@@ -25,6 +25,8 @@
 #   mise run image:resolve -- list-third-party           -> every third-party image ref the chart runs (security.yml scans them too)
 #   mise run image:resolve -- paths <component>          -> effective source paths (debug)
 #   mise run image:resolve -- tar-path <component>       -> where its :oci task writes its image tar
+#   mise run image:resolve -- import-path <component>    -> what the e2e cluster imports for it: its layout, or its tar
+#   mise run image:resolve -- oci-out                    -> where a build leaves an image's OCI layout
 #   mise run image:resolve -- --self-check               -> run assertions (no registry/network; git optional)
 # (the leading `--` keeps mise from parsing the subcommand's own `--`)
 #
@@ -39,6 +41,9 @@
 set -euo pipefail
 
 IMAGE_PREFIX="${IMAGE_PREFIX:-quay.io/dam-agents}"
+# Where image:ci-build leaves an image's OCI layout: it names this for the oci
+# task, and import_path finds an image's layout by it.
+OCI_OUT="${AGENT_OCI_OUT:-/tmp/ci-build/oci}"
 
 # Test-only files and the agents' READMEs never ship (final images copy dist/ +
 # node_modules, an agent's rootfs), so they don't move the last-touching commit.
@@ -99,6 +104,15 @@ tar_path() {
   [ "$1" = keycloak ] || for d in "packages/$1" "packages/agents/$1" "packages/e2e/agents/$1"; do [ -d "$d" ] && break; done
   echo "$d/dist/oci/$1.tar"
 }
+
+# What the e2e lane gives cluster:import for a component: an agent image this
+# run's :load output built is its OCI layout, which cluster:import tars into the
+# import as it reads it, so a multi-gigabyte image is never stored as a tar and
+# read back. Every other component, and an agent image pulled from the registry,
+# is the tar its :oci task or image:pull wrote. The oci task also leaves a
+# layout it built only as another image's base; image:ci-build names the ones a
+# load made, one per line, so neither kind is confused for the other.
+import_path() { if grep -qx "$1" "$OCI_OUT/load" 2>/dev/null; then echo "$OCI_OUT/$1"; else tar_path "$1"; fi; }
 
 own_paths() {
   if is_workload "$1"; then echo "$MISE_IMAGE_PATHS packages/agents/$1"; return; fi
@@ -207,6 +221,16 @@ self_check() {
   local f=0
   chk() { if [ "$1" != "$2" ]; then echo "FAIL: expected [$2] got [$1]" >&2; f=1; fi; }
   has() { case "$1" in *"$2"*) ;; *) echo "FAIL: [$1] missing [$2]" >&2; f=1 ;; esac; }
+  # An image built here imports as its layout, a pulled one as its tar, and a
+  # layout no load named is ignored.
+  chk "$(OCI_OUT=/nonexistent import_path mock)" "packages/e2e/agents/mock/dist/oci/mock.tar"
+  local d; d="$(mktemp -d)"
+  mkdir "$d/default" "$d/nous"
+  printf 'default\n' > "$d/load"
+  chk "$(OCI_OUT="$d" import_path default)" "$d/default"
+  chk "$(OCI_OUT="$d" import_path nous)" "packages/agents/nous/dist/oci/nous.tar"
+  chk "$(OCI_OUT="$d" import_path mock)" "packages/e2e/agents/mock/dist/oci/mock.tar"
+  rm -rf "$d"
   chk "$(base_of nous)" default
   chk "$(base_of shinkaevolve)" default
   chk "$(base_of gepa)" default
@@ -319,6 +343,8 @@ case "${1:-}" in
   list-third-party) third_party ;;
   paths)          effective_paths "$2" ;;
   tar-path)       tar_path "$2" ;;
+  import-path)    import_path "$2" ;;
+  oci-out)        echo "$OCI_OUT" ;;
   --self-check)   self_check ;;
-  *) echo "usage: image:resolve {resolve|source-sha|mq-tag|gha-outputs|list-workloads|list-harnesses|list-pinned-tags|list-components|list-third-party|paths|tar-path|--self-check}" >&2; exit 2 ;;
+  *) echo "usage: image:resolve {resolve|source-sha|mq-tag|gha-outputs|list-workloads|list-harnesses|list-pinned-tags|list-components|list-third-party|paths|tar-path|import-path|oci-out|--self-check}" >&2; exit 2 ;;
 esac

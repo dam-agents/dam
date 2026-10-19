@@ -55,29 +55,25 @@ fn preload_retry(failures: u32) -> Duration {
         .min(PRELOAD_RETRY_MAX)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner on the node may hold or resolve any digest over the one socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict. A runner's own cache has no ceiling: it serves one owner, on that owner's claim.
+// UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner on the node may hold or resolve any digest over the one socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict.
 pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     let budget = u64::try_from(budget).ok().filter(|b| *b > 0)?;
     Some(budget.saturating_add(budget / 2))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how much larger an unpacked tree is taken to be than the compressed size its manifest names. OCI metadata gives no unpacked size, and the export streams of common agent and base images measured 2.2 to 3.2 times their manifest's size; this is a fixed guess above all of them. It is also the most a fetch may unpack, so an image that inflates past it is refused rather than let fill the disk. Reading each gzip layer's trailer would give a closer figure at one ranged read per layer.
-pub const UNPACKED_RATIO: u64 = 4;
-
-// UNIT_BOUNDARY_DESCRIPTION: the least a fetch may unpack, whatever its manifest weighs. A tar stream pads every file and the whole stream, so an image of a few small files streams many times what its layers weigh compressed. An image whose manifest cannot be read gets the whole budget instead, since nothing was reserved for it.
+// UNIT_BOUNDARY_DESCRIPTION: the least a fetch may unpack, whatever its layers are taken to unpack to. A tar stream pads every file and the whole stream, so an image of a few small files streams many times what its layers weigh compressed. An image whose manifest cannot be read gets the whole budget instead, since nothing was reserved for it.
 pub const UNPACK_MIN: u64 = 16 << 20;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a hold keeps an entry from eviction after the holder last named it. A runner names every digest its machines boot at least once a minute, so a hold lapses only for a runner that has stopped, and its machines stopped with it.
 pub const HOLD_LEASE: Duration = Duration::from_secs(5 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: how the cache is opened. `pins` are references held for as long as the cache is open: the harness images the service preloads. `check_access` is set where the cache is shared by owners: an entry that was not proven readable without credentials is then served only to a caller whose own credentials read it where it came from. `hold_grace` is how long after opening nothing is evicted, which gives every runner time to name what it holds again after the service restarts and forgets. `fetch_ceiling` is the size past which a fetch is refused.
+// UNIT_BOUNDARY_DESCRIPTION: how the cache is opened. `pins` are references held for as long as the cache is open: the harness images the service preloads. The cache is shared by owners, so an entry that was not proven readable without credentials is served only to a caller whose own credentials read it where it came from. `hold_grace` is how long after opening nothing is evicted, which gives every runner time to name what it holds again after the service restarts and forgets. `fetch_ceiling` is the size past which a fetch is refused.
 pub struct CacheConfig {
     pub dir: PathBuf,
     pub budget: i64,
     pub crane: String,
     pub pins: Vec<String>,
     pub lifetime: CancellationToken,
-    pub check_access: bool,
     pub ref_fresh: Duration,
     pub hold_lease: Duration,
     pub hold_grace: Duration,
@@ -133,20 +129,12 @@ impl Lookup {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image cache as a runner uses it, whether the cache is in its own process or is the node's service at the other end of a socket. `hold` names every digest the runner's machines boot, and must be called again within HOLD_LEASE to keep them.
+// UNIT_BOUNDARY_DESCRIPTION: the image cache as a runner uses it: the node's service at the other end of a socket, or, in a test, the cache in the test's own process. `hold` names every digest the runner's machines boot, and must be called again within HOLD_LEASE to keep them.
 pub trait Images: Send + Sync {
     fn resolve(&self, reference: &str, auths: &[String]) -> Lookup;
     fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: frees every tree no machine holds, whatever the budget, for a runner whose claim is running out of room. A node cache's disk is the node's and not the owner's, so a runner's client to it sheds nothing.
-    fn shed(&self) -> Trim {
-        Trim::default()
-    }
     // UNIT_BOUNDARY_DESCRIPTION: called as the runner closes, once nothing fetches any more. Only a writer has trees to flush.
     fn flush(&self) {}
-    // UNIT_BOUNDARY_DESCRIPTION: what the cache's trees weigh on the runner's claim. A node cache's disk is the node's, so a runner's client to it holds nothing there.
-    fn claimed_bytes(&self) -> u64 {
-        0
-    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what one eviction pass did: the size of each image it removed, and what the cache held after it, when it was weighed against a budget at all.
@@ -186,11 +174,11 @@ enum Reuse {
     Unproven,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a fetch learned before it downloads anything: what the image says to run, the credential the registry accepted, and the compressed size its manifest names.
+// UNIT_BOUNDARY_DESCRIPTION: what a fetch learned before it downloads anything: what the image says to run, the credential the registry accepted, and the size it is taken to unpack to, with the estimate it is fetched again at should it unpack past that size.
 struct Prepared {
     launch: ImageLaunch,
     auth: String,
-    floor: Option<u64>,
+    unpacked: Option<(u64, u64)>,
 }
 
 impl ImageCache {
@@ -211,6 +199,14 @@ impl ImageCache {
     #[cfg(test)]
     fn dir(&self) -> &Path {
         &self.config.dir
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: moves every hold `by` into the past, so a test sees a hold lapse without waiting out a lease that a fetch on a loaded host could outlast.
+    #[cfg(test)]
+    pub(crate) fn age_holds(&self, by: Duration) {
+        for at in locked(&self.memory).holds.values_mut() {
+            *at -= by;
+        }
     }
 
     fn digest_entry(&self, digest: &str) -> PathBuf {
@@ -278,7 +274,7 @@ impl ImageCache {
         Ok(digest)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: resolves a reference, fetches its digest when the cache lacks it, and holds the entry for the caller once it is on disk and before the answer goes back, so no eviction can take it between this answer and the caller's next hold. A resolve that fails holds nothing. Two callers after one missing digest fetch it once: the second waits for the first and then finds it cached. A cached entry is checked against the caller's credentials when the cache is shared. A tree that is incomplete, or was unpacked for another platform, is fetched again.
+    // UNIT_BOUNDARY_DESCRIPTION: resolves a reference, fetches its digest when the cache lacks it, and holds the entry for the caller once it is on disk and before the answer goes back, so no eviction can take it between this answer and the caller's next hold. A resolve that fails holds nothing. Two callers after one missing digest fetch it once: the second waits for the first and then finds it cached. A cached entry is checked against the caller's credentials. A tree that is incomplete, or was unpacked for another platform, is fetched again.
     pub fn resolve_with(&self, reference: &str, auths: &[String], fresh: Duration) -> Lookup {
         if !is_image_ref(reference) || reference.contains("..") {
             return Lookup::failed(unusable(format!(
@@ -336,14 +332,28 @@ impl ImageCache {
                 }
             }
         };
-        let need = prepared.floor.unwrap_or(0).saturating_mul(UNPACKED_RATIO);
-        let room = self.make_room(need);
+        let (need, estimate) = prepared.unpacked.unwrap_or_default();
+        let mut room = self.make_room(need);
         let reserved = match self.admit(need) {
             Ok(reserved) => reserved,
             Err(e) => return Lookup::failed(e),
         };
-        let fetched = self.fetch(&pinned, &entry, &digest, &prepared, need, deadline);
+        let mut fetched = self.fetch(&pinned, &entry, &digest, &prepared, need, deadline);
         drop(reserved);
+        if estimate > need && fetched.as_ref().is_err_and(|e| e.is::<fetch::OverCap>()) {
+            tracing::warn!(
+                image = pinned.as_str(),
+                need,
+                estimate,
+                "image unpacked past its gzip trailers, fetching it again at the estimate"
+            );
+            let more = self.make_room(estimate);
+            room.freed.extend(more.freed);
+            room.used = more.used;
+            fetched = self.admit(estimate).and_then(|_reserved| {
+                self.fetch(&pinned, &entry, &digest, &prepared, estimate, deadline)
+            });
+        }
         let mut report = Fetched {
             ms: elapsed_ms(started),
             ok: fetched.is_ok(),
@@ -399,7 +409,7 @@ impl ImageCache {
         Ok(Some((launch, origin)))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so on a shared cache an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again. A boot the registry granted is remembered per digest and credential, and an anonymous read that failed per digest, each for `ref_fresh`: a fleet of creates on one private image then asks the registry once. A failed anonymous read only moves that read after the caller's credentials; it is never what refuses a boot, since a read that timed out reads the same as one refused, and a public image must still boot for a caller with no credential; and a revoked pull secret still boots a tree it was granted for that long, as a tag boots what it last resolved to.
+    // UNIT_BOUNDARY_DESCRIPTION: a cache hit is a boot the registry never saw, so an entry that is not known to be public is served only after a registry still gives it to the caller where it came from: an anonymous read of one of its origin repositories first, which marks it public, then each of the caller's credentials against each origin in turn. The repository the caller names is never what is asked, because anyone can name any digest under a registry of their own that answers every read. A caller whose repository is not an origin and whose credentials read none is unproven rather than refused, and fetches the digest itself. It fails closed: a registry that cannot be reached refuses the boot. What is known to be public is kept in memory only, so after a restart every entry is checked once again. A boot the registry granted is remembered per digest and credential, and an anonymous read that failed per digest, each for `ref_fresh`: a fleet of creates on one private image then asks the registry once. A failed anonymous read only moves that read after the caller's credentials; it is never what refuses a boot, since a read that timed out reads the same as one refused, and a public image must still boot for a caller with no credential; and a revoked pull secret still boots a tree it was granted for that long, as a tag boots what it last resolved to.
     fn may_reuse(
         &self,
         caller_repo: &str,
@@ -408,7 +418,7 @@ impl ImageCache {
         auths: &[String],
         deadline: Instant,
     ) -> anyhow::Result<Reuse> {
-        if !self.config.check_access || locked(&self.memory).public.contains(digest) {
+        if locked(&self.memory).public.contains(digest) {
             return Ok(Reuse::Granted);
         }
         let fresh = self.config.ref_fresh;
@@ -497,11 +507,11 @@ impl ImageCache {
             })?;
         let launch = launch_from_config(&config)
             .map_err(|e| unusable(format!("reading the config of {reference}: {e:#}")))?;
-        let floor = fetch::compressed_size(crane, reference, &auth, deadline, lifetime);
+        let unpacked = fetch::unpacked_size(crane, reference, &auth, deadline, lifetime);
         Ok(Prepared {
             launch,
             auth,
-            floor,
+            unpacked,
         })
     }
 
@@ -608,8 +618,7 @@ impl ImageCache {
             0o644,
         )
         .map_err(|e| written(e, "the origin record"))?;
-        let public = !self.config.check_access
-            || prepared.auth.is_empty()
+        let public = prepared.auth.is_empty()
             || prepared.auth == ANONYMOUS
             || fetch::readable(crane, reference, ANONYMOUS, deadline, lifetime);
         if boot.is_none() {
@@ -929,16 +938,8 @@ impl Images for ImageCache {
         ImageCache::hold(self, digests)
     }
 
-    fn shed(&self) -> Trim {
-        self.evict_to(None, 1)
-    }
-
     fn flush(&self) {
         ImageCache::flush(self);
-    }
-
-    fn claimed_bytes(&self) -> u64 {
-        self.used()
     }
 }
 

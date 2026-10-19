@@ -762,20 +762,6 @@ export const sidebarAgentOrder = pgTable(
   ],
 );
 
-export const sidebarSessionOrder = pgTable(
-  "sidebar_session_order",
-  {
-    owner: text("owner").notNull(),
-    agentId: text("agent_id").notNull(),
-    sessionId: text("session_id").notNull(),
-    position: integer("position").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.owner, table.agentId, table.sessionId] }),
-    index("sidebar_session_order_agent_idx").on(table.agentId),
-  ],
-);
-
 export const artifactFolders = pgTable(
   "artifact_folders",
   {

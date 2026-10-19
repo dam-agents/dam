@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-17
+Last verified: 2026-10-18
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -28,6 +28,7 @@ A runtime migration's copy Job reaches the runner the same way, pinned by addres
 
 **A machine reaches its gateway through a NodePort.** Guest egress leaves from the Mac, where a gateway's ClusterIP does not route.
 The controller exposes each vm Agent's gateway as a NodePort, and the cluster's VM forwards NodePorts to the Mac's loopback.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, the NodePort follows the agent's Service onto its slot on the owner's gateway pod, so nothing else changes here.
 The guest's proxy is smolvm's gateway address, which smolvm relays to the host's loopback.
 Allowing that address would open every loopback port: other machines' published ports, the runner's API, and whatever the user runs locally.
 So the machine is given its gateway's loopback port in place of an allowlist.
@@ -37,7 +38,7 @@ Both sides hold the gateway address to the [guest contract](../../packages/vm-ru
 No kernel gate stands behind that smolvm filter, since a Mac process has no NetworkPolicy.
 And the forwarded NodePort is open to any process on the Mac, which can use a gateway's credentials: the same trust as the laptop's own user.
 
-**Images and disks.** With no registry, the install stages image trees onto a case-sensitive volume the runner owns.
+**Images and disks.** The host runner is the one runner with no node image cache: no cache service runs beside it, so it fetches nothing from a registry and boots only the image trees the install stages onto a case-sensitive volume it owns.
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.

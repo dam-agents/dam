@@ -1,3 +1,5 @@
+import type { ReactNode } from "react";
+
 import { PageHeader } from "@/components/ui/page-header";
 
 import { AlwaysOnTag } from "../../../components/status-indicator.js";
@@ -5,9 +7,13 @@ import type { AgentView } from "../../../types.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
+import { MigrateRuntimeAction } from "../../agents/components/migrate-runtime-action.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
+import { useMigrateRuntime } from "../../agents/hooks/use-migrate-runtime.js";
+import { useRuntimeMigrationControls } from "../../agents/hooks/use-runtime-migration-controls.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 
 interface Props {
   agent: AgentView;
@@ -34,28 +40,55 @@ export function SandboxIdentity({ agent, display }: Props) {
   );
 }
 
+export type SectionHeaderSlot = (actions?: ReactNode) => ReactNode;
+
 export function SandboxHomeHeader({
   agent,
   title,
   description,
+  pictogram,
+  actions,
 }: {
   agent: AgentView;
   title: string;
   description?: string;
+  pictogram?: ReactNode;
+  actions?: ReactNode;
 }) {
   const { updateOne, updatingId } = useUpdateSandbox();
+  const newLayout = useNewLayout();
   return (
     <PageHeader
       title={title}
       description={description}
+      pictogram={pictogram}
       actions={
-        <UpdateAvailableAction
-          agent={agent}
-          pending={updatingId === agent.id}
-          busy={updatingId !== null}
-          onUpdate={() => void updateOne(agent)}
-        />
+        <>
+          {newLayout && <MigrateAction agent={agent} />}
+          <UpdateAvailableAction
+            agent={agent}
+            pending={updatingId === agent.id}
+            busy={updatingId !== null}
+            onUpdate={() => void updateOne(agent)}
+          />
+          {actions}
+        </>
       }
+    />
+  );
+}
+
+function MigrateAction({ agent }: { agent: AgentView }) {
+  const migrate = useMigrateRuntime();
+  const controls = useRuntimeMigrationControls();
+  return (
+    <MigrateRuntimeAction
+      agent={agent}
+      pending={migrate.isMigrating(agent.id)}
+      onMigrate={() => void migrate.migrateOne(agent)}
+      controlsBusy={controls.isBusy(agent.id)}
+      onAbort={() => void controls.abortOne(agent)}
+      onRetry={() => void controls.retryOne(agent)}
     />
   );
 }

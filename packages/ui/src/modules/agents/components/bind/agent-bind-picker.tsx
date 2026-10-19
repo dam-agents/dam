@@ -10,8 +10,8 @@ import type { SharedChannel } from "../../../sandboxes/lib/shared-channels.js";
 import { useActiveScheduleCounts } from "../../hooks/use-active-schedule-counts.js";
 import { useBindSharingConfirm } from "../../hooks/use-bind-sharing-confirm.js";
 import { useInlineAgentCreate } from "../../hooks/use-inline-agent-create.js";
-import { CreateAgentInline } from "../create-agent-inline.js";
 import { type BindMessenger, BindPage } from "./bind-page.js";
+import { withCommandChips } from "./command-chip.js";
 import { PickerFooter } from "./picker-footer.js";
 import { PickerSearch } from "./picker-search.js";
 import { PickerSectionList } from "./picker-section-list.js";
@@ -42,14 +42,8 @@ export function AgentBindPicker({
   onPick,
   onAgentCreated,
 }: Props) {
-  const {
-    isLoading,
-    displayedAgents,
-    justCreatedId,
-    creating,
-    openCreateForm,
-    markCreated,
-  } = useInlineAgentCreate();
+  const { isLoading, displayedAgents, creating, canCreate, create } =
+    useInlineAgentCreate();
   const [query, setQuery] = useState("");
   const [pickedId, setPickedId] = useState<string | null>(null);
   const scheduleCounts = useActiveScheduleCounts();
@@ -58,8 +52,7 @@ export function AgentBindPicker({
     () => pickerSections(displayedAgents, query),
     [displayedAgents, query],
   );
-  const selectedId = pickedId ?? justCreatedId;
-  const selected = displayedAgents.find((a) => a.id === selectedId) ?? null;
+  const selected = displayedAgents.find((a) => a.id === pickedId) ?? null;
   const bindConfirm = useBindSharingConfirm(selected);
   const whisper = copy.messenger === "slack" && selected?.whisper === true;
   const sharing = bindConfirm.body(copy.audience, whisper);
@@ -71,11 +64,25 @@ export function AgentBindPicker({
     onPick(selected);
   };
 
-  const handleCreated = (agent: AgentView) => {
-    markCreated(agent);
+  const createAgent = async () => {
+    const agent = await create();
+    if (!agent) return;
     setPickedId(agent.id);
     onAgentCreated();
   };
+
+  const createButton = (
+    <Button
+      variant="link"
+      size="inline"
+      onClick={() => void createAgent()}
+      disabled={!canCreate}
+      tone="muted"
+      className="mt-6 text-sm"
+    >
+      <AddAlt size={16} /> {creating ? "Creating…" : "Create a new agent"}
+    </Button>
+  );
 
   if (isLoading) {
     return (
@@ -99,9 +106,7 @@ export function AgentBindPicker({
         subtitle={copy.emptySubtitle}
       >
         <PickerError error={error} />
-        <div className="mt-6">
-          <CreateAgentInline onCreated={handleCreated} />
-        </div>
+        {createButton}
       </BindPage>
     );
   }
@@ -143,21 +148,7 @@ export function AgentBindPicker({
           onSelect={(agent) => setPickedId(agent.id)}
         />
       )}
-      {creating ? (
-        <div className="mt-6">
-          <CreateAgentInline onCreated={handleCreated} />
-        </div>
-      ) : (
-        <Button
-          variant="link"
-          size="inline"
-          onClick={openCreateForm}
-          tone="muted"
-          className="mt-6 text-sm"
-        >
-          <AddAlt size={16} /> Create a new agent
-        </Button>
-      )}
+      {createButton}
     </BindPage>
   );
 }
@@ -166,7 +157,7 @@ function PickerError({ error }: { error: Props["error"] }) {
   if (!error) return null;
   return (
     <p className="mt-4 text-sm text-danger">
-      {error.title} — {error.hint}
+      {error.title} — {withCommandChips(error.hint)}
     </p>
   );
 }

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The sidebar lists Agents, and the Sessions of each Agent, in one manual order per user that the user sets by drag and drop, in a real browser against a real api-server. A drop on a row puts the dragged item before or after it, by the half of the row the pointer is in. A Session moves only within its own Agent's list. A new Agent or a new Session goes to the bottom of its list, and activity never moves anything. The order survives a reload and is the same in another browser. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
+// TEST_OVERVIEW: The sidebar lists Agents in one manual order per user that the user sets by drag and drop, in a real browser against a real api-server, and lists the Sessions of each Agent by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent goes to the bottom of the list, and activity never moves an Agent. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of its Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -122,9 +122,12 @@ async function expectFullHitArea(button: Locator): Promise<void> {
       [box.left + 3, box.top + 3],
       [box.right - 3, box.bottom - 3],
     ] as const;
-    return points.filter(
-      ([x, y]) => !el.contains(document.elementFromPoint(x, y)),
-    );
+    return points.flatMap(([x, y]) => {
+      const hit = document.elementFromPoint(x, y);
+      if (el.contains(hit)) return [];
+      const covering = hit instanceof HTMLElement ? hit.outerHTML : String(hit);
+      return [`${Math.round(x)},${Math.round(y)}: ${covering.slice(0, 200)}`];
+    });
   });
   expect(misses, "points of the button another element covers").toEqual([]);
 }
@@ -219,8 +222,8 @@ test("drag reorders Agents, and a new Agent goes to the bottom", async ({
   });
 });
 
-// TEST_SCENARIO: Sessions keep one manual order within their own Agent. A drag moves a Session to any place there, a drop on another Agent changes nothing, a new Session goes to the bottom, and a turn in a Session moves nothing. The "⋯" button of a working row takes a click on every point: the hidden working indicator sits in the same place and must not catch it.
-test("drag reorders Sessions within their Agent, and a new Session goes to the bottom", async ({
+// TEST_SCENARIO: Sessions are listed by last activity, newest first, and do not drag. A new Session goes to the top, a turn in the oldest Session moves it to the top, and the order is the same after a reload. The "⋯" button of a working row takes a click on every point: the hidden working indicator sits in the same place and must not catch it.
+test("Sessions are listed newest first, and a turn moves its Session to the top", async ({
   page,
 }) => {
   test.setTimeout(300_000);
@@ -256,33 +259,20 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
   });
 
   const start = await shownSessions(page);
-  const [first, second, third] = start as [string, string, string];
+  const [newest, middle, oldest] = start as [string, string, string];
   const row = (title: string) =>
     sessionRows(page).filter({ hasText: title }).first();
 
-  await test.step("a drag moves a Session to the place it is dropped", async () => {
-    await dragTo(page, row(first), () => row(third), "bottom");
-    await expect
-      .poll(() => shownSessions(page))
-      .toEqual([second, third, first]);
-    await dragTo(page, row(third), () => row(second), "top");
-    await expect
-      .poll(() => shownSessions(page))
-      .toEqual([third, second, first]);
-  });
-
-  await test.step("a drop on another Agent changes nothing", async () => {
-    const agents = await shownAgents(page);
-    await dragTo(page, row(second), () => agentRow(page, AGENTS[1]), "middle");
+  await test.step("the newest Session is at the top, and a row does not drag", async () => {
+    await expect(row(newest)).toHaveAttribute("data-active", "true");
+    await dragTo(page, row(newest), () => row(oldest), "bottom");
     await page.waitForTimeout(1_000);
-    expect(await shownSessions(page)).toEqual([third, second, first]);
-    expect(await shownAgents(page)).toEqual(agents);
-    expect(
-      (await api.sidebarOrder.get.query()).sessions[agentIds.get(AGENTS[1])!],
-    ).toBeUndefined();
+    expect(await shownSessions(page)).toEqual([newest, middle, oldest]);
   });
 
-  await test.step("a turn in a Session moves nothing, and its ⋯ button takes every click", async () => {
+  await test.step("a turn in the oldest Session moves it to the top, and its ⋯ button takes every click", async () => {
+    await row(oldest).click();
+    await expect(row(oldest)).toHaveAttribute("data-active", "true");
     await setMockLongTurnReply(api, agentId, {
       holdMs: 15_000,
       tail: "order-long-tail",
@@ -290,7 +280,9 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
     await sendMessageToAgent(page, "order-working");
     const working = sessionRows(page).and(page.locator('[data-active="true"]'));
     await expect(working.getByTestId("working-dots")).toBeAttached();
-    expect(await shownSessions(page)).toEqual([third, second, first]);
+    await expect
+      .poll(() => shownSessions(page), { timeout: 30_000 })
+      .toEqual([oldest, newest, middle]);
     await working.hover();
     await expectFullHitArea(working.getByTestId("session-menu-button"));
     const menu = await working.getByTestId("session-menu-button").boundingBox();
@@ -300,7 +292,7 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
     await expect(page.getByText("order-long-tail")).toBeVisible({
       timeout: 60_000,
     });
-    expect(await shownSessions(page)).toEqual([third, second, first]);
+    expect(await shownSessions(page)).toEqual([oldest, newest, middle]);
   });
 
   await test.step("the order survives a reload", async () => {
@@ -308,18 +300,20 @@ test("drag reorders Sessions within their Agent, and a new Session goes to the b
     await ensureSidebarExpanded(page);
     await expect
       .poll(() => shownSessions(page))
-      .toEqual([third, second, first]);
+      .toEqual([oldest, newest, middle]);
   });
 
-  await test.step("a new Session goes to the bottom", async () => {
+  await test.step("a new Session goes to the top, and the collapsed list keeps the newest three", async () => {
     await setMockAgentReply(api, agentId, reply);
     await newSession("order-fourth");
-    await expect(sessionRows(page)).toHaveCount(PROMPTS.length + 1, {
-      timeout: 30_000,
-    });
+    await expect
+      .poll(async () => (await shownSessions(page)).slice(1), {
+        timeout: 30_000,
+      })
+      .toEqual([oldest, newest]);
     const shown = await shownSessions(page);
-    expect(shown.slice(0, 3)).toEqual([third, second, first]);
-    expect(shown[3]).not.toEqual("");
-    expect(start).not.toContain(shown[3]);
+    expect(shown).toHaveLength(PROMPTS.length);
+    expect(shown[0]).not.toEqual("");
+    expect(start).not.toContain(shown[0]);
   });
 });

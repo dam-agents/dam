@@ -107,21 +107,27 @@ export function ChatFormSettings({ agentId }: { agentId: string }) {
             value={preferences.recommend}
             onChange={(recommend) => update({ recommend })}
           />
-          <OptionField title="Lock the chat input">
-            <div className="flex items-center justify-between gap-4">
-              <p className="text-sm text-muted-foreground">
+          <label className="mt-6 flex cursor-pointer items-start justify-between gap-4">
+            <span>
+              <span className="block text-sm font-medium text-foreground">
+                Lock the chat input
+              </span>
+              <span className="mt-0.5 block text-sm text-muted-foreground">
                 Let the agent lock the message box until you answer a short
                 form.
-              </p>
-              <Switch
-                label="Lock the chat input"
-                checked={preferences.lockComposer}
-                onCheckedChange={(lockComposer) => update({ lockComposer })}
-              />
-            </div>
-          </OptionField>
+              </span>
+            </span>
+            <Switch
+              label="Lock the chat input"
+              checked={preferences.lockComposer}
+              onCheckedChange={(lockComposer) => update({ lockComposer })}
+            />
+          </label>
         </>
       )}
+      <p role="status" className="mt-4 min-h-5 text-sm text-muted-foreground">
+        {save.isSuccess && "Saved."}
+      </p>
     </section>
   );
 }

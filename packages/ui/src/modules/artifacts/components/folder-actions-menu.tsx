@@ -38,7 +38,7 @@ export function FolderActionsMenu({
       </DropdownMenuItem>
       <DropdownMenuItem onSelect={() => onEdit(folder)}>
         <Edit size={14} />
-        Edit folder
+        Rename folder
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuItem tone="danger" onSelect={() => onDelete(folder)}>

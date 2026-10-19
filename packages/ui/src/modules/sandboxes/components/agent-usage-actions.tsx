@@ -1,4 +1,11 @@
-import { Chat, Code, Launch, LogoSlack, Terminal } from "@carbon/icons-react";
+import {
+  Chat,
+  Code,
+  Launch,
+  LogoSlack,
+  Terminal,
+  Tools,
+} from "@carbon/icons-react";
 import { SessionMode } from "api-server-api";
 import type { ReactNode } from "react";
 
@@ -36,12 +43,15 @@ function DocLink({ href, children }: { href: string; children: ReactNode }) {
 export function AgentUsageActions({
   agent,
   showChat = true,
+  showConfigure = false,
   onNewTerminal,
 }: {
   agent: AgentView;
   showChat?: boolean;
+  showConfigure?: boolean;
   onNewTerminal?: () => void;
 }) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const selectAgent = useStore((s) => s.selectAgent);
   const openAgentSession = useStore((s) => s.openAgentSession);
   const agentsData = useAgents().data;
@@ -106,7 +116,7 @@ export function AgentUsageActions({
       icon: <Code />,
       kind: "expand",
       title: "VS Code and Zed",
-      description: "Work in the agent's sandbox from your own editor.",
+      description: "Work in the agent's workspace from your own editor.",
       content: (
         <div className="flex flex-col gap-2 text-sm text-muted-foreground">
           <p>
@@ -115,7 +125,7 @@ export function AgentUsageActions({
             remote <DocLink href={VS_CODE_REMOTE_URL}>VS Code</DocLink> (or{" "}
             <DocLink href={ZED_REMOTE_URL}>Zed</DocLink> with{" "}
             <code className="font-mono">-x zed</code>) session and work directly
-            in the agent's sandbox:
+            in the agent's workspace:
           </p>
           <CopyableCommand
             command={`${brand.short} ssh connect -x code ${ref}`}
@@ -152,6 +162,17 @@ export function AgentUsageActions({
             title: "Telegram",
             description: "Message the agent from a Telegram chat.",
             content: <MessengerInstructions messenger="telegram" />,
+          },
+        ]
+      : []),
+    ...(showConfigure
+      ? [
+          {
+            icon: <Tools />,
+            kind: "link" as const,
+            title: "Configure agent",
+            description: "Set LLM providers, skills, connections, and more.",
+            onClick: () => navigateToSandboxHome(agent.id),
           },
         ]
       : []),

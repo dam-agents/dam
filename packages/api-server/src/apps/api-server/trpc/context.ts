@@ -141,6 +141,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         channelManager.availableChannels()[ChannelType.Slack] === true &&
         (await findExternalUsersByIdentity(db)(ChannelType.Slack, user.sub))
           .length === 0,
+      vmPool: {
+        storage: config.vmPoolStorage,
+        memory: config.vmPoolMemory,
+      },
     });
     const { agents, isOwnedAgent } = composeAgentsModule({
       api,
@@ -265,6 +269,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
+      prefersVm: async () => (await features.flags())["vm-sandboxes"],
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(
           agentId,
@@ -422,6 +427,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       virtualizationEnabled: config.virtualizationEnabled,
       vmForced: agentsInstallSettings(config).vmForced,
       featureModes: config.featureModes,
+      telemetryBackend: telemetryReader !== null,
     };
   };
 }

@@ -63,6 +63,7 @@ import {
   type AgentMount,
   isVmBackend,
   type RuntimeMigrationContext,
+  type VmPoolCapacity,
 } from "../domain/runtime-migration.js";
 import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
@@ -533,9 +534,15 @@ export interface ResizeGatePort {
   ): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: refuses a new vm agent, or a move onto the vm backend, when its owner's shared storage is too full to hold one; it throws the refusal the caller sees.
+// UNIT_BOUNDARY_DESCRIPTION: refuses a new vm agent when its owner's shared storage is too full to hold one, and reads the pool a move must fit into, in the runner's own figures. Unreadable or absent is null, which refuses nothing.
 export interface StorageGatePort {
   assertCanCreateVm(): Promise<void>;
+  readCapacity(): Promise<VmPoolCapacity | null>;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what an Agent's home holds, read from the Agent's own runtime, which measures the volume it has mounted. Null when it cannot be read — the Agent is asleep or stopped, or its runtime does not answer — so a move is judged on the home's contents only where they are known.
+export interface HomeUsagePort {
+  read(agentId: string): Promise<number | null>;
 }
 
 export function createAgentsService(deps: {
@@ -563,6 +570,7 @@ export function createAgentsService(deps: {
   runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   storageGate?: StorageGatePort;
+  homeUsage?: HomeUsagePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -628,7 +636,23 @@ export function createAgentsService(deps: {
   const runtimeMigrationContext: RuntimeMigrationContext = {
     virtualizationEnabled: deps.virtualizationEnabled === true,
     defaultMounts: deps.agentDefaultMounts,
+    defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
   };
+
+  // UNIT_BOUNDARY_DESCRIPTION: the context a move is decided from, with the pool and the home read live: the plan and the request must agree about whether the owner has room for it, and about how much of that room the home takes.
+  async function migrationContext(
+    agentId: string,
+  ): Promise<RuntimeMigrationContext> {
+    const [capacity, homeBytes] = await Promise.all([
+      deps.storageGate?.readCapacity() ?? null,
+      deps.homeUsage?.read(agentId) ?? null,
+    ]);
+    return {
+      ...runtimeMigrationContext,
+      capacity: capacity ?? null,
+      homeBytes: homeBytes ?? null,
+    };
+  }
 
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
@@ -1564,11 +1588,9 @@ export function createAgentsService(deps: {
     },
 
     async migrateRuntime(id) {
-      await deps.storageGate?.assertCanCreateVm();
       const result = await executeRuntimeMigration({
         ...runtimeMigrationWrites,
-        migration: runtimeMigrationContext,
-        defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
+        migration: await migrationContext(id),
       })(id);
       if (!result.ok) return result;
       return ok(await migrationUpdated(result.value));
@@ -1595,7 +1617,7 @@ export function createAgentsService(deps: {
       if (!infra) return err({ type: "AgentNotFound" as const });
       return ok(
         runtimeMigrationPlan(infra, {
-          ...runtimeMigrationContext,
+          ...(await migrationContext(id)),
           retentionMs: deps.runtimeMigrationRetentionMs ?? null,
         }),
       );

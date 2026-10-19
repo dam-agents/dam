@@ -1,11 +1,11 @@
 import {
+  AddComment,
   Calendar,
   Download,
   Edit,
   FolderMoveTo,
-  NewTab,
+  RequestQuote,
   Share,
-  TextCreation,
   TrashCan,
 } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
@@ -70,12 +70,12 @@ export function ArtifactRowMenuItems({
     <>
       {isEditableArtifact(artifact) && (
         <Item onSelect={() => onEdit(artifact)}>
-          <Edit size={14} />
+          <RequestQuote size={14} />
           Edit
         </Item>
       )}
       <Item onSelect={() => onRename(artifact)}>
-        <TextCreation size={14} />
+        <Edit size={14} />
         Rename
       </Item>
       <Item onSelect={() => onMove(artifact)}>
@@ -92,7 +92,7 @@ export function ArtifactRowMenuItems({
       </Item>
       {startSession.available && (
         <Item onSelect={startSession.start}>
-          <NewTab size={14} />
+          <AddComment size={14} />
           Discuss with agent
         </Item>
       )}

@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
@@ -16,6 +17,7 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
 import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
 import {
@@ -28,8 +30,9 @@ import { SidePanelBar, type SidePanelTabProps } from "./side-panel-bar.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
 const FILE_PANEL_WIDTH_KEY = "platform-file-w";
-const MAIN_MIN_W = 320;
+const MAIN_MIN_W = 360;
 const SIDE_PANEL_BAR_W = 49;
+const SIDE_PANEL_TILE_BAR_W = 60;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel beside a page's main column, with
@@ -68,6 +71,8 @@ export function SidePanelShell({
   mainClassName?: string;
   children: ReactNode;
 }) {
+  const tiles = useNewLayout();
+  const barW = tiles ? SIDE_PANEL_TILE_BAR_W : SIDE_PANEL_BAR_W;
   const openFilePath = useStore((s) => s.openFilePath);
   const openArtifactId = useStore((s) => s.openArtifactId);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
@@ -91,6 +96,8 @@ export function SidePanelShell({
     return () => ro.disconnect();
   }, [columnsEl]);
   const filePanelRef = useRef<HTMLDivElement>(null);
+  const mobileBackRef = useRef<HTMLButtonElement>(null);
+  const desktop = useIsDesktop();
 
   const sidePanelOpen = activeTab !== null;
   const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
@@ -104,15 +111,36 @@ export function SidePanelShell({
   const maximized = maximizable !== null && sidePanelMaximized === maximizable;
   const sidePanelMinW = sidePanelMinWidth(activeTab);
   const columnsDoNotFit =
-    columnsW !== null &&
-    columnsW < MAIN_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
+    columnsW !== null && columnsW < MAIN_MIN_W + sidePanelMinW + barW;
   const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
-  const sidePanelMaxW =
-    columnsW === null ? null : columnsW - MAIN_MIN_W - SIDE_PANEL_BAR_W;
+  const sidePanelMaxW = columnsW === null ? null : columnsW - MAIN_MIN_W - barW;
   const sidePanelW =
     rightW === null
       ? null
       : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
+
+  const closeMobilePanel = () => {
+    setSidePanelTab(null);
+    setMobileScreen("chat");
+  };
+  const mobileOverlay = mobilePanelOpen && !desktop;
+  useEffect(() => {
+    if (!mobileOverlay) return;
+    mobileBackRef.current?.focus();
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (
+        document.querySelector(
+          '[role="dialog"], [role="alertdialog"], [role="menu"]',
+        )
+      )
+        return;
+      setSidePanelTab(null);
+      setMobileScreen("chat");
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => document.removeEventListener("keydown", onKeyDown);
+  }, [mobileOverlay, setSidePanelTab, setMobileScreen]);
 
   return (
     <div ref={setColumnsEl} className="flex flex-1 min-h-0 min-w-0">
@@ -131,6 +159,8 @@ export function SidePanelShell({
         <div className="hidden md:flex">
           <ResizeHandle
             side="right"
+            label="Resize side panel"
+            value={sidePanelW ?? undefined}
             onResize={(d) => {
               const max = sidePanelMaxW ?? window.innerWidth - 500;
               const base = shownSidePanelWidth(
@@ -149,7 +179,7 @@ export function SidePanelShell({
       <div
         data-testid="side-panel"
         className={cn(
-          "flex bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
+          "flex bg-chrome relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
           !mobilePanelOpen && "max-md:hidden",
           sidePanelFills
             ? "md:flex-1 md:min-w-0"
@@ -179,13 +209,12 @@ export function SidePanelShell({
           >
             <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
               <Button
+                ref={mobileBackRef}
                 variant="ghost"
                 size="icon-sm"
                 aria-label={mobileBackLabel}
-                onClick={() => {
-                  setSidePanelTab(null);
-                  setMobileScreen("chat");
-                }}
+                tooltip={mobileBackLabel}
+                onClick={closeMobilePanel}
               >
                 <ArrowLeft size={16} />
               </Button>
@@ -219,6 +248,7 @@ export function SidePanelShell({
           />
         )}
         <SidePanelBar
+          tiles={tiles}
           active={activeTab}
           hidden={hiddenTabs}
           onSelect={onSelectTab}

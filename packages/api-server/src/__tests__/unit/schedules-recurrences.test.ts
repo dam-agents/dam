@@ -508,6 +508,27 @@ describe("rrule presets", () => {
     );
   });
 
+  // TEST_SCENARIO: the daily preset stores its days as FREQ=DAILY;BYDAY, which the text library reads as "every day on Monday", so it is described as the weekly rule it fires like.
+  it.each([
+    [
+      "FREQ=DAILY;BYDAY=MO;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "every week on Monday at 9 AM",
+    ],
+    [
+      "FREQ=DAILY;BYDAY=MO,WE;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "every week on Monday and Wednesday at 9 AM",
+    ],
+    [
+      "FREQ=DAILY;BYDAY=MO,TU,WE,TH,FR;BYHOUR=9;BYMINUTE=0;BYSECOND=0",
+      "every weekday at 9 AM",
+    ],
+  ])(
+    "describes the daily preset limited to days, %s, as weekly",
+    (rrule, text) => {
+      expect(rruleToText(rrule)).toBe(text);
+    },
+  );
+
   it("describes a rule with a floating UNTIL", () => {
     expect(
       rruleToText("FREQ=MONTHLY;BYMONTHDAY=1;UNTIL=20271231T000000"),

@@ -117,7 +117,6 @@ pub fn run() -> ! {
         fs::metadata(guest::SEEDED_PATH).is_ok(),
         expected.as_ref(),
     );
-    tidy_scratch(&root);
     let trust = offer_trust_cache();
     show_boot_log(&root);
     let guard = pool_guard(&root);
@@ -464,7 +463,16 @@ fn fresh_root(disk: &Path, machine: &vm::Machine) {
     if let Err(e) = layers.fresh_scratch(&machine.image, stamp) {
         fatal!("{e}");
     }
-    if let Err(e) = layers.mount(&machine.image) {
+    let accounts = machine.image.with_file_name("accounts");
+    let mut lowers = vec![machine.image.as_path()];
+    match accounts_layer(&machine.image, &accounts) {
+        Ok(true) => lowers.insert(0, &accounts),
+        Ok(false) => {}
+        Err(e) => logf!(
+            "WARNING: building the boot's /etc/passwd ({e}); SSH logins as agent do not land as root"
+        ),
+    }
+    if let Err(e) = layers.mount(&lowers) {
         fatal!(
             "mounting the platform's root at {}: {e}",
             layers.merged.display()
@@ -588,17 +596,15 @@ const OLD_ROOT: &str = ".platform-old-root";
 const LOWER_MAY_CHANGE: &str = ",index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off";
 
 const KEPT: &str = "kept";
-const LEGACY_UPPER: &str = "upper";
 const WORK: &str = "work";
-const DISCARDED_LAYERS: [&str; 3] = [KEPT, LEGACY_UPPER, WORK];
+const DISCARDED_LAYERS: [&str; 2] = [KEPT, WORK];
 
-// UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is the image tree the VMM shares, read-only. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`. A platform-init from before roots were kept empties `upper` and `work` on every boot and never looks in `kept`, so a runner rolled back and forward again finds the kept upper still beside the record of the image that wrote it. The old `upper` is cleared on every boot, so a disk from that layout gets its space back.
+// UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is the image tree the VMM shares, read-only. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`.
 struct FreshRoot {
     store: PathBuf,
     kept: PathBuf,
     upper: PathBuf,
     image: PathBuf,
-    legacy_upper: PathBuf,
     work: PathBuf,
     merged: PathBuf,
 }
@@ -610,16 +616,15 @@ impl FreshRoot {
             kept: store.join(KEPT),
             upper: store.join(KEPT).join("upper"),
             image: store.join(KEPT).join("image"),
-            legacy_upper: store.join(LEGACY_UPPER),
             work: store.join(WORK),
             merged: store.join("merged"),
             store,
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: empties the work layer and the legacy upper, and with `fresh` the kept upper and its image record together, so a boot cut short leaves no record and the next boot is fresh too. Each is renamed aside, which is one step however many files it holds; only a rename that fails deletes in place.
+    // UNIT_BOUNDARY_DESCRIPTION: empties the work layer, and with `fresh` the kept upper and its image record together, so a boot cut short leaves no record and the next boot is fresh too. Each is renamed aside, which is one step however many files it holds; only a rename that fails deletes in place.
     fn clear(&self, fresh: bool, stamp: u64) -> io::Result<()> {
-        let mut cleared = vec![&self.legacy_upper, &self.work];
+        let mut cleared = vec![&self.work];
         if fresh {
             cleared.push(&self.kept);
         }
@@ -699,8 +704,12 @@ impl FreshRoot {
         }
     }
 
-    fn options(&self, lower: &Path) -> io::Result<CString> {
-        for dir in [lower, self.upper.as_path(), self.work.as_path()] {
+    fn options(&self, lowers: &[&Path]) -> io::Result<CString> {
+        for dir in lowers
+            .iter()
+            .copied()
+            .chain([self.upper.as_path(), self.work.as_path()])
+        {
             if dir
                 .as_os_str()
                 .as_bytes()
@@ -714,7 +723,13 @@ impl FreshRoot {
             }
         }
         let mut options = OsString::from("lowerdir=");
-        options.push(lower);
+        options.push(
+            lowers
+                .iter()
+                .map(|dir| dir.as_os_str())
+                .collect::<Vec<_>>()
+                .join(OsStr::new(":")),
+        );
         options.push(",upperdir=");
         options.push(&self.upper);
         options.push(",workdir=");
@@ -723,8 +738,8 @@ impl FreshRoot {
         cstring(&options)
     }
 
-    fn mount(&self, lower: &Path) -> io::Result<()> {
-        let options = self.options(lower)?;
+    fn mount(&self, lowers: &[&Path]) -> io::Result<()> {
+        let options = self.options(lowers)?;
         let target = cstring(self.merged.as_os_str())?;
         // SAFETY: the source, target, type and options are NUL-terminated strings that outlive the call, and overlayfs reads its options as a string.
         let rc = unsafe {
@@ -738,6 +753,48 @@ impl FreshRoot {
         };
         succeeded(rc == 0)
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a layer of this boot alone, over the image, holding the image's /etc/passwd with `agent` as uid 0: SSH logins come as `agent`, and on a machine the harness runs as root. A layer rather than a write keeps the entry out of the kept upper, so the next image's /etc/passwd shows through, and the file is an ordinary one of the root, which useradd copies up as it replaces it. The layer's /etc and passwd take the image's owners and modes, which the root shows for them. An image without /etc/passwd, or whose /etc/passwd names `agent` already, gets no layer.
+fn accounts_layer(image: &Path, layer: &Path) -> io::Result<bool> {
+    let image_passwd = image.join("etc/passwd");
+    let Some(passwd) = fs::read_to_string(&image_passwd)
+        .ok()
+        .and_then(|text| accounts_passwd(&text))
+    else {
+        return Ok(false);
+    };
+    let etc = layer.join("etc");
+    mkdir_all(&etc)?;
+    fs::write(etc.join("passwd"), passwd)?;
+    for (from, to) in [(image_passwd, etc.join("passwd")), (image.join("etc"), etc)] {
+        let meta = fs::metadata(&from)?;
+        std::os::unix::fs::chown(&to, Some(meta.uid()), Some(meta.gid()))?;
+        fs::set_permissions(&to, fs::Permissions::from_mode(meta.mode() & 0o7777))?;
+    }
+    Ok(true)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the image's /etc/passwd with `agent` at its end as uid 0, with HOME as its home and root's shell, or nothing when the image names `agent` already.
+fn accounts_passwd(image: &str) -> Option<String> {
+    if image.lines().any(|line| line.starts_with("agent:")) {
+        return None;
+    }
+    let shell = image
+        .lines()
+        .find(|line| line.starts_with("root:"))
+        .and_then(|line| line.rsplit(':').next())
+        .filter(|shell| !shell.is_empty())
+        .unwrap_or("/bin/sh");
+    let mut passwd = image.to_string();
+    if !passwd.is_empty() && !passwd.ends_with('\n') {
+        passwd.push('\n');
+    }
+    passwd.push_str(&format!(
+        "agent:x:0:0:Agent User:{}:{shell}\n",
+        guest::AGENT_HOME
+    ));
+    Some(passwd)
 }
 
 fn pivot_root(new_root: &Path, put_old: &Path) -> io::Result<()> {
@@ -949,51 +1006,9 @@ fn bind_ca() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. /var/cache is not one of them: an image ships its font, package and linker caches there, and an empty bind over them had every boot rebuild them, so it is part of the kept root, which lasts as long as the image's root generation. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
+// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are plain directories of the root's upper layer on the disk, empty on every boot, owned by root with the mode the image expects of them (FreshRoot::fresh_scratch), so they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. /var/cache is not one of them: an image ships its font, package and linker caches there, and emptying it had every boot rebuild them, so it is part of the kept root, which lasts as long as the image's root generation. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
 const SCRATCH_DIRS: [(&str, u32); 2] = [("/tmp", 0o1777), ("/var/tmp", 0o1777)];
-// UNIT_BOUNDARY_DESCRIPTION: scratch folders an earlier platform-init bound from a store of their own on the disk; the stores are discarded at boot so the disk gets their space back. /tmp and /var/tmp are now plain directories of the root (FreshRoot::fresh_scratch).
-const RETIRED_SCRATCH: [&str; 3] = ["/var/cache", "/tmp", "/var/tmp"];
 const HOME_CACHES: [&str; 2] = [".cache", ".npm"];
-const SCRATCH_STORE: &str = "scratch";
-
-// UNIT_BOUNDARY_DESCRIPTION: tidies the scratch folders once the root is in place and the home is mounted. /tmp and /var/tmp are already the root's own (FreshRoot::fresh_scratch); the stores an earlier platform-init bound them and /var/cache from are moved aside and deleted in the background, so the disk gets their space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way.
-fn tidy_scratch(root: &Path) {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
-    let store = guest::system_store(root, SCRATCH_STORE);
-    for dir in RETIRED_SCRATCH {
-        let retired = store.join(scratch_name(dir));
-        if let Err(e) = discard(&retired, stamp) {
-            logf!("WARNING: moving an earlier boot's {dir} aside ({e}); it is kept");
-        }
-        let _ = fs::remove_dir(&retired);
-    }
-    let home = PathBuf::from(guest::AGENT_HOME);
-    for name in HOME_CACHES {
-        let path = home.join(name);
-        if fs::symlink_metadata(&path).is_ok_and(|info| info.file_type().is_symlink()) {
-            if let Err(e) = fs::remove_file(&path) {
-                logf!("WARNING: removing the link at {} ({e})", path.display());
-            }
-        }
-    }
-    // UNIT_BOUNDARY_DESCRIPTION: leave_disk detaches the disk's root before the delete is done, so the store is reached through a descriptor opened now, which keeps the detached mount alive.
-    let store = File::open(&store);
-    std::thread::spawn(move || {
-        purge_discarded(&home, &HOME_CACHES);
-        match store {
-            Err(e) => logf!("WARNING: opening the scratch store ({e}); the last boot's folders stay on the disk until a later boot"),
-            Ok(store) => {
-            let names: Vec<String> = RETIRED_SCRATCH.into_iter().map(scratch_name).collect();
-            purge_discarded(
-                Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
-                &names,
-            );
-            }
-        }
-    });
-}
 
 fn out_of_room(e: &io::Error) -> bool {
     matches!(e.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT))
@@ -1008,12 +1023,6 @@ fn free_room_for_boot(disk: &Path) {
     for (dir, _) in SCRATCH_DIRS {
         let _ = remove_all(&layers.upper.join(dir.trim_start_matches('/')));
     }
-    let scratch = guest::system_store(disk, SCRATCH_STORE);
-    let names: Vec<String> = RETIRED_SCRATCH.into_iter().map(scratch_name).collect();
-    for name in &names {
-        let _ = remove_all(&scratch.join(name));
-    }
-    purge_discarded(&scratch, &names);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the names /tmp and /var/tmp are moved aside under in the root's store (FreshRoot::fresh_scratch).
@@ -2776,13 +2785,12 @@ mod tests {
     fn a_full_disk_gives_back_only_what_a_boot_discards() {
         let disk = TempDir::new("free-room");
         let layers = FreshRoot::on(disk.path());
-        let scratch = guest::system_store(disk.path(), SCRATCH_STORE);
         let home = disk.path().join("home");
         for dir in [
             layers.upper.clone(),
             layers.store.join(format!("work{DISCARDED_INFIX}1")),
-            scratch.join("tmp/repo"),
-            scratch.join(format!("var-tmp{DISCARDED_INFIX}1")),
+            layers.store.join(format!("var-tmp{DISCARDED_INFIX}1")),
+            layers.upper.join("tmp/repo"),
             home.clone(),
         ] {
             fs::create_dir_all(&dir).unwrap();
@@ -2795,8 +2803,11 @@ mod tests {
             .store
             .join(format!("work{DISCARDED_INFIX}1"))
             .exists());
-        assert!(!scratch.join("tmp").exists());
-        assert!(!scratch.join(format!("var-tmp{DISCARDED_INFIX}1")).exists());
+        assert!(!layers.upper.join("tmp").exists());
+        assert!(!layers
+            .store
+            .join(format!("var-tmp{DISCARDED_INFIX}1"))
+            .exists());
     }
 
     // TEST_SCENARIO: a guest's own disk that is short is evicted on every look down to the last EVICT_AGES step, until it has room; a disk whose room cannot be read is left alone.
@@ -3570,6 +3581,27 @@ mod tests {
         assert!(fresh_reason(None, None).is_some());
     }
 
+    // TEST_SCENARIO: an image names its root generation as a key, and the root is kept only when the key line is exactly the one the root was written under. An image that extends the default one appends its own segment, so its key starts with the default's and still boots on an empty root; so do a bumped key and the integer generation of the images before keys.
+    #[test]
+    fn a_root_is_kept_only_under_an_equal_generation_key() {
+        let default = "root-generation default-1";
+        assert_eq!(fresh_reason(Some(default), Some(default)), None);
+        for other in [
+            "root-generation default-1/gepa-1",
+            "root-generation default-2",
+            "root-compat 1",
+        ] {
+            assert!(
+                fresh_reason(Some(other), Some(default)).is_some(),
+                "{other}"
+            );
+            assert!(
+                fresh_reason(Some(default), Some(other)).is_some(),
+                "{other}"
+            );
+        }
+    }
+
     // TEST_SCENARIO: the records are read as one trimmed line. A missing or empty record names no image, so a share from an older runner reads as unknown rather than as an image called "".
     #[test]
     fn an_image_record_is_one_line_or_none() {
@@ -3616,18 +3648,10 @@ mod tests {
         assert!(store.path().join("tmp").is_dir());
     }
 
-    // TEST_SCENARIO: an image ships its font, package and linker caches in /var/cache, and an empty folder bound over it every boot had each boot rebuild them. /var/cache is no scratch folder, so it stays the image's and the kept root's, while the store an earlier platform-init bound there is among the names the background delete clears.
+    // TEST_SCENARIO: an image ships its font, package and linker caches in /var/cache, and emptying it every boot had each boot rebuild them. /var/cache is no scratch folder, so it stays the image's and the kept root's.
     #[test]
-    fn the_images_var_cache_is_not_bound_over() {
+    fn the_images_var_cache_is_not_emptied() {
         assert!(SCRATCH_DIRS.iter().all(|(dir, _)| *dir != "/var/cache"));
-        let store = TempDir::new("retired-scratch");
-        fs::create_dir(store.path().join("var-cache")).unwrap();
-        fs::write(store.path().join("var-cache/fontconfig"), b"x").unwrap();
-        let aside = discard(&store.path().join(scratch_name(RETIRED_SCRATCH[0])), 9)
-            .unwrap()
-            .unwrap();
-        purge_discarded(store.path(), &RETIRED_SCRATCH.map(scratch_name));
-        assert!(!aside.exists());
     }
 
     // TEST_SCENARIO: a new image boots on an empty upper, and the old one can hold millions of files, which deleted in place hold up the boot for minutes. Clearing renames the kept upper aside with its image record, so nothing under the old names is left to mount, and a later delete takes it away. A root kept for the same image is left as it is, while the work layer is emptied on every boot.
@@ -3975,7 +3999,7 @@ mod tests {
         assert!(target.path().join("kept").is_file());
     }
 
-    // TEST_SCENARIO: the platform root's layers are on the disk, in the platform's own namespace, so the image's home cannot collide with them. Its lower layer is the image tree the VMM shares, and nothing else. The kept upper layer is not at `rootfs/upper`, which a platform-init from before kept roots empties on every boot, so a rollback never leaves an upper that the image record beside it does not describe.
+    // TEST_SCENARIO: the platform root's layers are on the disk, in the platform's own namespace, so the image's home cannot collide with them. Its lower layer is the image tree the VMM shares, and nothing else. The kept upper layer sits beside the record of the image that wrote it.
     #[test]
     fn the_platforms_root_stacks_a_disk_upper_over_the_image() {
         let layers = FreshRoot::on(Path::new(guest::DISK_PATH));
@@ -3984,9 +4008,8 @@ mod tests {
             Path::new("/mnt/platform/system/rootfs/merged")
         );
         assert_eq!(layers.image, layers.upper.with_file_name("image"));
-        assert_ne!(layers.upper, layers.legacy_upper);
         assert_eq!(
-            layers.options(Path::new("/run/platform-boot/image")).unwrap().to_str().unwrap(),
+            layers.options(&[Path::new("/run/platform-boot/image")]).unwrap().to_str().unwrap(),
             "lowerdir=/run/platform-boot/image,upperdir=/mnt/platform/system/rootfs/kept/upper,workdir=/mnt/platform/system/rootfs/work,index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off"
         );
     }
@@ -3995,11 +4018,69 @@ mod tests {
     #[test]
     fn a_layer_path_overlayfs_would_misread_is_refused() {
         let image = Path::new("/run/platform-boot/image");
-        assert!(FreshRoot::on(Path::new("/mnt/a,b")).options(image).is_err());
-        assert!(FreshRoot::on(Path::new("/mnt/a:b")).options(image).is_err());
-        assert!(FreshRoot::on(Path::new(guest::DISK_PATH))
-            .options(Path::new("/i:x"))
+        assert!(FreshRoot::on(Path::new("/mnt/a,b"))
+            .options(&[image])
             .is_err());
+        assert!(FreshRoot::on(Path::new("/mnt/a:b"))
+            .options(&[image])
+            .is_err());
+        assert!(FreshRoot::on(Path::new(guest::DISK_PATH))
+            .options(&[Path::new("/i:x"), image])
+            .is_err());
+    }
+
+    // TEST_SCENARIO: the boot's accounts layer sits over the image, so its /etc/passwd is the one the root shows, and the kept upper over both.
+    #[test]
+    fn the_accounts_layer_sits_between_the_image_and_the_upper() {
+        let layers = FreshRoot::on(Path::new(guest::DISK_PATH));
+        let options = layers
+            .options(&[
+                Path::new("/run/platform-boot/accounts"),
+                Path::new("/run/platform-boot/image"),
+            ])
+            .unwrap();
+        assert!(options.to_str().unwrap().starts_with(
+            "lowerdir=/run/platform-boot/accounts:/run/platform-boot/image,upperdir="
+        ));
+    }
+
+    // TEST_SCENARIO: SSH logins come as `agent`, which on a machine is uid 0 with the agent's home and root's shell, appended to the image's own entries; an image that names `agent` itself is left as it is.
+    #[test]
+    fn the_boot_maps_agent_to_root_after_the_images_entries() {
+        let image = "root:x:0:0:root:/home/agent:/bin/bash\ndaemon:x:1:1::/:/usr/sbin/nologin";
+        assert_eq!(
+            accounts_passwd(image).unwrap(),
+            format!("{image}\nagent:x:0:0:Agent User:/home/agent:/bin/bash\n")
+        );
+        assert_eq!(
+            accounts_passwd("root:x:0:0:root:/root:\n").unwrap(),
+            "root:x:0:0:root:/root:\nagent:x:0:0:Agent User:/home/agent:/bin/sh\n"
+        );
+        assert_eq!(
+            accounts_passwd("root:x:0:0::/root:/bin/sh\nagent:x:1000:1000::/home/agent:/bin/sh\n"),
+            None
+        );
+    }
+
+    // TEST_SCENARIO: the layer's /etc and passwd show the image's owners and modes, since the topmost layer that holds a directory sets what the root shows; an image without /etc/passwd gets no layer.
+    #[test]
+    fn the_accounts_layer_keeps_the_images_modes() {
+        let image = TempDir::new("accounts-image");
+        let layer = image.path().join("layer");
+        let etc = image.path().join("etc");
+        fs::create_dir(&etc).unwrap();
+        assert!(!accounts_layer(image.path(), &layer).unwrap());
+        assert!(!layer.exists());
+        fs::write(etc.join("passwd"), "root:x:0:0:root:/root:/bin/bash\n").unwrap();
+        fs::set_permissions(&etc, fs::Permissions::from_mode(0o751)).unwrap();
+        fs::set_permissions(etc.join("passwd"), fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(accounts_layer(image.path(), &layer).unwrap());
+        let mode = |p: &Path| fs::metadata(p).unwrap().mode() & 0o7777;
+        assert_eq!(mode(&layer.join("etc")), 0o751);
+        assert_eq!(mode(&layer.join("etc/passwd")), 0o640);
+        assert!(fs::read_to_string(layer.join("etc/passwd"))
+            .unwrap()
+            .ends_with("agent:x:0:0:Agent User:/home/agent:/bin/bash\n"));
     }
 
     // TEST_SCENARIO: an image whose config sets no PATH still names bare commands, because a container runtime searches its own default for them. An empty or missing PATH is searched the same way here.

@@ -1,12 +1,26 @@
 #!/usr/bin/env bash
-#MISE description="Import image tars into the cluster's k3s"
+#MISE description="Import image tars, or OCI layouts, into the cluster's k3s"
 #MISE hide=true
-#USAGE arg "<tar>..." var=#true
+#USAGE arg "<image>..." var=#true help="An image tar, or the OCI layout image:resolve import-path names for an image built here"
 set -euo pipefail
-eval "tars=($usage_tar)"
+eval "images=($usage_image)"
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 import_one() {
-  local t=$1 g
+  local t=$1 g d w rc=0
+  if [ -d "$t" ]; then
+    [ -n "${IS_SANDBOX:-}" ] || { echo "cluster:import: an OCI layout imports only where k3s runs on this host" >&2; return 2; }
+    # The e2e lane keeps a built agent image as its layout: one tar, made here and
+    # read as the import writes it, so the image is never stored as a tar. A
+    # reader that gives up kills the tar with SIGPIPE.
+    d="$(mktemp -d)"
+    mkfifo "$d/image.tar"
+    tar -C "$t" -c $(ls -A "$t") > "$d/image.tar" &
+    w=$!
+    as_root k3s ctr images import "$d/image.tar" || rc=$?
+    wait "$w" 2>/dev/null || true
+    rm -rf "$d"
+    return "$rc"
+  fi
   if [ -n "${IS_SANDBOX:-}" ]; then
     as_root k3s ctr images import "$t"
   else
@@ -18,7 +32,7 @@ import_one() {
 }
 # Side by side: each import is mostly unpacking its own layers.
 pids=()
-for t in "${tars[@]}"; do
+for t in "${images[@]}"; do
   import_one "$t" &
   pids+=($!)
 done

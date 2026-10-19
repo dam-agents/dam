@@ -138,24 +138,26 @@ func TestTheRollHashLeavesTheMemoryOutAndKnowsTheOldOne(t *testing.T) {
 			},
 		}}}}}
 	}
-	install, err := runnerTemplateHash(runnerRollSpec(spec("8Gi", "16Gi"), false))
+	install, err := runnerTemplateHash(runnerRollSpec(spec("8Gi", "16Gi")))
 	require.NoError(t, err)
-	raised, err := runnerTemplateHash(runnerRollSpec(spec("8Gi", "24Gi"), false))
+	raised, err := runnerTemplateHash(runnerRollSpec(spec("8Gi", "24Gi")))
 	require.NoError(t, err)
-	belowRequest, err := runnerTemplateHash(runnerRollSpec(spec("4Gi", "4Gi"), false))
+	belowRequest, err := runnerTemplateHash(runnerRollSpec(spec("4Gi", "4Gi")))
 	require.NoError(t, err)
 	assert.Equal(t, install, raised)
 	assert.Equal(t, install, belowRequest, "a pool below the install's request rolled the runner")
 
-	old, err := runnerTemplateHash(spec("8Gi", "16Gi"))
+	before := spec("8Gi", "16Gi")
+	before.Template.Spec.Containers[0].Image = ""
+	old, err := runnerTemplateHash(before)
 	require.NoError(t, err)
 	assert.NotEqual(t, old, install)
-	assert.Equal(t, old, legacyRunnerTemplateHash(spec("8Gi", "16Gi"), spec("8Gi", "16Gi"), false))
-	assert.Equal(t, old, legacyRunnerTemplateHash(spec("4Gi", "4Gi"), spec("8Gi", "16Gi"), false),
+	assert.Equal(t, old, legacyRunnerTemplateHash(spec("8Gi", "16Gi"), spec("8Gi", "16Gi")))
+	assert.Equal(t, old, legacyRunnerTemplateHash(spec("4Gi", "4Gi"), spec("8Gi", "16Gi")),
 		"an owner whose UserBudget already set memory was rendered at the install's memory, so the upgrade must not roll them")
 	changed := spec("4Gi", "4Gi")
-	changed.Template.Spec.Containers[0].Image = "runner:2"
-	assert.NotEqual(t, old, legacyRunnerTemplateHash(changed, spec("8Gi", "16Gi"), false), "a real pod change still rolls")
+	changed.Template.Spec.Containers[0].Args = []string{"--boot-mib=1024"}
+	assert.NotEqual(t, old, legacyRunnerTemplateHash(changed, spec("8Gi", "16Gi")), "a real pod change still rolls")
 }
 
 // TEST_SCENARIO: a UserBudget that changes only `cpu` must reach the running runner pod within one memory pass, not wait for one of the owner's agents to start or stop.

@@ -1,5 +1,26 @@
 export const SIDEBAR_PREVIEW_SESSIONS = 3;
 
+function activityTime(at: string | null | undefined): number {
+  const time = at ? Date.parse(at) : Number.NaN;
+  return Number.isNaN(time) ? Number.NEGATIVE_INFINITY : time;
+}
+
+export function newestFirst<T>(
+  sessions: readonly T[],
+  activityAtOf: (session: T) => string | null | undefined,
+  idOf: (session: T) => string,
+): T[] {
+  return [...sessions].sort((a, b) => {
+    const [atA, atB] = [
+      activityTime(activityAtOf(a)),
+      activityTime(activityAtOf(b)),
+    ];
+    if (atA !== atB) return atA > atB ? -1 : 1;
+    const [idA, idB] = [idOf(a), idOf(b)];
+    return idA < idB ? -1 : idA > idB ? 1 : 0;
+  });
+}
+
 export function sidebarSessionWindow<T>(
   sessions: readonly T[],
   expanded: boolean,
@@ -14,14 +35,16 @@ export function sidebarSessionWindow<T>(
 
 export function sessionListControls({
   total,
+  collapsed,
   expanded,
   hasNextPage,
 }: {
   total: number;
+  collapsed: number;
   expanded: boolean;
   hasNextPage: boolean;
 }): { more: boolean; less: boolean } {
-  const overflow = total > SIDEBAR_PREVIEW_SESSIONS;
+  const overflow = total > collapsed;
   return {
     more: expanded ? hasNextPage : overflow || hasNextPage,
     less: expanded && (overflow || hasNextPage),
@@ -30,11 +53,13 @@ export function sessionListControls({
 
 export function moreClick({
   total,
+  collapsed,
   expanded,
   hasNextPage,
   isFetchingNextPage,
 }: {
   total: number;
+  collapsed: number;
   expanded: boolean;
   hasNextPage: boolean;
   isFetchingNextPage: boolean;
@@ -42,9 +67,7 @@ export function moreClick({
   return {
     expand: !expanded,
     fetchNextPage:
-      hasNextPage &&
-      !isFetchingNextPage &&
-      (expanded || total <= SIDEBAR_PREVIEW_SESSIONS),
+      hasNextPage && !isFetchingNextPage && (expanded || total <= collapsed),
   };
 }
 

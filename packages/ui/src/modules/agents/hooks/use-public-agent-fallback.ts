@@ -23,6 +23,9 @@ import { agentFallback } from "../lib/deleted-agent.js";
  * would wait on it forever. Home also replaces the entry, for the same Back
  * reason.
  *
+ * The redirect marks itself with `from=app`, so the page, which cannot tell who
+ * is asking, still knows this visitor is signed in and words itself for them.
+ *
  * It reports whether it is leaving, so the caller can cover its own surface for
  * as long as the navigation takes.
  */
@@ -37,7 +40,7 @@ export function usePublicAgentFallback(
 
   useEffect(() => {
     if (fallback === "public" && agentId !== null)
-      window.location.replace(publicAgentPath(agentId));
+      window.location.replace(`${publicAgentPath(agentId)}?from=app`);
     if (fallback === "home") {
       history.replaceState(null, "", routeToPath({ view: "home" }));
       useStore.getState().hydrateRoute();

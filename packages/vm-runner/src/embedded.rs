@@ -510,8 +510,12 @@ fn write_launch(record: &VmRecord) -> anyhow::Result<()> {
             record.name
         );
     };
+    // UNIT_BOUNDARY_DESCRIPTION: the strip goes once no runner logs this line, at any start of any machine: a record's command is rewritten only when the machine's image changes (update's relaunch), so a machine that kept one image since an older runner recorded it still holds that form.
     let command = match record.cmd.split_first() {
-        Some((first, rest)) if first == crate::guest::INIT_PATH => rest.to_vec(),
+        Some((first, rest)) if first == crate::guest::INIT_PATH => {
+            tracing::info!(machine = %record.name, "the machine's record still runs platform-init in front of the image's command, as an older runner recorded it; the launch record drops it");
+            rest.to_vec()
+        }
         _ => record.cmd.clone(),
     };
     let launch = crate::guest::Launch {
@@ -556,17 +560,17 @@ fn write_boot_image(record: &VmRecord) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's root to platform-init, which keeps the root while the line stays the same. An image that declares its root's compatibility generation in its own env (ROOT_COMPAT_ENV) is named by that generation alone, so a new image of the same generation keeps what the agent wrote outside HOME, and only a bump starts an empty root. Any other image is named exactly: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway. Only the image's env is read, never the spec's.
+// UNIT_BOUNDARY_DESCRIPTION: the one line that names a machine's root to platform-init, which keeps the root while the line stays the same. An image that declares its root generation in its own env (ROOT_GENERATION_ENV) is named by that key alone, so a new image of the same key keeps what the agent wrote outside HOME, and any other key, an extending image's included, starts an empty root. The key is compared whole and never parsed. Any other image is named exactly: the record's image, and for a `local-dir:` or `local:` reference also the inode and mtime of the host directory a start maps it to. A cached tree is staged by renaming a new directory over the old one, so a tag rebuilt under the same name, such as platform-default:latest, is a new directory and so a new image. A directory the start cannot find adds nothing, and the start then fails on it anyway. Only the image's env is read, never the spec's.
 fn image_identity(image: &str, image_env: Option<&[String]>) -> String {
     use std::os::unix::fs::MetadataExt;
     let generation = image_env
         .unwrap_or_default()
         .iter()
         .rev()
-        .find_map(|var| var.strip_prefix(ROOT_COMPAT_ENV)?.strip_prefix('='))
-        .and_then(|value| value.parse::<u32>().ok());
+        .find_map(|var| var.strip_prefix(ROOT_GENERATION_ENV)?.strip_prefix('='))
+        .filter(|key| !key.trim().is_empty());
     if let Some(generation) = generation {
-        return format!("root-compat {generation}");
+        return format!("root-generation {generation}");
     }
     match packed_layers_dir_for_ref(image).and_then(|dir| std::fs::metadata(dir).ok()) {
         Some(dir) => format!(
@@ -586,8 +590,8 @@ fn recorded_image_env(image: Option<&str>) -> Option<Vec<String>> {
         .and_then(|rootfs| image_env_beside(&rootfs))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image env var that declares which generation of root an image boots, as a decimal integer its build bumps on a change that breaks what an older image's root kept: a new base distribution release, or a file the boot rewrites that the new image changes too. Images of one generation keep each other's root.
-pub const ROOT_COMPAT_ENV: &str = "PLATFORM_ROOT_COMPAT";
+// UNIT_BOUNDARY_DESCRIPTION: the image env var that names which root generation an image boots, as a key its build changes on a change that breaks what an older image's root kept: a new base distribution release, or a file the image changes that an agent's writes would hide. The default image's key is one segment, such as `default-1`, and an image built on another appends its own, such as `default-1/gepa-1`, so the key names the image's lineage. Images of one key keep each other's root. It replaces PLATFORM_ROOT_COMPAT, whose roots hold the boot's writes to /etc/passwd and the trust store, so no root kept under that one is kept again.
+pub const ROOT_GENERATION_ENV: &str = "PLATFORM_ROOT_GENERATION";
 
 // UNIT_BOUNDARY_DESCRIPTION: the mounts a machine boots with: the share its create recorded. Any other recorded mount is dropped, such as the node's harness tools an earlier runner mounted for an image from before the default image baked them.
 fn boot_mounts(recorded: &[(String, String, bool)]) -> Vec<(String, String, bool)> {
@@ -954,20 +958,33 @@ mod tests {
         assert_ne!(image_identity(&image, None), first);
     }
 
-    // TEST_SCENARIO: an image that declares its root's generation is named by that generation alone, so the next image of the same generation keeps the machine's root and a bumped one does not. A value that is not a plain integer declares nothing, and the image is named exactly, as one with no declaration is.
+    // TEST_SCENARIO: an image that declares its root generation is named by that key alone, so the next image of the same key keeps the machine's root. Any other key starts an empty one: a bumped key, an image that extends the default one and appends its segment, and the old integer generation, whose roots hold the boot's writes. An empty key declares nothing, and the image is named exactly, as one with no declaration is.
     #[test]
     fn images_of_one_root_generation_share_a_root() {
-        let gen = |n: &str| {
+        let gen = |key: &str| {
             vec![
-                format!("{ROOT_COMPAT_ENV}={n}"),
+                format!("{ROOT_GENERATION_ENV}={key}"),
                 "PATH=/usr/bin".to_string(),
             ]
         };
-        let one = image_identity("quay.io/x/default:1", Some(&gen("1")));
-        assert_eq!(one, image_identity("quay.io/x/default:2", Some(&gen("1"))));
-        assert_ne!(one, image_identity("quay.io/x/default:3", Some(&gen("2"))));
+        let one = image_identity("quay.io/x/default:1", Some(&gen("default-1")));
+        assert_eq!(one, "root-generation default-1");
         assert_eq!(
-            image_identity("quay.io/x/custom:1", Some(&gen("one"))),
+            one,
+            image_identity("quay.io/x/default:2", Some(&gen("default-1")))
+        );
+        for other in [
+            image_identity("quay.io/x/default:3", Some(&gen("default-2"))),
+            image_identity("quay.io/x/gepa:1", Some(&gen("default-1/gepa-1"))),
+            image_identity(
+                "quay.io/x/default:1",
+                Some(&["PLATFORM_ROOT_COMPAT=1".to_string()]),
+            ),
+        ] {
+            assert_ne!(one, other);
+        }
+        assert_eq!(
+            image_identity("quay.io/x/custom:1", Some(&gen(""))),
             "quay.io/x/custom:1"
         );
         assert_eq!(

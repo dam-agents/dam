@@ -1,6 +1,6 @@
 # Public Agent Page
 
-Last verified: 2026-10-09
+Last verified: 2026-10-17
 
 ## Overview
 
@@ -19,6 +19,8 @@ Two consequences follow from it being a navigation and not a route change.
 The surface it leaves stays rendered until the browser lands, so it is covered while that happens — an Agent the visitor cannot read must never present an interactive chat.
 And a **deleted Agent the app knows about is remembered and never redirects**: an Agent that is gone and an Agent that is someone else's read the same to the app, so without that, deleting your own Agent would throw you out onto its public page.
 The app knows about a delete the visitor started, and about an Agent that drops out of their Agent list, as one deleted in another tab does; an unreadable Agent it knows is deleted sends the visitor home instead.
+The redirect marks the URL with `from=app`, because the page cannot tell who is asking but the app can: the generic page then says the Agent is unavailable or not shared with the visitor and offers the way back, instead of asking a signed-in visitor whether they have an account.
+The marker changes only wording, never what the page reads or discloses.
 
 ## Trust boundary
 

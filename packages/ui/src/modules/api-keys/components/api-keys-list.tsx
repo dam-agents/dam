@@ -1,66 +1,80 @@
-import type { ApiKeyView } from "api-server-api";
+import { Add } from "@carbon/icons-react";
+import { KeystoresExternal } from "@carbon/pictograms-react";
 import { useState } from "react";
 
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 import { PageHeader } from "@/components/ui/page-header";
 
+import { useStore } from "../../../store.js";
 import { useRevokeApiKey } from "../api/mutations.js";
 import { useApiKeys } from "../api/queries.js";
 import { ApiKeyRow } from "./api-key-row.js";
-import { ConfirmRevokeDialog } from "./confirm-revoke-dialog.js";
 import { CreateApiKeyDialog } from "./create-api-key-dialog/index.js";
-
-type RevokeTarget = Pick<ApiKeyView, "id" | "name">;
 
 export function ApiKeysList() {
   const { data: keys, isLoading, isError } = useApiKeys();
   const revokeApiKey = useRevokeApiKey();
+  const showConfirm = useStore((s) => s.showConfirm);
   const [createOpen, setCreateOpen] = useState(false);
-  const [revokeTarget, setRevokeTarget] = useState<RevokeTarget | null>(null);
 
-  function handleConfirmRevoke() {
-    if (!revokeTarget) return;
-    revokeApiKey.mutate(
-      { id: revokeTarget.id },
-      { onSettled: () => setRevokeTarget(null) },
+  async function revoke(id: string, name: string) {
+    const ok = await showConfirm(
+      <>
+        <p className="mb-2">
+          The key <span className="font-semibold text-foreground">{name}</span>{" "}
+          stops working immediately for every CLI and integration that uses it.
+        </p>
+        <p>This cannot be undone. To restore access, create a new key.</p>
+      </>,
+      "Revoke API key?",
+      { kind: "destructive", confirmLabel: "Revoke key" },
     );
+    if (ok) revokeApiKey.mutate({ id });
   }
 
   return (
     <div>
       <PageHeader
+        pictogram={<KeystoresExternal aria-hidden />}
         title="API keys"
-        description="Long-lived tokens for headless / CI use. Pass the value as a bearer credential when calling the API. Plaintext is shown once on creation and never recoverable."
+        description="Let the CLI and scripts sign in without a browser. A key is shown only once, when you create it."
       />
 
       <ListSection
         loading={isLoading}
         error={isError && "Couldn't load API keys."}
-        onNew={() => setCreateOpen(true)}
         isEmpty={(keys ?? []).length === 0}
         empty="No API keys yet. Create one to authenticate the CLI without a browser."
+        onNew={() => setCreateOpen(true)}
+        newLabel="Create API key"
+        addRow={
+          <AddRow onClick={() => setCreateOpen(true)}>
+            <Add size={20} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-md font-medium text-foreground">
+                Create API key
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Let the CLI and scripts sign in without a browser.
+              </p>
+            </div>
+          </AddRow>
+        }
       >
         {keys?.map((k) => (
           <ApiKeyRow
             key={k.id}
             apiKey={k}
-            onRevoke={(id, name) => setRevokeTarget({ id, name })}
-            revoking={revokeApiKey.isPending && revokeTarget?.id === k.id}
+            onRevoke={revoke}
+            revoking={
+              revokeApiKey.isPending && revokeApiKey.variables?.id === k.id
+            }
           />
         ))}
       </ListSection>
 
       {createOpen && (
         <CreateApiKeyDialog onClose={() => setCreateOpen(false)} />
-      )}
-
-      {revokeTarget && (
-        <ConfirmRevokeDialog
-          apiKey={revokeTarget}
-          onConfirm={handleConfirmRevoke}
-          onCancel={() => setRevokeTarget(null)}
-          pending={revokeApiKey.isPending}
-        />
       )}
     </div>
   );

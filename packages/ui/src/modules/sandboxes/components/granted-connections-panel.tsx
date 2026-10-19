@@ -1,6 +1,7 @@
+import { Add } from "@carbon/icons-react";
 import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
-import { ListSection } from "@/components/ui/list-section";
+import { AddRow, ListSection } from "@/components/ui/list-section";
 
 import { AwsProfilesCallout } from "../../connections/components/aws-profiles-callout.js";
 import { ConnectionGroup } from "../../connections/components/connection-group.js";
@@ -66,10 +67,24 @@ export function GrantedConnectionsPanel({
       {leading && <div className="mb-4">{leading}</div>}
       <ListSection
         label={title}
-        onNew={onOpenCatalog}
-        newTestId="open-connection-catalog"
         isEmpty={groups.length === 0 && !extraGroups}
         empty="No connections added to this agent yet."
+        onNew={onOpenCatalog}
+        newLabel="Add connection"
+        newTestId="open-connection-catalog"
+        addRow={
+          <AddRow onClick={onOpenCatalog} testId="open-connection-catalog">
+            <Add size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="truncate text-md font-medium text-foreground">
+                Add connection
+              </p>
+              <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                Add a service this agent can reach.
+              </p>
+            </div>
+          </AddRow>
+        }
       >
         {extraGroups}
         {groups.map((group) => (

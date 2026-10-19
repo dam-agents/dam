@@ -12,7 +12,7 @@ import { usePublicAgentFallback } from "../../agents/hooks/use-public-agent-fall
 import { useResolvedAgentDisplay } from "../../agents/hooks/use-resolved-agent-display.js";
 import { AgentEgressEditor } from "../../egress-rules/components/agent-egress-editor.js";
 import { SandboxUsageSection } from "../../metrics/components/sandbox-usage-section.js";
-import { routeToPath } from "../../platform/lib/routes.js";
+import { routeToPath, type SandboxSection } from "../../platform/lib/routes.js";
 import { useProcesses } from "../../processes/api/queries.js";
 import { useApplyPendingRestartWithConfirm } from "../../processes/components/pending-restart-banner.js";
 import { SchedulesPanel } from "../../schedules/components/schedules-panel.js";
@@ -23,6 +23,7 @@ import { SandboxChannelsSection } from "../components/sandbox-channels-section.j
 import {
   SandboxHomeHeader,
   SandboxIdentity,
+  type SectionHeaderSlot,
 } from "../components/sandbox-home-header.js";
 import { SandboxProvidersSection } from "../components/sandbox-providers-section.js";
 import {
@@ -33,6 +34,14 @@ import { SandboxSetupSection } from "../components/sandbox-setup-section.js";
 import { SandboxSkillsSection } from "../components/sandbox-skills-section.js";
 import { ConnectionAddressingSection } from "../components/setup/setup-sections.js";
 import { useSectionSummaries } from "../hooks/use-section-summaries.js";
+
+const SECTIONS_WITH_ACTIONS: ReadonlySet<SandboxSection> = new Set([
+  "providers",
+  "connections",
+  "network",
+  "environment",
+  "schedules",
+]);
 
 export function SandboxHomeView() {
   const agentId = useStore((s) => s.agentId);
@@ -56,6 +65,18 @@ export function SandboxHomeView() {
     ? SECTIONS
     : SECTIONS.filter((e) => e.section !== "chat-forms");
   const sectionEntry = SECTIONS.find((e) => e.section === section);
+  const SectionPictogram = sectionEntry?.pictogram;
+
+  const header: SectionHeaderSlot = (actions) =>
+    agent && (
+      <SandboxHomeHeader
+        agent={agent}
+        title={sectionEntry?.title ?? ""}
+        description={sectionEntry?.description}
+        pictogram={SectionPictogram && <SectionPictogram aria-hidden />}
+        actions={actions}
+      />
+    );
 
   if (!agent || !display) {
     return (
@@ -72,7 +93,7 @@ export function SandboxHomeView() {
 
   return (
     <>
-      <div className="flex flex-col gap-6 md:flex-row md:gap-10">
+      <div className="flex flex-col gap-6 md:flex-row md:gap-10 md:pt-5">
         <SandboxSectionNav
           sections={sections}
           header={<SandboxIdentity agent={agent} display={display} />}
@@ -82,11 +103,7 @@ export function SandboxHomeView() {
           warnings={warnings}
         />
         <div className="min-w-0 flex-1 md:max-w-[760px]">
-          <SandboxHomeHeader
-            agent={agent}
-            title={sectionEntry?.title ?? ""}
-            description={sectionEntry?.description}
-          />
+          {!SECTIONS_WITH_ACTIONS.has(section) && header()}
           {section === "setup" ? (
             <>
               <AgentUsageActions agent={agent} />
@@ -94,11 +111,11 @@ export function SandboxHomeView() {
               <AgentManagementActions agent={agent} display={display} />
             </>
           ) : section === "providers" ? (
-            <SandboxProvidersSection agentId={agent.id} />
+            <SandboxProvidersSection agentId={agent.id} header={header} />
           ) : section === "network" ? (
-            <AgentEgressEditor agentId={agent.id} />
+            <AgentEgressEditor agentId={agent.id} header={header} />
           ) : section === "environment" ? (
-            <EnvTab agent={agent} />
+            <EnvTab agent={agent} header={header} />
           ) : section === "channels" ? (
             <SandboxChannelsSection agentId={agent.id} />
           ) : section === "chat-forms" ? (
@@ -108,6 +125,7 @@ export function SandboxHomeView() {
           ) : section === "schedules" ? (
             <SchedulesPanel
               agentId={agent.id}
+              header={header}
               onResumeSession={(sessionId) =>
                 openAgentSession(agent.id, sessionId)
               }
@@ -116,9 +134,10 @@ export function SandboxHomeView() {
             <SandboxUsageSection agentId={agent.id} />
           ) : (
             <>
-              <ConnectionAddressingSection agent={agent} />
               <ConnectionsSection
                 agentId={agent.id}
+                header={header}
+                leading={<ConnectionAddressingSection agent={agent} />}
                 oauthReturnView={routeToPath({
                   view: "sandbox-home",
                   agentId: agent.id,

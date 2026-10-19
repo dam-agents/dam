@@ -192,10 +192,10 @@ for k, v in env.items():
 PY
 }
 
-agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=usr/local/share/mise --own-dir=65532:0=app)
+agent_owned=(--own=65532:0=home/agent --own=65532:0=etc/mise --own-dir=65532:0=app)
 # Packs <tree> onto <base layout> as <agent>'s layout; the rest are pack's
 # flags. The image is root's but for the paths the agent must write: its home,
-# mise's data dir and system config, and the runtime's directory itself, which
+# mise's system config, and the runtime's directory itself, which
 # an image over the default one ships again (the trust store is the apt
 # base's, a workload's Python its own layer's).
 pack_image() {
@@ -216,8 +216,7 @@ build_default() (
   install_tools
   b="$stage/build"
   install -d "$b"/{app,home/agent,etc/logrotate.d,opt/ms-playwright,usr/local/bin} \
-    "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins \
-    "$b"/usr/local/share/mise
+    "$b"/usr/local/lib/platform-python "$b"/usr/local/lib/docker/cli-plugins
   for a in $bare_harnesses; do
     h="$(sed -n 's/^PLATFORM_HARNESS = "\(.*\)"$/\1/p' "$agents/$a/image.toml")"
     r="$stage/$a/rootfs"
@@ -280,8 +279,7 @@ build_default() (
   # their pins, are layers of their own under the rest, which every
   # agent-runtime change rewrites: a deploy pulls that top layer alone.
   pack_image default "$apt_base" build --root-layer=build-selkies --root-layer=build-mise \
-    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path" \
-    --env=MISE_DATA_DIR=/usr/local/share/mise --env=MISE_CONFIG_DIR=/etc/mise
+    "--root-layer=$tools" --root-layer=build-claude-adapter "${flags[@]}" "--env=PATH=$path:$base_path"
 )
 
 # The default image's mise project, the tool configs and lockfile it ships in
@@ -327,7 +325,7 @@ install_tools() {
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/etc/." "$r/etc/"
   ${sudo[@]+"${sudo[@]}"} cp -a "$stage/build-mise/." "$r/"
   ${sudo[@]+"${sudo[@]}"} install -m 755 "$installer" "$r/usr/local/bin/install-harness-tools"
-  mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" MISE_DATA_DIR=/usr/local/share/mise MISE_CONFIG_DIR=/etc/mise | grep -E '^[A-Z_][A-Z0-9_]*=')
+  mapfile -t envv < <(printf '%s\n' "${flags[@]#--env=}" | grep -E '^[A-Z_][A-Z0-9_]*=')
   # The GitHub token stays out of every command line, where any user on the
   # host reads it: sudo keeps it in the environment, and it crosses env -i in a
   # root-only file the chroot's shell reads into the installer's environment.
@@ -337,7 +335,7 @@ install_tools() {
     mount --rbind /dev "$r/dev"
     mount -t proc proc "$r/proc"
     mount -t sysfs sys "$r/sys"
-    mkdir -p "$r/usr/share/mise" "$r/home/agent" "$r/usr/local/share/mise"
+    mkdir -p "$r/usr/share/mise" "$r/home/agent"
     mount --bind "$tools" "$r/usr/share/mise"
     cp -L /etc/resolv.conf "$r/etc/resolv.conf"
     (umask 077 && printf %s "${MISE_GITHUB_TOKEN:-${GITHUB_TOKEN:-}}" > "$r/run/mise-github-token")
@@ -353,12 +351,12 @@ install_tools() {
   touch "$tools.done"
 }
 
-# The env the default image was packed with, PATH's value.
-default_path() {
+# The value of $1 in the env the default image was packed with.
+default_env() {
   local m
   m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$oci_out/default/index.json")"
   jq -r '.config.digest | sub(":"; "/")' "$oci_out/default/blobs/$m" |
-    xargs -I{} jq -r '.config.Env[] | select(startswith("PATH=")) | sub("^PATH="; "")' "$oci_out/default/blobs/{}"
+    xargs -I{} jq -r --arg k "$1=" '.config.Env[] | select(startswith($k)) | ltrimstr($k)' "$oci_out/default/blobs/{}"
 }
 
 # A pipx tool's venv as a whole Python of its own, at <dest> for <image path>:
@@ -418,10 +416,18 @@ build_thin() (
   done
   [ ! -d build-links ] || layers+=("--layer=0:0=/=build-links")
   mapfile -t flags < <(pack_flags "$f")
+  # Its root generation is its own segment after the default image's key, so
+  # it never keeps a root the default image wrote, and a new default key is a
+  # new key for it too.
+  segment="$(printf '%s\n' "${flags[@]}" | sed -n 's|^--env=PLATFORM_ROOT_GENERATION=||p')"
+  [ -n "$segment" ] && [[ "$segment" != */* ]] || { echo "$agent names no root generation segment of its own" >&2; exit 1; }
+  generation="$(default_env PLATFORM_ROOT_GENERATION)"
+  [ -n "$generation" ] || { echo "the default image names no root generation" >&2; exit 1; }
+  flags+=("--env=PLATFORM_ROOT_GENERATION=$generation/$segment")
   # The mock's agent-runtime runs the node it carries.
   if [ "$agent" = mock ]; then
     install -d build/opt && cp -a "$(mise -E "$envs" where node)" build/opt/node
-    flags+=("--env=PATH=/opt/node/bin:$(default_path)")
+    flags+=("--env=PATH=/opt/node/bin:$(default_env PATH)")
   fi
   pack_image "$agent" "$oci_out/default" build ${layers[@]+"${layers[@]}"} ${flags[@]+"${flags[@]}"}
 )
@@ -429,8 +435,8 @@ build_thin() (
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 
 # base/apt.txt's packages on the root config's Debian base, as a one-layer
-# image layout every agent image is packed onto: rebuilt when either changes
-# and once a day for updates. The base's root is exported, and its own apt-get
+# image layout every agent image is packed onto: rebuilt when either or this
+# function changes, and once a day for updates. The base's root is exported, and its own apt-get
 # runs in it under chroot, in a mount namespace of its own, as a Dockerfile's
 # RUN would; the root is then one layer, with the owners its packages gave it.
 # The layer follows the packages alone, so a rebuild with no package update
@@ -444,7 +450,7 @@ build_apt_base() {
   local key from r packages layer d config manifest platform epoch
   apt_base="$state/apt-base"
   from="$(mise config get -f .mise/config.toml vars.base_image_debian)"
-  key="$({ cat "$agents/base/apt.txt"; echo "$from"; } | sha256sum | cut -c1-16)-$(date -u +%F)"
+  key="$({ cat "$agents/base/apt.txt"; echo "$from"; declare -f build_apt_base; } | sha256sum | cut -c1-16)-$(date -u +%F)"
   [ "$(cat "$apt_base.key" 2>/dev/null)" != "$key" ] || return 0
   r="$work/apt-root"
   ${sudo[@]+"${sudo[@]}"} rm -rf "$r" "$apt_base"
@@ -455,8 +461,14 @@ build_apt_base() {
     ${sudo[@]+"${sudo[@]}"} tar -xf - -C "$r"
   packages="$(grep -v '^#' "$agents/base/apt.txt" | xargs)"
   # policy-rc.d keeps a package's postinst from starting its service here. The
-  # trust store is the agent's, which the entrypoint fills, and the digest of
-  # the distribution roots spares it reading them every boot; the host keys
+  # distribution's bundle moves aside, and its path and a local CA name what
+  # the entrypoint builds under /run at every boot, so no boot writes the trust
+  # store. The image ships the distribution's roots there, for what runs
+  # without the entrypoint, such as the node's tool installer; a container's
+  # entrypoint replaces them, and a machine's /run tmpfs hides them; an
+  # update-ca-certificates hook links the path again. uid 0's
+  # home is the agent's, so OpenSSH keeps root's keys and known hosts in the
+  # home on a machine, where the agent is root. The host keys
   # openssh-server's postinst generated would be every image's. Every image
   # already shares one machine id, so it is one that follows the package list.
   # openrc's runlevels start empty: the services Debian enables there (ssh,
@@ -476,9 +488,15 @@ build_apt_base() {
       "$r"/var/log/*.log "$r"/var/log/apt/* "$r"/var/cache/ldconfig/aux-cache "$r"/var/cache/debconf/*-old
     find "$r/etc/runlevels" -mindepth 2 -delete
     for f in etc/machine-id var/lib/dbus/machine-id; do [ ! -e "$r/$f" ] || echo "$machine_id" > "$r/$f"; done
-    find "$r/usr/share/ca-certificates" -type f -print0 | LC_ALL=C sort -z | xargs -0r cat | sha256sum |
-      cut -c1-64 > "$r/usr/share/ca-certificates.sha256"
-    chown -R 65532:0 "$r/etc/ssl/certs" "$r/usr/local/share/ca-certificates"
+    mkdir -p "$r/usr/share/platform"
+    mv "$r/etc/ssl/certs/ca-certificates.crt" "$r/usr/share/platform/ca-certificates.crt"
+    ln -s /run/platform/ca-certificates.crt "$r/etc/ssl/certs/ca-certificates.crt"
+    ln -s /run/platform/ca.crt "$r/usr/local/share/ca-certificates/platform-ca.crt"
+    install -d -o 65532 -g 0 "$r/run/platform"
+    install -o 65532 -g 0 -m 644 "$r/usr/share/platform/ca-certificates.crt" "$r/run/platform/ca-certificates.crt"
+    sed -i "s|^\(root:[^:]*:0:0:[^:]*:\)/root:|\1/home/agent:|" "$r/etc/passwd"
+    grep -q "^root:[^:]*:0:0:[^:]*:/home/agent:" "$r/etc/passwd"
+
     : > "$r/etc/resolv.conf"
     find "$r" -xdev -newer "$r/.apt-start" -exec touch -h -d "@$epoch" {} +
     rm "$r/.apt-start"

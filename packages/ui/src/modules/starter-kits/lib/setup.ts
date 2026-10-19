@@ -184,7 +184,12 @@ export function describeAccepts(
 ): string {
   const families = familiesIn(templates);
   return ids
-    .map((id) => families.get(id)?.title ?? templates.get(id)?.name ?? id)
+    .map(
+      (id) =>
+        families.get(id)?.title ??
+        templates.get(id)?.name ??
+        id.charAt(0).toUpperCase() + id.slice(1),
+    )
     .join(" or ");
 }
 

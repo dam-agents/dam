@@ -81,7 +81,6 @@ fn main() -> anyhow::Result<()> {
                 crane: "crane".to_string(),
                 pins: images.clone(),
                 lifetime: lifetime.clone(),
-                check_access: true,
                 ref_fresh: REF_FRESH,
                 hold_lease: HOLD_LEASE,
                 hold_grace: HOLD_LEASE,

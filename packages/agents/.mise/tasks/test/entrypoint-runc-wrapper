@@ -16,15 +16,12 @@ for (const d of [docker, home]) mkdirSync(d);
 const wrapper = join(dir, "platform-runc");
 const dropin = join(k3s, "agent/etc/containerd/config-v3.toml.d/platform-runc.toml");
 writeFileSync(join(docker, "runc"), "#!/bin/sh\n", { mode: 0o755 });
-writeFileSync(join(dir, "passwd"), "agent:x:0:0::/home/agent:/bin/sh\n");
+writeFileSync(join(docker, "platform-ca-bundle"), "#!/bin/sh\n", { mode: 0o755 });
 writeFileSync(
   join(dir, "agent-entrypoint"),
   readFileSync(entrypoint, "utf8")
     .replaceAll("uid=$(id -u)", "uid=0")
-    .replaceAll("sed -i 's/^agent:x:65532:0:/agent:x:0:0:/' /etc/passwd", ":")
-    .replaceAll("/etc/passwd", join(dir, "passwd"))
     .replaceAll("/run/sshd", join(dir, "sshd"))
-    .replaceAll("/root", join(dir, "root"))
     .replaceAll("/etc/platform/ca", join(dir, "ca"))
     .replaceAll("/etc/rancher/k3s/config.yaml", join(dir, "k3s-config.yaml"))
     .replaceAll("/var/lib/rancher/k3s", k3s)

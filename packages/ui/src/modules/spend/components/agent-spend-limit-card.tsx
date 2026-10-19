@@ -3,12 +3,12 @@ import type { SpendStatus, SpendUnit } from "api-server-api";
 import { Card } from "@/components/ui/card";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../api/queries.js";
 import { agentLimitOf } from "../lib/agent-limit.js";
 import {
-  AGENT_LIMIT_NAME,
   CEILING_NAME,
   measuredSpendHelp,
   OWN_LIMIT_NAME,
@@ -24,8 +24,7 @@ import { nearerOwnerWideLimit } from "../lib/nearer-limit.js";
 import { AgentLimitCoverageNote } from "./agent-limit-coverage-note.js";
 import { HelpTip } from "./help-tip.js";
 import { RootDriverSpendNote } from "./root-driver-spend-note.js";
-import { SpendLimitField } from "./spend-limit-field.js";
-import { SpendLimitMeter } from "./spend-limit-meter.js";
+import { SpendLimitLine } from "./spend-limit-line.js";
 
 const NEARER_NAMES = {
   owner: OWN_LIMIT_NAME,
@@ -108,6 +107,9 @@ function AgentSpendLimitBody({
   const primaryMicros =
     status.spent.find((total) => total.unit === primary)?.costMicros ?? 0;
   const limit = agentLimitOf(status, agentId);
+  const agentName = useAgentDisplayName(agentId);
+  const usdMicros =
+    status.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
   const showField = coverage.paid || limit !== undefined;
   const nearer = coverage.paid ? nearerOwnerWideLimit(status, agentId) : null;
 
@@ -121,21 +123,12 @@ function AgentSpendLimitBody({
       </p>
       <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
         {showField && (
-          <SpendLimitField
-            label={AGENT_LIMIT_NAME}
+          <SpendLimitLine
             scope={{ kind: "agent", agentId }}
             unit="usd"
-            amountMicros={limit?.amountMicros ?? null}
-          />
-        )}
-        {coverage.paid && limit && (
-          <SpendLimitMeter
-            label={AGENT_LIMIT_NAME}
-            unit="usd"
-            spentMicros={limit.spentMicros}
-            limitMicros={limit.effectiveMicros}
-            state={limit.state}
-            extensions={limit.extensions}
+            spentMicros={usdMicros}
+            limit={limit}
+            subject={agentName}
           />
         )}
         {loaded && (

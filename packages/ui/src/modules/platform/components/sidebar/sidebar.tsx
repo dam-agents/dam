@@ -1,6 +1,8 @@
 import { Bot } from "@carbon/icons-react";
+import { useState } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
+import { useIsWideDesktop } from "@/hooks/use-is-desktop";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -15,8 +17,18 @@ import { SidebarHeader } from "./sidebar-header.js";
 import { SidebarNavItem } from "./sidebar-nav-item.js";
 
 export function Sidebar() {
-  const expanded = useStore((s) => s.sidebarExpanded);
+  const storedExpanded = useStore((s) => s.sidebarExpanded);
   const setExpanded = useStore((s) => s.setSidebarExpanded);
+  const sidePanelOpen = useStore((s) => s.sidePanelTab !== null);
+  const wide = useIsWideDesktop();
+  const crowded = sidePanelOpen && !wide;
+  const [openedWhileCrowded, setOpenedWhileCrowded] = useState(false);
+  const [wasCrowded, setWasCrowded] = useState(crowded);
+  if (wasCrowded !== crowded) {
+    setWasCrowded(crowded);
+    setOpenedWhileCrowded(false);
+  }
+  const expanded = storedExpanded && (!crowded || openedWhileCrowded);
   const { home } = useSidebarDestinations();
   const { width, resizing, resize, endResize } = useSidebarWidth();
 
@@ -32,7 +44,10 @@ export function Sidebar() {
       >
         <SidebarHeader
           expanded={expanded}
-          onToggle={() => setExpanded(!expanded)}
+          onToggle={() => {
+            if (crowded) setOpenedWhileCrowded(!expanded);
+            setExpanded(!expanded);
+          }}
           onHome={home.navigate}
         />
         {expanded ? (
@@ -43,7 +58,13 @@ export function Sidebar() {
       </nav>
       {expanded && (
         <div className="hidden md:flex" data-testid="app-sidebar-resize">
-          <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
+          <ResizeHandle
+            side="left"
+            label="Resize sidebar"
+            value={width}
+            onResize={resize}
+            onDragEnd={endResize}
+          />
         </div>
       )}
     </>

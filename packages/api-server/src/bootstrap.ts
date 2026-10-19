@@ -1625,7 +1625,14 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
-      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
+      storageGate: composeStorageGate({
+        k8s: k8sClient,
+        owner,
+        vmPool: {
+          storage: config.vmPoolStorage,
+          memory: config.vmPoolMemory,
+        },
+      }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,

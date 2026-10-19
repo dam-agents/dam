@@ -1,7 +1,11 @@
+import { Settings } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
+import { Card } from "@/components/ui/card";
+import { EmptyState } from "@/components/ui/empty-state";
+import { AddRow } from "@/components/ui/list-section";
 import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
@@ -33,8 +37,15 @@ import {
 } from "../../sessions/lib/session-pair-options.js";
 import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
+import type { SectionHeaderSlot } from "./sandbox-home-header.js";
 
-export function SandboxProvidersSection({ agentId }: { agentId: string }) {
+export function SandboxProvidersSection({
+  agentId,
+  header,
+}: {
+  agentId: string;
+  header: SectionHeaderSlot;
+}) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const showConfirm = useStore((s) => s.showConfirm);
   const { owned, granted, loaded } = useProviderConnections(agentId);
@@ -44,11 +55,19 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
 
   return (
     <div className="flex flex-col gap-3">
+      {header()}
       {root && <RootDriverSpendNote root={root} />}
       {loaded && owned.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          No providers connected yet.
-        </p>
+        <EmptyState
+          action={
+            <Button size="sm" onClick={() => navigateToSettings("providers")}>
+              Connect a provider
+            </Button>
+          }
+        >
+          No providers connected yet. Connect one in Settings to let this agent
+          reach a model.
+        </EmptyState>
       )}
       {owned.map((p) => {
         const attached = granted.some((g) => g.id === p.id);
@@ -77,19 +96,28 @@ export function SandboxProvidersSection({ agentId }: { agentId: string }) {
               <ConnectionSpendLimit
                 agentId={agentId}
                 connectionId={p.id}
+                connectionName={p.name}
                 templateId={p.templateId}
               />
             )}
           </ProviderToggleRow>
         );
       })}
-      <Button
-        variant="outline"
-        className="self-start"
-        onClick={() => navigateToSettings("providers")}
-      >
-        Manage providers
-      </Button>
+      {owned.length > 0 && (
+        <Card className="overflow-hidden">
+          <AddRow onClick={() => navigateToSettings("providers")}>
+            <Settings size={16} className="shrink-0" />
+            <div className="min-w-0 flex-1">
+              <p className="text-md font-medium text-foreground">
+                Manage providers
+              </p>
+              <p className="mt-0.5 text-sm text-muted-foreground">
+                Connect another LLM provider to give this agent more models.
+              </p>
+            </div>
+          </AddRow>
+        </Card>
+      )}
       <DefaultPairPicker agentId={agentId} />
     </div>
   );

@@ -223,7 +223,7 @@ export function ConnectionCatalogModal({
       <DialogHeader
         title={title ?? "Connection catalog"}
         subtitle={
-          subtitle ?? "Manage and create new connections your agents can use"
+          subtitle ?? "Manage and create new connections your agents can use."
         }
         onClose={onClose}
         closeTestId="catalog-close"

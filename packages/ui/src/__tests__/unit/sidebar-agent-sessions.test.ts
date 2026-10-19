@@ -10,13 +10,14 @@ import {
 } from "../../modules/home/lib/activity-sessions.js";
 import {
   moreClick,
+  newestFirst,
   nextSessionCursor,
   sessionListControls,
   SIDEBAR_PREVIEW_SESSIONS,
   sidebarSessionWindow,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, and no Session twice. An Agent shows its first three Sessions until the user clicks More, which lists the rest it has loaded; each further click on More loads one more page, and Less collapses the list. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, newest activity first, and no Session twice. An Agent shows its first three Sessions until the user clicks More, which lists the rest it has loaded; each further click on More loads one more page, and Less collapses the list. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -59,6 +60,55 @@ describe("sessions grouped by agent", () => {
   });
 });
 
+describe("the order of an agent's sessions", () => {
+  const session = (id: string, at: string | null) => ({ id, at });
+  const order = (sessions: { id: string; at: string | null }[]) =>
+    newestFirst(
+      sessions,
+      (s) => s.at,
+      (s) => s.id,
+    ).map((s) => s.id);
+
+  // TEST_SCENARIO: the user sees the Session with the newest activity at the top, and the oldest at the bottom.
+  it("lists the newest activity first", () => {
+    expect(
+      order([
+        session("week", "2026-10-10T08:00:00Z"),
+        session("now", "2026-10-17T08:05:00Z"),
+        session("hour", "2026-10-17T07:00:00Z"),
+      ]),
+    ).toEqual(["now", "hour", "week"]);
+  });
+
+  // TEST_SCENARIO: MORE appends an older page to the Sessions already shown. The rows on screen keep their places, and the older Sessions go below them, whatever order the pages came in.
+  it("keeps the rows already shown in place when an older page arrives", () => {
+    const first = [
+      session("s1", "2026-10-17T08:00:00Z"),
+      session("s2", "2026-10-17T07:00:00Z"),
+      session("s3", "2026-10-17T06:00:00Z"),
+    ];
+    const older = [
+      session("s5", "2026-10-16T08:00:00Z"),
+      session("s4", "2026-10-16T09:00:00Z"),
+    ];
+    const shown = order(first);
+    expect(order([...first, ...older]).slice(0, shown.length)).toEqual(shown);
+    expect(order([...older, ...first])).toEqual(["s1", "s2", "s3", "s4", "s5"]);
+  });
+
+  // TEST_SCENARIO: Sessions with the same activity time, or none that parses, keep one order on every render: by id, the undated ones last.
+  it("breaks ties by id and puts undated Sessions last", () => {
+    expect(
+      order([
+        session("b", "2026-10-17T08:00:00Z"),
+        session("z", null),
+        session("a", "2026-10-17T08:00:00Z"),
+        session("y", "not a date"),
+      ]),
+    ).toEqual(["a", "b", "y", "z"]);
+  });
+});
+
 describe("an agent's session window", () => {
   const sessions = ["s1", "s2", "s3", "s4", "s5"];
   const none = () => false;
@@ -88,13 +138,40 @@ describe("an agent's session window", () => {
 
   it("TEST_SCENARIO: More shows while there is more to list, and Less once expanded", () => {
     const n = SIDEBAR_PREVIEW_SESSIONS;
-    const controls = (total: number, expanded: boolean, hasNextPage: boolean) =>
-      sessionListControls({ total, expanded, hasNextPage });
+    const controls = (
+      total: number,
+      expanded: boolean,
+      hasNextPage: boolean,
+      collapsed = n,
+    ) => sessionListControls({ total, collapsed, expanded, hasNextPage });
     expect(controls(n, false, false)).toEqual({ more: false, less: false });
     expect(controls(n, false, true)).toEqual({ more: true, less: false });
     expect(controls(n + 1, false, false)).toEqual({ more: true, less: false });
     expect(controls(n + 1, true, false)).toEqual({ more: false, less: true });
     expect(controls(n + 1, true, true)).toEqual({ more: true, less: true });
+  });
+
+  it("TEST_SCENARIO: an active Session past the first three joins the window without a More that reveals nothing", () => {
+    const n = SIDEBAR_PREVIEW_SESSIONS;
+    const rows = Array.from({ length: n + 1 }, (_, i) => `s${i + 1}`);
+    const collapsed = sidebarSessionWindow(
+      rows,
+      false,
+      (s) => s === `s${n + 1}`,
+    );
+    expect(collapsed).toEqual(rows);
+    const args = { total: rows.length, collapsed: collapsed.length };
+    expect(
+      sessionListControls({ ...args, expanded: false, hasNextPage: false }),
+    ).toEqual({ more: false, less: false });
+    expect(
+      moreClick({
+        ...args,
+        expanded: false,
+        hasNextPage: true,
+        isFetchingNextPage: false,
+      }),
+    ).toEqual({ expand: true, fetchNextPage: true });
   });
 
   it("TEST_SCENARIO: one click on More fetches at most one page", () => {
@@ -104,7 +181,14 @@ describe("an agent's session window", () => {
       expanded: boolean,
       hasNextPage: boolean,
       isFetchingNextPage = false,
-    ) => moreClick({ total, expanded, hasNextPage, isFetchingNextPage });
+    ) =>
+      moreClick({
+        total,
+        collapsed: n,
+        expanded,
+        hasNextPage,
+        isFetchingNextPage,
+      });
     expect(click(n + 1, false, true)).toEqual({
       expand: true,
       fetchNextPage: false,

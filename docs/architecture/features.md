@@ -1,13 +1,13 @@
 # Experimental features
 
-Last verified: 2026-10-16
+Last verified: 2026-10-18
 
 ## Overview
 
 **Experimental features** are per-user toggles for pre-release surfaces.
 Every feature defaults **off**; a user opts in through a hidden "Experimental features" settings tab (revealed by five taps on the version string).
 The tab also carries a button that resets the user's [onboarding progress](getting-started.md#in-the-browser).
-The current features are advanced connection types, the new sandbox runtime, interactive artifacts, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), and the built-in LLM provider (the operator's self-hosted model server as a provider the user does not connect; see [connections](connections.md#built-in-preset-platform-llm)).
+The current features are advanced connection types, the new sandbox runtime, interactive artifacts, agent telemetry (a per-reply timeline in the conversation), [chat forms](chat-forms.md) (agents put forms and choices into their chat replies, and the chat tells them it can render them), and the processes panel (a chat-view section listing what runs in the agent, what keeps it awake and what finished, with each process's output, a Stop per process and a keep switch per background process, and a header indicator that replaces the background-task one; see [agent-processes](agent-processes.md)), custom avatars (an emoji or an uploaded image as an Agent's avatar; see [agent-avatars](agent-avatars.md#custom-avatars)), the built-in LLM provider (the operator's self-hosted model server as a provider the user does not connect; see [connections](connections.md#built-in-preset-platform-llm)), and the new layout (a different app shell, Home and side rails; see [home-feed](home-feed.md#the-new-layout)).
 Graduating a feature to always-on is deletion: drop its id from the enum and its gates from the UI — stored rows for a dropped id are simply never read again (Knowledge Bases, the [starter kit](starter-kits.md) catalog, session costs, [agent avatars](agent-avatars.md) and addressed credential injection graduated this way).
 
 An operator can take a feature out of users' hands: the chart's `features` value gives each feature a mode, `experimental` leaving the per-user switch, `on` or `off` deciding for every user whatever they stored.
@@ -21,9 +21,11 @@ The same module therefore answers a second, install-wide question — whether th
 That answer also says whether the install pins every new agent on the new runtime, decided the same way as the create path, so the kit card and the kit page show the VM badge, and no size, for every kit there; until it arrives they show neither.
 The settings tab leaves the new sandbox runtime out entirely on an install that cannot run it, since its switch would change nothing there.
 A surface that needs both, like either form that creates an agent, asks both and acts only once each has answered: an unanswered question reads like a no, and an agent would otherwise be created as something its author did not choose.
-**A kit that declares `backend: vm` is the exception, and reads neither answer** ([starter-kits](starter-kits.md#kit-backend)): the kit says its work needs a machine, so the agent gets one whether or not its owner ever opted in, and a kit that declares nothing gets the ordinary sandbox even from an owner who did.
+**A kit that declares `backend: vm` is the exception, and reads neither answer** ([starter-kits](starter-kits.md#kit-backend)): the kit says its work needs a machine, so the agent gets one whether or not its owner ever opted in.
 The flag still decides what that owner *sees* — a `vm` kit wears a badge rather than being hidden — and the install-wide answer still decides whether the kit is offered at all.
 The rule is the same one stated above from the other side: a per-user flag says what a user wants to see, and here the kit, not the user, is choosing the runtime.
+**A kit that declares nothing reads both answers, like the forms**: the kit has no opinion on its runtime, so the agent lands where the owner's plain create would, and an owner who opted in never gets a brand-new container agent that already offers to migrate.
+The api-server applies this in the kit apply rather than trusting the UI, and the kit card and the kit page show the VM badge and no size once both answers are yes.
 **An operator's pin on the new sandbox runtime is a choice of runtime, not of what users see**: with `vm-sandboxes` pinned `on` on an install that can run microVMs, the api-server makes every agent it creates a microVM, whatever the caller sent, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
 It is applied in the one create every path ends in, rather than trusted to each caller, because a path that forgot the flag would quietly create the container the operator ruled out.
 No kit can declare that it needs a container, so the pin never meets a kit it would have to refuse.

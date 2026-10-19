@@ -20,14 +20,26 @@ while :; do sleep 0.1; done
 const CRASHES: &str =
     "#!/bin/sh\n[ \"$1\" = --help ] && exit 0\necho \"$0 $*\" >> \"$RUNNER_LOG\"\nexit 1\n";
 
+// UNIT_BOUNDARY_DESCRIPTION: the release a loader reads on the node: its files, its runtime id, and its runner script, which `cp` writes so this process holds no descriptor on the inode the loader execs. A fork on another test thread copies such a descriptor into a child that keeps it until it execs, and Linux fails that exec with ETXTBSY.
 fn release_dir(dir: &Path, script: &str, runtime: &str) {
     std::fs::create_dir_all(dir).unwrap();
     for file in FILES {
         std::fs::write(dir.join(file), file).unwrap();
     }
     std::fs::write(dir.join(RUNTIME_ID), runtime).unwrap();
-    std::fs::write(dir.join(RUNNER), script).unwrap();
+    let staged = dir.join(format!(".{RUNNER}"));
+    std::fs::write(&staged, script).unwrap();
+    let copied = Command::new("cp")
+        .arg(&staged)
+        .arg(dir.join(RUNNER))
+        .status()
+        .unwrap();
+    assert!(
+        copied.success(),
+        "cp the runner script into place: {copied}"
+    );
     std::fs::set_permissions(dir.join(RUNNER), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::remove_file(&staged).unwrap();
 }
 
 fn wait_for(what: &str, mut done: impl FnMut() -> bool) {
@@ -69,7 +81,6 @@ impl Pod {
         let builtin_runtime = dir.join("builtin-runtime");
         release_dir(&builtin, script, "runtime-a");
         std::fs::create_dir_all(dir.join("releases")).unwrap();
-        std::fs::write(dir.join("release"), "runner:1").unwrap();
         let loader = Command::new(env!("CARGO_BIN_EXE_vm-runner-loader"))
             .args(["run", "--builtin"])
             .arg(&builtin)
@@ -78,7 +89,6 @@ impl Pod {
             .args(["--", "--smolvm"])
             .arg(builtin_runtime.join("smolvm"))
             .env(release::RELEASES_ENV, dir.join("releases"))
-            .env(release::RELEASE_FILE_ENV, dir.join("release"))
             .env(release::LOADER_DIR_ENV, dir.join("loader"))
             .env(release::BUILTIN_RELEASE_ENV, "runner:1")
             .env("VM_RUNNER_LOADER_POLL_MS", "50")
@@ -99,8 +109,11 @@ impl Pod {
         release::read_status(&release::status_file(&self.dir.join("loader")))
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: names a release as the runner does when the controller calls its machine API.
     fn name(&self, release: &str) {
-        std::fs::write(self.dir.join("release"), release).unwrap();
+        let loader = self.dir.join("loader");
+        std::fs::create_dir_all(&loader).unwrap();
+        release::replace(&release::target_file(&loader), release.as_bytes()).unwrap();
     }
 
     fn stage(&self, release: &str, script: &str, runtime: &str) {

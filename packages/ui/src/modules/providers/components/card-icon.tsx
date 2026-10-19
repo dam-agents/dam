@@ -27,7 +27,7 @@ const STYLES: Record<
   openai: { Icon: OpenAIIcon, bg: "bg-icon-green" },
   "ibm-litellm": {
     Icon: LiteLLMIcon,
-    bg: "bg-icon-rose",
+    bg: "bg-icon-litellm",
   },
   "curve-bender": {
     Icon: CurveBenderIcon,
@@ -63,7 +63,11 @@ export function CardIcon({
         size !== "sm" && ["rounded-lg text-white", bg],
       )}
     >
-      <Icon className={size === "sm" ? "size-full" : "size-3/5"} />
+      <Icon
+        className={
+          size === "sm" || provider === "ibm-litellm" ? "size-full" : "size-3/5"
+        }
+      />
     </div>
   );
 }

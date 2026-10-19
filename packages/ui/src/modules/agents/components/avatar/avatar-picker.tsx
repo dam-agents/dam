@@ -3,6 +3,7 @@ import {
   type PointerEvent,
   type ReactNode,
   useEffect,
+  useId,
   useRef,
   useState,
 } from "react";
@@ -87,7 +88,13 @@ export function AvatarPicker({
         <button
           ref={triggerRef}
           type="button"
-          aria-label={`Avatar: ${value}. Choose an avatar`}
+          aria-label={`Avatar: ${
+            value.startsWith("emoji:")
+              ? value.slice("emoji:".length)
+              : value.startsWith("image:")
+                ? "custom image"
+                : value
+          }. Choose an avatar`}
           aria-haspopup="dialog"
           aria-expanded={open}
           data-testid="avatar-picker"
@@ -242,6 +249,8 @@ function CustomAvatarInputs({ onPick }: { onPick: (avatar: string) => void }) {
   const [emoji, setEmoji] = useState("");
   const [uploading, setUploading] = useState(false);
   const validEmoji = AVATAR_EMOJI_RE.test(`emoji:${emoji.trim()}`);
+  const invalidEmoji = emoji.trim() !== "" && !validEmoji;
+  const hintId = useId();
   const upload = async (file: File) => {
     setUploading(true);
     try {
@@ -267,47 +276,56 @@ function CustomAvatarInputs({ onPick }: { onPick: (avatar: string) => void }) {
     }
   };
   return (
-    <div className="flex items-center gap-2 border-t border-border pt-3">
-      <form
-        className="flex items-center gap-1"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (validEmoji) onPick(`emoji:${emoji.trim()}`);
-        }}
-      >
-        <Input
-          size="sm"
-          aria-label="Emoji avatar"
-          placeholder="Emoji"
-          value={emoji}
-          onChange={(e) => setEmoji(e.target.value)}
-          className="w-20 text-center"
-        />
-        <Button
-          type="submit"
-          size="sm"
-          variant="outline"
-          disabled={!validEmoji}
+    <div className="flex flex-col gap-1 border-t border-border pt-3">
+      <div className="flex items-center gap-2">
+        <form
+          className="flex items-center gap-1"
+          onSubmit={(e) => {
+            e.preventDefault();
+            if (validEmoji) onPick(`emoji:${emoji.trim()}`);
+          }}
         >
-          Use
-        </Button>
-      </form>
-      <Button asChild size="sm" variant="outline" disabled={uploading}>
-        <label>
-          {uploading ? "Uploading…" : "Upload image"}
-          <input
-            type="file"
-            accept="image/png,image/jpeg"
-            className="sr-only"
-            disabled={uploading}
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              e.target.value = "";
-              if (file) void upload(file);
-            }}
+          <Input
+            size="sm"
+            aria-label="Emoji avatar"
+            aria-invalid={invalidEmoji || undefined}
+            aria-describedby={invalidEmoji ? hintId : undefined}
+            placeholder="Emoji"
+            value={emoji}
+            onChange={(e) => setEmoji(e.target.value)}
+            className="w-20 text-center text-sm"
           />
-        </label>
-      </Button>
+          <Button
+            type="submit"
+            size="sm"
+            variant="outline"
+            disabled={!validEmoji}
+          >
+            Use
+          </Button>
+        </form>
+        <Button asChild size="sm" variant="outline" disabled={uploading}>
+          <label>
+            {uploading ? "Uploading…" : "Upload image"}
+            <input
+              type="file"
+              accept="image/png,image/jpeg"
+              className="sr-only"
+              disabled={uploading}
+              onChange={(e) => {
+                const file = e.target.files?.[0];
+                e.target.value = "";
+                if (file) void upload(file);
+              }}
+            />
+          </label>
+        </Button>
+      </div>
+      {invalidEmoji && (
+        <p id={hintId} className="text-xs text-danger">
+          Enter a single emoji.
+        </p>
+      )}
     </div>
   );
 }

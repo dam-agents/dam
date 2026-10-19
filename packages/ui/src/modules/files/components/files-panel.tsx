@@ -1,5 +1,5 @@
 import {
-  AddAlt,
+  Add,
   DocumentAdd,
   FolderAdd,
   Folders,
@@ -16,6 +16,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { EmptyState } from "@/components/ui/empty-state";
 
 import { useStore } from "../../../store.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
@@ -71,7 +72,7 @@ export function FilesPanel({
             disabled={controller.isUploading}
             tooltip={controller.isUploading ? "Upload in progress…" : "Add"}
           >
-            <AddAlt size={16} />
+            <Add size={16} />
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
@@ -144,9 +145,7 @@ export function FilesPanel({
             )}
             {controller.rootLoading && <FileListSkeleton />}
             {controller.rootIsLoadedEmpty && (
-              <p className="px-4 py-5 text-xs text-muted-foreground">
-                No files yet
-              </p>
+              <EmptyState bordered={false}>No files yet.</EmptyState>
             )}
             <DirContents path="" depth={0} />
           </FilesPanelContext.Provider>

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: with virtualization on, the controller reads the install against the cluster before any vm agent needs a runner. It must name each setup that stops every runner from working — no node advertising the device resources, a missing runner ServiceAccount, an image budget it cannot read, a memory limit that leaves no machine room, a range that is not a CIDR — and it must warn, without refusing, when the runner's egress also reaches the cluster's own pod or Service range. A vm agent whose runner is not ready carries those problems in its status.
+// TEST_OVERVIEW: with virtualization on, the controller reads the install against the cluster before any vm agent needs a runner. It must name each setup that stops every runner from working — no node advertising the device resources, a missing runner ServiceAccount, an image cache with no node directory or a budget it cannot read, a memory limit that leaves no machine room. A vm agent whose runner is not ready carries those problems in its status.
 package reconciler
 
 import (
@@ -27,12 +27,9 @@ func preflightConfig() *config.Config {
 		KubeAPIAddr:      "172.30.0.1:443",
 		VM: config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 			Image: "vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
-			ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
-			Devices:           map[string]string{"devices.kubevirt.io/kvm": "1", "devices.kubevirt.io/tun": "1"},
-			NodeSelector:      map[string]string{"pool": "virt"},
-			EgressCIDRs:       []string{"0.0.0.0/0"},
-			EgressExceptCIDRs: []string{"10.128.0.0/14", "172.30.0.0/16", "169.254.0.0/16"},
-			DNSCIDRs:          []string{"10.0.2.3/32"},
+			ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
+			Devices:      map[string]string{"devices.kubevirt.io/kvm": "1", "devices.kubevirt.io/tun": "1"},
+			NodeSelector: map[string]string{"pool": "virt"},
 			Resources: &corev1.ResourceRequirements{Limits: corev1.ResourceList{
 				corev1.ResourceMemory: resource.MustParse("8Gi"),
 			}},
@@ -65,7 +62,7 @@ func runPreflight(cfg *config.Config, objects ...runtime.Object) vmPreflightResu
 	return r.vmPreflight(context.Background())
 }
 
-// TEST_SCENARIO: an install that got everything right — a node in the runner's pool advertises both devices, the runner identity exists, and the cluster's own ranges are excepted — gets nothing to fix and nothing to worry about.
+// TEST_SCENARIO: an install that got everything right — a node in the runner's pool advertises both devices, and the runner identity exists — gets nothing to fix and nothing to worry about.
 func TestPreflightPassesACorrectInstall(t *testing.T) {
 	res := runPreflight(preflightConfig(), preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
 	assert.Empty(t, res.problems)
@@ -94,66 +91,28 @@ func TestPreflightNamesAMissingRunnerServiceAccount(t *testing.T) {
 	assert.Contains(t, res.problems[0], "test-agents/platform-vm-runner does not exist")
 }
 
-// TEST_SCENARIO: values the controller cannot use — a budget that is not a quantity, a memory limit no larger than the runner's own reserve, an exception that is not a CIDR and would be dropped without a word — are each named with the value to fix.
+// TEST_SCENARIO: values the controller cannot use — a budget that is not a quantity, a memory limit no larger than the runner's own reserve — are each named with the value to fix.
 func TestPreflightNamesValuesTheControllerCannotUse(t *testing.T) {
 	cfg := preflightConfig()
 	cfg.VM.Runner.ImageCacheBudget = "fifty gigs"
 	cfg.VM.Runner.Resources.Limits[corev1.ResourceMemory] = resource.MustParse("512Mi")
-	cfg.VM.Runner.EgressExceptCIDRs = append(cfg.VM.Runner.EgressExceptCIDRs, "10.0.0.1")
 	res := runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
-	require.Len(t, res.problems, 3)
+	require.Len(t, res.problems, 2)
 	assert.Contains(t, res.problems[0], "virtualization.imageCache.budget")
 	assert.Contains(t, res.problems[1], "no machine ever fits")
-	assert.Contains(t, res.problems[2], `egressExceptCidrs entry "10.0.0.1" is not a CIDR`)
 }
 
-// TEST_SCENARIO: `0.0.0.0/0` with no exceptions is the values' own way to leave the runner unconfined on purpose, so it is not refused — but it does reach the pod and Service ranges, and the controller knows an address in each for certain, so it warns about both.
-func TestPreflightWarnsWhenEgressReachesTheCluster(t *testing.T) {
+// TEST_SCENARIO: the node image cache is the only place a runner pod gets an image from, so an install that names no node directory for it leaves every runner with nothing to boot. That is a problem naming the value to set. The Mac's host runner stages its own images and needs none.
+func TestPreflightNamesAnInstallWithNoNodeCache(t *testing.T) {
 	cfg := preflightConfig()
-	cfg.VM.Runner.EgressExceptCIDRs = nil
-	res := runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
-	assert.Empty(t, res.problems, "an unconfined runner is a choice the install may make")
-	require.Len(t, res.warnings, 3)
-	assert.Contains(t, res.warnings[0], "Service range")
-	assert.Contains(t, res.warnings[0], "172.30.0.1")
-	assert.Contains(t, res.warnings[1], "pod range")
-	assert.Contains(t, res.warnings[1], "10.128.2.7")
-	assert.Contains(t, res.warnings[2], "the controller excepts 169.254.0.0/16 itself",
-		"the metadata endpoint is closed anyway, and the install is told its values do not say so")
-
-	cfg.VM.Runner.EgressCIDRs = []string{"203.0.113.10/32"}
-	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
-	assert.Empty(t, res.warnings, "a runner confined to its registry reaches neither range")
-
-	cfg.VM.Runner.EgressCIDRs = []string{"169.254.169.254/32"}
-	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
-	require.Len(t, res.warnings, 1)
-	assert.Contains(t, res.warnings[0], "is not rendered", "a block naming the metadata endpoint is dropped, and said to be")
-}
-
-// TEST_SCENARIO: a confined runner that caches on its own claim resolves its registry only through the resolver the install names, so with none named no machine can fetch an image — a problem, naming the value to set. A runner on the node cache resolves nothing and needs none, and a resolver range of /0, which reopens port 53 everywhere, is warned about.
-func TestPreflightNamesARunnerWithNoResolver(t *testing.T) {
-	cfg := preflightConfig()
-	cfg.VM.Runner.DNSCIDRs = nil
+	cfg.VM.Runner.ImageCacheHostPath = ""
 	res := runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
 	require.Len(t, res.problems, 1)
-	assert.Contains(t, res.problems[0], "virtualization.runner.dnsCidrs")
+	assert.Contains(t, res.problems[0], "virtualization.imageCache.hostPath")
 
-	cfg.VM.Runner.DNSPolicy = "ClusterFirst"
-	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
-	require.Len(t, res.problems, 1)
-	assert.Contains(t, res.problems[0], "virtualization.runner.clusterDns")
-
-	cfg.VM.Runner.ImageCacheHostPath = "/var/lib/platform-images"
-	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
-	assert.Empty(t, res.problems, "the node's cache service resolves the registry, not the runner")
-
-	cfg = preflightConfig()
-	cfg.VM.Runner.DNSCIDRs = []string{"0.0.0.0/0"}
-	res = runPreflight(cfg, preflightCluster(kvmNode("virt-1", map[string]string{"pool": "virt"}))...)
-	assert.Empty(t, res.problems)
-	require.Len(t, res.warnings, 1)
-	assert.Contains(t, res.warnings[0], "admits DNS to every address")
+	cfg.VM.Runner.HostAddress = "192.168.5.2"
+	res = runPreflight(cfg, preflightCluster()...)
+	assert.Empty(t, res.problems, "the host runner is not a pod on the node cache")
 }
 
 // TEST_SCENARIO: a vm agent whose runner is not ready on an install that cannot run one says so in its status, next to what the runner pod reports, rather than reading "still starting" until someone reads the cluster by hand.
@@ -166,7 +125,7 @@ func TestAVMAgentCarriesThePreflightProblems(t *testing.T) {
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret())
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512,
-		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi",
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
 		Devices: map[string]string{"devices.kubevirt.io/kvm": "1"},
 	}}
 	r.runnerEndpoint = func(string) string { return srv.URL }

@@ -64,9 +64,15 @@ const suite: NamedProject[] = [
     use: { ...devices["Desktop Chrome"], storageState },
   },
   {
+    name: "new-layout",
+    testMatch: /26-.*\.spec\.ts$/,
+    dependencies: ["chain", "own-agents"],
+    use: { ...devices["Desktop Chrome"], storageState },
+  },
+  {
     name: "platform-provider",
     testMatch: /24-.*\.spec\.ts$/,
-    dependencies: ["api-keys", "live-events", "chain", "own-agents"],
+    dependencies: ["api-keys", "live-events", "new-layout"],
     use: { ...devices["Desktop Chrome"], storageState },
   },
   ...(full
@@ -118,6 +124,26 @@ const agentBackend: NamedProject = {
   use: { ...devices["Desktop Chrome"], storageState },
 };
 
+const prSkip =
+  process.env.E2E_SCOPE === "pr"
+    ? new RegExp(
+        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|24|25|26" : "12|18|21|24"})-`,
+      )
+    : undefined;
+
+const prEmpty = new Set(
+  laneBackend === "vm"
+    ? ["platform-provider", "new-layout", "agent-backend"]
+    : ["platform-provider"],
+);
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the smoke suite's Playwright projects: which specs a run
+ * takes, in what order, and on which Backend. E2E_VIRTUALIZATION picks the lane.
+ * E2E_SCOPE=pr narrows a pull request's run to the specs that fail for real there, and
+ * the merge queue, the nightly run and a tag take every one (docs/architecture/e2e.md).
+ * No spec a PR run keeps reads state an excluded spec creates.
+ */
 export default defineConfig({
   testDir: "./src/tests",
   fullyParallel: false,
@@ -142,5 +168,7 @@ export default defineConfig({
       ],
     },
   },
-  projects: laneBackend === "vm" ? [...suite, agentBackend] : suite,
+  projects: (laneBackend === "vm" ? [...suite, agentBackend] : suite)
+    .filter(({ name }) => !prSkip || !prEmpty.has(name))
+    .map((project) => (prSkip ? { ...project, testIgnore: prSkip } : project)),
 });

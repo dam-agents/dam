@@ -349,10 +349,11 @@ jobs:
         env:
           IMAGE: ${{ matrix.image }}
           SHA: ${{ github.sha }}
+          MISE_GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           tools="$(mktemp -d)"
-          docker run --rm --user 0 --entrypoint install-harness-tools \
+          docker run --rm --user 0 --entrypoint install-harness-tools -e MISE_GITHUB_TOKEN \
             -v "$tools:/usr/share/mise" "$IMAGE" > install.log 2>&1 || {
             tail -n 40 install.log
             if [[ "$IMAGE" != *":${SHA}" ]]; then

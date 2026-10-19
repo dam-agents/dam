@@ -63,7 +63,9 @@ http-body-util = "0.1"
 # only the runner's CA. No provider of its own: vm-seed installs ring, as the
 # runner does. smolvm's major, so the lock holds one reqwest; move with
 # smolvm's. futures-util turns the uploader's channel into the body stream.
-reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "stream"] }
+# The image cache reads each gzip layer's trailer with the blocking client,
+# trusting the system store crane trusts; the uploader turns those roots off.
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-manual-roots-no-provider", "rustls-tls-native-roots-no-provider", "stream", "blocking"] }
 futures-util = { version = "0.3", default-features = false }
 
 [dev-dependencies]

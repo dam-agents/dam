@@ -8,6 +8,7 @@ import type {
   UnmovablePath,
 } from "api-server-api";
 import { match } from "ts-pattern";
+import { STORAGE_FULL_PERCENT } from "../../budgets/domain/vm-usage.js";
 
 export const AGENT_HOME = "/home/agent";
 
@@ -91,7 +92,7 @@ function persistsHome(mounts: readonly AgentMount[]): boolean {
   return mounts.some((m) => m.persist && m.path === AGENT_HOME);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the one answer to whether an Agent may be moved to the vm backend, read both by the request and by the view that offers it, so the browser never offers a move the request then refuses. A running migration is checked first — one under way, failed, or still clearing up an abort — so a second request says the move is under way rather than anything else, and the view offers no second one. An Agent whose HOME is not persisted has nothing the machine would keep, so it is refused rather than moved empty.
+// UNIT_BOUNDARY_DESCRIPTION: the one answer to whether an Agent may be moved to the vm backend, read both by the request and by the view that offers it, so the browser never offers a move the request then refuses. A running migration is checked first — one under way, failed, or still clearing up an abort — so a second request says the move is under way rather than anything else, and the view offers no second one. An Agent whose HOME is not persisted has nothing the machine would keep, so it is refused rather than moved empty. The owner's pool is checked last, and only where it was read — the request and the plan, never a list — because a move it cannot hold would fill the storage the owner's other VM agents share, or boot a machine the pool has no memory for.
 export function runtimeMigrationRefusal(
   agent: {
     spec: AgentSpec;
@@ -109,12 +110,62 @@ export function runtimeMigrationRefusal(
   if (unmovable.length > 0)
     return { type: "PersistsUnmovablePaths", paths: unmovable };
   if (!persistsHome(mounts)) return { type: "HomeNotPersisted" };
+  if (!ctx.capacity) return null;
+  return poolRefusal(
+    ctx.capacity,
+    ctx.homeBytes ?? null,
+    homeVolumeBytes(agent.spec, mounts, ctx.defaultStorageSize),
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the move fits the owner's pool. Its storage holds the seed and then as much again on the machine's first disk, so the move needs about twice what the home holds — what the Agent's own runtime measured there, and nothing where it could not be read, because the volume's size is the most it may hold rather than what it does, and refusing a small home on a large claim is what the measured figure is for. A measurement above the volume's own size is not the home at all: it is the filesystem the volume sits on, which a claim backed by a directory on a node shares with everything else there, so it is read as the volume at most. The pool keeps the rest of the owner's agents safe up to the level the runner itself refuses an upload at. Its memory has to take one more machine, which may grow to half the pool; the reserve the runner keeps back is left out, so this never refuses a machine the runner would have admitted.
+function poolRefusal(
+  capacity: VmPoolCapacity,
+  measuredBytes: number | null,
+  volumeBytes: number | null,
+): RuntimeMigrationRefusal | null {
+  const { storage, memory } = capacity;
+  const homeBytes =
+    measuredBytes === null || volumeBytes === null
+      ? measuredBytes
+      : Math.min(measuredBytes, volumeBytes);
+  const needed = 2 * (homeBytes ?? 0);
+  if (
+    storage.usedBytes + needed >
+    (storage.usableBytes * STORAGE_FULL_PERCENT) / 100
+  )
+    return {
+      type: "VmStorageInsufficient",
+      neededBytes: needed,
+      usedBytes: storage.usedBytes,
+      usableBytes: storage.usableBytes,
+    };
+  if (
+    memory.limitMiB > 0 &&
+    memory.committedMiB + memory.limitMiB / 2 > memory.limitMiB
+  )
+    return {
+      type: "VmMemoryInsufficient",
+      committedMiB: memory.committedMiB,
+      limitMiB: memory.limitMiB,
+    };
   return null;
 }
 
 export interface RuntimeMigrationContext {
   virtualizationEnabled: boolean;
   defaultMounts: readonly AgentMount[];
+  defaultStorageSize: string;
+  // UNIT_BOUNDARY_DESCRIPTION: the owner's pool, as their runner reported it or, with no runner yet, as the install sizes it. Read where a move is decided and absent from the list views, which would pay a runner read per request for a flag. Unmeasured or unreachable is null, which refuses nothing: the runner refuses what it has no room for on its own.
+  capacity?: VmPoolCapacity | null;
+  // UNIT_BOUNDARY_DESCRIPTION: what HOME holds, as the Agent's own runtime measured it. Absent for an Agent that is not running, whose volume cannot be read without starting it, and nulls the storage half of the refusal rather than judging a home by the size its volume may grow to.
+  homeBytes?: number | null;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's VM pool, in the runner's own units: the storage every machine disk and the seed share, and the memory its machines are admitted against.
+export interface VmPoolCapacity {
+  storage: { usedBytes: number; usableBytes: number };
+  memory: { committedMiB: number; limitMiB: number };
 }
 
 const UNITS: Record<string, number> = {
@@ -150,6 +201,19 @@ export function movedStorageSize(
 }
 
 type Mounts = AgentMount[];
+
+// UNIT_BOUNDARY_DESCRIPTION: the most HOME's volume may hold, which no measurement of the home can exceed: the volume's own size when the mount names one, else the Agent's storageSize, else the install default, rounded up to whole GiB as the machine's disk is. Null when the size cannot be read, which leaves a measurement uncapped.
+export function homeVolumeBytes(
+  spec: AgentSpec,
+  mounts: readonly AgentMount[],
+  defaultStorageSize: string,
+): number | null {
+  const size =
+    movedStorageSize(spec, mounts, defaultStorageSize) ??
+    spec.storageSize ??
+    defaultStorageSize;
+  return quantityBytes(size);
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the shape the Agent takes on the vm backend, which the controller builds its machine to while the container spec stays the Agent's spec: the disk sized for HOME's volume when that is more than the Agent asks for. The mounts stay as they are, since HOME is already where the machine keeps it.
 export interface RuntimeMigrationTarget {

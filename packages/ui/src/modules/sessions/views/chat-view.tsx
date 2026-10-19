@@ -1,10 +1,4 @@
-import {
-  ArrowDown,
-  Document,
-  Renew,
-  TrashCan,
-  Warning,
-} from "@carbon/icons-react";
+import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
 import {
   SessionMode,
@@ -116,7 +110,6 @@ import { AgentUsageActions } from "../../sandboxes/components/agent-usage-action
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
-import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import { acpSessionsKeys } from "../api/keys.js";
@@ -141,6 +134,11 @@ import {
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
+import { SetupInstructionsCard } from "../components/setup-instructions-card.js";
+import {
+  SIDE_PANEL_TABS,
+  SidePanelTabButtons,
+} from "../components/side-panel-bar.js";
 import { SidePanelShell } from "../components/side-panel-shell.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
@@ -168,6 +166,7 @@ import {
 } from "../lib/side-panel.js";
 import {
   dividerLabel,
+  setupMessageOf,
   threadItems,
   timeProps,
   userRunsOf,
@@ -383,6 +382,9 @@ export function ChatView() {
     !sessionView.threadTs &&
     !sessionView.scheduleId &&
     !sessionView.initialization;
+  const setupMessageId = sessionView?.initialization
+    ? setupMessageOf(shown)
+    : undefined;
   const arrivalsRef = useRef(newLiveArrivals(sessionId));
   if (arrivalsRef.current.sessionId !== sessionId)
     arrivalsRef.current = newLiveArrivals(sessionId);
@@ -664,7 +666,6 @@ export function ChatView() {
   const dockedTab = dockedItemTab(docked);
   const dockedShown = dockedTab !== null && dockedTab === activeTab;
   const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
-  const sidePanelOpen = activeTab !== null;
   const onSidePanelTab = (tab: SidePanelTab) => {
     const selection = selectSidePanelTab(tab, activeTab, docked);
     if (selection.kind === "collapse") setSidePanelTab(null);
@@ -784,6 +785,9 @@ export function ChatView() {
           ) : null
         }
       >
+        <h1 className="sr-only">
+          {[selectedAgentName, sessionView?.title].filter(Boolean).join(" · ")}
+        </h1>
         <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
           <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
             <MobileMenuButton />
@@ -810,8 +814,15 @@ export function ChatView() {
                   className="@max-[149px]:hidden"
                 />
               )}
-              <span className="truncate text-sm font-bold text-foreground">
-                {selectedAgentName}
+              <span className="flex min-w-0 flex-col items-start text-left">
+                <span className="max-w-full truncate text-sm font-bold text-foreground">
+                  {selectedAgentName}
+                </span>
+                {sessionView?.title && (
+                  <span className="max-w-full truncate text-2xs text-muted-foreground">
+                    {sessionView.title}
+                  </span>
+                )}
               </span>
             </button>
             {agentView && (
@@ -836,24 +847,20 @@ export function ChatView() {
               processesEnabled={processesEnabled}
             />
           </div>
-          <div className="flex shrink-0 items-center gap-2 md:hidden">
+          <div className="flex shrink-0 items-center gap-1 md:hidden">
             {processesEnabled && <ProcessesIndicator agentId={selectedAgent} />}
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Files and artifacts"
-              data-testid="open-agent-files"
-              className="md:hidden"
-              onClick={() => {
-                if (!sidePanelOpen) setSidePanelTab("files");
+            <SidePanelTabButtons
+              tabs={SIDE_PANEL_TABS.filter(
+                ({ tab }) => tab === "artifacts" || tab === "files",
+              )}
+              active={null}
+              onSelect={(tab) => {
+                setSidePanelTab(tab);
                 setMobileScreen("files");
               }}
-            >
-              <Document size={16} />
-            </Button>
-            <div className="flex items-center gap-1 md:hidden">
-              <AppSidePanelButtons />
-            </div>
+              placement="top-bar"
+            />
+            <AppSidePanelButtons />
           </div>
         </header>
         <div className="empty:hidden">
@@ -950,6 +957,7 @@ export function ChatView() {
                             <AgentUsageActions
                               agent={agentView}
                               showChat={false}
+                              showConfigure
                               onNewTerminal={handleNewTerminal}
                             />
                           </div>
@@ -984,32 +992,41 @@ export function ChatView() {
                           ) ?? [item.message];
                           const lastIndex = item.index + members.length - 1;
                           const chatMessage = (actions?: ReactNode) => {
-                            const bubbles = members.map((m, k) => (
-                              <ChatMessage
-                                key={m.id}
-                                message={m}
-                                continued={k > 0}
-                                arriving={arrived.has(m.id)}
-                                avatarAgent={agentView ?? undefined}
-                                onAgentClick={handleConfigureSandbox}
-                                footer={
-                                  k === members.length - 1 ? actions : undefined
-                                }
-                                isLast={item.index + k === shown.length - 1}
-                                showModel={runStarts.length > 0}
-                                {...timeProps(m.at, now)}
-                                hasPendingPermission={hasPendingPermission}
-                                pendingNotice={
-                                  item.index + k === shown.length - 1
-                                    ? startNotice
-                                    : undefined
-                                }
-                                onRetry={sendPrompt}
-                                onFileClick={openFileHandler}
-                                onDelete={deleteMessage}
-                                onLoadOlder={loadOlderKeepingScroll}
-                              />
-                            ));
+                            const bubbles = members.map((m, k) =>
+                              m.id === setupMessageId ? (
+                                <SetupInstructionsCard key={m.id} message={m} />
+                              ) : (
+                                <ChatMessage
+                                  key={m.id}
+                                  message={m}
+                                  continued={k > 0}
+                                  arriving={arrived.has(m.id)}
+                                  avatarAgent={agentView ?? undefined}
+                                  onAgentClick={handleConfigureSandbox}
+                                  footer={
+                                    k === members.length - 1
+                                      ? actions
+                                      : undefined
+                                  }
+                                  isLast={item.index + k === shown.length - 1}
+                                  showModel={runStarts.length > 0}
+                                  {...timeProps(m.at, now)}
+                                  hasPendingPermission={hasPendingPermission}
+                                  pendingNotice={
+                                    item.index + k === shown.length - 1
+                                      ? startNotice
+                                      : undefined
+                                  }
+                                  onRetry={sendPrompt}
+                                  onFileClick={openFileHandler}
+                                  onDelete={deleteMessage}
+                                  onLoadOlder={loadOlderKeepingScroll}
+                                  turn={turn}
+                                  agentId={selectedAgent ?? undefined}
+                                  sessionId={sessionId ?? undefined}
+                                />
+                              ),
+                            );
                             return members.length === 1 ? (
                               bubbles[0]
                             ) : (
@@ -1067,13 +1084,6 @@ export function ChatView() {
                                 <RewriteMarker
                                   mode={rewriting.mode}
                                   following={shown.length - 1 - lastIndex}
-                                />
-                              )}
-                              {selectedAgent && sessionId && turn && (
-                                <TurnTelemetry
-                                  agentId={selectedAgent}
-                                  sessionId={sessionId}
-                                  turn={turn}
                                 />
                               )}
                             </Fragment>

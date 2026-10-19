@@ -1,19 +1,14 @@
-import { OverflowMenuVertical, View } from "@carbon/icons-react";
+import { View } from "@carbon/icons-react";
 import type { LibraryArtifact } from "api-server-api";
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
-import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
   ContextMenuContent,
   ContextMenuTrigger,
 } from "@/components/ui/context-menu";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION } from "@/components/ui/hover-action";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { treeIndent } from "@/components/ui/tree-guide";
 import { clickableProps } from "@/lib/clickable";
@@ -37,6 +32,7 @@ export function ArtifactListRow({
   artifact,
   depth,
   active,
+  highlighted = false,
   onClick,
   drag,
   showCreator,
@@ -49,6 +45,7 @@ export function ArtifactListRow({
   artifact: LibraryArtifact;
   depth: number;
   active: boolean;
+  highlighted?: boolean;
   onClick: () => void;
   drag?: ArtifactDragCallbacks;
   showCreator: boolean;
@@ -76,17 +73,23 @@ export function ArtifactListRow({
   });
 
   const menuActions = { onEdit, onRename, onMove, onShare, onSetRetention };
+  const rowRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (highlighted) rowRef.current?.scrollIntoView({ block: "nearest" });
+  }, [highlighted]);
 
   return (
     <ContextMenu>
       <ContextMenuTrigger asChild>
         <div
+          ref={rowRef}
           {...clickableProps(onClick)}
           {...(drag ? dragProps : {})}
           title={artifact.title}
           className={cn(
             "group flex h-8 w-full cursor-pointer items-center gap-1.5 pr-3 text-left text-sm text-muted-foreground transition-colors hover:bg-muted",
             active && "bg-muted text-foreground",
+            highlighted && "bg-accent-light text-foreground",
             dragging && "opacity-50",
           )}
           style={{ paddingLeft: treeIndent(depth) }}
@@ -125,22 +128,9 @@ export function ArtifactListRow({
           </div>
           {showCreator && <CreatorByline agentId={artifact.agentId} />}
           <div className="shrink-0" onClick={(e) => e.stopPropagation()}>
-            <DropdownMenu>
-              {}
-              <DropdownMenuTrigger asChild>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
-                  className={HOVER_ACTION}
-                  aria-label="More actions"
-                >
-                  <OverflowMenuVertical size={13} />
-                </Button>
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <ArtifactRowMenuItems artifact={artifact} {...menuActions} />
-              </DropdownMenuContent>
-            </DropdownMenu>
+            <RowActionsMenu label="More actions" dense className={HOVER_ACTION}>
+              <ArtifactRowMenuItems artifact={artifact} {...menuActions} />
+            </RowActionsMenu>
           </div>
         </div>
       </ContextMenuTrigger>

@@ -19,14 +19,9 @@ export function StaleModelNotice({
       icon={Warning}
       title="The saved model isn’t offered by the current provider."
       action={
-        <Button
-          variant="outline"
-          size="sm"
-          disabled={comingUp}
-          onClick={onStartAndFix}
-        >
+        <Button size="sm" disabled={comingUp} onClick={onStartAndFix}>
           {comingUp && <Spinner size={14} />}
-          {comingUp ? "Starting…" : "Start & fix"}
+          {comingUp ? "Starting…" : "Start and fix"}
         </Button>
       }
     >

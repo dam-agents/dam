@@ -1,8 +1,10 @@
 import {
   Download,
   Edit,
+  Pen,
+  Pin,
+  PinFilled,
   Terminal,
-  TextCreation,
   Time,
   TrashCan,
 } from "@carbon/icons-react";
@@ -14,14 +16,20 @@ import {
   SessionType,
   type SessionView,
 } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
-import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -44,6 +52,10 @@ const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
+export function sessionTitleLabel(s: SessionView): string {
+  return s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
+}
+
 interface Props {
   session: SessionView;
   active: boolean;
@@ -54,7 +66,9 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
-  reorderable?: boolean;
+  leading?: ReactNode;
+  pinned?: boolean;
+  onTogglePin?: () => void;
   onResume: () => void;
   onPrefetch?: () => void;
   onRename: () => void;
@@ -73,7 +87,9 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
-  reorderable = false,
+  leading,
+  pinned = false,
+  onTogglePin,
   onResume,
   onPrefetch,
   onRename,
@@ -84,6 +100,9 @@ export function SessionRow({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
+  const mainRef = useRef<HTMLButtonElement>(null);
+  const metaId = useId();
+  const afterMenu = useRef<(() => void) | null>(null);
 
   const startPress = useCallback(() => {
     didLongPress.current = false;
@@ -119,7 +138,7 @@ export function SessionRow({
     onResume();
   }, [onResume]);
 
-  const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
+  const titleLabel = sessionTitleLabel(s);
   const titleClass = !s.title
     ? "text-muted-foreground italic"
     : unread
@@ -150,11 +169,11 @@ export function SessionRow({
       data-active={active ? "true" : "false"}
       className={cn(
         "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
+        "has-[[data-row-main]:focus-visible]:outline-2 has-[[data-row-main]:focus-visible]:-outline-offset-2 has-[[data-row-main]:focus-visible]:outline-accent",
         active ? "bg-muted" : "hover:bg-muted/60",
         className,
       )}
-      {...clickableProps(handleClick)}
-      aria-keyshortcuts={reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+      onClick={handleClick}
       onPointerEnter={startDwell}
       onPointerLeave={endDwell}
       onFocus={onPrefetch}
@@ -166,17 +185,44 @@ export function SessionRow({
         setMenuOpen(true);
       }}
     >
+      {leading}
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          <span className={`text-sm min-w-0 truncate ${titleClass}`}>
-            {titleLabel}
-          </span>
-          {onboarding && (
-            <Badge variant={onboarding.variant} size="sm" className="shrink-0">
-              {onboarding.label}
-            </Badge>
+          <button
+            ref={mainRef}
+            type="button"
+            data-row-main
+            title={titleLabel}
+            aria-current={active ? "page" : undefined}
+            aria-describedby={metaId}
+            className="flex min-w-0 items-center gap-1.5 text-left outline-none"
+          >
+            <span className={`text-sm min-w-0 truncate ${titleClass}`}>
+              {titleLabel}
+            </span>
+            {onboarding && (
+              <Badge
+                variant={onboarding.variant}
+                size="sm"
+                className="shrink-0"
+              >
+                {onboarding.label}
+              </Badge>
+            )}
+          </button>
+          {pinned && (
+            <PinFilled
+              size={12}
+              aria-label="Pinned"
+              className="ml-auto shrink-0 text-muted-foreground"
+            />
           )}
-          <div className="ml-auto flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]">
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
+              pinned ? "ml-1" : "ml-auto",
+            )}
+          >
             <SessionIndicators
               scheduled={scheduled}
               terminal={terminal}
@@ -193,6 +239,21 @@ export function SessionRow({
                 HOVER_ACTION,
               )}
             >
+              {onTogglePin && (
+                <button
+                  type="button"
+                  aria-label={pinned ? "Unpin session" : "Pin to top"}
+                  aria-pressed={pinned}
+                  data-testid="session-pin-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    onTogglePin();
+                  }}
+                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
+                >
+                  {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+                </button>
+              )}
               <RowActionsMenu
                 label="More actions"
                 testId="session-menu-button"
@@ -200,7 +261,17 @@ export function SessionRow({
                 stopPropagation
                 open={menuOpen}
                 onOpenChange={setMenuOpen}
-                contentProps={{ onClick: (event) => event.stopPropagation() }}
+                contentProps={{
+                  onClick: (event) => event.stopPropagation(),
+                  onCloseAutoFocus: (event) => {
+                    const act = afterMenu.current;
+                    if (!act) return;
+                    afterMenu.current = null;
+                    event.preventDefault();
+                    mainRef.current?.focus();
+                    act();
+                  },
+                }}
               >
                 {onExportTimeline && (
                   <DropdownMenuItem
@@ -212,14 +283,18 @@ export function SessionRow({
                 )}
                 <DropdownMenuItem
                   data-testid="session-rename-button"
-                  onSelect={onRename}
+                  onSelect={() => {
+                    afterMenu.current = onRename;
+                  }}
                 >
-                  <TextCreation size={14} /> Rename session
+                  <Edit size={14} /> Rename session
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   data-testid="session-delete-button"
                   tone="danger"
-                  onSelect={onDelete}
+                  onSelect={() => {
+                    afterMenu.current = onDelete;
+                  }}
                 >
                   <TrashCan size={14} /> Delete session
                 </DropdownMenuItem>
@@ -227,7 +302,7 @@ export function SessionRow({
             </div>
           </div>
         </div>
-        <span className="text-2xs text-muted-foreground truncate">
+        <span id={metaId} className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}
@@ -331,7 +406,7 @@ function SessionIndicators({
           title="Has a draft"
           className="inline-flex text-muted-foreground shrink-0"
         >
-          <Edit size={16} />
+          <Pen size={16} />
         </span>
       ) : harness ? (
         <span

@@ -1,9 +1,10 @@
-import { Add, Close } from "@carbon/icons-react";
+import { Add } from "@carbon/icons-react";
 import { VIEWER_ALLOWLIST_MAX } from "api-server-api";
 import { useId, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { RemoveButton } from "@/components/ui/remove-button";
 
 import { normalizeViewerEmail } from "../lib/viewer-allowlist.js";
 
@@ -25,17 +26,12 @@ function ViewerRow({ email, onRemove, disabled }: ViewerRowProps) {
   return (
     <li className="flex items-center justify-between gap-2 rounded-md py-1 pl-1 pr-0.5 hover:bg-muted/40">
       <span className="truncate text-sm text-foreground">{email}</span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
-        aria-label={`Remove ${email}`}
+      <RemoveButton
+        label={`Remove ${email}`}
+        tooltip="Remove"
         disabled={disabled}
         onClick={() => onRemove(email)}
-        className="shrink-0 text-muted-foreground hover:text-foreground"
-      >
-        <Close size={14} />
-      </Button>
+      />
     </li>
   );
 }
