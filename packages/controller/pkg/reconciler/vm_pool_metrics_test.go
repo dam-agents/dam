@@ -90,7 +90,7 @@ func TestThePoolPassSumsWhatThePoolsPromiseAgainstTheCluster(t *testing.T) {
 	node.usage.Memory.LimitMiB, node.usage.Memory.CommittedMiB = 12288, 3072
 	node.usage.Storage.UsableBytes, node.usage.Storage.UsedBytes = 100, 80
 
-	pool, _, _, ok := r.vmPool(context.Background())
+	pool, _, _, _, ok := r.vmPool(context.Background())
 	require.True(t, ok)
 	assert.Equal(t, int64(12<<30), pool.Committed["memory"])
 	assert.Equal(t, int64(9000), pool.Committed["cpu"])
@@ -109,7 +109,7 @@ func TestThePoolPassSumsWhatThePoolsPromiseAgainstTheCluster(t *testing.T) {
 		Capacity:         resource.NewQuantity(1<<40, resource.BinarySI),
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
-	pool, _, _, _ = r.vmPool(context.Background())
+	pool, _, _, _, _ = r.vmPool(context.Background())
 	assert.Equal(t, int64(1<<40), pool.Capacity["storage"])
 }
 
@@ -126,6 +126,33 @@ func TestACriticalPoolNamesItsUserOncePerCrossing(t *testing.T) {
 	node.usage.Storage.UsedBytes = 92
 	r.PoolPass(context.Background())
 	assert.Equal(t, 2, eventsWithReason(t, r, "VMPoolCritical"))
+}
+
+// TEST_SCENARIO: the node holding an owner's runner is not ready. Every machine of that owner is gone with it, and no replacement can take the claim while the node keeps it, so the pool pass counts the pods there once and names the owner once by a Warning Event on their vm Agents — a node that stays lost is not announced on every pass. The controller never deletes the pod: two VMMs on one claim cannot be recovered, so an operator fences the node and clears it out of service.
+func TestARunnerOnALostNodeIsCountedAndNamesItsUserOnce(t *testing.T) {
+	r, _, _ := poolPassReconciler(t)
+	ctx := context.Background()
+	pods := r.client.CoreV1().Pods("test-agents")
+	pod, err := pods.Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Spec.NodeName = "kvm-2"
+	_, err = pods.Update(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Nodes().Create(ctx, &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "kvm-2"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse}}},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	pool, _, _, _, ok := r.vmPool(ctx)
+	require.True(t, ok)
+	assert.Equal(t, int64(1), pool.NodeLost)
+
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "a node that stays lost is not announced again")
 }
 
 // TEST_SCENARIO: a controller that restarts while a pool stays critical does not name its user again, since the Event it wrote before the restart is still there; a pool critical for another resource still is.

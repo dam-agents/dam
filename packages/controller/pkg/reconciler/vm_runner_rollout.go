@@ -445,19 +445,26 @@ func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner st
 }
 
 func (r *AgentReconciler) nodeLost(ctx context.Context, name string) bool {
-	if name == "" {
-		return false
-	}
-	nodes, err := r.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{FieldSelector: "metadata.name=" + name})
+	ready := r.nodesReady(ctx)
+	return name != "" && ready != nil && !ready[name]
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the nodes the cluster reports ready, by name; nil when they cannot be read, which tells no node's state apart from another's. A node the cluster no longer lists is not ready: it has gone, and a runner pod on it runs nowhere while its claim stays with it.
+func (r *AgentReconciler) nodesReady(ctx context.Context) map[string]bool {
+	nodes, err := r.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
 	if err != nil {
-		slog.Warn("vm runner: reading the node of a runner pod stuck terminating", "node", name, "error", err)
-		return false
+		slog.Warn("vm runner: reading which nodes of the cluster are ready", "error", err)
+		return nil
 	}
-	return !slices.ContainsFunc(nodes.Items, func(n corev1.Node) bool {
-		return n.Name == name && slices.ContainsFunc(n.Status.Conditions, func(c corev1.NodeCondition) bool {
+	ready := map[string]bool{}
+	for _, n := range nodes.Items {
+		if slices.ContainsFunc(n.Status.Conditions, func(c corev1.NodeCondition) bool {
 			return c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
-		})
-	})
+		}) {
+			ready[n.Name] = true
+		}
+	}
+	return ready
 }
 
 func (r *AgentReconciler) multiAttachRefused(ctx context.Context, pod *corev1.Pod) bool {

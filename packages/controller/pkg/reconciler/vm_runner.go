@@ -827,12 +827,18 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string, keepCl
 	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up, and so does a runner on a node the cluster has lost, which no wait outgrows.
 func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (string, string) {
 	const starting = "the owner's VM runner is still starting"
 	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil || len(pods) == 0 {
 		return vmrunner.ReasonNotReady, starting
+	}
+	ready := r.nodesReady(ctx)
+	for i := range pods {
+		if node := pods[i].Spec.NodeName; ready != nil && node != "" && !ready[node] {
+			return apiv1.ReasonMachineRunnerNodeLost, "the owner's VM runner is on node " + node + ", which the cluster does not report ready; its machines cannot start until that node returns or is fenced"
+		}
 	}
 	for i := range pods {
 		pod := &pods[i]
