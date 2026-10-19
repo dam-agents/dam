@@ -16,9 +16,11 @@ export function OutcomeLines({
       {line.lastRunText && (
         <span className="block">{`Last run ${line.lastRunText}`}</span>
       )}
-      <span className={cn("block break-words", line.className)}>
-        {line.resultText}
-      </span>
+      {line.resultText && (
+        <span className={cn("block break-words", line.className)}>
+          {line.resultText}
+        </span>
+      )}
     </div>
   );
 }

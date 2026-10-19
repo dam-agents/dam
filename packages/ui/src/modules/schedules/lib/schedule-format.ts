@@ -123,18 +123,18 @@ export function cardOutcome(schedule: Schedule): LastRunStatus | null {
 
 export interface RunOutcomeLine {
   lastRunText: string | null;
-  resultText: string;
-  className: string;
+  resultText: string | null;
+  className: string | null;
 }
 
 export function runOutcomeLine(schedule: Schedule): RunOutcomeLine | null {
   const status = lastRunStatus(schedule.status?.lastResult);
-  if (!status) return null;
   const lastRun = schedule.status?.lastRun;
+  if (!status && !lastRun) return null;
   return {
     lastRunText: lastRun ? formatRunTime(lastRun) : null,
-    resultText: `Last result: ${status.label}`,
-    className: status.className,
+    resultText: status ? `Last result: ${status.label}` : null,
+    className: status?.className ?? null,
   };
 }
 

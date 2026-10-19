@@ -74,7 +74,7 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
             <OutcomeLines
               line={outcome}
               className="mt-0.5 line-clamp-2 text-sm text-muted-foreground"
-              title={outcome.resultText}
+              title={outcome.resultText ?? undefined}
             />
           )
         )}

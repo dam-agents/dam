@@ -115,7 +115,7 @@ export function ScheduleDetails({
                 {declined ? "(never ran)" : "Never run"}
               </span>
             )}
-            {outcome && (
+            {outcome?.resultText && (
               <span className={cn("break-words", outcome.className)}>
                 {outcome.resultText}
               </span>

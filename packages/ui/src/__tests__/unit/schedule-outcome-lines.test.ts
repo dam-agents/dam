@@ -103,6 +103,19 @@ describe("runOutcomeLine", () => {
     expect(runOutcomeLine(ran)?.lastRunText).toBeTruthy();
   });
 
+  // TEST_SCENARIO: a cleared result is not a fire that never happened — a schedule that ran still names when, so the surface keeps the run after the reason it cleared.
+  it("keeps the run time once a result is cleared", () => {
+    const ran: Schedule = {
+      ...base,
+      status: { lastRun: "2026-06-12T09:00:00.000Z" },
+    };
+
+    const line = runOutcomeLine(ran);
+
+    expect(line?.lastRunText).toBeTruthy();
+    expect(line?.resultText).toBeNull();
+  });
+
   // TEST_SCENARIO: a schedule that never fired and never failed carries no line, so the surfaces stay quiet about work that has not happened.
   it("says nothing when no result is recorded", () => {
     expect(runOutcomeLine(base)).toBeNull();
