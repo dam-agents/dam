@@ -49,7 +49,7 @@ const (
 	runtimeMigrationCopying   = "copying"
 	runtimeMigrationBooting   = "booting"
 
-	// UNIT_BOUNDARY_DESCRIPTION: the bounds that make a migration end. Three copy attempts, each a Job of one pod, and a wall-clock budget from the request that covers one copy running into its own four-hour deadline with time left to boot; a migration past either is Failed, with the reason, until the user retries or aborts.
+	// UNIT_BOUNDARY_DESCRIPTION: the bounds that make a migration end. Three copy attempts, each a Job of one pod, and a wall-clock budget from the request that covers one copy running into its own four-hour deadline with time left to boot; a migration past either is Failed, with the reason, until an operator retries or aborts it.
 	runtimeMigrationMaxAttempts = 3
 	runtimeMigrationBudget      = 6 * time.Hour
 
