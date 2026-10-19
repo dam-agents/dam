@@ -264,7 +264,7 @@ test("comes back with the writes a running guest synced", async () => {
   const wrote = inGuest(
     agentId,
     [
-      `printf '%s\\n' '${synced}' > ${home}/${syncedPath}`,
+      `printf '%s' '${synced}' > ${home}/${syncedPath}`,
       "sync",
       "echo wrote",
       `cat ${home}/${syncedPath}`,
@@ -296,7 +296,7 @@ test("comes back with the writes a running guest synced", async () => {
   const again = inGuest(
     agentId,
     [
-      `printf '%s\\n' 'after' > ${home}/${syncedPath}`,
+      `printf '%s' 'after' > ${home}/${syncedPath}`,
       "sync",
       "echo wrote",
       `cat ${home}/${syncedPath}`,
