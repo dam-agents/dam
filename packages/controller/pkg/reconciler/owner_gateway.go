@@ -435,11 +435,11 @@ func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desir
 		}
 		r.runnerRollMu.Lock()
 		defer r.runnerRollMu.Unlock()
-		rolling, err := r.ownerGatewaysMidRoll(ctx)
+		rolling, total, err := r.ownerGatewaysMidRoll(ctx)
 		if err != nil {
 			return err
 		}
-		limit, _ := runnerRolloutLimits(r.config.VM.Runner)
+		limit := runnerRollWidth(r.config.VM.Runner, total)
 		if others := slices.DeleteFunc(rolling, func(n string) bool { return n == existing.Name }); len(others) >= limit {
 			slog.Info("owner gateway: the template changed, waiting for other owner gateways to finish rolling", "deployment", existing.Name, "rolling", others)
 			return nil
@@ -454,18 +454,17 @@ func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desir
 	})
 }
 
-func (r *AgentReconciler) ownerGatewaysMidRoll(ctx context.Context) ([]string, error) {
+func (r *AgentReconciler) ownerGatewaysMidRoll(ctx context.Context) (rolling []string, total int, err error) {
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	var out []string
 	for _, dep := range list.Items {
 		if dep.Annotations[annRunnerRolledAt] != "" && !runnerPodRolledOut(&dep) {
-			out = append(out, dep.Name)
+			rolling = append(rolling, dep.Name)
 		}
 	}
-	return out, nil
+	return rolling, len(list.Items), nil
 }
 
 func (r *AgentReconciler) settleOwnerGatewayRoll(ctx context.Context, dep *appsv1.Deployment) error {

@@ -42,7 +42,7 @@ const (
 	legacyRunnerReleaseSuffix = "-release"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run, the runner image this controller is configured with, to the pod's loader over the runner's machine API, which hands the machines to it once the node's stager has staged it, so a new runner image reaches an owner without a pod restart. A hand-off reboots nothing, but a release that runs and then refuses the machines' ensures would still break every owner it reaches, so a new release is named only while fewer than `rollout.maxConcurrent` runners are mid-roll or mid-hand-off, the same width as a pod roll. A hand-off ends no turn, so it does not wait for idle agents. A runner whose pod is about to roll is left to the roll, which starts it on the configured image. The release is recorded before the runner is called, and named again on a later turn while the runner does not report it, so a failed call or a controller restart only delays the hand-off.
+// UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run, the runner image this controller is configured with, to the pod's loader over the runner's machine API, which hands the machines to it once the node's stager has staged it, so a new runner image reaches an owner without a pod restart. A hand-off reboots nothing, but a release that runs and then refuses the machines' ensures would still break every owner it reaches, so a new release is named only while fewer than the roll's width (`rollout.maxConcurrent`, or `rollout.maxConcurrentPercent` of the install's runners) of runners are mid-roll or mid-hand-off. A hand-off ends no turn, so it does not wait for idle agents. A runner whose pod is about to roll is left to the roll, which starts it on the configured image. The release is recorded before the runner is called, and named again on a later turn while the runner does not report it, so a failed call or a controller restart only delays the hand-off.
 func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string, rendered *appsv1.Deployment) error {
 	release := r.config.VM.Runner.Image
 	hash, err := runnerTemplateHash(runnerRollSpec(rendered.Spec))
@@ -277,12 +277,16 @@ func runnerRollSpec(spec appsv1.DeploymentSpec) appsv1.DeploymentSpec {
 	return spec
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. Only a release whose runner does not load against this pod's libc needs a new one, since its loader can never hand the machines to it. A runner that has not answered since it was named the release, for longer than a hand-off ever takes, rolls too; once it answers that it runs the release, or holds it as failed, that clock is cleared. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it. A runner that reports neither running nor targeting the release it was named has a pod that restarted and forgot it, and is named it again; one not named it yet is left to applyRunnerRelease, which names it only with a place in the roll.
+// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod whose shape is unchanged must still roll to take the configured release. A release marked `rollout.rebootRequired` does: its fix only a machine that booted it has, and a hand-off leaves a running machine on the runtime it booted, so the pod rolls and reboots the owner's machines. So does a release whose runner does not load against this pod's libc, since its loader can never hand the machines to it. A runner that has not answered since it was named the release, for longer than a hand-off ever takes, rolls too; once it answers that it runs the release, or holds it as failed, that clock is cleared. A release that is merely not staged yet comes by itself, and one that failed right after it took over is left to the next release rather than rolled onto, since a pod on it would fail the same way and take the machines down with it. A runner that reports neither running nor targeting the release it was named has a pod that restarted and forgot it, and is named it again; one not named it yet is left to applyRunnerRelease, which names it only with a place in the roll.
 func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
 	want := r.config.VM.Runner.Image
 	containers := existing.Spec.Template.Spec.Containers
 	if len(containers) == 0 || containers[0].Image == want {
 		return false
+	}
+	if r.config.VM.Runner.Rollout.RebootRequired {
+		slog.Info("vm runner: the release is marked rebootRequired, so the pod rolls onto it instead of handing off", "owner", owner, "release", want)
+		return true
 	}
 	client, err := r.runnerFor(ctx, owner)
 	if err != nil {

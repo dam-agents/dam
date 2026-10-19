@@ -330,7 +330,10 @@ virtualization:
     # image the pod's loader cannot take in place — reboots every machine
     # that owner has. The controller rolls
     # such a change across owners rather than all at once: at most
-    # `maxConcurrent` runners are mid-roll at a time, and a runner stays
+    # `maxConcurrent` runners are mid-roll at a time, or, where
+    # `maxConcurrentPercent` is set, that share of the runners the install
+    # has (rounded up, at least one), which is what keeps a full roll of a
+    # large install to hours rather than days. A runner stays
     # mid-roll until its new pod is ready and every machine that was ready
     # before the roll is ready again. `settleTimeout` bounds that wait, so a
     # machine that never comes back (its agent was stopped mid-roll) does not
@@ -350,8 +353,19 @@ virtualization:
     # ensure refused, or outlasts `settleTimeout` halts the release. Time
     # spent waiting for the node's stager to stage the release does not
     # count. The controller's sweep follows that many hand-offs at once.
+    # A hand-off leaves a running machine on the runtime it booted, so a
+    # release whose fix only a machine that booted it has — a new libkrun,
+    # guest kernel or platform-init — reaches running machines only by
+    # rebooting them. Mark that release `rebootRequired` for the deploy: its
+    # pods roll instead of handing off, and those rolls do not wait for a
+    # busy agent, so the fix reaches every machine within the roll rather
+    # than after `idleWait`. Remove the mark once every runner runs it.
     rollout:
       maxConcurrent: 1
+      # Set instead of `maxConcurrent` to express the width as a percentage
+      # of the install's runners; `maxConcurrent` is then ignored.
+      maxConcurrentPercent: 0
+      rebootRequired: false
       settleTimeout: 10m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner

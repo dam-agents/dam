@@ -138,9 +138,14 @@ type GatewayEgressPeer struct {
 }
 
 type VMRunnerRollout struct {
-	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
-	SettleTimeout Duration `json:"settleTimeout,omitempty"`
-	IdleWait      Duration `json:"idleWait,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how many runners may be mid-roll or mid-hand-off at once: a count, or, when MaxConcurrentPercent is set, that share of the runners the install has. A count alone cannot express a width that keeps up: one runner at a time takes an install of a thousand owners days to roll.
+	MaxConcurrent int `json:"maxConcurrent,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the roll's width as a share of the runners the install has, 1 to 100, rounded up to at least one runner. Zero leaves the width to MaxConcurrent.
+	MaxConcurrentPercent int      `json:"maxConcurrentPercent,omitempty"`
+	SettleTimeout        Duration `json:"settleTimeout,omitempty"`
+	IdleWait             Duration `json:"idleWait,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: a mark on the release being deployed, for one whose fix only a machine that booted it has — a new libkrun, guest kernel or platform-init. A hand-off leaves a running machine on the runtime it booted, so set, each owner's runner pod rolls onto the release instead, which reboots the owner's machines, and the roll does not wait for a busy agent, since waiting a day is what leaves a guest-reachable fix off running machines.
+	RebootRequired bool `json:"rebootRequired,omitempty"`
 }
 
 type AgentProbes struct {

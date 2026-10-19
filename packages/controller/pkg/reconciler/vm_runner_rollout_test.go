@@ -21,6 +21,7 @@ import (
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
+	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
@@ -898,4 +899,156 @@ func TestARunnerPodTakesTheInstallsAffinity(t *testing.T) {
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, offGPU, dep.Spec.Template.Spec.Affinity)
+}
+
+// TEST_SCENARIO: the roll's width is a count or a share of the install's runners. A share is rounded up, so a share of a few owners still moves one at a time, and a share of none is one rather than none.
+func TestTheRollWidthIsACountOrAShareOfTheInstall(t *testing.T) {
+	for _, tc := range []struct {
+		name      string
+		count     int
+		percent   int
+		total     int
+		wantWidth int
+	}{
+		{name: "the count", count: 3, total: 100, wantWidth: 3},
+		{name: "a share", percent: 10, total: 100, wantWidth: 10},
+		{name: "a share rounds up", percent: 10, total: 91, wantWidth: 10},
+		{name: "a share of a few owners moves one", percent: 5, total: 3, wantWidth: 1},
+		{name: "a share of no owner is one", percent: 50, total: 0, wantWidth: 1},
+		{name: "a share wins over the count", count: 1, percent: 100, total: 4, wantWidth: 4},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.wantWidth, runnerRollWidth(config.VMRunnerSpec{Rollout: config.VMRunnerRollout{
+				MaxConcurrent: tc.count, MaxConcurrentPercent: tc.percent,
+			}}, tc.total))
+		})
+	}
+}
+
+// TEST_SCENARIO: an install too large for one runner at a time states the roll's width as a share of its runners. This one has five, and half of them is three: three runners roll at once and the rest wait, where `maxConcurrent: 1` would move them one at a time.
+func TestARollWidthInPercentRollsThatManyOwnersAtOnce(t *testing.T) {
+	ctx := context.Background()
+	const ours = "owner-d"
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b", "owner-c", ours)
+	r.config.VM.Runner.Rollout.MaxConcurrent = 1
+	r.config.VM.Runner.Rollout.MaxConcurrentPercent = 50
+	changeRunnerPod(r)
+	_, total, err := r.runnersMidRoll(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 5, total)
+	assert.Equal(t, 3, runnerRollWidth(r.config.VM.Runner, total))
+
+	for _, owner := range []string{"owner-a", "owner-b", "owner-c", ours} {
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	for _, owner := range []string{"owner-a", "owner-b", "owner-c"} {
+		assert.Equal(t, runnerV2, runnerImageOf(t, r, owner), "half of five rounds up to three runners mid-roll")
+	}
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, ours), "the fourth runner waits for a place")
+
+	setRolledAt(t, r, "owner-a", time.Now())
+	settleRunnerPod(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, ours, r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, ours), "a settled roll frees its place")
+}
+
+// TEST_SCENARIO: a release whose fix only a machine that booted it has is marked `rollout.rebootRequired`. Its runners roll onto it instead of handing off, so their machines reboot onto the release, and the roll does not wait for a busy agent: a hand-off would leave every running machine on the runtime it booted for as long as the owner keeps working, which is a day at most.
+func TestAReleaseMarkedRebootRequiredRollsThePodsWithoutWaitingForIdle(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	createRolloutRunner(t, r, testOwner)
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	r.config.VM.Runner.Image = runnerV2
+	r.config.VM.Runner.Rollout.RebootRequired = true
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, testOwner), "the pod rolls onto the release, rebooting the machine")
+	assert.Empty(t, nodes[testOwner].named, "nothing is handed off: a machine booted by the release is the point")
+	assert.NotContains(t, runnerAnnotations(t, r, testOwner), annRunnerBusy, "the roll waits for no agent's turn")
+
+	settleRunnerPod(t, r, testOwner)
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	assert.NotContains(t, runnerAnnotations(t, r, testOwner), annRunnerRolledAt, "the roll settles once the machine is back on the new pod")
+}
+
+// TEST_SCENARIO: a release reaches every owner, and the one before it is put back — a rollback — with a machine live on each. The machines keep running throughout, because the release reaches the pod in place and no pod rolls: what a rollback must not cost is the guests.
+func TestAReleaseRollsForwardAndBackWithALiveMachine(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	createRolloutRunner(t, r, testOwner)
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+
+	handOff := func(t *testing.T, want string) {
+		t.Helper()
+		r.config.VM.Runner.Image = want
+		require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+		require.Equal(t, want, namedRelease(t, r, testOwner), "the release is named over the machine API")
+		nodes[testOwner].release = vmrunner.RunnerRelease{Running: want, Target: want}
+		backdateHandoff(t, r, testOwner, runnerHandoffObserve+time.Second)
+		require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+		require.NotContains(t, runnerAnnotations(t, r, testOwner), annRunnerHandoffAt, "the hand-off settles")
+		assert.Equal(t, runnerV1, runnerImageOf(t, r, testOwner), "no pod rolled, so no machine rebooted")
+		nodes[testOwner].mu.Lock()
+		ready := nodes[testOwner].statuses["my-agent"].Ready
+		nodes[testOwner].mu.Unlock()
+		assert.True(t, ready, "the guest is still up")
+	}
+
+	handOff(t, runnerV2)
+	handOff(t, runnerV1)
+	assert.Equal(t, []string{runnerV2, runnerV1}, nodes[testOwner].named, "one hand-off forward, one back")
+}
+
+// TEST_SCENARIO: the mark is what drops the wait, not the change itself. The same changed pod, with an agent mid-turn, is held while the release is a hand-off and rolls at once once the release is marked `rebootRequired`.
+func TestTheRebootRequiredMarkIsWhatDropsTheIdleWait(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(_ context.Context, id string) bool { return id == "busy" }
+	changeRunnerPod(r)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "an agent mid-turn holds the roll")
+	assert.Contains(t, runnerAnnotations(t, r, "owner-a"), annRunnerBusy)
+
+	r.config.VM.Runner.Rollout.RebootRequired = true
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "a marked release reboots the machine mid-turn rather than wait")
+}
+
+// TEST_SCENARIO: a marked release rolls forward and back, as a rollback deploys the release before it: each rolls the owner's pod, and the machine that was up is up again on the new pod. The rollback is what an operator reaches for when the candidate is wrong, so the way back costs the same roll the way there did.
+func TestAMarkedReleaseRollsForwardAndBack(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	createRolloutRunner(t, r, testOwner)
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.config.VM.Runner.Rollout.RebootRequired = true
+
+	roll := func(t *testing.T, want string) {
+		t.Helper()
+		r.config.VM.Runner.Image = want
+		require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+		assert.Equal(t, want, runnerImageOf(t, r, testOwner), "the marked release rolls the pod")
+		settleRunnerPod(t, r, testOwner)
+		nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+		require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+		assert.NotContains(t, runnerAnnotations(t, r, testOwner), annRunnerRolledAt, "the roll settles once the machine is back")
+	}
+
+	roll(t, runnerV2)
+	roll(t, runnerV1)
+	assert.Empty(t, nodes[testOwner].named, "no release was handed off: every machine booted the release it needed")
 }
