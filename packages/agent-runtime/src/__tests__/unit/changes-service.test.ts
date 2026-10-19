@@ -261,13 +261,17 @@ describe("changes service", { timeout: 30_000 }, () => {
    * TEST_SCENARIO: $HOME is a repository that ignores everything but its own
    * files. A session that edits a file $HOME ignores — in a scratch directory
    * with no repository of its own — has not touched $HOME, so it gets no
-   * record; an edit of a file $HOME tracks does.
+   * record; an edit of a file $HOME re-includes, or tracks although a pattern
+   * ignores it, does.
    */
-  it("should not record a repository for a file it ignores", async () => {
+  it("should record a repository only for a file it does not ignore", async () => {
     await repository(home, {
       ".gitignore": "/*\n!/.gitignore\n!/notes.md\n",
       "notes.md": "a\n",
     });
+    await write(path.join(home, "forced.log"), "a\n");
+    await git(home, "add", "-f", "forced.log");
+    await git(home, "commit", "--quiet", "-m", "force-add");
     await write(path.join(home, "work", "scratch", "a.txt"), "a\n");
 
     await service.onToolActivity({
@@ -288,6 +292,16 @@ describe("changes service", { timeout: 30_000 }, () => {
       settled: false,
     });
     expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([home]);
+
+    await write(path.join(home, "forced.log"), "b\n");
+    await service.onToolActivity({
+      sessionId: "s2",
+      toolCallId: null,
+      started: false,
+      editedPaths: [path.join(home, "forced.log")],
+      settled: false,
+    });
+    expect(service.repositoriesOf("s2").map((r) => r.path)).toEqual([home]);
   });
 
   /**
