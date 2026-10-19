@@ -204,7 +204,10 @@ virtualization:
   runner:
     # Published charts pin this by digest, which a rebuild that changes nothing
     # in the image keeps, so an upgrade that leaves the runner unchanged doesn't
-    # roll the pod and stop every machine. A digest wins over the tag.
+    # roll the pod and stop every machine (unless this release declares a
+    # reboot key the pod it reaches does not run, which rolls the pods to
+    # reboot them; a pod whose own release declares no key takes it in
+    # place). A digest wins over the tag.
     image:
       repository: quay.io/dam-agents/vm-runner
       tag: ""
@@ -330,14 +333,17 @@ virtualization:
     # image the pod's loader cannot take in place — reboots every machine
     # that owner has. The controller rolls
     # such a change across owners rather than all at once: at most
-    # `maxConcurrent` runners are mid-roll at a time, and a runner stays
+    # `maxConcurrent` runners are mid-roll at a time, or, where
+    # `maxConcurrentPercent` is set, that share of the runners the install
+    # has (rounded up, at least one), which is what keeps a full roll of a
+    # large install to hours rather than days. A runner stays
     # mid-roll until its new pod is ready and every machine that was ready
     # before the roll is ready again. `settleTimeout` bounds that wait, so a
     # machine that never comes back (its agent was stopped mid-roll) does not
     # stall everyone else's upgrade. A new owner's runner is created at once.
     # A pass visits each runner about once every five minutes while its
     # agents run, and on the controller's ten-minute sweep otherwise, so a
-    # full roll takes roughly owners / maxConcurrent × (runner restart +
+    # full roll takes roughly owners / the roll's width × (runner restart +
     # machine boot).
     # A runner whose owner has an agent in the middle of a turn does not take
     # a free place in the roll: it is offered again on the next pass, and
@@ -350,8 +356,23 @@ virtualization:
     # ensure refused, or outlasts `settleTimeout` halts the release. Time
     # spent waiting for the node's stager to stage the release does not
     # count. The controller's sweep follows that many hand-offs at once.
+    # A hand-off leaves a running machine on the runtime it booted, so a
+    # release whose fix only a machine that booted it has — a new libkrun,
+    # guest kernel or platform-init — reaches running machines only by
+    # rebooting them. Such a release declares a reboot key the pod before it
+    # does not run (`packages/vm-runner/reboot-id`): a runner refuses it, its
+    # pod rolls instead, and that roll does not wait for a busy agent, so the
+    # fix reaches every machine within the roll rather than after `idleWait`.
+    # A pod built from a release that declares no key takes the release in
+    # place, since there is nothing to compare it with.
+    # A roll for a changed pod shape keeps its idle wait. A runner that
+    # already holds the release as failed keeps its pod: a pod on the release
+    # would fail the same way and take its machines with it.
     rollout:
       maxConcurrent: 1
+      # Set instead of `maxConcurrent` to express the width as a percentage
+      # of the install's runners; `maxConcurrent` is then ignored.
+      maxConcurrentPercent: 0
       settleTimeout: 10m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
@@ -361,14 +382,18 @@ virtualization:
     # it without a restart: the controller names the release over the
     # runner's machine API, the pod's loader drains the old runner, starts
     # the new one from this directory, and the new runner adopts every
-    # machine still running, so no machine reboots. A release built against
-    # another VM runtime (a new smolvm, libkrun or crane) brings its runtime
-    # along: machines already running keep the runtime they booted, and
-    # machines started after the hand-off boot the new one. Only a release
-    # that cannot load in the pod (a newer base image's libc) still rolls the
-    # pods, through `rollout`. The stager is the only writer; runners mount
-    # it read-only. Each install stages into its own subdirectory, named
-    # after `agentNamespace`, because every stager keeps only the newest few
+    # machine still running, so no machine reboots, unless the release
+    # declares a reboot key the pod it reaches does not run, which rolls the
+    # pods to reboot the machines, while a pod whose own release declares no
+    # key takes it in place. A release built against another VM runtime
+    # (a new smolvm, libkrun or crane) brings its runtime along: machines
+    # already running keep the runtime they booted, and machines started after
+    # the hand-off boot the new one. A release the pod's loader cannot load (a
+    # newer base image's libc) rolls the pods through `rollout` too, as does
+    # a release declaring another reboot key than its pod's release.
+    # The stager is the only writer; runners mount it read-only. Each
+    # install stages into its own subdirectory, named after
+    # `agentNamespace`, because every stager keeps only the newest few
     # releases in its directory. On OpenShift it needs `scc`, as
     # `imageCache.hostPath` does: the stager labels the directory for
     # containers, as spc_t, so the confined runners can read it.
