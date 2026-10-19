@@ -128,11 +128,12 @@ describe("convertedDefaultModel", () => {
     expect(convert("claude-opus-3")).toBeNull();
   });
 
-  // TEST_SCENARIO: the harness's own default is the model the Agent's calls mostly ran, the first one the provider still lists.
-  it("takes the model the agent ran for the harness default", () => {
-    expect(convert("default", ["claude-opus-3", "claude-opus-4-8"])).toBe(
+  // TEST_SCENARIO: the harness's own default is the model the Agent's calls mostly ran when the provider lists it, and a model they ran less never stands in for an unlisted one.
+  it("takes the model the agent mostly ran for the harness default", () => {
+    expect(convert("default", ["claude-opus-4-8", "claude-opus-3"])).toBe(
       "anthropic/claude-opus-4-8",
     );
+    expect(convert("default", ["claude-opus-3", "claude-opus-4-8"])).toBeNull();
     expect(convert(null, ["claude/claude-sonnet-5-5"])).toBe(
       "anthropic/claude-sonnet-5-5",
     );

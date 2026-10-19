@@ -15,9 +15,10 @@ const plain = (name: string, alias: string): string =>
  * word (opus, `opus[1m]`) is that provider's newest model carrying exactly
  * that word, never another tier in its place; a model id is kept when the
  * provider lists it; the harness's own default is the model the Agent's calls
- * mostly ran, when the provider lists it, under that name or as the one
- * listed id ending in it (Claude Code records `claude-opus-4-8` for IBM's
- * `aws/claude-opus-4-8`). Null when none of these holds, so
+ * mostly ran (`ran` ordered by output tokens, most first), when the provider
+ * lists it, under that name or as the one listed id ending in it (Claude Code
+ * records `claude-opus-4-8` for IBM's `aws/claude-opus-4-8`); a model the
+ * calls ran less never stands in for it. Null when none of these holds, so
  * the owner picks the default instead of the platform guessing it.
  */
 export function convertedDefaultModel(input: {
@@ -40,11 +41,9 @@ export function convertedDefaultModel(input: {
     return tail.length === 1 ? tail[0] : undefined;
   };
   if (setting === "" || plain(setting, alias) === "default") {
-    for (const name of input.ran) {
-      const hit = ranAs(name);
-      if (hit) return qualified(hit);
-    }
-    return null;
+    const [mostly] = input.ran;
+    const hit = mostly === undefined ? undefined : ranAs(mostly);
+    return hit ? qualified(hit) : null;
   }
   const tier = claudeTierOf(setting);
   if (tier) {
