@@ -353,7 +353,7 @@ A channel message becoming an agent turn — the inbound relay into an ACP sessi
 
 ## Per-Agent vs. platform channel
 
-Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm, a Slack bot token per workspace from its install handshake — and a conversation→Agent binding table, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
+Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm, a Slack bot token per workspace from its install handshake — and a binding table, keyed by conversation on Slack and by chat on Telegram, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
 The verbs match; the spelling follows each messenger — Slack prefixes its registered slash command, Telegram uses bare ones.
 Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
 

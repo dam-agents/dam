@@ -33,6 +33,7 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
+  telegramChatOf,
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
@@ -77,13 +78,6 @@ export interface TelegramConversationsPort {
   ): Promise<"bound" | "conflict">;
   listByAgent(agentId: string): Promise<string[]>;
   unbind(conversationId: string): Promise<void>;
-}
-
-export function telegramChatOf(conversationId: string): string {
-  const [surface, chatId, topicId] = conversationId.split(":");
-  return chatId === "biz" || topicId === undefined
-    ? conversationId
-    : `${surface}:${chatId}`;
 }
 
 export interface ChannelConversation {
