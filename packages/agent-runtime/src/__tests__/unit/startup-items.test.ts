@@ -98,6 +98,16 @@ describe("Startup Item rows", () => {
     ).toEqual(["detached"]);
   });
 
+  // TEST_SCENARIO: a mark that fails the id rule makes no Startup Item, which no Login item would list; the tree stays a Detached Process, so nothing that runs is hidden.
+  it("leaves a tree with a malformed mark a Detached Process", () => {
+    const { running } = inventory([
+      proc(300, 1, "sh -c serve", "../escape"),
+      proc(301, 300, "serve", "../escape"),
+    ]);
+
+    expect(running.find((row) => row.pid === 300)?.kind).toBe("detached");
+  });
+
   // TEST_SCENARIO: the panel shows every configured item, so the user can turn a disabled one back on or read the log of one that exited; an item runs when the scan found its row.
   it("lists configured items with or without a running row", () => {
     const { running, trees } = inventory([

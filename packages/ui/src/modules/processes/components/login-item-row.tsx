@@ -32,7 +32,6 @@ export function LoginItemRow({
       className={cn(
         "group flex cursor-pointer items-center gap-2 border-b border-border py-2.5 pl-4 pr-2 transition-colors",
         outputOpen ? "bg-muted" : "hover:bg-muted/60",
-        item.disabled && "text-muted-foreground",
       )}
       {...clickableProps(toggleOutput)}
     >
@@ -47,7 +46,11 @@ export function LoginItemRow({
                 : "bg-muted-foreground/40",
             )}
           />
-          <ProcessCommand command={item.command} title={item.command} />
+          <ProcessCommand
+            command={item.command}
+            title={item.command}
+            muted={item.disabled}
+          />
         </div>
         <span className="truncate text-2xs text-muted-foreground">
           {item.id} · {loginItemStatus(item)}

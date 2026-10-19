@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The Processes list renders Login items in a section of their own. With only Login items it lists them rather than saying nothing runs; an agent that runs an older runtime, whose list carries no Login items, still renders, because every fetch parses the list through the schema that defaults them; a running item no entry names any more is listed and says so.
+// TEST_OVERVIEW: The Processes list renders Login items in a section of their own. With only Login items it lists them rather than saying nothing runs; an agent that runs an older runtime, whose list carries no Login items, still renders, because every fetch parses the list through the schema that defaults them; a running item no entry names any more is listed and says so; an item that is off shows its command muted.
 import type { ProcessList as ProcessListData } from "agent-runtime-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -94,5 +94,27 @@ describe("the Processes list", () => {
     });
 
     expect(html).toContain("Running, no longer in the list");
+  });
+
+  // TEST_SCENARIO: an item the user turned off shows its command muted, so the row reads as off at a glance and not only in its status line; an item that is on shows it at full strength.
+  it("mutes the command of an item that is off", () => {
+    const command = (html: string) =>
+      /<span dir="rtl" class="([^"]*font-mono[^"]*)">/.exec(html)?.[1] ?? "";
+    const off = render({
+      running: [],
+      finished: [],
+      pendingRestart: null,
+      startupItems: [{ ...item, disabled: true }],
+    });
+    const on = render({
+      running: [],
+      finished: [],
+      pendingRestart: null,
+      startupItems: [item],
+    });
+
+    expect(command(off)).toContain("text-muted-foreground");
+    expect(command(on)).toContain("text-foreground");
+    expect(command(on)).not.toContain("text-muted-foreground");
   });
 });

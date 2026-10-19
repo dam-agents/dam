@@ -32,6 +32,15 @@ const ITEMS_CGROUP = "/sys/fs/cgroup/platform-startup";
 // openrc config: never the caller's whole environment, which holds the agent's
 // credentials when the agent-runtime is the caller.
 const RC_CONF = "/etc/rc.conf.d/platform.conf";
+// Every start and stop holds the list lock, which platform-startup and the
+// agent-runtime hold for their changes, so two controls never both pass the
+// running check and start an item twice. platform-startup runs this under the
+// lock already, and says so; any other caller runs it under flock(1), which
+// holds the lock for the whole run, with -o so no item inherits it.
+const LOCK = join(HOME, ".platform", "startup.lock");
+const LOCKED = "PLATFORM_STARTUP_LOCKED";
+const LOCK_WAIT_S = "60";
+const LOCK_TIMEOUT_EXIT = 75;
 
 function itemEnv(item) {
   let allowed = ["PATH"];
@@ -118,6 +127,18 @@ function stop(id) {
   if (running(id)) return false;
   rmSync(pidfile(id), { force: true });
   return true;
+}
+
+if (process.env[LOCKED] !== "1") {
+  mkdirSync(join(HOME, ".platform"), { recursive: true });
+  const locked = spawnSync(
+    "flock",
+    ["-o", "-w", LOCK_WAIT_S, "-E", String(LOCK_TIMEOUT_EXIT), LOCK, process.execPath, process.argv[1], ...process.argv.slice(2)],
+    { stdio: "inherit", env: { ...process.env, [LOCKED]: "1" } },
+  );
+  if (locked.error) fail(`could not lock the Startup Items list: ${locked.error.message}`);
+  if (locked.status === LOCK_TIMEOUT_EXIT) fail("the Startup Items list stayed locked; try again");
+  process.exit(locked.status ?? 1);
 }
 
 try {

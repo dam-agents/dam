@@ -134,7 +134,8 @@ The runtime reads the list the way the boot does: each entry on its own, under t
 The user restarts, stops, turns off or removes an item there, through the image's own control; turning one off is written into the list, so the next boot skips it, and `platform-startup` refuses to turn it on again or remove it, the same rule as a user's choice about a kept process.
 A remove takes the entry out of the list only once the item stopped; one that will not stop stays listed, and the user is told so.
 An `add` that replaces an item writes the new command only once the old one stopped, so the list never names a command that does not run.
-`platform-startup` and the runtime each hold one lock on the list for every change they make to it, so the user's choice and the agent's change never lose each other's write.
+`platform-startup`, the runtime and the image's control each hold one lock on the list for every change and every start or stop, so the user's choice and the agent's change never lose each other's write, and two controls never start one item twice.
+An `add` stops the item first whatever the list says, since one can run with no entry.
 A choice the user made is kept when the control then fails, and the item's status says so: an item turned off that still runs reads as off from the next wake, still running.
 Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc, and an image without the control has none.
 

@@ -83,7 +83,9 @@ switch (action) {
     const list = readList();
     const before = list.items.find((item) => item.id === id);
     if (before?.disabled) fail(`the user disabled ${id}; it stays disabled until they enable it`);
-    if (before && ctl("stop", id) !== 0) fail(`${id} could not be stopped, so it keeps its old command`);
+    // An item can run with no entry, its entry edited out while it ran, so the
+    // stop runs whatever the list says; a stop of nothing succeeds.
+    if (ctl("stop", id) !== 0) fail(`${id} could not be stopped, so it keeps its old command`);
     const item = { id, command: command.join(" ") };
     list.items = [...list.items.filter((i) => i.id !== id), item];
     writeList(list);
