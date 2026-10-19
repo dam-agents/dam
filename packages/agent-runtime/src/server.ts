@@ -568,6 +568,7 @@ sessionState = {
 };
 
 const { service: processesService, keepMarks } = processes.start({
+  agentHome: homeDir,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),

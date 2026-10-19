@@ -9,7 +9,7 @@ import type { ProcessesDocument, TrackedRow } from "../domain/inventory.js";
 const trackedRowSchema: z.ZodType<TrackedRow> = z.object({
   identity: z.string(),
   key: z.string(),
-  kind: z.enum(["harness-task", "detached"]),
+  kind: z.enum(["harness-task", "detached", "startup-item"]),
   procKey: z.string().nullable(),
   command: z.string(),
   startedAt: z.string(),

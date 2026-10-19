@@ -4,6 +4,7 @@ import {
   PROCESS_OUTPUT_MAX_BYTES,
   type FinishedRow,
   type KeepMarkRequest,
+  type ProcessesDomainError,
   type ProcessesService,
   type ProcessNotice,
   type ProcessRow,
@@ -42,9 +43,11 @@ import {
   type ProcSnapshot,
   type ScannedProcess,
 } from "../domain/snapshot.js";
+import { startupItemsFrom } from "../domain/startup-items.js";
 import type { OutputReader } from "../infrastructure/output-file.js";
 import type { ProcessTable } from "../infrastructure/proc-scan.js";
 import type { ProcessSignals } from "../infrastructure/signals.js";
+import type { StartupItemStore } from "../infrastructure/startup-items.js";
 import type { KeepState } from "./keep-state.js";
 
 const FRESH_MS = 3_000;
@@ -77,6 +80,7 @@ export interface ProcessesServiceDeps {
   keep: KeepState;
   runtimePid: number;
   harnessWork: HarnessWork;
+  startupItems: StartupItemStore;
   log: (msg: string) => void;
 }
 
@@ -139,7 +143,9 @@ function withDescendants(
  * a process or group that took over a pid of the tree meanwhile. Each scan
  * publishes how many Detached Processes keep the agent awake, which makes the
  * runtime busy. It also reports a harness restart that waits for kept
- * Harness Tasks, and applies it on request. Watchers get a data-less notice
+ * Harness Tasks, and applies it on request. It lists the agent's Startup
+ * Items beside the rows, and starts, stops, disables and removes one for the
+ * user through the image's own control. Watchers get a data-less notice
  * when a row appears, goes, or changes whether it keeps the agent awake, and
  * when a waiting restart appears or goes; CPU and memory changes are polled.
  */
@@ -345,6 +351,45 @@ export function createProcessesService(
     }
   }
 
+  function rowStartupItem(row: ProcessRow): string | null {
+    if (row.kind !== "startup-item") return null;
+    return (
+      latest?.trees.find((tree) => tree.key === row.key)?.startupItem ?? null
+    );
+  }
+
+  function listStartupItems(running: ProcessRow[]) {
+    if (!deps.startupItems.available) return [];
+    return startupItemsFrom(
+      deps.startupItems.list(),
+      running,
+      deps.startupItems.logPath,
+      rowStartupItem,
+    );
+  }
+
+  function startupItemLog(key: string): string | null {
+    const id = /^startup:(.+)$/.exec(key)?.[1];
+    if (!id || !deps.startupItems.list().some((item) => item.id === id))
+      return null;
+    return deps.startupItems.logPath(id);
+  }
+
+  async function runStartupItem(
+    action: "start" | "stop" | "restart",
+    id: string,
+  ): Promise<Result<void, ProcessesDomainError>> {
+    const failure = await deps.startupItems.run(action, id);
+    await scanFromNow();
+    if (failure !== null) return err({ kind: "NotAllowed", message: failure });
+    return ok(undefined);
+  }
+
+  function knownStartupItem(id: string) {
+    if (!deps.startupItems.available) return null;
+    return deps.startupItems.list().find((item) => item.id === id) ?? null;
+  }
+
   const backgroundTimer = setInterval(() => {
     backgroundTicks += 1;
     if (keepAlive || backgroundTicks % UNKEPT_SCAN_EVERY === 0) void refresh();
@@ -360,6 +405,7 @@ export function createProcessesService(
         running,
         finished: deps.document.read().finished,
         pendingRestart: deps.harnessWork.pendingRestart(),
+        startupItems: listStartupItems(running),
       };
     },
 
@@ -391,6 +437,7 @@ export function createProcessesService(
         running.find((row) => row.key === key)?.outputPath ??
         deps.document.read().finished.find((row) => row.key === key)
           ?.outputPath ??
+        startupItemLog(key) ??
         null;
       if (path === null) return err({ kind: "NotFound", key });
       const output = await deps.outputs.tail(path, PROCESS_OUTPUT_MAX_BYTES);
@@ -478,6 +525,41 @@ export function createProcessesService(
       deps.log("the user applied the waiting harness restart");
       await scanFromNow();
       return ok(undefined);
+    },
+
+    async restartStartupItem(id) {
+      const item = knownStartupItem(id);
+      if (!item) return err({ kind: "NotFound", key: id });
+      if (item.disabled)
+        return err({
+          kind: "NotAllowed",
+          message: "This login item is disabled. Enable it to start it.",
+        });
+      deps.log(`the user restarted Startup Item ${id}`);
+      return runStartupItem("restart", id);
+    },
+
+    async stopStartupItem(id) {
+      if (!knownStartupItem(id)) return err({ kind: "NotFound", key: id });
+      deps.log(`the user stopped Startup Item ${id}`);
+      return runStartupItem("stop", id);
+    },
+
+    async setStartupItemEnabled(id, enabled) {
+      if (!knownStartupItem(id)) return err({ kind: "NotFound", key: id });
+      deps.startupItems.setDisabled(id, !enabled);
+      deps.log(
+        `the user ${enabled ? "enabled" : "disabled"} Startup Item ${id}`,
+      );
+      return runStartupItem(enabled ? "start" : "stop", id);
+    },
+
+    async removeStartupItem(id) {
+      if (!knownStartupItem(id)) return err({ kind: "NotFound", key: id });
+      deps.log(`the user removed Startup Item ${id}`);
+      const stopped = await runStartupItem("stop", id);
+      deps.startupItems.remove(id);
+      return stopped;
     },
 
     async mark(request) {

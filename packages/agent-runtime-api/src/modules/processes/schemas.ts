@@ -2,7 +2,12 @@ import { z } from "zod";
 
 export const PROCESS_OUTPUT_MAX_BYTES = 64 * 1024;
 
-export const processKindSchema = z.enum(["turn", "harness-task", "detached"]);
+export const processKindSchema = z.enum([
+  "turn",
+  "harness-task",
+  "detached",
+  "startup-item",
+]);
 
 export const keepSourceSchema = z.enum(["default", "agent", "user"]);
 
@@ -36,7 +41,7 @@ export const processRowSchema = z.object({
 
 export const finishedRowSchema = z.object({
   key: z.string(),
-  kind: z.enum(["harness-task", "detached"]),
+  kind: z.enum(["harness-task", "detached", "startup-item"]),
   command: z.string(),
   startedAt: z.string(),
   finishedAt: z.string(),
@@ -57,10 +62,24 @@ export const pendingRestartSchema = z.object({
   }),
 });
 
+export const startupItemIdSchema = z
+  .string()
+  .regex(/^[a-z0-9][a-z0-9-]{0,39}$/);
+
+export const startupItemSchema = z.object({
+  id: startupItemIdSchema,
+  command: z.string(),
+  disabled: z.boolean(),
+  running: z.boolean(),
+  rowKey: z.string().nullable(),
+  outputPath: z.string(),
+});
+
 export const processListSchema = z.object({
   running: z.array(processRowSchema),
   finished: z.array(finishedRowSchema),
   pendingRestart: pendingRestartSchema.nullable(),
+  startupItems: z.array(startupItemSchema).default([]),
 });
 
 export const processKeyInputSchema = z.object({
@@ -69,6 +88,14 @@ export const processKeyInputSchema = z.object({
 
 export const setKeepInputSchema = processKeyInputSchema.extend({
   keepsAwake: z.boolean(),
+});
+
+export const startupItemInputSchema = z.object({
+  id: startupItemIdSchema,
+});
+
+export const setStartupItemEnabledInputSchema = startupItemInputSchema.extend({
+  enabled: z.boolean(),
 });
 
 const markedPidSchema = z.number().int().positive();

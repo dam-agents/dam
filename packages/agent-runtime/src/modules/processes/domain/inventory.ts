@@ -16,7 +16,7 @@ export const FINISHED_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 export interface TrackedRow {
   identity: string;
   key: string;
-  kind: "harness-task" | "detached";
+  kind: "harness-task" | "detached" | "startup-item";
   procKey: string | null;
   command: string;
   startedAt: string;

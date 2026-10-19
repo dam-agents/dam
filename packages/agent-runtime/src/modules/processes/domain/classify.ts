@@ -17,6 +17,11 @@ export interface ProcessTree {
   shown: ScannedProcess | null;
   members: ScannedProcess[];
   task: ReportedTask | null;
+  startupItem?: string;
+}
+
+export function startupItemIdentity(id: string): string {
+  return `startup:${id}`;
 }
 
 export function taskIdentity(
@@ -89,7 +94,9 @@ export function platformOwnPids(
  * Process is a child of the reaper an orphan is re-parented to: PID 1, or an ancestor of
  * agent-runtime acting as subreaper (catatonit when it is not PID 1). When
  * its root is only a forked copy of a tool shell, the row shows the command
- * below it. Work under an attached PTY or SSH shell is not listed until it
+ * below it. Such a tree that carries PLATFORM_STARTUP is a Startup Item
+ * instead, one row per item: the loop that runs it is the root, and the row
+ * shows the item's own command below it. Work under an attached PTY or SSH shell is not listed until it
  * detaches.
  */
 export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
@@ -195,6 +202,25 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
     if (!ancestors.has(root.ppid)) continue;
     if (ancestors.has(root.pid) || root.pid === input.runtimePid) continue;
     const members = [root, ...descendantsOf(root)];
+    const startupItem = members.find(
+      (m) => m.startupItem !== null,
+    )?.startupItem;
+    if (startupItem) {
+      const item = members.find(
+        (m) => m.startupItem === startupItem && m.pid !== root.pid,
+      );
+      trees.push({
+        identity: startupItemIdentity(startupItem),
+        key: procKey(root),
+        kind: "startup-item",
+        root,
+        shown: item ?? root,
+        members,
+        task: null,
+        startupItem,
+      });
+      continue;
+    }
     let shown = root;
     for (
       let only = children.get(shown.pid);

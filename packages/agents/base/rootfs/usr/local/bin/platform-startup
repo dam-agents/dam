@@ -19,7 +19,8 @@ when it wakes. <id> is lowercase letters, digits and hyphens.
 
 add starts the item at once, and replaces one with the same id. The user sees
 Startup Items in the agent's Processes panel as Login items, and can stop,
-restart or disable them there; an item the user disabled stays disabled.
+restart, disable or remove them there; an item the user disabled stays
+disabled, and only the user can remove it.
 `;
 
 const LIST = join(homedir(), ".platform", "startup.json");
@@ -74,7 +75,9 @@ switch (action) {
     const [id] = rest;
     if (!id) fail(`give an id\n\n${USAGE}`, 2);
     const list = readList();
-    if (!list.items.some((item) => item.id === id)) fail(`no Startup Item ${id}`);
+    const item = list.items.find((i) => i.id === id);
+    if (!item) fail(`no Startup Item ${id}`);
+    if (item.disabled) fail(`the user disabled ${id}; only they can remove it, in the Processes panel`);
     ctl("stop", id);
     list.items = list.items.filter((item) => item.id !== id);
     writeList(list);
