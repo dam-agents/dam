@@ -26,7 +26,7 @@ export function SidebarActivityRow({
   conversation: string | undefined;
   onOpen: () => void;
 }) {
-  const { session, agent, at, working, unread } = item;
+  const { session, agent, at, working, unread, needsApproval } = item;
   const messenger = MESSENGERS[session.type];
   return (
     <li>
@@ -49,7 +49,14 @@ export function SidebarActivityRow({
           >
             {session.title ?? "Session"}
           </span>
-          {working ? (
+          {needsApproval ? (
+            <span
+              data-testid="session-approval-dot"
+              role="img"
+              aria-label="Needs your approval"
+              className="size-2 shrink-0 rounded-full bg-warning"
+            />
+          ) : working ? (
             <WorkingDots
               className="shrink-0 text-muted-foreground"
               title="Working"

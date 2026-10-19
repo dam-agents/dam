@@ -32,6 +32,7 @@ import {
   classicColumns,
   type ClassicPanel,
   LEFT_MIN_W,
+  PANEL_MIN_W,
 } from "../lib/classic-chat-layout.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
@@ -243,7 +244,7 @@ export function ClassicChatLayout({
                   rightWRef.current ?? panelRef.current?.offsetWidth ?? 0,
                   max,
                 );
-                const v = Math.max(240, Math.min(max, base + d));
+                const v = Math.max(PANEL_MIN_W, Math.min(max, base + d));
                 rightWRef.current = v;
                 writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
                 setRightW(v);

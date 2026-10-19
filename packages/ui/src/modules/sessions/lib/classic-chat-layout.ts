@@ -3,7 +3,7 @@ import type { SidePanelTab } from "./side-panel.js";
 export const LEFT_MIN_W = 240;
 const LEFT_MAX_W = 400;
 const CHAT_MIN_W = 320;
-const PANEL_MIN_W = 320;
+export const PANEL_MIN_W = 320;
 
 export function clampLeftWidth(width: number): number {
   return Math.max(LEFT_MIN_W, Math.min(LEFT_MAX_W, width));

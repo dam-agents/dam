@@ -719,7 +719,6 @@ export function ChatView() {
       openProcessOutputKey,
     ].join("\n");
   const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
-  if (phoneHiddenDock !== null && classicTab !== null) setPhoneHiddenDock(null);
   const dockHiddenOnPhone =
     phoneHiddenDock !== null && phoneHiddenDock === dockedItem;
   const revealDock = () => {
