@@ -68,6 +68,8 @@ type AgentReconciler struct {
 	nodeCache             corelisters.NodeLister
 	nodeCacheSynced       cache.InformerSynced
 	vmRunning             sync.Map
+	vmRunningSince        sync.Map
+	vmRecoveredAt         sync.Map
 	vmLive                sync.Map
 	vmAnswers             sync.Map
 	vmDiskGrows           sync.Map
@@ -813,6 +815,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 		return err
 	}
 	r.vmRunning.Delete(name)
+	r.vmRunningSince.Delete(name)
+	r.vmRecoveredAt.Delete(name)
 	r.vmAnswers.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)

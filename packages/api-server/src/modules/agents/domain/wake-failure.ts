@@ -154,7 +154,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
         case "MachineRunnerNodeLost":
           return "the server running its owner's agents is down — tell an admin";
         case "RunnerOutOfMemory":
-          return "its owner's VM agents ran out of memory together and all restarted — disabling agents that aren't in use frees memory";
+          return "its owner's VM agents ran out of memory together and the ones that were running restarted — disabling agents that aren't in use frees memory";
         case "MachineStorageFull":
           return storageFullMessage();
         default:

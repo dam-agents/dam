@@ -83,7 +83,8 @@ platform-init flushes the agent's home to the disk when the workload stops, so a
 The loader keeps a runtime in the pod while any VMM still boots from it: it finds each VMM by its command line and reads the agent root the runner recorded beside the VMM's boot config at its start.
 A VMM makes itself non-dumpable, so its memory map is shut to the loader, and smolvm deletes the boot config once read; a VMM with no record, one an older release started, keeps every runtime.
 Connections already open through a published port drop with the old process, and the machine API is down for the seconds between the two.
-A VMM whose runner exited is reaped by the pod's init.
+A VMM whose runner exited is reaped by the loader, which asks the kernel to hand it every orphan of this pod: the pod's init would otherwise inherit the machine and reap it without a word, and the VMM's exit signal is the only record of how the machine went down.
+The loader writes that signal beside the runner's machine records, one file per pid, and the runner that adopted the machine reads it once and names the kill by it — `MachineOOMKilled` or `MachineSeccompKilled` ([vm-runner](vm-runner.md)).
 A release that exits within a minute of taking over is held as **failed**, and the loader goes back to the release it replaced until the controller names another.
 A runner under a loader whose machine API fails to serve exits as a hand-off does, leaving every machine running, so the release the loader goes back to, or the same one restarted, adopts them without a reboot; a pod stop that arrives during that close still stops them, and a runner with no loader stops them first, since its exit ends the pod.
 
