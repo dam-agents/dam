@@ -225,14 +225,11 @@ fn raise_oom_score_adj(path: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes lower their own scores instead: -1000 where the kernel allows it, else 0, which no process whose memory is smaller can outrank. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself.
+// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes ask for the lowest score there is. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself. A kernel refuses any score below the one the container started with unless the process holds CAP_SYS_RESOURCE in the kernel's own user namespace, which this pod adds for the case the node runs it without a user namespace of its own: a pod that has one holds the capability in that namespace, the write is refused anyway, and the line on the console says which score the runner keeps.
 fn lower_own_oom_score_adj() {
     const PATH: &str = "/proc/self/oom_score_adj";
-    if std::fs::write(PATH, "-1000").is_ok() {
-        return;
-    }
-    if let Err(e) = std::fs::write(PATH, "0") {
-        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it against its machines");
+    if let Err(e) = std::fs::write(PATH, "-1000") {
+        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it above the machines it hosts");
     }
 }
 
@@ -389,7 +386,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             .await;
         }
     });
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick: it says which signal killed the machine, which the sweep below discards.
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick, since it says which signal killed the machine; a death this read misses is one the sweep below reaps, and smolvm keeps that signal for the tick that follows.
     let reaping = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);

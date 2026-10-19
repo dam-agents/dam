@@ -49,13 +49,13 @@ pub trait Runtime: Send + Sync {
     fn nests(&self) -> bool {
         false
     }
-    // UNIT_BOUNDARY_DESCRIPTION: the process of the machine's running VMM, or nothing when no VMM runs or the runtime keeps none. The runner reaps that process itself, so it learns the signal that ended it — a seccomp filter's kill or the kernel's — where smolvm's own sweep over its children discards the status.
+    // UNIT_BOUNDARY_DESCRIPTION: the process of the machine's running VMM, or nothing when no VMM runs or the runtime keeps none — including one that is still booting, whose record the runtime may not have written yet, so a machine the kernel or its own filter kills during a boot is still named. The runner reaps that process itself, so it learns the signal that ended it, and a pid that now belongs to another process is never returned as this machine's.
     fn vmm_pid(&self, _id: &str) -> Option<i32> {
         None
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the pid the machine's own record names, whether or not that process is still the one the record meant: a VMM the loader reaped is gone, so its start time cannot be checked any more, and the pid is the only link to the exit the loader recorded. Read only to match such a record, never to reap.
-    fn vmm_record_pid(&self, _id: &str) -> Option<i32> {
+    // UNIT_BOUNDARY_DESCRIPTION: the signal that ended the VMM of `pid`, when the runtime's own code reaped it: a boot being waited on and a sweep of the runtime's children both read the status of a process this runner also watches, and the status word is read once. The signal is kept rather than dropped with it, and offered once. `None` for a process that exited on its own, one still running, and one whose status nothing here read.
+    fn vmm_exit_signal(&self, _pid: i32) -> Option<i32> {
         None
     }
 }
@@ -83,6 +83,8 @@ pub const GUEST_AGENT_PORT: u16 = 8080;
 pub const GATEWAY_HOST_PORT_FILE: &str = "platform-gateway-host-port";
 // UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the guest agent root its VMM boots, which lies in the runtime the runner booted it on. The runner writes it before each start, beside the boot config the VMM deletes once read, so it lasts as long as the VMM; the loader reads it to keep that runtime in the pod (see release::booted_from).
 pub const AGENT_ROOTFS_FILE: &str = "platform-agent-rootfs";
+// UNIT_BOUNDARY_DESCRIPTION: the file smolvm leaves when a launch fails because its VMM was killed: the pid on its first line and the signal on its second. The status word is read once, and the pid file the boot is waited on goes with the launch, so this record is the only naming of a kill during a boot; the runner reports it as the reason the machine restarted, and the next start removes it.
+pub const LAUNCH_EXIT_FILE: &str = "launch-exit";
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a stopped machine's VMM may keep its disks. Long enough for the guest to checkpoint its journal and let go, short enough that a VMM which will never exit is killed rather than waited on.
 pub const VMM_EXIT_WAIT: Duration = Duration::from_secs(10);
@@ -94,12 +96,13 @@ pub const IMAGE_LAUNCH_UNKNOWN: &str =
     "this image names no entrypoint, so a machine would boot to a filesystem with nothing running in it";
 
 // UNIT_BOUNDARY_DESCRIPTION: the files a VMM leaves in a machine's directory while it runs. A start removes them once the old VMM is gone, because a socket or lock left by a VMM that died with its runner makes the next boot believe the machine is still up.
-pub const STALE_RUNTIME_FILES: [&str; 5] = [
+pub const STALE_RUNTIME_FILES: [&str; 6] = [
     "agent.ready",
     "agent.sock",
     "control.sock",
     "vm.lock",
     "agent.pid",
+    LAUNCH_EXIT_FILE,
 ];
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
@@ -788,6 +791,25 @@ fn kill_named(named: &[Orphan], needle: &str) {
     let _ = needle;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a VMM a signal ended while its machine was booting or growing, which is what names the kill on the machine: the boot or grow call fails either way, and the failure alone would read as a machine that broke rather than one the kernel took for memory or its own filter killed. `pid` is the process, for the log and the counter.
+#[derive(Debug)]
+pub struct VmmKilled {
+    pub pid: i32,
+    pub signal: i32,
+}
+
+impl std::fmt::Display for VmmKilled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "the machine's VMM (pid {}) was killed by signal {}",
+            self.pid, self.signal
+        )
+    }
+}
+
+impl std::error::Error for VmmKilled {}
+
 // UNIT_BOUNDARY_DESCRIPTION: what one read of a child's exit status says. The read happens once and the caller keeps the answer: a second read gets ECHILD, and the status is gone with it, which is why the reaper collects before it decides anything. A VMM is a child of the process that spawned it, so a machine handed over to a new runner release reads as `Gone` here — the loader reaps those and records the signal for the runner that adopted them.
 pub enum Ended {
     Running,
@@ -1399,6 +1421,7 @@ mod tests {
                 "control.sock",
                 "vm.lock",
                 "agent.pid",
+                LAUNCH_EXIT_FILE,
             ]
         );
     }

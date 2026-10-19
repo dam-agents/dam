@@ -91,6 +91,8 @@ func TestARunnerOOMKillIsBlamedOnEveryAgentThatShouldRun(t *testing.T) {
 	assert.False(t, runnerOOMTookDown(up, true, false, wokenAt, notSince, at), "woken inside the episode, which the kill did not take down")
 	assert.False(t, runnerOOMTookDown(up, true, false, never, notSince, at), "a start this controller never saw is no evidence the kill took it down")
 	assert.False(t, runnerOOMTookDown(up, true, false, runningAt, notSince, never), "no kill")
+	// TEST_SCENARIO: the kill is published, then another restart of the runner's container replaces the termination that named it while the agent is still down. The readiness from before the kill is the last one the controller saw, and it is no answer to a kill nothing dates any more: the reason stays.
+	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonRunnerOutOfMemory), true, false, runningAt, runningAt, never), "a kill the runner's history no longer carries does not end the episode the reason names")
 	assert.False(t, runnerOOMTookDown(up, true, false, runningAt, notSince, aged), "a kill older than the episode")
 	assert.False(t, runnerOOMTookDown(stale, true, false, runningAt, notSince, never), "a reason carried past the episode")
 	assert.False(t, runnerOOMTookDown(nil, true, false, runningAt, notSince, at), "an agent that never published readiness")

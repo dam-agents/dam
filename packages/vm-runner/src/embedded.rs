@@ -19,7 +19,8 @@ use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
     clear_for_start, grown_storage, image_env_beside, kill_orphans, orphan_pids, timed,
-    updated_env, vmms_left, workload, Machine, Runtime, Update, GUEST_AGENT_PORT, VMM_EXIT_WAIT,
+    updated_env, vmms_left, workload, Machine, Runtime, Update, VmmKilled, GUEST_AGENT_PORT,
+    VMM_EXIT_WAIT,
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
@@ -290,7 +291,19 @@ impl Runtime for Smolvm {
         })?;
         let result = timed("start", id, &[], || Ok(self.runtime.start_machine(id)?));
         if result.is_err() {
+            // UNIT_BOUNDARY_DESCRIPTION: smolvm reads the status of a VMM it is still waiting for itself, so a machine killed during its boot is not this process's to reap, and the only thing left of the kill is the signal smolvm kept. It goes in the error for the runner to report as the reason the machine restarted.
+            let killed = booting_vmm_pid(&dir)
+                .and_then(|pid| {
+                    smolvm::process::take_exit_signal(pid).map(|signal| VmmKilled { pid, signal })
+                })
+                .or_else(|| launch_exit(&dir));
             kill_orphans(&self.proc_root, &dir);
+            if let Some(killed) = killed {
+                return Err(result
+                    .err()
+                    .unwrap_or_else(|| anyhow::anyhow!("smolvm machine start"))
+                    .context(killed));
+            }
         }
         result
     }
@@ -404,21 +417,23 @@ impl Runtime for Smolvm {
         allocated_bytes(&vm_data_dir(id))
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the pid of the machine's VMM, given only while that pid still names the process the record was written for. A pid is reused after its process ends, and the reap reads the exit status of the pid it is given, so a record whose pid now belongs to some other process would report that process's death as this machine's: the start time the record kept tells the two apart, and a pid the kernel no longer lists is the record's own, dead child.
-    fn vmm_record_pid(&self, id: &str) -> Option<i32> {
-        self.record(id).ok()??.pid
-    }
-
+    // UNIT_BOUNDARY_DESCRIPTION: the pid of the machine's VMM, given only while that pid still names the process the record was written for. A pid is reused after its process ends, and the reap reads the exit status of the pid it is given, so a record whose pid now belongs to some other process would report that process's death as this machine's: the start time the record kept tells the two apart, and a pid the kernel no longer lists is the record's own, dead child. A VMM still booting is named by smolvm's own pid file, which it writes before it waits for the guest: its record carries no pid until the boot succeeds, and a VMM killed during that boot is exactly the death the runner has to name.
     fn vmm_pid(&self, id: &str) -> Option<i32> {
         let record = self.record(id).ok()??;
-        let pid = record.pid?;
-        match (
-            record.pid_start_time,
-            smolvm::process::process_start_time(pid),
-        ) {
-            (Some(recorded), Some(now)) if recorded != now => None,
-            _ => Some(pid),
+        if let Some(pid) = record.pid {
+            return match (
+                record.pid_start_time,
+                smolvm::process::process_start_time(pid),
+            ) {
+                (Some(recorded), Some(now)) if recorded != now => None,
+                _ => Some(pid),
+            };
         }
+        booting_vmm_pid(&vm_data_dir(id))
+    }
+
+    fn vmm_exit_signal(&self, pid: i32) -> Option<i32> {
+        smolvm::process::take_exit_signal(pid)
     }
 }
 
@@ -676,6 +691,35 @@ fn guest_dns(record: &mut VmRecord, resolver: std::net::Ipv4Addr) {
     record.dns_filter_hosts = (resolver == GUEST_DNS_SINK).then(Vec::new);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the kill smolvm read while it booted a machine, from the record it leaves when the launch failed because its VMM was reaped with a signal. Read once, so the reason it names is reported once.
+fn launch_exit(dir: &Path) -> Option<VmmKilled> {
+    let path = dir.join(crate::runtime::LAUNCH_EXIT_FILE);
+    let text = std::fs::read_to_string(&path).ok()?;
+    let mut lines = text.lines();
+    let killed = VmmKilled {
+        pid: lines.next()?.trim().parse().ok()?,
+        signal: lines.next()?.trim().parse().ok()?,
+    };
+    let _ = std::fs::remove_file(&path);
+    Some(killed)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the pid file smolvm writes for a machine it is booting, which is the only naming of a VMM whose record carries no pid yet. Its first line is the pid, its second the process's start time; a pid the kernel has since reused fails that comparison and is refused, and one written without a start time is taken as it is, as a record without one is.
+fn booting_vmm_pid(dir: &Path) -> Option<i32> {
+    let text = std::fs::read_to_string(dir.join("agent.pid")).ok()?;
+    let mut lines = text.lines();
+    let pid: i32 = lines.next()?.trim().parse().ok()?;
+    match lines
+        .next()
+        .and_then(|start| start.trim().parse::<u64>().ok())
+    {
+        Some(recorded) => {
+            (smolvm::process::process_start_time(pid) == Some(recorded)).then_some(pid)
+        }
+        None => Some(pid),
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: smolvm maps one gateway port to the host's loopback per VMM process, so the port a machine may reach is written beside its boot config, where its own VMM reads it before it boots (see GATEWAY_HOST_PORT_FILE). A machine without one has the file removed, so an update that drops the port also drops the mapping.
 // UNIT_BOUNDARY_DESCRIPTION: the resolver the spec names for guest DNS, or the sink when it names none. A name that is not an IPv4 address is refused rather than read as none, since relaying nowhere would leave the machine unable to resolve with no word of why.
 fn guest_resolver(spec: &MachineSpec) -> anyhow::Result<std::net::Ipv4Addr> {
@@ -849,6 +893,55 @@ mod tests {
             err.contains(&format!("allows {}", SUN_PATH_LEN - 1)),
             "{err}"
         );
+    }
+
+    // TEST_SCENARIO: a launch whose VMM was killed names the kill smolvm left in the machine's directory, once: the pid file that boot was waited on goes with the launch, so this record is all there is, and a record missing its signal line names nothing rather than a clean exit.
+    #[test]
+    fn a_launch_that_failed_on_a_kill_carries_its_signal() {
+        let _home = Home::new("launch-exit");
+        let dir = vm_data_dir("m1");
+        fs::create_dir_all(&dir).unwrap();
+        let record = dir.join(crate::runtime::LAUNCH_EXIT_FILE);
+        assert!(launch_exit(&dir).is_none(), "no record, no kill");
+        fs::write(&record, "4242\n").unwrap();
+        assert!(
+            launch_exit(&dir).is_none(),
+            "a record with no signal names no kill"
+        );
+        assert!(
+            record.exists(),
+            "the record is left for the read that can name it"
+        );
+        fs::write(&record, "4242\n31").unwrap();
+        let killed = launch_exit(&dir).expect("the record names the kill");
+        assert_eq!((killed.pid, killed.signal), (4242, 31));
+        assert!(!record.exists(), "read once");
+    }
+
+    // TEST_SCENARIO: a machine that is still booting has no pid in its record yet, so the pid file smolvm writes as it boots is the only naming of its VMM — and a pid the kernel has handed to another process must not be read as that VMM, or its status is taken from whatever holds the pid now.
+    #[test]
+    fn a_booting_vmm_is_named_only_while_its_pid_is_that_process() {
+        let _home = Home::new("booting-pid");
+        let dir = vm_data_dir("m1");
+        fs::create_dir_all(&dir).unwrap();
+        assert!(booting_vmm_pid(&dir).is_none());
+        let mut vmm = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+        let file = dir.join("agent.pid");
+        fs::write(&file, format!("{pid}\n{started}")).unwrap();
+        assert_eq!(booting_vmm_pid(&dir), Some(pid));
+        fs::write(&file, format!("{pid}\n{}", started + 1)).unwrap();
+        assert_eq!(
+            booting_vmm_pid(&dir),
+            None,
+            "a pid whose process is another one is refused"
+        );
+        let _ = vmm.kill();
+        let _ = vmm.wait();
     }
 
     fn spec() -> MachineSpec {

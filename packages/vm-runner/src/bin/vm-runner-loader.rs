@@ -69,14 +69,11 @@ fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the loader holds every machine of its owner as their parent, and the kernel weighs a victim by memory plus its own adjustment: one it inherits from the container runtime ties with a VMM at the maximum as soon as it holds a few pages. It asks for the lowest score the kernel allows it, as the runner does, and a kernel that refuses leaves the inherited one in place, which is said on the console.
+// UNIT_BOUNDARY_DESCRIPTION: the loader holds every machine of its owner as their parent, and the kernel weighs a victim by memory plus its own adjustment: one it inherits from the container runtime ties with a VMM at the maximum as soon as it holds a few pages. It asks for the lowest score there is, as the runner does, and a kernel that refuses leaves the inherited one in place, which is said on the console.
 fn lower_own_oom_score_adj() {
     const PATH: &str = "/proc/self/oom_score_adj";
-    if std::fs::write(PATH, "-1000").is_ok() {
-        return;
-    }
-    if let Err(e) = std::fs::write(PATH, "0") {
-        tracing::warn!(path = PATH, error = %e, "could not lower the loader's own OOM score; the kernel may weigh it against a machine");
+    if let Err(e) = std::fs::write(PATH, "-1000") {
+        tracing::warn!(path = PATH, error = %e, "could not lower the loader's own OOM score; the kernel may weigh it above the machines it holds");
     }
 }
 
@@ -431,17 +428,20 @@ fn reap_children(runner: i32, exits: &Path) -> Option<ExitStatus> {
             continue;
         }
         if libc::WIFSIGNALED(status) {
-            if let Err(e) = std::fs::create_dir_all(exits).and_then(|()| {
-                std::fs::write(
-                    exits.join(pid.to_string()),
-                    libc::WTERMSIG(status).to_string(),
-                )
-            }) {
+            if let Err(e) = record_exit(exits, pid, libc::WTERMSIG(status)) {
                 tracing::warn!(pid, error = %e, "recording a machine's VMM exit for the next runner");
             }
         }
     }
     runner_status
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes a reaped VMM's signal where the runner that adopted the machine reads it, whole or not at all: the runner reads the moment a record appears, and a record caught half-written would name no signal — a death read as a machine that exited on its own, and pruned with the kill inside it. A rename within the directory is the one write a reader cannot see in pieces.
+fn record_exit(exits: &Path, pid: i32, signal: i32) -> std::io::Result<()> {
+    std::fs::create_dir_all(exits)?;
+    let scratch = exits.join(format!(".{pid}.part"));
+    std::fs::write(&scratch, signal.to_string())?;
+    std::fs::rename(scratch, exits.join(pid.to_string()))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the directory the runner reads a handed-over machine's exit from: its own state directory, which the loader sees in the arguments it passes on. The runner falls back to the same default when it names none.
@@ -573,6 +573,27 @@ mod tests {
             "a child that exited on its own left a kill record"
         );
         let _ = quiet.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // TEST_SCENARIO: the runner reads a record the moment it appears, so a record is never written in place: a reader that caught it empty would read a VMM that exited on its own, drop the kill, and let the file be pruned. It is written aside and renamed, and a write that stops before the rename leaves nothing the runner reads as a death.
+    #[test]
+    fn a_record_is_never_visible_half_written() {
+        let dir = std::env::temp_dir().join(format!("vmr-exits-part-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let exits = dir.join(vm_runner::state::EXIT_RECORDS);
+        record_exit(&exits, 4242, libc::SIGSYS).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(exits.join("4242")).unwrap(),
+            libc::SIGSYS.to_string()
+        );
+        assert!(
+            !exits.join(".4242.part").exists(),
+            "the scratch file is renamed away"
+        );
+        // TEST_SCENARIO: what a reader sees if the write stopped before the rename, which is a name no reader looks for.
+        std::fs::write(exits.join(".4243.part"), "").unwrap();
+        assert!(!exits.join("4243").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
