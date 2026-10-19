@@ -242,12 +242,11 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	if first == nil {
 		return "", false
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it. A runner that does not mark its machines with the memory figures is older than them — a runner release the controller has not rolled yet — and is asked about each machine in turn, as it was before, since its zeroes would count a warming machine at its measured use and forget the size a machine still runs at.
+	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it. A runner that does not mark its machines with the memory figures is older than them — a runner release the controller has not rolled yet — and is asked about each machine in turn, as it was before, since its zeroes would count a warming machine at its measured use and forget the size a machine still runs at. A failed read leaves the last measurements in place, as a failed status read of one machine did, and does not end the pass: a machine never measured counts at its size and a measured one at its last use, so the counted demand only leans high, and under the runner's pressure signal the need comes from the kernel's working set, which needs no measurement at all.
 	usage, err := runner.Usage(ctx)
 	if err != nil {
-		return "", false
-	}
-	if usage.MachineFigures {
+		slog.WarnContext(ctx, "vm memory: reading the runner's usage", "owner", owner, "error", err)
+	} else if usage.MachineFigures {
 		held := make(map[string]vmrunner.MachineUsage, len(usage.Machines))
 		for _, m := range usage.Machines {
 			held[m.ID] = m

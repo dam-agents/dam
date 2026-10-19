@@ -312,6 +312,35 @@ func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T)
 	assert.True(t, reclaimed("idle-a") && reclaimed("idle-b"), "the signal did not reclaim what it could")
 }
 
+// TEST_SCENARIO: under the runner's pressure signal the need comes from the kernel's working set, not from the usage read, so a read that fails must not end the pass: a fleet in trouble is still reclaimed, counting a machine never measured at its size and a measured one at its last use, and the pass costs no status read per machine instead.
+func TestAPressurePassReclaimsWhenTheUsageReadFails(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")}}
+	ctx := context.Background()
+	peerVMAgent(t, r, "idle-peer", "4Gi", "20Gi", true)
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "idle-peer", "application/merge-patch+json",
+		[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+		metav1.PatchOptions{})
+	require.NoError(t, err)
+	node.mu.Lock()
+	node.statuses["idle-peer"] = measured(700)
+	node.usageFails = true
+	node.mu.Unlock()
+	r.vmRunning.Store(agent.Name, true)
+
+	pressure := &vmrunner.RunnerPressure{Version: 2, Pressured: true, LimitMiB: 8192, WorkingSetMiB: 8000}
+	r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, pressure)
+
+	peer, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, peer.GetAnnotations()[annReclaimedAt], "the pressure signal still frees an idle peer when the usage read fails")
+	node.mu.Lock()
+	assert.Equal(t, 0, node.statusReads, "a failed usage read does not fall back to a status read per machine")
+	node.mu.Unlock()
+}
+
 // TEST_SCENARIO: an agent whose status does not answer may be deep in a long turn with its guest saturated, so a reclaim hibernates it only on the runner's pressure signal, when no agent said it is idle, because the OOM kill it heads off would stop it anyway; an agent that answered busy is never hibernated.
 func TestASilentPeerIsReclaimedForMemoryOnlyAsAPressureLastResort(t *testing.T) {
 	ctx := context.Background()

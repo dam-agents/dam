@@ -76,11 +76,13 @@ An agent whose cold boot is still in progress is not hibernated for a refused st
 A refused start is retried once their machines have stopped.
 No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, in one usage read for the owner rather than a status read per machine, and that read is what pressure is judged from and what moves the request between reconciles.
+A read that fails leaves the last figures in place, as a failed status read of one machine did, and the pass goes on: a machine never measured counts at its size and a measured one at its last use, so the counts only lean high, and a pass under the runner's pressure signal needs no figures at all.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
 The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
 Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
 When no candidate says it is idle, this pass alone hibernates the candidates that did not answer, as a last resort, because the kill would stop them too; one that answered busy is never hibernated.
-The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after any reclaim of that owner hibernated agents, because the runner's measured working set still holds their machines until they have stopped.
+The controller holds one watch on each owner's pressure, and asks again a second later when a read fails, doubling the wait to half a minute, since a settled agent no longer reconciles often enough to start the watch again and the counted threshold is the view the kernel's does not share.
+A pass on it hibernates nothing more for fifteen seconds after any reclaim of that owner hibernated agents, because the runner's measured working set still holds their machines until they have stopped.
 The two passes never run together for one owner.
 A refused start's reclaim and the pass do run side by side, so each reads its need and hibernates the agents it chose under the owner's lock, and those agents stop counting at once: the reclaim that comes next sees the room already freed and does not choose or count them again.
 
