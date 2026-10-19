@@ -20,10 +20,10 @@ const oauthConfig: KeycloakOAuthConfig = {
   callbackUrl: "https://app.example/api/telegram/oauth/callback",
 };
 
-function makeThread(opts?: { isDM?: boolean }) {
+function makeThread(opts?: { isDM?: boolean; id?: string }) {
   const posts: string[] = [];
   const thread: ThreadLike & { posts: string[]; subscribed: boolean } = {
-    id: "chat-42",
+    id: opts?.id ?? "chat-42",
     isDM: opts?.isDM ?? false,
     posts,
     subscribed: false,
@@ -41,6 +41,7 @@ function makeThread(opts?: { isDM?: boolean }) {
 
 function harness(opts?: {
   boundTo?: string | null;
+  bindings?: Record<string, string>;
   isAdmin?: boolean;
   termsAccepted?: boolean;
 }) {
@@ -49,13 +50,15 @@ function harness(opts?: {
   const unbind = vi.fn(async () => {});
   const bind = vi.fn(async () => "bound" as const);
   const relay = vi.fn(async () => {});
+  const agentFor = (conversationId: string) =>
+    opts?.bindings ? opts.bindings[conversationId] : opts?.boundTo;
 
   const handle = createTelegramMessageHandler({
     conversations: {
-      findAgentByConversation: async () =>
-        opts?.boundTo
-          ? { agentId: opts.boundTo, authorizedBy: "kc|owner-1" }
-          : null,
+      findAgentByConversation: async (conversationId) => {
+        const agentId = agentFor(conversationId);
+        return agentId ? { agentId, authorizedBy: "kc|owner-1" } : null;
+      },
       bind,
       listByAgent: async () => [],
       unbind,
@@ -230,5 +233,52 @@ describe("telegram message handler", () => {
     expect(h.unbind).not.toHaveBeenCalled();
     expect(thread.posts).toEqual([]);
     expect(h.relay).toHaveBeenCalled();
+  });
+});
+
+describe("telegram binding covers the whole chat", () => {
+  const CHAT = "telegram:-100777";
+  const TOPIC = "telegram:-100777:99";
+
+  /**
+   * TEST_SCENARIO: The reported bug. A forum topic message carries its topic
+   * in its conversation id, and the lookup matched only the exact id `/bind`
+   * stored, so the message was dropped without a word. It must reach the
+   * agent bound to its chat, and stay in its topic so the answer goes there.
+   */
+  it("relays a forum topic message to the agent bound to its chat", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" } });
+    const thread = makeThread({ id: TOPIC });
+    await h.handle(thread, { text: "hi", author: author() }, true);
+    expect(h.relay).toHaveBeenCalledWith(
+      "agent-1",
+      thread,
+      "hi",
+      expect.objectContaining({ userId: "tg-7" }),
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: `/bind` sent inside a topic connects the chat, not only
+   * that topic, so every topic of the group reaches the agent.
+   */
+  it("binds the chat when `/bind` is sent in a forum topic", async () => {
+    const h = harness({ bindings: {} });
+    const thread = makeThread({ id: TOPIC });
+    await h.handle(thread, { text: "/bind", author: author() }, true);
+    const pending = [...h.pendingOAuthFlowsMap.values()][0]!;
+    expect(pending.threadId).toBe(CHAT);
+  });
+
+  /**
+   * TEST_SCENARIO: `/unbind` sent inside a topic releases the chat's binding,
+   * since that is the one binding the topic's messages reach.
+   */
+  it("unbinds the chat when `/unbind` is sent in a forum topic", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" } });
+    const thread = makeThread({ id: TOPIC });
+    await h.handle(thread, { text: "/unbind", author: author() }, true);
+    expect(h.unbind).toHaveBeenCalledWith(CHAT);
+    expect(thread.posts.join("\n")).toContain("Chat disconnected");
   });
 });

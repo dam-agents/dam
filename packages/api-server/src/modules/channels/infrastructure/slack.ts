@@ -1230,24 +1230,28 @@ async function hasScope(
   return !scopes || scopes.has(scope);
 }
 
+function signsAgentPosts(scopes: Set<string> | null): boolean {
+  return !scopes?.has("chat:write.customize");
+}
+
 const SCOPE_WITHHELD_USERS =
   "this workspace did not grant the permission to look people up (users:read)";
 const SCOPE_WITHHELD_REACTIONS =
   "this workspace did not grant the permission to read reactions (reactions:read)";
 
-const AGENT_SIGNATURE_RE = /^:[a-z0-9_'+-]+: \*[^*\n]*\*\n\n/;
+const AGENT_SIGNATURE_RE = /^\S+\s+\*[^*\n]*\*\s+/;
 
 type AgentPersona = {
   persona: Pick<SlackPostMessage, "username" | "iconUrl">;
   sign: (text: string, bold: "*" | "**") => string;
 };
 
-function withoutAgentSignature<T extends { text: string; sender: SlackSender }>(
-  event: T,
-): T {
-  return event.sender.kind === "agent"
-    ? { ...event, text: event.text.replace(AGENT_SIGNATURE_RE, "") }
-    : event;
+async function withoutAgentSignature<
+  T extends { text: string; sender: SlackSender; teamId: SlackWorkspace },
+>(gw: SlackGateway, event: T): Promise<T> {
+  if (event.sender.kind !== "agent") return event;
+  if (!signsAgentPosts(await grantedScopes(gw, event.teamId))) return event;
+  return { ...event, text: event.text.replace(AGENT_SIGNATURE_RE, "") };
 }
 
 const SCOPE_CAPABILITIES: Array<{ scope: string; backs: string }> = [
@@ -2074,14 +2078,12 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     instanceName: string,
     conversation: { id: string; teamId: SlackWorkspace },
   ): Promise<AgentPersona> {
-    const scopes = await grantedScopes(gw, conversation.teamId);
-    const customize = scopes?.has("chat:write.customize");
+    const signs = signsAgentPosts(await grantedScopes(gw, conversation.teamId));
     const [{ name: username, avatar }, owner, bound] = await Promise.all([
       resolveAgentIdentity(instanceName),
       getInstanceOwner(instanceName).catch(() => null),
-      customize
-        ? []
-        : channelRegistry
+      signs
+        ? channelRegistry
             .resolveSlackChannelsByInstance(instanceName)
             .catch((err: unknown) => {
               getLogger().warn(
@@ -2089,10 +2091,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
                 "slack.persona.bindings_unavailable: posting with the robot face",
               );
               return [];
-            }),
+            })
+        : [],
     ]);
     const parsed = owner ? parseAvatar(avatar, owner, username) : null;
-    if (!customize) {
+    if (signs) {
       const custom =
         parsed?.kind === "character" &&
         bound.find((c) => c.id === conversation.id)?.customEmoji?.[
@@ -4780,7 +4783,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   ) {
     if (!gateway) return;
 
-    const event = withoutAgentSignature(signedEvent);
+    const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     if (opts.directMessage && sender.kind !== "person") return;
     if (
@@ -5638,7 +5641,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
   async function handleChannelMessage(signedEvent: SlackChannelMessageEvent) {
     if (!gateway) return;
-    const event = withoutAgentSignature(signedEvent);
+    const event = await withoutAgentSignature(gateway, signedEvent);
     const sender = event.sender;
     const slackUserId = sender.kind === "person" ? sender.user : "";
     const conversation = botPostConversation(event.channel, event.threadTs);

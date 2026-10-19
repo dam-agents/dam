@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 
@@ -20,65 +21,83 @@ type vmPool struct {
 	storage *resource.Quantity
 }
 
-func (r *AgentReconciler) vmPoolOf(ctx context.Context, owner string) vmPool {
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget this process has never read has no pool, and that is not the same as an empty one. The install's default is smaller than some owners' pools and larger than others: sized from it, a claim grows to it and can never shrink again, a memory limit falls under the machines already running on it, and their next machine is sized past the pool they meant. Every caller that would set a size from the pool refuses and retries instead; one that only counts what the machines hold falls back to the install's limit for the while the pool is unknown.
+var errVMPoolUnread = errors.New("the owner's UserBudget is unread, so their VM pool is unknown")
+
+func (r *AgentReconciler) vmPoolOf(ctx context.Context, owner string) (vmPool, error) {
 	if pool, ok := r.vmPools.Load(owner); ok {
-		return pool.(vmPool)
+		return pool.(vmPool), nil
 	}
 	return r.refreshVMPool(ctx, owner)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reads the owner's UserBudget again. A read that fails keeps the overrides last read, so an API server that is slow for a moment does not shrink a pool back to the install's.
-func (r *AgentReconciler) refreshVMPool(ctx context.Context, owner string) vmPool {
+// UNIT_BOUNDARY_DESCRIPTION: reads the owner's UserBudget again. A read that fails keeps the overrides last read, so an API server that is slow for a moment does not shrink a pool back to the install's; an owner never read at all has none to keep, which is what errVMPoolUnread says.
+func (r *AgentReconciler) refreshVMPool(ctx context.Context, owner string) (vmPool, error) {
 	obj, err := r.dynamic.Resource(UserBudgetsGVR).Namespace(r.config.Namespace).Get(ctx, "budget-"+owner, metav1.GetOptions{})
 	var pool vmPool
 	switch {
 	case k8serrors.IsNotFound(err):
 	case err != nil:
 		slog.Warn("vm runner: reading the owner's UserBudget, the pool stays as it was", "owner", owner, "error", err)
-		if last, ok := r.vmPools.Load(owner); ok {
-			return last.(vmPool)
-		}
+		return r.lastVMPool(owner, err)
 	default:
 		b, err := FromCacheObject[apiv1.UserBudget](obj)
 		if err != nil {
 			slog.Warn("vm runner: decoding the owner's UserBudget, the pool stays as it was", "owner", owner, "error", err)
-			if last, ok := r.vmPools.Load(owner); ok {
-				return last.(vmPool)
-			}
-			break
+			return r.lastVMPool(owner, err)
 		}
 		pool = vmPool{memory: b.Spec.Memory, cpu: b.Spec.CPU, storage: b.Spec.Storage}
 	}
 	r.vmPools.Store(owner, pool)
-	return pool
+	return pool, nil
 }
 
-func (r *AgentReconciler) runnerLimitMiB(ctx context.Context, owner string) int {
-	if pool := r.vmPoolOf(ctx, owner); pool.memory != nil {
-		return int(pool.memory.Value() >> 20)
+// UNIT_BOUNDARY_DESCRIPTION: the pool last read for the owner, or the refusal to answer for one this process has never read.
+func (r *AgentReconciler) lastVMPool(owner string, cause error) (vmPool, error) {
+	if last, ok := r.vmPools.Load(owner); ok {
+		return last.(vmPool), nil
+	}
+	return vmPool{}, fmt.Errorf("%w: %w", errVMPoolUnread, cause)
+}
+
+func (r *AgentReconciler) runnerLimitMiB(ctx context.Context, owner string) (int, error) {
+	pool, err := r.vmPoolOf(ctx, owner)
+	if err != nil {
+		return 0, err
+	}
+	if pool.memory != nil {
+		return int(pool.memory.Value() >> 20), nil
 	}
 	if res := r.config.VM.Runner.Resources; res != nil {
 		if q, ok := res.Limits[corev1.ResourceMemory]; ok {
-			return int(q.Value() >> 20)
+			return int(q.Value() >> 20), nil
 		}
 	}
-	return 0
+	return 0, nil
 }
 
-func (r *AgentReconciler) runnerCPUCeiling(ctx context.Context, owner string) *resource.Quantity {
-	if pool := r.vmPoolOf(ctx, owner); pool.cpu != nil {
-		return pool.cpu
+func (r *AgentReconciler) runnerCPUCeiling(ctx context.Context, owner string) (*resource.Quantity, error) {
+	pool, err := r.vmPoolOf(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if pool.cpu != nil {
+		return pool.cpu, nil
 	}
 	if res := r.config.VM.Runner.Resources; res != nil {
 		if q, ok := res.Limits[corev1.ResourceCPU]; ok {
-			return &q
+			return &q, nil
 		}
 	}
-	return nil
+	return nil, nil
 }
 
 func (r *AgentReconciler) runnerStorageCeiling(ctx context.Context, owner string) (resource.Quantity, error) {
-	if pool := r.vmPoolOf(ctx, owner); pool.storage != nil {
+	pool, err := r.vmPoolOf(ctx, owner)
+	if err != nil {
+		return resource.Quantity{}, err
+	}
+	if pool.storage != nil {
 		return *pool.storage, nil
 	}
 	ceiling, err := resource.ParseQuantity(r.config.VM.Runner.Storage)

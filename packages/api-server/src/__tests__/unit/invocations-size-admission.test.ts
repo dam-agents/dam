@@ -179,7 +179,11 @@ describe("budget visibility over the route", () => {
             : null,
       } as never,
       invocationsServiceFor: () => ({}) as never,
-      connectionsServiceFor: () => ({}) as never,
+      connectionsServiceFor: () =>
+        ({
+          listConnections: async () => [],
+          getAgentConnections: async () => ({ connections: [] }),
+        }) as never,
       templates: {
         list: async () => [
           {

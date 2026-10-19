@@ -10,7 +10,7 @@ import (
 // UNIT_BOUNDARY_DESCRIPTION: how long one status read on the runner may wait for a change. The runner caps its own wait above this, so the read ends with an answer rather than a timeout.
 const vmStatusWait = 25 * time.Second
 
-// UNIT_BOUNDARY_DESCRIPTION: the watch on one machine that is on its way up. Nothing in the cluster changes when a guest starts answering — there is no pod to watch — so the controller asks the runner, with a long poll that returns when the machine's status version moves. A change requeues the Agent at once and ends the watch, and the ordinary reconcile publishes the new status and starts another watch if the machine is still not ready. That keeps one code path for status writes, and a full reconcile only when something changed.
+// UNIT_BOUNDARY_DESCRIPTION: the watch on one machine: its way up, its failure, and once ready the guest going quiet or being restarted. Nothing in the cluster changes when a guest starts answering, goes quiet, or is restarted — there is no pod to watch — so the controller asks the runner, with a long poll that returns when the machine's status version moves. A change requeues the Agent at once and ends the watch, and the ordinary reconcile publishes the new status and starts another watch if there is still a reason to hold one. That keeps one code path for status writes, a full reconcile only when something changed, and no per-minute reconcile of a settled agent.
 type machineWatch struct {
 	cancel context.CancelFunc
 }

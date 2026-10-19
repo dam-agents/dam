@@ -1,7 +1,7 @@
 images:
-  - location: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-arm64.img
+  - location: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-arm64.qcow2
     arch: aarch64
-  - location: https://cloud-images.ubuntu.com/releases/noble/release/ubuntu-24.04-server-cloudimg-amd64.img
+  - location: https://cloud.debian.org/images/cloud/trixie/latest/debian-13-genericcloud-amd64.qcow2
     arch: x86_64
 
 cpus: 4
@@ -32,6 +32,31 @@ provision:
         - "container-log-max-size=10Mi"
         - "container-log-max-files=3"
       EOF
+      # Nested guests are only usable with transparent huge pages pinned on:
+      # under Ubuntu's `madvise` a nested boot took 3 to 25 s and pegged its
+      # vCPUs, which the vm lane sees as agents stuck "starting". Red Hat
+      # hosts default to `always`, and the runner's memory layout assumes it.
+      # A sysfs write alone would be lost on reboot, so a unit re-applies it.
+      # A sandbox runs OpenRC or no init at all, and never reboots: there the
+      # one write is the whole job, and a sysfs this kernel won't take is a
+      # warning, not a failed provision.
+      if [ -d /run/systemd/system ]; then
+        cat > /etc/systemd/system/transparent-hugepage.service << 'THP'
+      [Unit]
+      Description=Pin transparent huge pages on for the nested VM runners
+      After=local-fs.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c 'echo always > /sys/kernel/mm/transparent_hugepage/enabled'
+
+      [Install]
+      WantedBy=multi-user.target
+      THP
+        systemctl enable --now transparent-hugepage.service
+      elif ! { echo always > /sys/kernel/mm/transparent_hugepage/enabled; } 2>/dev/null; then
+        echo "WARNING: transparent huge pages are not pinned on; nested VMs boot slowly." >&2
+      fi
       if [ ! -d /var/lib/rancher/k3s ]; then
         # Pinned: k3s ships the Gateway API CRDs through its own gateway-api-crd
         # chart, so GATEWAY_API_VERSION in .mise/tasks/cluster/install must match the

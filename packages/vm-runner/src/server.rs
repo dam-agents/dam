@@ -199,7 +199,9 @@ pub struct Server {
     versions: AtomicU64,
     admission: Mutex<()>,
     ports: Mutex<()>,
+    storage_look: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
+    storage_unmeasured: std::sync::atomic::AtomicBool,
     shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
@@ -297,7 +299,9 @@ impl Server {
             ),
             admission: Mutex::new(()),
             ports: Mutex::new(()),
+            storage_look: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
+            storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
             shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
@@ -1281,6 +1285,8 @@ impl Server {
                 note: None,
             });
         }
+        // UNIT_BOUNDARY_DESCRIPTION: a start is a look at the claim of its own, so the guest boots on the room the machine has now and not on the grant its share held while it slept, nor on the floor alone until the next STORAGE_CHECK. The action is already set on the entry, so this machine counts itself among the machines that are up.
+        self.check_storage();
         let started = Instant::now();
         let runtime = self.runtime.clone();
         let target = id.to_string();
@@ -1476,7 +1482,10 @@ impl Server {
                 MachineUsage {
                     disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
                     cpu_milli,
-                    id: id.clone(),
+                    id,
+                    cpus: status.cpus,
+                    memory_mib: status.memory_mib,
+                    warming: status.warming,
                     state: status.state,
                     used_mib: status.used_mib,
                     disk_gib: status.disk_gib,
@@ -1511,6 +1520,7 @@ impl Server {
             },
             cpu,
             machines,
+            machine_figures: true,
         })
     }
 
@@ -1543,8 +1553,10 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to; a claim that cannot be measured grants nothing, and the guests are then held to nothing. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK and at every start. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to, one at a time, split between the machines that are neither stopped nor absent: a stopping machine counts, since its guest can still write until the VMM is gone, and so does one whose recorded state is unknown, or not yet read, since a state not known to be stopped only makes every part smaller. A group woken together writes at once, so an even part of the room for the running ones alone would give each of them the whole room until the next look, and their writes together would pass the level the claim is held to. A machine that is stopped or absent is granted nothing rather than a part, because a grant outlives the look that wrote it: a stopped machine that is started before the next look would boot on the room its share held while it was stopped, beside every sibling started with it. A grant of nothing is the floor platform-init keeps for a guest held at nothing, room for SSH keys, a shell and the agent's own state, so a wake that finds no look of its own writes no further, and a start publishes the room again before its guest boots. A claim that cannot be measured grants nothing, so no guest is held to the claim at all: the runner says so in the log, once per change, and its storage gauges read as no level rather than as an empty claim. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
+        // UNIT_BOUNDARY_DESCRIPTION: a look scans the machines and then writes every share, and the periodic look and a start's look run at once on different threads, so the whole of one holds this: a look that scanned before another must not write after it, which would leave a machine's guest with the room of a look that is no longer true, and the shares of a group summing past the room.
+        let _looking = locked(&self.storage_look);
         let shares: Vec<(String, PathBuf)> = state::machine_ids(&self.config.state_dir)
             .unwrap_or_default()
             .into_iter()
@@ -1553,20 +1565,46 @@ impl Server {
                 share.is_dir().then_some((id, share))
             })
             .collect();
-        let running = locked(&self.machines)
-            .entries
-            .values()
-            .filter(|e| e.seen.as_ref().is_some_and(|s| s.state == State::Running))
-            .count();
+        let (up, running) = {
+            let machines = locked(&self.machines);
+            let (mut up, mut running) = (BTreeSet::new(), 0);
+            for (id, entry) in &machines.entries {
+                let state = entry
+                    .action
+                    .map(Action::state)
+                    .or(entry.seen.as_ref().map(|s| s.state));
+                if state == Some(State::Running) {
+                    running += 1;
+                }
+                if !matches!(state, Some(State::Stopped | State::Absent)) {
+                    up.insert(id.clone());
+                }
+            }
+            (up, running)
+        };
         let storage = (self.config.measure_storage)();
-        let grant = storage.map(|storage| {
-            let id = self.versions.fetch_add(1, Ordering::Relaxed);
-            format!("{id} {}\n", storage.guest_room(running))
-        });
+        let look = self.versions.fetch_add(1, Ordering::Relaxed);
         for (id, share) in &shares {
+            let grant = storage.map(|storage| {
+                let bytes = if up.contains(id.as_str()) {
+                    storage.guest_room(up.len())
+                } else {
+                    0
+                };
+                format!("{look} {bytes}\n")
+            });
             if let Err(e) = share::grant_storage_room(share, grant.as_deref()) {
                 tracing::warn!(machine = %id, error = %e, "vm runner: cannot grant the machine's guest its room on the claim");
             }
+        }
+        let was_unmeasured = self
+            .storage_unmeasured
+            .swap(storage.is_none(), Ordering::Relaxed);
+        if storage.is_none() != was_unmeasured {
+            tracing::warn!(
+                unmeasured = storage.is_none(),
+                "vm runner: the owner's storage claim changed between measurable and not; an unmeasurable claim grants no guest anything, so no guest's writes are held to it"
+            );
         }
         let Some(storage) = storage else {
             return;
@@ -1880,7 +1918,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting up to a minute for the controller's next reconcile to do the same.
+    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing. A machine known not to be running holds none, so no figure outlives its VMM.
     fn probe(self: &Arc<Self>, id: &str) {
         let Some((action, looked)) = locked(&self.machines)
             .entries
@@ -1899,6 +1937,7 @@ impl Server {
             None => self.look(id),
         };
         let running = seen.state == State::Running;
+        let unread = seen.state == State::Unknown;
         let resident = running.then(|| self.runtime.resident_mib(id)).flatten();
         let cpu = running
             .then(|| self.runtime.cpu_usec(id))
@@ -1909,17 +1948,23 @@ impl Server {
             self.note_guest_room(id);
         }
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
-            entry.resident_mib = resident;
-            entry.cpu_milli = match (entry.cpu, cpu) {
-                (Some((from, before)), Some((to, now))) if now >= before => {
-                    let micros = to.duration_since(from).as_micros() as u64;
-                    ((now - before) * 1000)
-                        .checked_div(micros)
-                        .unwrap_or(entry.cpu_milli)
+            if !unread {
+                if !running {
+                    entry.resident_mib = None;
+                } else if resident.is_some() {
+                    entry.resident_mib = resident;
                 }
-                _ => 0,
-            };
-            entry.cpu = cpu;
+                entry.cpu_milli = match (entry.cpu, cpu) {
+                    (Some((from, before)), Some((to, now))) if now >= before => {
+                        let micros = to.duration_since(from).as_micros() as u64;
+                        ((now - before) * 1000)
+                            .checked_div(micros)
+                            .unwrap_or(entry.cpu_milli)
+                    }
+                    _ => 0,
+                };
+                entry.cpu = cpu;
+            }
         }
         self.note_slow_boot(id);
         if !self.dead_for_long(id) {
@@ -2008,13 +2053,14 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state is unknown counts as running, which is what a launch record that cannot be read records: the room of a VMM that may be up is not room to hand to another, and its spec cannot be matched to a size either, so it is counted at the whole handout.
     fn known_running(&self, id: &str) -> bool {
         let recorded = locked(&self.machines)
             .entries
             .get(id)
             .and_then(|e| e.seen.as_ref().map(|seen| seen.state));
-        recorded.or_else(|| self.runtime.state(id).ok()) == Some(State::Running)
+        let state = recorded.unwrap_or_else(|| self.runtime.state(id).unwrap_or(State::Unknown));
+        matches!(state, State::Running | State::Unknown)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
@@ -2059,13 +2105,13 @@ impl Server {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
             status.disk_gib = spec.storage_gib;
-            status.used_mib = entry
-                .and_then(|e| e.resident_mib)
-                .filter(|_| state == State::Running)
-                .unwrap_or(0);
-            status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
             status.nested = spec.nested_virtualization && self.runtime.nests();
         }
+        status.used_mib = entry
+            .and_then(|e| e.resident_mib)
+            .filter(|_| matches!(state, State::Running | State::Unknown))
+            .unwrap_or(0);
+        status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
         if state == State::Unknown && status.message.is_empty() {
             status.message = seen.and_then(|seen| seen.error).unwrap_or_default();
         }

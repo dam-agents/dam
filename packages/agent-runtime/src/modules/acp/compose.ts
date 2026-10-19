@@ -5,9 +5,12 @@ import type { ArtifactTouch } from "./infrastructure/artifact-touch.js";
 import type { ToolActivity } from "../changes/index.js";
 import { leaseSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
+  isPlatformSubagentSetting,
+  platformSubagentSettingsError,
   sessionSettingsError,
   type HarnessConfigCatalog,
   type SessionRepository,
+  type SubAgentHarnessConfig,
 } from "agent-runtime-api";
 import type { SessionSettingBinding } from "../runtime-channel/manifest.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
@@ -16,7 +19,6 @@ import {
   createWorkerHistoryProvider,
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
-import { createExecSpendProvider } from "./infrastructure/spend-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
 import {
   createPlatformMcpEntryStore,
@@ -112,7 +114,6 @@ export interface HarnessRuntime {
     render: (model: string) => string;
   };
   initialize?: Record<string, unknown>;
-  sessionSpend?: { command: string[]; unit: string };
   sessionSettings?: Record<string, SessionSettingBinding>;
   catalog?: HarnessConfigCatalog;
 }
@@ -159,6 +160,48 @@ const canonicalSetting = (value: string): string => {
   const parsed = parseQualifiedModel(value, { claudePrefix: true });
   return parsed ? `${parsed.alias}/${parsed.upstreamId}` : value;
 };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a platform sub-agent on the session's own
+ * harness takes from the session: its provider-qualified model, and each
+ * setting the harness binds, except a model-valued one, one for the
+ * harness's own subagents, one the Model Router applies, and a value a person
+ * must approve, since nobody is there to approve it in an unattended
+ * sub-agent.
+ */
+function inheritedSubAgentConfig(
+  harness: HarnessRuntime | undefined,
+  meta: { model?: string; settings?: Record<string, string> },
+): SubAgentHarnessConfig {
+  const parsed = parseQualifiedModel(meta.model, { claudePrefix: true });
+  const kept = Object.entries(meta.settings ?? {}).filter(([id, value]) => {
+    const binding = harness?.sessionSettings?.[id];
+    const option = harness?.catalog?.options.find((o) => o.id === id);
+    return (
+      binding !== undefined &&
+      !("router" in binding) &&
+      option !== undefined &&
+      option.category !== "model" &&
+      !option.subagents &&
+      option.choices.some((c) => c.value === value && !c.needsApproval)
+    );
+  });
+  const mode = kept.find(([id]) => {
+    const binding = harness?.sessionSettings?.[id];
+    return binding !== undefined && "mode" in binding;
+  })?.[1];
+  const configOptions = Object.fromEntries(
+    kept.filter(([id]) => {
+      const binding = harness?.sessionSettings?.[id];
+      return binding !== undefined && !("mode" in binding);
+    }),
+  );
+  return {
+    ...(parsed && { model: `${parsed.alias}/${parsed.upstreamId}` }),
+    ...(mode !== undefined && { mode }),
+    ...(Object.keys(configOptions).length > 0 && { configOptions }),
+  };
+}
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a native process names a model the way the
@@ -287,10 +330,17 @@ export function composeAcp(opts: ComposeAcpOptions): {
     settingsError: (harness, settings, model) => {
       const runtime = opts.harnesses[harness];
       const unbound = Object.keys(settings).find(
-        (id) => runtime?.sessionSettings?.[id] === undefined,
+        (id) =>
+          !isPlatformSubagentSetting(id) &&
+          runtime?.sessionSettings?.[id] === undefined,
       );
       if (unbound)
         return `The ${harness} harness cannot set ${unbound} for one session`;
+      const platform = platformSubagentSettingsError(
+        settings,
+        (h) => opts.harnesses[h]?.catalog,
+      );
+      if (platform) return platform;
       const native = (m: string | null) =>
         (opts.nativeConnectionOf?.(harness, m) ?? null) !== null;
       const crossed = Object.entries(settings).find(
@@ -402,10 +452,14 @@ export function composeAcp(opts: ComposeAcpOptions): {
     findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
     log: (msg) => opts.log?.(msg),
   });
-  const sessionSpend = Object.values(opts.harnesses).find(
-    (h) => h.sessionSpend,
-  )?.sessionSpend;
   const sessions = createSessionsService({
+    subAgentContextOf: (meta) => {
+      const harness = meta.harness ?? opts.defaultHarness;
+      return {
+        harness,
+        inherited: inheritedSubAgentConfig(opts.harnesses[harness], meta),
+      };
+    },
     openCaller: () =>
       createInProcessCaller((channel) =>
         runtime.attach(channel, { viewer: false }),
@@ -419,16 +473,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
       sessionRepositories: opts.sessionRepositories,
     }),
     ...(historyProvider ? { historyProvider } : {}),
-    ...(sessionSpend
-      ? {
-          spendProvider: createExecSpendProvider({
-            command: sessionSpend.command,
-            unit: sessionSpend.unit,
-            cwd: opts.workingDir,
-            log: opts.log,
-          }),
-        }
-      : {}),
     ...(terminalSessionPins ? { terminalSessionPins } : {}),
     log: opts.log,
   });

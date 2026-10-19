@@ -1,6 +1,6 @@
 # Agent Telemetry (trace and log read path)
 
-Last verified: 2026-10-17
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -55,11 +55,11 @@ Neither is a trace lookup — which is what lets a Turn hold spans from several 
 
 ## Correlating a log record to the call it describes
 
-The purpose of the surface is to show, on the bar for a model call, what that call cost.
+The purpose of the surface is to show, on the bar for a model call, what the harness reported about that call.
 Two facts make that harder than it looks, and together they decide the design:
 
-- The **cost is only on the log record**.
-  A model-call span carries token counts; the per-call currency figure exists on the record alone, so the two must be joined for a waterfall to show spend at all.
+- The **call's report is only on the log record**.
+  A model-call span carries token counts; the rest of what the harness reported exists on the record alone, so the two must be joined for a waterfall to show it at all.
 - The record's own span identifier is **unreliable and often absent**.
   Where it is set it names the *enclosing* span — the turn, or the tool being run — rather than the model call, because the harness creates the call span without making it the active one.
   Where no enclosing span exists it is empty.
@@ -91,7 +91,7 @@ A capped read takes the **newest** rows of its window and re-sorts them into tim
 Each query also carries execution-time and rows-read ceilings and **fails rather than truncating silently**, since a short answer rendered as complete is the failure worth designing against.
 Where a cap does bind, the response says so and the surface reports it.
 
-Spend per Turn is read from the log side and merged with the span side in the service, so neither query has to span two tables.
+The calls and tokens of each Turn are read from the log side and merged with the span side in the service, so neither query has to span two tables.
 
 ## Contract
 
@@ -99,7 +99,7 @@ Four owner-scoped reads, all query-only.
 The Turn reads are scoped to one owned agent and one Session, or to an Invocation target the caller drove; the record read narrows on request.
 The field-level shapes live in the contract package [`packages/api-server-api/`](../../packages/api-server-api/).
 
-- **Turns** — the listing for one Session over a window: when each Turn started, how long it took, how many spans and records it holds, which traces it touched, which models it called, and what it cost.
+- **Turns** — the listing for one Session over a window: when each Turn started, how long it took, how many spans and records it holds, which traces it touched, which models it called, and how many calls and tokens it used.
 - **Turn** — one Turn in full, addressed by its prompt id within a window, or by its time range when it has none: its spans, its log records, and the resolved attachment between them.
   Addressed by an Invocation target instead of a Session, it holds that target's run.
 - **Invocation turns** — one Turn per Invocation target the caller names, each covering the target's whole run.
@@ -119,7 +119,7 @@ It is bounded by a row cap and says so in the response when the cap binds.
 ## Progressive disclosure
 
 The in-product surface is **inside the conversation**, not beside it.
-Each agent reply carries a one-line summary of what that exchange cost and how long it took, which expands in place to the exchange's own timeline.
+Each agent reply carries a one-line summary of how long that exchange took, its calls and tokens, and its measured cost ([spend-limits](spend-limits.md#screens)), which expands in place to the exchange's own timeline.
 There is no separate panel and no list of turns to cross-reference against the transcript: the transcript *is* the list, and a row of telemetry belongs to the message above it.
 
 A Turn is matched to its reply **by the prompt id**, which a reply learns when the Session is loaded: the history the harness replays stamps each reply with the prompt id of the message it answered, by position, so the join is authoritative once loaded.

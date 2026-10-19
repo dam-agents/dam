@@ -41,6 +41,7 @@ export {
   type WakeFailureCause,
 } from "./domain/wake-failure.js";
 export { isAgentStoppedError } from "./domain/agent-stopped.js";
+export { telegramChatOf } from "./domain/telegram-conversation.js";
 export {
   isNewOutOfMemoryRestart,
   type PodRestartState,

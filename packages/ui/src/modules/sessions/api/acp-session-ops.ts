@@ -127,6 +127,7 @@ const POD_TYPE: Record<PodSession["type"], SessionType> = {
   schedule_cron: SessionType.ScheduleCron,
   schedule_once: SessionType.ScheduleOnce,
   cli_run: SessionType.CliRun,
+  invocation: SessionType.Invocation,
 };
 
 const POD_MODE: Record<PodSession["mode"], SessionMode> = {
@@ -155,7 +156,6 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     provider: s.provider ?? null,
     model: s.model ?? null,
     ...(s.settings && { settings: s.settings }),
-    ...(s.spend ? { spend: s.spend } : {}),
     ...(s.repositories?.length ? { repositories: s.repositories } : {}),
   };
 }

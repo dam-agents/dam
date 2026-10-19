@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -64,17 +65,24 @@ type AgentReconciler struct {
 	statefulSets          cache.MutationCache
 	runnerDeploys         cache.MutationCache
 	runnerPodCache        corelisters.PodLister
+	nodeCache             corelisters.NodeLister
+	nodeCacheSynced       cache.InformerSynced
 	vmRunning             sync.Map
 	vmLive                sync.Map
+	vmAnswers             sync.Map
 	vmDiskGrows           sync.Map
 	vmPools               sync.Map
 	usageSecrets          sync.Map
 	resizeNotices         sync.Map
+	claimNotices          sync.Map
 	runnerCapacity        sync.Map
+	nodeLostNotices       sync.Map
+	nodeLostLast          atomic.Int64
 	poolLevels            sync.Map
 	notReadyPolls         sync.Map
 	vmStartClocks         sync.Map
 	ownerless             sync.Map
+	orphanMachines        sync.Map
 	machineWatchMu        sync.Mutex
 	machineWatches        map[string]*machineWatch
 	pressureWatches       map[string]*machineWatch
@@ -123,6 +131,12 @@ func (r *AgentReconciler) WithStatefulSetCache(informer cache.SharedIndexInforme
 func (r *AgentReconciler) WithRunnerCaches(deployments cache.SharedIndexInformer, pods corelisters.PodLister) *AgentReconciler {
 	r.runnerDeploys = readsOwnWrites(deployments)
 	r.runnerPodCache = pods
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a not-ready agent's reconcile asks about a node, and the requeue behind it runs from three seconds to a minute, so on a lost node the ask scales with the number of agents waiting there. The node watch answers instead, as the runner pods' cache does, and its sync decides whether it can answer at all: a watch that has not synced reads as a node that cannot be read, never as a node that is gone. The cache is not waited for at startup, since a cluster without the node read permission must still run everything else. A reconciler built without the cache — the tests — reads nodes live.
+func (r *AgentReconciler) WithNodeCache(lister corelisters.NodeLister, synced cache.InformerSynced) *AgentReconciler {
+	r.nodeCache, r.nodeCacheSynced = lister, synced
 	return r
 }
 
@@ -455,7 +469,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if err != nil {
 			return r.setMachineError(ctx, agent, err)
 		}
+		// UNIT_BOUNDARY_DESCRIPTION: the sample is kept under the owner's lock, the one the runner's answer was recorded under, so a pass that read a status before that answer cannot keep the older reading after it.
+		machineLock := r.ownerLock(owner)
+		machineLock.Lock()
 		r.noteMachineUse(name, machine)
+		machineLock.Unlock()
 		timer.mark("vmMachine")
 		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer.
 		if pairAtRest && runnerReached && machineStopped(machine) && (lastReady == nil || lastReady.Reason != apiv1.ReasonHibernated) {
@@ -775,8 +793,19 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: cleans up after a deleted Agent. It runs on the controller's delete queue rather than in the informer's handler, because removing a vm agent's machine is a call to its owner's runner that can take seconds or fail outright; an error asks the queue to try again later, and every step is safe to repeat.
-func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error {
+// UNIT_BOUNDARY_DESCRIPTION: cleans up after a deleted Agent. It runs on the controller's delete queue rather than in the informer's handler, because removing a vm agent's machine is a call to its owner's runner that can take seconds or fail outright; an error asks the queue to try again later, and every step is safe to repeat. The Agent is read live first, because a queued cleanup can run three quarters of an hour after the delete: a name that another Agent holds now is left alone, with its machine, home and objects, and one the same Agent still holds waits for the queue.
+func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid types.UID) error {
+	live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	switch {
+	case err == nil && live.GetUID() != uid:
+		slog.Info("deleted agent cleanup: the name belongs to an agent created since, nothing is removed", "agent", name, "uid", uid, "live", live.GetUID())
+		return nil
+	case err == nil:
+		return fmt.Errorf("the deleted agent is still there")
+	case !errors.IsNotFound(err):
+		return fmt.Errorf("reading the deleted agent: %w", err)
+	}
+
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
@@ -784,6 +813,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error 
 		return err
 	}
 	r.vmRunning.Delete(name)
+	r.vmAnswers.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)

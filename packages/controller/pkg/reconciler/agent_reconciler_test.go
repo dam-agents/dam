@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	dynfake "k8s.io/client-go/dynamic/fake"
 	"k8s.io/client-go/kubernetes/fake"
 	typednetworkingv1 "k8s.io/client-go/kubernetes/typed/networking/v1"
@@ -59,6 +60,17 @@ func agentCR() *apiv1.Agent {
 		},
 		Spec: *testAgent,
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what an Agent's removal does for the controller's delete queue — the object goes, and the cleanup follows with the UID it went with — so a test calls Delete the way the informer's event does.
+func deleteAgentCR(t *testing.T, r *AgentReconciler, name string) types.UID {
+	t.Helper()
+	ctx := context.Background()
+	cli := r.dynamic.Resource(AgentsGVR).Namespace("test-agents")
+	stored, err := cli.Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, cli.Delete(ctx, name, metav1.DeleteOptions{}))
+	return stored.GetUID()
 }
 
 func setupReconciler(t *testing.T, agent *apiv1.Agent, objects ...runtime.Object) (*AgentReconciler, *fake.Clientset) {
@@ -686,7 +698,7 @@ func TestDelete_CleansPVCs(t *testing.T) {
 	require.NoError(t, err)
 	assert.Len(t, pvcs.Items, 1)
 
-	r.Delete(ctx, "my-agent", "")
+	r.Delete(ctx, "my-agent", "", deleteAgentCR(t, r, "my-agent"))
 
 	pvcs, err = client.CoreV1().PersistentVolumeClaims("test-agents").List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=my-agent",

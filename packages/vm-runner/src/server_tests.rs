@@ -7,7 +7,7 @@ use super::*;
 use crate::api::{
     REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
     REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
-    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -380,6 +380,22 @@ impl Harness {
             );
             tokio::time::sleep(Duration::from_millis(1)).await;
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each named machine's share grants its guest, as platform-init reads them.
+    fn grants(&self, ids: &[&str]) -> Vec<u64> {
+        ids.iter()
+            .map(|id| {
+                let grant = self
+                    .dir
+                    .join("machines")
+                    .join(id)
+                    .join(SHARE_DIR)
+                    .join(share::STORAGE_ROOM_FILE);
+                let text = std::fs::read_to_string(grant).unwrap();
+                text.split_whitespace().nth(1).unwrap().parse().unwrap()
+            })
+            .collect()
     }
 
     fn machine<R>(&self, id: &str, change: impl FnOnce(&mut MachineEntry) -> R) -> R {
@@ -2844,7 +2860,7 @@ async fn a_short_claim_marks_every_share_until_it_has_room_again() {
     }
 }
 
-// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, its part of what is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews.
+// TEST_SCENARIO: a guest's disk is sized at the whole claim, so the runner grants every machine's guest, at each look, its part of what is left below 95% of the claim, with an id new at every look so the guest counts its writes from the latest grant; a claim that cannot be measured grants nothing, so no guest is held to a grant nobody renews, and the runner records that it is no longer holding them, for its log.
 #[tokio::test(flavor = "multi_thread")]
 async fn every_look_grants_each_guest_its_room_on_the_claim() {
     let (h, claim) = with_claim("storage-room");
@@ -2865,9 +2881,166 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     );
     h.server.check_storage();
     assert_ne!(std::fs::read_to_string(&grant).unwrap(), first);
+    assert!(!h.server.storage_unmeasured.load(Ordering::Relaxed));
     *locked(&claim) = None;
     h.server.check_storage();
     assert!(!grant.exists());
+    assert!(h.server.storage_unmeasured.load(Ordering::Relaxed));
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    assert!(!h.server.storage_unmeasured.load(Ordering::Relaxed));
+}
+
+// TEST_SCENARIO: machines woken together boot together and write together, so the room below 95% is split between every machine that is neither stopped nor absent. Split between the running ones alone, none of them is running yet when the group boots, and each holds a grant for the whole room until the next look, so their writes together pass the level the claim is held to.
+#[tokio::test(flavor = "multi_thread")]
+async fn machines_woken_together_share_the_room_between_them() {
+    let (h, claim) = with_claim("storage-woken-together");
+    let ids = ["m1", "m2"];
+    for id in ids {
+        h.server.put(id, spec(true)).unwrap();
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+        h.server.put(id, spec(false)).unwrap();
+        h.until(id, "stopped", |s| s.state == STATE_STOPPED).await;
+    }
+    *locked(&claim) = filled(55);
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    locked(&h.fake.calls).clear();
+    for id in ids {
+        assert_eq!(h.server.put(id, spec(true)).unwrap().state, STATE_STARTING);
+    }
+    h.wait_for_call("start m2").await;
+    h.server.check_storage();
+    assert_eq!(h.grants(&ids), vec![20u64 << 30; 2]);
+    for id in ids {
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
+    h.server.check_storage();
+    assert_eq!(h.grants(&ids), vec![20u64 << 30; 2]);
+}
+
+// TEST_SCENARIO: a grant outlives the look that wrote it, so a machine that is stopped is granted nothing rather than a part of the room: started between two looks, it would otherwise boot on the room its share held while it was stopped, beside every machine started with it. A start is a look of its own, so the machines woken together boot on their even part instead of on the floor alone, and the room they hold together never passes what the claim has left below 95%.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_woken_between_looks_does_not_boot_on_the_whole_room() {
+    let (h, claim) = with_claim("storage-woken-between");
+    let ids = ["m1", "m2"];
+    for id in ids {
+        h.server.put(id, spec(true)).unwrap();
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+        h.server.put(id, spec(false)).unwrap();
+        h.until(id, "stopped", |s| s.state == STATE_STOPPED).await;
+    }
+    let room = 40u64 << 30;
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    assert_eq!(
+        h.grants(&ids),
+        vec![0; 2],
+        "a sleeping machine was granted room"
+    );
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    locked(&h.fake.calls).clear();
+    for id in ids {
+        assert_eq!(h.server.put(id, spec(true)).unwrap().state, STATE_STARTING);
+    }
+    h.wait_for_call("start m2").await;
+    let woken = h.grants(&ids);
+    assert!(
+        woken.iter().all(|&bytes| bytes > 0),
+        "a wake booted on no grant of its own: {woken:?}"
+    );
+    assert!(
+        woken.iter().sum::<u64>() <= room,
+        "the machines woken together hold {woken:?} of the room's {room} bytes"
+    );
+    for id in ids {
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
+}
+
+// TEST_SCENARIO: the two halves of a look count different machines. The room is split between the machines that are up, so a starting machine takes its part from the running ones before it boots. The shortage is asked back of the running machines alone, since only a guest that runs can free its scratch, so a starting sibling does not halve what a running one is asked for.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_and_a_starting_machine_split_the_room_but_only_the_running_one_sheds() {
+    let (h, claim) = with_claim("storage-mixed");
+    h.server.put("m1", spec(true)).unwrap();
+    h.until("m1", "running", |s| s.state == STATE_RUNNING).await;
+    h.server.put("m2", spec(true)).unwrap();
+    h.until("m2", "running", |s| s.state == STATE_RUNNING).await;
+    h.server.put("m2", spec(false)).unwrap();
+    h.until("m2", "stopped", |s| s.state == STATE_STOPPED).await;
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    locked(&h.fake.calls).clear();
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_STARTING
+    );
+    h.wait_for_call("start m2").await;
+    *locked(&claim) = filled(80);
+    h.server.check_storage();
+    let room = 15u64 << 30;
+    assert_eq!(h.grants(&["m1", "m2"]), vec![room / 2; 2]);
+    let shed = std::fs::read_to_string(
+        h.dir
+            .join("machines/m1")
+            .join(SHARE_DIR)
+            .join(share::STORAGE_SHORT_FILE),
+    )
+    .expect("a short claim asks every share");
+    assert_eq!(
+        shed.split_whitespace().nth(1),
+        Some((10u64 << 30).to_string().as_str()),
+        "the running machine is asked the whole shortage: {shed}"
+    );
+    h.until("m2", "running", |s| s.state == STATE_RUNNING).await;
+}
+
+// TEST_SCENARIO: a look scans the machines and then writes every share, and two looks run at once: the periodic one and the one a start takes. A periodic look that scanned before a start, and stalled past it, must not write its older room over the newer one: that leaves the started machine at the floor and its sibling holding the whole room. The shares hold the look that scanned last, and what the machines hold together stays inside the room.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_look_that_scanned_first_does_not_write_over_a_later_one() {
+    let armed = Arc::new(AtomicBool::new(false));
+    let scanned = Arc::new(AtomicBool::new(false));
+    let stored: Arc<Mutex<Option<StorageUse>>> = Arc::default();
+    let (measured, slow, told) = (stored.clone(), armed.clone(), scanned.clone());
+    let h = Harness::with("storage-look-order", move |c| {
+        c.measure_storage = Arc::new(move || {
+            let storage = *locked(&measured);
+            if slow.swap(false, Ordering::SeqCst) {
+                told.store(true, Ordering::SeqCst);
+                std::thread::sleep(Duration::from_millis(300));
+            }
+            storage
+        });
+    });
+    for id in ["m1", "m2"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
+    h.server.put("m2", spec(false)).unwrap();
+    h.until("m2", "stopped", |s| s.state == STATE_STOPPED).await;
+    *locked(&stored) = filled(55);
+    armed.store(true, Ordering::SeqCst);
+    let server = h.server.clone();
+    let stalled = std::thread::spawn(move || server.check_storage());
+    while !scanned.load(Ordering::SeqCst) {
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    *locked(&h.fake.start_delay) = Duration::from_millis(500);
+    locked(&h.fake.calls).clear();
+    assert_eq!(
+        h.server.put("m2", spec(true)).unwrap().state,
+        STATE_STARTING
+    );
+    h.wait_for_call("start m2").await;
+    stalled.join().unwrap();
+    let room = 40u64 << 30;
+    let held = h.grants(&["m1", "m2"]);
+    assert_eq!(
+        held,
+        vec![room / 2; 2],
+        "the shares do not hold the look that scanned last"
+    );
+    for id in ["m1", "m2"] {
+        h.until(id, "running", |s| s.state == STATE_RUNNING).await;
+    }
 }
 
 // TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
@@ -3216,4 +3389,102 @@ async fn a_hand_off_admits_no_start_into_memory_adopted_machines_hold() {
     let refused = next.server.put("m2", spec(true)).unwrap();
     assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
     next.server.close().await;
+}
+
+// TEST_SCENARIO: a launch record that cannot be read says nothing about whether its machine runs, and a runner that read it as "not running" counted a live VMM as nothing: admission then handed its room to the next machine. It counts as running instead, at what it was measured holding or at its size, until the record reads again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("unreadable-record", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    let next = h.hand_off(tune).await;
+    assert_eq!(
+        next.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a running machine whose launch record cannot be read was counted as nothing"
+    );
+    let refused = next.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: admission counts the figure the last probe read, as the runner's adoption of a handed-off machine does, and not the whole handout. A machine that is not running reports none, so no figure outlives the VMM that held it.
+#[tokio::test]
+async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
+    let h = Harness::new("resident-unread");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(500);
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 500);
+
+    *locked(&h.fake.resident) = None;
+    h.server.probe("m1");
+    assert_eq!(
+        h.server.status("m1").used_mib,
+        500,
+        "a failed measurement counted the machine as holding nothing"
+    );
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(
+        h.server.status("m1").used_mib,
+        0,
+        "a stopped machine still reported the memory it held"
+    );
+}
+
+// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine.
+#[tokio::test]
+async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
+    let h = Harness::new("state-unread");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(700);
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 700);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    h.server.probe("m1");
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_UNKNOWN, "{status:?}");
+    assert_eq!(
+        status.used_mib, 700,
+        "an unread state counted the machine as holding nothing"
+    );
+
+    locked(&h.fake.state_fails_until_start).remove("m1");
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 700);
+}
+
+// TEST_SCENARIO: a spec that cannot be read says nothing about what the machine holds or how long its boot has been up, and the status that zeroed both over an unreadable spec made the controller count a measured machine at its floor. Neither is read off the spec, so both are still reported; only what the spec carries is missing.
+#[tokio::test]
+async fn a_machine_whose_spec_cannot_be_read_still_reports_what_it_measured() {
+    let h = Harness::new("spec-unread-status");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(640);
+    h.server.probe("m1");
+    std::fs::write(
+        h.dir.join("machines").join("m1").join("spec.json"),
+        "not json",
+    )
+    .unwrap();
+
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert_eq!(
+        status.used_mib, 640,
+        "an unreadable spec counted the machine as holding nothing"
+    );
+    assert!(
+        status.warming,
+        "an unreadable spec dropped the warm-up the runner knows about"
+    );
 }

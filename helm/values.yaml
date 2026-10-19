@@ -335,9 +335,10 @@ virtualization:
     # before the roll is ready again. `settleTimeout` bounds that wait, so a
     # machine that never comes back (its agent was stopped mid-roll) does not
     # stall everyone else's upgrade. A new owner's runner is created at once.
-    # A pass visits each runner about once a minute while its agents run, and
-    # on the controller's ten-minute sweep otherwise, so a full roll takes
-    # roughly owners / maxConcurrent × (runner restart + machine boot).
+    # A pass visits each runner about once every five minutes while its
+    # agents run, and on the controller's ten-minute sweep otherwise, so a
+    # full roll takes roughly owners / maxConcurrent × (runner restart +
+    # machine boot).
     # A runner whose owner has an agent in the middle of a turn does not take
     # a free place in the roll: it is offered again on the next pass, and
     # other owners roll meanwhile. `idleWait` bounds that wait; past it, the

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   rewriteCutOf,
+  takeBackCutOf,
   withOriginalTimes,
 } from "../../modules/acp/domain/rewrite-cut.js";
 
@@ -240,5 +241,61 @@ describe("rewriteCutOf: a batch", () => {
       kind: "after",
       entry: "tr1",
     });
+  });
+});
+
+describe("takeBackCutOf", () => {
+  /**
+   * TEST_SCENARIO: A turn stopped before the agent wrote anything leaves the
+   * message and the harness's own note of the stop as the last batch. Taking
+   * the message back cuts right before that batch, whatever its text.
+   */
+  it("cuts before the last batch when the agent wrote nothing after it", () => {
+    const history = [
+      user("u1", "hi"),
+      agent("msg_a", "hello"),
+      user("u2", "name three rivers"),
+      user("u3", "[Request interrupted by user]"),
+    ];
+
+    const log = [echo("p2", "name three rivers")];
+
+    expect(takeBackCutOf(history, log, "p2")).toEqual({
+      kind: "after",
+      entry: "msg_a",
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: Once the agent wrote anything after the last message, the
+   * message is answered and cannot be taken back.
+   */
+  it("reports an answered message as missing", () => {
+    const history = [
+      user("u1", "hi"),
+      agent("msg_a", "hello"),
+      user("u2", "name three rivers"),
+      toolCall("msg_b", "t1"),
+    ];
+
+    expect(takeBackCutOf(history, [], "u2")).toEqual({ kind: "missing" });
+  });
+
+  /**
+   * TEST_SCENARIO: The harness may not hold the message — not written yet
+   * right after the turn ends, or dropped when the stop came before the turn
+   * began — while an older unanswered message is the last batch. That batch
+   * is not the message, so nothing is cut.
+   */
+  it("reports a message the last batch does not hold as absent", () => {
+    const history = [
+      user("u1", "hi"),
+      agent("msg_a", "hello"),
+      user("u2", "an older stopped message"),
+      user("u3", "[Request interrupted by user]"),
+    ];
+    const log = [echo("p3", "name three rivers")];
+
+    expect(takeBackCutOf(history, log, "p3")).toEqual({ kind: "absent" });
   });
 });

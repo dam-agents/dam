@@ -84,7 +84,7 @@ Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and 
   The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-pod) reads its own harness's rail.
   A harness's layer owns its variables over an agent-wide copy, so the rail an older agent was seeded from its Template never leaks into another harness: Bob never sees the Claude Code rail's OTLP protocol.
 
-- **Signals.** The agent-runtime's Model Router ([harness configuration](harness-config.md#the-model-router)) exports one **log record per LLM call** on every harness it serves, as OTLP/HTTP JSON on the same rail with the harness's trace context: the token counts, the cost from the catalog's price, the provider Connection, the upstream model, the harness, and whether the call went uncounted (cut short, no usage, unpriced).
+- **Signals.** The agent-runtime's Model Router ([harness configuration](harness-config.md#the-model-router)) exports one **log record per LLM call** on every harness it serves, as OTLP/HTTP JSON on the same rail with the harness's trace context: the token counts, the provider Connection, the upstream model, the harness, and whether the call went uncounted (cut short, no usage); no cost, as spend reads the [meter](spend-limits.md).
   It batches for a second, retries a refused post once, then drops with a log line; a call never waits on it.
   Claude Code also exports metrics, logs and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP, with its own **log record per LLM call**; the [metrics](metrics.md) reader prefers the router's records where an agent has them.
   Pi exports **log records only**: the same per-call counters, and a prompt identifier on every record a prompt caused, but no traces, so its sessions never fold child runs by trace.
@@ -95,7 +95,7 @@ Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and 
   Bob additionally gates those spans behind its own agent-operations switch, so the rail turns it on explicitly; without it the harness exports its lifecycle spans and none of the spend.
   Codex exports **log records and traces**, but in a shape of its own: no record body, its event name and counter names its own, its thread id where the others carry the session, and input counted with cache reads included.
   The collector reshapes Codex's records on arrival — body from the event name, session from the thread id, and its per-call usage record renamed with the common counters, input net of cache reads — so the read path takes Codex spend from them like Claude Code's.
-  Codex reports no per-call cost; the Model Router prices each of its calls in a record of its own, which the read path prefers, so Codex's own records count, as tokens at zero cost, only where no router record reached the store.
+  Codex reports no per-call cost, so its records count as tokens at zero cost, only where no router record reached the store.
   Its usage record carries no trace context, so a session-scoped span read finds no Codex session.
 
 - **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.
@@ -127,8 +127,8 @@ Enabling the backend sets the standard OTLP endpoint environment on each deploym
 Unlike agent telemetry, this export does not ride a gateway: it arrives without the trusted attribution header, so it carries no `platform.agent.id` and is never attributed to a user — which is exactly how the read path distinguishes platform telemetry from agent telemetry.
 
 - The **controller** emits one trace per reconcile pass and background sweep (with spans for each Kubernetes API call), reconcile and workqueue metrics, and its structured logs with trace correlation.
-  Its leader also exports the users' **VM pools** for operators, every half minute: what the runners' limits and claims commit against what the scheduler reserves for them and what the nodes able to run a runner hold (storage only where the storage driver publishes its capacity), how many runners sit at each level of their pool (ok, warning from 75%, critical from 90%), and how many runner pods wait on a resize the node deferred or refused.
-  The identity rule below holds: none of these names a user, so a user whose pool goes critical, or whose runner the node cannot fit, is named by a Warning Event on their vm Agents, and the second also by their `RunnerCapacity` condition.
+  Its leader also exports the users' **VM pools** for operators, every half minute: what the runners' limits and claims commit against what the scheduler reserves for them and what the nodes able to run a runner hold (storage only where the storage driver publishes its capacity), how many runners sit at each level of their pool (ok, warning from 75%, critical from 90%), how many runner pods wait on a resize the node deferred or refused, and how many sit on a node the cluster has lost.
+  The identity rule below holds: none of these names a user, so a user whose pool goes critical, whose runner the node cannot fit, or whose runner's node is lost is named by a Warning Event on their vm Agents, and a runner the node cannot fit also by their `RunnerCapacity` condition.
   The critical Event comes once per crossing; a controller restart repeats it only once the cluster has dropped the earlier Event.
 - The **api-server** emits one trace per incoming request with a child span per tRPC procedure (and spans for outbound calls: agents, Keycloak, channels, Redis, the ext-authz gRPC checks), per-procedure duration/outcome metrics plus Node runtime health (event loop, GC, heap), the **usage counters** and **state gauges** below, and its structured logs with trace correlation.
   Health-probe requests are not traced.
@@ -258,8 +258,9 @@ The runner's health prober writes the note for a quiet guest and refreshes it ab
 The chart ships alert rules for the VM pools only, for a cluster that runs prometheus-operator (or OpenShift's user-workload monitoring), because the backend's own alerts are not something a chart can declare.
 With `monitoring.enabled` the collector exports the pool series — the runners' and the controller's, and nothing else — in Prometheus form on a port of its own, and a ServiceMonitor and a PrometheusRule render where the cluster serves their API; elsewhere nothing renders.
 That port is admitted from any source, since the cluster's Prometheus has no mesh identity to match, which is why it carries no series but these.
-The rules fire on a user's pool at 75% and 90% of its memory or storage, a runner throttled in a fifth of its CPU periods or past its memory pressure, refusals that last, a resize a node deferred or refused, the users' pools committing more than one and a half times what the nodes or the storage driver hold, and runners reserving nine tenths of the nodes.
+The rules fire on a user's pool at 75% and 90% of its memory or storage, a runner throttled in a fifth of its CPU periods or past its memory pressure, refusals that last, a resize a node deferred or refused, the users' pools committing more than one and a half times what the nodes or the storage driver hold, runners reserving nine tenths of the nodes, and a node the cluster has stopped reporting ready with users' runners on it, which no wait clears ([node loss](../notes/vm-runner-node-loss.md)).
 No alert names a user; each critical one says how to find the user's agents from their Warning Events.
+The node-loss rule counts only the pods its own installation scrapes, because a Prometheus may serve several installations and a node lost to one is not a fault of the others; it keeps the namespace label so an alert instance says which installation it belongs to.
 
 ### Runtime migration
 

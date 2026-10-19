@@ -34,7 +34,6 @@ const turn: TurnSummary = {
   traceIds: [],
   models: [],
   calls: 0,
-  costUsd: 0,
   inputTokens: 0,
   outputTokens: 0,
   cacheReadTokens: 0,

@@ -25,6 +25,7 @@ type reclaimCandidate struct {
 	mem       resource.Quantity
 	vmMiB     int
 	booting   bool
+	refused   bool
 }
 
 func (r *AgentReconciler) reclaimIdleRoom(ctx context.Context, agent *apiv1.Agent, owner string) (bool, error) {
@@ -127,6 +128,7 @@ func (r *AgentReconciler) reclaimableAgents(ctx context.Context, self, owner str
 		c := reclaimCandidate{name: peer.Name, idleSince: idleSince, cpu: cpu, mem: mem, booting: vmBootInProgress(item, idleTimeout, now)}
 		if peer.Spec.IsVM() {
 			c.vmMiB = r.accountedMemoryMiB(ctx, owner, peer.Name, &peer.Spec)
+			c.refused = r.refusedWithoutMachine(peer)
 		}
 		out = append(out, c)
 	}

@@ -309,6 +309,14 @@ const ReasonOwnerGatewayListenerStale = "OwnerGatewayListenerStale"
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 
+// ReasonMachineRunnerNodeLost is stamped on AgentPodReady when a vm agent's
+// owner has a VM runner pod on a node the cluster does not report ready. The
+// pod cannot be replaced there — the claim stays attached to a node nothing
+// runs on — so every agent of that owner is down until an operator brings the
+// node back or fences it. Not a Machine* reason the runner can report: the
+// runner is not running.
+const ReasonMachineRunnerNodeLost = "MachineRunnerNodeLost"
+
 // ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent the
 // kernel took down when it OOM-killed the owner's VM runner, from the
 // runner pod's last termination, until the agent is ready again. Every

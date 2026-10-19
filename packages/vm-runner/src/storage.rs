@@ -64,11 +64,11 @@ impl StorageUse {
             < u128::from(self.usable) * u128::from(CRITICAL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `running` guests may still add to the claim before it reaches FULL_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. No running guest reads as one.
-    pub fn guest_room(&self, running: usize) -> u64 {
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `up` machines may still add to the claim before it reaches FULL_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. `up` counts the machines that are neither stopped nor absent, since a group woken together writes as soon as it boots, and no machine at all reads as one.
+    pub fn guest_room(&self, up: usize) -> u64 {
         let limit = u64::try_from(u128::from(self.usable) * u128::from(FULL_PERCENT) / 100)
             .unwrap_or(u64::MAX);
-        limit.saturating_sub(self.used) / u64::try_from(running.max(1)).unwrap_or(1)
+        limit.saturating_sub(self.used) / u64::try_from(up.max(1)).unwrap_or(1)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the owner is told when the runner refuses a machine for want of storage, word for word the api-server's storage-full message: what is refused at this level, that a sleeping VM agent can still be opened to clean up below FULL_PERCENT, that running ones may be failing to write from it, and the ways to free space.
@@ -156,9 +156,9 @@ mod tests {
         assert!(refusal.contains("50.0 of 100.0 GiB free"), "{refusal}");
     }
 
-    // TEST_SCENARIO: each running guest may add its even part of what is left below 95%, and nothing once the claim is full.
+    // TEST_SCENARIO: each guest of a machine that is up may add its even part of what is left below 95%, and nothing once the claim is full.
     #[test]
-    fn each_running_guest_may_add_its_part_of_the_room() {
+    fn each_guest_up_may_add_its_part_of_the_room() {
         assert_eq!(at(55).guest_room(2), 20);
         assert_eq!(at(55).guest_room(0), 40);
         assert_eq!(at(95).guest_room(1), 0);

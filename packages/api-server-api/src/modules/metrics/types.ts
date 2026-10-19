@@ -2,14 +2,10 @@ import type { z } from "zod";
 import type { SessionCategory } from "../sessions/types.js";
 import type {
   metricsOverviewInputSchema,
-  metricsSessionCostsInputSchema,
   metricsSpendBreakdownInputSchema,
 } from "./schemas.js";
 
 export type MetricsQuery = z.infer<typeof metricsOverviewInputSchema>;
-export type MetricsSessionCostsQuery = z.infer<
-  typeof metricsSessionCostsInputSchema
->;
 type MetricsSpendBreakdownQuery = z.infer<
   typeof metricsSpendBreakdownInputSchema
 >;
@@ -85,20 +81,6 @@ export interface CallContext {
   durationMs: number;
 }
 
-export interface SubAgentSpend {
-  subAgentId: string;
-  models: string[];
-  calls: number;
-  totalDurationMs: number;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheCreationTokens: number;
-  costUsd: number;
-  firstAt: string;
-  lastAt: string;
-}
-
 export interface MetricsOverview {
   tokenSpendByModel: TokenSpendByModel[];
   tokenSpendByProvider: TokenSpendByProvider[];
@@ -116,6 +98,5 @@ interface SpendBreakdown {
 
 export interface MetricsService {
   overview(query: MetricsQuery): Promise<MetricsOverview>;
-  sessionCosts(query: MetricsSessionCostsQuery): Promise<SessionRuntime[]>;
   spendBreakdown(query: MetricsSpendBreakdownQuery): Promise<SpendBreakdown>;
 }

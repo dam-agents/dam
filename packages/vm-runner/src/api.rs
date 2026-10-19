@@ -91,6 +91,9 @@ pub struct RunnerUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu: Option<CpuUsage>,
     pub machines: Vec<MachineUsage>,
+    // UNIT_BOUNDARY_DESCRIPTION: whether each machine above lists the memory figures a status reports for a running machine, which the controller's memory pass reads instead of a status read each. A runner older than those figures leaves this out, and the controller then reads each machine's status, so a controller newer than its runners still counts a warming machine at its warm-up floor and a machine still running at its old size at that size.
+    #[serde(rename = "machineFigures", skip_serializing_if = "is_zero")]
+    pub machine_figures: bool,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner's CPU over the last minute, off its cgroup: the limit the kernel holds it to (zero for none), what its machines used on average, the percentage of active scheduler periods in which that limit held them back, and the CPU pressure: the share of the last minute in which its agents waited for a CPU, by the cgroup's pressure stall information or by that throttling, whichever is higher. The pressure is absent when the cgroup has no cpu.pressure, and the whole figure when the runner has no cgroup, or neither a CPU limit nor a pressure to read.
@@ -134,8 +137,13 @@ pub struct MemoryUsage {
 pub struct MachineUsage {
     pub id: String,
     pub state: String,
+    // UNIT_BOUNDARY_DESCRIPTION: the memory figures a status reports for a running machine, sent under the `machineFigures` mark on the read. The measured use is kept out of the status version, so a figure that moves at every probe wakes nothing.
+    pub cpus: i32,
+    #[serde(rename = "memoryMiB", skip_serializing_if = "is_zero")]
+    pub memory_mib: i32,
     #[serde(rename = "usedMiB", skip_serializing_if = "is_zero")]
     pub used_mib: i32,
+    pub warming: bool,
     #[serde(rename = "diskGiB", skip_serializing_if = "is_zero")]
     pub disk_gib: i32,
     #[serde(rename = "diskUsedBytes", skip_serializing_if = "is_zero")]
@@ -373,7 +381,10 @@ mod tests {
                 machines: vec![MachineUsage {
                     id: "agent-a".into(),
                     state: STATE_RUNNING.into(),
+                    cpus: 2,
+                    memory_mib: 2048,
                     used_mib: 640,
+                    warming: true,
                     disk_gib: 100,
                     disk_used_bytes: 8589934592,
                     cpu_milli: 350,
@@ -385,6 +396,7 @@ mod tests {
                     throttled_percent: 4,
                     pressure_percent: Some(12),
                 }),
+                machine_figures: true,
             },
         );
         matches_the_contract(
