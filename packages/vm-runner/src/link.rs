@@ -315,7 +315,7 @@ mod tests {
             dir
         }
 
-        // An Environment's sshd: echoes what it gets, prefixed, on its expose socket.
+        // UNIT_BOUNDARY_DESCRIPTION: an Environment's sshd, which echoes what it gets, prefixed, on its expose socket.
         fn environment(&self, id: &str, owner: &str) {
             let dir = self.dir(id);
             write_role(
