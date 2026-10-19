@@ -308,7 +308,8 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
-  const { answered, vm } = useVmRuntime();
+  const { answered, vm: installVm } = useVmRuntime();
+  const vm = kit.backend === "vm" || installVm;
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();

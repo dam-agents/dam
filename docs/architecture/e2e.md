@@ -8,7 +8,7 @@ It is the only test that covers a change across the whole system — login throu
 ## Lanes
 
 A **lane** is a Backend for the Agents a spec creates.
-The **container lane** runs a plain install, where an Agent is a pod; the **vm lane** runs an install with virtualization on, where an Agent is a machine on its owner's VM runner.
+The **container lane** runs a plain install, where an Agent is a pod; the **vm lane** runs an install with virtualization on, where the Agents a spec creates are machines on their owner's VM runner.
 The lanes differ in nothing else, and both run on every pull request and in every full-suite run, each on its own runner, so a fault only one Backend has shows on the change that caused it.
 The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the vm backend on, and the suite reads it to pick the specs only one lane can run, and so the order the projects run in.
 

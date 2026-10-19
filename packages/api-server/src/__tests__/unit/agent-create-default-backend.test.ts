@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: with the new sandbox runtime out of the experiment, every agent created on an install that can run microVMs is a microVM, whether the caller asked for one. Every create path — the UI's forms, a starter kit, a sub-agent spawn, the CLI and the API — ends in the one agents create, so the default is applied there rather than trusted to each caller. An install without virtualization keeps creating containers.
+// TEST_OVERVIEW: with the new sandbox runtime out of the experiment, every agent created on an install that can run microVMs is a microVM unless the create asks for a container. Every create path — the UI's forms, a starter kit, a sub-agent spawn, the CLI and the API — ends in the one agents create, so the default is applied there rather than trusted to each caller. An install without virtualization keeps creating containers.
 import { describe, expect, it } from "vitest";
 import { createAgentsService } from "../../modules/agents/services/agents-service.js";
 import { parseInfraAgent } from "../../modules/agents/infrastructure/agent-mappers.js";

@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -23,7 +23,6 @@ That answer is what the runtime of a new agent follows, and it is not a feature:
 A kit that declares `backend: vm` ([starter-kits](starter-kits.md#kit-backend)) is the one declaration that can refuse instead: on an install without virtualization the kit is hidden and the create refuses it, since there is no machine to put the agent on.
 No kit can declare that it needs a container, so the install's answer never meets a kit it would have to refuse.
 One ask still beats the install's answer, for now: a create that names the container Backend itself gets one, which is how the e2e suite stages the container Agent its migration spec moves.
-A surface that creates an agent asks the install before it acts: an unanswered question reads like a no, and an agent would otherwise be created as something its author did not choose.
 **An install without virtualization keeps creating containers**, which is how a local or development install runs.
 
 ### Install preflight

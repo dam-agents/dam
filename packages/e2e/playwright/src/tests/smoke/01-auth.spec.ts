@@ -144,7 +144,7 @@ test("login via Keycloak and accept terms", async ({ page }) => {
   await page.context().storageState({ path: storageStatePath });
 });
 
-// TEST_SCENARIO: The global setup for the lane's Backend. The install's own virtualization decides which backend every agent it creates lands on, so the vm lane fails here, once, when the install has no vm backend, and not later in every spec that boots an agent.
+// TEST_SCENARIO: The global setup for the lane's Backend. The install's own virtualization decides which backend every agent it creates lands on, unless the spec asks for a container, so the vm lane fails here, once, when the install has no vm backend, and not later in every spec that boots an agent.
 test("the e2e lane's install has the Backend it runs on", async () => {
   const api = createApiClient(await getAccessToken());
   await requireBackend(api, laneBackend);

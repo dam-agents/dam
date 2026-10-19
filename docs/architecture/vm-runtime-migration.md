@@ -1,6 +1,6 @@
 # VM runtime migration
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it to the owner of any container Agent on an install that can run a machine, which is the only install where one could move.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
