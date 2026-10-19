@@ -1071,7 +1071,7 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free or only entries used within the last EVICT_AGES pass are left. A request from the runner that the owner's claim is short (ClaimRequest) is served once, with one pass that stops at the bytes the runner asked this machine for and evicts nothing used within CLAIM_EVICT_AGE: the claim is mostly the agents' homes, which no eviction touches, so a claim that stays short would otherwise give every agent's /tmp a ten-minute life with nothing gained. The runner sends a new request only when the claim fills further. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it, at the newest access time of its files, and while any process has a file open under it or works in it (open_paths): a read moves a file's access time only where the mount keeps it, and a reader takes no lock, so neither the times nor the kernel's lock table show a turn that is only reading. A grant that is spent serves one pass and no more until its room comes back (pool_guard::eviction_pass). The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed. A guest a grant holds back is not judged by this share at all but by the room its guard leaves it (POOL_GUARD_KEEP), so the pass that gives an agent down to its floor room again is the grant's own, run once per shortage (pool_guard::eviction_pass).
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free or only entries used within the last EVICT_AGES pass are left. A request from the runner that the owner's claim is short (ClaimRequest) is served once, with one pass that stops at the bytes the runner asked this machine for and evicts nothing used within CLAIM_EVICT_AGE: the claim is mostly the agents' homes, which no eviction touches, so a claim that stays short would otherwise give every agent's /tmp a ten-minute life with nothing gained. The runner sends a new request only when the claim fills further. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it, at the newest access time of its files, and while any process has a file open under it or works in it (open_paths): a read moves a file's access time only where the mount keeps it, and a reader takes no lock, so neither the times nor the kernel's lock table show a turn that is only reading. A grant that is spent serves one pass per CLAIM_EVICT_AGE, the age its pass spares (pool_guard::eviction_pass). The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed. A guest a grant holds back is not judged by this share at all but by the room its guard leaves it (POOL_GUARD_KEEP), so the pass that gives an agent down to its floor room again is the grant's own, run once per CLAIM_EVICT_AGE (pool_guard::eviction_pass).
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
 // UNIT_BOUNDARY_DESCRIPTION: the Cache Directory Tagging Specification's mark (bford.info/cachedir) that a directory holds only a cache its tool can rebuild. Go, cargo and ccache write it. In each pass a tagged entry goes before an untagged one, which may be an agent's work in progress.
@@ -1166,32 +1166,29 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
 
 fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     let home = Path::new(guest::AGENT_HOME);
-    let (mut stuck, mut served, mut swept) = (false, None::<String>, false);
+    let (mut stuck, mut served) = (false, None::<String>);
+    let mut swept: Option<u64> = None;
     loop {
         std::thread::sleep(EVICT_INTERVAL);
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |since| since.as_secs());
         let request = claim_request();
         if request.is_none() {
             served = None;
         }
-        let granted = POOL_GUARD_GRANTED.load(std::sync::atomic::Ordering::Relaxed);
-        let room = POOL_GUARD_KEEP.load(std::sync::atomic::Ordering::Relaxed);
-        if !granted || room >= crate::pool_guard::POOL_GUARD_FLOOR {
-            swept = false;
-        }
         let Some(pass) = eviction_pass(
-            granted,
-            room,
+            POOL_GUARD_GRANTED.load(std::sync::atomic::Ordering::Relaxed),
+            POOL_GUARD_KEEP.load(std::sync::atomic::Ordering::Relaxed),
             free_percent(home),
             request.as_ref(),
             served.as_deref(),
             swept,
+            now,
         ) else {
             stuck = false;
             continue;
         };
-        let now = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |since| since.as_secs());
         let (mut freed, mut deleted) = (0, Vec::new());
         let locked = match fs::read_to_string("/proc/locks") {
             Ok(table) => locked_files(&table),
@@ -1222,7 +1219,7 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
             served = Some(request.id);
         }
         if pass.kind == EvictionKind::Grant {
-            swept = true;
+            swept = Some(now);
         }
         if !deleted.is_empty() {
             announce(&format!(
@@ -1439,7 +1436,7 @@ fn claim_request() -> Option<ClaimRequest> {
         .map(|text| crate::pool_guard::parse_claim_request(&text))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (pool_guard::PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). btrfs's free space is an estimate that can pass the disk's own size, so the guard counts on no more than the disk holds beyond the guest's use, and when a preallocation is refused it finds what the disk takes and holds to that until the guest frees room, warning once (PoolGuard::grow). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor. What the guard leaves the agent is its room, and every look marks it on the console: full below guest::HOME_FULL_BYTES, held below POOL_GUARD_FLOOR, and room again above it, each mark held until the room clears its level by pool_guard::ROOM_BAND and each carrying its own word (guest::GUEST_FULL, guest::GUEST_NEARLY_FULL, guest::GUEST_ROOM), which is how the runner hears that a running agent's writes are failing and when they stop. Eviction is decided on that room and not on the disk (pool_guard::eviction_pass): the disk is the owner's whole claim, so a healthy grant is a small share of it, and a guest down to its floor evicts its scratch while it runs — one pass per shortage, of what it has not touched for CLAIM_EVICT_AGE — instead of being held behind the guard's blocks until it is restarted.
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (pool_guard::PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). btrfs's free space is an estimate that can pass the disk's own size, so the guard counts on no more than the disk holds beyond the guest's use, and when a preallocation is refused it finds what the disk takes and holds to that until the guest frees room, warning once (PoolGuard::grow). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor. What the guard leaves the agent is its room, and every look marks it on the console: full below guest::HOME_FULL_BYTES, held below POOL_GUARD_FLOOR, and room again above it, each mark held until the room clears its level by pool_guard::ROOM_BAND and each carrying its own word (guest::GUEST_FULL, guest::GUEST_NEARLY_FULL, guest::GUEST_ROOM), which is how the runner hears that a running agent's writes are failing and when they stop. Eviction is decided on that room and not on the disk (pool_guard::eviction_pass): the disk is the owner's whole claim, so a healthy grant is a small share of it, and a guest down to its floor evicts its scratch while it runs — one pass per CLAIM_EVICT_AGE, of what it has not touched for that age — instead of being held behind the guard's blocks until it is restarted.
 const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 const POOL_GUARD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
 

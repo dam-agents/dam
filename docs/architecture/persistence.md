@@ -254,7 +254,7 @@ An entry is one name directly in such a folder, such as `~/.cache/go-build` or `
 Use is the newest modification or change time anywhere in the entry, and the newest access time of its files.
 An entry used in the last ten minutes stays, and so does one that is or holds a file a process has locked, by any kind of lock, the way `systemd-tmpfiles` leaves a locked entry, and one a process has a file open under or works in: a reader takes no lock.
 A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
-A guest down at its grant's floor keeps that hour and no byte bound, served once per shortage like a request: a pass at every look would delete its scratch entry by entry as it crossed the hour.
+A guest down at its grant's floor keeps that hour and no byte bound, served again once that hour has passed rather than at every look, which would delete its scratch entry by entry.
 A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work.
 Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
 An agent that exits with its home nearly out of space or inodes is reported as a full home.
