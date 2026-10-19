@@ -171,13 +171,14 @@ impl EvictionPass {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a look evicts, and how. A guest a grant holds back is not judged by the disk: its disk is the owner's whole claim, so a healthy grant is a small share of it — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and a pass on that share would give every agent's scratch a ten-minute life for no shortage at all. Nor is it judged by the filesystem's free blocks when it is out of room, since btrfs reports room it does not have: its room is what the guard leaves it (POOL_GUARD_KEEP), and a pass is run once that is down to the floor, which is the agent's last allowance and the point at which its writes fail. That pass spares CLAIM_EVICT_AGE like the claim's, because the agent's own disk is the one thing it must not lose work from. A disk whose room cannot be read is left alone unless a request or a grant asks for a pass.
+// UNIT_BOUNDARY_DESCRIPTION: whether a look evicts, and how. A guest a grant holds back is not judged by the disk: its disk is the owner's whole claim, so a healthy grant is a small share of it — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and a pass on that share would give every agent's scratch a ten-minute life for no shortage at all. Nor is it judged by the filesystem's free blocks when it is out of room, since btrfs reports room it does not have: its room is what the guard leaves it (POOL_GUARD_KEEP), and a pass is run once that is down to the floor, which is the agent's last allowance and the point at which its writes fail. That pass spares CLAIM_EVICT_AGE like the claim's, because the agent's own disk is the one thing it must not lose work from, and it is run once per shortage (`swept`), like a claim's request: an agent held at its floor by its own home's files has no room whatever it evicts, so a pass at every look would delete its scratch entry by entry as each crossed the hour. A disk whose room cannot be read is left alone unless a request or a grant asks for a pass.
 pub fn eviction_pass(
     granted: bool,
     room: u64,
     free: Option<u64>,
     request: Option<&ClaimRequest>,
     served: Option<&str>,
+    swept: bool,
 ) -> Option<EvictionPass> {
     if !granted && disk_short(free, EVICT_BELOW_PERCENT) {
         return Some(EvictionPass {
@@ -193,7 +194,7 @@ pub fn eviction_pass(
             bytes: request.bytes,
         });
     }
-    (granted && room < POOL_GUARD_FLOOR).then_some(EvictionPass {
+    (granted && room < POOL_GUARD_FLOOR && !swept).then_some(EvictionPass {
         kind: EvictionKind::Grant,
         youngest: CLAIM_EVICT_AGE,
         bytes: None,
@@ -273,11 +274,11 @@ mod tests {
     // TEST_SCENARIO: a guest's own disk that is short is evicted on every look down to the last EVICT_AGES step, until it has room; a disk whose room cannot be read is left alone, since an unreadable disk is no proof of a shortage.
     #[test]
     fn a_short_disk_is_evicted_until_it_has_room() {
-        let pass = eviction_pass(false, 0, Some(5), None, None).unwrap();
+        let pass = eviction_pass(false, 0, Some(5), None, None, false).unwrap();
         assert_eq!((pass.kind, pass.youngest), (EvictionKind::Disk, 600));
         assert!(pass.continues(Some(15), 1 << 40) && !pass.continues(Some(20), 0));
-        assert_eq!(eviction_pass(false, 0, Some(50), None, None), None);
-        assert_eq!(eviction_pass(false, 0, None, None, None), None);
+        assert_eq!(eviction_pass(false, 0, Some(50), None, None, false), None);
+        assert_eq!(eviction_pass(false, 0, None, None, None, false), None);
     }
 
     // TEST_SCENARIO: a grant is an even part of the claim, so a healthy one is a small share of a disk sized at the whole claim — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and that share alone reads as a disk in trouble on every look. Eviction is decided on the room the guard leaves, not on the share: nothing is evicted on while the grant still has room, and a grant that is spent evicts one pass of what the agent has not touched for CLAIM_EVICT_AGE, which is the agent's last allowance and not a disk shortage.
@@ -285,12 +286,12 @@ mod tests {
     fn a_healthy_grant_is_not_a_short_disk() {
         let grant = 4_608 << 20;
         let share = Some(9);
-        assert_eq!(eviction_pass(true, grant, share, None, None), None);
+        assert_eq!(eviction_pass(true, grant, share, None, None, false), None);
         assert_eq!(
-            eviction_pass(true, POOL_GUARD_FLOOR, share, None, None),
+            eviction_pass(true, POOL_GUARD_FLOOR, share, None, None, false),
             None
         );
-        let spent = eviction_pass(true, POOL_GUARD_FLOOR - 1, share, None, None).unwrap();
+        let spent = eviction_pass(true, POOL_GUARD_FLOOR - 1, share, None, None, false).unwrap();
         assert_eq!(
             (spent.kind, spent.youngest),
             (EvictionKind::Grant, CLAIM_EVICT_AGE)
@@ -321,7 +322,7 @@ mod tests {
         let room = guest_room(guard.keep, true, optimistic);
         assert_eq!(room, 0);
         assert_eq!(room_of(room, None), Room::Full);
-        let pass = eviction_pass(true, room, Some(80), None, None).unwrap();
+        let pass = eviction_pass(true, room, Some(80), None, None, false).unwrap();
         assert_eq!(
             (pass.kind, pass.youngest),
             (EvictionKind::Grant, CLAIM_EVICT_AGE)
@@ -333,14 +334,14 @@ mod tests {
     fn a_short_claim_is_served_once_per_request_and_spares_recent_work() {
         let request = parse_claim_request("17 1000\n");
         assert_eq!(request.bytes, Some(1000));
-        let pass = eviction_pass(false, 0, Some(50), Some(&request), None).unwrap();
+        let pass = eviction_pass(false, 0, Some(50), Some(&request), None, false).unwrap();
         assert_eq!(
             (pass.kind, pass.youngest),
             (EvictionKind::Claim, CLAIM_EVICT_AGE)
         );
         assert!(pass.continues(Some(50), 999) && !pass.continues(Some(50), 1000));
         assert_eq!(
-            eviction_pass(false, 0, Some(50), Some(&request), Some("17 1000")),
+            eviction_pass(false, 0, Some(50), Some(&request), Some("17 1000"), false),
             None
         );
         assert!(eviction_pass(
@@ -348,23 +349,51 @@ mod tests {
             0,
             Some(50),
             Some(&parse_claim_request("18 1000")),
-            Some("17 1000")
+            Some("17 1000"),
+            false
         )
         .is_some());
         let legacy = parse_claim_request("");
         assert_eq!(legacy.bytes, None);
-        assert!(eviction_pass(false, 0, Some(50), Some(&legacy), None)
-            .unwrap()
-            .continues(Some(50), u64::MAX));
+        assert!(
+            eviction_pass(false, 0, Some(50), Some(&legacy), None, false)
+                .unwrap()
+                .continues(Some(50), u64::MAX)
+        );
         assert_eq!(
-            eviction_pass(false, 0, Some(50), Some(&legacy), Some("")),
+            eviction_pass(false, 0, Some(50), Some(&legacy), Some(""), false),
             None
         );
-        let both = eviction_pass(true, 0, Some(50), Some(&request), None).unwrap();
+        let both = eviction_pass(true, 0, Some(50), Some(&request), None, false).unwrap();
         assert_eq!(
             both.kind,
             EvictionKind::Claim,
             "a request the runner sent is served ahead of a spent grant, on the bytes it asked for"
+        );
+    }
+
+    // TEST_SCENARIO: a guest held at its floor by files in its own home, which eviction never touches, gains no room from a pass: what a pass frees the guard takes again, so the guest is at its floor at the next look too. A pass at every look would then delete its scratch entry by entry as each crossed the hour, so a grant that is spent gets one pass per shortage and another only once its room came back, while a request the runner sent still gets its own.
+    #[test]
+    fn a_spent_grant_is_evicted_once_per_shortage() {
+        let below = POOL_GUARD_FLOOR - 1;
+        assert_eq!(
+            eviction_pass(true, below, Some(9), None, None, false)
+                .unwrap()
+                .kind,
+            EvictionKind::Grant
+        );
+        assert_eq!(
+            eviction_pass(true, below, Some(9), None, None, true),
+            None,
+            "the pass that already ran stands while the guest is still at its floor"
+        );
+        let request = parse_claim_request("7 1000");
+        assert_eq!(
+            eviction_pass(true, below, Some(9), Some(&request), None, true)
+                .unwrap()
+                .kind,
+            EvictionKind::Claim,
+            "a request the runner sent is served all the same"
         );
     }
 

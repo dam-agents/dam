@@ -249,13 +249,13 @@ The old upper is renamed aside with the record of its image and deleted in the b
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root that start empty on every boot, whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them, and never through a link or a mount: a folder that is a link, such as a `~/.cache` an agent pointed at its work, or a mount it was not at boot, is skipped, an entry holding a mount stays whole, and no delete goes into a mount.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them: a folder that is a link, such as a `~/.cache` an agent pointed at its work, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
 An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
-Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
-An entry used in the last ten minutes stays, and so does one that is or holds a file a process has locked, by any kind of lock, the way `systemd-tmpfiles` leaves a locked entry.
+Use is the newest modification or change time anywhere in the entry, and the newest access time of its files.
+An entry used in the last ten minutes stays, and so does one that is or holds a file a process has locked, by any kind of lock, the way `systemd-tmpfiles` leaves a locked entry, and one a process has a file open under or works in: a reader takes no lock.
 A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
-A guest down at its grant's floor keeps that hour but no byte bound: each look serves it again.
-A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
+A guest down at its grant's floor keeps that hour and no byte bound, served once per shortage like a request: a pass at every look would delete its scratch entry by entry as it crossed the hour.
+A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work.
 Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
 An agent that exits with its home nearly out of space or inodes is reported as a full home.
 A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
@@ -300,7 +300,7 @@ The agent that used it up gets room again once the claim has room, through a gra
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
 A clean stop empties it first, so the next boot does not start with its blocks taken.
-btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
+btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, and grows only as far as the disk takes.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until btrfs discards them; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
