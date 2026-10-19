@@ -46,7 +46,7 @@ impl Capacity<'_> {
         Ok(())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, raised to the warm-up floor while it is unmeasured, warming up, or measured before a read that has failed since, and never above its applied size. A running machine whose spec cannot be read counts at the same measurement plus headroom, at least at the warm-up floor while it warms up, and at everything the runner hands out for machines when it was never measured: its size is what is unknown, not whether it holds memory.
+    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, raised to the warm-up floor while it is unmeasured, warming up, or measured before a read that has failed since, and never above its applied size. A running machine whose spec cannot be read counts at the same measurement plus headroom, at least at the warm-up floor while it warms up or after a read that has failed since, and at everything the runner hands out for machines when it was never measured: its size is what is unknown, not whether it holds memory.
     pub fn committed(
         &self,
         except: Option<&str>,
@@ -68,9 +68,13 @@ impl Capacity<'_> {
             }
             let Some(applied) = read_spec(self.state_dir, other) else {
                 let handout = i64::from(self.limit_mib - self.reserve_mib).max(0);
-                let floor = i64::from(if warming(other) { self.boot_mib } else { 0 });
-                used += resident(other).map_or(handout, |(mib, _)| {
-                    i64::from(mib.saturating_add(self.headroom_mib)).max(floor)
+                used += resident(other).map_or(handout, |(mib, stale)| {
+                    let counted = i64::from(mib.saturating_add(self.headroom_mib));
+                    if warming(other) || stale {
+                        counted.max(i64::from(self.boot_mib))
+                    } else {
+                        counted
+                    }
                 });
                 continue;
             };
@@ -616,6 +620,40 @@ mod tests {
 
     fn never(_: &str) -> bool {
         false
+    }
+
+    // TEST_SCENARIO: a machine whose spec cannot be read and whose last figure a probe could not refresh is counted at least at the warm-up floor, as one that is warming up is: the spec that would bound it is what is missing, and the figure is from before the failure, so neither says how much it holds now. Nothing else about the branch changes: a figure the last read did read counts at measurement plus headroom.
+    #[test]
+    fn an_unreadable_spec_after_a_failed_read_counts_at_the_warm_up_floor() {
+        let dir = TempDir::new("unreadable-stale");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        fs::write(state.join("agent-b").join(SPEC_FILE), "not json").unwrap();
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+            boot_mib: 3072,
+        };
+        let all = |_: &str| true;
+        let stale = |_: &str| Some((300, true));
+        let fresh = |_: &str| Some((300, false));
+
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &stale, &never)
+                .unwrap(),
+            3072,
+            "a figure from before a failed read was counted below the warm-up floor when the spec could not be read"
+        );
+        assert_eq!(
+            capacity
+                .committed(None, &BTreeMap::new(), &all, &fresh, &never)
+                .unwrap(),
+            556,
+            "a figure the last read did read was raised to the floor"
+        );
     }
 
     fn unmeasured(_: &str) -> Option<(i32, bool)> {
