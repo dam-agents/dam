@@ -28,8 +28,14 @@ const (
 // UNIT_BOUNDARY_DESCRIPTION: last reported it: what its VMM holds, and the
 // UNIT_BOUNDARY_DESCRIPTION: size it booted with, which a new size reaches
 // UNIT_BOUNDARY_DESCRIPTION: only at its next start. A machine that is not
-// UNIT_BOUNDARY_DESCRIPTION: running holds nothing to remember.
+// UNIT_BOUNDARY_DESCRIPTION: running holds nothing to remember. An unknown
+// UNIT_BOUNDARY_DESCRIPTION: state is not a machine that stopped, so it
+// UNIT_BOUNDARY_DESCRIPTION: forgets nothing: what the runner last reported
+// UNIT_BOUNDARY_DESCRIPTION: stands until it reads the machine again.
 func (r *AgentReconciler) noteMachineUse(name string, machine vmrunner.MachineStatus) {
+	if machine.State == vmrunner.StateUnknown {
+		return
+	}
 	if machine.State == vmrunner.StateRunning {
 		r.vmLive.Store(name, machine)
 		return

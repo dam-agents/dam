@@ -7,7 +7,7 @@ use super::*;
 use crate::api::{
     REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
     REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
-    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -3211,4 +3211,28 @@ async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
         0,
         "a stopped machine still reported the memory it held"
     );
+}
+
+// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine.
+#[tokio::test]
+async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
+    let h = Harness::new("state-unread");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(700);
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 700);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    h.server.probe("m1");
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_UNKNOWN, "{status:?}");
+    assert_eq!(
+        status.used_mib, 700,
+        "an unread state counted the machine as holding nothing"
+    );
+
+    locked(&h.fake.state_fails_until_start).remove("m1");
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 700);
 }

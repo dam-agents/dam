@@ -63,7 +63,7 @@ Counting a boot at half the pool would let only two machines boot at once; at th
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
-A machine whose own state cannot be read counts as running, at the whole handout until it can be measured again: an unknown VMM is not an absent one.
+A machine whose own state cannot be read is counted as running: its measured use plus headroom, never more than its size, at least its warm-up floor until it is measured, and at the whole handout when its spec cannot be read either, since then its size is the unknown part — an unknown VMM is not an absent one.
 That limit is the one the kernel holds the runner to, read off its cgroup's `memory.max` at every admission and pressure sample, so a limit resized in place counts at once; a runner with no cgroup v2 limit to read uses the limit it was started with.
 
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit.

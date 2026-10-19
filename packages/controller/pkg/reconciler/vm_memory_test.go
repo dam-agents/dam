@@ -36,6 +36,11 @@ func TestAMeasuredMachineCountsAtItsUsePlusHeadroom(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3072+600+256, d.memoryMiB)
 
+	r.noteMachineUse("peer-up", vmrunner.MachineStatus{State: vmrunner.StateUnknown})
+	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3072+600+256, d.memoryMiB, "an unread state forgot the last measurement")
+
 	r.noteMachineUse("peer-up", measured(2000))
 	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
