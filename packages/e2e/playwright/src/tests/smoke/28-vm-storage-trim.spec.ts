@@ -56,13 +56,14 @@ function claimKb(): { used: number; total: number } {
   return { used: Number(fields[2]), total: Number(fields[1]) };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the machines the runner divides the claim's room among now, from its own record of each machine: the machines it holds running, which is what it grants room to, and one for a count of none, as it reads an empty claim. The lane's shared agent counts too, so the count is not this spec's own two machines.
-function runningMachines(): number {
-  const count = onRunnerHost(
-    probeId,
-    `n=0; for f in /var/lib/platform/machines/*/spec.json; do grep -qF '"running":true' "$f" && n=$((n+1)); done; echo $n`,
+// UNIT_BOUNDARY_DESCRIPTION: the machines the runner divides the claim's room among now: the owner's agents the platform reports running, since every agent on this lane runs on a machine of the runner's, and the lane's shared agent counts too, so the count is not this spec's own two. One for a count of none, as the runner reads an empty claim.
+async function runningMachines(): Promise<number> {
+  const states = await Promise.all(
+    (await api.agents.list.query()).map(({ id }) =>
+      api.agents.get.query({ id }).then((agent) => agent.state === "running"),
+    ),
   );
-  return Math.max(Number(count.trim()) || 0, 1);
+  return Math.max(states.filter(Boolean).length, 1);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The vm lane's idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and the per-agent hibernation timeout a spec can set is a container backend setting the vm backend ignores; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
@@ -210,7 +211,7 @@ test("a writing agent stops at its share, not at the claim", async () => {
     test.skip(true, "the cap ran out before the guest was full");
   }
   const claim = claimKb();
-  const running = runningMachines();
+  const running = await runningMachines();
   await keepAwake(siblingId);
   expect(
     claim.used,

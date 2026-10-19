@@ -314,11 +314,13 @@ export function runnerPod(agentId: string): string {
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root on the agent's VM runner, as an operator with the pod would: the owner's claim is $HOME, and a machine's VMM is a `_boot-vm` child of the runner.
 export function onRunnerHost(agentId: string, script: string): string {
+  const pod = runnerPod(agentId);
+  if (!pod) throw new Error(`no VM runner hosts the machine of ${agentId}`);
   return kubectl(
     "-n",
     AGENT_NS,
     "exec",
-    runnerPod(agentId),
+    pod,
     "-c",
     "vm-runner",
     "--",
