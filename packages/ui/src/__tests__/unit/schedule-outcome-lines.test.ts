@@ -1,7 +1,10 @@
-// TEST_OVERVIEW: the outcome line a schedule's card carries in an Agent's schedules panel. It is the only place a user scanning the list sees that a schedule stopped working, so a recurring schedule's failure must appear there with its reason, not only inside the details card.
+// TEST_OVERVIEW: the outcome lines the schedules surfaces show from a schedule's last result. A failure must be readable wherever it is listed, even before the schedule ever ran, because that is the only sign a schedule stopped working.
 import { describe, expect, it } from "vitest";
 
-import { cardOutcome } from "../../modules/schedules/lib/schedule-format.js";
+import {
+  cardOutcome,
+  runOutcomeLine,
+} from "../../modules/schedules/lib/schedule-format.js";
 import type { Schedule } from "../../types.js";
 
 const base: Schedule = {
@@ -26,6 +29,9 @@ const base: Schedule = {
   migrationNote: null,
   sessionTitle: null,
 };
+
+const refusal =
+  "no model provider granted to this agent can run its harness; grant one to run this schedule";
 
 describe("cardOutcome", () => {
   // TEST_SCENARIO: a schedule whose saved model names a provider the agent no longer holds is refused on every fire. The card must show that reason, in the danger colour, so the failure is visible without opening the schedule's details.
@@ -68,5 +74,37 @@ describe("cardOutcome", () => {
 
     expect(cardOutcome(done)).toMatchObject({ label: "Succeeded" });
     expect(cardOutcome(pending)).toBeNull();
+  });
+});
+
+describe("runOutcomeLine", () => {
+  // TEST_SCENARIO: a schedule refused before its first fire has a result and no run time. The owner list and the results modal must still show the reason, or a schedule that never worked reads as a healthy one with an upcoming run.
+  it("shows the reason with no run time before the first run", () => {
+    const refused: Schedule = { ...base, status: { lastResult: refusal } };
+
+    expect(runOutcomeLine(refused)).toEqual({
+      when: null,
+      label: `Failed: ${refusal}`,
+      className: "text-danger",
+    });
+  });
+
+  // TEST_SCENARIO: once a fire has run, the line names when, so the reason and the run it belongs to are read together.
+  it("carries the run time once a fire has run", () => {
+    const ran: Schedule = {
+      ...base,
+      status: { lastRun: "2026-06-12T09:00:00.000Z", lastResult: "success" },
+    };
+
+    expect(runOutcomeLine(ran)).toMatchObject({
+      label: "Succeeded",
+      className: "text-success",
+    });
+    expect(runOutcomeLine(ran)?.when).toBeTruthy();
+  });
+
+  // TEST_SCENARIO: a schedule that never fired and never failed carries no line, so the surfaces stay quiet about work that has not happened.
+  it("says nothing when no result is recorded", () => {
+    expect(runOutcomeLine(base)).toBeNull();
   });
 });

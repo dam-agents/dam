@@ -148,7 +148,10 @@ export function ScheduleCard({
             {outcome && (
               <>
                 <span aria-hidden>·</span>
-                <span className={cn("truncate", outcome.className)}>
+                <span
+                  className={cn("truncate", outcome.className)}
+                  title={outcome.label}
+                >
                   {outcome.label}
                 </span>
               </>

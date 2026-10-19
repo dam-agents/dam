@@ -13,11 +13,7 @@ import {
   type OwnerScheduleRow,
   ownerScheduleRows,
 } from "../lib/owner-schedules.js";
-import {
-  formatRunTime,
-  lastRunStatus,
-  scheduleCadenceText,
-} from "../lib/schedule-format.js";
+import { runOutcomeLine, scheduleCadenceText } from "../lib/schedule-format.js";
 
 export function OwnerSchedulesView() {
   const { data, isLoading, isError } = useOwnerSchedules();
@@ -51,8 +47,7 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const cadence = scheduleCadenceText(schedule);
   const nextRun = active ? schedule.status?.nextRun : undefined;
-  const lastRun = schedule.status?.lastRun;
-  const outcome = lastRunStatus(schedule.status?.lastResult);
+  const outcome = runOutcomeLine(schedule);
   const idle = schedule.type === "once" ? "Finished" : "Paused";
 
   return (
@@ -74,10 +69,9 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
         {problem ? (
           <p className="mt-0.5 line-clamp-2 text-sm text-danger">{problem}</p>
         ) : (
-          lastRun &&
           outcome && (
             <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
-              Last run {formatRunTime(lastRun)} ·{" "}
+              {outcome.when ? `Last run ${outcome.when} · ` : ""}
               <span className={outcome.className}>{outcome.label}</span>
             </p>
           )

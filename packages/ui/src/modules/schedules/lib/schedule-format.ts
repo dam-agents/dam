@@ -121,6 +121,23 @@ export function cardOutcome(schedule: Schedule): LastRunStatus | null {
   return scheduleOnceState(schedule) === "pending" ? null : status;
 }
 
+export interface RunOutcomeLine {
+  when: string | null;
+  label: string;
+  className: string;
+}
+
+export function runOutcomeLine(schedule: Schedule): RunOutcomeLine | null {
+  const status = lastRunStatus(schedule.status?.lastResult);
+  if (!status) return null;
+  const lastRun = schedule.status?.lastRun;
+  return {
+    when: lastRun ? formatRunTime(lastRun) : null,
+    label: status.label,
+    className: status.className,
+  };
+}
+
 export function declinedSummary(status?: {
   declinedCount?: number;
   lastDeclinedAt?: string;

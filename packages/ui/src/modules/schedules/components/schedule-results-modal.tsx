@@ -10,7 +10,7 @@ import { AgentSleepingCallout } from "../../agents/components/agent-sleeping-cal
 import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { useScheduleSessions } from "../api/queries.js";
-import { formatRunTime, lastRunStatus } from "../lib/schedule-format.js";
+import { runOutcomeLine } from "../lib/schedule-format.js";
 
 interface RowProps {
   session: SessionView;
@@ -35,14 +35,16 @@ function ResultRow({ session, onOpen }: RowProps) {
   );
 }
 
-function LastRunLine({ schedule }: { schedule: Schedule }) {
-  const lastRun = schedule.status?.lastRun;
-  if (!lastRun) return null;
-  const status = lastRunStatus(schedule.status?.lastResult);
+function OutcomeLine({ schedule }: { schedule: Schedule }) {
+  const line = runOutcomeLine(schedule);
+  if (!line) return null;
   return (
     <p className="px-5 pb-4 text-sm text-muted-foreground md:px-6">
-      Last run {formatRunTime(lastRun)}
-      {status && <span className={status.className}> — {status.label}</span>}
+      {line.when ? `Last run ${line.when}` : ""}
+      <span className={line.className}>
+        {line.when ? " — " : ""}
+        {line.label}
+      </span>
     </p>
   );
 }
@@ -97,7 +99,7 @@ export function ScheduleResultsModal({
                 — Wake the agent to see runs.
               </AgentSleepingCallout>
             </div>
-            <LastRunLine schedule={schedule} />
+            <OutcomeLine schedule={schedule} />
           </>
         )}
         {!stopped && sessionsQuery.isError && (
