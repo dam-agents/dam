@@ -20,6 +20,12 @@ const snapshotSchema = z.object({
     }),
   ),
   damSide: z.object({ since: z.string() }).nullable(),
+  streaks: z
+    .partialRecord(
+      z.enum(["curve-bender", "ibm-litellm", "claude", "openai", "bob"]),
+      z.object({ failedRuns: z.number(), since: z.string() }),
+    )
+    .default({}),
 });
 
 export function createRedisStatusSnapshots(redis: Redis): StatusSnapshots {
@@ -27,7 +33,13 @@ export function createRedisStatusSnapshots(redis: Redis): StatusSnapshots {
     async read() {
       const raw = await redis.get(SNAPSHOT_KEY);
       if (raw === null) return null;
-      const parsed = snapshotSchema.safeParse(JSON.parse(raw));
+      let json: unknown;
+      try {
+        json = JSON.parse(raw);
+      } catch {
+        return null;
+      }
+      const parsed = snapshotSchema.safeParse(json);
       return parsed.success ? parsed.data : null;
     },
 

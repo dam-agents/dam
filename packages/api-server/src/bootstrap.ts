@@ -276,6 +276,7 @@ import {
   createGrantedConnectionTemplates,
   createProviderEgressScopes,
   listConnectionGrantAgentIds,
+  listConnectionTemplateIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
@@ -1122,7 +1123,10 @@ export async function bootstrap() {
     24 * 60 * 60 * 1000,
     () => spend.callRowsRetentionTick(),
   );
-  const providerStatus = composeProviderStatus({ redis: sharedRedis });
+  const providerStatus = composeProviderStatus({
+    redis: sharedRedis,
+    connectedTemplates: listConnectionTemplateIds(db),
+  });
   const providerStatusSaga = providerStatus.startSaga();
   await periodicJobs.register("provider-status-evaluate", 60_000, () =>
     providerStatus.service.evaluate(new Date()),

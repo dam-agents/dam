@@ -6,6 +6,7 @@ import {
 import { createXactLock } from "../../core/xact-lock.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
 import { createConnectionsRepository } from "./infrastructure/connections-repository.js";
+import { readConnectionTemplateIds } from "./infrastructure/connection-template-ids.js";
 import { createProviderBalanceSource } from "./infrastructure/provider-balance-source.js";
 import {
   createOAuthEngine,
@@ -137,6 +138,10 @@ export function listPlatformConnectionOwners(db: Db): Promise<string[]> {
   return createConnectionsRepository(db).listOwnersOfTemplate(
     PLATFORM_LLM_TEMPLATE_ID,
   );
+}
+
+export function listConnectionTemplateIds(db: Db): () => Promise<string[]> {
+  return () => readConnectionTemplateIds(db);
 }
 
 export function createGrantedConnectionTemplates(db: Db): {

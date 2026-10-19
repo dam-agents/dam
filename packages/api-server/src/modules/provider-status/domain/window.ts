@@ -19,6 +19,20 @@ export function windowMinutes(now: Date): number[] {
   return Array.from({ length: WINDOW_MINUTES }, (_, i) => last - i);
 }
 
+export function failedAgentsOf(buckets: readonly WindowBucket[]): Set<string> {
+  return new Set(buckets.flatMap((b) => b.failedAgents));
+}
+
+export function hasSucceededCalls(buckets: readonly WindowBucket[]): boolean {
+  let calls = 0;
+  let failures = 0;
+  for (const bucket of buckets) {
+    calls += bucket.calls;
+    failures += bucket.failures;
+  }
+  return calls > failures;
+}
+
 export function isDegraded(buckets: readonly WindowBucket[]): boolean {
   let calls = 0;
   let failures = 0;
