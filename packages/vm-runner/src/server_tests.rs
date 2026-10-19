@@ -82,6 +82,12 @@ impl Runtime for Fake {
     }
 
     fn vmm_pid(&self, id: &str) -> Option<i32> {
+        let pid = locked(&self.vmm_pids).get(id).copied()?;
+        // SAFETY: kill(2) with signal 0 takes no pointers and touches no process.
+        (unsafe { libc::kill(pid, 0) } == 0).then_some(pid)
+    }
+
+    fn vmm_record_pid(&self, id: &str) -> Option<i32> {
         locked(&self.vmm_pids).get(id).copied()
     }
 
@@ -3664,6 +3670,142 @@ async fn a_sigkill_the_cgroup_did_not_count_is_not_a_memory_kill() {
     locked(&h.fake.states).insert("m2".into(), State::Running);
     let status = kill_vmm(&h, "m2", libc::SIGKILL);
     assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+}
+
+// TEST_SCENARIO: a VMM that dies while its machine's start call is still running is the case the runtime's own sweep hides: the reaper cannot report a kill the start might itself be causing, and the sweep in the same tick reads the status and drops it, so the machine would restart under a boot failure and the kill would go unrecorded. The status is collected once, before either decides, and kept until the start returns: the kill is then named as the boot after it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
+    let h = Harness::new("kill-during-boot");
+    *locked(&h.fake.start_delay) = Duration::from_millis(400);
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    smolvm::process::register_vm_child(pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    // TEST_SCENARIO: the production tick, three times over: the reaper collects, the runtime's sweep of the same child reads nothing left, and the machine is still starting.
+    for _ in 0..3 {
+        h.server.reap_killed();
+        smolvm::process::reap_vm_children();
+        // TEST_SCENARIO: the sweep's own read, which erases the status on every host: smolvm's is Linux-only, so the test makes the same read itself.
+        let mut status = 0;
+        // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
+        let _ = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "a kill was reported while the start it may belong to still ran"
+    );
+
+    h.settle("m1").await;
+    h.server.reap_killed();
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "the kill the sweep would have erased was not named once the start returned"
+    );
+    let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: the cgroup counts an OOM kill, and an operator `kill -9`s another machine in the same second. One count is one victim: the machine the kernel took names memory, the operator's does not, and the kill counter shows the one. A count the reaper never matched to a victim — a kill of something outside its machines — does not label the next SIGKILL it does see.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_counted_oom_names_one_machine_not_every_sigkill_beside_it() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-two-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    let counted = |kills: u64| {
+        fs::write(
+            cgroup.join("memory.events"),
+            format!("low 0\nhigh 0\nmax 4\noom {kills}\noom_kill {kills}\noom_group_kill 0\n"),
+        )
+        .unwrap();
+    };
+    counted(0);
+    let h = Harness::with("cgroup-one-of-two", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    for id in ["m1", "m2"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.settle(id).await;
+        locked(&h.fake.states).insert(id.into(), State::Running);
+    }
+    h.server.reap_killed();
+
+    let mut first = stand_in_vmm();
+    let mut second = stand_in_vmm();
+    let (one, two) = (
+        i32::try_from(first.id()).unwrap(),
+        i32::try_from(second.id()).unwrap(),
+    );
+    h.fake.set_vmm("m1", one);
+    h.fake.set_vmm("m2", two);
+    counted(1);
+    // SAFETY: kill(2) takes no pointers, and both pids are this test's own children.
+    unsafe {
+        libc::kill(one, libc::SIGKILL);
+        libc::kill(two, libc::SIGKILL);
+    }
+    let deadline = Instant::now() + ACTION_DEADLINE;
+    while h.server.status("m1").reason.is_empty() && h.server.status("m2").reason.is_empty() {
+        assert!(Instant::now() < deadline, "neither kill was reported");
+        h.server.reap_killed();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let (one_reason, two_reason) = (
+        h.server.status("m1").reason.clone(),
+        h.server.status("m2").reason.clone(),
+    );
+    let named = [one_reason.clone(), two_reason.clone()]
+        .iter()
+        .filter(|reason| **reason == REASON_OOM_KILLED)
+        .count();
+    assert_eq!(
+        named, 1,
+        "one count is one victim: m1={one_reason:?} m2={two_reason:?}"
+    );
+    assert!(
+        h.server.metrics_text().lines().any(|line| line
+            == format!(
+                "platform_vm_runner_machine_kills_total{{reason=\"{REASON_OOM_KILLED}\"}} 1"
+            )),
+        "the counter shows one kill:\n{}",
+        h.server.metrics_text()
+    );
+    let _ = first.wait();
+    let _ = second.wait();
+}
+
+// TEST_SCENARIO: after a hand-off the machine's VMM is a child of the loader, which reads its status and records the signal for the runner that adopted the machine; this process reads nothing of it. The record is the only thing that names the kill, and it is read once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_death_the_loader_recorded_is_named_after_a_handoff() {
+    let h = Harness::new("handoff-record");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+
+    // TEST_SCENARIO: the VMM the machine was booted with, reaped by the loader as the old runner's child, so this process can read no status of it.
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGSYS) };
+    let _ = vmm.wait();
+    let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&records).unwrap();
+    fs::write(records.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+
+    h.server.reap_killed();
+    let status = h.server.status("m1");
+    assert_eq!(status.reason, REASON_SECCOMP_KILLED, "{status:?}");
+    assert!(
+        !records.join(pid.to_string()).exists(),
+        "the record was read twice"
+    );
 }
 
 // TEST_SCENARIO: a machine the kernel killed that wakes onto a boot copying a migration's seed reports the copy, not the kill: the copy is what is running now, the controller holds it past its idle cap and exempts it from its not-ready bound, and a kill from before it explains neither. The kill is still what the status said before that boot, and it says so again if the copy ends before the guest answers.

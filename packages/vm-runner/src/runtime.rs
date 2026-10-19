@@ -49,6 +49,11 @@ pub trait Runtime: Send + Sync {
     fn vmm_pid(&self, _id: &str) -> Option<i32> {
         None
     }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pid the machine's own record names, whether or not that process is still the one the record meant: a VMM the loader reaped is gone, so its start time cannot be checked any more, and the pid is the only link to the exit the loader recorded. Read only to match such a record, never to reap.
+    fn vmm_record_pid(&self, _id: &str) -> Option<i32> {
+        None
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged tree, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
@@ -386,14 +391,23 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the signal that ended a VMM this runner started, collected from its exit status, or nothing when it has not exited, is not this runner's child, or exited on its own. A VMM is this process's child, so only this process can read the status; a machine handed over to a new runner release keeps no status at all, and a pid some other sweep already reaped reads as nothing.
-pub fn killed_by(pid: i32) -> Option<i32> {
+// UNIT_BOUNDARY_DESCRIPTION: what one read of a child's exit status says. The read happens once and the caller keeps the answer: a second read gets ECHILD, and the status is gone with it, which is why the reaper collects before it decides anything. A VMM is a child of the process that spawned it, so a machine handed over to a new runner release reads as `Gone` here — the loader reaps those and records the signal for the runner that adopted them.
+pub enum Ended {
+    Running,
+    Signalled(i32),
+    Exited,
+}
+
+pub fn ended(pid: i32) -> Ended {
     let mut status = 0;
     // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
     if unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } != pid {
-        return None;
+        return Ended::Running;
     }
-    libc::WIFSIGNALED(status).then(|| libc::WTERMSIG(status))
+    match libc::WIFSIGNALED(status) {
+        true => Ended::Signalled(libc::WTERMSIG(status)),
+        false => Ended::Exited,
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
@@ -870,23 +884,40 @@ mod tests {
             .spawn()
             .unwrap();
         let pid = i32::try_from(child.id()).unwrap();
-        assert_eq!(killed_by(pid), None, "a running VMM exited");
+        assert!(matches!(ended(pid), Ended::Running), "a running VMM exited");
         // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
         unsafe { libc::kill(pid, libc::SIGSYS) };
         let deadline = Instant::now() + Duration::from_secs(5);
         let signal = loop {
-            if let Some(signal) = killed_by(pid) {
-                break Some(signal);
+            if let Ended::Signalled(signal) = ended(pid) {
+                break signal;
             }
             assert!(Instant::now() < deadline, "the VMM never exited");
             std::thread::sleep(Duration::from_millis(5));
         };
-        assert_eq!(signal, Some(libc::SIGSYS));
-        assert_eq!(
-            killed_by(pid),
-            None,
+        assert_eq!(signal, libc::SIGSYS);
+        assert!(
+            matches!(ended(pid), Ended::Running),
             "a VMM whose status was already read is not read again"
         );
+        let _ = child.wait();
+    }
+
+    // TEST_SCENARIO: a VMM that exits on its own is told apart from one a signal ended, so a machine that stopped itself is not reported as a kill.
+    #[test]
+    fn a_vmm_that_exits_on_its_own_is_not_a_kill() {
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match ended(pid) {
+                Ended::Exited => break,
+                _ => {
+                    assert!(Instant::now() < deadline, "the VMM never exited");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+        }
         let _ = child.wait();
     }
 }

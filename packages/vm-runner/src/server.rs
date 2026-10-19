@@ -28,7 +28,7 @@ use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
     admissible, gateway_port_admissible, quiet_limit, reads_ready, step, Action, Health,
 };
-use crate::runtime::{killed_by, redact, Machine, Runtime, Update};
+use crate::runtime::{ended, redact, Ended, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
     self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
@@ -192,8 +192,48 @@ struct Machines {
     cpu: crate::cpu::Window,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what `oom_kills` holds until the first reap reads a cgroup's oom_kill count: a figure the cgroup could plausibly reach (u64::MAX), so a runner that reads no cgroup never mistakes it for a baseline.
+// UNIT_BOUNDARY_DESCRIPTION: what `oom_kills_seen` holds until the first reap reads a cgroup's oom_kill count: a figure the cgroup could plausibly reach (u64::MAX), so a runner that reads no cgroup never mistakes it for a baseline.
 const OOM_KILLS_UNREAD: u64 = u64::MAX;
+
+// UNIT_BOUNDARY_DESCRIPTION: how long an exit the reaper collected is kept while no report can be made of it — the machine's start call is still running, or it is converging, or its owner asked it down and the stop has not finished. Past it the record goes, since a death that old explains nothing the machine reads now.
+const EXIT_KEPT: Duration = Duration::from_secs(120);
+
+// UNIT_BOUNDARY_DESCRIPTION: the most kernel OOM kills the reaper carries unmatched between ticks. The kernel counts a kill before its victim is read, and a victim the reaper never sees — the loader, or a machine whose record is gone — would otherwise leave a credit that labels a later operator's `kill -9` as memory; a handful covers a burst, and what is past it is dropped rather than carried.
+const OOM_CREDIT_CAP: u64 = 8;
+
+// UNIT_BOUNDARY_DESCRIPTION: the signal the loader recorded for a VMM it reaped, read and removed in one step so one death is reported once: a VMM that died while its machine had no runner is the case where this process never saw the status at all. A record that cannot be parsed still counts as a death, so it is not read forever.
+fn read_exit_record(state_dir: &std::path::Path, pid: i32) -> Option<Option<i32>> {
+    let path = state_dir
+        .join(crate::state::EXIT_RECORDS)
+        .join(pid.to_string());
+    let text = fs::read_to_string(&path).ok()?;
+    let _ = fs::remove_file(&path);
+    Some(text.trim().parse().ok())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: removes the loader's records for pids no machine names any more, and any record older than a death still explains: a machine deleted while its record was being written leaves a file nothing would ever read.
+fn prune_exit_records(state_dir: &std::path::Path, named: &BTreeSet<i32>) {
+    let dir = state_dir.join(crate::state::EXIT_RECORDS);
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let named_here = name
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+            .is_some_and(|pid| named.contains(&pid));
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age > EXIT_KEPT);
+        if !named_here || stale {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
 
 pub struct Server {
     config: Config,
@@ -208,9 +248,12 @@ pub struct Server {
     storage_look: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
     storage_unmeasured: std::sync::atomic::AtomicBool,
-    // UNIT_BOUNDARY_DESCRIPTION: the cgroup's oom_kill count as the last two reaps saw it, the baseline that says whether a SIGKILL that ended a machine was the kernel's OOM killer or a signal from outside: OOM_KILLS_UNREAD until the first reap reads it, since a runner with no cgroup to read falls back to the signal alone.
-    oom_kills: AtomicU64,
-    oom_kills_before: AtomicU64,
+    // UNIT_BOUNDARY_DESCRIPTION: the cgroup's oom_kill count as the last reap saw it: OOM_KILLS_UNREAD until one reads it, since a runner with no cgroup to read falls back to the signal alone.
+    oom_kills_seen: AtomicU64,
+    // UNIT_BOUNDARY_DESCRIPTION: kernel OOM kills counted but not yet matched to a victim this reaper reported. One credit is spent per SIGKILL it reports, so an operator's `kill -9` beside a real OOM is not read as memory, and an OOM counted before its victim was read is not lost.
+    oom_credit: AtomicU64,
+    // UNIT_BOUNDARY_DESCRIPTION: every death the reaper has collected and not yet reported or dropped, by pid, with the signal that ended it when one did: the runtime's own sweep of these children discards the status, and the status read once is all there is, so a machine still starting when its VMM dies keeps its record until the start call returns.
+    exits: Mutex<BTreeMap<i32, (Option<i32>, Instant)>>,
     shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
@@ -311,8 +354,9 @@ impl Server {
             storage_look: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
             storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
-            oom_kills: AtomicU64::new(OOM_KILLS_UNREAD),
-            oom_kills_before: AtomicU64::new(OOM_KILLS_UNREAD),
+            oom_kills_seen: AtomicU64::new(OOM_KILLS_UNREAD),
+            oom_credit: AtomicU64::new(0),
+            exits: Mutex::new(BTreeMap::new()),
             shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
@@ -456,53 +500,22 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of every machine's VMM that has ended, and says on the machine what killed it: a VMM killed by a signal is a machine the kernel took for memory, or one its own seccomp filter killed, and either is said on the status with a counter of its own. It runs every second, ahead of the runtime's own sweep of these children in the same tick: that sweep discards the status, so a machine whose signal arrives between two of its probes, ten seconds apart, would otherwise restart with nothing said. Only a machine its owner asked to run is read — the runner's own stop, delete and start kill VMMs too — and those kills are guarded here by the action in flight, by a runtime call still holding the machine after its wait gave up, and by the spec that asked the machine down. A SIGKILL counts as the kernel's only when the cgroup's own oom_kill count grew in the second this reap covers, so an operator's `kill -9` and a container runtime's stop are not reported as memory. A kill is read once, and it goes when the guest answers, when its owner asks the machine down, and with the machine.
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of every machine's VMM that has ended, and says on the machine what killed it: a VMM killed by a signal is a machine the kernel took for memory, or one its own seccomp filter killed, and either is said on the status with a counter of its own. It runs every second, ahead of the runtime's own sweep of these children in the same tick, and it collects every machine's status before it decides anything: that sweep reads the same statuses and throws them away, so one read has to serve both, and a machine whose start call is still running keeps its collected exit until that call returns rather than losing it to a boot failure. A status this process cannot read is a machine another runner release booted, whose VMM the loader reaps and records, so a kill is still named after a hand-off. Only a machine its owner asked to run is reported — the runner's own stop, delete and start kill VMMs too — and those kills are guarded here by the action in flight, by a runtime call still holding the machine after its wait gave up, and by the spec that asked the machine down. A SIGKILL counts as the kernel's only when the cgroup counted an OOM kill this reaper has not yet matched to a victim, so an operator's `kill -9` and a container runtime's stop are not reported as memory. A kill is read once, and it goes when the guest answers, when its owner asks the machine down, and with the machine.
     pub fn reap_killed(&self) {
-        let oom_kills = self
-            .config
-            .cgroup_dir
-            .as_ref()
-            .and_then(|cgroup| crate::pressure::oom_kills(cgroup));
-        let seen = match oom_kills {
-            Some(now) => self.oom_kills.swap(now, Ordering::Relaxed),
-            None => OOM_KILLS_UNREAD,
-        };
-        // UNIT_BOUNDARY_DESCRIPTION: the count is compared over two ticks, not one: the kernel counts a kill at the second it happens, and the death is read at the tick after it, so a tick that found no death must not spend the increment that explains the next one.
-        let before = seen.min(self.oom_kills_before.swap(seen, Ordering::Relaxed));
-        // UNIT_BOUNDARY_DESCRIPTION: a cgroup that cannot be read says nothing about who killed the machine, and the signal alone is all there is; one that can, and counted no kill over those two ticks, says the signal came from outside the kernel's OOM killer.
-        let kernel_took_one = match oom_kills {
-            Some(now) if before != OOM_KILLS_UNREAD => now > before,
-            _ => true,
-        };
-        let settled: Vec<String> = locked(&self.machines)
-            .entries
-            .iter()
-            .filter(|(_, e)| {
-                !e.converging
-                    && !e.deleting
-                    && e.action.is_none()
-                    && Arc::strong_count(&e.calls) == 1
-                    && e.killed.is_none()
-                    && e.desired.as_ref().is_some_and(|spec| spec.running)
-            })
-            .map(|(id, _)| id.clone())
-            .collect();
-        for id in settled {
-            let Some(pid) = self.runtime.vmm_pid(&id) else {
-                continue;
-            };
-            let Some(signal) = killed_by(pid) else {
-                continue;
-            };
+        self.collect_exits();
+        self.match_oom_kills();
+        for (id, pid, signal) in self.reportable_kills() {
             let reason = match signal {
                 libc::SIGSYS => REASON_SECCOMP_KILLED,
-                libc::SIGKILL if kernel_took_one => REASON_OOM_KILLED,
+                libc::SIGKILL if self.take_oom_credit() => REASON_OOM_KILLED,
                 libc::SIGKILL => {
-                    tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal its cgroup did not count as an OOM kill, so it was not the kernel's; the machine restarts with no reason saying it ran out of memory");
+                    tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal the kernel's OOM killer did not count, so it was not the kernel's; the machine restarts with no reason saying it ran out of memory");
+                    locked(&self.exits).remove(&pid);
                     continue;
                 }
                 _ => {
                     tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal no reason on the status explains");
+                    locked(&self.exits).remove(&pid);
                     continue;
                 }
             };
@@ -516,6 +529,7 @@ impl Server {
             };
             tracing::warn!(machine = %id, pid, signal, reason, "vm runner: a machine's VMM was killed");
             self.metrics.killed(reason);
+            locked(&self.exits).remove(&pid);
             let mut machines = locked(&self.machines);
             if let Some(entry) = machines.entries.get_mut(&id) {
                 entry.killed = Some(Killed { reason, message });
@@ -529,6 +543,100 @@ impl Server {
                 self.bump(entry);
             }
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: keeps every ended child's status, wherever the machine it belongs to stands: a VMM that dies while its start or grow call still runs is the very case the runtime's sweep would erase, and the call's own failure would then read as a boot that broke rather than the kill it was. A status is read once and kept, and the loader's record covers a VMM this process is no longer the parent of.
+    fn collect_exits(&self) {
+        let mut named = BTreeSet::new();
+        let ids: Vec<String> = locked(&self.machines).entries.keys().cloned().collect();
+        for id in ids {
+            let Some(pid) = self.runtime.vmm_record_pid(&id) else {
+                continue;
+            };
+            if locked(&self.exits).contains_key(&pid) {
+                continue;
+            }
+            let signal = match self.runtime.vmm_pid(&id) {
+                Some(_) => match ended(pid) {
+                    Ended::Running => continue,
+                    Ended::Signalled(signal) => Some(signal),
+                    Ended::Exited => None,
+                },
+                None => match read_exit_record(&self.config.state_dir, pid) {
+                    Some(signal) => signal,
+                    None => continue,
+                },
+            };
+            named.insert(pid);
+            locked(&self.exits).insert(pid, (signal, Instant::now()));
+        }
+        locked(&self.exits).retain(|_, (_, at)| at.elapsed() < EXIT_KEPT);
+        prune_exit_records(&self.config.state_dir, &named);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the kernel counts an OOM kill at the second it makes one, and the victim is read at the tick after, so the count is turned into credits every tick and each credit is spent by the first SIGKILL this reaper reports. A cgroup that cannot be read says nothing about who killed the machine, so every SIGKILL is read as memory there.
+    fn match_oom_kills(&self) {
+        let Some(now) = self
+            .config
+            .cgroup_dir
+            .as_ref()
+            .and_then(|cgroup| crate::pressure::oom_kills(cgroup))
+        else {
+            return;
+        };
+        let before = self.oom_kills_seen.swap(now, Ordering::Relaxed);
+        if before == OOM_KILLS_UNREAD {
+            return;
+        }
+        let counted = now.saturating_sub(before);
+        if counted > 0 {
+            let credit = self.oom_credit.load(Ordering::Relaxed) + counted;
+            self.oom_credit
+                .store(credit.min(OOM_CREDIT_CAP), Ordering::Relaxed);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether one kernel OOM kill is still unmatched: spent by the SIGKILL it is reported for, or granted outright where no cgroup can be read to count them.
+    fn take_oom_credit(&self) -> bool {
+        if self
+            .config
+            .cgroup_dir
+            .as_ref()
+            .and_then(|cgroup| crate::pressure::oom_kills(cgroup))
+            .is_none()
+        {
+            return true;
+        }
+        self.oom_credit
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |credit| {
+                credit.checked_sub(1)
+            })
+            .is_ok()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the machines whose collected death can be reported now, with the machine, its pid and the signal: one its owner asked to run, with no action in flight, not converging or deleting, not already saying a kill, and no runtime call still holding it after its wait gave up. A death collected for any other machine is kept, not dropped — the call in flight is what will make it reportable next tick.
+    fn reportable_kills(&self) -> Vec<(String, i32, i32)> {
+        let exits = locked(&self.exits);
+        let machines = locked(&self.machines);
+        let mut found = Vec::new();
+        for (id, entry) in machines.entries.iter() {
+            if entry.converging
+                || entry.deleting
+                || entry.action.is_some()
+                || Arc::strong_count(&entry.calls) > 1
+                || entry.killed.is_some()
+                || !entry.desired.as_ref().is_some_and(|spec| spec.running)
+            {
+                continue;
+            }
+            let Some(pid) = self.runtime.vmm_record_pid(id) else {
+                continue;
+            };
+            if let Some((Some(signal), _)) = exits.get(&pid) {
+                found.push((id.clone(), pid, *signal));
+            }
+        }
+        found
     }
 
     pub fn pressure(&self) -> RunnerPressure {

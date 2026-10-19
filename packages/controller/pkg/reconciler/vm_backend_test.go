@@ -2403,12 +2403,13 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}, true))
 	assert.Equal(t, "PodReady", reason(), "an agent that is up again: the notice reads a reason published while it is down")
 
-	runner.Status.ContainerStatuses = nil
-	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
-	require.NoError(t, err)
+	// TEST_SCENARIO: the kill stays in the runner's last termination for the whole episode, and the agent answered after it: a failure that follows is its own, not the kill's again.
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
 		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonBootFailed, Message: "the guest console ends: panic"}, true))
-	assert.Equal(t, vmrunner.ReasonBootFailed, reason(), "a boot's own failure, on a runner that was not killed")
+	assert.Equal(t, vmrunner.ReasonBootFailed, reason(), "a boot that failed after the agent had been up since the kill")
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonSeccompKilled, Message: "the machine's VMM made a call its seccomp filter forbids"}, true))
+	assert.Equal(t, vmrunner.ReasonSeccompKilled, reason(), "a seccomp kill after the agent had been up since the kill")
 
 	// TEST_SCENARIO: a machine woken inside the episode was not running when the kill happened, so the kill is not what keeps it down: its own reason is what the agent reads.
 	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
@@ -2432,6 +2433,7 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 		LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Minute)),
 	})
 	r.vmRunningSince.Delete(agent.Name)
+	r.vmRecoveredAt.Delete(agent.Name)
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
 		vmrunner.MachineStatus{State: vmrunner.StateRunning, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
 	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "a reason published before the controller restarted, with no start behind it")
