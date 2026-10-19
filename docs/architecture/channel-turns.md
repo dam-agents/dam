@@ -292,4 +292,4 @@ The two messengers diverge slightly on what a top-level post means:
   A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
   An Agent-initiated DM lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
-  The worker posts to the chat id; if the agent's prompt was triggered by a previous message in the same chat, that chat is still the conversation.
+  The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

@@ -617,6 +617,13 @@
       "when": 1792228899422,
       "tag": "0087_drop_sidebar_session_order",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1792404813846,
+      "tag": "0088_fold_telegram_bindings_into_chats",
+      "breakpoints": true
     }
   ]
 }

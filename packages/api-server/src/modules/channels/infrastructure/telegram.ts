@@ -79,29 +79,11 @@ export interface TelegramConversationsPort {
   unbind(conversationId: string): Promise<void>;
 }
 
-export interface TelegramBinding {
-  conversationId: string;
-  agentId: string;
-  authorizedBy: string;
-}
-
 export function telegramChatOf(conversationId: string): string {
   const [surface, chatId, topicId] = conversationId.split(":");
   return chatId === "biz" || topicId === undefined
     ? conversationId
     : `${surface}:${chatId}`;
-}
-
-export async function findTelegramBinding(
-  conversations: Pick<TelegramConversationsPort, "findAgentByConversation">,
-  conversationId: string,
-): Promise<TelegramBinding | null> {
-  const chat = telegramChatOf(conversationId);
-  for (const key of new Set([chat, conversationId])) {
-    const binding = await conversations.findAgentByConversation(key);
-    if (binding) return { conversationId: key, ...binding };
-  }
-  return null;
 }
 
 export interface ChannelConversation {
@@ -298,7 +280,8 @@ export function createTelegramMessageHandler(deps: {
   async function handleBind(thread: ThreadLike, telegramUserId: string) {
     if (await denyNonAdmin(thread, telegramUserId, "bind")) return;
 
-    const binding = await findTelegramBinding(deps.conversations, thread.id);
+    const chat = telegramChatOf(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(chat);
     if (binding) {
       await thread.post(
         "This chat is already connected to an agent. Send `/unbind` first to reconnect.",
@@ -310,7 +293,7 @@ export function createTelegramMessageHandler(deps: {
     const { state: oauthState, codeVerifier, codeChallenge } = generatePkce();
     await deps.pendingOAuthFlows.set(oauthState, {
       telegramUserId,
-      threadId: telegramChatOf(thread.id),
+      threadId: chat,
       codeVerifier,
       chatTitle,
       createdAt: Date.now(),
@@ -335,12 +318,13 @@ export function createTelegramMessageHandler(deps: {
   async function handleUnbind(thread: ThreadLike, telegramUserId: string) {
     if (await denyNonAdmin(thread, telegramUserId, "unbind")) return;
 
-    const binding = await findTelegramBinding(deps.conversations, thread.id);
+    const chat = telegramChatOf(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(chat);
     if (!binding) {
       await thread.post("This chat isn't connected to an agent.");
       return;
     }
-    await deps.conversations.unbind(binding.conversationId);
+    await deps.conversations.unbind(chat);
     securityLog("info", "channel.chat_unbound", {
       category: "authz-list",
       actor: null,
@@ -348,10 +332,7 @@ export function createTelegramMessageHandler(deps: {
       surface: "telegram",
       agentId: binding.agentId,
       result: "success",
-      detail: {
-        conversationId: binding.conversationId,
-        byTelegramUserId: telegramUserId,
-      },
+      detail: { conversationId: chat, byTelegramUserId: telegramUserId },
     });
     await thread.post("Chat disconnected. Send `/bind` to connect it again.");
   }
@@ -375,7 +356,9 @@ export function createTelegramMessageHandler(deps: {
       return;
     }
 
-    const binding = await findTelegramBinding(deps.conversations, thread.id);
+    const binding = await deps.conversations.findAgentByConversation(
+      telegramChatOf(thread.id),
+    );
     if (!binding) {
       securityLog("warn", "channel.inbound.unauthorized", {
         category: "channel",
@@ -823,9 +806,8 @@ export function createTelegramWorker(deps: {
         : text;
 
       if (conversationId) {
-        const binding = await findTelegramBinding(
-          deps.conversations,
-          conversationId,
+        const binding = await deps.conversations.findAgentByConversation(
+          telegramChatOf(conversationId),
         );
         if (!binding || binding.agentId !== agentId)
           return { error: "conversation is not connected to this agent" };

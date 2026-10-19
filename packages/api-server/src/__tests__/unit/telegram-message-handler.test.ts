@@ -271,21 +271,14 @@ describe("telegram binding covers the whole chat", () => {
   });
 
   /**
-   * TEST_SCENARIO: A topic bound on its own before bindings covered the chat
-   * keeps working, and `/unbind` there releases that topic's binding.
+   * TEST_SCENARIO: `/unbind` sent inside a topic releases the chat's binding,
+   * since that is the one binding the topic's messages reach.
    */
-  it("keeps a binding made earlier for one topic", async () => {
-    const h = harness({ bindings: { [TOPIC]: "agent-2" } });
+  it("unbinds the chat when `/unbind` is sent in a forum topic", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" } });
     const thread = makeThread({ id: TOPIC });
-    await h.handle(thread, { text: "hi", author: author() }, true);
-    expect(h.relay).toHaveBeenCalledWith(
-      "agent-2",
-      thread,
-      "hi",
-      expect.anything(),
-    );
-
     await h.handle(thread, { text: "/unbind", author: author() }, true);
-    expect(h.unbind).toHaveBeenCalledWith(TOPIC);
+    expect(h.unbind).toHaveBeenCalledWith(CHAT);
+    expect(thread.posts.join("\n")).toContain("Chat disconnected");
   });
 });

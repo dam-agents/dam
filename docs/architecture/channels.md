@@ -186,8 +186,8 @@ flowchart LR
 ```
 
 The bot token comes from Helm values and lives in api-server env, like the Slack tokens.
-A chat binds to exactly one Agent in its binding table (the conversation id is the primary key); the single bot polls for the whole install and resolves each inbound message to its chat's binding, a forum topic's message included.
-A topic bound on its own before bindings covered the chat keeps its row, and is found when its chat has none.
+A chat binds to exactly one Agent in its binding table (the chat's id is the primary key); the single bot polls for the whole install and resolves each inbound message to its chat's binding, a forum topic's message included.
+A forum topic or a reply chain never has a row of its own.
 The relay path is single-track — the main pod handles every turn.
 
 ## Adapters
