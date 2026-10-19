@@ -70,7 +70,7 @@ The refusal names the providers that would do, by their Settings names, and the 
 An image target declares nothing, so nothing is narrowed.
 
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.
-Network reach needs no grant of its own: a target has no egress identity and runs under its Driver's rules ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
+Network reach needs no grant of its own: a target has no egress identity and runs under its Driver's rules, though its own provider Connections' hosts pass over them ([Egress Aliasing](security-and-credentials.md)); its spend is attributed to its root Driver ([observability](observability.md)).
 
 **Admission.** A target sized past its owner's [budget](budgets.md) Ceiling could never start, so the spawn fails at once with the figures.
 A vm target stands outside the budget and is never refused here.

@@ -237,7 +237,8 @@ def spawn(
 
     The sub-agent runs on this driver's model provider and receives only the
     ``connections`` passed (ids from ``list_connections()``). Its egress
-    follows this driver's rules.
+    follows this driver's rules, except the hosts of its own model provider,
+    which pass over them.
 
     ``ttl_ms`` is a kill deadline, not pacing: the platform removes the
     sub-agent the moment it lapses, mid-work or not. ``label`` names the

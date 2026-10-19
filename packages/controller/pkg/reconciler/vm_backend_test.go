@@ -1528,7 +1528,7 @@ func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
 }
 
-// TEST_SCENARIO: images/ is the node cache the runners on a node share, never a directory of the runner's claim, so it gets a mount of its own, read-only, from the host directory the install names. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
+// TEST_SCENARIO: images/ is the node cache the install's runners on a node share, never a directory of the runner's claim, so it gets a mount of its own, read-only, from the host directory the install names. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -1860,6 +1860,60 @@ func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	require.NotNil(t, cond)
 	assert.Equal(t, apiv1.ReasonHomeVolumeFull, cond.Reason)
 	assert.Contains(t, cond.Message, "disk is full")
+}
+
+// TEST_SCENARIO: an agent that was down before the runner's kill carried a condition flip from long before it, and a publish that changes only the reason moves no transition time — so a kill timed from that flip would be outside its episode on the first read, and the agent would name the kill on one reconcile and its own reason on the next, all the way through the episode. The reason carries the time it was first published instead, so the reconcile after it still reads the kill.
+func TestTheKillTheRunnerReportsIsNotOvertakenByTheAgentsOwnReason(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	r.vmRunning.Store(agent.Name, true)
+	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, unstructured.SetNestedSlice(stored.Object, []any{map[string]any{
+		"type":               apiv1.ConditionAgentPodReady,
+		"status":             string(metav1.ConditionFalse),
+		"reason":             vmrunner.ReasonNotReady,
+		"message":            "machine is stopped",
+		"lastTransitionTime": metav1.NewTime(time.Now().Add(-20 * time.Minute)).Format(time.RFC3339),
+	}}, "status", "conditions"))
+	seeded, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	agent, err = FromCacheObject[apiv1.Agent](seeded)
+	require.NoError(t, err)
+	runner, err := r.client.CoreV1().Pods("test-agents").Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(time.Now().Add(-time.Minute)),
+		}},
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	read := func() *metav1.Condition {
+		obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+		require.NoError(t, err)
+		got, err := FromCacheObject[apiv1.Agent](obj)
+		require.NoError(t, err)
+		return apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	}
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonNotReady, Message: "machine is stopped"}, true))
+	first := read()
+	require.NotNil(t, first)
+	require.Equal(t, apiv1.ReasonRunnerOutOfMemory, first.Reason)
+	assert.WithinDuration(t, time.Now(), first.LastTransitionTime.Time, time.Minute,
+		"the episode is timed from this publish, not from a flip twenty minutes old")
+
+	// TEST_SCENARIO: the next reconcile reads the condition this one wrote, exactly as a reconciler working from the API would.
+	agent.Status.Conditions = []metav1.Condition{*first}
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonNotReady, Message: "machine is stopped"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, read().Reason, "the reconcile after the kill's publish names the kill again")
 }
 
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
@@ -2304,16 +2358,28 @@ func TestMachineTrustedCAsAppendsTheExtraCAs(t *testing.T) {
 		machineTrustedCAs("-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----", &cfg))
 }
 
-// TEST_SCENARIO: an agent the runner's OOM kill took down carries that reason through the runner's restart and the machine's boot, but only while nothing more specific explains the wait. A boot that then fails is a reason the owner has to act on, which the api-server reads as an error; hidden behind the kill, the agent would read as still starting with its boot console lost.
-func TestAFreshTerminalReasonWinsOverACarriedRunnerOOM(t *testing.T) {
+// TEST_SCENARIO: the OOM kill of an owner's runner was reported only on the agents whose runner reason happened to be MachineNotReady, so an agent the restarted runner refused room, or one carrying a reason of its own, told its owner about that consequence and never about the kill — and the OOM notice and the Slack alert read nothing else. Every agent that was already running when the kill happened now names it for the episode that follows, from the runner pod's last termination alone, whatever reason it carries until then; an agent woken inside that episode carries nothing, since the kill did not take it down.
+func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 	r.vmRunning.Store(agent.Name, true)
+	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
 	agent.Status.Conditions = []metav1.Condition{{
-		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse,
-		Reason: apiv1.ReasonRunnerOutOfMemory, LastTransitionTime: metav1.Now(),
+		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
 	}}
+	pods := r.client.CoreV1().Pods("test-agents")
+	runner, err := pods.Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(time.Now().Add(-time.Minute)),
+		}},
+	}}
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
 	reason := func() string {
 		got, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
 		require.NoError(t, err)
@@ -2326,12 +2392,51 @@ func TestAFreshTerminalReasonWinsOverACarriedRunnerOOM(t *testing.T) {
 		return ""
 	}
 
-	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateStarting}, true))
-	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "the reason did not last through the boot")
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonOutOfCapacity, Message: "room for one of two machines"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "an agent refused room after the kill")
 
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStarting, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "an agent carrying a machine's own kill reason")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true}, true))
+	assert.Equal(t, "PodReady", reason(), "an agent that is up again: the notice reads a reason published while it is down")
+
+	// TEST_SCENARIO: the kill stays in the runner's last termination for the whole episode, and the agent answered after it: a failure that follows is its own, not the kill's again.
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
 		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonBootFailed, Message: "the guest console ends: panic"}, true))
-	assert.Equal(t, vmrunner.ReasonBootFailed, reason())
+	assert.Equal(t, vmrunner.ReasonBootFailed, reason(), "a boot that failed after the agent had been up since the kill")
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonSeccompKilled, Message: "the machine's VMM made a call its seccomp filter forbids"}, true))
+	assert.Equal(t, vmrunner.ReasonSeccompKilled, reason(), "a seccomp kill after the agent had been up since the kill")
+
+	// TEST_SCENARIO: a machine woken inside the episode was not running when the kill happened, so the kill is not what keeps it down: its own reason is what the agent reads.
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(time.Now().Add(-time.Minute)),
+		}},
+	}}
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.vmRunningSince.Store(agent.Name, time.Now())
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStarting, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
+	assert.Equal(t, vmrunner.ReasonOOMKilled, reason(), "a machine woken inside the episode, whose own boot the kill did not take down")
+
+	// TEST_SCENARIO: a controller that restarts inside the episode knows no start time for an agent it finds running, and a reason it published before that restart says the kill took the agent down: it keeps it to the end of the episode.
+	apimeta.SetStatusCondition(&agent.Status.Conditions, metav1.Condition{
+		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionFalse, Reason: apiv1.ReasonRunnerOutOfMemory,
+		LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Minute)),
+	})
+	r.vmRunningSince.Delete(agent.Name)
+	r.vmRecoveredAt.Delete(agent.Name)
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "a reason published before the controller restarted, with no start behind it")
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a clientset whose Secret reads each take `delay`, outside the fake's own lock, which serialises every call it answers. The time a reconcile takes then counts the Secret reads it makes one after another.

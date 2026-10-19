@@ -86,7 +86,9 @@ impl Pod {
             .arg(&builtin)
             .arg("--builtin-runtime")
             .arg(&builtin_runtime)
-            .args(["--", "--smolvm"])
+            .args(["--", "--state-dir"])
+            .arg(dir.join("state"))
+            .args(["--smolvm"])
             .arg(builtin_runtime.join("smolvm"))
             .env(release::RELEASES_ENV, dir.join("releases"))
             .env(release::LOADER_DIR_ENV, dir.join("loader"))
@@ -202,9 +204,10 @@ fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
     assert!(exited.success(), "the loader exited with {exited}");
     let runners = lines(&dir.join("runners"));
     let copies = dir.join("loader").join("releases");
+    let state = format!("--state-dir {}", dir.join("state").display());
     let ran = |release: &str, runtime: &Path| {
         format!(
-            "{} {}",
+            "{} {state} {}",
             copies.join(release::key(release)).join(RUNNER).display(),
             smolvm(runtime)
         )
@@ -214,7 +217,7 @@ fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
         runners,
         [
             format!(
-                "{} {}",
+                "{} {state} {}",
                 builtin.join(RUNNER).display(),
                 smolvm(&builtin_runtime)
             ),
@@ -228,6 +231,50 @@ fn a_release_takes_over_the_machines_and_a_broken_one_gives_them_back() {
         std::fs::read_to_string(pod_runtime.join("smolvm")).unwrap(),
         "runtime-b"
     );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the parent of a process, from the fourth field of its status, after the command name's closing parenthesis.
+#[cfg(target_os = "linux")]
+fn parent_of(pid: &str) -> String {
+    let stat = std::fs::read_to_string(format!("/proc/{pid}/stat")).unwrap();
+    let rest = &stat[stat.rfind(')').unwrap() + 1..];
+    rest.split_whitespace().nth(1).unwrap().to_string()
+}
+
+// TEST_SCENARIO: the pod's init is catatonit, and an orphan is handed to whatever the kernel finds first: without a subreaper, catatonit inherits every machine a replaced runner leaves and reaps it without a word, and the VMM's signal — the only record of how the machine went down — is gone before any runner could read it. The loader asks to be the pod's subreaper, so the machine a hand-off orphaned is its child, and the death it reaps there is the record the runner that adopted the machine names the kill by. Linux only, as the loader runs only in a Linux pod.
+#[test]
+#[cfg(target_os = "linux")]
+fn a_machine_a_hand_off_orphaned_is_the_loaders_to_reap() {
+    let mut pod = Pod::start("subreaper", RUNS);
+    let dir = pod.dir.clone();
+    wait_for("the pod's own machine", || {
+        lines(&dir.join("machines")).len() == 1
+    });
+    let machine = lines(&dir.join("machines"))[0].clone();
+    pod.stage("runner:2", RUNS, "runtime-a");
+    pod.name("runner:2");
+    wait_for("the hand-off to runner:2", || {
+        lines(&dir.join("machines")).len() == 2
+    });
+    assert_eq!(
+        parent_of(&machine),
+        pod.loader.id().to_string(),
+        "the pod's init reaped the machine the hand-off orphaned"
+    );
+
+    // TEST_SCENARIO: the machine dies while no runner it belongs to is watching, and the signal is where the next runner reads it.
+    // SAFETY: kill(2) takes plain integers and touches no memory of this process.
+    unsafe { libc::kill(machine.parse().unwrap(), libc::SIGSYS) };
+    let record = dir
+        .join("state")
+        .join(vm_runner::state::EXIT_RECORDS)
+        .join(&machine);
+    wait_for("the record of the machine's death", || record.exists());
+    assert_eq!(
+        std::fs::read_to_string(&record).unwrap(),
+        libc::SIGSYS.to_string()
+    );
+    let _ = pod.loader.kill();
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner that, like the real one, sets up its stop only some time after it starts, and takes two seconds to close for a hand-off. Each step is logged to the pod's runner log.

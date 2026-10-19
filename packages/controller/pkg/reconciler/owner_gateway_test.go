@@ -229,6 +229,39 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	return r, node, agent
 }
 
+// TEST_SCENARIO: the owner gateway mounts one credential Secret for all of the owner's agents, and the kubelet refreshes that mount only when it syncs the pod, as it does an agent's own gateway's. So its pod carries the Secret's content hash, and a new hash syncs it at once and asks one of its agents to come back for the second sync, which a kubelet whose copy of the Secret was still old needs. A pod that is going away is left alone.
+func TestOwnerGateway_ACredentialChangeSyncsItsPodTwice(t *testing.T) {
+	r, _, _ := servedVMReconciler(t)
+	ctx, ns := context.Background(), "test-agents"
+	requeued := &requeueLog{}
+	r.WithRequeue(t.Context(), requeued.add)
+	ownerPod := func() *corev1.Pod {
+		pod, err := r.client.CoreV1().Pods(ns).Get(ctx, "owner-gw-1", metav1.GetOptions{})
+		require.NoError(t, err)
+		return pod
+	}
+
+	creds, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner)+"-credentials", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, creds.Annotations[annOwnerCredentialsHash], ownerPod().Annotations[annGatewayCredentialsRev], "the owner gateway pod carries the hash of the Secret it mounts")
+
+	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now)
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev])
+	assert.Equal(t, []time.Duration{gatewayCredentialsResyncWait}, requeued.all(), "one of its agents comes back for the second sync")
+
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now.Add(gatewayCredentialsResyncWait))
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsResync])
+
+	pod := ownerPod()
+	deleting := metav1.NewTime(now)
+	pod.DeletionTimestamp = &deleting
+	_, err = r.client.CoreV1().Pods(ns).Update(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "next", []string{"my-agent"}, now.Add(time.Minute))
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev], "a pod going away is not synced")
+}
+
 // TEST_SCENARIO: an agent its owner gateway serves hibernates and wakes without its own gateway pod: the idle checker stops the machine and records the agent down on its Service, the agent still reads hibernated only once the machine stopped, and a wake records it up and starts the machine while its own gateway stays at zero. Its listener stays configured the whole time, so a wake needs no configuration change.
 func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	ctx := context.Background()

@@ -5,7 +5,10 @@ import {
   createEgressRulesService,
   type CreateEgressRulesServiceDeps,
 } from "./services/egress-rules-service.js";
-import { createPresetSeeder } from "./services/preset-seeder.js";
+import {
+  createPresetSeeder,
+  markTrustedRowsTakenOver,
+} from "./services/preset-seeder.js";
 import { createKitRulesSeeder } from "./services/kit-rules-seeder.js";
 import {
   createConnectionRulesSync,
@@ -44,7 +47,17 @@ export function createEgressRuleMatchAdapter(db: Db) {
       path: string,
     ) {
       const row = await repo.findMatch(agentId, host, port, tls, method, path);
-      return row ? { verdict: row.verdict } : null;
+      return row
+        ? {
+            verdict: row.verdict,
+            rule: {
+              host: row.host,
+              ...(row.port ? { port: row.port } : {}),
+              method: row.method,
+              pathPattern: row.pathPattern,
+            },
+          }
+        : null;
     },
   };
 }
@@ -72,6 +85,16 @@ export function createPresetSeederAdapter(
 ) {
   const repo = createEgressRulesRepository(db);
   return createPresetSeeder({ repo, trustedHosts });
+}
+
+export function markTrustedRowsTakenOverAdapter(
+  db: Db,
+  trustedHosts: readonly string[],
+): Promise<number> {
+  return markTrustedRowsTakenOver({
+    repo: createEgressRulesRepository(db),
+    trustedHosts,
+  });
 }
 
 export function createL7PromotionReconcile(

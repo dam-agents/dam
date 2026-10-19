@@ -172,6 +172,7 @@ jobs:
       - id: built
         if: ${{ inputs.main-push }}
         run: |
+          set -o pipefail
           newer() { [ -n "$(find "$1" -newer "$RUNNER_TEMP/check-start" -type f -print -quit 2>/dev/null)" ]; }
           newer packages/vm-runner/target && echo "rust=true" >> "$GITHUB_OUTPUT"
           newer ~/.cache/go-build && echo "go=true" >> "$GITHUB_OUTPUT"

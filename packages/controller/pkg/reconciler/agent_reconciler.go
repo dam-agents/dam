@@ -68,6 +68,8 @@ type AgentReconciler struct {
 	nodeCache             corelisters.NodeLister
 	nodeCacheSynced       cache.InformerSynced
 	vmRunning             sync.Map
+	vmRunningSince        sync.Map
+	vmRecoveredAt         sync.Map
 	vmLive                sync.Map
 	vmAnswers             sync.Map
 	vmDiskGrows           sync.Map
@@ -414,9 +416,13 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 				"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 		}
 		if running {
-			if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
+			recheck, err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets, time.Now())
+			if err != nil {
 				slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
 					"agent", name, "error", err)
+			}
+			if recheck > 0 && r.requeue != nil {
+				r.requeue(name, recheck)
 			}
 		}
 		timer.mark("gatewayStatefulSet")
@@ -813,6 +819,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 		return err
 	}
 	r.vmRunning.Delete(name)
+	r.vmRunningSince.Delete(name)
+	r.vmRecoveredAt.Delete(name)
 	r.vmAnswers.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)

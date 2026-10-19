@@ -8,7 +8,22 @@
 # staged instead: no guest flattens one since platform-init became its init.
 set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-IMAGE_DIR=/var/lib/platform-vm-images
+# The directory the runners mount, out of the controller's own environment. The
+# install hands it in (VM_IMAGE_DIR), since its render is the only one that
+# knows its overlay and --set; on its own, the chart's local values are all
+# there is. Either way a staged tree lands where that install's runners look.
+IMAGE_DIR="${VM_IMAGE_DIR:-$(helm template platform "$MISE_CONFIG_ROOT/helm" \
+  -f "$MISE_CONFIG_ROOT/helm/values-local.yaml" \
+  --show-only templates/controller/deployment.yaml \
+  | yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[].env[]
+      | select(.name == "AGENT_VM") | .value | fromjson | .runner.imageCacheHostPath')}"
+# The trees land under this directory as root; an empty one would put them in
+# the node's own root, where the next prune or eviction of the cache would take
+# them for its own.
+[ -n "$IMAGE_DIR" ] || {
+  echo "image:stage-vm: the chart named no node image cache directory — set virtualization.imageCache.hostPath in the install's values, helm/values-local.yaml or the overlay cluster:install was given" >&2
+  exit 1
+}
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 

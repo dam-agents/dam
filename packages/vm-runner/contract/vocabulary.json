@@ -8,7 +8,9 @@
     "MachineSeedMissing",
     "MachineStorageFull",
     "MachineHomeFull",
-    "MachineCopyingDisk"
+    "MachineCopyingDisk",
+    "MachineOOMKilled",
+    "MachineSeccompKilled"
   ],
   "seedExitPermanent": 3,
   "releaseHolds": ["unstaged", "runtime", "reboot", "failed"]
