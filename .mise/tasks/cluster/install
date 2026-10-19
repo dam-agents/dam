@@ -312,10 +312,15 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     echo "Configuring k3s container log rotation (issue #244)..."
     as_root mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
     printf '%s' "$K3S_CONFIG_YAML" | as_root tee "$K3S_LOGROT_DROPIN" >/dev/null
-    if k3s_service restart; then
+    rc=0
+    k3s_service restart || rc=$?
+    if [ "$rc" = 0 ]; then
       kubectl wait --for=condition=Ready node --all --timeout=120s
-    else
+    elif [ "$rc" = "$K3S_NO_SERVICE" ]; then
       echo "No service manager here — container log rotation applies the next time k3s starts."
+    else
+      echo "FATAL: k3s did not restart (rc=$rc); container log rotation is not applied." >&2
+      exit 1
     fi
   fi
 else
