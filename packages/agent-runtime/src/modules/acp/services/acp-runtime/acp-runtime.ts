@@ -494,12 +494,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return meta?.type === SessionType.CliRun || meta?.reportTo !== undefined;
   }
 
+  const unconfirmedRefs = new Map<string, string>();
+
   function refFor(sessionId: string): string {
-    const current = deps.sessionMetadata?.get(sessionId)?.meta;
-    if (current?.ref) return current.ref;
-    const ref = randomUUID();
-    deps.sessionMetadata?.set(sessionId, { ...current, ref });
+    const entry = deps.sessionMetadata?.get(sessionId);
+    if (entry?.meta.ref) return entry.meta.ref;
+    if (entry) {
+      const ref = randomUUID();
+      deps.sessionMetadata?.set(sessionId, { ...entry.meta, ref });
+      return ref;
+    }
+    const ref = unconfirmedRefs.get(sessionId) ?? randomUUID();
+    unconfirmedRefs.set(sessionId, ref);
     return ref;
+  }
+
+  function settleUnconfirmedRef(sessionId: string, attached: boolean): void {
+    const ref = unconfirmedRefs.get(sessionId);
+    if (ref === undefined) return;
+    unconfirmedRefs.delete(sessionId);
+    if (!attached || !deps.sessionMetadata) return;
+    const current = deps.sessionMetadata.get(sessionId)?.meta;
+    deps.sessionMetadata.set(sessionId, { ...current, ref });
   }
 
   function mcpServersFor(sessionId: string): unknown[] {
@@ -1514,6 +1530,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }
 
         if (mapping.attachSessionId) {
+          settleUnconfirmedRef(
+            mapping.attachSessionId,
+            (frame as { error?: unknown }).error === undefined,
+          );
           if (mapping.rehydrate) {
             finishHarnessRehydrate(mapping.attachSessionId, frame);
           } else if (mapping.method === "session/load") {
