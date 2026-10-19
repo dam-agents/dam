@@ -5,13 +5,13 @@ import {
   useQuery,
 } from "@tanstack/react-query";
 import {
-  SPEND_TURNS_MAX_SPAN_DAYS,
-  SPEND_TURNS_MAX_WINDOWS,
   type SpendAmount,
   type SpendBreakdownInput,
   type SpendSessionRow,
   type SpendSessions,
   type SpendTurns,
+  type SpendTurnWindow,
+  spendTurnWindows,
 } from "api-server-api";
 import { useMemo } from "react";
 
@@ -23,7 +23,6 @@ const SPEND_REFRESH_MS = 15_000;
 const LATEST_SESSIONS_REFRESH_MS = 60_000;
 const OLDER_SESSIONS_STALE_MS = 5 * 60_000;
 const OPEN_TURN_MS = 10 * 60_000;
-const DAY_MS = 86_400_000;
 
 export function useOwnerSpendStatus() {
   return useQuery({
@@ -99,38 +98,15 @@ interface TurnWindow {
   endedAt: string;
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the newest turns that one read can carry, newest
- * first: at most the read's window count, within its span back from the newest
- * turn's end.
- */
-function readableTurns(turns: readonly TurnWindow[]): TurnWindow[] {
-  const newest = [...turns].sort((a, b) =>
-    b.startedAt.localeCompare(a.startedAt),
-  );
-  const end = Math.max(...newest.map((t) => Date.parse(t.endedAt)));
-  return newest
-    .filter(
-      (t) => end - Date.parse(t.startedAt) < SPEND_TURNS_MAX_SPAN_DAYS * DAY_MS,
-    )
-    .slice(0, SPEND_TURNS_MAX_WINDOWS);
-}
-
-function windowEnd(turn: TurnWindow, next: TurnWindow | undefined): string {
-  const cap = next ? Date.parse(next.startedAt) - 1 : Infinity;
-  if (Date.parse(turn.endedAt) <= cap) return turn.endedAt;
-  return new Date(Math.max(cap, Date.parse(turn.startedAt))).toISOString();
-}
-
 function amountsByTurn(
-  turns: readonly TurnWindow[],
+  readable: readonly SpendTurnWindow<TurnWindow>[],
 ): (data: SpendTurns) => Map<string, SpendAmount[]> {
   return (data) => {
     const byWindow = new Map(data.windows.map((w) => [w.from, w.amounts]));
     return new Map(
-      turns.flatMap((t) => {
-        const amounts = byWindow.get(t.startedAt);
-        return amounts ? [[t.turnId, amounts] as const] : [];
+      readable.flatMap(({ turn, from }) => {
+        const amounts = byWindow.get(from);
+        return amounts ? [[turn.turnId, amounts] as const] : [];
       }),
     );
   };
@@ -141,9 +117,9 @@ export function useTurnSpend(
   sessionId: string | null,
   turns: readonly TurnWindow[],
 ) {
-  const readable = useMemo(() => readableTurns(turns), [turns]);
+  const readable = useMemo(() => spendTurnWindows(turns), [turns]);
   const open = readable.some(
-    (t) => Date.now() - Date.parse(t.endedAt) < OPEN_TURN_MS,
+    ({ turn }) => Date.now() - Date.parse(turn.endedAt) < OPEN_TURN_MS,
   );
   const select = useMemo(() => amountsByTurn(readable), [readable]);
   return useQuery({
@@ -152,10 +128,7 @@ export function useTurnSpend(
         ? {
             agentId,
             ...(sessionId && { sessionId }),
-            windows: readable.map((t, i) => ({
-              from: t.startedAt,
-              to: windowEnd(t, readable[i - 1]),
-            })),
+            windows: readable.map(({ from, to }) => ({ from, to })),
           }
         : skipToken,
     ),

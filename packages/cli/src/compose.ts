@@ -51,6 +51,10 @@ export function compose(): Command {
     ...base,
     browserOpener: createBrowserOpener(),
   });
+  const spend = composeSpendModule({
+    ...base,
+    createConnectionService: connection.exports.createService,
+  });
 
   const program = new Command();
   program
@@ -78,11 +82,11 @@ export function compose(): Command {
     }),
     composeChannelModule(base),
     composeMetricsModule(base),
-    composeSpendModule({
+    spend,
+    composeTelemetryModule({
       ...base,
-      createConnectionService: connection.exports.createService,
+      createSpendService: spend.exports.createService,
     }),
-    composeTelemetryModule(base),
     composeTermsModule(base),
   ]) {
     for (const command of module.commands) program.addCommand(command);
