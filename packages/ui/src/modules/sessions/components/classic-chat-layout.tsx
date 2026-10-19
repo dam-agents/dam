@@ -35,6 +35,7 @@ import {
   PANEL_MIN_W,
 } from "../lib/classic-chat-layout.js";
 import type { SidebarPanelId } from "../lib/sidebar-panels.js";
+import { SidePanelCloseScope } from "./side-panel-close-button.js";
 import { SidePanelEdgeTab } from "./side-panel-edge-tab.js";
 
 const LEFT_WIDTH_KEY = "platform-left-w";
@@ -182,32 +183,36 @@ export function ClassicChatLayout({
             </span>
           </div>
           {desktop && notices}
-          <FilesPanel
-            open={filesSectionOpen}
-            onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-            {...panelStack.panelProps("files")}
-            onOpenFile={onOpenFile}
-          />
-          <PanelDivider stack={panelStack} below="artifacts" />
-          <ChatArtifactsPanel
-            key={agentId}
-            agentId={agentId}
-            open={artifactsSectionOpen}
-            onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-            {...panelStack.panelProps("artifacts")}
-          />
-          {processesEnabled && (
-            <>
-              <PanelDivider stack={panelStack} below="processes" />
-              <ProcessesPanel
-                agentId={agentId}
-                alwaysOn={alwaysOn}
-                open={processesSectionOpen}
-                onToggle={() => setProcessesSectionOpen(!processesSectionOpen)}
-                {...panelStack.panelProps("processes")}
-              />
-            </>
-          )}
+          <SidePanelCloseScope value={false}>
+            <FilesPanel
+              open={filesSectionOpen}
+              onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
+              {...panelStack.panelProps("files")}
+              onOpenFile={onOpenFile}
+            />
+            <PanelDivider stack={panelStack} below="artifacts" />
+            <ChatArtifactsPanel
+              key={agentId}
+              agentId={agentId}
+              open={artifactsSectionOpen}
+              onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
+              {...panelStack.panelProps("artifacts")}
+            />
+            {processesEnabled && (
+              <>
+                <PanelDivider stack={panelStack} below="processes" />
+                <ProcessesPanel
+                  agentId={agentId}
+                  alwaysOn={alwaysOn}
+                  open={processesSectionOpen}
+                  onToggle={() =>
+                    setProcessesSectionOpen(!processesSectionOpen)
+                  }
+                  {...panelStack.panelProps("processes")}
+                />
+              </>
+            )}
+          </SidePanelCloseScope>
         </div>
         {!maximized && (
           <ResizeHandle
@@ -296,7 +301,7 @@ export function ClassicChatLayout({
                 panel !== "dock" && "hidden",
               )}
             >
-              {dock}
+              <SidePanelCloseScope value={false}>{dock}</SidePanelCloseScope>
             </div>
             {maximizable && (maximized || !panelFills) && (
               <SidePanelEdgeTab

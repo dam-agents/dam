@@ -170,7 +170,7 @@ flowchart LR
 
 - The library lives in the **Artifacts tab** of the side panel on the right, on every page outside an Agent's chat.
   The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and shows as the current destination while that tab is open; there it shares the panel with Get started and Approvals.
-  In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files.
+  In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files, and the Artifacts destination opens that section and shows as current while it is open.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.
@@ -181,7 +181,7 @@ flowchart LR
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
-  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent, then the panel's close X — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
+  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent, then the side panel's close X, which the docked preview in a chat with `new-layout` off does not show — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
   It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does.
   Deleting the artifact a preview is showing closes that preview.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
