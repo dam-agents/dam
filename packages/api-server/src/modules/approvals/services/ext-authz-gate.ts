@@ -52,10 +52,15 @@ export interface ExtAuthzGate {
   gateRequest(input: ExtAuthzGateInput): Promise<ExtAuthzDecision>;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whose rules and approvals a request falls under: the agent itself, the driver of an invocation sub-agent, or the Owning Agent of an Environment, which `environment` then names so the approval says where the request came from.
 export interface AgentIdentityResolver {
   resolve(
     agentId: string,
-  ): Promise<{ ownerSub: string; agentId: string } | null>;
+  ): Promise<{
+    ownerSub: string;
+    agentId: string;
+    environment?: string;
+  } | null>;
 }
 
 export interface MatchedEgressRule {
@@ -278,6 +283,9 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             method,
             path,
             viaAgentId: via,
+            ...(identity.environment
+              ? { viaEnvironment: identity.environment }
+              : {}),
           },
           expiresAt: new Date(Date.now() + deps.holdSeconds * 1000),
         });

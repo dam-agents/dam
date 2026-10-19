@@ -1,3 +1,5 @@
+import { TRPCError } from "@trpc/server";
+import type { ApiContext } from "../../context.js";
 import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
@@ -23,6 +25,21 @@ import {
   connectionStartOAuthInputSchema,
   connectionUpdateInputSchema,
 } from "./schemas.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: only the owner, signed in to the app, grants or removes a connection on an Environment: never an API key, which an agent or a script may hold, so the Owning Agent cannot pass its own connections to the software it runs.
+async function ownerInAppForEnvironment(
+  ctx: { user: { keyId?: string }; agents: ApiContext["agents"] },
+  agentId: string,
+): Promise<void> {
+  if (ctx.user.keyId === undefined) return;
+  const agent = await ctx.agents.get(agentId);
+  if (agent?.spec.environmentOf)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message:
+        "Connections on an Environment are granted by its owner in the app, not with an API key",
+    });
+}
 
 export const connectionsRouter = t.router({
   listTemplates: readCredentialsProcedure.query(({ ctx }) =>
@@ -113,18 +130,23 @@ export const connectionsRouter = t.router({
 
   setAgentConnections: manageAgentsProcedure
     .input(connectionSetAgentConnectionsInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.connections.setAgentConnections(input.agentId, input.connectionIds),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      await ownerInAppForEnvironment(ctx, input.agentId);
+      return ctx.connections.setAgentConnections(
+        input.agentId,
+        input.connectionIds,
+      );
+    }),
 
   updateAgentConnections: manageAgentsProcedure
     .input(connectionUpdateAgentConnectionsInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.connections.updateAgentConnections(input.agentId, {
+    .mutation(async ({ ctx, input }) => {
+      await ownerInAppForEnvironment(ctx, input.agentId);
+      return ctx.connections.updateAgentConnections(input.agentId, {
         grant: input.grant,
         revoke: input.revoke,
-      }),
-    ),
+      });
+    }),
 
   setPreferredConnection: manageAgentsProcedure
     .input(connectionSetPreferredConnectionInputSchema)

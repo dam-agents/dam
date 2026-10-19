@@ -204,6 +204,62 @@ describe("ext-authz gate", () => {
     expect(bus.publishes).toHaveLength(0);
   });
 
+  // TEST_SCENARIO: an Environment's request falls under its Owning Agent: the Owning Agent's rule decides it, and a host with no rule files one approval as the Owning Agent's, naming the Environment it came from, so the verdict becomes the Owning Agent's rule.
+  it("decides an Environment's request by its Owning Agent's rules and files its approval as theirs", async () => {
+    const repo = makeFakeRepo();
+    const bus = makeFakeBus();
+    const asked: string[] = [];
+    const gate = createExtAuthzGate({
+      repo: repo.repo,
+      bus: bus.bus,
+      attendance: attended,
+      identityResolver: {
+        resolve: async (agentId: string) =>
+          agentId === "agent-env"
+            ? {
+                ownerSub: "user-1",
+                agentId: "agent-owning",
+                environment: "pr-42",
+              }
+            : null,
+      },
+      ruleMatcher: {
+        match: async (agentId: string, host: string) => {
+          asked.push(agentId);
+          return host === "registry.example.com" ? { verdict: "allow" } : null;
+        },
+      },
+      holdSeconds: 30,
+      spend: noSpend,
+      questions: noQuestions,
+      platformAllowedAuthorities: [],
+    });
+
+    const request = (host: string) =>
+      gate.gateRequest({
+        agentId: "agent-env",
+        host,
+        port: 443,
+        tls: true,
+        method: "GET",
+        path: "/",
+      });
+    expect(await request("registry.example.com")).toBe("allow");
+    void request("new.example.com");
+    await flushMicrotasks();
+
+    expect(asked.every((id) => id === "agent-owning")).toBe(true);
+    expect(repo.rows).toHaveLength(1);
+    expect(repo.rows[0]).toMatchObject({
+      agentId: "agent-owning",
+      payload: {
+        host: "new.example.com",
+        viaAgentId: "agent-env",
+        viaEnvironment: "pr-42",
+      },
+    });
+  });
+
   it("denies when identity can't be resolved", async () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();

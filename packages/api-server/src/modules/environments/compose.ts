@@ -80,6 +80,14 @@ export function startItemCommand(command: string): string {
   ].join(" && ");
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: an Environment's name by its Agent id, for an approval that came from it.
+export function environmentNameLookup(
+  db: Db,
+): (agentId: string) => Promise<string | null> {
+  const repo = createEnvironmentsRepository(db);
+  return async (agentId) => (await repo.get(agentId))?.name ?? null;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Wires the environments module once per install.
  * The service is built per owner; the cleanup source, run when any Agent is

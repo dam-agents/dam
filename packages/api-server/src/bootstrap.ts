@@ -258,6 +258,7 @@ import {
 import {
   composeEnvironmentGate,
   composeEnvironments,
+  environmentNameLookup,
 } from "./modules/environments/index.js";
 import {
   composeApprovalsSystem,
@@ -1481,6 +1482,7 @@ export async function bootstrap() {
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
   });
 
+  const environmentNameOf = environmentNameLookup(db);
   const objectStoreAgentUrl = config.objectStorageAgentEndpoint
     ? new URL(config.objectStorageAgentEndpoint)
     : null;
@@ -1497,7 +1499,15 @@ export async function bootstrap() {
         const rootId = await invocationDriverResolution.resolveRoot(agentId);
         if (!rootId) return null;
         const r = await agentsRepo.resolveIdentity(rootId);
-        return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
+        if (!r) return null;
+        if (!r.environmentOf) return { ownerSub: r.owner, agentId: r.agentId };
+        const owning = await agentsRepo.resolveIdentity(r.environmentOf);
+        if (!owning || owning.owner !== r.owner) return null;
+        return {
+          ownerSub: owning.owner,
+          agentId: owning.agentId,
+          environment: (await environmentNameOf(r.agentId)) ?? r.agentId,
+        };
       },
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),

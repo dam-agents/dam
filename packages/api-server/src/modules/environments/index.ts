@@ -10,4 +10,4 @@ export {
   noEnvironmentGate,
   type EnvironmentGate,
 } from "./gate/environment-gate.js";
-export { composeEnvironmentGate } from "./compose.js";
+export { composeEnvironmentGate, environmentNameLookup } from "./compose.js";

@@ -58,7 +58,11 @@ export function approvalDetail(
     payload.path === "*"
       ? `${payload.host} (any path)`
       : `${payload.host}${payload.path}`;
-  return payload.method === "*" ? target : `${payload.method} ${target}`;
+  const request =
+    payload.method === "*" ? target : `${payload.method} ${target}`;
+  return payload.viaEnvironment
+    ? `${request}, from its Environment ${payload.viaEnvironment}`
+    : request;
 }
 
 export function approvalHideHint(approval: ApprovalView): string {
