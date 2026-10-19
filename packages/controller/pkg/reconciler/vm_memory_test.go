@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -529,6 +530,54 @@ func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 	assert.True(t, reclaimedAgent(t, r, "idle-a"), "the start needs 376 MiB, and the idlest agent that holds memory gives 956 MiB")
 }
 
+// TEST_SCENARIO: the pass reads a machine's status, and the runner restarts before the pass keeps that reading: a reconcile records the refusal the restart brought and drops the sample the pass had counted from. Kept after that answer, the older reading counted a machine the runner holds nothing of, which is the defect this branch fixes, reached from the other side. So the pass reads a status and keeps it under the owner's lock, the one a reconcile records the runner's answer under, and the two cannot cross.
+func TestAStatusSampleThePassReadBeforeARefusalIsNotKeptAfterIt(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, UsedMiB: 2600})
+	r.vmRunning.Store("my-agent", true)
+	listed := cachedAgent(t, r, "my-agent")
+
+	// UNIT_BOUNDARY_DESCRIPTION: the runner answers with the status it read, while the test holds that answer back, as a pass that reads it and pauses does.
+	reading, release := make(chan struct{}), make(chan struct{})
+	var letGoOnce sync.Once
+	letGo := func() { letGoOnce.Do(func() { close(release) }) }
+	t.Cleanup(letGo)
+	node.onGet = func(id string) {
+		if id == "my-agent" {
+			node.onGet = nil
+			close(reading)
+			<-release
+		}
+	}
+	passDone := make(chan struct{})
+	go func() {
+		defer close(passDone)
+		r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{listed}, nil)
+	}()
+	<-reading
+	if lock := r.ownerLock(testOwner); lock.TryLock() {
+		lock.Unlock()
+		letGo()
+		<-passDone
+		t.Fatal("the pass reads a status outside the owner lock: the reading it keeps can land after a refusal and count a machine the runner holds nothing of")
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the runner restarted meanwhile, so the machine is gone and its start is refused.
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	refused := make(chan struct{})
+	go func() {
+		defer close(refused)
+		require.NoError(t, r.Reconcile(ctx, cachedAgent(t, r, "my-agent")))
+	}()
+	letGo()
+	<-passDone
+	<-refused
+
+	assert.True(t, r.refusedWithoutMachine(cachedAgent(t, r, "my-agent")),
+		"the reading the pass took before the refusal was kept after it, and counted a machine the runner no longer holds")
+}
+
 // TEST_SCENARIO: a refused start retries every 30 seconds, and its own reconcile is the one that hears the refusal. Sizing the pod from a demand that counts its own pending start would raise the request to that whole machine, and the next reconcile of any other agent would drop it again: a resize every pass, against the quarter-step hysteresis that exists to stop exactly that. So the runner's answer decides, and a refused start is sized out of what the owner's machines hold.
 func TestARefusedStartDoesNotRaiseTheRunnerRequestForItself(t *testing.T) {
 	ctx := context.Background()
@@ -542,7 +591,7 @@ func TestARefusedStartDoesNotRaiseTheRunnerRequestForItself(t *testing.T) {
 	runnerPod(t, r, "1Gi", "3Gi")
 	peerVMAgent(t, r, "peer-up", "2Gi", "20Gi", true)
 	r.noteMachineUse("peer-up", measured(600))
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"})
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 

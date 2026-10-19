@@ -456,7 +456,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if err != nil {
 			return r.setMachineError(ctx, agent, err)
 		}
+		// UNIT_BOUNDARY_DESCRIPTION: the sample is kept under the owner's lock, the one the runner's answer was recorded under, so a pass that read a status before that answer cannot keep the older reading after it.
+		machineLock := r.ownerLock(owner)
+		machineLock.Lock()
 		r.noteMachineUse(name, machine)
+		machineLock.Unlock()
 		timer.mark("vmMachine")
 		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer.
 		if pairAtRest && runnerReached && machineStopped(machine) && (lastReady == nil || lastReady.Reason != apiv1.ReasonHibernated) {

@@ -193,8 +193,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
 	if err == nil && running {
 		// UNIT_BOUNDARY_DESCRIPTION: the answer is kept whether it refused or admitted the machine: the Agent's status carries a refusal one reconcile late, and a machine that is still booting is not yet a live machine to count by.
-		r.vmAnswers.Store(name, refusedReason(st.Reason))
-		if refusedReason(st.Reason) {
+		r.vmAnswers.Store(name, refusedAnswer(st))
+		if refusedAnswer(st) {
 			// UNIT_BOUNDARY_DESCRIPTION: a refusal leaves the machine holding nothing, so the pod is sized for what the owner holds and not for the start the runner refused, or the next reconcile of any other agent would raise it again.
 			if held, heldErr := r.heldRunnerDemand(ctx, owner, agent, running); heldErr == nil {
 				demand = held

@@ -60,6 +60,8 @@ type fakeNode struct {
 	onName func()
 	usage  vmrunner.RunnerUsage
 	onPut  func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: a status read holds the runner's lock nowhere while it runs, so a test can hold one answer back and let a reconcile record the runner's next answer meanwhile.
+	onGet func(id string)
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
@@ -156,6 +158,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			st, ok := n.statuses[id]
 			if !ok {
 				st.State = vmrunner.StateAbsent
+			}
+			if hook := n.onGet; hook != nil {
+				n.mu.Unlock()
+				hook(id)
+				n.mu.Lock()
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodDelete:
@@ -776,7 +783,7 @@ func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason)
 
@@ -793,9 +800,14 @@ func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, cached))
 	assert.Equal(t, int32(0), gatewayAtRetry, "the gateway stays down while the runner is asked again")
 
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity})
 	require.NoError(t, r.Reconcile(ctx, cached))
-	assert.False(t, r.refusedWithoutMachine(cached), "a machine the runner admitted counts, whatever park the status still carries")
+	assert.False(t, r.refusedWithoutMachine(cached), "a machine the runner admitted counts while it boots, whatever park the status still carries")
+	elsewhere := vmAgentCR()
+	elsewhere.Name = "elsewhere"
+	demand, err := r.heldRunnerDemand(ctx, testOwner, elsewhere, false)
+	require.NoError(t, err)
+	assert.Equal(t, 3072, demand.memoryMiB, "the admitted machine still holds its boot floor, though its answer repeats the refusal's reason")
 }
 
 // TEST_SCENARIO: on a wake the machine often answers before its gateway pod is ready, and the gateway pod turning ready starts a reconcile. That reconcile publishes Ready once the gateway is applied, before it calls the runner, because the status already holds the machine ready for this generation.

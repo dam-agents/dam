@@ -135,6 +135,15 @@ func refusedReason(reason string) bool {
 	return reason == vmrunner.ReasonOutOfCapacity || reason == vmrunner.ReasonStorageFull
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner keeps a refusal's reason after it admits the retry — it clears it only when that action completes — so the reason alone does not say the machine holds nothing. A refusal with nothing running or in flight does: the machine holds its memory while it boots, restarts or stops, and while it runs, whatever a refusal from an attempt before says.
+func refusedAnswer(st vmrunner.MachineStatus) bool {
+	switch st.State {
+	case "", vmrunner.StateAbsent, vmrunner.StateStopped:
+		return refusedReason(st.Reason)
+	}
+	return false
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
 func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resource.Quantity) resource.Quantity {
 	needMiB := demandMiB + reserveMiB

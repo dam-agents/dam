@@ -225,19 +225,29 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	}
 	r.refreshVMPool(ctx, owner)
 	var first *apiv1.Agent
+	lock := r.ownerLock(owner)
 	for _, a := range agents {
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil || !running {
 			continue
 		}
+		// UNIT_BOUNDARY_DESCRIPTION: the status is read and its sample kept
+		// UNIT_BOUNDARY_DESCRIPTION: under the owner's lock, the one a reconcile
+		// UNIT_BOUNDARY_DESCRIPTION: records the runner's answer under, so the two
+		// UNIT_BOUNDARY_DESCRIPTION: cannot cross: a sample read before a refusal
+		// UNIT_BOUNDARY_DESCRIPTION: is kept before it, and the answer that follows
+		// UNIT_BOUNDARY_DESCRIPTION: drops it. Kept outside, the older reading lands
+		// UNIT_BOUNDARY_DESCRIPTION: after the refusal and counts a machine the
+		// UNIT_BOUNDARY_DESCRIPTION: runner holds nothing of.
+		lock.Lock()
 		status, err := runner.Status(ctx, a.Name)
-		if err != nil {
-			continue
+		if err == nil {
+			r.noteMachineUse(a.Name, status)
+			if first == nil && !r.refusedWithoutMachine(a) {
+				first = a
+			}
 		}
-		r.noteMachineUse(a.Name, status)
-		if first == nil && !r.refusedWithoutMachine(a) {
-			first = a
-		}
+		lock.Unlock()
 	}
 	if first == nil {
 		return "", false
