@@ -167,3 +167,4 @@ The controller renders the owner gateway after the runner call, so a machine's s
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.
 The old pod sleeps out most of its grace before Envoy is signalled, serving the streams it holds while the new one takes new connections.
 Only a template change (an image, the install's trust settings) rolls it, paced across owners by the same roll width as runner rolls (`rollout.maxConcurrent` runners, or `rollout.maxConcurrentPercent` of them); listener, credential and leaf changes never do.
+A gateway already mid-roll holds one of the width's places, so a later template change replaces its stuck target in the place it holds rather than taking another: a fleet that shrinks under a stalled roll — owners removed, the share falling below the gateways stuck on it — still takes a corrective change, where counting its peers alone would leave every one of them blocked.
