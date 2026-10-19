@@ -141,6 +141,7 @@ pub fn run() -> ! {
     std::thread::spawn(move || reclaim_cold_cache(swapping));
     let scratch = scratch_folders();
     std::thread::spawn(move || evict_scratch(&scratch));
+    std::thread::spawn(trim_disk);
     if let Some(guard) = guard {
         *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(guard);
         std::thread::spawn(guard_pool);
@@ -1440,7 +1441,51 @@ fn eviction_pass(
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (pool_guard::PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). btrfs's free space is an estimate that can pass the disk's own size, so the guard counts on no more than the disk holds beyond the guest's use, and when a preallocation is refused it finds what the disk takes and holds to that until the guest frees room, warning once (PoolGuard::grow). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
+// UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, so a block the agent frees stays allocated there, and counted against the owner's storage, until the guest's filesystem discards it. btrfs discards on its own (`discard=async`), and in these machines that does not reach the claim: a guest that deleted 300 MiB saw the claim's use stay where it was for minutes, while a trim of the same disk returned it at once. So platform-init trims the disk itself: every TRIM_INTERVAL, and before the guard sizes itself, because the guard's preallocation takes the extents the guest just freed and no trim can reach an extent that is allocated (trim_freed).
+const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
+// UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
+const FITRIM: libc::c_ulong = 0xC018_5879;
+// UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
+const TRIM_MIN_BYTES: u64 = 1 << 20;
+
+#[repr(C)]
+struct FstrimRange {
+    start: u64,
+    len: u64,
+    minlen: u64,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: returns every free extent of the filesystem holding `path` to the storage under it, and the bytes it returned. It is called every TRIM_INTERVAL, and by the storage guard before the guard sizes itself: a preallocated extent is allocated, so a trim skips it, and the room the guest freed would stay on the claim until the machine stopped if the guard took it first.
+fn trim_freed(path: &Path) -> io::Result<u64> {
+    let dir = File::open(path)?;
+    let mut range = FstrimRange {
+        start: 0,
+        len: u64::MAX,
+        minlen: TRIM_MIN_BYTES,
+    };
+    // SAFETY: `dir` holds an open descriptor for the call, and `range` is a live fstrim_range the kernel reads and writes back.
+    succeeded(unsafe { libc::ioctl(dir.as_raw_fd(), FITRIM as _, &mut range) } == 0)?;
+    Ok(range.len)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: trims the disk every TRIM_INTERVAL, so a delete the storage guard never moves for, one smaller than its step, still goes back to the claim within a minute. A trim that cannot run costs only the room it would have returned, so the warning is written once and the trim retried.
+fn trim_disk() {
+    let home = Path::new(guest::AGENT_HOME);
+    let mut failing = false;
+    loop {
+        std::thread::sleep(TRIM_INTERVAL);
+        match trim_freed(home) {
+            Ok(_) => failing = false,
+            Err(e) => {
+                if !std::mem::replace(&mut failing, true) {
+                    logf!("WARNING: trimming {} ({e}); the room the agent frees stays on the owner's storage", home.display());
+                }
+            }
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (pool_guard::PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. A preallocated extent a guest frees is whole or nothing, so the file is emptied before it is sized again (size_guard): btrfs keeps the blocks of an extent it partly truncated allocated while the file's own stat reports the smaller size, and a guard shortened that way gave a steadily writing guest nothing back, which filled that guest's disk with room the guard said it had freed. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). btrfs's free space is an estimate that can pass the disk's own size, so the guard counts on no more than the disk holds beyond the guest's use, and when a preallocation is refused it finds what the disk takes and holds to that until the guest frees room, warning once (PoolGuard::grow). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
 const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 const POOL_GUARD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -1462,6 +1507,25 @@ fn pool_guard(root: &Path) -> Option<File> {
             None
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: sizes the guard file to `size` bytes of preallocated blocks, or leaves it holding the `held` bytes it had when the disk refuses them, and reports the refusal. The file is emptied first, because that is the only way a smaller guard gives its room back: btrfs keeps the blocks of a partly truncated preallocated extent allocated while the file's stat reports only its size, so a file shortened in place frees nothing on the claim, and the guard then asked for new extents while the old ones stayed taken. Emptying frees every extent the file holds, and the preallocation after it is all or nothing, so the file's blocks are the room the guard holds. A refused preallocation puts the room it had back, so a disk that takes less than the guard asked for never leaves the guest more than the disk has: the claim's room is what every other agent of the owner writes into.
+fn size_guard(guard: &File, held: u64, size: u64) -> io::Result<()> {
+    let length =
+        libc::off_t::try_from(size).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // SAFETY: `guard` holds an open descriptor for every call, and none of them takes a pointer.
+    if unsafe { libc::ftruncate(guard.as_raw_fd(), 0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    if size == 0 || unsafe { libc::fallocate(guard.as_raw_fd(), 0, 0, length) } == 0 {
+        return Ok(());
+    }
+    let error = io::Error::last_os_error();
+    if let Ok(length) = libc::off_t::try_from(held) {
+        // SAFETY: as above; this one's failure leaves the guard smaller than it was, never larger.
+        unsafe { libc::fallocate(guard.as_raw_fd(), 0, 0, length) };
+    }
+    Err(error)
 }
 
 fn guard_pool() {
@@ -1512,29 +1576,20 @@ fn guard_pool() {
             logf!("WARNING: syncing the disk before sizing the storage guard: {e}");
             continue;
         }
+        if let Err(e) = trim_freed(home) {
+            logf!("WARNING: trimming the disk before sizing the storage guard: {e}");
+        }
         let Some((want, mine)) = look(&mut state) else {
             continue;
         };
         moved = Some(std::time::Instant::now());
-        let (mut error, mut current) = (None, held);
-        let mut size_to = |size: u64| {
-            let Ok(length) = libc::off_t::try_from(size) else {
-                return false;
-            };
-            // SAFETY: the descriptor is open for the call, and neither call takes a pointer.
-            let rc = unsafe {
-                if size > current {
-                    libc::fallocate(guard.as_raw_fd(), 0, 0, length)
-                } else {
-                    libc::ftruncate(guard.as_raw_fd(), length)
-                }
-            };
-            if rc == 0 {
-                current = size;
-            } else {
-                error = Some(io::Error::last_os_error());
+        let mut error = None;
+        let mut size_to = |size: u64| match size_guard(guard, held, size) {
+            Ok(()) => true,
+            Err(e) => {
+                error = Some(e);
+                false
             }
-            rc == 0
         };
         let (sized, warn) = if want > held {
             state.grow(held, want, mine, size_to)
@@ -2747,6 +2802,37 @@ mod tests {
                 .count(),
             0
         );
+    }
+
+    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly freed while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The file is emptied and preallocated again, so preallocating 128 MiB takes 128 MiB and sizing back to 32 MiB gives 96 MiB back.
+    #[test]
+    fn a_smaller_guard_gives_its_room_back() {
+        let disk = TempDir::new("guard-resize");
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
+        let free = || {
+            flush_filesystem(disk.path()).unwrap();
+            let stat = statvfs(disk.path()).expect("the disk's free space");
+            #[allow(clippy::unnecessary_cast)]
+            let (size, avail) = (stat.f_frsize as u64, stat.f_bavail as u64);
+            size * avail
+        };
+        let base = free();
+        size_guard(&guard, 0, 128 << 20).unwrap();
+        let held = free();
+        assert!(
+            base.saturating_sub(held) >= 120 << 20,
+            "128 MiB of blocks took {} MiB",
+            base.saturating_sub(held) >> 20
+        );
+        size_guard(&guard, 128 << 20, 32 << 20).unwrap();
+        let after = free();
+        assert!(
+            after.saturating_sub(held) >= 88 << 20,
+            "a guard shrunk by 96 MiB gave back {} MiB",
+            after.saturating_sub(held) >> 20
+        );
+        assert_eq!(guard.metadata().unwrap().blocks() * 512, 32 << 20);
     }
 
     // TEST_SCENARIO: a disk of many small files runs out of inodes with most of its space free, and a write then fails as on a full disk, so the free share is the smaller of blocks and inodes; a filesystem that counts no inodes is judged by its blocks.

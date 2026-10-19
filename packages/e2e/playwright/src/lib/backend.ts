@@ -297,9 +297,9 @@ export function runnerGrows(
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
-export function inGuest(agentId: string, script: string): string {
-  const pod = kubectl(
+// UNIT_BOUNDARY_DESCRIPTION: the pod hosting a vm agent's machine: the agent's owner's VM runner, which every call into that machine goes through (`vm-runner exec`).
+export function runnerPod(agentId: string): string {
+  return kubectl(
     "-n",
     AGENT_NS,
     "get",
@@ -309,11 +309,15 @@ export function inGuest(agentId: string, script: string): string {
     "-o",
     "jsonpath={.items[0].metadata.name}",
   );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
+export function inGuest(agentId: string, script: string): string {
   return kubectl(
     "-n",
     AGENT_NS,
     "exec",
-    pod,
+    runnerPod(agentId),
     "-c",
     "vm-runner",
     "--",
