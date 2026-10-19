@@ -182,6 +182,10 @@ export interface AcpRuntimeDeps {
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onToolActivity?: (activity: ToolActivity) => void;
   onHarnessExited?: () => void;
+  onTurnEnded?: (
+    sessionId: string,
+    end: { stopReason: string | null; error: string | null },
+  ) => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
   modeSettingId?: string;
 }
@@ -1607,6 +1611,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             });
             reportTurnEnd(sid, buffer);
           }
+          if (turnEnded)
+            deps.onTurnEnded?.(sid, {
+              stopReason,
+              error:
+                error === undefined
+                  ? null
+                  : [error.message, error.details].filter(Boolean).join(": "),
+            });
           maybeCloseIdleSession(sid);
         }
         lease.maybeRecycle();

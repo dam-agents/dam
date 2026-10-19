@@ -86,6 +86,11 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  onTurnEnded?: (
+    sessionId: string,
+    end: { stopReason: string | null; error: string | null },
+  ) => void;
+  onHarnessExited?: () => void;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
   providerAliases: () => string[];
@@ -343,7 +348,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
           });
         },
         backgroundWork: scoped.backgroundWork,
-        onHarnessExited: scoped.onHarnessExited,
+        onHarnessExited: () => {
+          scoped.onHarnessExited();
+          opts.onHarnessExited?.();
+        },
+        ...(opts.onTurnEnded && { onTurnEnded: opts.onTurnEnded }),
         sessionSettingFrames: (sessionId) => [
           ...modelFrames(
             harness,

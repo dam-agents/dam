@@ -144,6 +144,7 @@ export const contribution = z.discriminatedUnion("kind", [
 export type Contribution = z.infer<typeof contribution>;
 
 export const SESSION_REF_HEADER = "x-platform-session-ref";
+export const INVOCATION_SCHEDULE_PREFIX = "invocation:";
 export const PLATFORM_MCP_ENTRY_NAME = "platform-outbound";
 
 export const onceOriginMode = z.enum(["continue", "report"]);

@@ -96,9 +96,23 @@ export interface ModelRouterDeps {
   ) => Record<string, unknown>;
   extensions?: readonly RouterExtension[];
   onCall?: (record: ModelCallRecord) => void;
+  onAnswered?: (session: string | null) => void;
+  onRefused?: (refusal: ModelRefusal) => void;
   fetchImpl?: typeof globalThis.fetch;
   port?: number;
   log: (msg: string) => void;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a model call the router or the provider refused,
+ * with the text the harness got back; permanent when retrying the same call
+ * cannot succeed.
+ */
+export interface ModelRefusal {
+  session: string | null;
+  status: number;
+  text: string;
+  permanent: boolean;
 }
 
 export interface ModelRouter {
@@ -251,7 +265,15 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       providers: deps.catalog.providers(),
       sessionModel: session ? (choiceOf(session)?.model ?? null) : null,
     });
-    if (!target.ok) return reply(res, target.status, dialect, target.reason);
+    if (!target.ok) {
+      deps.onRefused?.({
+        session,
+        status: target.status,
+        text: target.reason,
+        permanent: true,
+      });
+      return reply(res, target.status, dialect, target.reason);
+    }
     const { entry, publicName } = target;
     const layer = deps
       .envState()
@@ -379,6 +401,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       deps.log(
         `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: ${text.replace(/\s+/g, " ").slice(0, 400)}`,
       );
+      deps.onRefused?.({
+        session,
+        status: upstream.status,
+        text,
+        permanent: PERMANENT_STATUSES.has(upstream.status),
+      });
       if (upstream.headers.has(PLATFORM_REFUSAL_HEADER)) {
         res.writeHead(upstream.status, resHeaders);
         onceSent(() => record(upstream.status, null));
@@ -409,6 +437,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       res.end(explained);
       return;
     }
+    deps.onAnswered?.(session);
     res.writeHead(upstream.status, resHeaders);
     if (!upstream.body) {
       onceSent(() => record(upstream.status, null));

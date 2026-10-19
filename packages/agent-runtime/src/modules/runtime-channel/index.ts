@@ -2,6 +2,10 @@ export { composeRuntimeChannel, pluginStateRoot } from "./compose.js";
 export { createArtifactTouchReporter } from "./artifact-touch-reporter.js";
 export { createHarnessClient, type HarnessClient } from "./harness-client.js";
 export {
+  createInvocationWatch,
+  type InvocationWatch,
+} from "./invocation-watch.js";
+export {
   loadManifest,
   harnessConfigBindingOf,
   resolveDrivers,

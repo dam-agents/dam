@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { createDb, runMigrations } from "db";
 import {
+  INVOCATION_SCHEDULE_PREFIX,
   type TriggerEventPayload,
   workspaceMutationEventKinds,
 } from "agent-runtime-api";
@@ -1712,6 +1713,19 @@ export async function bootstrap() {
       await invocationSetupFailure(
         event.agentId,
         HARNESS_CONFIG_STEP,
+        input.detail ?? input.outcome,
+      );
+    },
+  );
+  runtimeDelivery.registerEventOutcomeHandler(
+    "trigger",
+    async (event, input) => {
+      const { scheduleId } = event.payload as Partial<TriggerEventPayload>;
+      if (input.outcome !== "failed") return;
+      if (!scheduleId?.startsWith(INVOCATION_SCHEDULE_PREFIX)) return;
+      await invocationSetupFailure(
+        event.agentId,
+        "run",
         input.detail ?? input.outcome,
       );
     },

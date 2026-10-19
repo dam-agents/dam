@@ -89,6 +89,7 @@ import {
   createModelDiscovery,
   createFilePlugin,
   createHarnessClient,
+  createInvocationWatch,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
   loadManifest,
@@ -256,6 +257,19 @@ if (envStore.ready()) void modelCatalog.refresh();
 modelCatalog.start();
 
 const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the watch is composed before the Model Router
+ * and the ACP runtime that feed it, so what it reads of them is bound late.
+ */
+let sessionHoldsWork: (sessionId: string) => boolean = () => false;
+const invocationWatch = createInvocationWatch({
+  reporter: {
+    report: (input) =>
+      harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
+  },
+  holdsWork: (sessionId) => sessionHoldsWork(sessionId),
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
 const modelCallExporter = createModelCallExporter({
   envState: () => envStore.state(),
   log: modelRouterLog,
@@ -280,6 +294,9 @@ const modelRouter = composeModelRouter({
   defaultHarness,
   port: config.PLATFORM_MODEL_ROUTER_PORT,
   onCall: (record) => modelCallExporter.record(record),
+  onAnswered: (session) => invocationWatch.modelAnswered(session),
+  onRefused: ({ session, ...error }) =>
+    invocationWatch.modelError(session, error),
   log: modelRouterLog,
 });
 await modelRouter.listen();
@@ -450,6 +467,8 @@ const {
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   onToolActivity: changes.onToolActivity,
+  onTurnEnded: (sessionId, end) => invocationWatch.turnEnded(sessionId, end),
+  onHarnessExited: () => invocationWatch.harnessExited(),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
   beforeSpawn: () =>
@@ -470,6 +489,8 @@ const {
 });
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
+sessionHoldsWork = (sessionId) =>
+  backgroundWork.hasWork(sessionId) || subAgentSessions.spawnedAny(sessionId);
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
@@ -512,6 +533,7 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
+  invocationWatch,
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>

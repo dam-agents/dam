@@ -8,6 +8,7 @@ import type {
   ScheduleResetEventPayload,
   TriggerEventPayload,
 } from "agent-runtime-api";
+import { INVOCATION_SCHEDULE_PREFIX } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 import {
   SessionModelError,
@@ -16,6 +17,7 @@ import {
 import type { PrecheckOutcome } from "../domain/precheck.js";
 import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
+import type { InvocationWatch } from "../invocation-watch.js";
 
 const IMPL_NAME = "trigger";
 
@@ -55,11 +57,12 @@ export function createTriggerPlugin(deps: {
   reporter: EventReporter;
   findSessionByRef?: (ref: string) => string | undefined;
   catalogListed?: () => Promise<void>;
+  invocationWatch?: Pick<InvocationWatch, "watch">;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
     task: string,
-  ): Promise<void> => {
+  ): Promise<string> => {
     if (deps.catalogListed)
       await Promise.race([
         deps.catalogListed(),
@@ -82,20 +85,20 @@ export function createTriggerPlugin(deps: {
     if (origin?.mode === "continue") {
       const originSession = deps.findSessionByRef?.(origin.sessionRef);
       if (originSession) {
-        await deps.driver.start({
+        const res = await deps.driver.start({
           task: continuationPrompt(origin.name, task),
           mcpServers: payload.mcpServers,
           resumeSessionId: originSession,
           unattended: true,
         });
-        return;
+        return res.sessionId;
       }
       deps.log(
         `[trigger] ${payload.scheduleId}: the session that scheduled it is gone; running in a fresh session`,
       );
     }
     if (origin?.mode === "report") {
-      await deps.driver.start({
+      const res = await deps.driver.start({
         task,
         mcpServers: payload.mcpServers,
         platformMeta: {
@@ -105,7 +108,7 @@ export function createTriggerPlugin(deps: {
         },
         model,
       });
-      return;
+      return res.sessionId;
     }
     if (!payload.once && (payload.sessionMode ?? "fresh") === "continuous") {
       const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
@@ -129,14 +132,15 @@ export function createTriggerPlugin(deps: {
           payload.scheduleId,
           res.sessionId,
         );
-      return;
+      return res.sessionId;
     }
-    await deps.driver.start({
+    const res = await deps.driver.start({
       task,
       mcpServers: payload.mcpServers,
       platformMeta,
       model,
     });
+    return res.sessionId;
   };
 
   const report = async (input: EventReportInput): Promise<void> => {
@@ -208,10 +212,38 @@ export function createTriggerPlugin(deps: {
     );
   };
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a sub-agent's trigger is its one turn, so a
+   * run that cannot start fails it at once rather than at its deadline, and
+   * a run that starts is watched until it reports its result.
+   */
+  const runInvocation = async (
+    payload: TriggerEventPayload,
+    eventId: string,
+  ): Promise<void> => {
+    try {
+      deps.invocationWatch?.watch(
+        await startSession(payload, payload.task),
+        eventId,
+      );
+    } catch (err) {
+      const detail =
+        err instanceof SessionModelError
+          ? err.message
+          : `the run could not start: ${(err as Error).message}`;
+      deps.log(`[trigger] ${payload.scheduleId} ${detail}`);
+      void report(refusedReport(eventId, detail.slice(0, DETAIL_MAX)));
+    }
+  };
+
   const fire = async (
     payload: TriggerEventPayload,
     ctx: EventContext,
   ): Promise<void> => {
+    if (payload.scheduleId.startsWith(INVOCATION_SCHEDULE_PREFIX)) {
+      await runInvocation(payload, ctx.eventId);
+      return;
+    }
     if (!payload.precheck) {
       const refused = await runOrRefuse(payload, payload.task);
       if (refused) void report(refusedReport(ctx.eventId, refused));
