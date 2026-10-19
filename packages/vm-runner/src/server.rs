@@ -1899,7 +1899,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting up to a minute for the controller's next reconcile to do the same.
+    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting up to a minute for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing. A machine known not to be running holds none, so no figure outlives its VMM.
     fn probe(self: &Arc<Self>, id: &str) {
         let Some((action, looked)) = locked(&self.machines)
             .entries
@@ -1918,6 +1918,7 @@ impl Server {
             None => self.look(id),
         };
         let running = seen.state == State::Running;
+        let unread = seen.state == State::Unknown;
         let resident = running.then(|| self.runtime.resident_mib(id)).flatten();
         let cpu = running
             .then(|| self.runtime.cpu_usec(id))
@@ -1925,17 +1926,23 @@ impl Server {
             .map(|usec| (Instant::now(), usec));
         self.record(id, seen, Some(looked));
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
-            entry.resident_mib = resident;
-            entry.cpu_milli = match (entry.cpu, cpu) {
-                (Some((from, before)), Some((to, now))) if now >= before => {
-                    let micros = to.duration_since(from).as_micros() as u64;
-                    ((now - before) * 1000)
-                        .checked_div(micros)
-                        .unwrap_or(entry.cpu_milli)
+            if !unread {
+                if !running {
+                    entry.resident_mib = None;
+                } else if resident.is_some() {
+                    entry.resident_mib = resident;
                 }
-                _ => 0,
-            };
-            entry.cpu = cpu;
+                entry.cpu_milli = match (entry.cpu, cpu) {
+                    (Some((from, before)), Some((to, now))) if now >= before => {
+                        let micros = to.duration_since(from).as_micros() as u64;
+                        ((now - before) * 1000)
+                            .checked_div(micros)
+                            .unwrap_or(entry.cpu_milli)
+                    }
+                    _ => 0,
+                };
+                entry.cpu = cpu;
+            }
         }
         self.note_slow_boot(id);
         if !self.dead_for_long(id) {
@@ -1991,13 +1998,14 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state is unknown counts as running, which is what a launch record that cannot be read records: the room of a VMM that may be up is not room to hand to another, and its spec cannot be matched to a size either, so it is counted at the whole handout.
     fn known_running(&self, id: &str) -> bool {
         let recorded = locked(&self.machines)
             .entries
             .get(id)
             .and_then(|e| e.seen.as_ref().map(|seen| seen.state));
-        recorded.or_else(|| self.runtime.state(id).ok()) == Some(State::Running)
+        let state = recorded.unwrap_or_else(|| self.runtime.state(id).unwrap_or(State::Unknown));
+        matches!(state, State::Running | State::Unknown)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
@@ -2042,13 +2050,13 @@ impl Server {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
             status.disk_gib = spec.storage_gib;
-            status.used_mib = entry
-                .and_then(|e| e.resident_mib)
-                .filter(|_| state == State::Running)
-                .unwrap_or(0);
-            status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
             status.nested = spec.nested_virtualization && self.runtime.nests();
         }
+        status.used_mib = entry
+            .and_then(|e| e.resident_mib)
+            .filter(|_| matches!(state, State::Running | State::Unknown))
+            .unwrap_or(0);
+        status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
         if state == State::Unknown && status.message.is_empty() {
             status.message = seen.and_then(|seen| seen.error).unwrap_or_default();
         }
