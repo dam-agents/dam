@@ -53,12 +53,12 @@ The owner is told on [Home](home-feed.md#default-model-notices) about a default 
 The conversion runs after each `hello` while nothing is saved, and once per channel turn.
 A schedule fire for an agent moved to a new image and still asleep wakes it first, so the fire is checked, converted and resolved against the new runtime rather than the one its last `hello` came from; when the new runtime does not say hello in time, the fire fails as still setting up instead of going out on the old view.
 Run Now on such an agent refuses with "setting up" and starts that wake in the background.
-**A turn with no model.** On a harness that reaches its models through the Model Router, the runtime refuses a turn whose session has no model, with the `no-model` reason, whether the turn starts a session, prompts one, resends an edited message or opens its terminal; the router or the harness never picks a model in its place.
+**A turn with no model.** On a harness that reaches its models through the Model Router, the runtime refuses a turn whose session has no model, with the `no-model` reason, whether the turn starts a session, prompts one or resends an edited message; the router or the harness never picks a model in its place.
 A harness on a native Connection, or an agent holding no provider whose API the harness speaks, is not refused, and before the pod's env arrives every routed harness needs a model.
 The turns the platform starts on its own carry the agent's saved default: kit setup, and the result of a satellite Job or of a sub-agent when no waiting session takes it.
 A session from before the Model Router carries no model, and it ran on the agent's one provider and its default model, so a channel turn or an api-server trigger that continues it pins the agent's saved default on it first, and a one-time task or a sub-agent result that continues it pins the model the event names.
 A scheduled run with no model, such a task when it names none, an interrupted turn on such a session, or a chat prompt in it is refused until a model is picked.
-A new web terminal starts on the model picked for its harness or else the agent's default; with neither, its button opens the Providers page, and a terminal session with no model takes the one its client asks for on that session's harness.
+A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts on the agent's default when the default is on its harness, and otherwise with no model, on the harness's own default.
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.

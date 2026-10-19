@@ -19,7 +19,6 @@ import {
   STAGED_SKILLS_DIR,
   backgroundWorkReportSchema,
   keepMarkRequestSchema,
-  NO_MODEL_REASON,
   type AgentRuntimeContext,
   type ApplyStateInput,
 } from "agent-runtime-api";
@@ -686,35 +685,26 @@ function markTerminalSeen(sessionId: string): void {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
- * refuses the terminal with the provider-removed reason, and a missing model
- * on a harness that needs one with the no-model reason, as a chat prompt
- * would be refused. A terminal session with no model of its own takes the
- * one the client asks for on its harness.
+ * refuses the terminal with the provider-removed reason, as a chat prompt
+ * would be refused.
  */
 function terminalLease(
   sessionId: string,
   requested: { harness?: string; model?: string },
-  fresh: boolean,
 ): { harness: string; model: string | null } | string {
   const meta = sessionMetadata.get(sessionId)?.meta;
-  const harness =
-    meta?.harness ?? (fresh ? requested.harness : undefined) ?? defaultHarness;
+  const harness = meta?.harness ?? requested.harness ?? defaultHarness;
   if (!Object.hasOwn(harnessManifests, harness))
     return `this agent does not carry the ${harness} harness`;
-  const stored =
+  const chosen =
     meta?.harness !== undefined
       ? acpRuntime.sessionChoice(sessionId).model
-      : null;
-  const asked =
-    requested.model !== undefined &&
-    (requested.harness === undefined || requested.harness === harness)
-      ? canonicalModel(requested.model)
-      : null;
-  const chosen = stored ?? asked;
+      : requested.model !== undefined
+        ? canonicalModel(requested.model)
+        : null;
   const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
   if (alias && !grantedAliases().includes(alias))
     return PROVIDER_REMOVED_REASON;
-  if (chosen === null && modelRequired(harness)) return NO_MODEL_REASON;
   sessionMetadata.set(sessionId, {
     ...meta,
     mode: "terminal",
@@ -831,7 +821,7 @@ function attachPty(
         return;
       }
 
-      const lease = terminalLease(sessionId, opts.lease, opts.reset);
+      const lease = terminalLease(sessionId, opts.lease);
       if (typeof lease === "string") {
         ws.close(1008, lease);
         return;

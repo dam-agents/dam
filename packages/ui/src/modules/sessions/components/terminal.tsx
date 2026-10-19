@@ -3,7 +3,6 @@ import "@xterm/xterm/css/xterm.css";
 import { ErrorFilled, Terminal as TerminalIcon } from "@carbon/icons-react";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal as XTerm } from "@xterm/xterm";
-import { NO_MODEL_REASON } from "agent-runtime-api";
 import {
   decodeFrame,
   encodeDataFrame,
@@ -116,7 +115,7 @@ export function Terminal({
       const token = await getAccessToken();
       if (cancelled) return;
 
-      const lease = readNextSessionPair(agentId);
+      const lease = fresh ? readNextSessionPair(agentId) : null;
       const wakes = userConnect.current;
       userConnect.current = false;
       ws = new WebSocket(
@@ -159,9 +158,7 @@ export function Terminal({
           setRefusal(
             e.reason === "provider-removed"
               ? "This session's model provider was removed from the agent"
-              : e.reason === NO_MODEL_REASON
-                ? "This session has no model. Pick one for it, or set the agent's default model on its Providers page"
-                : e.reason,
+              : e.reason,
           );
         setState((s) => (s === "exited" ? s : "disconnected"));
       };
