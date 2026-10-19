@@ -132,8 +132,19 @@ func logLevel() slog.Level {
 	return level
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the mark is read by exact equality with the configured runner image, and a published chart renders that image as `repository@digest`, so a mark spelled `repository:tag` matches nothing and no roll reads it: every release keeps being handed off in place, and the machines keep the runtime they booted. Nothing else reports a mark that matches nothing, since the runners answer as they always do. Reported once per leadership term, which is the operator's window to correct the value.
+func warnInertRebootMark(cfg *config.Config) {
+	marked := cfg.VM.Runner.Rollout.RebootRequiredRelease
+	if marked == "" || marked == cfg.VM.Runner.Image {
+		return
+	}
+	slog.Warn("rollout.rebootRequiredRelease names no runner image this install runs; no roll reads the mark, so a release is handed off in place and its machines keep the runtime they booted",
+		"marked", marked, "image", cfg.VM.Runner.Image)
+}
+
 func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Interface, cfg *config.Config) {
 	slog.Info("started leading", "namespace", cfg.Namespace)
+	warnInertRebootMark(cfg)
 
 	dynFactory := dynamicinformer.NewFilteredDynamicSharedInformerFactory(dynClient, 30*time.Second, cfg.Namespace, nil)
 	agentInformer := dynFactory.ForResource(reconciler.AgentsGVR)

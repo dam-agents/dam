@@ -373,7 +373,10 @@ virtualization:
       # of the install's runners; `maxConcurrent` is then ignored.
       maxConcurrentPercent: 0
       # The runner image reference of the one release whose machines must
-      # reboot, e.g. the `image` this chart configures; empty marks none.
+      # reboot, spelled exactly as this chart renders `image` — with the
+      # digest a published chart pins, not a tag; empty marks none. A mark
+      # that names no image the install runs is read by no roll, so the
+      # controller reports it when it starts.
       rebootRequiredRelease: ""
       settleTimeout: 10m
       idleWait: 24h
