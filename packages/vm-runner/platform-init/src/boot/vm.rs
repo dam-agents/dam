@@ -320,7 +320,7 @@ fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
 // UNIT_BOUNDARY_DESCRIPTION: what a disk that predates the subvolume layout is told: it is never booted, formatted or rewritten, so what it holds is kept for an operator to recover.
 const PREDATES_SUBVOLUMES: &str = "predates the btrfs subvolume layout, which this platform-init alone boots; refusing to boot it, and the disk is kept as it is";
 
-// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats as btrfs before the first boot, compressed with zstd level 1 and grown online to its disk, and returns the platform's root on it: the whole filesystem, with AGENT_DIR and SYSTEM_DIR as subvolumes. The system subvolume is made on the first boot; the agent's is the home's seed (see stage). A disk from before that layout — ext4, or btrfs that holds DISK_ROOT_DIR at its top — fails the boot. A disk with no filesystem is never formatted here either, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console.
+// UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats as btrfs before the first boot, compressed with zstd level 1 and grown online to its disk, and returns the platform's root on it: the whole filesystem, with AGENT_DIR and SYSTEM_DIR as subvolumes. It is mounted strictatime and lazytime: eviction keeps an entry a process has read (boot::tree_use), and only a mount that moves a file's access time on every read can say when one was last read, while lazytime keeps that update in memory and lets the disk take it with the next flush instead of on every read. The system subvolume is made on the first boot; the agent's is the home's seed (see stage). A disk from before that layout — ext4, or btrfs that holds DISK_ROOT_DIR at its top — fails the boot. A disk with no filesystem is never formatted here either, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console.
 fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = mkdir_all(target) {
         fatal!("creating {}: {e}", target.display());
@@ -335,7 +335,7 @@ fn mount_storage(target: &Path) -> PathBuf {
         STORAGE_DEVICE,
         target,
         "btrfs",
-        libc::MS_NOATIME,
+        libc::MS_STRICTATIME | libc::MS_LAZYTIME,
         "compress=zstd:1",
     ) {
         fatal!("mounting the storage disk's btrfs: {e}; the disk is kept as it is");
