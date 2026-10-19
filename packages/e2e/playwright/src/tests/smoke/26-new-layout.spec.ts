@@ -148,8 +148,9 @@ test("pins a Session above every Agent", async ({ page }) => {
   await expect(inAgent).toBeVisible();
 });
 
-// TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list and marks the control filtered; putting Chat back returns it to the Pinned section.
-test("filters the Pinned section and the Agent's list", async ({ page }) => {
+// TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list and marks the control filtered; putting Chat back returns it to the Pinned section. Pins live in this browser's storage, so the delete runs in the same page: deleting the Session from its Pinned row removes it from the tree and drops its pin.
+test("filters, then deletes, a pinned Session", async ({ page }) => {
+  test.setTimeout(120_000);
   await setNewLayout(true);
   const name = AGENTS[0];
   await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentIds.get(name)!)}`);
@@ -182,21 +183,9 @@ test("filters the Pinned section and the Agent's list", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(inPinned).toBeVisible();
   await expect(filter).toHaveAccessibleName("Filter sessions");
-});
 
-// TEST_SCENARIO: deleting the pinned Session from its row in the Pinned section removes it from the tree and drops its pin from browser storage, so no stale pin waits for an id that no longer exists.
-test("deletes a pinned Session and drops its pin", async ({ page }) => {
-  await setNewLayout(true);
-  const name = AGENTS[0];
-  const agentId = agentIds.get(name)!;
-  await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
-  const pinnedSection = page.getByRole("region", { name: "Pinned" });
-  const row = pinnedSection.getByTestId("session-row").first();
-  await expect(row).toBeVisible({ timeout: 30_000 });
-  const sessionId = await row.getAttribute("data-session-id");
-
-  await row.hover();
-  await row.getByTestId("session-menu-button").click();
+  await inPinned.hover();
+  await inPinned.getByTestId("session-menu-button").click();
   await page.getByTestId("session-delete-button").click();
   await page.getByRole("button", { name: "Delete session" }).click();
   await expect(pinnedSection).toHaveCount(0, { timeout: 30_000 });
@@ -206,5 +195,5 @@ test("deletes a pinned Session and drops its pin", async ({ page }) => {
   const pins = await page.evaluate(() =>
     localStorage.getItem("platform-pinned-sessions"),
   );
-  expect(pins ?? "").not.toContain(`${agentId}:${sessionId}`);
+  expect(pins ?? "").not.toContain(`${agentIds.get(name)!}:${sessionId}`);
 });
