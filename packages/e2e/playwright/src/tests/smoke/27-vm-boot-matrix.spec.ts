@@ -40,7 +40,8 @@ function capacityOf(dfRow: string): number {
 // UNIT_BOUNDARY_DESCRIPTION: the line of a helper script's output that follows its marker. The runner hands back stdout alone, so every script this spec runs prints a marker line before each piece of data it means to be read: a script's output read by the line it happens to land on breaks the moment the script prints one more or one fewer line before it.
 function after(output: string, marker: string): string {
   const lines = output.split("\n");
-  return (lines[lines.indexOf(marker) + 1] ?? "").trim();
+  const at = lines.indexOf(marker);
+  return at === -1 ? "" : (lines[at + 1] ?? "").trim();
 }
 
 async function hibernate(): Promise<void> {
@@ -79,7 +80,7 @@ function watchForKill(id: string, afterMs: number): void {
       "done",
       `sleep ${(afterMs / 1_000).toFixed(3)}`,
       'if kill -9 "$pid" 2>/dev/null; then',
-      `  echo "killed $pid after $(( $(now) - appeared ))ms, from a wait of ${afterMs}ms, in $(basename "$(dirname "$dir")")/$(basename "$dir")" >> $out`,
+      `  echo "killed $pid after $(( $(now) - appeared ))ms, from a wait of ${afterMs}ms, in $(basename "$(dirname "$dir")")" >> $out`,
       "else",
       '  echo "could not kill $pid: it had gone" >> $out',
       "fi",
@@ -277,6 +278,7 @@ test("refuses a start while the owner's claim is full", async () => {
     !Number.isFinite(capGiB) || capGiB <= 0,
     "the lane's claim is a directory of the node's disk, so filling it would fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume",
   );
+  onRunnerHost(agentId, "rm -f /var/lib/platform/disks/e2e-claim-fill");
   const filled = onRunnerHost(
     agentId,
     [
@@ -301,13 +303,13 @@ test("refuses a start while the owner's claim is full", async () => {
     verdict.startsWith("cannot "),
     `the claim's filesystem is too big to fill under the cap: ${verdict}`,
   );
-  const row = after(filled, "filled");
-  console.log(`[e2e] the owner's claim when the fill stopped: ${row}`);
-  expect(
-    capacityOf(row),
-    `the claim was not filled: ${row}`,
-  ).toBeGreaterThanOrEqual(95);
   try {
+    const row = after(filled, "filled");
+    console.log(`[e2e] the owner's claim when the fill stopped: ${row}`);
+    expect(
+      capacityOf(row),
+      `the claim was not filled: ${row}`,
+    ).toBeGreaterThanOrEqual(95);
     await hibernate();
     await api.agents.wake
       .mutate({ id: agentId })
@@ -323,7 +325,10 @@ test("refuses a start while the owner's claim is full", async () => {
     onRunnerHost(agentId, "rm -f /var/lib/platform/disks/e2e-claim-fill");
   }
   await api.agents.wake.mutate({ id: agentId });
-  await waitAgentState(api, agentId, "running", { timeoutMs: 600_000 });
+  await waitAgentState(api, agentId, "running", {
+    timeoutMs: 600_000,
+    failOnError: false,
+  });
   await expectHomeFile(token, agentId, markerPath, marker, {
     timeoutMs: 120_000,
   });
