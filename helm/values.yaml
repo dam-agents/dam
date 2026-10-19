@@ -524,15 +524,16 @@ virtualization:
     # closes, so the pods are named and not the Service. `podLabels` is
     # required: an empty one would admit every pod in the namespace.
     peers: []
-    # Ranges the service may also reach inside the cluster. Its egress policy
-    # admits the public internet minus every range this cluster owns (private,
-    # loopback, link-local, CGNAT and this-network, which hold the platform's
-    # own datastores, the node and the cloud metadata endpoints), so this is
-    # for a registry the pods above cannot name: one on a private address
-    # OUTSIDE the cluster, such as a mirror on the enterprise network. An
-    # in-cluster registry is a `peers` entry. The metadata endpoints stay
-    # closed inside the ranges above; name the narrowest range that holds the
-    # mirror. Each entry is an address/prefix, never `/0`.
+    # Ranges the service may also reach OUTSIDE the cluster, for a registry on
+    # a private address that no pod selector can name — a mirror on the
+    # enterprise network, say. An in-cluster registry is a `peers` entry: the
+    # policy applies after a Service's address becomes a pod address, which no
+    # range follows. The service already reaches the public internet minus
+    # every range this cluster owns (private, loopback, link-local, CGNAT and
+    # this-network, which hold the platform's own datastores, the node and the
+    # cloud metadata endpoints); inside a range named here those endpoints
+    # lose that protection, so name the narrowest range that holds the mirror.
+    # Each entry is an address/prefix, never `/0`.
     egressCidrs: []
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a
