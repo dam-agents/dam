@@ -2885,7 +2885,7 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     assert!(!h.server.storage_unmeasured.load(Ordering::Relaxed));
 }
 
-// TEST_SCENARIO: machines woken together boot together and write together, so the room below 95% is split between every machine that is running or on its way up. Split between the running ones alone, none of them is running yet when the group boots, and each holds a grant for the whole room until the next look, so their writes together pass the level the claim is held to.
+// TEST_SCENARIO: machines woken together boot together and write together, so the room below 95% is split between every machine that is neither asleep nor absent. Split between the running ones alone, none of them is running yet when the group boots, and each holds a grant for the whole room until the next look, so their writes together pass the level the claim is held to.
 #[tokio::test(flavor = "multi_thread")]
 async fn machines_woken_together_share_the_room_between_them() {
     let (h, claim) = with_claim("storage-woken-together");
