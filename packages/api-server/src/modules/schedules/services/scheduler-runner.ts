@@ -541,6 +541,8 @@ export function createSchedulerRunner(
 
       if (!sched.spec.precheck)
         await deps.repo.stampFire(scheduleId, "success");
+      else if (isFailureResult(sched.status?.lastResult))
+        await deps.repo.stampResult(scheduleId, null);
       await emitFired(sched, "success");
       return "started";
     },

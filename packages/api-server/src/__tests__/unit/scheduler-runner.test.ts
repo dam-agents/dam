@@ -918,6 +918,22 @@ describe("scheduler-runner precheck", () => {
 });
 
 describe("scheduler-runner runNow", () => {
+  // TEST_SCENARIO: an on-demand run is the same fire, so a prechecked one that commits clears the refusal it settles just as an occurrence does — and still writes no next run, since trying a schedule out never moves the cadence.
+  it("clears a refusal once a prechecked run-now commits", async () => {
+    const { runner, stampedResults, stampedFires, nextRuns, enqueued } =
+      makeDeps({
+        precheck: "true",
+        lastResult: "this agent holds no openai provider",
+      });
+
+    await expect(runner.runNow(SCHEDULE_ID)).resolves.toBe("started");
+
+    expect(stampedResults).toEqual([{ result: null, nextRun: undefined }]);
+    expect(stampedFires).toEqual([]);
+    expect(nextRuns).toEqual([]);
+    expect(enqueued).toEqual([]);
+  });
+
   // TEST_SCENARIO: trying a Schedule out must not shift when it next fires — so an on-demand run writes no nextRun and arms no queue job, and the cadence the user was waiting for stays exactly where it was.
   it("delivers the fire without touching the cadence", async () => {
     const { runner, calls, nextRuns, enqueued } = makeDeps();

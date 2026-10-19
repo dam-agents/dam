@@ -3,6 +3,7 @@ import { Time } from "@carbon/icons-react";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 import type { Schedule } from "../../../types.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
@@ -115,7 +116,9 @@ export function ScheduleDetails({
               </span>
             )}
             {outcome && (
-              <span className={outcome.className}>{outcome.resultText}</span>
+              <span className={cn("break-words", outcome.className)}>
+                {outcome.resultText}
+              </span>
             )}
           </div>
         </DetailCard>
