@@ -88,7 +88,6 @@ export function SidebarAgentRow({
             <>
               <span
                 aria-hidden
-                title="No default model it can run"
                 className={cn(
                   "size-2 shrink-0 rounded-full bg-warning group-hover/agent:hidden",
                   open && "hidden",
@@ -97,7 +96,7 @@ export function SidebarAgentRow({
               <span className="sr-only">(no default model)</span>
             </>
           )}
-          {unread && !noDefaultModel && (
+          {unread && (
             <>
               <span
                 aria-hidden

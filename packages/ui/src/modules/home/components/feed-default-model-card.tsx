@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import {
+  defaultModelAction,
   defaultModelDetail,
   defaultModelHeadline,
 } from "../lib/default-model-copy.js";
@@ -57,7 +58,7 @@ export function FeedDefaultModelCard({
           <button
             type="button"
             onClick={onDismiss}
-            title="Hides this from the bell. The agent still has no default it can run."
+            title="Hides this from Approvals. The agent's schedules and channel turns still won't run."
             className="shrink-0 text-sm text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:text-foreground"
           >
             Dismiss
@@ -76,7 +77,7 @@ export function FeedDefaultModelCard({
           </Button>
         )}
         <Button size="sm" onClick={open}>
-          {changed ? "Change" : "Choose a model"}
+          {defaultModelAction(notice)}
         </Button>
       </div>
     </div>

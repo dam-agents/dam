@@ -1,14 +1,23 @@
 import { ChevronRight, Warning } from "@carbon/icons-react";
 
 import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
+import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useWaitingApprovals } from "../hooks/use-waiting-approvals.js";
 import { approvalsBannerCopy } from "../lib/approval-copy.js";
 
 export function ApprovalsBanner() {
   const openSidePanel = useOpenSidePanel();
   const approvals = useWaitingApprovals();
-  if (approvals.length === 0) return null;
-  const { title, detail } = approvalsBannerCopy(approvals);
+  const notices = useDefaultModelNotices().waiting;
+  if (approvals.length === 0 && notices.length === 0) return null;
+  const { title, detail } =
+    approvals.length > 0
+      ? approvalsBannerCopy(approvals)
+      : {
+          title: `${String(notices.length)} ${notices.length === 1 ? "agent needs" : "agents need"} a default model`,
+          detail:
+            "Their schedules and Slack or Telegram turns won't run until you choose one",
+        };
 
   return (
     <button

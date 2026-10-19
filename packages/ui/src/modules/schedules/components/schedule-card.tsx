@@ -12,7 +12,10 @@ import { useStore } from "../../../store.js";
 import type { Schedule } from "../../../types.js";
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
-import { defaultModelBlocks } from "../../home/lib/default-model-copy.js";
+import {
+  defaultModelScheduleWarning,
+  defaultModelStopsRuns,
+} from "../../home/lib/default-model-copy.js";
 import {
   useDeleteSchedule,
   useResetScheduleSession,
@@ -60,10 +63,11 @@ export function ScheduleCard({
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
   const stopReason = enabled ? status?.stopReason : undefined;
+  const defaultModelNotice = defaultModels.byAgentEvenDismissed.get(
+    schedule.agentId,
+  );
   const noDefaultModel =
-    enabled &&
-    !schedule.model &&
-    defaultModelBlocks(defaultModels.byAgent.get(schedule.agentId));
+    enabled && !schedule.model && defaultModelStopsRuns(defaultModelNotice);
   const onceState = scheduleOnceState(schedule);
   const outcome = cardOutcome(schedule);
 
@@ -184,7 +188,9 @@ export function ScheduleCard({
                   className="inline-flex items-center gap-1 whitespace-nowrap text-warning"
                   title="The agent has no default model it can run. Set one on its Providers page, or pick a model for this schedule."
                 >
-                  <WarningAlt size={12} /> Won&rsquo;t run: no default model
+                  <WarningAlt size={12} />{" "}
+                  {defaultModelNotice &&
+                    defaultModelScheduleWarning(defaultModelNotice)}
                 </span>
               </>
             )}

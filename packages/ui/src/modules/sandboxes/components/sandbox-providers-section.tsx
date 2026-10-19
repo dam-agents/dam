@@ -119,7 +119,7 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
-      <DefaultPairPicker agentId={agentId} />
+      <DefaultPairPicker key={agentId} agentId={agentId} />
     </div>
   );
 }

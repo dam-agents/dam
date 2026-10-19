@@ -3,16 +3,17 @@ import { Button } from "@/components/ui/button";
 import { useStore } from "../../../store.js";
 import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
 import {
-  defaultModelBlocks,
+  defaultModelAction,
   defaultModelDetail,
   defaultModelHeadline,
+  defaultModelStopsRuns,
 } from "../../home/lib/default-model-copy.js";
 
 export function DefaultModelNotice({ agentId }: { agentId: string | null }) {
-  const { byAgent } = useDefaultModelNotices();
+  const { byAgentEvenDismissed } = useDefaultModelNotices();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const notice = agentId ? byAgent.get(agentId) : undefined;
-  if (!agentId || !notice || !defaultModelBlocks(notice)) return null;
+  const notice = agentId ? byAgentEvenDismissed.get(agentId) : undefined;
+  if (!agentId || !notice || !defaultModelStopsRuns(notice)) return null;
 
   return (
     <div
@@ -29,7 +30,7 @@ export function DefaultModelNotice({ agentId }: { agentId: string | null }) {
         variant="outline"
         onClick={() => navigateToSandboxHome(agentId, "providers")}
       >
-        Choose a model
+        {defaultModelAction(notice)}
       </Button>
     </div>
   );

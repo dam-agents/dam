@@ -8,8 +8,7 @@ import { useAttention } from "../api/queries.js";
 import { defaultModelNoticeId } from "../lib/default-model-copy.js";
 
 interface DefaultModelNotices {
-  /** UNIT_BOUNDARY_DESCRIPTION: every notice, dismissed or not: the sidebar dot, the chat banner and schedule rows keep showing a default that does not run. */
-  byAgent: ReadonlyMap<string, DefaultModelNotice>;
+  byAgentEvenDismissed: ReadonlyMap<string, DefaultModelNotice>;
   waiting: readonly DefaultModelNotice[];
   dismiss: (notice: DefaultModelNotice) => void;
 }
@@ -25,7 +24,7 @@ export function useDefaultModelNotices(): DefaultModelNotices {
       }),
   });
 
-  const { byAgent, waiting } = useMemo(() => {
+  const { byAgentEvenDismissed, waiting } = useMemo(() => {
     const notices = attention.data?.defaultModels ?? [];
     const dismissed = new Set(
       (attention.data?.dismissed ?? [])
@@ -33,7 +32,9 @@ export function useDefaultModelNotices(): DefaultModelNotices {
         .map((d) => d.id),
     );
     return {
-      byAgent: new Map(notices.map((n) => [n.agentId, n] as const)),
+      byAgentEvenDismissed: new Map(
+        notices.map((n) => [n.agentId, n] as const),
+      ),
       waiting: notices.filter((n) => !dismissed.has(defaultModelNoticeId(n))),
     };
   }, [attention.data]);
@@ -46,5 +47,5 @@ export function useDefaultModelNotices(): DefaultModelNotices {
     [dismissItems],
   );
 
-  return { byAgent, waiting, dismiss };
+  return { byAgentEvenDismissed, waiting, dismiss };
 }

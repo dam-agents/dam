@@ -9,11 +9,12 @@ import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import {
   useHarnessCatalog,
   useProviderConnections,
+  useRememberedPair,
 } from "../api/session-pair.js";
 import { terminalHarnessChoice } from "../lib/session-pair-options.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: one button per harness a new web terminal can start with. Opening one makes it the agent's next session pair, which the terminal hands the runtime on connect; a harness whose fitting providers the owner holds but has not granted asks which to attach first; a harness that cannot start is greyed and its tooltip says why.
+// UNIT_BOUNDARY_DESCRIPTION: one button per harness a new web terminal can start with. Opening one makes it the agent's next session pair, which the terminal hands the runtime on connect, on the model picked for that harness or else the agent's default; on a routed agent with neither, the button opens the Providers page to choose one, since the runtime refuses a terminal with no model. A harness whose fitting providers the owner holds but has not granted asks which to attach first; a harness that cannot start is greyed and its tooltip says why.
 export function TerminalHarnessButtons({
   agentId,
   onOpen,
@@ -22,6 +23,9 @@ export function TerminalHarnessButtons({
   onOpen: () => void;
 }) {
   const setNextSessionPair = useStore((s) => s.setNextSessionPair);
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
+  const { data: remembered } = useRememberedPair(agentId);
   const status = useHarnessConfigStatus(agentId);
   const catalogQuery = useHarnessCatalog();
   const { granted, owned, loaded, failed } = useProviderConnections(agentId);
@@ -36,6 +40,10 @@ export function TerminalHarnessButtons({
   });
 
   if (choice.kind === "loading") return null;
+  const routed = status.data?.modelRouter ?? false;
+  const modelFor = (harness: string): string | null =>
+    [chosen, remembered].find((p) => p?.harness === harness && p.model)
+      ?.model ?? null;
   if (choice.kind === "fallback")
     return (
       <Button
@@ -60,23 +68,35 @@ export function TerminalHarnessButtons({
             aria-label={
               unavailable
                 ? `${displayName}: ${unavailable}`
-                : `Open a ${displayName} terminal`
+                : routed && !modelFor(name)
+                  ? `${displayName}: choose a default model first`
+                  : `Open a ${displayName} terminal`
             }
             aria-disabled={unavailable !== null}
-            tooltip={unavailable ?? displayName}
+            tooltip={
+              unavailable ??
+              (routed && !modelFor(name)
+                ? `Choose a default model for ${displayName} on the Providers page first`
+                : displayName)
+            }
             className={cn(
               "size-9 [&_[role=img]]:size-5",
               unavailable && "cursor-default opacity-25",
             )}
             onClick={async () => {
               if (unavailable || attach.pending) return;
-              const chosen =
+              const model = modelFor(name);
+              if (routed && !model) {
+                navigateToSandboxHome(agentId, "providers");
+                return;
+              }
+              const attached =
                 provider ?? (await attach.ask(name, attachable))?.[0];
-              if (!chosen) return;
+              if (!attached) return;
               setNextSessionPair(agentId, {
                 harness: name,
-                provider: chosen,
-                model: null,
+                provider: attached,
+                model,
               });
               onOpen();
             }}

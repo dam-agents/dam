@@ -41,7 +41,7 @@ export function useAppSidePanelTabs(): Pick<
       },
       approvals: {
         count: waiting,
-        label: `Approvals, ${String(waiting)} waiting`,
+        label: `Approvals, ${String(waiting)} need you`,
         tone: "warning",
       },
     },

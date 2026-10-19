@@ -120,7 +120,10 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
-import { useProviderConnections } from "../api/session-pair.js";
+import {
+  rememberFirstModel,
+  useProviderConnections,
+} from "../api/session-pair.js";
 import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
@@ -153,6 +156,7 @@ import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
+import { useHasModelChoices } from "../hooks/use-has-model-choices.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -324,7 +328,7 @@ export function ChatView() {
   const sessionHarness =
     currentSession?.harness ??
     (currentSession && harnessStatus?.modelRouter
-      ? harnessStatus.defaultHarness
+      ? (harnessStatus.defaultHarness ?? carried[0]?.name)
       : undefined);
   const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
   const harnessesPending =
@@ -349,6 +353,15 @@ export function ChatView() {
     pickable?.routed ? pickable.agentId : null,
     carried.map((h) => h.name),
     pickable?.defaultHarness,
+  );
+  const routedAgent = harnessStatus?.modelRouter ? selectedAgent : null;
+  const newPairHasChoices = useHasModelChoices(
+    routedAgent,
+    nextSessionPair?.harness,
+  );
+  const sessionHasChoices = useHasModelChoices(
+    currentSession ? routedAgent : null,
+    sessionHarness,
   );
   const providerConnections = useProviderConnections(newSessionAgent);
   const noProviders =
@@ -1089,10 +1102,8 @@ export function ChatView() {
                 ? "No LLM provider connected to this agent."
                 : formLocksComposer
                   ? COMPOSER_LOCKED_REASON
-                  : (nextSessionPair && nextSessionPair.model === null) ||
-                      (harnessStatus?.modelRouter &&
-                        sessionHarness &&
-                        !currentSession?.model)
+                  : (nextSessionPair?.model === null && newPairHasChoices) ||
+                      (sessionHasChoices && !currentSession?.model)
                     ? "Choose a model for this session first."
                     : null
             }
@@ -1138,7 +1149,16 @@ export function ChatView() {
                       carried={harnessStatus?.harnesses ?? []}
                       routed={harnessStatus?.modelRouter ?? false}
                       turnRunning={busy}
-                      onChoose={(value) => void chooseSessionModel(value)}
+                      onChoose={(value) =>
+                        void chooseSessionModel(value, () => {
+                          if (harnessStatus?.modelRouter && sessionHarness)
+                            rememberFirstModel(selectedAgent, {
+                              harness: sessionHarness,
+                              provider: null,
+                              model: value,
+                            });
+                        })
+                      }
                       onConfigure={(change) => void configureSession(change)}
                       onNewSession={() => handleNewSession(true)}
                     />

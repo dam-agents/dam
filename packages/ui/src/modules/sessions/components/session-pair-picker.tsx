@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
 import {
+  rememberFirstModel,
   rememberSessionPair,
   useGrantProvider,
   useHarnessCatalog,
@@ -31,8 +32,8 @@ import {
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
-  useRememberedPair,
 } from "../api/session-pair.js";
+import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import {
   addableProviders,
   attachableProviders,
@@ -42,11 +43,9 @@ import {
   sameSideGroups,
 } from "../lib/catalog-groups.js";
 import {
-  fittingProviders,
   harnessDisplayName,
   harnessOptions,
   modelProviderLabel,
-  nextPair,
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
@@ -82,8 +81,6 @@ export function SessionPairPicker({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
-  const { data: remembered, isSuccess: rememberedLoaded } =
-    useRememberedPair(agentId);
   const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
   const setPair = useStore((s) => s.setNextSessionPair);
   const providers = useProviderConnections(agentId);
@@ -106,13 +103,7 @@ export function SessionPairPicker({
   const harnessName = (name: string) => harnessDisplayName(name, views);
   const names = carried.map((h) => h.name);
   const harnesses = harnessOptions(names, views);
-  const pair = nextPair(
-    chosen,
-    remembered ?? null,
-    names,
-    fittingProviders(views, providers.granted),
-    defaultHarness,
-  );
+  const pair = useNextSessionPair(agentId, names, defaultHarness);
   const harness =
     (chosen && names.includes(chosen.harness) ? chosen.harness : null) ??
     pair?.harness ??
@@ -142,15 +133,9 @@ export function SessionPairPicker({
     useHarnessConfigured(agentId, harness),
   );
   const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
-  /**
-   * UNIT_BOUNDARY_DESCRIPTION: on an agent with no default model, the first
-   * model its owner picks for a session becomes the default, so a new agent
-   * gets one from the person, never from the platform.
-   */
   const choose = (next: SessionPair) => {
     setPair(agentId, next);
-    if (routed && next.model !== null && rememberedLoaded && !remembered?.model)
-      rememberSessionPair(agentId, next);
+    if (routed) rememberFirstModel(agentId, next);
   };
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
