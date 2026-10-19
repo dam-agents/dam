@@ -170,11 +170,15 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if pullErr != nil {
 		return vmrunner.MachineStatus{}, false, pullErr
 	}
+	memoryMiB, err := r.machineMemoryMiB(ctx, owner, spec)
+	if err != nil {
+		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the machine: %w", err)
+	}
 
 	machine := vmrunner.MachineSpec{
 		Image:           spec.Image,
 		CPUs:            max(r.config.VM.Runner.MachineCPUs, 1),
-		MemoryMiB:       r.machineMemoryMiB(ctx, owner, spec),
+		MemoryMiB:       memoryMiB,
 		StorageGiB:      storageGiB,
 		Env:             env,
 		CACert:          machineTrustedCAs(string(leaf.Data["ca.crt"]), r.config),

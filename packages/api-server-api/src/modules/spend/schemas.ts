@@ -50,6 +50,64 @@ export const spendDailyInputSchema = z
     }
   });
 
+export const spendBreakdownInputSchema = spendDailyInputSchema;
+
+export const SPEND_SESSIONS_MAX = 200;
+export const SPEND_SESSIONS_DEFAULT_LIMIT = 50;
+
+export const spendSessionsInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    from: utcDaySchema.optional(),
+    to: utcDaySchema.optional(),
+    sessionIds: z.array(z.string().min(1)).max(SPEND_SESSIONS_MAX).optional(),
+    limit: z.number().int().min(1).max(SPEND_SESSIONS_MAX).optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.from && input.to && input.from > input.to) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["from"],
+        message: "from must be on or before to",
+      });
+    }
+  });
+
+export const SPEND_TURNS_MAX_WINDOWS = 200;
+export const SPEND_TURNS_MAX_SPAN_DAYS = 31;
+
+const instantSchema = z.string().datetime({ offset: true });
+
+export const spendTurnsInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    sessionId: z.string().min(1).optional(),
+    windows: z
+      .array(z.object({ from: instantSchema, to: instantSchema }))
+      .min(1)
+      .max(SPEND_TURNS_MAX_WINDOWS),
+  })
+  .superRefine((input, ctx) => {
+    const froms = input.windows.map((w) => Date.parse(w.from));
+    const tos = input.windows.map((w) => Date.parse(w.to));
+    if (input.windows.some((_, i) => tos[i]! < froms[i]!)) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["windows"],
+        message: "a window ends before it starts",
+      });
+    } else if (
+      Math.max(...tos) - Math.min(...froms) >
+      SPEND_TURNS_MAX_SPAN_DAYS * 86_400_000
+    ) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["windows"],
+        message: `the windows span at most ${SPEND_TURNS_MAX_SPAN_DAYS} days`,
+      });
+    }
+  });
+
 export const spendLimitScopeSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("agent"), agentId: z.string().min(1) }),
   z.object({ kind: z.literal("owner") }),

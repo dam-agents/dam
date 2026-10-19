@@ -46,7 +46,7 @@ impl Capacity<'_> {
         Ok(())
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, raised to the warm-up floor while it is unmeasured or warming up, and never above its applied size.
+    // UNIT_BOUNDARY_DESCRIPTION: the memory the other machines hold, as admission counts it — what each in-flight operation asked for, and each running machine at its measured use plus headroom, raised to the warm-up floor while it is unmeasured or warming up, and never above its applied size. A running machine whose spec cannot be read counts at the same measurement plus headroom, and at everything the runner hands out for machines when it was never measured: its size is what is unknown, not whether it holds memory.
     pub fn committed(
         &self,
         except: Option<&str>,
@@ -66,18 +66,23 @@ impl Capacity<'_> {
             if !running(other) {
                 continue;
             }
-            if let Some(applied) = read_spec(self.state_dir, other) {
-                let size = applied.memory_mib;
-                let floor = self.unmeasured(size);
-                used += resident(other).map_or(floor, |mib| {
-                    let counted = i64::from(size.min(mib.saturating_add(self.headroom_mib)));
-                    if warming(other) {
-                        counted.max(floor)
-                    } else {
-                        counted
-                    }
+            let Some(applied) = read_spec(self.state_dir, other) else {
+                let handout = i64::from(self.limit_mib - self.reserve_mib).max(0);
+                used += resident(other).map_or(handout, |mib| {
+                    i64::from(mib.saturating_add(self.headroom_mib))
                 });
-            }
+                continue;
+            };
+            let size = applied.memory_mib;
+            let floor = self.unmeasured(size);
+            used += resident(other).map_or(floor, |mib| {
+                let counted = i64::from(size.min(mib.saturating_add(self.headroom_mib)));
+                if warming(other) {
+                    counted.max(floor)
+                } else {
+                    counted
+                }
+            });
         }
         Ok(used)
     }
@@ -250,6 +255,57 @@ mod tests {
                 .room_for("agent-a", 1, &BTreeMap::new(), &all, &unmeasured, &never)
                 .is_err(),
             "an unmeasured machine was counted below its size"
+        );
+    }
+
+    // TEST_SCENARIO: a running machine whose spec cannot be read holds memory all the same: a spec.json left corrupt, or one a runner of another schema wrote, is not a machine holding nothing, and admitting another machine beside it as if it held nothing is how the runner goes over its limit and the kernel kills it with every machine of its owner. The runner measured it on adoption, so it counts at that measurement plus headroom; one never measured counts at everything the runner hands out for machines, since its size is what is unknown.
+    #[test]
+    fn a_running_machine_whose_spec_cannot_be_read_is_not_counted_as_nothing() {
+        let dir = TempDir::new("unreadable");
+        let state = dir.path();
+        created(state, "agent-b", 4096);
+        fs::write(state.join("agent-b").join("spec.json"), b"not a spec").unwrap();
+        let capacity = Capacity {
+            state_dir: state,
+            limit_mib: 8192,
+            reserve_mib: 0,
+            headroom_mib: 256,
+            boot_mib: 0,
+        };
+        let all = |_: &str| true;
+        let used = |mib: i32| move |id: &str| (id == "agent-b").then_some(mib);
+
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    8192 - 512 - 256,
+                    &BTreeMap::new(),
+                    &all,
+                    &used(512),
+                    &never
+                )
+                .is_ok(),
+            "a measured machine with no readable spec was counted at more than its measurement plus headroom"
+        );
+        assert!(
+            capacity
+                .room_for(
+                    "agent-a",
+                    8192 - 512 - 255,
+                    &BTreeMap::new(),
+                    &all,
+                    &used(512),
+                    &never
+                )
+                .is_err(),
+            "a measured machine with no readable spec was counted at less than its measurement plus headroom"
+        );
+        assert!(
+            capacity
+                .room_for("agent-a", 1, &BTreeMap::new(), &all, &unmeasured, &never)
+                .is_err(),
+            "an unmeasured machine with no readable spec was counted as nothing"
         );
     }
 

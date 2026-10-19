@@ -150,6 +150,11 @@ export {
   PLATFORM_REFUSAL_HEADER,
   SPEND_DAILY_MAX_DAYS,
   SPEND_LIMIT_MAX_MICROS,
+  SPEND_SESSIONS_DEFAULT_LIMIT,
+  SPEND_SESSIONS_MAX,
+  SPEND_TURNS_MAX_SPAN_DAYS,
+  SPEND_TURNS_MAX_WINDOWS,
+  spendBreakdownInputSchema,
   spendCeilingSourceSchema,
   spendCeilingUsdTextSchema,
   spendDailyInputSchema,
@@ -157,8 +162,10 @@ export {
   spendLimitAmountTextSchema,
   spendLimitScopeSchema,
   spendLimitStateSchema,
+  spendSessionsInputSchema,
   spendSetLimitInputSchema,
   spendStatusInputSchema,
+  spendTurnsInputSchema,
   spendUnitSchema,
 } from "./modules/spend/schemas.js";
 export {
@@ -173,19 +180,32 @@ export {
   type ConnectionLimitRule,
 } from "./modules/spend/units.js";
 export type {
+  AgentSpend,
+  AgentSpendQuery,
+  SpendAmount,
+  SpendBreakdown,
+  SpendBreakdownInput,
   SpendCeilingSource,
   SpendCeilingView,
+  SpendCounts,
   SpendConnectionTotal,
   SpendDailyInput,
   SpendDailyRow,
   SpendLimitScope,
   SpendLimitState,
   SpendLimitView,
+  SpendMetering,
   SpendService,
+  SpendSessionRow,
+  SpendSessions,
+  SpendSessionsInput,
   SpendSetLimitInput,
+  SubAgentSpendRow,
   SpendStatus,
   SpendStatusInput,
   SpendTotal,
+  SpendTurns,
+  SpendTurnsInput,
   SpendUnit,
 } from "./modules/spend/types.js";
 export type { AgentSpecCR } from "./crd-types.gen.js";
@@ -486,12 +506,13 @@ export {
 export {
   AGENT_TELEMETRY_MAX_DAYS,
   AGENT_TELEMETRY_MAX_LIMIT,
+  METRICS_MAX_LIMIT,
+  METRICS_MAX_SINCE_HOURS,
 } from "./modules/metrics/constants.js";
 
 export type {
   MetricsService,
   MetricsQuery,
-  MetricsSessionCostsQuery,
   MetricsOverview,
   TokenSpendByModel,
   TokenSpendByProvider,
@@ -501,7 +522,6 @@ export type {
   SpendCategory,
   SessionRuntime,
   CallContext,
-  SubAgentSpend,
 } from "./modules/metrics/types.js";
 
 export type {

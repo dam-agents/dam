@@ -10,6 +10,7 @@ export interface CallAmounts {
   readonly webSearches: number;
   readonly calls: number;
   readonly estimatedCalls: number;
+  readonly durationMs: number;
 }
 
 export const AMOUNT_FIELDS = [
@@ -22,6 +23,7 @@ export const AMOUNT_FIELDS = [
   "webSearches",
   "calls",
   "estimatedCalls",
+  "durationMs",
 ] as const satisfies readonly (keyof CallAmounts)[];
 
 export interface SpendRow {
@@ -30,6 +32,8 @@ export interface SpendRow {
   readonly ownerSub: string;
   readonly connectionId: string;
   readonly model: string;
+  readonly sessionId: string;
+  readonly callingAgentId: string;
   readonly provider: string;
   readonly unit: SpendUnit;
 }
@@ -56,6 +60,7 @@ export type DayCounter =
 
 export const UNKNOWN_CONNECTION = "unknown";
 export const UNKNOWN_MODEL = "unknown";
+export const NO_SESSION = "";
 
 export function mapAmounts(
   value: (field: keyof CallAmounts) => number,
@@ -70,6 +75,7 @@ export function mapAmounts(
     webSearches: value("webSearches"),
     calls: value("calls"),
     estimatedCalls: value("estimatedCalls"),
+    durationMs: value("durationMs"),
   };
 }
 

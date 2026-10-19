@@ -8,7 +8,7 @@ use crate::api::{
     REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
     REASON_OOM_KILLED, REASON_SECCOMP_KILLED, REASON_SEED_MISSING, REASON_STORAGE_FULL,
     STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED,
-    STATE_STOPPING,
+    STATE_STOPPING, STATE_UNKNOWN,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -3692,4 +3692,102 @@ async fn a_boot_copying_a_disk_reads_over_the_kill_before_it() {
     let _guest = guest(h.base);
     let up = h.until("m1", "ready", |s| s.ready).await;
     assert_eq!(up.reason, "", "{up:?}");
+}
+
+// TEST_SCENARIO: a launch record that cannot be read says nothing about whether its machine runs, and a runner that read it as "not running" counted a live VMM as nothing: admission then handed its room to the next machine. It counts as running instead, at what it was measured holding or at its size, until the record reads again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("unreadable-record", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    let next = h.hand_off(tune).await;
+    assert_eq!(
+        next.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a running machine whose launch record cannot be read was counted as nothing"
+    );
+    let refused = next.server.put("m2", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: admission counts the figure the last probe read, as the runner's adoption of a handed-off machine does, and not the whole handout. A machine that is not running reports none, so no figure outlives the VMM that held it.
+#[tokio::test]
+async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
+    let h = Harness::new("resident-unread");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(500);
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 500);
+
+    *locked(&h.fake.resident) = None;
+    h.server.probe("m1");
+    assert_eq!(
+        h.server.status("m1").used_mib,
+        500,
+        "a failed measurement counted the machine as holding nothing"
+    );
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(
+        h.server.status("m1").used_mib,
+        0,
+        "a stopped machine still reported the memory it held"
+    );
+}
+
+// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine.
+#[tokio::test]
+async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
+    let h = Harness::new("state-unread");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(700);
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 700);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    h.server.probe("m1");
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_UNKNOWN, "{status:?}");
+    assert_eq!(
+        status.used_mib, 700,
+        "an unread state counted the machine as holding nothing"
+    );
+
+    locked(&h.fake.state_fails_until_start).remove("m1");
+    h.server.probe("m1");
+    assert_eq!(h.server.status("m1").used_mib, 700);
+}
+
+// TEST_SCENARIO: a spec that cannot be read says nothing about what the machine holds or how long its boot has been up, and the status that zeroed both over an unreadable spec made the controller count a measured machine at its floor. Neither is read off the spec, so both are still reported; only what the spec carries is missing.
+#[tokio::test]
+async fn a_machine_whose_spec_cannot_be_read_still_reports_what_it_measured() {
+    let h = Harness::new("spec-unread-status");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(640);
+    h.server.probe("m1");
+    std::fs::write(
+        h.dir.join("machines").join("m1").join("spec.json"),
+        "not json",
+    )
+    .unwrap();
+
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert_eq!(
+        status.used_mib, 640,
+        "an unreadable spec counted the machine as holding nothing"
+    );
+    assert!(
+        status.warming,
+        "an unreadable spec dropped the warm-up the runner knows about"
+    );
 }

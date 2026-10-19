@@ -350,6 +350,7 @@ export function createInvocationsService(deps: {
               scheduleId: invocationScheduleId(agent.id),
               task,
               sessionMode: "fresh",
+              invocation: true,
               ...(input.target.harness && {
                 harness: input.target.harness,
                 ...(provider.kind === "inherited" && { provider: provider.id }),

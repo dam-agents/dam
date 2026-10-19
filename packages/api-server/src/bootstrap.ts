@@ -168,7 +168,6 @@ import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-
 import {
   composeMetricsReader,
   createAgentTelemetry,
-  createUnavailableAgentTelemetry,
 } from "./modules/metrics/index.js";
 import { composeCaseStudiesModule } from "./modules/case-studies/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
@@ -237,6 +236,7 @@ import {
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
+  createSpawnSessionsAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
@@ -269,6 +269,7 @@ import {
   composeConnectionsAtBoot,
   composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
+  createConnectionNames,
   createGrantedConnectionTemplates,
   listConnectionGrantAgentIds,
   listPlatformConnectionOwners,
@@ -1078,6 +1079,8 @@ export async function bootstrap() {
   const payerOf = async (agentId: string) =>
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
+  const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
+    composeSessionDirectory(db);
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
@@ -1092,9 +1095,26 @@ export async function bootstrap() {
     k8s: k8sClient,
     defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
+    connectionNames: createConnectionNames(db),
+    ownedAgents: {
+      anyCreatedBefore: async (ownerSub, at) =>
+        (await agentsRepo.list(ownerSub)).some(
+          (agent) =>
+            agent.createdAt !== undefined &&
+            Date.parse(agent.createdAt) < at.getTime(),
+        ),
+    },
+    sessions: sessionDirectory,
+    subAgents: createSpawnSessionsAdapter(db),
+    telemetryStoreOn: metricsReader !== null,
   });
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
+  );
+  await periodicJobs.register(
+    "spend-call-rows-retention",
+    24 * 60 * 60 * 1000,
+    () => spend.callRowsRetentionTick(),
   );
 
   const spendQuestions = composeSpendLimitQuestions(db);
@@ -1767,8 +1787,6 @@ export async function bootstrap() {
   await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
   await periodicJobs.retire("retired-image-migration");
 
-  const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
-    composeSessionDirectory(db);
   await periodicJobs.register(
     "session-directory-retention",
     7 * 24 * 60 * 60 * 1000,
@@ -1897,9 +1915,10 @@ export async function bootstrap() {
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,
     carriesInspectorRole: carriesInspectorRole(db, subPseudonymizer),
-    agentTelemetry: metricsReader
-      ? createAgentTelemetry({ reader: metricsReader })
-      : createUnavailableAgentTelemetry(),
+    agentTelemetry: createAgentTelemetry({
+      reader: metricsReader,
+      spend: spend.agentSpend,
+    }),
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     markOnboardingComplete: (agentId: string, owner: string) =>

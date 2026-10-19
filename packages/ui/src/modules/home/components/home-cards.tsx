@@ -28,7 +28,7 @@ import { ResourcesCard } from "../../budgets/components/resources-card.js";
 import { formatBytes } from "../../budgets/lib/pools.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useMonthlySpend } from "../../metrics/hooks/use-monthly-spend.js";
-import { formatTokens, formatUsd } from "../../metrics/lib/format.js";
+import { formatTokens } from "../../metrics/lib/format.js";
 import { useOwnerSchedules } from "../../schedules/api/queries.js";
 import { useOpenSidePanel } from "../../sessions/hooks/use-open-side-panel.js";
 import { useAttention, useFeed } from "../api/queries.js";
@@ -506,90 +506,6 @@ export function ApiKeysCard() {
       <p className="mt-auto pt-4 text-xs text-muted-foreground">
         {lastUsed ? `Last used ${timeAgo(lastUsed)}` : "Never used yet."}
       </p>
-    </Card>
-  );
-}
-
-const CATEGORY_LABEL: Record<string, string> = {
-  chats: "Chats",
-  scheduled: "Schedules",
-  channels: "Slack and Telegram",
-  runs: "CLI runs",
-  terminal: "Terminal",
-  unknown: "Other",
-};
-
-export function SpendByKindCard() {
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const { data, state, label } = useMonthlySpend();
-  if (state === "unavailable") return null;
-  const rows = [...(data?.bySessionType ?? [])].sort(
-    (a, b) => b.costUsd - a.costUsd,
-  );
-  const total = rows.reduce((n, r) => n + r.costUsd, 0);
-  return (
-    <Card
-      title={`Spend by kind of session, ${label}`}
-      onOpen={() => navigateToSettings("usage")}
-    >
-      <ul className="flex flex-col gap-2.5 text-sm">
-        {rows.map((r) => (
-          <li key={r.category} className="flex flex-col gap-1">
-            <div className="flex justify-between">
-              <span className="text-muted-foreground">
-                {CATEGORY_LABEL[r.category] ?? r.category}
-              </span>
-              <span className="text-foreground tabular-nums">
-                {formatUsd(r.costUsd)}
-              </span>
-            </div>
-            <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-              <div
-                className="h-full rounded-full bg-accent/70"
-                style={{ width: `${total ? (r.costUsd * 100) / total : 0}%` }}
-              />
-            </div>
-          </li>
-        ))}
-      </ul>
-      {rows.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          {state === "loading" ? "Loading…" : "No spend this month."}
-        </p>
-      )}
-    </Card>
-  );
-}
-
-export function ModelsCard() {
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const { data, state, label } = useMonthlySpend();
-  if (state === "unavailable") return null;
-  const models = [...(data?.byModel ?? [])]
-    .sort((a, b) => b.calls - a.calls)
-    .slice(0, 5);
-  return (
-    <Card title={`Models, ${label}`} onOpen={() => navigateToSettings("usage")}>
-      <ul className="flex flex-col gap-2 text-sm">
-        {models.map((m) => (
-          <li key={m.model} className="flex items-baseline gap-2">
-            <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
-              {m.model}
-            </span>
-            <span className="text-xs text-muted-foreground tabular-nums">
-              {m.calls} calls
-            </span>
-            <span className="w-14 text-right text-foreground tabular-nums">
-              {formatUsd(m.costUsd)}
-            </span>
-          </li>
-        ))}
-      </ul>
-      {models.length === 0 && (
-        <p className="text-sm text-muted-foreground">
-          {state === "loading" ? "Loading…" : "No model calls this month."}
-        </p>
-      )}
     </Card>
   );
 }

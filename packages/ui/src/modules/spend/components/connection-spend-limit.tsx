@@ -2,8 +2,19 @@ import { connectionLimitRule } from "api-server-api";
 
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useAgentSpendStatus } from "../api/queries.js";
-import { NO_LIMIT_REASONS, UNIT_EXPLANATIONS } from "../lib/format.js";
-import { SpendLimitLine } from "./spend-limit-line.js";
+import {
+  CONNECTION_LIMIT_TITLE,
+  connectionLimitHelp,
+  resetsAtLine,
+} from "../lib/copy.js";
+import {
+  localResetTime,
+  NO_LIMIT_REASONS,
+  UNIT_EXPLANATIONS,
+} from "../lib/format.js";
+import { DailyLimitMeter } from "./daily-limit-meter.js";
+import { HelpTip } from "./help-tip.js";
+import { SpendLimitButton } from "./spend-limit-button.js";
 
 interface Props {
   agentId: string;
@@ -42,24 +53,34 @@ export function ConnectionSpendLimit({
         total.connectionId === connectionId && total.unit === rule.unit,
     )
     .reduce((sum, total) => sum + total.costMicros, 0);
-  const explanation = UNIT_EXPLANATIONS[rule.unit];
+  const subject = `${agentName} on ${connectionName}`;
 
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-3">
-      <SpendLimitLine
-        scope={{ kind: "connection", agentId, connectionId }}
-        unit={rule.unit}
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          {CONNECTION_LIMIT_TITLE}
+          <HelpTip
+            content={connectionLimitHelp(UNIT_EXPLANATIONS[rule.unit])}
+          />
+        </p>
+        <SpendLimitButton
+          scope={{ kind: "connection", agentId, connectionId }}
+          subject={subject}
+          amountMicros={limit?.amountMicros ?? null}
+          unit={rule.unit}
+        />
+      </div>
+      <DailyLimitMeter
         spentMicros={spentMicros}
         limit={limit}
-        subject={`${agentName} on ${connectionName}`}
-        help={explanation}
+        resetsAt={status.resetsAt}
+        subject={subject}
+        unit={rule.unit}
       />
-      {explanation && (
-        <p className="text-xs text-muted-foreground">
-          Only this limit stops calls on this provider. The agent spend limit
-          and your spend limit do not count them.
-        </p>
-      )}
+      <p className="text-xs text-muted-foreground">
+        {resetsAtLine(localResetTime(status.resetsAt))}
+      </p>
     </div>
   );
 }

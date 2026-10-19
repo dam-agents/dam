@@ -18,9 +18,12 @@ const pressureUnservedBackoff = 10 * time.Minute
 // UNIT_BOUNDARY_DESCRIPTION: how long after a reclaim under pressure the owner's runner is not reclaimed for again on its signal. The machines it hibernated take seconds to stop, and until they have, the runner's working set still counts them, so a second signal would hibernate more agents for room already freed.
 const pressureReclaimCooldown = 15 * time.Second
 
-// UNIT_BOUNDARY_DESCRIPTION: starts the one pressure watch on the owner's runner, unless it is already running. Only a runner in the cluster with a memory limit reports pressure; the host runner admits against a share of the Mac's memory the controller never learns. The watch lives no longer than the reconciler's lifetime, and a failed read ends it, so the next reconcile of the owner's agents starts it again on a runner it can reach.
+// UNIT_BOUNDARY_DESCRIPTION: starts the one pressure watch on the owner's runner, unless it is already running. Only a runner in the cluster with a memory limit reports pressure; the host runner admits against a share of the Mac's memory the controller never learns. The watch lives no longer than the reconciler's lifetime, and a failed read ends it, so the next reconcile of the owner's agents starts it again on a runner it can reach. An owner whose pool is unread is left to that next reconcile too.
 func (r *AgentReconciler) watchRunnerPressure(runner *vmrunner.Client, owner string) {
-	if r.lifetime == nil || r.config.VM.Runner.HostAddress != "" || r.runnerLimitMiB(r.lifetime, owner) == 0 {
+	if r.lifetime == nil || r.config.VM.Runner.HostAddress != "" {
+		return
+	}
+	if limit, err := r.runnerLimitMiB(r.lifetime, owner); err != nil || limit == 0 {
 		return
 	}
 	r.machineWatchMu.Lock()

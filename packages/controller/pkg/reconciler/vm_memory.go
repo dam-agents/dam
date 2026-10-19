@@ -28,8 +28,14 @@ const (
 // UNIT_BOUNDARY_DESCRIPTION: last reported it: what its VMM holds, and the
 // UNIT_BOUNDARY_DESCRIPTION: size it booted with, which a new size reaches
 // UNIT_BOUNDARY_DESCRIPTION: only at its next start. A machine that is not
-// UNIT_BOUNDARY_DESCRIPTION: running holds nothing to remember.
+// UNIT_BOUNDARY_DESCRIPTION: running holds nothing to remember. An unknown
+// UNIT_BOUNDARY_DESCRIPTION: state is not a machine that stopped, so it
+// UNIT_BOUNDARY_DESCRIPTION: forgets nothing: what the runner last reported
+// UNIT_BOUNDARY_DESCRIPTION: stands until it reads the machine again.
 func (r *AgentReconciler) noteMachineUse(name string, machine vmrunner.MachineStatus) {
+	if machine.State == vmrunner.StateUnknown {
+		return
+	}
 	if machine.State == vmrunner.StateRunning {
 		r.vmLive.Store(name, machine)
 		return
@@ -53,7 +59,8 @@ func (r *AgentReconciler) liveMachine(name string) vmrunner.MachineStatus {
 // UNIT_BOUNDARY_DESCRIPTION: it booted with and the one its next start takes.
 func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name string, spec *apiv1.AgentSpec) int {
 	live := r.liveMachine(name)
-	size := max(r.machineMemoryMiB(ctx, owner, spec), live.MemoryMiB)
+	machineMiB, _ := r.machineMemoryMiB(ctx, owner, spec)
+	size := max(machineMiB, live.MemoryMiB)
 	floor := size
 	if boot := r.config.VM.Runner.BootMiB; boot > 0 {
 		floor = min(size, boot)
@@ -71,10 +78,12 @@ func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name st
 // UNIT_BOUNDARY_DESCRIPTION: how much more memory the owner's machines are
 // UNIT_BOUNDARY_DESCRIPTION: counted at, with the reserve, than `percent` of
 // UNIT_BOUNDARY_DESCRIPTION: the runner's limit; zero or less when they fit,
-// UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit.
+// UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit,
+// UNIT_BOUNDARY_DESCRIPTION: and for a pool that cannot be read, which says
+// UNIT_BOUNDARY_DESCRIPTION: nothing about how much memory the machines may hold.
 func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, demandMiB, percent int) int {
-	limit := r.runnerLimitMiB(ctx, owner)
-	if limit == 0 {
+	limit, err := r.runnerLimitMiB(ctx, owner)
+	if err != nil || limit == 0 {
 		return 0
 	}
 	return demandMiB + r.config.VM.Runner.ReserveMiB - limit*percent/100
@@ -248,7 +257,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 		switch {
 		case pressure != nil && !r.freedUnderPressureSince(owner, time.Now().Add(-pressureReclaimCooldown)):
 			limit := pressure.LimitMiB
-			if pool := r.runnerLimitMiB(ctx, owner); pool > 0 {
+			if pool, err := r.runnerLimitMiB(ctx, owner); err == nil && pool > 0 {
 				limit = min(limit, pool)
 			}
 			return max(r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-limit*memoryTargetPercent/100), nil
@@ -310,12 +319,14 @@ func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.
 	if r.config.VM.Runner.HostAddress != "" {
 		return "Your VM agents' memory is full, so this agent can't start yet. " + next
 	}
-	pool := r.runnerLimitMiB(ctx, owner)
+	pool, err := r.runnerLimitMiB(ctx, owner)
 	limit := pool - r.config.VM.Runner.ReserveMiB
-	demand, err := r.ownerRunnerDemand(ctx, owner, agent, false)
-	var with runnerDemand
-	if err == nil {
-		with, err = r.ownerRunnerDemand(ctx, owner, agent, true)
+	var demand, with runnerDemand
+	if limit > 0 {
+		demand, err = r.ownerRunnerDemand(ctx, owner, agent, false)
+		if err == nil {
+			with, err = r.ownerRunnerDemand(ctx, owner, agent, true)
+		}
 	}
 	if err != nil {
 		slog.Warn("reading the owner's VM memory for a refused start's message failed; the message goes without figures", "agent", agent.Name, "error", err)

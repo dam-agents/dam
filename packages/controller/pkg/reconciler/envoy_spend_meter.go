@@ -13,6 +13,11 @@ const (
 	spendRecordLogName       = "spend"
 	spendRecordFlushInterval = "2s"
 	proxyCostHeader          = "x-litellm-response-cost"
+	proxyCostOriginalHeader  = "x-litellm-response-cost-original"
+	proxyCostDiscountHeader  = "x-litellm-response-cost-discount-amount"
+	proxyCostMarginHeader    = "x-litellm-response-cost-margin-amount"
+	sessionStampHeader       = "x-platform-session"
+	harnessStampHeader       = "x-platform-harness"
 )
 
 func spendMeterHTTPFilter(p bootstrapParams, c envoyHostChain) ev {
@@ -43,7 +48,9 @@ func spendRecordAccessLog(p bootstrapParams) ev {
 					"envoy_grpc": ev{"cluster_name": p.named("ext_authz_cluster"), "authority": p.ExtAuthzHost},
 				},
 			},
-			"additional_response_headers_to_log": []any{proxyCostHeader},
+			"additional_response_headers_to_log": []any{
+				proxyCostHeader, proxyCostOriginalHeader, proxyCostDiscountHeader, proxyCostMarginHeader,
+			},
 		},
 		"filter": ev{
 			"metadata_filter": ev{
@@ -95,6 +102,8 @@ func luaSpendMeterParams(p bootstrapParams, c envoyHostChain) string {
 	sort.Strings(providers)
 	return "local NS = " + strconv.Quote(spendMetadataNamespace) + "\n" +
 		"local ADDRESS_HEADER = " + strconv.Quote(connectionAddressHeader) + "\n" +
+		"local SESSION_HEADER = " + strconv.Quote(sessionStampHeader) + "\n" +
+		"local HARNESS_HEADER = " + strconv.Quote(harnessStampHeader) + "\n" +
 		"local ADDRESSED_PATH = " + strconv.Quote(luaAddressedPathPattern()) + "\n" +
 		"local PAYER = " + strconv.Quote(p.PayerID()) + "\n" +
 		"local CONNECTIONS = " + luaStringMap(templates) + "\n" +
@@ -106,6 +115,7 @@ const luaSpendMeterBody = `local MAX_OBJECT = 8192
 local TAIL = 256
 local MAX_FRAME = 1048576
 local MAX_NAME = 256
+local MAX_STAMP = 128
 local SHALLOWEST_FIELDS = {model = true, service_tier = true}
 local FIELDS = {
   input_tokens = "input_tokens",
@@ -402,6 +412,11 @@ local function event_stream(meter)
   end
 end
 
+local function stamp(value)
+  if value == nil or #value > MAX_STAMP or not string.find(value, "^[ -~]+$") then return nil end
+  return value
+end
+
 local function publish(md, fields, sent)
   for field, value in pairs(fields) do
     if sent[field] ~= value then
@@ -435,6 +450,9 @@ function envoy_on_request(rh)
   md:set(NS, "dialect", dialect)
   md:set(NS, "providers", providers)
   if conn ~= nil then md:set(NS, "conn", conn) end
+  local session, harness = stamp(h:get(SESSION_HEADER)), stamp(h:get(HARNESS_HEADER))
+  if session ~= nil then md:set(NS, "session", session) end
+  if harness ~= nil then md:set(NS, "harness", harness) end
 end
 
 function envoy_on_response(rh)

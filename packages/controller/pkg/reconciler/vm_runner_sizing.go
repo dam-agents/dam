@@ -29,12 +29,17 @@ type runnerDemand struct {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
-func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, spec *apiv1.AgentSpec) int {
-	if limit := r.runnerLimitMiB(ctx, owner); limit > 0 && r.config.VM.Runner.HostAddress == "" {
-		return max((limit-r.config.VM.Runner.ReserveMiB)/2, 1)
+func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, spec *apiv1.AgentSpec) (int, error) {
+	var err error
+	limit := 0
+	if r.config.VM.Runner.HostAddress == "" {
+		limit, err = r.runnerLimitMiB(ctx, owner)
+	}
+	if err == nil && limit > 0 {
+		return max((limit-r.config.VM.Runner.ReserveMiB)/2, 1), nil
 	}
 	_, mem := r.limitsOf(spec)
-	return max(int(mem.Value()>>20), 1)
+	return max(int(mem.Value()>>20), 1), err
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
@@ -167,7 +172,15 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 	if !ok || current.IsZero() {
 		return runnerPodWant{}, false
 	}
-	limit := runnerMemoryLimit(r.runnerLimitMiB(ctx, owner), demand.memoryMiB, r.config.VM.Runner.ReserveMiB, current)
+	poolMiB, err := r.runnerLimitMiB(ctx, owner)
+	if err != nil {
+		return runnerPodWant{}, false
+	}
+	ceiling, err := r.runnerCPUCeiling(ctx, owner)
+	if err != nil {
+		return runnerPodWant{}, false
+	}
+	limit := runnerMemoryLimit(poolMiB, demand.memoryMiB, r.config.VM.Runner.ReserveMiB, current)
 	floor := limit
 	if cfg := r.config.VM.Runner.Resources; cfg != nil {
 		if q, ok := cfg.Requests[corev1.ResourceMemory]; ok && q.Cmp(limit) < 0 {
@@ -181,7 +194,7 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 		res:            res,
 		memoryLimit:    limit,
 		memoryRequest:  runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit),
-		cpu:            runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, r.runnerCPUCeiling(ctx, owner)),
+		cpu:            runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, ceiling),
 		hasCPURequest:  hasCPURequest,
 		currentLimit:   current,
 		currentRequest: currentRequest,

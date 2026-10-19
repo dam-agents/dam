@@ -1,4 +1,4 @@
-import { callCostMicros } from "./cost.js";
+import { callCostMicros, type ProxyCostHeaders } from "./cost.js";
 import { lookupPrice, type PriceBook, type PriceSource } from "./prices.js";
 import { payingProvider, unitOf, type SpendUnit } from "./units.js";
 import type { NormalizedUsage } from "./usage.js";
@@ -34,6 +34,8 @@ export interface CallRecord {
   readonly payer: string;
   readonly connectionId: string | null;
   readonly providers: readonly string[];
+  readonly sessionId: string | null;
+  readonly harness: string | null;
   readonly path: string;
   readonly dialect: ApiDialect;
   readonly model: string | null;
@@ -41,10 +43,11 @@ export interface CallRecord {
   readonly status: number | null;
   readonly replyBytes: number | null;
   readonly complete: boolean;
-  readonly proxyCost: string | null;
+  readonly proxyCost: ProxyCostHeaders;
   readonly final: boolean;
   readonly refusedByGate: boolean;
   readonly startedAt: Date;
+  readonly durationMs: number;
 }
 
 export type CallMeasure =
@@ -114,6 +117,7 @@ export function measureCall(record: CallRecord, book: PriceBook): CallMeasure {
       webSearches: metered.webSearches,
       calls: 1,
       estimatedCalls: estimated ? 1 : 0,
+      durationMs: record.durationMs,
     },
   };
 }

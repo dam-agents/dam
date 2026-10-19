@@ -32,7 +32,24 @@ export function hasRunning(nodes: readonly DelegationNode[]): boolean {
   );
 }
 
-const CAPTURE_WINDOW_MS = 60_000;
+const JUST_ENDED_MS = 60_000;
+
+function justEnded(node: DelegationNode, now: number): boolean {
+  return (
+    node.status !== "running" &&
+    node.completedAt !== null &&
+    now - Date.parse(node.completedAt) < JUST_ENDED_MS
+  );
+}
+
+export function hasJustEnded(
+  nodes: readonly DelegationNode[],
+  now: number,
+): boolean {
+  return nodes.some(
+    (node) => justEnded(node, now) || hasJustEnded(node.children, now),
+  );
+}
 
 export function awaitsCapture(
   nodes: readonly DelegationNode[],
@@ -40,10 +57,7 @@ export function awaitsCapture(
 ): boolean {
   return nodes.some(
     (node) =>
-      (node.status !== "running" &&
-        !node.transcriptAvailable &&
-        node.completedAt !== null &&
-        now - Date.parse(node.completedAt) < CAPTURE_WINDOW_MS) ||
+      (justEnded(node, now) && !node.transcriptAvailable) ||
       awaitsCapture(node.children, now),
   );
 }
