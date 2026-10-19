@@ -211,7 +211,7 @@ A single `--exec` flag selects the client and how it is invoked (`ssh`, or an ed
 Editor modes write a managed host block to dam's own ssh_config and pull it into `~/.ssh/config` via one `Include` line — the reliable cross-client hook, since editors are often already-running singletons that ignore a launch-time environment — then launch the editor against the agent alias; `dam ssh configure` writes those blocks without launching and can reconcile them to the host's current agents or clear them.
 `code` mode additionally pre-allows the VS Code server-download hosts as egress rules so the connect doesn't trip a mid-flight approval prompt.
 `dam ssh` depends on the OpenSSH client locally; `sshd` ships in the shared agent base image, so every agent supports it.
-The files sshd needs to let a connection in — its host key, its config and the keys a connection registers — live in a directory of the runtime's own, `/run/dam/ssh`, and not in the agent's home, so an agent whose storage is full is still one its owner can get into to free it; the environment file stays where sshd reads it, in the home, so that session starts with a bare shell and without the replayed environment.
+The files sshd needs to let a connection in — its host key, its config and the keys a connection registers — are a vm agent's in a directory of the runtime's own, `/run/dam/ssh`, and not in its home, so a full agent is still one its owner can get into to free it; a container agent keeps them in its home, the one path its uid may write; the environment file stays where sshd reads it, in the home, so that session starts with a bare shell and without the replayed environment.
 
 ## Files and import
 

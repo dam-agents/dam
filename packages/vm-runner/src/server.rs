@@ -1961,6 +1961,13 @@ impl Server {
         }
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: sends the next probe back to the start of the machine's kernel log, for a trim that rewrote it: the retained tail begins at no offset the last read counted from, so reading on from there would begin in the middle of the lines the trim kept. A log that got shorter is read whole anyway, which leaves only a cut of a log the probe had read less of than the tail it keeps.
+    pub fn forget_kernel_read(&self, id: &str) {
+        if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.kernel_read = 0;
+        }
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: starts a probe of each machine that is due and has none in flight, up to PROBES_IN_FLIGHT at once. Each runs on its own blocking thread, so a guest that hangs its health check costs its own probe the timeout and does not stretch the cadence of every other machine on its way up.
     fn probe_due(self: &Arc<Self>) {
         let due: Vec<String> = {

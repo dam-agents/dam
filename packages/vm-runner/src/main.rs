@@ -348,11 +348,14 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             let logs = logs.clone();
             let _ = tokio::task::spawn_blocking(move || {
                 for id in logs.list().unwrap_or_default() {
-                    vm_runner::console::trim_logs(
+                    let cut = vm_runner::console::trim_logs(
                         &id,
                         &smolvm::agent::vm_data_dir(&id),
                         vm_runner::console::LOG_CAP_BYTES,
                     );
+                    if cut {
+                        logs.forget_kernel_read(&id);
+                    }
                 }
             })
             .await;

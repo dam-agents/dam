@@ -167,8 +167,9 @@ fn cut_to(tail: &[u8], limit: usize) -> String {
     printable(&String::from_utf8_lossy(&tail[start..]))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: cuts each of a machine's logs that is over `cap` back to what a status reads of it: the kernel's last lines and the window at the end that tail_of reads. The VMM appends to both, so once the file is emptied it writes on at its new end; a line it writes between the emptying and the write-back lands before the kept lines, which a tail read at the end tolerates.
-pub fn trim_logs(id: &str, dir: &Path, cap: u64) {
+// UNIT_BOUNDARY_DESCRIPTION: cuts each of a machine's logs that is over `cap` back to what a status reads of it: the kernel's last lines and the window at the end that tail_of reads. The VMM appends to both, so once the file is emptied it writes on at its new end; a line it writes between the emptying and the write-back lands before the kept lines, which a tail read at the end tolerates. It says whether it cut one, because a cut moves the kept lines to offsets the runner's last read of the file did not count from (kernel_since).
+pub fn trim_logs(id: &str, dir: &Path, cap: u64) -> bool {
+    let mut cut = false;
     for path in [dir.join(CONSOLE_LOG), dir.join(VMM_LOG)] {
         let Ok(size) = fs::metadata(&path).map(|m| m.len()) else {
             continue;
@@ -176,10 +177,14 @@ pub fn trim_logs(id: &str, dir: &Path, cap: u64) {
         if size <= cap {
             continue;
         }
-        if let Err(e) = trim(&path, size) {
-            tracing::warn!(machine = %id, file = %path.display(), error = %e, "could not cut back a machine log over its cap");
+        match trim(&path, size) {
+            Ok(()) => cut = true,
+            Err(e) => {
+                tracing::warn!(machine = %id, file = %path.display(), error = %e, "could not cut back a machine log over its cap")
+            }
         }
     }
+    cut
 }
 
 fn trim(path: &Path, size: u64) -> std::io::Result<()> {
@@ -418,7 +423,10 @@ mod tests {
         fs::write(dir.path().join(CONSOLE_LOG), &console).unwrap();
         let before = machine_tail(dir.path());
 
-        trim_logs("m1", dir.path(), 64 * 1024);
+        assert!(
+            trim_logs("m1", dir.path(), 64 * 1024),
+            "a log over its cap is cut"
+        );
 
         for name in [VMM_LOG, CONSOLE_LOG] {
             let size = fs::metadata(dir.path().join(name)).unwrap().len();
@@ -431,7 +439,10 @@ mod tests {
         assert!(before.starts_with(fatal), "{before:?}");
 
         let small = fs::metadata(dir.path().join(CONSOLE_LOG)).unwrap().len();
-        trim_logs("m1", dir.path(), 64 * 1024);
+        assert!(
+            !trim_logs("m1", dir.path(), CONSOLE_TAIL_BYTES * 20),
+            "logs under the cap are left alone"
+        );
         assert_eq!(
             fs::metadata(dir.path().join(CONSOLE_LOG)).unwrap().len(),
             small,

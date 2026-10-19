@@ -15,7 +15,7 @@ const SFTP_SERVER_CANDIDATES = [
   "/usr/lib/ssh/sftp-server",
 ].filter((p): p is string => Boolean(p));
 
-// UNIT_BOUNDARY_DESCRIPTION: where sshd's own files live — its host key, its config and the keys the CLI registers — rather than in the agent's home. They are the platform's, they are tiny, and they are needed exactly when the agent's storage is full, which is the one time its home refuses a write: the guest's /run is a tmpfs and a container's /run is outside its home volume, so registering a key costs no room on the disk whose filling shut the door. Nothing here outlives the machine or container, and neither does a key registered for one session. The environment file is not among them: sshd reads it from the home and nowhere else, so a session into a full home gets a shell without the replayed environment until its owner frees room.
+// UNIT_BOUNDARY_DESCRIPTION: where a VM guest keeps sshd's own files — its host key, its config and the keys the CLI registers — rather than in the agent's home. They are the platform's and they are tiny, and they are needed exactly when the agent's storage is full, which is the one time its home refuses a write: the guest runs as root and its /run is a tmpfs that no pool guard covers, so registering a key costs no room on the disk whose filling shut the door. Nothing here outlives the machine, and neither does a key registered for one session. A container keeps them in its home instead (server.ts): its runtime is not root and /run is not writable, and no guard fills its volume. The environment file is in the home on both, sshd reading it there and nowhere else, so a session into a full home gets a shell without the replayed environment until its owner frees room.
 export const SSH_RUNTIME_DIR = "/run/dam/ssh";
 
 export interface PreparedSshd {
@@ -197,24 +197,31 @@ export function createSshService(sshDir: string): SshService {
       if (/[\r\n]/.test(key) || !PUBKEY_RE.test(key))
         return err({ kind: "Invalid", reason: "not an OpenSSH public key" });
 
-      await mkdir(sshDir, { recursive: true, mode: 0o700 });
-      await chmod(sshDir, 0o700).catch(() => {});
-
-      let existing = "";
       try {
-        existing = await readFile(authorizedKeys, "utf8");
-      } catch {}
-      const body = keyBody(key);
-      const present = existing
-        .split("\n")
-        .some((l) => l.trim() && keyBody(l) === body);
-      if (!present) {
-        const sep = existing && !existing.endsWith("\n") ? "\n" : "";
-        await writeFile(authorizedKeys, existing + sep + key + "\n", {
-          mode: 0o600,
+        await mkdir(sshDir, { recursive: true, mode: 0o700 });
+        await chmod(sshDir, 0o700).catch(() => {});
+
+        let existing = "";
+        try {
+          existing = await readFile(authorizedKeys, "utf8");
+        } catch {}
+        const body = keyBody(key);
+        const present = existing
+          .split("\n")
+          .some((l) => l.trim() && keyBody(l) === body);
+        if (!present) {
+          const sep = existing && !existing.endsWith("\n") ? "\n" : "";
+          await writeFile(authorizedKeys, existing + sep + key + "\n", {
+            mode: 0o600,
+          });
+        }
+        await chmod(authorizedKeys, 0o600).catch(() => {});
+      } catch (e) {
+        return err({
+          kind: "Unavailable",
+          reason: `could not write ${authorizedKeys}: ${(e as Error).message}`,
         });
       }
-      await chmod(authorizedKeys, 0o600).catch(() => {});
       return ok({ ok: true });
     },
   };

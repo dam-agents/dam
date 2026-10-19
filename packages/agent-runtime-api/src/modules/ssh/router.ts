@@ -9,7 +9,10 @@ export const sshRouter = t.router({
       const result = await ctx.ssh.authorizeKey(input.publicKey);
       if (!result.ok)
         throw new TRPCError({
-          code: "BAD_REQUEST",
+          code:
+            result.error.kind === "Invalid"
+              ? "BAD_REQUEST"
+              : "INTERNAL_SERVER_ERROR",
           message: result.error.reason,
         });
       return { ok: true as const };

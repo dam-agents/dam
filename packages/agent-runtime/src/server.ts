@@ -212,8 +212,11 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
       : {}),
     log: skillsLog,
   });
-// UNIT_BOUNDARY_DESCRIPTION: sshd keeps its host key, config and authorized keys outside the agent's home (SSH_RUNTIME_DIR): an agent whose storage is full must still be reachable, which is the one time its home refuses a write, and a dev run has no /run of its own.
-const sshDir = config.PLATFORM_DEV ? join(homeDir, ".ssh") : SSH_RUNTIME_DIR;
+// UNIT_BOUNDARY_DESCRIPTION: sshd's files go outside the agent's home only where nothing else fills that home and /run is writable: a VM guest runs as root over a tmpfs /run with the platform share at /platform, so a full home there cannot lock its owner out of the machine; a container and a dev run keep them in the home, which is the one path their uid may write — a container's /run is root's and it has no share, and its volume no pool guard.
+const VM_SHARE_DIR = "/platform";
+const sshDir = existsSync(VM_SHARE_DIR)
+  ? SSH_RUNTIME_DIR
+  : join(homeDir, ".ssh");
 const sshService = createSshService(sshDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),

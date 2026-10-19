@@ -1,4 +1,4 @@
-import { mkdtemp, readFile, stat } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
@@ -21,4 +21,19 @@ describe("createSshService", () => {
     expect((await stat(sshDir)).mode & 0o777).toBe(0o700);
     expect(SSH_RUNTIME_DIR).toBe("/run/dam/ssh");
   });
+
+  // TEST_SCENARIO: a directory the runtime may not write — a container's /run, where only root may — is reported to the caller as an error result, so the CLI names the refusal instead of the mutation rejecting with nothing to say.
+  it.skipIf(process.getuid?.() === 0)(
+    "reports a directory it cannot write",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "dam-ssh-"));
+      const locked = join(root, "run");
+      await mkdir(locked, { mode: 0o500 });
+      const result = await createSshService(join(locked, "ssh")).authorizeKey(
+        KEY,
+      );
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.error.kind).toBe("Unavailable");
+    },
+  );
 });
