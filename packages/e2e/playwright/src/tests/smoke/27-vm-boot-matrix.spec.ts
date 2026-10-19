@@ -42,39 +42,51 @@ async function hibernate(): Promise<void> {
   await waitAgentState(api, agentId, "hibernated");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits on the runner for this agent's machine to have a VMM, SIGKILLs it the given delay after it appeared, and answers the kill line that says which process died — or the processes it did see, when none matched. A VMM is one machine's boot process, given the boot config of that machine, and the config names the machine's share under its owner's state directory, whose name the agent id is the tail of (the machine is named for the agent). So the process is picked by the agent id rather than by being the only one running: another agent of the same owner may be up beside it. The wait runs on the runner so a boot that lasts seconds is still caught: a round trip from the test would arrive after it. The patterns are bracketed so they cannot match the shell that runs them.
-function killMachineVMM(id: string, afterMs: number): string {
+// UNIT_BOUNDARY_DESCRIPTION: notes on the runner which of its VMMs are already running, so the one this spec's wake starts is the one that was not there before. A VMM is one machine's boot process, an `_boot-vm` of the runner's own binary, and its command line names nothing this test can ask after: the boot config beside it is written for the process, not about it. Running VMMs belong to other agents of the same owner, which this spec must not touch. The pattern is bracketed so the shell that carries it is not read as one of them.
+function noteRunningVMMs(id: string): void {
+  onRunnerHost(
+    id,
+    [
+      `seen=/tmp/boot-matrix-vmms-${id}`,
+      ": > $seen",
+      "for p in /proc/[0-9]*; do",
+      `  tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[-]_boot-vm' || continue`,
+      "  basename $p >> $seen",
+      "done",
+    ].join("\n"),
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waits on the runner for a VMM this spec's wake started, SIGKILLs it the given delay after it appeared, and answers the kill line that says which process died — or the ones it did see, when none was new. The wait runs on the runner so a boot that lasts seconds is still caught: a round trip from the test would arrive after it.
+function killNewVMM(id: string, afterMs: number): string {
   return onRunnerHost(
     id,
     [
-      `id=${id}`,
+      `seen=/tmp/boot-matrix-vmms-${id}`,
       `delay=${(afterMs / 1_000).toFixed(2)}`,
-      "vmm() {",
-      "  for p in /proc/[0-9]*; do",
-      "    [ -r $p/cmdline ] || continue",
-      `    cfg=$(tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -e 'boot-config[.]json' | head -1)`,
-      '    [ -n "$cfg" ] && [ -r "$cfg" ] || continue',
-      `    grep -q "machines/[^/]*$id" "$cfg" && basename $p`,
-      "  done",
-      "}",
       "deadline=$(( $(date +%s) + 120 ))",
       "pid=",
       'while [ -z "$pid" ]; do',
-      "  pid=$(vmm | head -1)",
+      "  for p in /proc/[0-9]*; do",
+      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[-]_boot-vm' || continue`,
+      "    q=$(basename $p)",
+      "    grep -qx $q $seen && continue",
+      "    pid=$q",
+      "    break",
+      "  done",
       '  [ -n "$pid" ] && break',
       "  [ $(date +%s) -lt $deadline ] || break",
       "  sleep 0.1",
       "done",
       'if [ -z "$pid" ]; then',
-      "  echo none matched $id",
+      "  echo none new",
       "  for p in /proc/[0-9]*; do",
-      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q boot-config || continue`,
-      `    echo saw $(basename $p) $(tr '\\0' ' ' < $p/cmdline | cut -c1-200)`,
+      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[-]_boot-vm' || continue`,
+      `    echo saw $(basename $p) $(tr '\\0' ' ' < $p/cmdline | cut -c1-120)`,
       "  done",
       "  exit 0",
       "fi",
       'sleep "$delay"',
-      `echo killing $(tr '\\0' ' ' < /proc/$pid/cmdline | cut -c1-200)`,
       "kill -9 $pid",
       `echo killed $pid`,
     ].join("\n"),
@@ -111,8 +123,9 @@ test("comes back from its VMM being killed at points across a boot", async () =>
   test.setTimeout(1_200_000);
   for (const afterMs of KILL_DELAYS_MS) {
     await hibernate();
+    noteRunningVMMs(agentId);
     await api.agents.wake.mutate({ id: agentId });
-    const out = killMachineVMM(agentId, afterMs);
+    const out = killNewVMM(agentId, afterMs);
     console.log(
       `[e2e] ${afterMs}ms after its VMM appeared: ${out.replace(/\n/g, " | ")}`,
     );
