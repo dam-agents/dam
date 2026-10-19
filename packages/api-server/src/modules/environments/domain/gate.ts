@@ -117,19 +117,41 @@ export type AccessDecision =
   { allow: true } | { allow: false; reason: "not-signed-in" | "not-allowed" };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Who may open an Environment. In this slice only
- * its owner, by their platform sign-in; a session made for another address
- * counts as no session, so a cookie carried to another Environment opens
- * nothing.
+ * UNIT_BOUNDARY_DESCRIPTION: The people who may open one Environment: those on
+ * its owner's list for the owning agent, narrowed to the Environment's own
+ * list when its agent set one. The agent can only narrow: an email on the
+ * Environment's list but not on the owner's opens nothing. Emails compare
+ * trimmed and lowercased.
+ */
+export function effectiveAccess(
+  ownerList: readonly string[],
+  environmentList: readonly string[] | null,
+): string[] {
+  const normalize = (e: string) => e.trim().toLowerCase();
+  const owners = ownerList.map(normalize);
+  if (environmentList === null) return owners;
+  const narrowed = new Set(environmentList.map(normalize));
+  return owners.filter((e) => narrowed.has(e));
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Who may open an Environment. Its owner always,
+ * and anyone whose identity provider verified an email on the effective list.
+ * A session made for another address counts as no session, so a cookie
+ * carried to another Environment opens nothing; a session without a verified
+ * email matches no list.
  */
 export function decideAccess(
   record: Pick<EnvironmentRecord, "owner">,
+  allowed: readonly string[],
   session: EnvironmentSession | null,
   address: string,
 ): AccessDecision {
   if (!session || session.address !== address)
     return { allow: false, reason: "not-signed-in" };
   if (session.sub === record.owner) return { allow: true };
+  const email = session.email?.trim().toLowerCase();
+  if (email && allowed.includes(email)) return { allow: true };
   return { allow: false, reason: "not-allowed" };
 }
 

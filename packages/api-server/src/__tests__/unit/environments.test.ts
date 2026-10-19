@@ -94,13 +94,27 @@ const vmOwning = {
   spec: { backend: { type: "vm" } },
 } as unknown as Partial<Agent>;
 
-function setup(opts: { agents?: Partial<Agent>[]; max?: number } = {}) {
+function setup(
+  opts: {
+    agents?: Partial<Agent>[];
+    max?: number;
+    ownerList?: Record<string, string[]>;
+  } = {},
+) {
   const repo = memoryRepo();
   const agents = fakeAgents(opts.agents ?? [vmOwning]);
   const starts: [string, string][] = [];
+  const ownerLists = new Map<string, string[]>(
+    Object.entries(opts.ownerList ?? {}),
+  );
   const service = createEnvironmentsService({
     owner: OWNER,
     repo,
+    accessLists: {
+      get: async (id) => ownerLists.get(id) ?? [],
+      set: async (id, _owner, emails) => void ownerLists.set(id, emails),
+      delete: async (id) => void ownerLists.delete(id),
+    },
     agents: agents.service,
     config: {
       urlTemplate: "https://{host}.env.example.com",
@@ -110,7 +124,7 @@ function setup(opts: { agents?: Partial<Agent>[]; max?: number } = {}) {
     startCommand: async (id, command) => void starts.push([id, command]),
     now: () => NOW,
   });
-  return { repo, agents, starts, woken: agents.woken, service };
+  return { repo, agents, starts, woken: agents.woken, service, ownerLists };
 }
 
 describe("creating an Environment", () => {
@@ -226,7 +240,9 @@ describe("creating an Environment", () => {
 describe("changing and deleting Environments", () => {
   // TEST_SCENARIO: the owning Agent changes and deletes its Environments by name, and its owner by id; an expiry past the install's maximum is cut to it, one in the past refused.
   it("extends, narrows access and deletes", async () => {
-    const { service, agents, repo } = setup();
+    const { service, agents, repo } = setup({
+      ownerList: { [vmOwning.id!]: ["reviewer@example.com"] },
+    });
     const mine = service.forOwningAgent(vmOwning.id!);
     const env = await mine.create({
       name: "a",
@@ -248,6 +264,32 @@ describe("changing and deleting Environments", () => {
     await service.delete(env.id);
     expect(agents.deleted).toEqual([env.id]);
     expect(repo.rows).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: the owning Agent narrows an Environment to people on its owner's list and can never add anyone: an email off the list is refused, at create and at update, with the email named but not the list. The owner sets the list per agent; it is unique and replaces the old one.
+  it("lets the agent narrow access only within its owner's list", async () => {
+    const { service, ownerLists } = setup({
+      ownerList: { [vmOwning.id!]: ["a@example.com", "b@example.com"] },
+    });
+    const mine = service.forOwningAgent(vmOwning.id!);
+    const endpoints = [{ name: "app", port: 80 }];
+
+    await expect(
+      mine.create({ name: "x", endpoints, access: ["c@example.com"] }),
+    ).rejects.toThrow(/c@example\.com/);
+    await mine.create({ name: "y", endpoints, access: ["a@example.com"] });
+    await expect(
+      mine.update("y", { access: ["a@example.com", "z@example.com"] }),
+    ).rejects.toThrow(/not on your owner's list of people: z@example\.com/);
+
+    expect(
+      await service.setAccessList(vmOwning.id!, [
+        "c@example.com",
+        "c@example.com",
+      ]),
+    ).toEqual(["c@example.com"]);
+    expect(ownerLists.get(vmOwning.id!)).toEqual(["c@example.com"]);
+    expect(await service.accessList(vmOwning.id!)).toEqual(["c@example.com"]);
   });
 
   // TEST_SCENARIO: the owning Agent wakes a sleeping Environment by name before it opens the Environment Link, which reaches only a running machine; a name it does not own wakes nothing, and one its owner turned off is refused with that reason, never reported as waking.

@@ -10,6 +10,7 @@ import {
   appSetCookie,
   cookieValue,
   decideAccess,
+  effectiveAccess,
   parseAddress,
   relayHeaders,
   RESERVED_PREFIX,
@@ -50,6 +51,7 @@ export interface EnvironmentGateDeps {
   scheme: "http" | "https";
   addressUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
+  ownerList: (owningAgentId: string) => Promise<string[]>;
   signIn: EnvironmentSignIn;
   ensureReady: (agentId: string) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
@@ -326,7 +328,15 @@ export function createEnvironmentGate(
       return reserved(c, address, record);
 
     const visitor = await session(getCookie(c, cookieName));
-    const access = decideAccess(record, visitor, address);
+    const access = decideAccess(
+      record,
+      effectiveAccess(
+        await deps.ownerList(record.owningAgentId),
+        record.access,
+      ),
+      visitor,
+      address,
+    );
     if (!access.allow) {
       deny(record, visitor, address, access.reason);
       if (access.reason === "not-signed-in") {
@@ -343,8 +353,10 @@ export function createEnvironmentGate(
       return page(
         c,
         403,
-        "Not yours to open",
-        "This Environment is open to its owner only. Ask them for access.",
+        "You don't have access",
+        visitor?.email
+          ? `You are signed in as ${visitor.email}, which is not on this Environment's list. Ask the person who sent you the link to add you, then sign out and open it again.`
+          : "Your account has no verified email address, so it cannot be on this Environment's list. Ask the person who sent you the link.",
       );
     }
 
@@ -417,7 +429,15 @@ export function createEnvironmentGate(
         return refuseUpgrade(socket, "404 Not Found");
       const cookie = cookieValue(req.headers.cookie, cookieName);
       const visitor = await session(cookie);
-      const access = decideAccess(resolved.record, visitor, resolved.address);
+      const access = decideAccess(
+        resolved.record,
+        effectiveAccess(
+          await deps.ownerList(resolved.record.owningAgentId),
+          resolved.record.access,
+        ),
+        visitor,
+        resolved.address,
+      );
       if (!access.allow) {
         deny(resolved.record, visitor, resolved.address, access.reason);
         return refuseUpgrade(

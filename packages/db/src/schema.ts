@@ -461,6 +461,15 @@ export const environments = pgTable(
   ],
 );
 
+export const environmentAccessLists = pgTable("environment_access_lists", {
+  owningAgentId: text("owning_agent_id").primaryKey(),
+  owner: text("owner").notNull(),
+  emails: jsonb("emails").$type<string[]>().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .defaultNow()
+    .notNull(),
+});
+
 export const agentChatFormPreferences = pgTable("agent_chat_form_preferences", {
   agentId: text("agent_id").primaryKey(),
   preferences: jsonb("preferences").notNull(),

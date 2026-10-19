@@ -59,6 +59,11 @@ export const environmentListInputSchema = z.object({
   owningAgentId: z.string().min(1),
 });
 
+export const environmentAccessListInputSchema = z.object({
+  owningAgentId: z.string().min(1),
+  emails: environmentAccessSchema,
+});
+
 export const environmentExtendInputSchema = z.object({
   id: z.string().min(1),
   expiresAt: z.iso.datetime(),

@@ -17,6 +17,7 @@ import {
   type EnvironmentRecord,
 } from "../domain/environment.js";
 import type { EnvironmentsRepository } from "../infrastructure/environments-repository.js";
+import type { AccessListsRepository } from "../infrastructure/access-lists-repository.js";
 
 export interface EnvironmentsConfig {
   urlTemplate: string | null;
@@ -41,6 +42,7 @@ export interface UpdateEnvironmentInput {
 export interface EnvironmentsDeps {
   owner: string;
   repo: EnvironmentsRepository;
+  accessLists: AccessListsRepository;
   agents: AgentsService;
   config: EnvironmentsConfig;
   startCommand: (agentId: string, command: string) => Promise<void>;
@@ -58,6 +60,8 @@ export interface OwningAgentEnvironments {
 export interface EnvironmentsServiceImpl {
   forOwningAgent(owningAgentId: string): OwningAgentEnvironments;
   list(owningAgentId: string): Promise<EnvironmentView[]>;
+  accessList(owningAgentId: string): Promise<string[]>;
+  setAccessList(owningAgentId: string, emails: string[]): Promise<string[]>;
   extend(id: string, expiresAt: Date): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
   remove(record: EnvironmentRecord, actor: string): Promise<void>;
@@ -115,6 +119,12 @@ export function createEnvironmentsService(
       .map((r) => view(r, agents.get(r.agentId) ?? null));
   }
 
+  async function ownedAgent(id: string): Promise<Agent> {
+    const agent = await deps.agents.get(id);
+    if (!agent) refuse("no such agent", "NOT_FOUND");
+    return agent;
+  }
+
   async function owningAgent(id: string): Promise<Agent> {
     const agent = await deps.agents.get(id);
     if (!agent) refuse("no such agent", "NOT_FOUND");
@@ -125,6 +135,20 @@ export function createEnvironmentsService(
         "only an agent on the vm backend can own Environments: they run on its owner's VM runner beside it",
       );
     return agent;
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: an owning agent may narrow who opens one of its Environments to people on its owner's list, and never add anyone; the refusal names the emails that are not on it, but never the list itself, which the agent cannot read.
+  async function withinOwnerList(
+    owningAgentId: string,
+    emails: string[],
+  ): Promise<void> {
+    const allowed = new Set(await deps.accessLists.get(owningAgentId));
+    const outside = emails.filter((e) => !allowed.has(e));
+    if (outside.length > 0)
+      refuse(
+        `not on your owner's list of people: ${outside.join(", ")}. Only your owner adds people, in the app.`,
+        "FORBIDDEN",
+      );
   }
 
   async function ownRecord(id: string): Promise<EnvironmentRecord> {
@@ -172,6 +196,7 @@ export function createEnvironmentsService(
           "PRECONDITION_FAILED",
         );
       const expiresAt = expiry(input.expiresAt);
+      if (input.access) await withinOwnerList(owningAgentId, input.access);
       const agent = await deps.agents.create({
         name: environmentAgentName(owning.name, input.name),
         description: `Environment ${input.name} of ${owning.name}`,
@@ -237,6 +262,7 @@ export function createEnvironmentsService(
         const record = await byName(name);
         const patch: Partial<EnvironmentRecord> = {};
         if (input.expiresAt) patch.expiresAt = expiry(input.expiresAt);
+        if (input.access) await withinOwnerList(owningAgentId, input.access);
         if (input.access !== undefined) patch.access = input.access;
         await deps.repo.update(record.agentId, patch);
         return view(
@@ -273,6 +299,26 @@ export function createEnvironmentsService(
     async list(owningAgentId) {
       const records = await deps.repo.listByOwningAgent(owningAgentId);
       return views(records.filter((r) => r.owner === deps.owner));
+    },
+
+    async accessList(owningAgentId) {
+      await ownedAgent(owningAgentId);
+      return deps.accessLists.get(owningAgentId);
+    },
+
+    async setAccessList(owningAgentId, emails) {
+      await ownedAgent(owningAgentId);
+      const unique = [...new Set(emails)];
+      await deps.accessLists.set(owningAgentId, deps.owner, unique);
+      securityLog("info", "environment.access_list", {
+        category: "authz-list",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: owningAgentId,
+        result: "success",
+        detail: { count: unique.length },
+      });
+      return unique;
     },
 
     async extend(id, expiresAt) {
