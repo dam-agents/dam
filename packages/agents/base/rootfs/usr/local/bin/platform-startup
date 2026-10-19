@@ -17,13 +17,20 @@ again after a growing delay; a clean exit is done until the next boot. An item
 never keeps the agent awake: it stops when the agent sleeps and starts again
 when it wakes. <id> is lowercase letters, digits and hyphens.
 
-add starts the item at once, and replaces one with the same id. The user sees
+add starts the item at once, and replaces one with the same id; one that
+will not stop keeps its old command. The user sees
 Startup Items in the agent's Processes panel as Login items, and can stop,
 restart, disable or remove them there; an item the user disabled stays
 disabled, and only the user can remove it.
 `;
 
 const LIST = join(homedir(), ".platform", "startup.json");
+// Every read-modify-write of the list holds this lock, here and in the
+// agent-runtime, so the user's Disable and the agent's add never lose each
+// other's write. Node has no flock, so this command runs itself under
+// flock(1), which holds the lock for the whole run.
+const LOCK = join(homedir(), ".platform", "startup.lock");
+const LOCKED = "PLATFORM_STARTUP_LOCKED";
 const CTL = "/usr/local/lib/platform-startup/ctl";
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
 
@@ -56,6 +63,18 @@ function ctl(...args) {
 
 const [action, ...rest] = process.argv.slice(2);
 
+if (["add", "remove"].includes(action) && process.env[LOCKED] !== "1") {
+  mkdirSync(dirname(LOCK), { recursive: true });
+  // -o: flock holds the lock itself, so nothing this command starts, an item's
+  // loop least of all, inherits it.
+  const locked = spawnSync("flock", ["-o", LOCK, process.execPath, process.argv[1], ...process.argv.slice(2)], {
+    stdio: "inherit",
+    env: { ...process.env, [LOCKED]: "1" },
+  });
+  if (locked.error) fail(`could not lock the list: ${locked.error.message}`);
+  process.exit(locked.status ?? 1);
+}
+
 switch (action) {
   case "add": {
     const [id, separator, ...command] = rest;
@@ -64,7 +83,7 @@ switch (action) {
     const list = readList();
     const before = list.items.find((item) => item.id === id);
     if (before?.disabled) fail(`the user disabled ${id}; it stays disabled until they enable it`);
-    if (before) ctl("stop", id);
+    if (before && ctl("stop", id) !== 0) fail(`${id} could not be stopped, so it keeps its old command`);
     const item = { id, command: command.join(" ") };
     list.items = [...list.items.filter((i) => i.id !== id), item];
     writeList(list);

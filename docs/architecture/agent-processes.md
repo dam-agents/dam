@@ -130,9 +130,11 @@ Every process of an item carries `PLATFORM_STARTUP=<id>`, which the process scan
 The panel lists every configured item in a section of its own, running, exited or off, with its log as output and history, and keeps a running item's row out of the background groups, the header count and the finished history.
 A running item that no entry names any more — its entry removed while it could not be stopped, or edited out of the file — is listed there too, as no longer in the list, so nothing that runs is hidden; the user can still stop it.
 The runtime reads the list the way the boot does: each entry on its own, under the same id rule, so a malformed entry is dropped alone and hides no other item.
-**An item never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark.
+**An item never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark; the panel refuses a keep choice for an item.
 The user restarts, stops, turns off or removes an item there, through the image's own control; turning one off is written into the list, so the next boot skips it, and `platform-startup` refuses to turn it on again or remove it, the same rule as a user's choice about a kept process.
 A remove takes the entry out of the list only once the item stopped; one that will not stop stays listed, and the user is told so.
+An `add` that replaces an item writes the new command only once the old one stopped, so the list never names a command that does not run.
+`platform-startup` and the runtime each hold one lock on the list for every change they make to it, so the user's choice and the agent's change never lose each other's write.
 A choice the user made is kept when the control then fails, and the item's status says so: an item turned off that still runs reads as off from the next wake, still running.
 Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc, and an image without the control has none.
 

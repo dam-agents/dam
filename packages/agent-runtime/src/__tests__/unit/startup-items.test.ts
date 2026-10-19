@@ -1,4 +1,5 @@
 // TEST_OVERVIEW: A vm agent's Startup Items reach the Processes panel, and the user controls them there. The scan reads PLATFORM_STARTUP beside the keep mark, and a reaper child whose tree carries it is one Startup Item row, keyed by the item, showing the item's own command, never keeping the agent awake. The panel's list joins the configured items with those rows, so a disabled or exited item is listed too, with its log as output. The list file the agent edits is read and written by the runtime for the user's Disable and Remove, and each of the user's actions goes through the image's control, refusing an item that is off or unknown.
+import { spawn } from "node:child_process";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -211,7 +212,7 @@ describe("the Startup Items list", () => {
   }
 
   // TEST_SCENARIO: the user's Disable is written into the list the agent edits, and Remove takes the item out of it, so the image's boot and `platform-startup` both see the user's decision.
-  it("reads items and writes the user's Disable and Remove into the list", () => {
+  it("reads items and writes the user's Disable and Remove into the list", async () => {
     const dir = home({
       items: [
         { id: "web", command: "serve" },
@@ -224,9 +225,9 @@ describe("the Startup Items list", () => {
       { id: "web", command: "serve", disabled: false },
       { id: "setup", command: "make setup", disabled: false },
     ]);
-    expect(store.setDisabled("web", true)).toBe(true);
-    expect(store.remove("setup")).toBe(true);
-    expect(store.setDisabled("nope", true)).toBe(false);
+    expect(await store.setDisabled("web", true)).toBe(true);
+    expect(await store.remove("setup")).toBe(true);
+    expect(await store.setDisabled("nope", true)).toBe(false);
 
     const written = JSON.parse(
       readFileSync(join(dir, ".platform", "startup.json"), "utf8"),
@@ -239,6 +240,30 @@ describe("the Startup Items list", () => {
     );
   });
 
+  // TEST_SCENARIO: the user's Disable waits while `platform-startup` holds the list lock — an add that stops the old instance holds it for up to fifteen seconds — and is written only once the lock is free, so neither write is lost.
+  it("waits for the list lock before it writes", async () => {
+    const dir = home({ items: [{ id: "web", command: "serve" }] });
+    const holder = spawn("flock", [
+      join(dir, ".platform", "startup.lock"),
+      "sleep",
+      "1",
+    ]);
+    await new Promise((r) => setTimeout(r, 200));
+    const listPath = join(dir, ".platform", "startup.json");
+    const before = readFileSync(listPath, "utf8");
+
+    const write = createStartupItemStore(dir).setDisabled("web", true);
+    await new Promise((r) => setTimeout(r, 300));
+    expect(readFileSync(listPath, "utf8"), "held: not written yet").toBe(
+      before,
+    );
+    expect(await write).toBe(true);
+    expect(JSON.parse(readFileSync(listPath, "utf8")).items[0].disabled).toBe(
+      true,
+    );
+    holder.kill();
+  });
+
   // TEST_SCENARIO: a file that does not parse starts nothing at boot, so the panel lists nothing rather than failing.
   it("reads a list that does not parse as empty", () => {
     expect(createStartupItemStore(home("{not json")).list()).toEqual([]);
@@ -246,7 +271,7 @@ describe("the Startup Items list", () => {
   });
 
   // TEST_SCENARIO: the boot's ctl drops a malformed entry alone and runs the rest, so the runtime does the same: one bad entry hides no valid item, and an id outside the rule — a path, say — is never read, so the log it names is never tailed. The user's choice is written without losing the entry the runtime could not read.
-  it("drops a malformed entry alone, as the boot does, and keeps it on write", () => {
+  it("drops a malformed entry alone, as the boot does, and keeps it on write", async () => {
     const dir = home({
       items: [
         { id: "web", command: "serve" },
@@ -259,7 +284,7 @@ describe("the Startup Items list", () => {
 
     expect(store.list().map((i) => i.id)).toEqual(["web"]);
     expect(() => store.logPath("../escape")).toThrow();
-    store.setDisabled("web", true);
+    await store.setDisabled("web", true);
     const written = JSON.parse(
       readFileSync(join(dir, ".platform", "startup.json"), "utf8"),
     );
@@ -280,11 +305,13 @@ describe("the user's control of Startup Items", () => {
     const startupItems: StartupItemStore = {
       available: () => true,
       list: () => list.map((i) => ({ ...i, disabled: disabled.get(i.id)! })),
-      setDisabled: (id, value) => {
+      setDisabled: async (id, value) => {
+        if (id === "locked")
+          throw new Error("the Startup Items list stayed locked; try again");
         disabled.set(id, value);
         return true;
       },
-      remove: (id) => {
+      remove: async (id) => {
         list = list.filter((i) => i.id !== id);
         return true;
       },
@@ -378,6 +405,60 @@ describe("the user's control of Startup Items", () => {
         "It is on from the next wake, but could not start now: ctl failed",
     });
     expect(runs).toEqual(["stop web", "stop stuck", "start broken"]);
+  });
+
+  // TEST_SCENARIO: a list that stays locked past the wait is reported to the user, and nothing is stopped or written.
+  it("reports a list that stays locked", async () => {
+    const { processes, runs } = service([
+      { id: "locked", command: "serve", disabled: false },
+    ]);
+
+    const result = await processes.setStartupItemEnabled("locked", false);
+    expect(result.ok ? null : result.error).toEqual({
+      kind: "NotAllowed",
+      message: "the Startup Items list stayed locked; try again",
+    });
+    expect(runs).toEqual([]);
+  });
+
+  // TEST_SCENARIO: an item starts again at every wake and never keeps the agent awake, so the panel's keep choice is refused for it, as for a foreground process, rather than recorded as a choice that does nothing.
+  it("refuses a keep choice on a Startup Item", async () => {
+    const processes = createProcessesService({
+      table: {
+        scan: async () => ({
+          scannedAt: Date.now(),
+          processes: [
+            proc(RUNTIME, 1, "node dist/server.js"),
+            proc(300, 1, LOOP, "web"),
+          ],
+        }),
+        bootId: async () => "boot",
+      },
+      document: openProcessesDocument(
+        createFileDocumentStoreBackend(mkdtempSync(join(tmpdir(), "state-"))),
+      ),
+      outputs: { tail: async () => null },
+      signals: { send: () => true },
+      keep: {
+        setKeptProcesses: () => {},
+        taskKeepChanged: () => {},
+      } as never,
+      backgroundWorkHolds: true,
+      runtimePid: RUNTIME,
+      harnessWork: {
+        harnesses: () => [],
+        reportedTasks: () => [],
+        forgetTask: () => {},
+        pendingRestart: () => null,
+        applyPendingRestart: () => false,
+        onChange: () => {},
+      },
+      startupItems: { available: () => false } as never,
+      log: () => {},
+    });
+
+    const result = await processes.setKeep("300:300", true);
+    expect(result.ok ? null : result.error.kind).toBe("NotAllowed");
   });
 
   // TEST_SCENARIO: an item without a running row still opens its log, by a key made from its id.

@@ -367,6 +367,21 @@ export function createProcessesService(
     );
   }
 
+  // UNIT_BOUNDARY_DESCRIPTION: a write of the Startup Items list, which waits for the lock `platform-startup` holds; a lock that stays taken is reported to the user, and the list is left as it was.
+  async function listWrite(
+    write: () => Promise<boolean>,
+  ): Promise<Result<void, ProcessesDomainError>> {
+    try {
+      await write();
+      return ok(undefined);
+    } catch (error) {
+      return err({
+        kind: "NotAllowed",
+        message: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+
   function startupItemLog(key: string): string | null {
     const id = startupItemIdSchema.safeParse(/^startup:(.+)$/.exec(key)?.[1]);
     if (!id.success) return null;
@@ -458,6 +473,12 @@ export function createProcessesService(
           kind: "NotAllowed",
           message:
             "A foreground process ends with its turn and cannot keep the agent awake.",
+        });
+      if (tree.kind === "startup-item")
+        return err({
+          kind: "NotAllowed",
+          message:
+            "A login item starts again at every wake and never keeps the agent awake.",
         });
       const doc = deps.document.read();
       deps.document.write({
@@ -555,7 +576,10 @@ export function createProcessesService(
 
     async setStartupItemEnabled(id, enabled) {
       if (!knownStartupItem(id)) return err({ kind: "NotFound", key: id });
-      deps.startupItems.setDisabled(id, !enabled);
+      const written = await listWrite(() =>
+        deps.startupItems.setDisabled(id, !enabled),
+      );
+      if (!written.ok) return written;
       deps.log(
         `the user ${enabled ? "enabled" : "disabled"} Startup Item ${id}`,
       );
@@ -578,7 +602,10 @@ export function createProcessesService(
           kind: "NotAllowed",
           message: `It could not be stopped, so it stays listed: ${stopped.error.kind === "NotAllowed" ? stopped.error.message : "not found"}`,
         });
-      if (listed) deps.startupItems.remove(id);
+      if (listed) {
+        const removed = await listWrite(() => deps.startupItems.remove(id));
+        if (!removed.ok) return removed;
+      }
       return ok(undefined);
     },
 
