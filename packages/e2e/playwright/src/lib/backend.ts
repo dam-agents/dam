@@ -408,7 +408,7 @@ export function runnerStartFailures(agentId: string): string[] {
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what provisions the claim the agent's runner keeps its machines' disks on, which is the owner's storage: the provisioner of the claim's StorageClass, or the class's name where the cluster serves it without one. A provisioner that hands out a directory of the node makes the claim part of the node's own disk, which nothing may fill.
+// UNIT_BOUNDARY_DESCRIPTION: what provisions the claim the agent's runner keeps its machines' disks on, which is the owner's storage: the provisioner of the claim's StorageClass, the cluster's default class when the claim names none. A provisioner that hands out a directory of the node makes the claim part of the node's own disk, which nothing may fill.
 export function runnerClaimProvisioner(agentId: string): string {
   const claim = kubectl(
     "-n",
@@ -429,7 +429,7 @@ export function runnerClaimProvisioner(agentId: string): string {
     "-o",
     "jsonpath={.spec.storageClassName}",
   );
-  const class_ = named
+  const className = named
     ? named
     : kubectl(
         "-n",
@@ -439,13 +439,13 @@ export function runnerClaimProvisioner(agentId: string): string {
         "-o",
         String.raw`jsonpath={.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}`,
       );
-  if (!class_) return "";
+  if (!className) return "";
   return kubectl(
     "-n",
     AGENT_NS,
     "get",
     "storageclass",
-    class_,
+    className,
     "-o",
     "jsonpath={.provisioner}",
   );
