@@ -1,4 +1,4 @@
-import { ArrowLeft, Branch, Document, Globe, Tools } from "@carbon/icons-react";
+import { ArrowLeft } from "@carbon/icons-react";
 import {
   type CSSProperties,
   type ReactNode,
@@ -7,7 +7,6 @@ import {
   useState,
 } from "react";
 
-import { stateDotClass } from "@/components/status-indicator";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
 
@@ -17,11 +16,6 @@ import {
   writePersistedNumber,
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
-import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
-import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
-import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
-import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
@@ -309,104 +303,5 @@ export function ClassicChatLayout({
         )}
       </div>
     </>
-  );
-}
-
-export function ClassicChatIdentity({
-  agent,
-  agentId,
-  name,
-  display,
-  canOpenBrowser,
-  browserOpen,
-  changesOpen,
-  onToggleBrowser,
-  onToggleChanges,
-  onConfigure,
-}: {
-  agent: AgentView | null;
-  agentId: string | null;
-  name: string | null;
-  display: AgentDisplay | null;
-  canOpenBrowser: boolean;
-  browserOpen: boolean;
-  changesOpen: boolean;
-  onToggleBrowser: () => void;
-  onToggleChanges: () => void;
-  onConfigure: () => void;
-}) {
-  const setMobileScreen = useStore((s) => s.setMobileScreen);
-  return (
-    <div className="flex min-w-0 flex-1 items-center gap-3">
-      <span
-        aria-hidden
-        className={cn(
-          "h-2 w-2 shrink-0 rounded-full",
-          agent && "hidden @max-[149px]:block",
-          display ? stateDotClass[display.state] : "bg-warning",
-        )}
-      />
-      {agent ? (
-        <EditableAgentIdentity
-          agent={agent}
-          avatarSize={32}
-          mood={avatarMood(display?.state, agent)}
-          nameClassName="text-sm font-bold text-foreground"
-        />
-      ) : (
-        <h1 className="text-sm font-bold text-foreground truncate">{name}</h1>
-      )}
-      {agent && (
-        <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-          <VmRuntimeBadge agent={agent} labelClassName="@max-[279px]:sr-only" />
-        </span>
-      )}
-      <div className="ml-auto flex shrink-0">
-        {canOpenBrowser && agentId && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Open browser"
-            tooltip="Open browser"
-            aria-pressed={browserOpen}
-            onClick={onToggleBrowser}
-          >
-            <Globe size={16} />
-          </Button>
-        )}
-        {agentId && (
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Show changes"
-            tooltip="Show changes"
-            aria-pressed={changesOpen}
-            onClick={onToggleChanges}
-          >
-            <Branch size={16} />
-          </Button>
-        )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Files and artifacts"
-          data-testid="open-agent-files"
-          className="md:hidden"
-          onClick={() => setMobileScreen("files")}
-        >
-          <Document size={16} />
-        </Button>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Configure agent"
-          tooltip="Configure agent"
-          className="max-md:hidden"
-          onClick={onConfigure}
-        >
-          <Tools size={16} />
-        </Button>
-      </div>
-    </div>
   );
 }

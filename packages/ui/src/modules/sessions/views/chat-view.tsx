@@ -126,10 +126,8 @@ import { BackgroundWorkIndicator } from "../components/background-work-indicator
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
-import {
-  ClassicChatIdentity,
-  ClassicChatLayout,
-} from "../components/classic-chat-layout.js";
+import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
+import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
