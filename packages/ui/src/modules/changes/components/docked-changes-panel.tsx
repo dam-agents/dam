@@ -11,6 +11,7 @@ import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useChangeSetDiff, useChangeSets } from "../api/queries.js";
 import { useChangeSetSelection } from "../hooks/use-change-set-selection.js";
 import { useChangesWatch } from "../hooks/use-changes-watch.js";
@@ -78,6 +79,7 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
             <LayoutToggle layout={layout} onChange={setLayout} />
           </div>
         )}
+        <SidePanelCloseButton />
       </div>
       {error ? (
         <Notice text={listErrorText(error.message)} />

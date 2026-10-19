@@ -3,7 +3,6 @@ import {
   Book,
   Branch,
   type CarbonIconType,
-  Close,
   Folders,
   Globe,
   Notification,
@@ -155,13 +154,11 @@ export function SidePanelBar({
   hidden,
   className,
   tiles = false,
-  onClose,
   ...props
 }: SidePanelTabProps & {
   hidden: ReadonlySet<SidePanelTab>;
   className?: string;
   tiles?: boolean;
-  onClose?: () => void;
 }) {
   const appTabs = appSidePanelTabs(hidden);
   return (
@@ -175,39 +172,6 @@ export function SidePanelBar({
         className,
       )}
     >
-      {onClose && (
-        <Tooltip content="Close panel" side="left">
-          {tiles ? (
-            <button
-              type="button"
-              aria-label="Close panel"
-              data-testid="side-panel-close"
-              className={cn(
-                railTile(false),
-                "max-md:hidden",
-                props.active === null && "invisible",
-              )}
-              onClick={onClose}
-            >
-              <Close size={20} />
-            </button>
-          ) : (
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="Close panel"
-              data-testid="side-panel-close"
-              className={cn(
-                "h-12 w-12 rounded-none text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:ring-inset focus-visible:ring-offset-0 max-md:hidden",
-                props.active === null && "invisible",
-              )}
-              onClick={onClose}
-            >
-              <Close size={24} />
-            </Button>
-          )}
-        </Tooltip>
-      )}
       <SidePanelTabButtons
         tabs={SIDE_PANEL_TABS.filter(
           ({ tab }) => !APP_TABS.has(tab) && !hidden.has(tab),

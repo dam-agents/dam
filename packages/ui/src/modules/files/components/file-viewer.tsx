@@ -16,6 +16,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useFilePromotion } from "../../artifacts/hooks/use-file-promotion.js";
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { type FileContent, useFileWriteMutation } from "../api/queries.js";
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
@@ -266,6 +267,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             )}
           </>
         )}
+        <SidePanelCloseButton />
       </div>
       {platformInstructions && (
         <p className="px-4 py-2 border-b border-border text-xs text-muted-foreground">
