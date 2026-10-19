@@ -17,6 +17,7 @@ import {
   applyConnectionEgressAddressing,
   composeAwsProfiles,
   composeGitHubAccounts,
+  withoutRetiredEnv,
   type Contribution,
   type ContributionKind,
   type GitHubAccountSource,
@@ -159,7 +160,10 @@ async function readGrantedContributions(
       name: row.name,
       preferred: row.preferred,
       grantedAt: row.grantedAt.toISOString(),
-      contributions: applyConnectionEgressAddressing(row.id, parsed),
+      contributions: applyConnectionEgressAddressing(
+        row.id,
+        withoutRetiredEnv(row.templateId, parsed),
+      ),
     });
   }
   return {

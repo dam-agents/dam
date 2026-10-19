@@ -1,3 +1,5 @@
+import type { Contribution } from "agent-runtime-api";
+
 export type ProviderPresetType =
   "anthropic" | "ibm-litellm" | "curve-bender" | "openai" | "bob" | "bedrock";
 
@@ -44,6 +46,21 @@ export function ibmLitellmEnvMappings(): EnvMapping[] {
     CONTEXT_WINDOW: "200000",
     MAX_TOKENS: "8192",
   });
+}
+
+const RETIRED_PRESET_ENVS: Record<string, readonly string[]> = {
+  "ibm-litellm": ["CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS"],
+};
+
+export function withoutRetiredEnv(
+  templateId: string,
+  contributions: Contribution[],
+): Contribution[] {
+  const retired = RETIRED_PRESET_ENVS[templateId];
+  if (!retired) return contributions;
+  return contributions.filter(
+    (c) => c.kind !== "env" || !retired.includes(c.name),
+  );
 }
 
 export function curveBenderEnvMappings(): EnvMapping[] {

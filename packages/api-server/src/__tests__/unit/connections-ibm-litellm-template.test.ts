@@ -1,5 +1,5 @@
-import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
+import { withoutRetiredEnv } from "api-server-api";
 import type { Contribution, SecretRef } from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
@@ -46,28 +46,20 @@ describe("ibm-litellm connection template", () => {
     });
   });
 
-  // TEST_SCENARIO: a Connection stores the preset's contributions when it is created, so the Connections made before the preset dropped the flag keep it until the migration takes it out — from those Connections only.
-  it("takes the flag out of the Connections made before the preset dropped it", async () => {
-    const migration = readFileSync(
-      new URL(
-        "../../../../db/drizzle/0060_drop_litellm_disable_experimental_betas.sql",
-        import.meta.url,
-      ),
-      "utf8",
-    );
-    const dropped = migration.match(
-      /\(item ->> 'name'\) IS DISTINCT FROM '([A-Z0-9_]+)'/,
-    )?.[1];
-    const templateId = migration.match(/c\.template_id = '([a-z-]+)'/)?.[1];
+  // TEST_SCENARIO: a Connection stores the preset's contributions when it is created, so a Connection made before the preset dropped the flag still carries it — the harness must never see it, and Curve Bender's own copy must survive.
+  it("withholds the flag a Connection made earlier still carries", () => {
+    const stored: Contribution[] = [
+      {
+        kind: "env",
+        name: "ANTHROPIC_BASE_URL",
+        placeholder: "https://ete-litellm.ai-models.vpc.res.ibm.com",
+      },
+      { kind: "env", name: DISABLE_BETAS, placeholder: "1" },
+    ];
 
-    expect(dropped).toBe(DISABLE_BETAS);
-    expect(templateId).toBe("ibm-litellm");
-    expect(
-      (await buildIbmLitellm()).contributions.some(
-        (c) => c.kind === "env" && c.name === dropped,
-      ),
-    ).toBe(false);
-    expect(migration).toContain("UPDATE runtime_state_outbox");
+    expect(withoutRetiredEnv("ibm-litellm", stored)).toEqual([stored[0]]);
+    expect(withoutRetiredEnv("curve-bender", stored)).toEqual(stored);
+    expect(withoutRetiredEnv("anthropic", stored)).toEqual(stored);
   });
 
   // TEST_SCENARIO: an agent granted this connection runs Bob against the proxy, so the gateway URL and a key placeholder must ride along — and the placeholder stays inert, since a key-shaped one has meant a different backend to some Bob versions.
