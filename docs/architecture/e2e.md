@@ -16,8 +16,8 @@ The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the
 
 The specs are grouped into Playwright **projects**, one per area, whose dependencies chain the state they share: the auth project stores the user's login, the agent project creates the suite's mock Agent and the Connection its chat turns need, and the chain project drives that Agent through messages, Sessions, Slack and egress.
 A spec that boots and drives an Agent of its own runs in a project after those, one at a time, because each of them competes for the same cluster's compute.
-Two specs run in the vm lane only: the runtime migration needs an install with both Backends, and the storage trim spec measures the claim under an agent's machine, which only a vm install has.
-The agent backend spec runs in both lanes, but last: it deletes its owner's VM runner, which runs every other machine of that user, so the config runs it after the rest of the suite.
+Four specs run in the vm lane only: the runtime migration needs an install with both Backends, the harness-tools and browser-tabs specs need the default image's harness tools, which that lane enables, and the storage trim spec measures the claim under an agent's machine.
+The agent backend spec runs in both lanes, and in the vm lane it runs last: it deletes its owner's VM runner, which runs every other machine of that user.
 The tier under `src/tests/full/` is on demand: a local run asks for it, and no CI run takes it.
 
 ## Scope: what a pull request runs

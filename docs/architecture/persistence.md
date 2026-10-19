@@ -313,7 +313,7 @@ Past 90%, and again past 95% when writes start failing, the owner also gets a Sl
 
 **A write the claim has no room for waits instead of failing.** virtio-blk can report a failed write to the guest only as an I/O error, and on that error the guest drops the data in its page cache that a write had accepted, and btrfs aborts its transaction and turns the filesystem read-only.
 So the runner's libkrun holds a guest write that the claim refuses with no space, and tries it again every second until it fits, as QEMU does by default.
-The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through another guest's discards, a deleted agent or a larger storage.
+The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through another guest's trims, a deleted agent or a larger storage.
 A stop of the machine ends the wait: the write fails as before, or a kill ends the machine as a power cut would, which btrfs's copy-on-write recovers from without errors.
 A flush is never tried again: after a failed fsync the host can have dropped the data, and a second fsync would report it written.
 
