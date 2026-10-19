@@ -8,7 +8,9 @@
 # staged instead: no guest flattens one since platform-init became its init.
 set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-IMAGE_DIR=/var/lib/platform-vm-images
+# The directory values-local.yaml gives the runners, so a staged tree always
+# lands where they mount it.
+IMAGE_DIR="$(yq -r '.virtualization.imageCache.hostPath' "$MISE_CONFIG_ROOT/helm/values-local.yaml")"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
