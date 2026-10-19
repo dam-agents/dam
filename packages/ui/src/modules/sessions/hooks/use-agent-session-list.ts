@@ -44,9 +44,7 @@ export function useAgentSessionList(agentId: string) {
   const sessions: SessionView[] =
     listed ?? (provisional ? lastKnown : undefined) ?? EMPTY;
   const loading =
-    listed === undefined &&
-    !provisional &&
-    (isFetching || (!operable && (answerableSoon || lastKnown === undefined)));
+    listed === undefined && !provisional && (isFetching || !operable);
 
   const visible = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategoryOf(s))),

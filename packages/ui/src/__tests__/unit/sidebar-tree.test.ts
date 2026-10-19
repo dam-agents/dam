@@ -8,6 +8,7 @@ import { ActivityDot } from "../../modules/platform/components/sidebar-v2/activi
 import { AddRow } from "../../modules/platform/components/sidebar-v2/add-row.js";
 import {
   activityTone,
+  awaitsApproval,
   sessionContext,
   splitPinned,
   toggleExpanded,
@@ -45,6 +46,23 @@ describe("sidebar tree", () => {
     [{ working: false, needsApproval: false, unread: false }, "idle"],
   ] as const)("picks the dot for %o", (state, tone) => {
     expect(activityTone(state)).toBe(tone);
+  });
+
+  // TEST_SCENARIO: a pinned row reads its approval tone from the owner's approvals: only a pending approval of that Agent's Session counts.
+  it("finds a pending approval for one Session", () => {
+    const approvals = [
+      { status: "approved", agentId: "a", sessionId: "s1" },
+      { status: "pending", agentId: "b", sessionId: "s1" },
+      { status: "pending", agentId: "a", sessionId: null },
+    ];
+    expect(awaitsApproval(approvals, "a", "s1")).toBe(false);
+    expect(
+      awaitsApproval(
+        [...approvals, { status: "pending", agentId: "a", sessionId: "s1" }],
+        "a",
+        "s1",
+      ),
+    ).toBe(true);
   });
 
   // TEST_SCENARIO: only a working Session's dot spins, it stops spinning under prefers-reduced-motion, and every state names itself to assistive technology.

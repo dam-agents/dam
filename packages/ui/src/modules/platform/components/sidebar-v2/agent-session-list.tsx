@@ -3,6 +3,7 @@ import { useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../../store.js";
 import type { SessionView } from "../../../../types.js";
+import { useIsAgentAnswerableSoon } from "../../../agents/api/queries.js";
 import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
 import {
   useFeatures,
@@ -49,6 +50,8 @@ export function AgentSessionList({
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const actWhenAwake = useActWhenAwake(agentId);
+  const answerableSoon = useIsAgentAnswerableSoon(agentId);
+  const asleep = list.loading && !answerableSoon;
   const openSession = useOpenSession();
   const pins = usePinnedSessions();
   const [renaming, setRenaming] = useState<SessionView | null>(null);
@@ -138,9 +141,18 @@ export function AgentSessionList({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || list.loading}
+      aria-busy={list.provisional || (list.loading && !asleep)}
     >
-      {list.loading && <SessionListSkeleton />}
+      {asleep ? (
+        <p
+          className="py-1.5 pl-2 text-xs text-muted-foreground"
+          data-testid="sidebar-agent-asleep"
+        >
+          Its sessions show when it wakes.
+        </p>
+      ) : (
+        list.loading && <SessionListSkeleton />
+      )}
       {!list.loading && rows.length === 0 && !hasNextPage && (
         <p className="py-1.5 pl-2 text-xs text-muted-foreground">
           {isFiltered(filters)

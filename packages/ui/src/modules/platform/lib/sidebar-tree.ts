@@ -82,3 +82,20 @@ export function sessionContext(
     .filter(Boolean)
     .join(" · ");
 }
+
+export function awaitsApproval(
+  approvals: readonly {
+    status: string;
+    agentId: string;
+    sessionId: string | null;
+  }[],
+  agentId: string,
+  sessionId: string,
+): boolean {
+  return approvals.some(
+    (a) =>
+      a.status === "pending" &&
+      a.agentId === agentId &&
+      a.sessionId === sessionId,
+  );
+}

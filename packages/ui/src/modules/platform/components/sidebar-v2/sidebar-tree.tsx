@@ -36,6 +36,7 @@ import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
+import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import {
@@ -55,6 +56,7 @@ import {
 } from "../../../sessions/lib/pinned-sessions.js";
 import {
   activityTone,
+  awaitsApproval,
   sessionContext,
   splitPinned,
   toggleExpanded,
@@ -367,12 +369,17 @@ function PinnedRow({
       s.selectedAgent === agentId &&
       s.sessionId === sessionId,
   );
+  const approvals = useApprovalsForOwner().data;
+  const permissionPending = useStore((s) =>
+    s.pendingPermissions.some((p) => p.sessionId === sessionId),
+  );
   const actWhenAwake = useActWhenAwake(agentId);
   const session = provisionalSessionView(item.session);
   const label = session.title || sessionId.slice(0, 12);
   const state = {
     working: item.working,
-    needsApproval: false,
+    needsApproval:
+      permissionPending || awaitsApproval(approvals ?? [], agentId, sessionId),
     unread: item.unread,
   };
   return (
