@@ -16,8 +16,7 @@ import type { StartupItemConfig } from "../domain/startup-items.js";
 const CTL = "/usr/local/lib/platform-startup/ctl";
 const OPENRC_BOOTED = "/run/openrc/softlevel";
 const CTL_TIMEOUT_MS = 30_000;
-// `platform-startup add` holds the list lock while it stops the old instance,
-// which takes up to 15 seconds, and starts the new one.
+// UNIT_BOUNDARY_DESCRIPTION: how long a write waits for the list lock. `platform-startup add` holds it while it stops the old instance, which takes up to 15 seconds, and starts the new one.
 const LOCK_WAIT_S = 60;
 
 const entrySchema = z.object({
