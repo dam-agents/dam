@@ -38,14 +38,15 @@ func TestADeleteThatCannotReachTheRunnerIsRetried(t *testing.T) {
 	r.runners = nil
 	r.runnerMu.Unlock()
 
-	require.Error(t, r.Delete(ctx, "my-agent", testOwner))
+	uid := deleteAgentCR(t, r, "my-agent")
+	require.Error(t, r.Delete(ctx, "my-agent", testOwner, uid))
 	assert.Empty(t, node.deleted)
 
 	r.runnerEndpoint = reachable
 	r.runnerMu.Lock()
 	r.runners = nil
 	r.runnerMu.Unlock()
-	require.NoError(t, r.Delete(ctx, "my-agent", testOwner))
+	require.NoError(t, r.Delete(ctx, "my-agent", testOwner, uid))
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
