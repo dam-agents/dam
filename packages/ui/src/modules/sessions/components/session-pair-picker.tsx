@@ -82,7 +82,8 @@ export function SessionPairPicker({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
-  const { data: remembered } = useRememberedPair(agentId);
+  const { data: remembered, isSuccess: rememberedLoaded } =
+    useRememberedPair(agentId);
   const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
   const setPair = useStore((s) => s.setNextSessionPair);
   const providers = useProviderConnections(agentId);
@@ -141,7 +142,16 @@ export function SessionPairPicker({
     useHarnessConfigured(agentId, harness),
   );
   const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
-  const choose = (next: SessionPair) => setPair(agentId, next);
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: on an agent with no default model, the first
+   * model its owner picks for a session becomes the default, so a new agent
+   * gets one from the person, never from the platform.
+   */
+  const choose = (next: SessionPair) => {
+    setPair(agentId, next);
+    if (routed && next.model !== null && rememberedLoaded && !remembered?.model)
+      rememberSessionPair(agentId, next);
+  };
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
   const catalogModels = useHarnessCatalogModels(
@@ -161,7 +171,8 @@ export function SessionPairPicker({
     void showConfirm(
       <p>
         Sessions running on <strong>{name}</strong> stop until it is attached
-        again. Schedules and channels that use it move to another provider.
+        again. Schedules and channels that use it don&rsquo;t run until you
+        choose another model.
       </p>,
       `Disconnect ${name} from this agent?`,
       { kind: "destructive", confirmLabel: "Disconnect" },
@@ -174,7 +185,7 @@ export function SessionPairPicker({
   const label = !pair
     ? undefined
     : routed
-      ? (modelIndicatorLabel(groups, pair.model) ?? "Default model")
+      ? (modelIndicatorLabel(groups, pair.model) ?? "Choose a model")
       : modelProviderLabel(
           pair.model,
           provider?.name,
@@ -406,6 +417,7 @@ export function SetAsDefault({
   defaults: Readonly<Record<string, string>>;
   remembered: SessionPair | null | undefined;
 }) {
+  if (pair.model === null) return null;
   const saved =
     !!remembered &&
     remembered.harness === pair.harness &&

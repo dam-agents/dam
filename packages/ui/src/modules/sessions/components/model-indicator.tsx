@@ -117,7 +117,7 @@ export function ModelIndicator({
           ?.choices ?? [])
       : (data?.availableModels ?? []);
   const modelName = routed
-    ? (modelIndicatorLabel(groups, model) ?? "Default model")
+    ? (modelIndicatorLabel(groups, model) ?? "Choose a model")
     : (models.find((m) => m.value === model)?.name ?? model);
   const unlisted =
     !routed &&

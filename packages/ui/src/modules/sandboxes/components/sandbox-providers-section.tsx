@@ -1,6 +1,7 @@
 import { Settings } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
 import type { SessionPair } from "api-server-api";
+import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -85,7 +86,7 @@ export function SandboxProvidersSection({
                     <p>
                       Sessions running on <strong>{p.name}</strong> stop until
                       it is attached again. Schedules and channels that use it
-                      move to another provider.
+                      don&rsquo;t run until you choose another model.
                     </p>,
                     `Disconnect ${p.name} from this agent?`,
                     { kind: "destructive", confirmLabel: "Disconnect" },
@@ -135,14 +136,19 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     carried.map((h) => h.name),
     views,
   ).filter((h) => fitting(h.name).length > 0);
-  const pair = nextPair(
+  const routed = status?.modelRouter ?? false;
+  const [draftHarness, setDraftHarness] = useState<string | null>(null);
+  const saved = nextPair(
     null,
     remembered ?? null,
     harnesses.map((h) => h.name),
     fitting,
     status?.defaultHarness,
   );
-  const routed = status?.modelRouter ?? false;
+  const pair =
+    routed && draftHarness !== null && draftHarness !== saved?.harness
+      ? { harness: draftHarness, provider: null, model: null }
+      : saved;
   const { data: models } = useProviderModels(
     routed ? null : agentId,
     pair?.harness ?? null,
@@ -195,10 +201,11 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
           title="Harness"
           choices={harnesses.map((h) => ({ id: h.name, name: h.displayName }))}
           value={pair.harness}
-          onSelect={(harness) =>
-            harness &&
-            save({ harness, provider: fitting(harness)[0]!, model: null })
-          }
+          onSelect={(harness) => {
+            if (!harness) return;
+            if (routed) setDraftHarness(harness);
+            else save({ harness, provider: fitting(harness)[0]!, model: null });
+          }}
         />
       </OptionField>
       {!routed && (
@@ -224,10 +231,13 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
               ? (findModel(groups, pair.model)?.model.name ?? pair.model)
               : pair.model
           }
-          clearable
-          onSelect={(model) =>
-            save({ ...pair, provider: providerOfModel(model), model })
-          }
+          clearable={!routed}
+          {...(routed && { placeholder: "Not set" })}
+          onSelect={(model) => {
+            if (routed && model === null) return;
+            save({ ...pair, provider: providerOfModel(model), model });
+            setDraftHarness(null);
+          }}
         />
       </OptionField>
     </section>

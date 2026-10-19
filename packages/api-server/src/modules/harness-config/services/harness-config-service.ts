@@ -158,6 +158,11 @@ export function createHarnessConfigService(deps: {
         });
       const granted = await deps.pairRepo.grantedProviders(agentId);
       const routed = routesByModelName(await deps.getCapabilities(agentId));
+      if (routed && pair.model === null)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "pick a model for the default; it cannot be left unset",
+        });
       if (routed) pair = await routedPair(agentId, pair, granted);
       const provider = granted.find((p) => p.id === pair.provider);
       if (

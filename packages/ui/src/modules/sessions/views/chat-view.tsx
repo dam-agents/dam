@@ -153,6 +153,7 @@ import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
+import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
@@ -320,6 +321,11 @@ export function ChatView() {
   const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
   const carried = (selectedAgent && harnessStatus?.harnesses) || [];
+  const sessionHarness =
+    currentSession?.harness ??
+    (currentSession && harnessStatus?.modelRouter
+      ? harnessStatus.defaultHarness
+      : undefined);
   const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
   const harnessesPending =
     !harnessStatus?.harnesses &&
@@ -339,6 +345,11 @@ export function ChatView() {
           routed: harnessStatus?.modelRouter ?? false,
         }
       : null;
+  const nextSessionPair = useNextSessionPair(
+    pickable?.routed ? pickable.agentId : null,
+    carried.map((h) => h.name),
+    pickable?.defaultHarness,
+  );
   const providerConnections = useProviderConnections(newSessionAgent);
   const noProviders =
     !!newSessionAgent &&
@@ -1078,7 +1089,12 @@ export function ChatView() {
                 ? "No LLM provider connected to this agent."
                 : formLocksComposer
                   ? COMPOSER_LOCKED_REASON
-                  : null
+                  : (nextSessionPair && nextSessionPair.model === null) ||
+                      (harnessStatus?.modelRouter &&
+                        sessionHarness &&
+                        !currentSession?.model)
+                    ? "Choose a model for this session first."
+                    : null
             }
           />
           {!hasPendingPermission && pickable && (
@@ -1111,11 +1127,11 @@ export function ChatView() {
               <ChatColumn>
                 {selectedAgent && pairOutdated ? (
                   <SessionPairOutdatedNotice agentId={selectedAgent} />
-                ) : selectedAgent && currentSession?.harness ? (
+                ) : selectedAgent && currentSession && sessionHarness ? (
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <ModelIndicator
                       agentId={selectedAgent}
-                      harness={currentSession.harness}
+                      harness={sessionHarness}
                       provider={currentSession.provider ?? null}
                       model={currentSession.model ?? null}
                       settings={currentSession.settings}
