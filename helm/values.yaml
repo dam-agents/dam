@@ -506,11 +506,18 @@ virtualization:
     dnsPolicy: Default
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a
-    # throttled unpack is a slow first boot.
+    # throttled unpack is a slow first boot. The ephemeral-storage request is
+    # for eviction, not scheduling: the tree goes to the host directory rather
+    # than to the pod, so the pod uses about a megabyte, and a node short of
+    # disk evicts pods by how far above their request they are — at any use a
+    # pod with no request is over it. No ephemeral-storage limit beside it: a
+    # limit caps what the pod already never uses, and a pod over its limit is
+    # evicted first, the opposite of what this asks for.
     resources:
       requests:
         cpu: 50m
         memory: 128Mi
+        ephemeral-storage: 1Gi
       limits:
         memory: 1Gi
 

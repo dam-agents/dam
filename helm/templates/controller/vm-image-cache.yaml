@@ -66,6 +66,15 @@ spec:
         istio.io/dataplane-mode: none
     spec:
       enableServiceLinks: false
+      {{- /*
+      A node short of disk evicts the pods over their ephemeral-storage
+      requests first and ranks by priority among the rest, so the class here
+      and the request in `values.yaml` together put this pod last. The service
+      is in the boot path: losing it costs every machine on the node that
+      boots an image it does not already hold, and the DaemonSet controller
+      replaces a failed pod from a backoff that reaches fifteen minutes.
+      */}}
+      priorityClassName: system-node-critical
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}
       automountServiceAccountToken: false
