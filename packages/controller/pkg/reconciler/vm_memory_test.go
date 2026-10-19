@@ -312,7 +312,7 @@ func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T)
 	assert.True(t, reclaimed("idle-a") && reclaimed("idle-b"), "the signal did not reclaim what it could")
 }
 
-// TEST_SCENARIO: under the runner's pressure signal the need comes from the kernel's working set, not from the usage read, so a read that fails must not end the pass: a fleet in trouble is still reclaimed, counting a machine never measured at its size and a measured one at its last use, and the pass costs no status read per machine instead.
+// TEST_SCENARIO: under the runner's pressure signal the need comes from the kernel's working set, not from the usage read, so a read that fails must not end the pass: a fleet in trouble is still reclaimed, counting a machine never measured at its warm-up floor and a measured one at its last use, and the pass costs no status read per machine instead.
 func TestAPressurePassReclaimsWhenTheUsageReadFails(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
