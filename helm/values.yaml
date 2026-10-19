@@ -75,8 +75,6 @@ links:
 # for every user, whatever they stored. A feature `features` does not name
 # takes `featureDefault`, so an install that sets it `off` also keeps features
 # added by later releases off until it names them.
-# `vm-sandboxes` also needs `virtualization.enabled`; pinned `on`, it makes
-# every new agent a microVM, starter kits and API creates included.
 featureDefault: experimental
 features: {}
 

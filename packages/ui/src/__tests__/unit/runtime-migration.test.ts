@@ -1,11 +1,10 @@
-// TEST_OVERVIEW: the agent row's runtime badge and its Migrate action. With the
-// TEST_OVERVIEW: vm-sandboxes experiment off, only a vm agent is badged, as the
-// TEST_OVERVIEW: new runtime. With it on, no settled agent is badged and a
-// TEST_OVERVIEW: container agent is offered the migration, and a migrating agent shows
-// TEST_OVERVIEW: the migration in progress with its phase and the controller's
-// TEST_OVERVIEW: reason, a failed one distinctly, and the way back until the
-// TEST_OVERVIEW: agent has started on the new runtime. Each row's Abort and
-// TEST_OVERVIEW: Retry stay busy exactly as long as that row's own request.
+// TEST_OVERVIEW: the agent row's runtime badge and its Migrate action. No settled
+// TEST_OVERVIEW: agent is badged, and a container agent on an install that can
+// TEST_OVERVIEW: virtualize is offered the migration. A migrating agent shows the
+// TEST_OVERVIEW: migration in progress with its phase and the controller's reason, a
+// TEST_OVERVIEW: failed one distinctly, and the way back until the agent has started on
+// TEST_OVERVIEW: the new runtime. Each row's Abort and Retry stay busy exactly as long
+// TEST_OVERVIEW: as that row's own request.
 import { describe, expect, test } from "vitest";
 
 import {
@@ -33,27 +32,16 @@ function agent(extra: Partial<AgentView>): AgentView {
 }
 
 describe("runtimeBadge", () => {
-  test("experiment off: badges a vm agent as the new runtime", () => {
-    expect(runtimeBadge(agent({ vm: true }), OFF)?.kind).toBe("new");
-    expect(runtimeBadge(agent({ vm: true }), OFF)?.label).toBe("New runtime");
-  });
-
-  test("experiment off: leaves a container agent unbadged", () => {
-    expect(runtimeBadge(agent({}), OFF)).toBeNull();
-  });
-
-  // TEST_SCENARIO: with the experiment on the new runtime is the default, and a container agent already shows its Migrate action, so a badge saying it is old would only repeat it.
-  test("experiment on: leaves a container agent unbadged", () => {
+  // TEST_SCENARIO: the new runtime is the default and a container agent already shows its Migrate action, so a settled agent carries no badge either way.
+  test("leaves a settled agent unbadged", () => {
     expect(runtimeBadge(agent({}), ON)).toBeNull();
     expect(runtimeBadge(agent({ runtimeMigratable: false }), ON)).toBeNull();
-  });
-
-  test("experiment on: leaves a vm agent unbadged", () => {
     expect(runtimeBadge(agent({ vm: true }), ON)).toBeNull();
+    expect(runtimeBadge(agent({ vm: true }), OFF)).toBeNull();
   });
 
-  // TEST_SCENARIO: before the flag and the install answer arrive the page cannot know which badge is right; showing one and then swapping it reads as a change to the agent.
-  test("shows nothing until the experiment is answered", () => {
+  // TEST_SCENARIO: before the install answer arrives the page cannot know whether a migration is running; showing one and then swapping it reads as a change to the agent.
+  test("shows nothing until the install is answered", () => {
     expect(runtimeBadge(agent({ vm: true }), UNANSWERED)).toBeNull();
     expect(runtimeBadge(agent({}), UNANSWERED)).toBeNull();
   });
@@ -72,11 +60,11 @@ function migration(
 }
 
 describe("runtimeBadge during a migration", () => {
-  // TEST_SCENARIO: a migration the user started is badged with its phase whatever the experiment says, and a failed one with a badge of its own, so a stuck move is never mistaken for one still running.
+  // TEST_SCENARIO: a migration under way is badged with its phase, and a failed one with a badge of its own, so a stuck move is never mistaken for one still running.
   test("shows the phase, and a failure distinctly", () => {
     const copying = runtimeBadge(
       agent({ runtimeMigration: migration("copying") }),
-      OFF,
+      ON,
     );
     expect(copying).toMatchObject({
       kind: "migrating",
@@ -97,11 +85,11 @@ describe("runtimeBadge during a migration", () => {
 });
 
 describe("migrateAction", () => {
-  test("offers the migration to a container agent when the experiment is on", () => {
+  test("offers the migration to a container agent on an install that can virtualize", () => {
     expect(migrateAction(agent({}), ON, false)).toEqual({ kind: "offer" });
   });
 
-  test("offers nothing when the experiment is off or unanswered", () => {
+  test("offers nothing on an install that cannot virtualize or has not said", () => {
     expect(migrateAction(agent({}), OFF, false)).toBeNull();
     expect(migrateAction(agent({}), UNANSWERED, false)).toBeNull();
   });
@@ -171,8 +159,8 @@ describe("migrateAction", () => {
     });
   });
 
-  // TEST_SCENARIO: a user who turned the experiment off while a move was under way must still be able to see it and undo it.
-  test("keeps showing a migration with the experiment off", () => {
+  // TEST_SCENARIO: an agent already moving shows its move and its way back whatever the install read now says, since the user started it and has something to finish or undo.
+  test("keeps showing a migration whatever the install read says", () => {
     expect(
       migrateAction(
         agent({ runtimeMigration: migration("copying") }),
