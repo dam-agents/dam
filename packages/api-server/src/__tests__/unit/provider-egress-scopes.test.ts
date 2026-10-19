@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: the egress gate lets a model provider Connection's own hosts pass over the Agent's deny rules. Only provider Connections count, and a scope covers a request only on its own host, port and path.
+// TEST_OVERVIEW: the egress gate lets a model provider Connection's hosts pass over the Agent's deny rules: its own egress hosts, and api.anthropic.com when it sets Claude Code's env. Only provider Connections count, and a scope covers a request only on its own host, port and path.
 import { describe, expect, it } from "vitest";
 import type { Connection } from "api-server-api";
 import {
@@ -35,7 +35,40 @@ describe("providerEgressScopes", () => {
         ]),
         connection("github", [inject("api.github.com")]),
       ]),
-    ).toEqual([{ host: "api.anthropic.com", pathPattern: "*" }]);
+    ).toEqual([
+      { host: "api.anthropic.com", pathPattern: "*" },
+      { host: "api.anthropic.com", pathPattern: "*" },
+    ]);
+  });
+
+  // TEST_SCENARIO: the prod report started on the LiteLLM Connection, whose own host is its proxy; Claude Code still called api.anthropic.com for settings and bootstrap, so a deny on it must not hold while a Connection points Claude Code elsewhere.
+  it("adds api.anthropic.com for a provider that sets Claude Code's env", () => {
+    expect(
+      providerEgressScopes([
+        connection("ibm-litellm", [
+          {
+            kind: "env",
+            name: "ANTHROPIC_BASE_URL",
+            placeholder: "https://ete-litellm.example",
+          },
+          inject("ete-litellm.example"),
+        ]),
+      ]),
+    ).toEqual([
+      { host: "ete-litellm.example", pathPattern: "*" },
+      { host: "api.anthropic.com", pathPattern: "*" },
+    ]);
+  });
+
+  it("adds no Anthropic host for a provider that does not set Claude Code's env", () => {
+    expect(
+      providerEgressScopes([
+        connection("openai", [
+          { kind: "env", name: "OPENAI_API_KEY", placeholder: "x" },
+          inject("api.openai.com", "/v1/*"),
+        ]),
+      ]),
+    ).toEqual([{ host: "api.openai.com", pathPattern: "/v1/*" }]);
   });
 });
 

@@ -248,6 +248,7 @@ Host names compare in any letter case, as DNS does: the agent writes the Host he
 A request a deny rule refuses on a TLS-terminated chain gets a 403 whose body names the rule and says the egress gateway refused it, not the upstream, so a harness shows the cause instead of a bare 403; the SNI-only catch-all can only close the connection.
 
 **Model provider hosts.** A model provider Connection granted to the Agent passes the gate on its own hosts, ports and paths even where a rule denies them, logged with basis *provider*.
+A provider Connection that sets Claude Code's env also passes `api.anthropic.com`, which Claude Code calls for its settings, policy limits and bootstrap whatever host serves its model calls.
 A model call refused at the gate ends the session, and a deny written while another provider was attached — for the host a harness also calls for its own settings — would otherwise break the provider attached later.
 A rule that allows the request decides first, so the override is read only when no rule allows it.
 
@@ -282,6 +283,7 @@ Both signals are read across api-server replicas (the replica relaying a turn is
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
 **Egress Aliasing.** An Invocation target has no egress identity of its own: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+The provider-host check alone reads the calling agent's own grants, because the target's gateway injects the target's own provider credentials: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
 Approval prompts raised by target traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
 The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own (attenuated) connection grants, so the target gains the driver's network *reach*, never its credential set.
