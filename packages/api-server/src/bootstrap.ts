@@ -208,6 +208,7 @@ import {
   createContentApp,
   createShareAuthRoutes,
   createShareViewerApp,
+  shareSessionCookie,
   type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
@@ -509,6 +510,7 @@ export async function bootstrap() {
     },
     shareBaseUrl: config.shareBaseUrl,
   });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
     share: {
       baseUrl: config.shareBaseUrl,
@@ -516,11 +518,12 @@ export async function bootstrap() {
         auth: createShareAuthRoutes({
           auth: shareAuth,
           brandName: config.brand.name,
-          secureCookie: new URL(config.shareBaseUrl).protocol === "https:",
+          sessionCookie: shareCookie,
         }),
         viewer: createShareViewerApp({
           viewer: shareViewer,
           auth: shareAuth,
+          sessionCookie: shareCookie,
           renderTokens: shareRenderTokens,
           brandName: config.brand.name,
           uiBaseUrl: config.uiBaseUrl,
