@@ -179,7 +179,7 @@ func nextStarted(t *testing.T, started chan string, within time.Duration) string
 	}
 }
 
-// TEST_SCENARIO: a VM runner that hangs but keeps its listener holds its owner's reconcile for the runner client's whole timeout, and the health poll brings every agent of that owner back each minute. A wake for another owner on another worker must start at once, not after the hung reconcile ends; a second agent of the hung owner must still wait for the first, because one owner's agents are reconciled one at a time.
+// TEST_SCENARIO: a VM runner that hangs but keeps its listener holds its owner's reconcile for the runner client's whole timeout, and the drift sweep brings every agent of that owner back, so the owner is delayed rather than stranded. A wake for another owner on another worker must start at once, not after the hung reconcile ends; a second agent of the hung owner must still wait for the first, because one owner's agents are reconciled one at a time.
 func TestAHungRunnerDelaysOnlyItsOwnersWorker(t *testing.T) {
 	probe := newShardedAgentQueue(ownedAgents(t, nil))
 	other := ""

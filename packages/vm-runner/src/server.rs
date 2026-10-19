@@ -1483,6 +1483,9 @@ impl Server {
                     disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
                     cpu_milli,
                     id,
+                    cpus: status.cpus,
+                    memory_mib: status.memory_mib,
+                    warming: status.warming,
                     state: status.state,
                     used_mib: status.used_mib,
                     disk_gib: status.disk_gib,
@@ -1516,6 +1519,7 @@ impl Server {
             },
             cpu,
             machines,
+            machine_figures: true,
         })
     }
 
@@ -1919,7 +1923,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting up to a minute for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing, and either leaves a figure no probe could refresh, which admission counts at least at the warm-up floor. A machine known not to be running holds none, so no figure outlives its VMM.
+    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing, and either leaves a figure no probe could refresh, which admission counts at least at the warm-up floor. A machine known not to be running holds none, so no figure outlives its VMM.
     fn probe(self: &Arc<Self>, id: &str) {
         let Some((action, looked)) = locked(&self.machines)
             .entries
