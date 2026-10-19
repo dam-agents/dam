@@ -18,10 +18,14 @@
     {
       "id": "agent-a",
       "state": "running",
+      "cpus": 2,
+      "memoryMiB": 2048,
       "usedMiB": 640,
+      "warming": true,
       "diskGiB": 100,
       "diskUsedBytes": 8589934592,
       "cpuMilli": 350
     }
-  ]
+  ],
+  "machineFigures": true
 }

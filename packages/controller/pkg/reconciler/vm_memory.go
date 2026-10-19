@@ -175,12 +175,12 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 // UNIT_BOUNDARY_DESCRIPTION: a running machine's use is learned only when its
 // UNIT_BOUNDARY_DESCRIPTION: agent reconciles, which a settled agent does every
 // UNIT_BOUNDARY_DESCRIPTION: few minutes, while guests grow within seconds. So
-// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner about their
-// UNIT_BOUNDARY_DESCRIPTION: running machines, hibernates idle agents of an
-// UNIT_BOUNDARY_DESCRIPTION: owner under pressure, and returns one agent of each
-// UNIT_BOUNDARY_DESCRIPTION: owner whose runner pod's request differs from what
-// UNIT_BOUNDARY_DESCRIPTION: their counts call for, for the caller to reconcile
-// UNIT_BOUNDARY_DESCRIPTION: so the request follows them.
+// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner, in one read,
+// UNIT_BOUNDARY_DESCRIPTION: about their running machines, hibernates idle
+// UNIT_BOUNDARY_DESCRIPTION: agents of an owner under pressure, and returns one
+// UNIT_BOUNDARY_DESCRIPTION: agent of each owner whose runner pod's request
+// UNIT_BOUNDARY_DESCRIPTION: differs from what their counts call for, for the
+// UNIT_BOUNDARY_DESCRIPTION: caller to reconcile so the request follows them.
 func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	if r.agentCache == nil || !r.config.VM.Enabled {
 		return nil
@@ -234,33 +234,46 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	}
 	r.refreshVMPool(ctx, owner)
 	var first *apiv1.Agent
+	var up []string
 	lock := r.ownerLock(owner)
 	for _, a := range agents {
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil || !running {
 			continue
 		}
-		// UNIT_BOUNDARY_DESCRIPTION: the status is read and its sample kept
-		// UNIT_BOUNDARY_DESCRIPTION: under the owner's lock, the one a reconcile
-		// UNIT_BOUNDARY_DESCRIPTION: records the runner's answer under, so the two
-		// UNIT_BOUNDARY_DESCRIPTION: cannot cross: a sample read before a refusal
-		// UNIT_BOUNDARY_DESCRIPTION: is kept before it, and the answer that follows
-		// UNIT_BOUNDARY_DESCRIPTION: drops it. Kept outside, the older reading lands
-		// UNIT_BOUNDARY_DESCRIPTION: after the refusal and counts a machine the
-		// UNIT_BOUNDARY_DESCRIPTION: runner holds nothing of.
-		lock.Lock()
-		status, err := runner.Status(ctx, a.Name)
-		if err == nil {
-			r.noteMachineUse(a.Name, status)
-			if first == nil && !r.refusedWithoutMachine(a) {
-				first = a
-			}
+		up = append(up, a.Name)
+		if first == nil && !r.refusedWithoutMachine(a) {
+			first = a
 		}
-		lock.Unlock()
 	}
 	if first == nil {
 		return "", false
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it. A runner that does not mark its machines with the memory figures is older than them — a runner release the controller has not rolled yet — and is asked about each machine in turn, as it was before, since its zeroes would count a warming machine at its measured use and forget the size a machine still runs at. A failed read leaves the last measurements in place, as a failed status read of one machine did, and does not end the pass: a measured machine counts at its last use and one never measured at its warm-up floor, or its size when that is smaller, as it does on any pass, and under the runner's pressure signal the need comes from the kernel's working set, which needs no measurement at all. Every sample is kept under the owner's lock, the one a reconcile records the runner's answer under, so the two cannot cross: a sample read before a refusal is kept before it, and the answer that follows drops it.
+	lock.Lock()
+	usage, err := runner.Usage(ctx)
+	switch {
+	case err != nil:
+		slog.WarnContext(ctx, "vm memory: reading the runner's usage", "owner", owner, "error", err)
+	case usage.MachineFigures:
+		held := make(map[string]vmrunner.MachineUsage, len(usage.Machines))
+		for _, m := range usage.Machines {
+			held[m.ID] = m
+		}
+		for _, name := range up {
+			m := held[name]
+			r.noteMachineUse(name, vmrunner.MachineStatus{State: m.State, CPUs: m.CPUs, MemoryMiB: m.MemoryMiB, UsedMiB: m.UsedMiB, Warming: m.Warming})
+		}
+	default:
+		for _, name := range up {
+			status, err := runner.Status(ctx, name)
+			if err != nil {
+				continue
+			}
+			r.noteMachineUse(name, status)
+		}
+	}
+	lock.Unlock()
 	demand, err := r.heldRunnerDemand(ctx, owner, first, true)
 	if err != nil {
 		return "", false
