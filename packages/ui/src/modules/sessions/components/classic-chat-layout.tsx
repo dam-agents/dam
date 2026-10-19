@@ -8,6 +8,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui/button";
+import { useIsDesktop } from "@/hooks/use-is-desktop";
 import { cn } from "@/lib/utils";
 
 import { ResizeHandle } from "../../../components/resize-handle.js";
@@ -90,6 +91,7 @@ export function ClassicChatLayout({
   children: ReactNode;
 }) {
   const mobileScreen = useStore((s) => s.mobileScreen);
+  const desktop = useIsDesktop();
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const filesSectionOpen = useStore((s) => s.filesSectionOpen);
   const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
@@ -178,7 +180,7 @@ export function ClassicChatLayout({
               {agentName}
             </span>
           </div>
-          {notices}
+          {desktop && notices}
           <FilesPanel
             open={filesSectionOpen}
             onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
@@ -226,6 +228,7 @@ export function ClassicChatLayout({
             panelFills && "md:!hidden",
           )}
         >
+          {!desktop && notices}
           {children}
         </div>
 

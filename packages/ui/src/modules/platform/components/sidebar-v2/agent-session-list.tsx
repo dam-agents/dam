@@ -78,7 +78,12 @@ export function AgentSessionList({
       .map((session) => ({ session, state: list.rowState(session) }))
       .filter(({ session, state }) =>
         matchesActivityFilters(
-          { session, working: state.working, unread: state.unread },
+          {
+            session,
+            working: state.working,
+            unread: state.unread,
+            needsApproval: state.needsApproval,
+          },
           filters,
         ),
       ),

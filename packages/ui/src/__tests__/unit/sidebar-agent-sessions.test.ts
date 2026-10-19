@@ -239,6 +239,7 @@ describe("the sidebar session filter", () => {
       session: { type: SessionType.ChannelSlack, mode: SessionMode.Chat },
       working: true,
       unread: false,
+      needsApproval: true,
     };
     const base = defaultActivityFilters();
     expect(matchesActivityFilters(slack, base)).toBe(true);
@@ -254,6 +255,15 @@ describe("the sidebar session filter", () => {
     expect(
       matchesActivityFilters(slack, { ...base, state: "in-progress" }),
     ).toBe(true);
+    expect(
+      matchesActivityFilters(slack, { ...base, state: "needs-attention" }),
+    ).toBe(true);
+    expect(
+      matchesActivityFilters(
+        { ...slack, needsApproval: false },
+        { ...base, state: "needs-attention" },
+      ),
+    ).toBe(false);
   });
 });
 

@@ -46,7 +46,7 @@ export interface FilterableSession {
   session: Parameters<typeof channelTypeOfSession>[0];
   working: boolean;
   unread: boolean;
-  needsApproval?: boolean;
+  needsApproval: boolean;
 }
 
 export function matchesActivityFilters(
@@ -57,7 +57,7 @@ export function matchesActivityFilters(
     return false;
   switch (filters.state) {
     case "needs-attention":
-      return item.needsApproval === true;
+      return item.needsApproval;
     case "in-progress":
       return item.working;
     case "unread":
