@@ -131,14 +131,21 @@ jq -e -s '
 # A selector the API server takes renders as written, so the grammar check
 # costs no real install its registry: a label under a DNS prefix, a namespace
 # and ports all reach the policy untouched.
-helm template platform . "${COMMON[@]}" "${VM[@]}" \
+policy=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set-json 'controller.gatewayEgress.clusterDns.podLabels={"dns.operator.openshift.io/daemonset-dns":"default"}' \
   --set controller.gatewayEgress.clusterDns.namespace=openshift-dns \
   --set controller.gatewayEgress.clusterDns.ports[0]=5353 \
   --set-json 'virtualization.imageCache.peers=[{"namespace":"openshift-image-registry","podLabels":{"registry":"image-registry"},"ports":[5000]}]' \
-  --show-only templates/controller/vm-image-cache.yaml \
-  | grep -q 'dns.operator.openshift.io/daemonset-dns: default' \
-  || { echo "a render with a prefixed label and a namespaced registry did not reach the cache policy" >&2; exit 1; }
+  --show-only templates/controller/vm-image-cache.yaml | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "NetworkPolicy"))[0].spec) as $np
+  | any($np.egress[]; .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "openshift-dns"
+      and .to[0].podSelector.matchLabels["dns.operator.openshift.io/daemonset-dns"] == "default"
+      and any(.ports[]; .port == 5353))
+  and any($np.egress[]; .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "openshift-image-registry"
+      and .to[0].podSelector.matchLabels.registry == "image-registry"
+      and any(.ports[]; .port == 5000))' <<<"$policy" >/dev/null ||
+  { echo "a render with a prefixed label and a namespaced registry did not reach the cache policy: $policy" >&2; exit 1; }
 # A cache that resolves through the node instead is a supported install: it
 # names no cluster DNS pods, and its egress policy admits the resolver by range.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
@@ -191,13 +198,14 @@ jq -e -s '
   { echo "the upgrade window does not keep a cache service on the directory an unrolled runner still dials: $window" >&2; exit 1; }
 # An unquoted `seccomp: off` in a values file arrives as a boolean, and must
 # still mean no filter rather than the default.
-helm template platform . "${COMMON[@]}" "${VM[@]}" \
-  --set virtualization.runner.seccomp=false | grep '\\"seccomp\\":\\"off\\"' >/dev/null ||
+seccomp=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --set virtualization.runner.seccomp=false)
+grep '\\"seccomp\\":\\"off\\"' <<<"$seccomp" >/dev/null ||
   { echo "a render with seccomp=false did not give the runners seccomp off" >&2; exit 1; }
 # The Mac's host runner runs outside the cluster on images the install stages
 # for it, so it needs no node cache, and none is rendered for it.
-! helm template platform . "${COMMON[@]}" "${VM[@]}" --set virtualization.imageCache.hostPath= \
-  --set virtualization.runner.hostAddress=192.168.5.2 | grep -q 'component: vm-image-cache' ||
+host=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --set virtualization.imageCache.hostPath= \
+  --set virtualization.runner.hostAddress=192.168.5.2)
+! grep -q 'component: vm-image-cache' <<<"$host" ||
   { echo "a render for the host runner rendered the node image cache" >&2; exit 1; }
 # Runner pods take a new runner image only from the node's release directory,
 # so an install that clears it fails the render.
@@ -266,7 +274,8 @@ grep -q '^kind: PrometheusRule$' <<<"$rendered" && grep -q '^kind: ServiceMonito
   || { echo "monitoring.enabled with prometheus-operator's API rendered no PrometheusRule or ServiceMonitor" >&2; exit 1; }
 # A second -skip would replace the first, so the operator kinds join its list.
 "${KUBECONFORM[@]:0:3}" -skip "${KUBECONFORM[4]},ServiceMonitor,PrometheusRule" "$@" <<<"$rendered"
-! helm template platform . "${COMMON[@]}" "${MONITORING[@]}" | grep -Eq '^kind: (PrometheusRule|ServiceMonitor)$' \
+unmonitored=$(helm template platform . "${COMMON[@]}" "${MONITORING[@]}")
+! grep -Eq '^kind: (PrometheusRule|ServiceMonitor)$' <<<"$unmonitored" \
   || { echo "monitoring.enabled without prometheus-operator's API rendered its kinds" >&2; exit 1; }
 # The Postgres health checks take their timing from values: by default liveness
 # waits 10s per check and kills only after 6 misses, and an override reaches the
