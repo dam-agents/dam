@@ -310,7 +310,7 @@ Fail at render instead, naming what took each one's place.
 {{- fail "virtualization.runner.ingressCidrs is no longer read. The runner's NetworkPolicy is the only gate on its published ports, admitting the api-server and the controller. Remove the key." -}}
 {{- end -}}
 {{- if hasKey $runner "releaseSameRuntimeOnly" -}}
-{{- fail "virtualization.runner.releaseSameRuntimeOnly is no longer read: a runner release built against another VM runtime is always handed off in place, and a machine whose runtime errors, or whose guest goes quiet, is rebooted onto the runner's own runtime. To leave the new runtime, configure the previous runner image again. Remove the key." -}}
+{{- fail "virtualization.runner.releaseSameRuntimeOnly is no longer read: a runner release built against another VM runtime is handed off in place (unless virtualization.runner.rollout.rebootRequiredRelease names it, which rolls the pods instead), and a machine whose runtime errors, or whose guest goes quiet, is rebooted onto the runner's own runtime. To leave the new runtime, configure the previous runner image again. Remove the key." -}}
 {{- end -}}
 {{- if or (hasKey $runner "dnsCidrs") (hasKey $runner "clusterDns") -}}
 {{- fail "virtualization.runner.dnsCidrs and virtualization.runner.clusterDns are no longer read. A runner never resolves a name: the node image cache service (virtualization.imageCache) fetches every image, so the runner's NetworkPolicy admits no resolver. Remove the keys." -}}

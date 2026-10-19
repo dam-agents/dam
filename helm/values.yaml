@@ -385,8 +385,9 @@ virtualization:
     # reboot the machines. A release built against another VM runtime (a new
     # smolvm, libkrun or crane) brings its runtime along: machines already
     # running keep the runtime they booted, and machines started after the
-    # hand-off boot the new one. Only a release that cannot load in the pod
-    # (a newer base image's libc) still rolls the pods, through `rollout`.
+    # hand-off boot the new one. A release the pod's loader cannot load (a
+    # newer base image's libc) rolls the pods through `rollout` too, as does
+    # the one `rollout.rebootRequiredRelease` names.
     # The stager is the only writer; runners mount it read-only. Each
     # install stages into its own subdirectory, named after
     # `agentNamespace`, because every stager keeps only the newest few
