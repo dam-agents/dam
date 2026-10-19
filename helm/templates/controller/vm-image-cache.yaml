@@ -1,12 +1,13 @@
 {{- $v := .Values.virtualization }}
 {{- if and $v.enabled (not $v.runner.hostAddress) }}
 {{- /*
-The per-node image cache service: the only writer of the node directory that
-`imageCache.hostPath` names. Every runner on the node mounts that directory
-read-only and asks this service, over a Unix socket in the directory itself,
-for the tree of the image a machine boots. The service resolves the tag,
-fetches and unpacks the image with the pull credentials the runner forwards,
-and evicts inside `imageCache.budget` — sparing every tree a runner holds.
+The per-node image cache service: the only writer of the node directory
+`platform.vmImageCache.dir` derives from `imageCache.hostPath`. Every runner of
+the install on the node mounts that directory read-only and asks this service, over a Unix
+socket in the directory itself, for the tree of the image a machine boots. The
+service resolves the tag, fetches and unpacks the image with the pull
+credentials the runner forwards, and evicts inside `imageCache.budget` —
+sparing every tree a runner holds.
 Because no runner can write the directory, a guest that escapes into its
 runner cannot rewrite a tree another owner's machine boots.
 
@@ -127,38 +128,7 @@ spec:
             - --pull-secret-dir=/etc/vm-image-cache/pull-secrets
             {{- end }}
           securityContext:
-            {{- /*
-            What unpacking an image faithfully costs, and nothing else: every
-            capability the runtime would grant is dropped first. A rootfs
-            carries the owners and modes its files were built with, so tar
-            chowns each entry (CHOWN), sets a mode on a file it has just given
-            away (FOWNER), keeps a setgid bit on a file whose group is not its
-            own (FSETID), and keeps writing into directories that are
-            read-only or no longer its own (DAC_OVERRIDE). There is no MKNOD:
-            the unpack skips the image's /dev, and fails on a device node
-            anywhere else. The runners this service serves only read, so they
-            hold none of CHOWN, FOWNER and FSETID.
-            */}}
-            runAsUser: 0
-            capabilities:
-              drop: ["ALL"]
-              add: ["CHOWN", "FOWNER", "FSETID", "DAC_OVERRIDE"]
-            appArmorProfile:
-              type: Unconfined
-            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
-            {{- /*
-            The label above is set from inside the container, and container_t
-            may not relabel a host directory any more than write it, so on
-            OpenShift the service runs as spc_t: the type a privileged
-            container gets, unconfined by SELinux, without this becoming a
-            privileged container. `runner.scc` has to leave the type to the
-            pod (seLinuxContext RunAsAny); under MustRunAs admission refuses
-            this pod. The runners keep container_t.
-            */}}
-            seLinuxOptions:
-              type: spc_t
-              level: s0
-            {{- end }}
+            {{- include "platform.vmImageCache.securityContext" . | nindent 12 }}
           resources:
             {{- toYaml $cache.resources | nindent 12 }}
           volumeMounts:
@@ -169,11 +139,52 @@ spec:
               mountPath: /etc/vm-image-cache/pull-secrets
               readOnly: true
             {{- end }}
+        {{- if $cache.legacyPath }}
+        {{- /*
+        The window an upgrade that moves the cache directory needs. The rollout
+        holds back a runner whose owner has a busy agent — up to
+        `runner.rollout.idleWait`, a day by default — and that runner goes on
+        mounting the directory the release before this one gave it, and dials
+        the socket inside it. This service answers on that socket from that
+        directory, so such a runner keeps booting the trees it holds and
+        fetching the ones it does not, until the roll reaches it and
+        `imageCache.legacyPath` comes out.
+        No `--images`: this one pins nothing, so the window costs a second
+        service over the old trees rather than a second copy of the harness
+        images. It needs none of the pull Secrets either, which preload alone
+        reads.
+        */}}
+        - name: vm-image-cache-legacy
+          image: {{ include "platform.vmRunner.image" $ | quote }}
+          imagePullPolicy: {{ $v.runner.image.pullPolicy | default "IfNotPresent" }}
+          command: ["vm-image-cache"]
+          args:
+            - --image-dir=/var/lib/platform/images-legacy
+            - --socket=/var/lib/platform/images-legacy/.cache.sock
+            - --image-budget={{ $cache.budget }}
+            - --interval={{ $cache.preloadInterval }}
+            {{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+            - --selinux-label=system_u:object_r:container_file_t:s0
+            {{- end }}
+          securityContext:
+            {{- include "platform.vmImageCache.securityContext" . | nindent 12 }}
+          resources:
+            {{- toYaml $cache.resources | nindent 12 }}
+          volumeMounts:
+            - name: image-cache-legacy
+              mountPath: /var/lib/platform/images-legacy
+        {{- end }}
       volumes:
         - name: image-cache
           hostPath:
-            path: {{ $cache.hostPath }}
+            path: {{ include "platform.vmImageCache.dir" . }}
             type: DirectoryOrCreate
+        {{- if $cache.legacyPath }}
+        - name: image-cache-legacy
+          hostPath:
+            path: {{ $cache.legacyPath }}
+            type: DirectoryOrCreate
+        {{- end }}
         {{- if $pullSecrets }}
         {{- /*
         One directory per Secret, numbered in list order so the service tries
@@ -197,6 +208,96 @@ spec:
                       path: {{ printf "%03d" $i }}/.dockercfg
               {{- end }}
         {{- end }}
+---
+{{- /*
+The cache service's own egress gate. It fetches every image a machine boots,
+so it reaches a registry, and nothing else: the public internet minus the
+ranges this cluster owns — private, loopback, link-local, CGNAT and
+this-network, which hold the platform's own datastores, the node and the
+cloud metadata endpoints — whatever registry the pull credentials a runner
+forwards name. Unlike a runner it resolves names, so it also reaches the
+cluster DNS pods on the ports they listen on.
+
+A registry inside the cluster is reached by pod, not by range: the policy is
+applied after a Service's address is translated to a pod, and the pod's
+address lies in a range the rule above closes, so an install whose registry
+is a Service here names its pods and ports in `imageCache.peers`. A mirror
+outside the cluster on a private address is named in `imageCache.egressCidrs`.
+
+Nothing dials this pod: the runners reach it over the Unix socket in the
+directory they share with it, which no policy sees, so there is no ingress
+rule here. The namespace's deny-all is scoped to `role: agent`, which this
+pod is not, so this policy alone gates it.
+*/}}
+{{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-image-cache
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vm-image-cache
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+        - ipBlock:
+            cidr: "::/0"
+            except:
+              - "::1/128"
+              - fc00::/7
+              - fe80::/10
+    {{- if and $dns.namespace $dns.podLabels }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $dns.podLabels | nindent 14 }}
+      ports:
+        {{- range ($dns.ports | default (list 53)) }}
+        - protocol: UDP
+          port: {{ . }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- range $cache.peers }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml .podLabels | nindent 14 }}
+      ports:
+        {{- range .ports }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- range $cache.egressCidrs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . }}
+    {{- end }}
 {{- with $v.runner.scc }}
 ---
 {{- /*
