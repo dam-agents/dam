@@ -39,7 +39,7 @@ function OutcomeLine({ schedule }: { schedule: Schedule }) {
   const line = runOutcomeLine(schedule);
   if (!line) return null;
   return (
-    <p className="px-5 pb-4 text-sm text-muted-foreground md:px-6">
+    <p className="px-5 pt-4 pb-4 text-sm text-muted-foreground md:px-6">
       {line.when ? `Last run ${line.when}` : ""}
       <span className={line.className}>
         {line.when ? " — " : ""}
@@ -89,18 +89,16 @@ export function ScheduleResultsModal({
         onClose={onClose}
       />
       <DialogBody flush className="min-h-[50vh]">
+        <OutcomeLine schedule={schedule} />
         {stopped && (
-          <>
-            <div className="px-5 py-4 md:px-6">
-              <AgentSleepingCallout
-                comingUp={comingUp}
-                onStart={() => wakeAgent.wake(agentId)}
-              >
-                — Wake the agent to see runs.
-              </AgentSleepingCallout>
-            </div>
-            <OutcomeLine schedule={schedule} />
-          </>
+          <div className="px-5 py-4 md:px-6">
+            <AgentSleepingCallout
+              comingUp={comingUp}
+              onStart={() => wakeAgent.wake(agentId)}
+            >
+              — Wake the agent to see runs.
+            </AgentSleepingCallout>
+          </div>
         )}
         {!stopped && sessionsQuery.isError && (
           <div className="flex flex-col items-center gap-3 px-5 py-6 md:px-6">

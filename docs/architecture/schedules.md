@@ -194,11 +194,10 @@ There a schedule with no model runs on the harness's **default**, never on the m
 **Migration.** A schedule saved with a bare model was qualified with the alias of the agent's one provider; with several, its model was cleared and the schedule carries `migrationNote` until its owner picks a model again.
 The one-shot SQL migration carries its dry-run count query in its comment.
 
-**A refused fire records its reason, and the last-run stamp stays put.** The fire still settles, so it is not redelivered.
-A refusal the api-server reaches before it commits the trigger — a saved choice that no longer holds, or no granted provider that can run the harness — wakes nothing: the fire writes the reason and arms the next occurrence.
-A refusal the runtime reaches instead — a harness that refuses the session's model at fire time — comes back as a failed *run*, a stage distinct from a broken Precheck, and leaves the unprompted session behind, empty.
-Either way the schedule's last result names the reason (a one-time task records it as its result), the schedule's card in the panel shows it in the failure colour, and the stamp keeps the last fire that actually ran, since a Precheck measures "anything new since last time?"
+**A refused fire records its reason, and the last-run stamp stays put.** The last result names the reason (a one-time task records it as its result), the schedule's card in the panel shows it in the failure colour, and the stamp keeps the last fire that actually ran, since a Precheck measures "anything new since last time?"
 from it.
+A refusal the api-server reaches before it commits the trigger — a saved choice that no longer holds, or no granted provider that can run the harness — delivers nothing and wakes nothing: the fire writes the reason and arms the next occurrence.
+A refusal the runtime reaches instead — a harness that refuses the session's model at fire time — settles as a failed *run*, a stage distinct from a broken Precheck, so it is not redelivered, and leaves the unprompted session behind, empty.
 Follow-up turns keep the session's model as far as the harness restores it on reload.
 
 In a session with scheduled runs, each reply shows the model that answered it in a muted line, as the harness reports it: Claude Code only today, and the main conversation's model, never a subagent's.

@@ -70,7 +70,10 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
           <p className="mt-0.5 line-clamp-2 text-sm text-danger">{problem}</p>
         ) : (
           outcome && (
-            <p className="mt-0.5 line-clamp-2 text-sm text-muted-foreground">
+            <p
+              className="mt-0.5 line-clamp-2 text-sm text-muted-foreground"
+              title={outcome.label}
+            >
               {outcome.when ? `Last run ${outcome.when} · ` : ""}
               <span className={outcome.className}>{outcome.label}</span>
             </p>
