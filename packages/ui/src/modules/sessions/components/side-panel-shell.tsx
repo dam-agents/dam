@@ -2,6 +2,7 @@ import { ArrowLeft } from "@carbon/icons-react";
 import {
   type CSSProperties,
   type ReactNode,
+  useCallback,
   useEffect,
   useRef,
   useState,
@@ -34,6 +35,15 @@ const FILE_PANEL_WIDTH_KEY = "platform-file-w";
 const MAIN_MIN_W = 360;
 const SIDE_PANEL_BAR_W = 49;
 const SIDE_PANEL_TILE_BAR_W = 60;
+const LAYER_ABOVE_SELECTOR =
+  '[role="dialog"], [role="alertdialog"], [role="menu"]';
+
+const layerAbove = () => document.querySelector(LAYER_ABOVE_SELECTOR) !== null;
+
+const dismissLayerAbove = () =>
+  (document.activeElement ?? document).dispatchEvent(
+    new KeyboardEvent("keydown", { key: "Escape", bubbles: true }),
+  );
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel beside a page's main column, with
@@ -120,35 +130,33 @@ export function SidePanelShell({
       ? null
       : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
 
-  const closeMobilePanel = () => {
+  const closeMobilePanel = useCallback(() => {
     setSidePanelTab(null);
     setMobileScreen("chat");
-  };
+  }, [setSidePanelTab, setMobileScreen]);
   const mobileOverlay = mobilePanelOpen && !desktop;
   useEffect(() => {
     if (!mobileOverlay) return;
     mobileBackRef.current?.focus();
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== "Escape" || e.defaultPrevented) return;
-      if (
-        document.querySelector(
-          '[role="dialog"], [role="alertdialog"], [role="menu"]',
-        )
-      )
-        return;
-      setSidePanelTab(null);
-      setMobileScreen("chat");
+      if (layerAbove()) return;
+      closeMobilePanel();
     };
     document.addEventListener("keydown", onKeyDown);
     const releaseBackEntry = holdBackEntry(() => {
-      setSidePanelTab(null);
-      setMobileScreen("chat");
+      if (layerAbove()) {
+        dismissLayerAbove();
+        return false;
+      }
+      closeMobilePanel();
+      return true;
     });
     return () => {
       document.removeEventListener("keydown", onKeyDown);
       releaseBackEntry();
     };
-  }, [mobileOverlay, setSidePanelTab, setMobileScreen]);
+  }, [mobileOverlay, closeMobilePanel]);
 
   return (
     <div ref={setColumnsEl} className="flex flex-1 min-h-0 min-w-0">
