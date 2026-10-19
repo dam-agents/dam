@@ -13,6 +13,8 @@ add it to the include list in `platform.validate`.
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
 {{- include "platform.validate.vmRunnersHaveANodeImageCache" . -}}
+{{- include "platform.validate.vmImageCachePathIsItsOwn" . -}}
+{{- include "platform.validate.vmImageCacheEgressCidrs" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
 {{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
@@ -99,7 +101,7 @@ fails every agent's reconcile. A /0 entry would reopen every private range the
 policy exists to close.
 */}}
 {{- define "platform.validate.gatewayEgressCidrs" -}}
-{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
+{{- $cidr := include "platform.cidrPattern" . -}}
 {{- range ((.Values.controller.gatewayEgress | default dict).extraCidrs | default list) -}}
 {{- if not (regexMatch $cidr (toString .)) -}}
 {{- fail (printf "controller.gatewayEgress.extraCidrs entry %q is not a CIDR (address/prefix, e.g. 10.20.0.0/16)." (toString .)) -}}
@@ -243,7 +245,66 @@ anything. The Mac's host runner runs outside the cluster with a cache of its own
 {{- define "platform.validate.vmRunnersHaveANodeImageCache" -}}
 {{- $v := .Values.virtualization -}}
 {{- if and $v.enabled (not $v.runner.hostAddress) (not ($v.imageCache | default dict).hostPath) -}}
-{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to a directory on the runner nodes (the default is /var/lib/platform-images; on OpenShift, the one etc/openshift-node-config creates)." -}}
+{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to this install's own directory on the runner nodes, named by its agent namespace (e.g. /var/lib/platform-images/dam-dev; on OpenShift, under the directory etc/openshift-node-config creates)." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Nodes are shared, and a node directory is either the install's own or it is a
+collision: the image cache service is the only writer of the directory it
+serves, so an install given another's unlinks its socket and serves its trees,
+and the release stager prunes everything in the directory it stages into.
+So the cache path carries a component that names this install — its agent
+namespace, release or release namespace, as the release directory's own
+subdirectory does — and it stays out of the release directory's tree.
+*/}}
+{{- define "platform.validate.vmImageCachePathIsItsOwn" -}}
+{{- $v := .Values.virtualization -}}
+{{- $dir := (($v.imageCache | default dict).hostPath | default "") | trimSuffix "/" -}}
+{{- if and $v.enabled (not $v.runner.hostAddress) $dir -}}
+{{- $own := false -}}
+{{- range $name := list .Values.agentNamespace .Release.Name .Release.Namespace -}}
+{{- if hasSuffix (printf "/%s" $name) $dir }}{{ $own = true }}{{ end -}}
+{{- end -}}
+{{- if not $own -}}
+{{- fail (printf "virtualization.imageCache.hostPath %q is not this install's own directory, and every install on a shared node needs one: the image cache service is the only writer of the directory it serves, so two installs given one directory take turns unlinking each other's socket and reading each other's trees. End the path with a component that names this install, as runner.releaseHostPath's own subdirectory does — /var/lib/platform-images/%s." $dir .Values.agentNamespace) -}}
+{{- end -}}
+{{- $release := include "platform.vmRunner.releaseDir" . -}}
+{{- if $release -}}
+{{- $release = printf "%s/" $release -}}
+{{- if or (hasPrefix $release (printf "%s/" $dir)) (hasPrefix (printf "%s/" $dir) $release) -}}
+{{- fail (printf "virtualization.imageCache.hostPath %q shares the release directory %q: the release stager prunes every entry there that is not one of its own releases, which would delete the cached trees a machine is booting from. Give the cache a directory outside it." $dir $release) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+An address/prefix, either family: a NetworkPolicy rejects the whole policy on an
+entry that is not one, and a rejected policy leaves the pod it names ungated.
+*/}}
+{{- define "platform.cidrPattern" -}}
+^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$
+{{- end -}}
+
+{{/*
+The image cache service's egress policy admits the public internet minus the
+ranges the cluster owns, and the cluster DNS pods. A registry inside the
+cluster is named in imageCache.egressCidrs, so each entry there has to be a
+real block, and a /0 would reopen every range the policy exists to close.
+*/}}
+{{- define "platform.validate.vmImageCacheEgressCidrs" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $cidr := include "platform.cidrPattern" . -}}
+{{- $cidrs := (.Values.virtualization.imageCache | default dict).egressCidrs | default list -}}
+{{- range $cidrs -}}
+{{- if not (regexMatch $cidr (toString .)) -}}
+{{- fail (printf "virtualization.imageCache.egressCidrs entry %q is not a CIDR (address/prefix, e.g. 10.20.0.0/24)." (toString .)) -}}
+{{- end -}}
+{{- if hasSuffix "/0" (toString .) -}}
+{{- fail (printf "virtualization.imageCache.egressCidrs entry %q opens every range to the node image cache service, which is what its egress policy closes — it already reaches the public internet. Name the internal registry's own range instead." (toString .)) -}}
+{{- end -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 

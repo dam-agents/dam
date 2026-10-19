@@ -1,10 +1,11 @@
 # VM image cache
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 That tree is never on the runner's claim: it lives in a **node cache**, the host directory `imageCache.hostPath` names, which every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
-The install must name it once the `vm` Backend is on, and the chart refuses one that does not; its default is the directory the OpenShift node configuration creates.
+The install must name it once the `vm` Backend is on, and the chart refuses one that does not: the directory is the install's own, under the one the OpenShift node configuration creates and named by its agent namespace, because nodes are shared and an install given another install's cache directory is a second writer of it.
+It refuses one inside the release directory too, which the stager prunes.
 It is a host directory, not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
 On OpenShift the runners need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
 Every tree it unpacks inherits that label, which is what lets the runners, still confined, boot from it; the label is set from the chart's OpenShift signal, and a service that cannot set it says so and exits rather than serve trees no runner could read.
@@ -16,6 +17,8 @@ A runner that could write a shared directory would let a guest that escapes into
 The service is therefore in the boot path: with it down, a runner boots only an image one of its own machines already holds, and refuses any other as unavailable rather than booting it straight from the registry.
 The runner fetches nothing itself, so it holds none of the capabilities an unpack takes, and it resolves no name: its egress policy admits no resolver ([vm-runner](vm-runner.md)).
 The service resolves the registries itself, through the node's resolver, or through the cluster's where `imageCache.dnsPolicy` says the registry is a Service inside the cluster.
+It is the one pod of the install that fetches, so its own egress policy is the gate on what a compromise of it reaches: the public internet minus every range the cluster owns — private, loopback, link-local, CGNAT and this-network, which hold the platform's own datastores, the node and the cloud metadata endpoints — the cluster DNS pods on their ports, and the range an install names in `imageCache.egressCidrs` for a registry that is a Service inside the cluster.
+Nothing dials it: the runners reach it over the Unix socket in the directory they share with it, which no policy sees.
 The service unpacks with every capability dropped but the few that restoring an image's owners and modes takes, and skips the image's `/dev`, so no tree carries a device node.
 No entry lands outside the tree: tar strips a leading `/` and refuses a member that names `..` or a path through a symlink, and the fetch fails on either.
 A tree keeps the setuid binaries its image carries, because a guest boots it as root on its own kernel and its `sudo` or `su` has to work there.

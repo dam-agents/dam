@@ -20,12 +20,13 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
   --set virtualization.runner.scc=hostmount-anyuid \
   --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images/platform-agents \
   --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
 # The stager DaemonSet with the node image cache beside it.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
-  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images/platform-agents \
   --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases \
   --set agentNamespace=platform-agents \
   | "${KUBECONFORM[@]}" "$@"
@@ -33,6 +34,7 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 # projected volume, which no other render reaches.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images/platform-agents \
   --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
   --set 'controller.agent.base.imagePullSecrets[1]=fallback' \
   --set agentNamespace=platform-agents \
@@ -42,19 +44,40 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 # the envoyMitm path off.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images/platform-agents \
   --set virtualization.imageCache.dnsPolicy=ClusterFirst \
   --set controller.envoyMitm.enabled=false \
   | "${KUBECONFORM[@]}" "$@"
 # A runner with no node image cache has no image to boot, and a VMM seccomp
 # mode smolvm would read as no filter installs none: each fails the render.
-VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi)
+# So does a cache directory another install would be given too: the image
+# cache service is the only writer of the directory it serves, and a registry
+# range it could not reach or one that reopens the ranges its policy closes.
+VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images/platform-agents)
 for refused in 'virtualization.imageCache.hostPath=' \
+  'virtualization.imageCache.hostPath=/var/lib/platform-images' \
+  'virtualization.imageCache.hostPath=/var/lib/platform-vm-runner-releases/platform-agents' \
+  'virtualization.imageCache.egressCidrs[0]=not-a-cidr' \
+  'virtualization.imageCache.egressCidrs[0]=0.0.0.0/0' \
   'virtualization.runner.seccomp=permissive'; do
   if helm template platform . "${COMMON[@]}" "${VM[@]}" --set "$refused" >/dev/null 2>&1; then
     echo "a render setting $refused succeeded, but it leaves the runners no image cache or no seccomp filter" >&2
     exit 1
   fi
 done
+# The node image cache service fetches from registries and reaches nothing
+# else: its own policy admits the public internet minus the ranges the
+# cluster owns, the cluster DNS pods, and the range an install names for a
+# registry inside the cluster.
+cache_egress=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set 'virtualization.imageCache.egressCidrs[0]=10.20.0.0/24' \
+  --show-only templates/controller/vm-image-cache.yaml |
+  yq -o=json 'select(.kind == "NetworkPolicy") | .spec.egress')
+jq -e 'any(.[]; any(.to[]; .ipBlock.cidr == "0.0.0.0/0" and (.ipBlock.except | index("10.0.0.0/8")) and (.ipBlock.except | index("169.254.0.0/16"))))
+  and any(.[]; any(.to[]; .ipBlock.cidr == "10.20.0.0/24"))
+  and any(.[]; .to[0].podSelector.matchLabels["k8s-app"] == "kube-dns")' <<<"$cache_egress" >/dev/null ||
+  { echo "the node image cache's egress policy is not the registry-only one: $cache_egress" >&2; exit 1; }
 # An unquoted `seccomp: off` in a values file arrives as a boolean, and must
 # still mean no filter rather than the default.
 helm template platform . "${COMMON[@]}" "${VM[@]}" \
@@ -124,6 +147,7 @@ helm template platform . "${COMMON[@]}" \
 # API; the render must hold both, and kubeconform has no schema for its kinds.
 MONITORING=(--set monitoring.enabled=true --set clickstack.enabled=true --set virtualization.enabled=true
   --set virtualization.runner.resources.limits.memory=8Gi
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images/platform-agents
   --set virtualization.runner.scc=hostmount-anyuid --set agentNamespace=platform-agents)
 rendered=$(helm template platform . "${COMMON[@]}" "${MONITORING[@]}" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor --api-versions monitoring.coreos.com/v1/PrometheusRule)

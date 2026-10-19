@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -56,7 +56,8 @@ The credential boundary is the pod: K8s Secrets are mounted into the gateway pod
 Enforcement is layered:
 
 - **Per-pair NetworkPolicies** gate the agent → paired gateway hop at both ends.
-- **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
+- **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md), which dials its owner's gateways and nothing else.
+  The node [image cache](vm-image-cache.md) service that fetches every image has a policy of its own: the public internet minus every range the cluster owns, the cluster DNS pods, and the registry range an install names for one that is a Service inside the cluster.
 - **Agent ingress NetworkPolicy** admits ingress to the agent port only from the api-server (ACP/tRPC relay) and the controller (idle-checker busy-probe).
   agent-runtime serves unauthenticated on the assumption that this kernel gate is the auth boundary; kubelet probes are node-originated and unaffected.
 - **Gateway Envoy ext_authz** gates everything the gateway forwards on behalf of the agent — external upstreams via the HITL rule model, while platform-internal upstreams pass without a per-request human decision: the harness path (control-plane traffic to the api-server) and the artifact object store, where each request already carries a platform-minted authorization — a short-lived link scoped to a single object and operation, issued by the api-server after ownership checks and validated by the store itself ([artifact-library](artifact-library.md)).

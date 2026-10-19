@@ -440,8 +440,10 @@ virtualization:
   # virtualization.enabled. A machine may reach only its gateway, so the guest
   # cannot pull its own image; it is fetched and unpacked here once, and the
   # next owner on that node boots the same tree without touching the
-  # registry. The default is the directory etc/openshift-node-config has the
-  # nodes create and label. An install with no registry (local dev) stages
+  # registry. It is this install's own directory under the one
+  # etc/openshift-node-config has the nodes create and label, named by its
+  # agent namespace, so the installs sharing a node never take each other's.
+  # An install with no registry (local dev) stages
   # pre-flattened trees here too, named after the image reference
   # (`mise run image:stage-vm`), which the runners boot before they ask the
   # service.
@@ -498,13 +500,29 @@ virtualization:
   # set with room to spare: pins are never evicted, so a budget below their
   # total leaves the cache permanently over it and saying so in its log.
   imageCache:
-    hostPath: /var/lib/platform-images
+    # This install's OWN directory on every node it runs on: the chart refuses
+    # one that is not, and one that sits in the release directory. Nodes are
+    # shared, and an install given another install's cache directory is a
+    # second writer of it — the two take turns unlinking each other's socket
+    # and serving each other's trees. End it with a component that names this
+    # install, its agent namespace (e.g. /var/lib/platform-images/dam-dev), as
+    # `runner.releaseHostPath` takes its own per-install subdirectory.
+    hostPath: ""
     budget: 20Gi
     preloadInterval: 5m
     # How the service resolves the registries it fetches from. `Default` is
     # the node's resolver. `ClusterFirst` is for an install whose registry is
     # a Service inside the cluster, such as OpenShift's internal registry.
     dnsPolicy: Default
+    # Ranges the service may also reach inside the cluster, for a registry
+    # that is a Service here or a mirror of one. Its egress policy admits the
+    # public internet minus every range this cluster owns (private, loopback,
+    # link-local, CGNAT and this-network, which hold the platform's own
+    # datastores, the node and the cloud metadata endpoints), so a registry on
+    # a private address needs its range named here. The metadata endpoints
+    # stay closed inside the ranges above; name the narrowest range that
+    # holds the registry. Each entry is an address/prefix, never `/0`.
+    egressCidrs: []
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a
     # throttled unpack is a slow first boot.

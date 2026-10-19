@@ -186,6 +186,77 @@ spec:
                       path: {{ printf "%03d" $i }}/.dockercfg
               {{- end }}
         {{- end }}
+---
+{{- /*
+The cache service's own egress gate. It fetches every image a machine boots,
+so it reaches a registry, and nothing else: the public internet minus the
+ranges this cluster owns — private, loopback, link-local, CGNAT and
+this-network, which hold the platform's own datastores, the node and the
+cloud metadata endpoints — whatever registry the pull credentials a runner
+forwards name. Unlike a runner it resolves names, so it also reaches the
+cluster DNS pods on the ports they listen on; an install whose registry is a
+Service inside the cluster names that range in `imageCache.egressCidrs`.
+
+Nothing dials this pod: the runners reach it over the Unix socket in the
+directory they share with it, which no policy sees, so there is no ingress
+rule here. The namespace's deny-all is scoped to `role: agent`, which this
+pod is not, so this policy alone gates it.
+*/}}
+{{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict }}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ $name }}
+  namespace: {{ .Values.agentNamespace }}
+  labels:
+    {{- include "platform.labels" . | nindent 4 }}
+    app.kubernetes.io/component: vm-image-cache
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "platform.selectorLabels" . | nindent 6 }}
+      app.kubernetes.io/component: vm-image-cache
+  policyTypes:
+    - Egress
+  egress:
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              - 0.0.0.0/8
+              - 10.0.0.0/8
+              - 100.64.0.0/10
+              - 127.0.0.0/8
+              - 169.254.0.0/16
+              - 172.16.0.0/12
+              - 192.168.0.0/16
+        - ipBlock:
+            cidr: "::/0"
+            except:
+              - "::1/128"
+              - fc00::/7
+              - fe80::/10
+    {{- if and $dns.namespace $dns.podLabels }}
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ $dns.namespace | quote }}
+          podSelector:
+            matchLabels:
+              {{- toYaml $dns.podLabels | nindent 14 }}
+      ports:
+        {{- range ($dns.ports | default (list 53)) }}
+        - protocol: UDP
+          port: {{ . }}
+        - protocol: TCP
+          port: {{ . }}
+        {{- end }}
+    {{- end }}
+    {{- range $cache.egressCidrs }}
+    - to:
+        - ipBlock:
+            cidr: {{ . }}
+    {{- end }}
 {{- with $v.runner.scc }}
 ---
 {{- /*
