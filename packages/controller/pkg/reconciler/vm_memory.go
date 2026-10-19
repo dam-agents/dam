@@ -208,6 +208,10 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 // UNIT_BOUNDARY_DESCRIPTION: waited for: the kernel's view is what kills the
 // UNIT_BOUNDARY_DESCRIPTION: runner, so the need is the larger of the counted
 // UNIT_BOUNDARY_DESCRIPTION: and the measured overshoot of the target.
+// UNIT_BOUNDARY_DESCRIPTION: The agent the pass counts from is one the
+// UNIT_BOUNDARY_DESCRIPTION: runner has not refused: a parked machine holds
+// UNIT_BOUNDARY_DESCRIPTION: nothing, and its floor must not hibernate the
+// UNIT_BOUNDARY_DESCRIPTION: machines the runner did admit.
 func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, agents []*apiv1.Agent, pressure *vmrunner.RunnerPressure) (string, bool) {
 	if !r.beginMemoryPass(owner) {
 		return "", false
@@ -224,14 +228,14 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 		if err != nil || !running {
 			continue
 		}
-		if first == nil {
-			first = a
-		}
 		status, err := runner.Status(ctx, a.Name)
 		if err != nil {
 			continue
 		}
 		r.noteMachineUse(a.Name, status)
+		if first == nil && !r.parkedWithoutMachine(a) {
+			first = a
+		}
 	}
 	if first == nil {
 		return "", false

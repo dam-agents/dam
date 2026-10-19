@@ -8,12 +8,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 const (
@@ -37,7 +39,7 @@ func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, sp
 	return max(int(mem.Value()>>20), 1)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
+// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it. A peer the runner refused for room is left out too: it holds nothing until a retry gets it running, and counted beside the machines the runner did admit it made the memory pass hibernate those. The agent being sized counts whatever its own park says, since freeing its room is what its count is for.
 func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
 	items, err := r.ownerAgents(ctx, owner)
 	if err != nil {
@@ -64,7 +66,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 				return runnerDemand{}, err
 			}
 		}
-		if running {
+		if running && (a.Name == self.Name || !r.parkedWithoutMachine(a)) {
 			d.memoryMiB += r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
 			d.vCPUs += max(r.config.VM.Runner.MachineCPUs, r.liveMachine(a.Name).CPUs, 1)
 		}
@@ -99,6 +101,12 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 		return running.(bool), nil
 	}
 	return r.agentDesiredUp(ctx, name, true)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget — and its pair is scaled to zero until the 30-second retry fits. It holds no memory meanwhile, so it counts toward none. The park is remembered on the Agent's Ready condition, and the live machine says whether that retry got it running anyway.
+func (r *AgentReconciler) parkedWithoutMachine(a *apiv1.Agent) bool {
+	ready := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionReady)
+	return ready != nil && ready.Reason == apiv1.ReasonOverBudget && r.liveMachine(a.Name).State != vmrunner.StateRunning
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
