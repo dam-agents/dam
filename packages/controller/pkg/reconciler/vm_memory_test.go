@@ -462,6 +462,7 @@ func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
 		{name: "refused for storage", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonStorageFull + `"}]`},
 		{name: "a home that is full", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonHomeFull + `"}]`},
 		{name: "a boot that failed", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonBootFailed + `"}]`},
+		{name: "a cache the runner cannot reach", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonImageCacheUnreachable + `"}]`},
 		{name: "refusal recorded before its status", recorded: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

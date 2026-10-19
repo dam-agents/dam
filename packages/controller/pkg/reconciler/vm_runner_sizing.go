@@ -140,7 +140,8 @@ func (r *AgentReconciler) refusedWithoutMachine(a *apiv1.Agent) bool {
 func refusedReason(reason string) bool {
 	switch reason {
 	case vmrunner.ReasonOutOfCapacity, vmrunner.ReasonStorageFull, vmrunner.ReasonHomeFull,
-		vmrunner.ReasonImageUnavailable, vmrunner.ReasonSeedMissing, vmrunner.ReasonBootFailed:
+		vmrunner.ReasonImageUnavailable, vmrunner.ReasonImageCacheUnreachable,
+		vmrunner.ReasonSeedMissing, vmrunner.ReasonBootFailed:
 		return true
 	}
 	return false

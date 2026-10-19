@@ -101,7 +101,7 @@ func RunnerHandoffStalled(ctx context.Context) {
 
 var runnerRollHeldForIdle = sync.OnceValue(func() metric.Int64Gauge {
 	gauge, err := otel.Meter(ScopeName).Int64Gauge("platform.vm_runner.roll_held_for_idle",
-		metric.WithDescription("How long a VM runner's changed pod has been held back waiting for the owner's agents to go idle, by owner, recorded on every pass that holds it"),
+		metric.WithDescription("How long a VM runner's changed pod has been held back waiting for the owner's agents to go idle, by owner: recorded on every pass that holds it, and zero on the pass that ends the wait"),
 		metric.WithUnit("s"))
 	if err != nil {
 		otel.Handle(err)

@@ -228,7 +228,7 @@ func repairRunnerMeta(meta *metav1.ObjectMeta, labels map[string]string, refs []
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a roll reboots every machine of the owner, and an agent in the middle of a turn loses that turn. So a changed runner whose owner has a busy agent — one whose `/api/status` does not say `idle`, the idle checker's own probe — does not take its place in the roll: it holds no place, so other owners roll meanwhile, and the next pass or sweep offers it again. The agents are probed at once, so an owner with many machines waits one probe timeout rather than one per machine. `rollout.idleWait` bounds the wait from the first pass that found it busy, recorded on the Deployment so a controller restart does not start the wait over; past it, the runner rolls with the agent busy, since an owner who is never idle must still get the release. An agent that does not answer counts as idle.
-// UNIT_BOUNDARY_DESCRIPTION: a runner that cannot reach the node's image cache service boots only the trees its own machines already hold, so every image its owner has not booted yet is refused, and the image update job moves each Agent back onto what it ran. Waiting for a turn to end protects that turn and costs the owner every image move, for as long as the idle wait, so such a runner rolls at once. Only that case, asked of the runner itself, since a runner that answers nothing at all may still have a working cache and is waited for as before. The wait is recorded and reported once per transition rather than once per pass, and its age is recorded as a metric while it lasts.
+// UNIT_BOUNDARY_DESCRIPTION: a runner that cannot reach the node's image cache service boots only the trees its own machines already hold, so every image its owner has not booted yet is refused, and the image update job moves each Agent back onto what it ran. Waiting for a turn to end protects that turn and costs the owner every image move, for as long as the idle wait, so such a runner rolls at once. Only that case, asked of the runner itself, since a runner that answers nothing at all may still have a working cache and is waited for as before. The wait is recorded and reported once per transition rather than once per pass, and its age is recorded as a metric while it lasts and zeroed on the pass that ends it, since a gauge keeps its last value.
 func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
 	if refused := r.runnerImageCacheRefused(ctx, owner); refused != "" {
 		slog.Warn("vm runner: the runner cannot reach the node's image cache, rolling it now without waiting for its owner's agents to go idle", "owner", owner, "imageCache", refused)
@@ -237,6 +237,7 @@ func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner stri
 			mount = " It mounts the node's " + source + " as its image cache."
 		}
 		r.runnerEvent(ctx, existing, corev1.EventTypeWarning, reasonRollImageCacheUnreachable, "rolling this runner without waiting for its owner's agents to go idle: it cannot reach the node's image cache, so it boots only images its machines already hold."+mount+" "+refused)
+		telemetry.RunnerRollHeldForIdle(ctx, owner, 0)
 		return false
 	}
 	ready := r.readyMachines(ctx, owner)
@@ -253,6 +254,7 @@ func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner stri
 		}
 	}
 	if len(busy) == 0 {
+		telemetry.RunnerRollHeldForIdle(ctx, owner, 0)
 		return false
 	}
 	wait := r.config.VM.Runner.Rollout.IdleWait.AsDuration()
@@ -279,6 +281,7 @@ func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner stri
 	}
 	slog.Warn("vm runner: the owner's agents stayed busy past the idle wait, rolling anyway", "owner", owner, "busy", busy, "since", since, "idleWait", wait)
 	r.runnerEvent(ctx, existing, corev1.EventTypeWarning, reasonRollIdleWaitOver, fmt.Sprintf("rolling this runner past the idle wait: %s stayed busy for %s, the whole %s, and its machines reboot when it rolls", strings.Join(busy, ", "), held.Truncate(time.Minute), wait))
+	telemetry.RunnerRollHeldForIdle(ctx, owner, 0)
 	return false
 }
 
