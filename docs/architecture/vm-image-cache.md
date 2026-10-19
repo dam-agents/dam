@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 That tree is never on the runner's claim: it lives in a **node cache**, the host directory `imageCache.hostPath` names, which every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
@@ -13,7 +13,10 @@ The node configuration in [`etc/openshift-node-config/`](../../etc/openshift-nod
 **The cache has exactly one writer**, a per-node **image cache service**: runners mount the directory read-only and ask the service, over a socket inside it, for each image a machine boots.
 The service resolves the reference, fetches and unpacks it on a miss with the pull secrets the runner forwards for that machine ([security-and-credentials](security-and-credentials.md#image-pull-credentials)), and answers with the tree and what the image says to run.
 A runner that could write a shared directory would let a guest that escapes into it rewrite a tree another owner's machines boot; one writer also means a fetch and an eviction never have to agree across processes, so what the writer knows about the cache is kept in its memory — all but where each tree came from, which is written beside the tree because a later caller's access is checked against it.
-The service is therefore in the boot path: with it down, a runner boots only an image one of its own machines already holds, and refuses any other as unavailable rather than booting it straight from the registry.
+The service is therefore in the boot path: with it down, a runner boots only an image one of its own machines already holds, and refuses any other rather than booting it straight from the registry ([vm-runner-upgrades](vm-runner-upgrades.md)).
+That refusal is the node's, not the image's, and it is reported as such: a machine refused because the service cannot be reached carries a reason of its own, distinct from an unavailable image, so the api-server holds an image update instead of convicting an image that starts fine elsewhere.
+The refusal names the socket inside the runner's read-only mount and says what such a mount means — no service serving this node, or a service writing another node directory than the one this runner mounts — since one message covers both and only an operator can tell them apart.
+The same sentence reaches the controller as the runner's own answer about whether it can reach the service, which is what keeps a broken runner from waiting out the idle wait before it rolls.
 The runner fetches nothing itself, so it holds none of the capabilities an unpack takes, and it resolves no name: its egress policy admits no resolver ([vm-runner](vm-runner.md)).
 The service resolves the registries itself, through the node's resolver, or through the cluster's where `imageCache.dnsPolicy` says the registry is a Service inside the cluster.
 The service unpacks with every capability dropped but the few that restoring an image's owners and modes takes, and skips the image's `/dev`, so no tree carries a device node.

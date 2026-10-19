@@ -10,9 +10,10 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
+    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerImageCache,
+    RunnerPressure, RunnerUsage, SeedResult, State, StorageUsage, REASON_BOOT_FAILED,
+    REASON_COPYING_DISK, REASON_HOME_FULL, REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL,
+    STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
@@ -198,6 +199,7 @@ pub struct Server {
     storage_short: std::sync::atomic::AtomicBool,
     storage_unmeasured: std::sync::atomic::AtomicBool,
     shed_request: Mutex<Option<(u64, String)>>,
+    hold_failure: Mutex<Option<String>>,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -298,6 +300,7 @@ impl Server {
             storage_short: std::sync::atomic::AtomicBool::new(false),
             storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
             shed_request: Mutex::new(None),
+            hold_failure: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -579,6 +582,14 @@ impl Server {
         Ok(state::machine_ids(&self.config.state_dir)?
             .into_iter()
             .collect())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node image cache service now, asked by the controller before it holds a changed runner pod back for a busy agent. A runner with no service configured needs no one and answers reachable, since it boots only the trees staged on its node.
+    pub fn image_cache(&self) -> RunnerImageCache {
+        match &self.config.images {
+            Some(images) => images.reach(),
+            None => RunnerImageCache::default(),
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it. While a seed is being uploaded the spec is stored and no worker is started, because a guest booted then would read half a seed; the controller's next ensure after the upload starts it.
@@ -1189,7 +1200,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as the cache's fault or the image's, whichever it is, and never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
     fn resolve(
         &self,
         id: &str,
@@ -1694,7 +1705,14 @@ impl Server {
             return;
         }
         if let Err(e) = images.hold(&held) {
-            tracing::warn!(error = %format!("{e:#}"), "image cache: cannot hold the images this runner's machines boot");
+            let note = format!("{e:#}");
+            let mut last = locked(&self.hold_failure);
+            if last.as_deref() != Some(note.as_str()) {
+                tracing::warn!(error = %note, "image cache: cannot hold the images this runner's machines boot");
+                *last = Some(note);
+            }
+        } else if locked(&self.hold_failure).take().is_some() {
+            tracing::info!("image cache: the images this runner's machines boot are held again");
         }
     }
 

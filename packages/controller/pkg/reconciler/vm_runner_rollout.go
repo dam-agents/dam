@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"slices"
 	"sort"
@@ -28,6 +29,11 @@ const (
 	annRunnerAwaiting = "agent-platform.ai/runner-awaiting"
 	annRunnerStalled  = "agent-platform.ai/runner-roll-stalled"
 	annRunnerBusy     = "agent-platform.ai/runner-busy-since"
+
+	// UNIT_BOUNDARY_DESCRIPTION: the reasons of the Events the roll writes on a runner, so a reader of `kubectl get events` follows a held roll and the two ways out of it without reading the controller's log.
+	reasonRollHeldForIdle           = "RunnerRollHeldForIdle"
+	reasonRollIdleWaitOver          = "RunnerRollIdleWaitOver"
+	reasonRollImageCacheUnreachable = "RunnerImageCacheUnreachable"
 
 	defaultRunnerSettleTimeout = 10 * time.Minute
 	defaultRunnerIdleWait      = 24 * time.Hour
@@ -222,7 +228,17 @@ func repairRunnerMeta(meta *metav1.ObjectMeta, labels map[string]string, refs []
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a roll reboots every machine of the owner, and an agent in the middle of a turn loses that turn. So a changed runner whose owner has a busy agent — one whose `/api/status` does not say `idle`, the idle checker's own probe — does not take its place in the roll: it holds no place, so other owners roll meanwhile, and the next pass or sweep offers it again. The agents are probed at once, so an owner with many machines waits one probe timeout rather than one per machine. `rollout.idleWait` bounds the wait from the first pass that found it busy, recorded on the Deployment so a controller restart does not start the wait over; past it, the runner rolls with the agent busy, since an owner who is never idle must still get the release. An agent that does not answer counts as idle.
+// UNIT_BOUNDARY_DESCRIPTION: a runner that cannot reach the node's image cache service boots only the trees its own machines already hold, so every image its owner has not booted yet is refused, and the image update job moves each Agent back onto what it ran. Waiting for a turn to end protects that turn and costs the owner every image move, for as long as the idle wait, so such a runner rolls at once. Only that case, asked of the runner itself, since a runner that answers nothing at all may still have a working cache and is waited for as before. The wait is recorded and reported once per transition rather than once per pass, and its age is recorded as a metric while it lasts.
 func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner string, existing *appsv1.Deployment) bool {
+	if refused := r.runnerImageCacheRefused(ctx, owner); refused != "" {
+		slog.Warn("vm runner: the runner cannot reach the node's image cache, rolling it now without waiting for its owner's agents to go idle", "owner", owner, "imageCache", refused)
+		mount := ""
+		if source := runnerImageCacheSource(existing); source != "" {
+			mount = " It mounts the node's " + source + " as its image cache."
+		}
+		r.runnerEvent(ctx, existing, corev1.EventTypeWarning, reasonRollImageCacheUnreachable, "rolling this runner without waiting for its owner's agents to go idle: it cannot reach the node's image cache, so it boots only images its machines already hold."+mount+" "+refused)
+		return false
+	}
 	ready := r.readyMachines(ctx, owner)
 	probed := make([]bool, len(ready))
 	var wg sync.WaitGroup
@@ -253,14 +269,41 @@ func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner stri
 			slog.Warn("vm runner: recording that the roll waits for busy agents", "owner", owner, "error", err)
 		}
 		slog.Info("vm runner: the pod changed, waiting for the owner's agents to finish their turns", "owner", owner, "busy", busy, "idleWait", wait)
+		r.runnerEvent(ctx, existing, corev1.EventTypeNormal, reasonRollHeldForIdle, fmt.Sprintf("holding this runner's changed pod back until %s goes idle, at most %s; its machines reboot when it rolls", strings.Join(busy, ", "), wait))
 		return true
 	}
-	if time.Since(since) < wait {
-		slog.Info("vm runner: the pod changed, waiting for the owner's agents to finish their turns", "owner", owner, "busy", busy, "since", since)
+	held := time.Since(since)
+	if held < wait {
+		telemetry.RunnerRollHeldForIdle(ctx, owner, held)
 		return true
 	}
 	slog.Warn("vm runner: the owner's agents stayed busy past the idle wait, rolling anyway", "owner", owner, "busy", busy, "since", since, "idleWait", wait)
+	r.runnerEvent(ctx, existing, corev1.EventTypeWarning, reasonRollIdleWaitOver, fmt.Sprintf("rolling this runner past the idle wait: %s stayed busy for %s, the whole %s, and its machines reboot when it rolls", strings.Join(busy, ", "), held.Truncate(time.Minute), wait))
 	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the owner's runner says right now that it cannot reach the node's image cache service, and what it says about the socket. A runner that cannot be asked at all is not this case: it may have a working cache, and its absence is its own fault that the roll's settle timeout handles.
+func (r *AgentReconciler) runnerImageCacheRefused(ctx context.Context, owner string) string {
+	client, err := r.runnerFor(ctx, owner)
+	if err != nil {
+		return ""
+	}
+	cache, err := client.ImageCache(ctx)
+	if err != nil {
+		slog.Warn("vm runner: asking a runner about its image cache", "owner", owner, "error", err)
+		return ""
+	}
+	return cache.Error
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the node directory the runner in this Deployment mounts as its image cache, as the controller rendered it on that Deployment rather than as it renders one now: a runner left behind by a move is the case that matters, and naming the directory it actually holds is what sends an operator to the mount to compare with the one the cache service writes.
+func runnerImageCacheSource(dep *appsv1.Deployment) string {
+	for _, volume := range dep.Spec.Template.Spec.Volumes {
+		if volume.Name == "image-cache" && volume.HostPath != nil {
+			return volume.HostPath.Path
+		}
+	}
+	return ""
 }
 
 func (r *AgentReconciler) readyMachines(ctx context.Context, owner string) []string {
@@ -323,6 +366,31 @@ func (r *AgentReconciler) runnersMidRoll(ctx context.Context) ([]string, error) 
 	sort.Strings(rolling)
 	r.runnerRoll = runnerRollView{at: time.Now(), rolling: rolling}
 	return rolling, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Event on the runner's Deployment, so a roll held back, or let through, is legible in `kubectl get events` and across the fleet without reading the controller's log and without one line per reconcile. Its name carries the nanosecond, as the controller's other Events do, so two transitions write two Events. An Event that cannot be written is logged and never fails the roll.
+func (r *AgentReconciler) runnerEvent(ctx context.Context, dep *appsv1.Deployment, eventType, reason, message string) {
+	now := metav1.Now()
+	event := &corev1.Event{
+		ObjectMeta: metav1.ObjectMeta{Name: fmt.Sprintf("%s.%x", dep.Name, now.UnixNano()), Namespace: dep.Namespace},
+		InvolvedObject: corev1.ObjectReference{
+			APIVersion: "apps/v1",
+			Kind:       "Deployment",
+			Name:       dep.Name,
+			Namespace:  dep.Namespace,
+			UID:        dep.UID,
+		},
+		Reason:         reason,
+		Message:        message,
+		Type:           eventType,
+		Source:         corev1.EventSource{Component: "platform-controller"},
+		FirstTimestamp: now,
+		LastTimestamp:  now,
+		Count:          1,
+	}
+	if _, err := r.client.CoreV1().Events(dep.Namespace).Create(ctx, event, metav1.CreateOptions{}); err != nil {
+		slog.Warn("vm runner: writing an event on the runner failed", "runner", dep.Name, "reason", reason, "error", err)
+	}
 }
 
 func (r *AgentReconciler) markRunnerRollStalled(ctx context.Context, dep *appsv1.Deployment, timeout time.Duration) {

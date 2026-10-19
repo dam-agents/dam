@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none.
 
@@ -20,6 +20,11 @@ A changed runner also waits for its owner's agents to be idle, since a roll ends
 Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, all at once, and an agent that does not answer counts as idle.
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
 The install's idle wait, a day by default so that a multi-hour kept job finishes, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
+**A runner that cannot reach its node's image cache does not wait at all.** Such a runner boots only the trees its own machines already hold, so every image its owner has not booted yet is refused ([vm-image-cache](vm-image-cache.md)), and the image update job holds each upgrade rather than moving an Agent back.
+Waiting would protect one turn and cost the owner every image move for the whole idle wait, so a runner that says its cache is unreachable rolls at once, with the agent busy.
+The wait is unchanged for every other runner: one whose cache answers waits, and so does one that cannot be asked at all, since a runner that answers nothing may still have a working cache.
+**A held roll is reported once per transition, not once per pass.** The controller writes a Kubernetes Event on the runner's Deployment when the wait starts, when it passes the idle wait, and when a cache keeps it from waiting, naming whichever of the busy agents, the node directory that runner mounts as its cache, and the runner's own refusal explains that transition, and records how long the roll has been held as a metric by owner while it lasts.
+An operator therefore reads one line per change in `kubectl get events`, and one series per held owner, rather than one log line per reconcile.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn so owners whose agents all sleep still roll, as many turns at once as the roll is wide, handed out in name order; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
 That read takes only what the runners' Deployments record, and calls no runner, since every owner's decision waits on it.
 Whether a runner's machines came back is asked on its own owner's turn, an agent of theirs reconciling or the sweep reaching them, and so is the owner's own list of ready machines before it takes a place.

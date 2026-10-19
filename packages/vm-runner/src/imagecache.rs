@@ -133,6 +133,10 @@ impl Lookup {
 pub trait Images: Send + Sync {
     fn resolve(&self, reference: &str, auths: &[String]) -> Lookup;
     fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: whether the service behind this runner can be reached now. The controller asks it before holding a changed runner pod back for a busy agent: a runner that cannot reach the service boots only trees one of its own machines already holds. A writer, and a runner with no service to ask, need nothing of anyone and answers reachable.
+    fn reach(&self) -> crate::api::RunnerImageCache {
+        crate::api::RunnerImageCache::default()
+    }
     // UNIT_BOUNDARY_DESCRIPTION: called as the runner closes, once nothing fetches any more. Only a writer has trees to flush.
     fn flush(&self) {}
 }

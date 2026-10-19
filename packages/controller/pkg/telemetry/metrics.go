@@ -99,6 +99,22 @@ func RunnerHandoffStalled(ctx context.Context) {
 	}
 }
 
+var runnerRollHeldForIdle = sync.OnceValue(func() metric.Int64Gauge {
+	gauge, err := otel.Meter(ScopeName).Int64Gauge("platform.vm_runner.roll_held_for_idle",
+		metric.WithDescription("How long a VM runner's changed pod has been held back waiting for the owner's agents to go idle, by owner, recorded on every pass that holds it"),
+		metric.WithUnit("s"))
+	if err != nil {
+		otel.Handle(err)
+	}
+	return gauge
+})
+
+func RunnerRollHeldForIdle(ctx context.Context, owner string, held time.Duration) {
+	if g := runnerRollHeldForIdle(); g != nil {
+		g.Record(ctx, int64(held.Seconds()), metric.WithAttributes(attribute.String("platform.vm_runner.owner", owner)))
+	}
+}
+
 var runnerRollSkipped = sync.OnceValue(func() metric.Int64Counter {
 	counter, err := otel.Meter(ScopeName).Int64Counter("platform.vm_runner.roll_skipped",
 		metric.WithDescription("VM runner rolls whose new pod was not ready by the settle timeout for a fault of its owner alone, and which gave up their place in the roll"))

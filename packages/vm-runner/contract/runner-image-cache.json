@@ -1,0 +1,4 @@
+{
+  "socket": "/var/lib/platform/images/.cache.sock",
+  "error": "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"
+}

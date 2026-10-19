@@ -184,6 +184,16 @@ pub struct RunnerPressure {
     #[serde(rename = "workingSetMiB", skip_serializing_if = "is_zero")]
     pub working_set_mib: i32,
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node image cache service right now, asked by the controller before it holds a changed runner pod back for a busy agent. A runner that cannot reach the service boots only a tree one of its own machines already holds, so waiting for a turn to end protects that turn at the price of every image the owner has not yet booted; the socket is named so an operator sees which mount answered, and the error is the refusal a machine of theirs would get.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RunnerImageCache {
+    pub socket: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub error: String,
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another. `runtime` keeps its wire name from when it also meant another VM runtime.
 pub const HELD_UNSTAGED: &str = "unstaged";
 pub const HELD_RUNTIME: &str = "runtime";
@@ -242,6 +252,8 @@ impl std::fmt::Display for State {
 pub const REASON_NOT_READY: &str = "MachineNotReady";
 pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";
+// UNIT_BOUNDARY_DESCRIPTION: a machine refused because this runner cannot reach the node image cache service at all: the node's fault, not the image's. It is a reason of its own so the api-server holds an image update instead of convicting the image, and so an operator is sent to the mount rather than to the registry.
+pub const REASON_CACHE_UNREACHABLE: &str = "MachineImageCacheUnreachable";
 pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
 pub const REASON_SEED_MISSING: &str = "MachineSeedMissing";
 pub const REASON_STORAGE_FULL: &str = "MachineStorageFull";
@@ -393,6 +405,13 @@ mod tests {
             },
         );
         matches_the_contract(
+            "runner-image-cache",
+            &RunnerImageCache {
+                socket: "/var/lib/platform/images/.cache.sock".into(),
+                error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)".into(),
+            },
+        );
+        matches_the_contract(
             "seed-result",
             &SeedResult {
                 bytes: 1234,
@@ -433,6 +452,7 @@ mod tests {
                 REASON_NOT_READY,
                 REASON_OUT_OF_CAPACITY,
                 REASON_IMAGE_UNAVAILABLE,
+                REASON_CACHE_UNREACHABLE,
                 REASON_BOOT_FAILED,
                 REASON_SEED_MISSING,
                 REASON_STORAGE_FULL,

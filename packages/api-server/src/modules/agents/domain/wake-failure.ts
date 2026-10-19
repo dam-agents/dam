@@ -34,6 +34,7 @@ export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.ContainerTerminated,
   TerminationCode.MachineBootFailed,
   TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineImageCacheUnreachable,
   TerminationCode.MachineRunnerUnschedulable,
   TerminationCode.MachineRunnerNodeLost,
   TerminationCode.RunnerOutOfMemory,
@@ -48,8 +49,14 @@ export const GATEWAY_FAILURE_REASONS = new Set([
 export const REFUSED_START_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
   TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineImageCacheUnreachable,
   TerminationCode.MachineBootFailed,
   TerminationCode.MachineRunnerNodeLost,
+]);
+
+// UNIT_BOUNDARY_DESCRIPTION: the refusals that come from the node a machine runs on rather than from the image it was asked to boot: the runner cannot reach the node's image cache service, so it boots only the trees its machines already hold and refuses every other image. An image update that meets one holds the upgrade and says so: moving the Agent back would convict an image that starts fine on every other node, and silently drop the upgrade the owner is waiting for.
+export const NODE_FAULT_REASONS: ReadonlySet<string> = new Set([
+  TerminationCode.MachineImageCacheUnreachable,
 ]);
 
 export function classifyWakeFailure(
@@ -147,6 +154,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the agent image reference is invalid";
         case "MachineImageUnavailable":
           return "the agent image is not available";
+        case "MachineImageCacheUnreachable":
+          return "the server running its owner's agents cannot reach its image cache — tell an admin";
         case "MachineBootFailed":
           return "its VM didn't boot";
         case "MachineRunnerUnschedulable":

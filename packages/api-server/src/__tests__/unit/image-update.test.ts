@@ -463,6 +463,31 @@ describe("image update tick", () => {
     });
   });
 
+  // TEST_SCENARIO: a start the node refused — its runner cannot reach the image
+  // TEST_SCENARIO: cache, so no image at all is fetched there — is not the image's
+  // TEST_SCENARIO: fault. The agent stays on the new image and nothing is recorded
+  // TEST_SCENARIO: as refused, which would strand it on the image it came from for
+  // TEST_SCENARIO: good; the reason is said once, so the upgrade is seen waiting.
+  it("holds a move the node's image cache refused instead of moving it back", async () => {
+    const m = update([
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      }),
+    ]);
+    await m.tick();
+    await m.tick();
+    expect(m.writeSpec).not.toHaveBeenCalled();
+    const held = m.log.mock.calls.filter((call) =>
+      String(call[0]).includes("holds its move"),
+    );
+    expect(held).toHaveLength(1);
+    expect(String(held[0]![0])).toContain("MachineImageCacheUnreachable");
+  });
+
   it("waits while a moved agent has not started on its new image", async () => {
     const m = update([
       agent({
@@ -590,6 +615,17 @@ describe("parseInfraAgent", () => {
       );
     },
   );
+
+  // TEST_SCENARIO: a machine its node refused could not start either, so the
+  // TEST_SCENARIO: agent reads as a failed start rather than as one still
+  // TEST_SCENARIO: coming up. What failed is the node and not the image, which
+  // TEST_SCENARIO: the image update job decides on the reason.
+  it("reads a refusal by the node's image cache as a failed start", () => {
+    expect(
+      parse({}, { conditions: [agentPod("MachineImageCacheUnreachable")] })
+        .specStart,
+    ).toBe("failed");
+  });
 
   // TEST_SCENARIO: the pod a roll replaces exits on SIGTERM at the new
   // TEST_SCENARIO: generation, and memory fails on any image, so neither

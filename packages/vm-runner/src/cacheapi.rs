@@ -12,8 +12,8 @@ use axum::routing::post;
 use axum::{Json, Router};
 use serde::{Deserialize, Serialize};
 
-use crate::api::{REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
-use crate::fetch::{failure_reason, unusable, Refusal};
+use crate::api::{RunnerImageCache, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY};
+use crate::fetch::{cache_unreachable, failure_reason, Refusal};
 use crate::imagecache::{Fetched, ImageCache, Images, Lookup, Resolved, RESOLVE_DEADLINE};
 
 // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's API, and the runner's client for it. It is HTTP/1.1 with JSON bodies over a Unix socket in the cache directory itself. The service mounts that directory read-write and each runner mounts it read-only, and a socket on a read-only mount can still be connected to but not replaced — so a runner reaches the service and cannot put a socket of its own in its place for other runners to reach.
@@ -121,7 +121,7 @@ pub async fn serve(
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's side: one blocking request per connection, because every call is made from a machine's worker thread and one resolve can run as long as a fetch. A cache that cannot be reached is an image problem for the controller, and the lookup says it was unreachable so the runner can still boot a tree it already holds.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's side: one blocking request per connection, because every call is made from a machine's worker thread and one resolve can run as long as a fetch. A cache that cannot be reached is the node's problem rather than the image's, refused under the cache's own reason, and the lookup says it was unreachable so the runner can still boot a tree it already holds.
 pub struct CacheClient {
     socket: PathBuf,
 }
@@ -158,25 +158,25 @@ impl CacheClient {
 
     fn unreachable_message(&self, e: std::io::Error) -> String {
         format!(
-            "the node's image cache service at {} cannot be reached: {e}",
+            "the node's image cache service at {} cannot be reached: {e}; this runner mounts the node's image cache directory there read-only, so either no service serves this node or the service writes a different node directory than the one this runner mounts",
             self.socket.display()
         )
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a service that took the request and did not answer in time is reachable, and is most likely still fetching, so this is not the failure that lets the runner boot a tree it holds instead. It is said as what it is, rather than as a socket that could not be reached.
+    // UNIT_BOUNDARY_DESCRIPTION: a service that took the request and did not answer in time is reachable, and is most likely still fetching, so this is not the failure that lets the runner boot a tree it holds instead. It is still the cache's fault rather than the image's: it is said as what it is, under the cache's own reason, rather than as a socket that could not be reached.
     fn unreachable(&self, e: std::io::Error) -> Lookup {
         if matches!(
             e.kind(),
             std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
         ) {
-            return Lookup::failed(unusable(format!(
+            return Lookup::failed(cache_unreachable(format!(
                 "the node's image cache service at {} took the request and did not answer within {}s",
                 self.socket.display(),
                 RESOLVE_TIMEOUT.as_secs()
             )));
         }
         Lookup {
-            resolved: Err(unusable(self.unreachable_message(e))),
+            resolved: Err(cache_unreachable(self.unreachable_message(e))),
             fetched: None,
             unreachable: true,
         }
@@ -273,11 +273,27 @@ impl Images for CacheClient {
         );
         Ok(())
     }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one connect, no request: the question is whether anything serves the socket this runner's own mount holds. A connection is closed at once, and the service sees it as a caller that said nothing.
+    fn reach(&self) -> RunnerImageCache {
+        let socket = self.socket.display().to_string();
+        match UnixStream::connect(&self.socket) {
+            Ok(_) => RunnerImageCache {
+                socket,
+                error: String::new(),
+            },
+            Err(e) => RunnerImageCache {
+                socket,
+                error: self.unreachable_message(e),
+            },
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::api::REASON_CACHE_UNREACHABLE;
 
     // TEST_SCENARIO: the client reads the answer to its own request by hand, so both body framings a server may use must read as the same body, and a reply that is not HTTP must read as nothing rather than as some status.
     #[test]
@@ -290,16 +306,34 @@ mod tests {
         assert_eq!(parse_response(b"garbage"), None);
     }
 
-    // TEST_SCENARIO: a resolve that takes as long as the service's own deadline must still be heard, so the client waits longer than that deadline. A service that took the request and did not answer is said to be slow, not unreachable, so the runner does not fall back to a tree it holds while the service is still fetching; a socket nobody listens on is unreachable.
+    // TEST_SCENARIO: a resolve that takes as long as the service's own deadline must still be heard, so the client waits longer than that deadline. A service that took the request and did not answer is said to be slow, not unreachable, so the runner does not fall back to a tree it holds while the service is still fetching; a socket nobody listens on is unreachable. Both are the cache's fault rather than the image's, so both are refused under the cache's reason, and the one nobody answers names the socket and the mount that carried it, since "Connection refused" alone sends an operator looking for an outage that the mount's own directory explains.
     #[test]
     fn a_slow_service_is_told_apart_from_a_lost_one() {
         assert!(RESOLVE_TIMEOUT > RESOLVE_DEADLINE);
         let client = CacheClient::new(PathBuf::from("/nonexistent/.cache.sock"));
         let slow = client.unreachable(std::io::ErrorKind::WouldBlock.into());
         assert!(!slow.unreachable);
-        let message = slow.resolved.err().unwrap().to_string();
-        assert!(message.contains("did not answer"), "{message}");
+        let slow = slow.resolved.err().unwrap();
+        assert_eq!(failure_reason(&slow), REASON_CACHE_UNREACHABLE);
+        assert!(slow.to_string().contains("did not answer"), "{slow}");
         let lost = client.unreachable(std::io::ErrorKind::ConnectionRefused.into());
         assert!(lost.unreachable);
+        let lost = lost.resolved.err().unwrap();
+        assert_eq!(failure_reason(&lost), REASON_CACHE_UNREACHABLE);
+        assert!(
+            lost.to_string()
+                .contains("/nonexistent/.cache.sock cannot be reached"),
+            "{lost}"
+        );
+        assert!(lost.to_string().contains("read-only"), "{lost}");
+        let reach = client.reach();
+        assert_eq!(reach.socket, "/nonexistent/.cache.sock");
+        assert!(
+            reach
+                .error
+                .contains("/nonexistent/.cache.sock cannot be reached"),
+            "{reach:?}"
+        );
+        assert!(reach.error.contains("read-only"), "{reach:?}");
     }
 }

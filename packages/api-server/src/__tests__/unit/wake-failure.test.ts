@@ -88,6 +88,17 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
+      name: "MachineImageCacheUnreachable → agent-pod-failed (the node's cache, not the image)",
+      snapshot: {
+        ...base,
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "MachineImageCacheUnreachable",
+      },
+    },
+    {
       name: "over-budget carries its message — the runner's refusal arrives this way, and it is not a budget problem",
       snapshot: {
         ...base,

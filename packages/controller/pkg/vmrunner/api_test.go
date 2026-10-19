@@ -103,6 +103,10 @@ func TestTheWireTypesWriteAndReadWhatTheContractSays(t *testing.T) {
 		LimitMiB:      12288,
 		WorkingSetMiB: 11800,
 	})
+	matchesTheContract(t, "runner-image-cache", RunnerImageCache{
+		Socket: "/var/lib/platform/images/.cache.sock",
+		Error:  "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)",
+	})
 	matchesTheContract(t, "seed-result", SeedResult{
 		Bytes:  1234,
 		SHA256: "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
@@ -133,7 +137,7 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 		StateRestarting, StateRunning, StateStopping, StateStopped,
 	}, vocabulary.States)
 	assert.Equal(t, []string{
-		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonBootFailed, ReasonSeedMissing, ReasonStorageFull, ReasonHomeFull, ReasonCopyingDisk,
+		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonImageCacheUnreachable, ReasonBootFailed, ReasonSeedMissing, ReasonStorageFull, ReasonHomeFull, ReasonCopyingDisk,
 	}, vocabulary.Reasons)
 	assert.Equal(t, int32(SeedExitPermanent), vocabulary.SeedExitPermanent)
 	assert.Equal(t, []string{HeldUnstaged, HeldRuntime, HeldFailed}, vocabulary.ReleaseHolds)

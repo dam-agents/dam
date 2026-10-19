@@ -59,7 +59,9 @@ type fakeNode struct {
 	named  []string
 	onName func()
 	usage  vmrunner.RunnerUsage
-	onPut  func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: what the fake runner answers to a read of its image cache: reachable unless a test says otherwise, and the refusal it reports when it is not.
+	imageCache vmrunner.RunnerImageCache
+	onPut      func(vmrunner.MachineSpec)
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
@@ -70,7 +72,11 @@ type fakeNode struct {
 const fakeNodeWait = 20 * time.Millisecond
 
 func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
-	n := &fakeNode{specs: map[string]vmrunner.MachineSpec{}, statuses: map[string]vmrunner.MachineStatus{}}
+	n := &fakeNode{
+		specs:      map[string]vmrunner.MachineSpec{},
+		statuses:   map[string]vmrunner.MachineStatus{},
+		imageCache: vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock"},
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer node-token" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -97,6 +103,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 		}
 		if r.URL.Path == "/usage" {
 			require.NoError(t, json.NewEncoder(w).Encode(n.usage))
+			return
+		}
+		if r.URL.Path == "/image-cache" {
+			require.NoError(t, json.NewEncoder(w).Encode(n.imageCache))
 			return
 		}
 		if r.URL.Path == "/machines" {

@@ -12,6 +12,7 @@ import {
   resolveEffectiveHibernationTimeoutMin,
   type IdleTimeoutMinutes,
 } from "../domain/spec-assembly.js";
+import { NODE_FAULT_REASONS } from "../domain/wake-failure.js";
 import { securityLog } from "../../../core/security-log.js";
 import { executeTemplateUpgrade } from "./agents-service.js";
 
@@ -57,7 +58,7 @@ export interface ImageUpdate {
   tick(): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: keeps every Agent created from a Template on that Template's current image, so a new image reaches existing Agents without their owner. It applies the template upgrade the UI's Update applies to every Agent imageMove selects, so the harness carries over the same way, and names the image it decided on as the confirmed target, so a Template that moved in between refuses it. Eligibility is decided again on a live read, the pod is probed only after that read, and the spec is written against the read's version: a connection, a wake or an activity stamp in between conflicts, and the Agent is decided again on the next tick. The move records the image the Agent came from until the Agent has stayed ready on the new one for READY_HOLD_MS. A start that fails on the image itself, or a pod or machine on the new spec that keeps crashing or never becomes ready, moves it back and records the new image as refused, so no Agent is left on an image it cannot run.
+// UNIT_BOUNDARY_DESCRIPTION: keeps every Agent created from a Template on that Template's current image, so a new image reaches existing Agents without their owner. It applies the template upgrade the UI's Update applies to every Agent imageMove selects, so the harness carries over the same way, and names the image it decided on as the confirmed target, so a Template that moved in between refuses it. Eligibility is decided again on a live read, the pod is probed only after that read, and the spec is written against the read's version: a connection, a wake or an activity stamp in between conflicts, and the Agent is decided again on the next tick. The move records the image the Agent came from until the Agent has stayed ready on the new one for READY_HOLD_MS. A start that fails on the image itself, or a pod or machine on the new spec that keeps crashing or never becomes ready, moves it back and records the new image as refused, so no Agent is left on an image it cannot run. A start the node refused instead — its runner cannot reach the image cache, so no image at all can be fetched there — holds the move: nothing is moved back or recorded as refused, since the image is not what failed and would fail the same way on the image it came from, and the reason is logged once per change so the upgrade is seen waiting rather than silently dropped.
 export function createImageUpdate(deps: {
   listAgents: () => Promise<InfraAgent[]>;
   getAgent: (id: string) => Promise<InfraAgent | null>;
@@ -73,6 +74,7 @@ export function createImageUpdate(deps: {
   const moveOf = (agent: InfraAgent, templateImage: string) =>
     imageMove(agent, templateImage, deps.idleTimeoutMinutes, new Date());
   const readySeen = new Map<string, number>();
+  const heldOn = new Map<string, string>();
 
   async function idlePod(id: string): Promise<boolean> {
     try {
@@ -118,6 +120,18 @@ export function createImageUpdate(deps: {
     const from = live?.imageUpdateFrom;
     if (!live || !from || !live.specStart) return;
     const failed = live.specStart === "failed";
+    const nodeFault = NODE_FAULT_REASONS.has(live.agentPodNotReadyReason ?? "");
+    if (failed && nodeFault) {
+      const reason = live.agentPodNotReadyReason!;
+      if (heldOn.get(id) !== reason) {
+        heldOn.set(id, reason);
+        deps.log(
+          `[image-update] ${id} holds its move to ${live.spec.image}: ${reason}, which is the node's fault and not the image's, so the image is not refused and the move is tried again`,
+        );
+      }
+      return;
+    }
+    heldOn.delete(id);
     if (!failed) {
       const since =
         live.readySince?.getTime() ?? readySeen.get(id) ?? Date.now();
