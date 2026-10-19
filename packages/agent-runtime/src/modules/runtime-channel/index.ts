@@ -4,8 +4,8 @@ export { createHarnessClient, type HarnessClient } from "./harness-client.js";
 export {
   createInvocationWatch,
   type InvocationWatch,
-} from "./invocation-watch.js";
-export { createSubAgentsRunning } from "./sub-agents-running.js";
+} from "./services/invocation-watch.js";
+export { createSubAgentsRunning } from "./infrastructure/sub-agents-running.js";
 export {
   loadManifest,
   harnessConfigBindingOf,

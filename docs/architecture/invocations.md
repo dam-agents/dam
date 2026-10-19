@@ -58,7 +58,7 @@ External skills are applied the way kit apply applies them, after the target is 
 
 **Provider Inheritance.** A target runs on its Driver's model provider; a spawn never names one.
 The platform takes the provider connections granted to the Driver and gives the target the first one its harness can run on.
-A harness whose providers none of the Driver's match is refused before anything is created, since the target would otherwise fail its first model call and sit until its deadline.
+A harness whose providers none of the Driver's match is refused before anything is created, since the target could not make its first model call and the Driver would get a failed run instead of a refused spawn.
 An image target declares nothing, so nothing is narrowed.
 
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.
@@ -84,9 +84,12 @@ The reasons:
   It covers a harness config the target cannot apply as well — an image with no harness-config driver, a setting its catalog does not offer, or a write the target reports as failed — found once the target reports what it can do; a result such a target reports first is refused, because it came from the default and a comparison across models must never record it as the one asked for.
   There is no retry: the Driver is waiting and can spawn again, while a long-lived agent retries within its attempt budget because a user comes back to it.
 - **Run failed.** A target that can no longer report a result fails at once, with the cause, instead of at its deadline.
-  The target's runtime watches the one turn: a run that cannot start or does not start within two minutes, a turn that fails, a harness that exits under it, or a turn that ends with nothing left running and no result.
-  A model call the provider refused outright, followed by a minute with no completed call and no model call, tool call, background work or sub-agent of its own running, counts too, since a harness can go quiet after it without ending the turn; the reason carries that call's status and body.
-  A turn that ends while its background work or its own sub-agents still run stays watched, because a later turn may still report.
+  The target's runtime watches the run's session until the result is accepted, which it reads in the answer to `report_result`.
+  A run that cannot start, or whose session does not open within two minutes, a turn that fails, the run's prompt when the harness never takes it, and a harness that exits or is recycled under it fail at once; for an exit, the reason carries the harness's spawn error, exit code or signal.
+  A turn that ends without a result, and a model call the provider refused outright with no completed call for a minute after it, go through one check: the run fails only when no turn, model call, tool call, background work or sub-agent of its own still runs, on two reads 30 seconds apart.
+  The second read leaves room for a sub-agent's result or the harness's own next turn, which reach the session a few seconds after the work behind them ends.
+  The check repeats every minute while something runs, so work that ends without a further turn fails the run then.
+  A refused call's reason carries its status and body, since a harness such as Codex can go quiet after it without ending the turn.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
 - **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.

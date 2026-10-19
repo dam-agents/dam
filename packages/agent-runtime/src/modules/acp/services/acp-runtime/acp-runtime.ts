@@ -38,6 +38,7 @@ import {
   subAgentSpawnIn,
   type SubAgentSpawn,
 } from "../../infrastructure/sub-agent-spawn.js";
+import { resultAcceptedIn } from "../../infrastructure/result-accepted.js";
 import {
   createToolActivityReader,
   type ToolActivity,
@@ -188,10 +189,11 @@ export interface AcpRuntimeDeps {
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onToolActivity?: (activity: ToolActivity) => void;
   onHarnessExited?: () => void;
-  onTurnEnded?: (
+  onTurnOutcome?: (
     sessionId: string,
     end: { stopReason: string | null; error: string | null },
   ) => void;
+  onResultAccepted?: (sessionId: string) => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
   modeSettingId?: string;
 }
@@ -270,7 +272,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   let shuttingDown = false;
   let processExiting = false;
-  let harnessExiting = false;
+  let harnessGone: string | null = null;
+  const teardownCause = (reason: HarnessTeardownReason): string | null => {
+    if (reason === "shutdown") return null;
+    if (reason !== "agent-exited") return teardownCloseByReason[reason].message;
+    const cause = lease.lastExitCause();
+    return cause ? `the harness exited (${cause})` : "the harness exited";
+  };
 
   const autonomousTurns = createAutonomousTurns({
     onEnded: (sessionId, turnId) =>
@@ -340,10 +348,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
-      if (harnessExiting)
-        deps.onTurnEnded?.(sessionId, {
+      if (harnessGone)
+        deps.onTurnOutcome?.(sessionId, {
           stopReason: null,
-          error: "the harness exited mid-turn",
+          error: `${harnessGone} mid-turn`,
         });
       const unstoredPrompt = processExiting
         ? undefined
@@ -380,10 +388,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
-      if (harnessExiting)
-        deps.onTurnEnded?.(sessionId, {
+      if (
+        harnessGone ||
+        (cause === "park-expired" &&
+          !promptScheduler.hasTurnInFlight(sessionId))
+      )
+        deps.onTurnOutcome?.(sessionId, {
           stopReason: null,
-          error: "the harness exited before it took the prompt",
+          error: harnessGone
+            ? `${harnessGone} before it took the prompt`
+            : "the prompt was never taken: the harness did not start the turn",
         });
       if (cause !== "park-expired") return;
       maybeCloseIdleSession(sessionId);
@@ -765,7 +779,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         JSON.stringify({
           jsonrpc: "2.0",
           id,
-          error: { code: -32000, message: close.message },
+          error: {
+            code: -32000,
+            message:
+              reason === "agent-exited"
+                ? (teardownCause(reason) ?? close.message)
+                : close.message,
+          },
         }),
       );
     }
@@ -783,7 +803,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.clear();
     rehydrateLoadIds.clear();
     orphanedHarnessLoads.clear();
-    harnessExiting = reason === "agent-exited";
+    harnessGone = teardownCause(reason);
     promptScheduler.clear();
     autonomousTurns.clear();
     runTextBuffers.clear();
@@ -793,7 +813,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessColdSessions.clear();
     appliedSettings.clear();
     rehydratingSessions.clear();
-    harnessExiting = false;
+    harnessGone = null;
     sessionCloseSupported = true;
     sessionResumeSupported = false;
     harnessSteers = false;
@@ -801,7 +821,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const unansweredOwn = [...ownRequests.values()];
     ownRequests.clear();
     for (const reply of unansweredOwn)
-      reply({ error: { code: -32000, message: "the harness went down" } });
+      reply({
+        error: {
+          code: -32000,
+          message: teardownCause(reason) ?? "the harness went down",
+        },
+      });
     initializeAnswer = null;
     initializeWaiters = null;
     deps.backgroundWork.clear();
@@ -1677,13 +1702,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             });
             reportTurnEnd(sid, buffer);
           }
-          if (turnEnded && !lost)
-            deps.onTurnEnded?.(sid, {
+          if (turnEnded && (!lost || !promptScheduler.hasWork(sid)))
+            deps.onTurnOutcome?.(sid, {
               stopReason,
               error:
                 error === undefined
-                  ? null
-                  : [error.message, error.details].filter(Boolean).join(": "),
+                  ? lost
+                    ? "the harness lost the session"
+                    : null
+                  : [
+                      ...(lost ? ["the harness lost the session"] : []),
+                      error.message,
+                      error.details,
+                    ]
+                      .filter(Boolean)
+                      .join(": "),
             });
           maybeCloseIdleSession(sid);
         }
@@ -1701,6 +1734,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ) {
         return;
       }
+      const accepted = resultAcceptedIn(frame);
+      if (accepted) deps.onResultAccepted?.(accepted);
       if (!bootstrap.has(sessionId)) {
         const touch = artifactTouchIn(frame);
         if (touch) deps.onArtifactTouch(touch);

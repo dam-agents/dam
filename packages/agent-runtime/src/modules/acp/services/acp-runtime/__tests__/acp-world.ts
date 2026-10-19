@@ -70,6 +70,7 @@ export function createHarness(): { harness: Harness; process: AgentProcess } {
       resolveExit();
     },
     exited,
+    exitCause: () => null,
   };
 
   const received = (method?: string): Frame[] =>

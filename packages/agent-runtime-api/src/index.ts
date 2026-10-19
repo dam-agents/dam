@@ -210,7 +210,7 @@ export {
   mergeMode,
   eventReportInput,
   SESSION_REF_HEADER,
-  INVOCATION_SCHEDULE_PREFIX,
+  RESULT_ACCEPTED_FIELD,
   PLATFORM_MCP_ENTRY_NAME,
   onceOrigin,
   onceOriginMode,

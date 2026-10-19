@@ -1,5 +1,3 @@
-import { INVOCATION_SCHEDULE_PREFIX } from "agent-runtime-api";
-
 const TARGET_NAME = /^invocation-(?:[a-z0-9]+(?:-[a-z0-9]+)*-)?[0-9a-f]{12}$/;
 
 const MAX_LABEL_SLUG_CHARS = 30;
@@ -12,7 +10,7 @@ const labelSlug = (label: string): string =>
     .replace(/^-+|-+$/g, "");
 
 export const invocationScheduleId = (agentId: string): string =>
-  `${INVOCATION_SCHEDULE_PREFIX}${agentId}`;
+  `invocation:${agentId}`;
 
 export const invocationTargetName = (hex: string, label?: string): string => {
   const slug = label === undefined ? "" : labelSlug(label);

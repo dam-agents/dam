@@ -261,21 +261,25 @@ if (envStore.ready()) void modelCatalog.refresh();
 modelCatalog.start();
 
 const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
-let sessionHoldsWork: (sessionId: string) => Promise<boolean> = () =>
-  Promise.resolve(false);
 const subAgentsRunning = createSubAgentsRunning({
   apiServerUrl: config.API_SERVER_URL,
   agentId: platformAgentId,
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
-let sessionToolRunning: (sessionId: string) => boolean = () => false;
+let sessionState: {
+  turnRunning: (sessionId: string) => boolean;
+  localWork: (sessionId: string) => boolean;
+  spawnedBy: (sessionId: string) => string[];
+} = { turnRunning: () => false, localWork: () => false, spawnedBy: () => [] };
 const invocationWatch = createInvocationWatch({
   reporter: {
     report: (input) =>
       harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
   },
-  holdsWork: (sessionId) => sessionHoldsWork(sessionId),
-  toolRunning: (sessionId) => sessionToolRunning(sessionId),
+  turnRunning: (sessionId) => sessionState.turnRunning(sessionId),
+  localWork: (sessionId) => sessionState.localWork(sessionId),
+  subAgentsRunning: (sessionId) =>
+    subAgentsRunning(sessionState.spawnedBy(sessionId)),
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
 const modelCallExporter = createModelCallExporter({
@@ -486,7 +490,9 @@ const {
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   onToolActivity: changes.onToolActivity,
-  onTurnEnded: (sessionId, end) => invocationWatch.turnEnded(sessionId, end),
+  onTurnOutcome: (sessionId, end) =>
+    invocationWatch.turnOutcome(sessionId, end),
+  onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
   beforeSpawn: () =>
@@ -508,10 +514,12 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
-sessionHoldsWork = async (sessionId) =>
-  backgroundWork.hasWork(sessionId) ||
-  (await subAgentsRunning(subAgentSessions.spawnedBy(sessionId)));
-sessionToolRunning = (sessionId) => acpRuntime.toolCallsOpen(sessionId);
+sessionState = {
+  turnRunning: (sessionId) => acpRuntime.isSessionRunning(sessionId),
+  localWork: (sessionId) =>
+    acpRuntime.toolCallsOpen(sessionId) || backgroundWork.hasWork(sessionId),
+  spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
+};
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,

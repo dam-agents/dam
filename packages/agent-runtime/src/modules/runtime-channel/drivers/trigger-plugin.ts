@@ -8,7 +8,6 @@ import type {
   ScheduleResetEventPayload,
   TriggerEventPayload,
 } from "agent-runtime-api";
-import { INVOCATION_SCHEDULE_PREFIX } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 import {
   SessionModelError,
@@ -17,7 +16,7 @@ import {
 import type { PrecheckOutcome } from "../domain/precheck.js";
 import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
-import type { InvocationWatch } from "../invocation-watch.js";
+import type { InvocationWatch } from "../services/invocation-watch.js";
 
 const IMPL_NAME = "trigger";
 
@@ -88,7 +87,7 @@ export function createTriggerPlugin(deps: {
   reporter: EventReporter;
   findSessionByRef?: (ref: string) => string | undefined;
   catalogListed?: () => Promise<void>;
-  invocationWatch?: Pick<InvocationWatch, "watch">;
+  invocationWatch: Pick<InvocationWatch, "watch">;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
@@ -249,7 +248,7 @@ export function createTriggerPlugin(deps: {
   ): Promise<void> => {
     for (let attempt = 1; ; attempt++) {
       try {
-        deps.invocationWatch?.watch(
+        deps.invocationWatch.watch(
           await withinStartBound(startSession(payload, payload.task)),
           eventId,
         );
@@ -288,7 +287,7 @@ export function createTriggerPlugin(deps: {
     payload: TriggerEventPayload,
     ctx: EventContext,
   ): Promise<void> => {
-    if (payload.scheduleId.startsWith(INVOCATION_SCHEDULE_PREFIX)) {
+    if (payload.invocation) {
       void runInvocation(payload, ctx.eventId).catch((err) =>
         deps.log(`[trigger] invocation run failed: ${(err as Error).message}`),
       );

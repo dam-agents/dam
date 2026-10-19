@@ -288,7 +288,6 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         dialect,
         `provider '${entry.alias}' has no endpoint in this pod's env`,
       );
-    deps.onCallStarted?.(session);
     const stream = body.stream === true;
     const prepared =
       deps.prepareBody?.(body, { entry, dialect, stream }) ?? body;
@@ -369,6 +368,8 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       res.on("close", fn);
     };
 
+    deps.onCallStarted?.(session);
+    if (res.destroyed) return record(499, null);
     let upstream: Response;
     try {
       upstream = await doFetch(upstreamUrl(wire, dialect, path, search), {
