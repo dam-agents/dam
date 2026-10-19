@@ -2016,13 +2016,13 @@ impl Server {
             status.cpus = spec.cpus;
             status.memory_mib = spec.memory_mib;
             status.disk_gib = spec.storage_gib;
-            status.used_mib = entry
-                .and_then(|e| e.resident_mib)
-                .filter(|_| matches!(state, State::Running | State::Unknown))
-                .unwrap_or(0);
-            status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
             status.nested = spec.nested_virtualization && self.runtime.nests();
         }
+        status.used_mib = entry
+            .and_then(|e| e.resident_mib)
+            .filter(|_| matches!(state, State::Running | State::Unknown))
+            .unwrap_or(0);
+        status.warming = state == State::Running && entry.is_some_and(MachineEntry::warming);
         if state == State::Unknown && status.message.is_empty() {
             status.message = seen.and_then(|seen| seen.error).unwrap_or_default();
         }

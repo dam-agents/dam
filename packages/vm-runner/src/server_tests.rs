@@ -3236,3 +3236,29 @@ async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 700);
 }
+
+// TEST_SCENARIO: a spec that cannot be read says nothing about what the machine holds or how long its boot has been up, and the status that zeroed both over an unreadable spec made the controller count a measured machine at its floor. Neither is read off the spec, so both are still reported; only what the spec carries is missing.
+#[tokio::test]
+async fn a_machine_whose_spec_cannot_be_read_still_reports_what_it_measured() {
+    let h = Harness::new("spec-unread-status");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(640);
+    h.server.probe("m1");
+    std::fs::write(
+        h.dir.join("machines").join("m1").join("spec.json"),
+        "not json",
+    )
+    .unwrap();
+
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert_eq!(
+        status.used_mib, 640,
+        "an unreadable spec counted the machine as holding nothing"
+    );
+    assert!(
+        status.warming,
+        "an unreadable spec dropped the warm-up the runner knows about"
+    );
+}
