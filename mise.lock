@@ -306,26 +306,26 @@ url_api = "https://api.github.com/repos/Boshen/cargo-shear/releases/assets/58085
 provenance = "github-attestations"
 
 [[tools."github:jolars/panache"]]
-version = "3.14.0"
+version = "3.16.0"
 backend = "github:jolars/panache"
-specifiers = ["3.14.0"]
+specifiers = ["3.16.0"]
 
 [tools."github:jolars/panache"."platforms.linux-arm64"]
-checksum = "sha256:f8d3147f5046b951cc588985335dd7ae8f937770e85e0515b2f9376e06cdc205"
-url = "https://github.com/jolars/panache/releases/download/v3.14.0/panache-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jolars/panache/releases/assets/605282829"
+checksum = "sha256:b0df4c8eb04e9efa5dfb76192d15b67b710e3ace949ddf703a9ee3920026dbe1"
+url = "https://github.com/jolars/panache/releases/download/v3.16.0/panache-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/636221742"
 provenance = "github-attestations"
 
 [tools."github:jolars/panache"."platforms.linux-x64"]
-checksum = "sha256:c11d878a641bab85834fffdcfa04ba30066a302a3e29f1c980bb22608438567e"
-url = "https://github.com/jolars/panache/releases/download/v3.14.0/panache-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/jolars/panache/releases/assets/605283683"
+checksum = "sha256:d8b86d20a178e18d06ab935058d1f6d4381a690f261c4e228bfa7e9c94610ca9"
+url = "https://github.com/jolars/panache/releases/download/v3.16.0/panache-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/636223512"
 provenance = "github-attestations"
 
 [tools."github:jolars/panache"."platforms.macos-arm64"]
-checksum = "sha256:e76d367532b76dc8755e2c3fdddd4fe97a3aa43a920ac6deb33d18f47b7c371b"
-url = "https://github.com/jolars/panache/releases/download/v3.14.0/panache-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/jolars/panache/releases/assets/605292078"
+checksum = "sha256:0a745a0a7e165983342e0e2eff862473c4eb1751c6b5c19111f8dd776d1ba41f"
+url = "https://github.com/jolars/panache/releases/download/v3.16.0/panache-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/jolars/panache/releases/assets/636224407"
 provenance = "github-attestations"
 
 [[tools.go]]
@@ -346,14 +346,14 @@ checksum = "sha256:76812b213b1b2302c978d28fa52fa92d541704b9e7d9d5db8002c50e4018c
 url = "https://dl.google.com/go/go1.27.2.darwin-arm64.tar.gz"
 
 [[tools."go:golang.org/x/vuln/cmd/govulncheck"]]
-version = "1.8.0"
+version = "1.9.0"
 backend = "go:golang.org/x/vuln/cmd/govulncheck"
 specifiers = ["latest"]
 
 [[tools."go:honnef.co/go/tools/cmd/staticcheck"]]
-version = "0.7.0-0.dev.0.20261009221906-f1838cc308e5"
+version = "0.8.2"
 backend = "go:honnef.co/go/tools/cmd/staticcheck"
-specifiers = ["v0.7.0-0.dev.0.20261009221906-f1838cc308e5"]
+specifiers = ["latest"]
 
 [[tools."go:sigs.k8s.io/controller-tools/cmd/controller-gen"]]
 version = "0.22.0"
@@ -527,13 +527,13 @@ url = "https://nodejs.org/dist/v26.11.1/node-v26.11.1-darwin-arm64.tar.gz"
 
 [[tools."npm:json-schema-to-typescript"]]
 version = "16.0.0"
-aube = { path = ".mise/locks/npm-json-schema-to-typescript/16.0.0", digest = "sha256:d709f31e2156a84ad0a31472b19e1ac40eda7d608de936c9ca3fd733ec8b7571" }
+aube = { path = ".mise/locks/npm-json-schema-to-typescript/16.0.0", digest = "sha256:c5d15d9c2424228eaeba300762fd482ca97dd9e27035520c319e1a6bdb4ed51c" }
 backend = "npm:json-schema-to-typescript"
 specifiers = ["latest"]
 
 [[tools."npm:knip"]]
-version = "6.40.0"
-aube = { path = ".mise/locks/npm-knip/6.40.0", digest = "sha256:b79554d8e8420830b1800b61424e5ad40994846b54e8e48b468c95f59646a064" }
+version = "6.41.0"
+aube = { path = ".mise/locks/npm-knip/6.41.0", digest = "sha256:9399e9ec005b9e5f9fea2dcb528798383b48d93d442fae22bc6528c5fdf43cea" }
 backend = "npm:knip"
 specifiers = ["latest"]
 
@@ -561,26 +561,26 @@ url_api = "https://api.github.com/repos/suzuki-shunsuke/pinact/releases/assets/5
 provenance = "github-attestations"
 
 [[tools.pnpm]]
-version = "12.10.1"
+version = "12.12.1"
 backend = "aqua:pnpm/pnpm"
 specifiers = ["latest"]
 
 [tools.pnpm."platforms.linux-arm64"]
-checksum = "sha256:18dbb118de1dbef0e4516c17bf847d6ee206fc4deffb2bb488ec8e1d2814e078"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.10.1/pnpm-linux-arm64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/616153643"
+checksum = "sha256:193f101e2e670c5ef0b167f82e894c7b863be442c4a691ec8b57e51d657cb6b9"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.12.1/pnpm-linux-arm64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/630553360"
 provenance = "github-attestations"
 
 [tools.pnpm."platforms.linux-x64"]
-checksum = "sha256:502a275984a4cd01e5579ac72049a241091cac5118e44becf84951130c3e079e"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.10.1/pnpm-linux-x64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/616153639"
+checksum = "sha256:f61657f53f7891f76ae5cf11e924ee3e9ae1659affcaf7deb9622d4d7ea5637e"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.12.1/pnpm-linux-x64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/630553361"
 provenance = "github-attestations"
 
 [tools.pnpm."platforms.macos-arm64"]
-checksum = "sha256:a617ae6a55c8b3cd494c611ada88d65cb7c3cf6d7828e91b2f44b4bed1bee217"
-url = "https://github.com/pnpm/pnpm/releases/download/v12.10.1/pnpm-darwin-arm64.tar.gz"
-url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/616153633"
+checksum = "sha256:00039372346c8bf9d63302e71713824b6376de7038bb2e3b4c75f88cf437d532"
+url = "https://github.com/pnpm/pnpm/releases/download/v12.12.1/pnpm-darwin-arm64.tar.gz"
+url_api = "https://api.github.com/repos/pnpm/pnpm/releases/assets/630553366"
 provenance = "github-attestations"
 
 [[tools.rust]]
@@ -635,26 +635,26 @@ url = "https://github.com/jdx/usage/releases/download/v6.12.1/usage-universal-ap
 signer = "sigstore-oidc:https://github.com/jdx/usage/.github/workflows/publish-cli.yml"
 
 [[tools.uv]]
-version = "0.12.24"
+version = "0.13.0"
 backend = "aqua:astral-sh/uv"
 specifiers = ["latest"]
 
 [tools.uv."platforms.linux-arm64"]
-checksum = "sha256:5231be65f496304623895dacdbf1de8504fec90303684bdf05805aa34414dd21"
-url = "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/622872824"
+checksum = "sha256:3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003012"
 provenance = "github-attestations"
 
 [tools.uv."platforms.linux-x64"]
-checksum = "sha256:b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6"
-url = "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/622873043"
+checksum = "sha256:1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003332"
 provenance = "github-attestations"
 
 [tools.uv."platforms.macos-arm64"]
-checksum = "sha256:0c4346de7abdb49495b393b9ec809fe387aa43e586be20fecb972216c1e71732"
-url = "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-aarch64-apple-darwin.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/622872807"
+checksum = "sha256:a9c1b29002cf3c83f07fa9cd8a887a3be0107d90e23189721221e7257db8e3d6"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-apple-darwin.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626002972"
 provenance = "github-attestations"
 
 [[tools.yq]]
