@@ -32,6 +32,24 @@ provision:
         - "container-log-max-size=10Mi"
         - "container-log-max-files=3"
       EOF
+      # Nested guests are only usable with transparent huge pages pinned on:
+      # under Ubuntu's `madvise` a nested boot took 3 to 25 s and pegged its
+      # vCPUs, which the vm lane sees as agents stuck "starting". Red Hat
+      # hosts default to `always`, and the runner's memory layout assumes it.
+      # A sysfs write alone would be lost on reboot, so a unit re-applies it.
+      cat > /etc/systemd/system/transparent-hugepage.service << 'THP'
+      [Unit]
+      Description=Pin transparent huge pages on for the nested VM runners
+      After=local-fs.target
+
+      [Service]
+      Type=oneshot
+      ExecStart=/bin/sh -c 'echo always > /sys/kernel/mm/transparent_hugepage/enabled'
+
+      [Install]
+      WantedBy=multi-user.target
+      THP
+      systemctl enable --now transparent-hugepage.service
       if [ ! -d /var/lib/rancher/k3s ]; then
         # Pinned: k3s ships the Gateway API CRDs through its own gateway-api-crd
         # chart, so GATEWAY_API_VERSION in .mise/tasks/cluster/install must match the

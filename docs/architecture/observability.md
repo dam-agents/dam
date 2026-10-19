@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-17
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -84,7 +84,7 @@ Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and 
   The api-server delivers it tagged with its harness, and only to a runtime that advertises the harnesses it carries, so each [Harness Lease](sessions.md#session-inside-the-pod) reads its own harness's rail.
   A harness's layer owns its variables over an agent-wide copy, so the rail an older agent was seeded from its Template never leaks into another harness: Bob never sees the Claude Code rail's OTLP protocol.
 
-- **Signals.** The agent-runtime's Model Router ([harness configuration](harness-config.md#the-model-router)) exports one **log record per LLM call** on every harness it serves, as OTLP/HTTP JSON on the same rail with the harness's trace context: the token counts, the cost from the catalog's price, the provider Connection, the upstream model, the harness, and whether the call went uncounted (cut short, no usage, unpriced).
+- **Signals.** The agent-runtime's Model Router ([harness configuration](harness-config.md#the-model-router)) exports one **log record per LLM call** on every harness it serves, as OTLP/HTTP JSON on the same rail with the harness's trace context: the token counts, the provider Connection, the upstream model, the harness, and whether the call went uncounted (cut short, no usage); no cost, as spend reads the [meter](spend-limits.md).
   It batches for a second, retries a refused post once, then drops with a log line; a call never waits on it.
   Claude Code also exports metrics, logs and traces (the last via the enhanced-telemetry beta) over OTLP/HTTP, with its own **log record per LLM call**; the [metrics](metrics.md) reader prefers the router's records where an agent has them.
   Pi exports **log records only**: the same per-call counters, and a prompt identifier on every record a prompt caused, but no traces, so its sessions never fold child runs by trace.
@@ -95,7 +95,7 @@ Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and 
   Bob additionally gates those spans behind its own agent-operations switch, so the rail turns it on explicitly; without it the harness exports its lifecycle spans and none of the spend.
   Codex exports **log records and traces**, but in a shape of its own: no record body, its event name and counter names its own, its thread id where the others carry the session, and input counted with cache reads included.
   The collector reshapes Codex's records on arrival — body from the event name, session from the thread id, and its per-call usage record renamed with the common counters, input net of cache reads — so the read path takes Codex spend from them like Claude Code's.
-  Codex reports no per-call cost; the Model Router prices each of its calls in a record of its own, which the read path prefers, so Codex's own records count, as tokens at zero cost, only where no router record reached the store.
+  Codex reports no per-call cost, so its records count as tokens at zero cost, only where no router record reached the store.
   Its usage record carries no trace context, so a session-scoped span read finds no Codex session.
 
 - **Content bodies are not exported** — prompt text, tool arguments, and raw API bodies stay off; only structural telemetry (durations, model/tool names, token and cost counters, span shape) leaves the agent.

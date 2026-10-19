@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -104,7 +104,7 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **activity log + agent mirror** — append-only event log (`activity_events`), per-sub role flags (`actor_roles`), and the K8s↔Postgres agent ownership mirror (`agents`).
   Pseudonymized `actor_sub` and `owner_sub` columns at the write boundary.
   Owned by [usage-tracking](usage-tracking.md).
-- **session directory** — the kind of each Session (`agent_sessions`), reported by the agent that owns it.
+- **session directory** — the kind of each Session, reported by its agent.
   A deliberate copy of agent-owned state, kept only so spend can still be attributed to how the work was started once the agent hibernates or is deleted; it is not a Session store and no Session is read from it.
   Owned by [metrics](metrics.md#session-directory).
 - **schedules** — RRULE, quiet hours, task payload, session mode, the optional Precheck, and firing bookkeeping (`schedules`) — the last of which separates runs from declined occurrences and from a Precheck that broke.
@@ -127,9 +127,10 @@ Postgres carries application state the api-server owns end-to-end — anything t
 - **knowledge-base shares** — one row per shared knowledge base (`kb_shares`): the durable share secret, owner-controlled public name, the published-snapshot pointer and stats, and the publish/auto-refresh lifecycle bookkeeping.
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
-- **delegation records** — one row per Invocation (`invocations`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
-- **spend** — the daily Metered Spend, not rebuildable, as costs are fixed when priced, and the owner's daily limits; Redis caches its day totals.
-  Owned by [spend-limits](spend-limits.md).
+- **delegation records** — one row per Invocation, kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
+- **spend** — the Metered Spend by day and by call, not rebuildable, as costs are fixed when priced; its measuring start; and the owner's daily limits.
+  Redis caches the day totals.
+  Owned by [spend-limits](spend-limits.md#ledger).
 
 Several of those rows carry an owner's Keycloak sub, and they carry it **differently on purpose**: the usage mirror hashes it, because pseudonymized identifiers are that subsystem's whole premise, while the public agent profile and the attention record store the real sub, as channel bindings already do.
 The difference is the requirement, not an oversight — a public page names its Agent's owner and a feed names a person's own sessions back to them, and a hash cannot be resolved back to a person.
@@ -291,7 +292,8 @@ A refused growth is reported and reconciliation continues: the runner still serv
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
-Every guest is held to the claim's room as well: at each look the runner grants each running guest an even part of what is left below 95% of the claim, the level at which it counts the claim full, through its share, and platform-init sizes a preallocated file on the disk so that the guest can write only what is left of its grant.
+Every guest is held to the claim's room as well: each look grants each machine that is running or starting an even part of what is left below 95% of the claim, and a sleeping one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init sizes a preallocated file on the disk so that the guest can write only what is left of its grant.
+A claim the runner cannot measure grants nothing at all, so no guest is held to it, and it says so in its log each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
 The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.

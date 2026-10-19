@@ -31,7 +31,6 @@ export interface TurnGroup {
   traceIds: string[];
   rootName: string;
   calls: number;
-  costUsd: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -117,10 +116,6 @@ function summarise(items: readonly Item[], identity: Identity): TurnGroup {
     ],
     rootName: root?.name ?? spans[0]?.name ?? "",
     calls: calls.length,
-    costUsd: calls.reduce(
-      (sum, c) => sum + num(c.attributes.cost_usd_micros) / 1e6,
-      0,
-    ),
     inputTokens: calls.reduce((s, c) => s + num(c.attributes.input_tokens), 0),
     outputTokens: calls.reduce(
       (s, c) => s + num(c.attributes.output_tokens),

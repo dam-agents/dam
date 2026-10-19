@@ -1,13 +1,24 @@
-import type { MetricsOverview, MetricsQuery } from "api-server-api";
+import type {
+  MetricsOverview,
+  MetricsQuery,
+  SpendBreakdown,
+  SpendBreakdownInput,
+  SpendMetering,
+  SpendSessions,
+  SpendSessionsInput,
+} from "api-server-api";
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
 import type { TrpcClient } from "../../shared/trpc/trpc-client.js";
 import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
 
+type MetricsResult<T> = Promise<Result<T, TransportError | AuthRequiredError>>;
+
 export interface MetricsService {
-  overview(
-    query: MetricsQuery,
-  ): Promise<Result<MetricsOverview, TransportError | AuthRequiredError>>;
+  overview(query: MetricsQuery): MetricsResult<MetricsOverview>;
+  breakdown(input: SpendBreakdownInput): MetricsResult<SpendBreakdown>;
+  sessions(input: SpendSessionsInput): MetricsResult<SpendSessions>;
+  metering(): MetricsResult<SpendMetering>;
 }
 
 export function createMetricsService(deps: {
@@ -16,6 +27,15 @@ export function createMetricsService(deps: {
   return {
     async overview(query) {
       return trpcCall(() => deps.trpc.metrics.overview.query(query));
+    },
+    async breakdown(input) {
+      return trpcCall(() => deps.trpc.spend.breakdown.query(input));
+    },
+    async sessions(input) {
+      return trpcCall(() => deps.trpc.spend.sessions.query(input));
+    },
+    async metering() {
+      return trpcCall(() => deps.trpc.spend.metering.query());
     },
   };
 }

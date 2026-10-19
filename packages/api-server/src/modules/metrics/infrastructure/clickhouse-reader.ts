@@ -4,7 +4,6 @@ import type {
   SessionRuntime,
   SpendByAgent,
   SpendByDay,
-  SubAgentSpend,
   TokenSpendByModel,
   TokenSpendByProvider,
 } from "api-server-api";
@@ -18,6 +17,9 @@ import type {
 
 const AGENT_GATE =
   "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}";
+const CALLING_AGENT_GATE = `(${AGENT_GATE} OR ResourceAttributes['platform.invocation.id'] IN {agentIds:Array(String)})`;
+const CALLING_AGENT_ID =
+  "if(ResourceAttributes['platform.invocation.id'] != '', ResourceAttributes['platform.invocation.id'], ResourceAttributes['platform.agent.id'])";
 
 const HARNESS_CALL =
   "Body IN ('claude_code.api_request', 'pi.api_request', 'codex.response_completed')";
@@ -43,8 +45,8 @@ const CALL_KEY_TEXT =
  * names its model without the `claude/` prefix and always counts from the
  * harness's record.
  */
-const callRows = (w: MetricsWindow): string => {
-  const routerRows = [ROUTER_CALL, AGENT_GATE, ...timeBounds(w)].join(" AND ");
+const callRows = (w: MetricsWindow, gate = AGENT_GATE): string => {
+  const routerRows = [ROUTER_CALL, gate, ...timeBounds(w)].join(" AND ");
   return `(${ROUTER_CALL} OR (${HARNESS_CALL} AND (${CLAUDE_NATIVE_CALL}
      OR ${CALL_KEY} NOT IN (SELECT DISTINCT ${CALL_KEY} FROM otel_logs WHERE ${routerRows})
      OR Timestamp < (SELECT mapFromArrays(groupArray(k), groupArray(m)) FROM (SELECT ${CALL_KEY_TEXT} AS k, min(Timestamp) AS m FROM otel_logs WHERE ${routerRows} GROUP BY k))[${CALL_KEY_TEXT}])))`;
@@ -62,40 +64,46 @@ const timeBounds = (w: MetricsWindow): string[] => [
     : ["Timestamp < parseDateTimeBestEffort({toIso:String})"]),
 ];
 
-const ownedCallRows = (w: MetricsWindow): string =>
-  [callRows(w), AGENT_GATE, ...timeBounds(w)].join(" AND ");
+const ownedCallRows = (w: MetricsWindow, gate: string): string =>
+  [callRows(w, gate), gate, ...timeBounds(w)].join(" AND ");
 
 const sessionMatch = (w: MetricsWindow): string | undefined => {
   if (w.sessionId !== undefined)
     return "LogAttributes['session.id'] = {sessionId:String}";
-  if (w.sessionIds !== undefined)
-    return "LogAttributes['session.id'] IN {sessionIds:Array(String)}";
   return undefined;
 };
 
-const literalSessionTraceIds = (w: MetricsWindow, match: string): string =>
+const literalSessionTraceIds = (
+  w: MetricsWindow,
+  match: string,
+  gate: string,
+): string =>
   `SELECT DISTINCT TraceId FROM otel_logs
-       WHERE ${ownedCallRows(w)}
+       WHERE ${ownedCallRows(w, gate)}
          AND ${match}
          AND TraceId != ''`;
 
-const ownedLogRows = (w: MetricsWindow, body: string[]): string => {
-  const base = [...body, AGENT_GATE, ...timeBounds(w)];
+const ownedLogRows = (
+  w: MetricsWindow,
+  body: string[],
+  gate = AGENT_GATE,
+): string => {
+  const base = [...body, gate, ...timeBounds(w)];
   const match = sessionMatch(w);
   if (match === undefined) return base.join("\n  AND ");
-  const owned = ownedCallRows(w);
+  const owned = ownedCallRows(w, gate);
   return [
     ...base,
     `(${match}
    OR LogAttributes['session.id'] IN (
      SELECT DISTINCT LogAttributes['session.id'] FROM otel_logs
      WHERE ${owned} AND LogAttributes['session.id'] != '' AND TraceId IN (
-       ${literalSessionTraceIds(w, match)})))`,
+       ${literalSessionTraceIds(w, match, gate)})))`,
   ].join("\n  AND ");
 };
 
-export const ownedApiRequests = (w: MetricsWindow): string =>
-  ownedLogRows(w, [callRows(w)]);
+export const ownedApiRequests = (w: MetricsWindow, gate = AGENT_GATE): string =>
+  ownedLogRows(w, [callRows(w, gate)], gate);
 
 export const ownedAgentLogs = (w: MetricsWindow): string => ownedLogRows(w, []);
 
@@ -116,7 +124,6 @@ const windowParams = (agentIds: readonly string[], w: MetricsWindow) => ({
   ...(w.fromIso === undefined ? {} : { fromIso: w.fromIso }),
   ...(w.toIso === undefined ? {} : { toIso: w.toIso }),
   ...(w.sessionId === undefined ? {} : { sessionId: w.sessionId }),
-  ...(w.sessionIds === undefined ? {} : { sessionIds: w.sessionIds }),
 });
 
 const INVOCATION_ID = "ResourceAttributes['platform.invocation.id']";
@@ -302,7 +309,6 @@ export function createClickhouseReader(
       const base = ownedApiRequests({
         ...window,
         sessionId: undefined,
-        sessionIds: undefined,
       });
       const r = await rows(
         `WITH trace_root AS (
@@ -376,7 +382,7 @@ export function createClickhouseReader(
         `SELECT
            Timestamp AS at,
            LogAttributes['request_id'] AS requestId,
-           ResourceAttributes['platform.agent.id'] AS agentId,
+           ${CALLING_AGENT_ID} AS agentId,
            LogAttributes['model'] AS model,
            ${TOK_IN} AS inputTokens,
            ${TOK_CACHE_R} AS cacheReadTokens,
@@ -386,7 +392,7 @@ export function createClickhouseReader(
            ${COST_USD} AS costUsd,
            ${IN("'duration_ms'")} AS durationMs
          FROM otel_logs
-         WHERE ${ownedApiRequests(window)}
+         WHERE ${ownedApiRequests(window, CALLING_AGENT_GATE)}
          ORDER BY Timestamp DESC
          LIMIT {limit:UInt32}`,
         { ...windowParams(agentIds, window), limit },
@@ -404,47 +410,6 @@ export function createClickhouseReader(
         costUsd: n(x.costUsd),
         durationMs: n(x.durationMs),
       })) satisfies CallContext[];
-    },
-
-    async spendBySubAgent(agentIds, window, limit) {
-      const r = await rows(
-        `SELECT
-           ${INVOCATION_ID} AS subAgentId,
-           groupUniqArray(LogAttributes['model']) AS models,
-           count() AS calls,
-           sum(${IN("'duration_ms'")}) AS totalDurationMs,
-           sum(${TOK_IN}) AS inputTokens,
-           sum(${IN("'output_tokens'")}) AS outputTokens,
-           sum(${TOK_CACHE_R}) AS cacheReadTokens,
-           sum(${TOK_CACHE_C}) AS cacheCreationTokens,
-           sum(${COST_USD}) AS costUsd,
-           min(Timestamp) AS firstAt,
-           max(Timestamp) AS lastAt
-         FROM otel_logs
-         WHERE ${ownedApiRequests(window)} AND ${INVOCATION_ID} != ''
-         GROUP BY subAgentId
-         ORDER BY lastAt DESC
-         LIMIT {limit:UInt32}`,
-        { ...windowParams(agentIds, window), limit },
-      );
-      return r.map((x) => ({
-        subAgentId: String(x.subAgentId ?? ""),
-        models: Array.isArray(x.models)
-          ? x.models
-              .map(String)
-              .filter((m) => m !== "")
-              .sort()
-          : [],
-        calls: n(x.calls),
-        totalDurationMs: n(x.totalDurationMs),
-        inputTokens: n(x.inputTokens),
-        outputTokens: n(x.outputTokens),
-        cacheReadTokens: n(x.cacheReadTokens),
-        cacheCreationTokens: n(x.cacheCreationTokens),
-        costUsd: n(x.costUsd),
-        firstAt: String(x.firstAt ?? ""),
-        lastAt: String(x.lastAt ?? ""),
-      })) satisfies SubAgentSpend[];
     },
 
     async telemetryEvents(agentIds, window, limit) {

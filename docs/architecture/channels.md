@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -318,6 +318,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
   The emoji is the Agent's emoji avatar if it has one, else the robot face, unless the conversation's binding names custom emoji: whoever connects or edits the conversation can switch them on and name the workspace's emoji for each of the eight characters, prefilled `<brand.short>-agent-1` to `-8` in the order the set was drawn.
   The names are trusted as given — Slack shows an unknown name as literal text — and a post to a conversation the Agent is not connected to uses the robot face.
   When such a post reaches another Agent, the opening is removed first, so a peer named at the start of the reply is still addressed.
+  Slack returns the line break after the opening as spaces, so the opening is found by its shape — an emoji in any form, then the bold name — and is removed only in a workspace where the platform signs posts.
   Platform notices (a failed turn, a slow start) are the platform speaking and always post as the app.
 - **Omit the capability entirely**, when no partial answer is possible: checked once proactively, not per call, and the affordance drops out of the tool list rather than staying registered to fail forever.
   **No Slack capability takes this path.** It is the tool list that would have to carry the verdict, and a tool list is per Agent while a grant is per workspace — so with several installed there is always a partial answer to give, and the rule above selects the first strategy for every one of them.
@@ -329,6 +330,7 @@ The agent persona above is the one exception and fails closed: the cost of guess
 
 - **Transport.** Long-poll `getUpdates` — one client for the install, started by the lease-holding replica at boot (the Bot API admits no second consumer) so `/bind` works in chats that have no binding yet.
   The same boot step advertises the command list to the Bot API, which is what makes the commands offered when someone types `/`.
+  The client fetches nothing new until every update it handed over is handled, so an inbound message is only queued there; waiting on its turn would stop the bot reading every chat.
 - **Token provenance.** The operator creates one bot via `@BotFather` and sets the token in Helm values; it reaches the api-server as env.
   No per-Agent Secrets, no token at rest in Postgres.
 - **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent attaches to the *conversation*: someone sends `/bind` (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing *their own* Agents.

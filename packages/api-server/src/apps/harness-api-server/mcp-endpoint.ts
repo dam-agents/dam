@@ -1319,7 +1319,7 @@ export function createMcpSession(
 
   server.tool(
     "report_result",
-    "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
+    "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Once a call is accepted, your task is over: end your turn at once, with no more text and no more tool calls. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
     {
       result: z
         .unknown()
@@ -1334,7 +1334,12 @@ export function createMcpSession(
           `report_result rejected: ${outcome.errors ?? "result did not validate"}. Fix the result and call report_result again.`,
         );
       }
-      return textResult(JSON.stringify({ accepted: true }));
+      return textResult(
+        JSON.stringify({
+          accepted: true,
+          next: "Your task is done. End your turn now, with no more text and no more tool calls.",
+        }),
+      );
     },
   );
 

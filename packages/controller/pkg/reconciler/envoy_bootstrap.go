@@ -230,15 +230,16 @@ func buildOuterRouteConfig(p bootstrapParams) ev {
 			ev{"name": "connect", "domains": []any{"*"}, "routes": buildOuterRoutes(p)},
 		},
 	}
+	remove := []any{attributionAgentHeader, attributionInvocationHeader}
 	if p.Telemetry {
 		applyAttributionMutations(routeConfig, p)
-	} else {
-		routeConfig["request_headers_to_remove"] = []any{attributionAgentHeader, attributionInvocationHeader}
+		remove, _ = routeConfig["request_headers_to_remove"].([]any)
 	}
+	remove = append(remove, sessionStampHeader, harnessStampHeader)
 	if p.HarnessGuardAgent != "" {
-		removed, _ := routeConfig["request_headers_to_remove"].([]any)
-		routeConfig["request_headers_to_remove"] = append(removed, harnessGuardHeader)
+		remove = append(remove, harnessGuardHeader)
 	}
+	routeConfig["request_headers_to_remove"] = remove
 	return routeConfig
 }
 
@@ -409,10 +410,11 @@ func leafTLSContext(p bootstrapParams) ev {
 }
 
 func chainHeadersToRemove(p bootstrapParams) []any {
+	headers := []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader}
 	if p.HarnessGuardAgent != "" {
-		return []any{connectionAddressHeader, harnessGuardHeader}
+		headers = append(headers, harnessGuardHeader)
 	}
-	return []any{connectionAddressHeader}
+	return headers
 }
 
 func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {

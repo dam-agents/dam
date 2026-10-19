@@ -16,7 +16,6 @@ import {
   createWorkerHistoryProvider,
   type HistoryProvider,
 } from "./infrastructure/history-provider.js";
-import { createExecSpendProvider } from "./infrastructure/spend-provider.js";
 import { createRunResultStore } from "./infrastructure/run-result-store.js";
 import {
   createPlatformMcpEntryStore,
@@ -116,7 +115,6 @@ export interface HarnessRuntime {
     render: (model: string) => string;
   };
   initialize?: Record<string, unknown>;
-  sessionSpend?: { command: string[]; unit: string };
   sessionSettings?: Record<string, SessionSettingBinding>;
   catalog?: HarnessConfigCatalog;
 }
@@ -407,9 +405,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
     findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
     log: (msg) => opts.log?.(msg),
   });
-  const sessionSpend = Object.values(opts.harnesses).find(
-    (h) => h.sessionSpend,
-  )?.sessionSpend;
   const sessions = createSessionsService({
     openCaller: () =>
       createInProcessCaller((channel) =>
@@ -424,16 +419,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
       sessionRepositories: opts.sessionRepositories,
     }),
     ...(historyProvider ? { historyProvider } : {}),
-    ...(sessionSpend
-      ? {
-          spendProvider: createExecSpendProvider({
-            command: sessionSpend.command,
-            unit: sessionSpend.unit,
-            cwd: opts.workingDir,
-            log: opts.log,
-          }),
-        }
-      : {}),
     ...(terminalSessionPins ? { terminalSessionPins } : {}),
     log: opts.log,
   });

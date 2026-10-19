@@ -162,6 +162,7 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   once: z.literal(true).optional(),
+  invocation: z.literal(true).optional(),
   origin: onceOrigin.optional(),
   harness: z.string().min(1).optional(),
   provider: z.string().min(1).optional(),

@@ -8,14 +8,9 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { Message } from "../../../types.js";
 import { extractErrorMessage } from "../../acp/errors.js";
+import { messageText } from "../lib/unanswered-prompt.js";
 import type { RewriteMode } from "../store/sessions.js";
 import { MessageEditor } from "./message-editor.js";
-
-function textOf(message: Message): string {
-  return message.parts
-    .flatMap((p) => (p.kind === "text" ? [p.text] : []))
-    .join("\n\n");
-}
 
 const EDITOR_COPY: Record<RewriteMode, { label: string; save: string }> = {
   rewind: { label: "Rewind to this message", save: "Rewind and send" },
@@ -37,7 +32,7 @@ export function RewritableMessage({
   const setRewriting = useStore((s) => s.setRewriting);
   const [pending, setPending] = useState(false);
   const mode = rewriting?.messageId === message.id ? rewriting.mode : null;
-  const original = separateRendererBlocks(textOf(message));
+  const original = separateRendererBlocks(messageText(message));
 
   const save = async (text: string) => {
     if (mode === null) return;

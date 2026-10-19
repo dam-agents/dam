@@ -35,3 +35,27 @@ export function readTerminalSessionPins(dir: string): PlatformSessionOf {
   }
   return (harnessSessionId) => byHarnessId.get(harnessSessionId);
 }
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the pins of several harnesses, kept for the
+ * Model Router, which asks on each call of a terminal Session. A pin lands
+ * when the harness starts its conversation, so an id with no pin reads the
+ * directories again, at most once per `refreshMs`.
+ */
+export function createTerminalSessionLookup(
+  dirs: readonly string[],
+  refreshMs: number,
+  now: () => number = Date.now,
+): PlatformSessionOf {
+  let pins: PlatformSessionOf[] = [];
+  let readAt = Number.NEGATIVE_INFINITY;
+  const find = (harnessSessionId: string) =>
+    pins.map((of) => of(harnessSessionId)).find((id) => id !== undefined);
+  return (harnessSessionId) => {
+    const known = find(harnessSessionId);
+    if (known !== undefined || now() - readAt < refreshMs) return known;
+    pins = dirs.map(readTerminalSessionPins);
+    readAt = now();
+    return find(harnessSessionId);
+  };
+}

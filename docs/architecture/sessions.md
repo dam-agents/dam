@@ -53,6 +53,16 @@ A rewind gives the copy the original's place, title and creation time and then d
 Files the agent changed stay changed.
 The runtime answers before the copy's first frame, so the client that asked follows the new id without reloading.
 It refuses while a turn, a queued prompt or an agent request is pending, and for Sessions other parts of the platform hold the id of — scheduled, channel-bound, initialization.
+It tells a busy refusal from the others, so a client can ask again once the turn ends.
+A rewind can carry no message: it then **takes back** the newest message, cutting before the last batch of user messages in the history.
+It takes that batch by its place, since a stopped turn adds the harness's own note of the stop to it, and checks only that the batch holds the message.
+The harness may write the message a moment after the turn ends, so the runtime reads the history again for a short while.
+When the history still does not hold the message, the harness dropped it — a stop that came before the turn began — and the runtime answers with the same Session, since nothing needs cutting.
+It refuses when the agent wrote anything after the batch.
+The chat takes a message back when the agent has shown nothing for it yet and the user presses Escape in an empty input.
+A message still in the queue is removed from it; otherwise the chat stops the turn, repeating the stop until the turn ends, and rewinds.
+Either way, the message's text goes back to the input; when the runtime refuses because the agent already answered, the turn only stops.
+When the message started the Session, the chat deletes the Session instead and puts the text in a new chat.
 The copy keeps the original's times: the harness stamps the last entry it copies with the time of the fork, and the runtime gives that entry its original time back.
 
 ## Prompt delivery

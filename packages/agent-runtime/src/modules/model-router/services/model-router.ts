@@ -20,13 +20,12 @@ import type { RuntimeEnvState } from "../../runtime-channel/infrastructure/env-s
 import { ANTHROPIC_OAUTH_TEMPLATE } from "../../model-catalog/index.js";
 import { anthropicBetaFor } from "../domain/anthropic-beta.js";
 import { bobGatewayPath, classify } from "../domain/classify.js";
-import type { SessionHandle } from "../domain/session-of.js";
+import { SESSION_HEADER, type SessionHandle } from "../domain/session-of.js";
 import { resolveTarget } from "../domain/resolve-target.js";
 import { upstreamUrl, upstreamWireOf } from "../domain/upstream.js";
 import { explainUpstreamError } from "../domain/upstream-error.js";
 import { createSseModelRewrite, rewriteBody } from "../domain/model-rewrite.js";
 import {
-  costUsdMicros,
   createUsageScanner,
   traceOf,
   usageOfBody,
@@ -50,9 +49,7 @@ export interface ModelCallRecord {
   startedAt: string;
   durationMs: number;
   usage: ModelUsage | null;
-  costUsdMicros: number | null;
   uncounted: UncountedReason | null;
-  providerReportedCostUsd: number | null;
   requestId: string | null;
   trace: { traceId: string; spanId: string } | null;
 }
@@ -135,6 +132,7 @@ const REQ_DROP = new Set([
   "authorization",
   "x-api-key",
   HARNESS_HEADER,
+  SESSION_HEADER,
 ]);
 const RES_DROP = new Set([
   "content-encoding",
@@ -149,6 +147,14 @@ const RES_DROP = new Set([
  * so the router adds `x-should-retry: false` where the provider set none.
  */
 const PERMANENT_STATUSES = new Set([400, 401, 403, 404, 422]);
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a stamp the gateway's meter accepts: at most 128
+ * characters of printable ASCII. A Claude Code `user_id` can hold any text,
+ * and a header value fetch refuses would fail the call, so such a session
+ * goes unstamped.
+ */
+const STAMP_VALUE = /^[\x20-\x7e]{1,128}$/;
 
 function errorBody(dialect: ModelDialect | null, message: string): string {
   return dialect === "anthropic-messages"
@@ -295,6 +301,8 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     };
     if (wire.credential)
       headers[wire.credential.header] = wire.credential.value;
+    if (STAMP_VALUE.test(harness)) headers[HARNESS_HEADER] = harness;
+    if (session && STAMP_VALUE.test(session)) headers[SESSION_HEADER] = session;
     const beta = anthropicBetaFor(
       headers["anthropic-beta"],
       entry.template === ANTHROPIC_OAUTH_TEMPLATE,
@@ -312,17 +320,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       recorded = true;
       deps.onCallEnded?.(session, status < 400 && usage !== null);
       if (!billed) return;
-      const reported = Number(
-        upstreamHeaders?.get("x-litellm-response-cost") ?? "",
-      );
       const uncounted: UncountedReason | null =
         usage === null
           ? status >= 400 && status !== 499
             ? "error"
             : "no-usage-event"
-          : entry.metadata.prices === null
-            ? "unpriced"
-            : null;
+          : null;
       deps.onCall?.({
         connectionId: entry.connectionId,
         alias: entry.alias,
@@ -336,13 +339,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         startedAt: startedAt.toISOString(),
         durationMs: Date.now() - startedAt.getTime(),
         usage,
-        costUsdMicros:
-          usage && status < 400
-            ? costUsdMicros(entry.metadata.prices, usage)
-            : null,
         uncounted,
-        providerReportedCostUsd:
-          Number.isFinite(reported) && reported > 0 ? reported : null,
         requestId:
           upstreamHeaders?.get("request-id") ??
           upstreamHeaders?.get("x-request-id") ??

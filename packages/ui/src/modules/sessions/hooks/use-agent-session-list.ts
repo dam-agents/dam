@@ -10,7 +10,7 @@ import {
 } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
-import { useSessionCosts } from "../../metrics/api/queries.js";
+import { useSessionSpend } from "../../spend/api/queries.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { useProvisionalSessions, useSessionPages } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
@@ -51,7 +51,7 @@ export function useAgentSessionList(agentId: string) {
     [sessions, sessionFilter],
   );
 
-  const costs = useSessionCosts(agentId, sessions);
+  const costs = useSessionSpend(agentId, sessions);
   const { data: approvals = EMPTY } = useApprovalsForAgent(agentId);
   const approvalSessions = useMemo(() => {
     const set = new Set<string>();
