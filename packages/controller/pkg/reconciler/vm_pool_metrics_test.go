@@ -15,6 +15,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
+	corelisters "k8s.io/client-go/listers/core/v1"
 	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
@@ -174,6 +175,25 @@ func TestAPassThatCannotReadTheNodesKeepsTheLastOne(t *testing.T) {
 	unreadable = false
 	r.PoolPass(ctx)
 	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "the same loss was announced again once the nodes were readable")
+}
+
+// TEST_SCENARIO: the controller asks which nodes are ready from the watch it was built with, not from the API server. A not-ready agent's reconcile asks on every retry, and on a lost node those retries run for every agent waiting there, so a live read would scale with the fleet.
+func TestNodeReadinessComesFromTheWatch(t *testing.T) {
+	r, _, _ := poolPassReconciler(t)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	require.NoError(t, indexer.Add(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "kvm-1"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionTrue}}},
+	}))
+	r.WithNodeCache(corelisters.NewNodeLister(indexer))
+	r.client.(*fake.Clientset).PrependReactor("list", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("a reconcile must not list the nodes from the API server")
+	})
+
+	ready := r.nodesReady(context.Background())
+	require.NotNil(t, ready)
+	assert.True(t, ready["kvm-1"])
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the owner's ready runner pod, moved onto a node the cluster reports not ready — one of the two pods a lost node leaves behind.

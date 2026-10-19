@@ -64,6 +64,7 @@ type AgentReconciler struct {
 	statefulSets          cache.MutationCache
 	runnerDeploys         cache.MutationCache
 	runnerPodCache        corelisters.PodLister
+	nodeCache             corelisters.NodeLister
 	vmRunning             sync.Map
 	vmLive                sync.Map
 	vmDiskGrows           sync.Map
@@ -124,6 +125,12 @@ func (r *AgentReconciler) WithStatefulSetCache(informer cache.SharedIndexInforme
 func (r *AgentReconciler) WithRunnerCaches(deployments cache.SharedIndexInformer, pods corelisters.PodLister) *AgentReconciler {
 	r.runnerDeploys = readsOwnWrites(deployments)
 	r.runnerPodCache = pods
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a not-ready agent's reconcile asks which nodes are ready, and the requeue behind it runs from three seconds to a minute, so on a lost node the ask scales with the number of agents waiting there. The node watch answers instead, as the runner pods' cache does. A reconciler built without the cache — the tests — reads the nodes live.
+func (r *AgentReconciler) WithNodeCache(lister corelisters.NodeLister) *AgentReconciler {
+	r.nodeCache = lister
 	return r
 }
 

@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
@@ -449,15 +450,28 @@ func (r *AgentReconciler) nodeLost(ctx context.Context, name string) bool {
 	return name != "" && ready != nil && !ready[name]
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the nodes the cluster reports ready, by name; nil when they cannot be read, which tells no node's state apart from another's. A node the cluster no longer lists is not ready: it has gone, and a runner pod on it runs nowhere while its claim stays with it.
+// UNIT_BOUNDARY_DESCRIPTION: the nodes the cluster reports ready, by name; nil when they cannot be read, which tells no node's state apart from another's. A node the cluster no longer lists is not ready: it has gone, and a runner pod on it runs nowhere while its claim stays with it. The node watch answers where the reconciler was built with one, since a not-ready agent's reconcile asks on every retry and the answer changes nothing between them.
 func (r *AgentReconciler) nodesReady(ctx context.Context) map[string]bool {
-	nodes, err := r.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-	if err != nil {
-		slog.Warn("vm runner: reading which nodes of the cluster are ready", "error", err)
-		return nil
+	var nodes []*corev1.Node
+	if r.nodeCache != nil {
+		cached, err := r.nodeCache.List(labels.Everything())
+		if err != nil {
+			slog.Warn("vm runner: reading which nodes of the cluster are ready", "error", err)
+			return nil
+		}
+		nodes = cached
+	} else {
+		list, err := r.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
+		if err != nil {
+			slog.Warn("vm runner: reading which nodes of the cluster are ready", "error", err)
+			return nil
+		}
+		for i := range list.Items {
+			nodes = append(nodes, &list.Items[i])
+		}
 	}
 	ready := map[string]bool{}
-	for _, n := range nodes.Items {
+	for _, n := range nodes {
 		if slices.ContainsFunc(n.Status.Conditions, func(c corev1.NodeCondition) bool {
 			return c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
 		}) {

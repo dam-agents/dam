@@ -161,7 +161,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
 
 	var runnerFactory informers.SharedInformerFactory
-	var runnerInformer, runnerPodInformer cache.SharedIndexInformer
+	var runnerInformer, runnerPodInformer, nodeInformer cache.SharedIndexInformer
 	if cfg.VM.Enabled {
 		runnerFactory = informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
 			informers.WithNamespace(cfg.Namespace),
@@ -174,6 +174,10 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		runnerPods := runnerFactory.Core().V1().Pods()
 		runnerPodInformer = runnerPods.Informer()
 		agentReconciler.WithRunnerCaches(runnerInformer, runnerPods.Lister())
+		// UNIT_BOUNDARY_DESCRIPTION: nodes are cluster-scoped, so they take a factory of their own. A not-ready agent's reconcile asks which nodes are ready on every retry, and on a lost node those retries add up across the owner's agents.
+		nodes := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second, stripManagedFields).Core().V1().Nodes()
+		nodeInformer = nodes.Informer()
+		agentReconciler.WithNodeCache(nodes.Lister())
 	}
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
@@ -277,6 +281,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			return
 		}
 		runnerFactory.Start(ctx.Done())
+		go nodeInformer.RunWithContext(ctx)
 	}
 
 	podInformer.TypedInformer().AddTypedEventHandler(cache.TypedResourceEventHandlerDetailedFuncs[*corev1.Pod]{
@@ -327,6 +332,9 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	synced := []cache.InformerSynced{agentInformer.Informer().HasSynced, podInformer.Informer().HasSynced, secretInformer.Informer().HasSynced, statefulSetInformer.HasSynced}
 	if runnerInformer != nil {
 		synced = append(synced, runnerInformer.HasSynced, runnerPodInformer.HasSynced)
+	}
+	if nodeInformer != nil {
+		synced = append(synced, nodeInformer.HasSynced)
 	}
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
