@@ -290,6 +290,25 @@ func TestASingleRefusedConnectDoesNotSkipTheIdleWait(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: a pod change undone before the roll leaves a stamp from the pass that recorded the outage. The stamp is what the grace is measured from, so one left behind makes the next refusal pass the minute at once and roll a runner with busy agents; the pass that finds nothing to roll clears it.
+func TestARollThatStopsBeingNeededClearsTheCacheStamp(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	boot := r.config.VM.Runner.BootMiB
+	changeRunnerPod(r)
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "the refusal was not recorded")
+
+	r.config.VM.Runner.Image, r.config.VM.Runner.BootMiB = runnerV1, boot
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "a roll nobody needs any more keeps a stamp from the outage it was waiting out")
+}
+
 // TEST_SCENARIO: the pass that would hold a roll writes the stamp the next pass reads. When that write fails — an informer copy from before the write, which the API server refuses as a conflict — the pass reports nothing: a hold said twice for one wait is the noise the Events exist to remove, and the next pass says it when it lands.
 func TestARollWhoseWaitCannotBeRecordedSaysNothing(t *testing.T) {
 	ctx := context.Background()

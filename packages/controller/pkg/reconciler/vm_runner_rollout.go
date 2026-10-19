@@ -220,8 +220,10 @@ func legacyRunnerTemplateHash(desired, existing appsv1.DeploymentSpec) string {
 
 func (r *AgentReconciler) repairRunnerDeploymentMeta(ctx context.Context, owner string, existing, desired *appsv1.Deployment) error {
 	_, waited := existing.Annotations[annRunnerBusy]
+	_, cacheDown := existing.Annotations[annRunnerCacheDown]
 	delete(existing.Annotations, annRunnerBusy)
-	if !repairRunnerMeta(&existing.ObjectMeta, desired.Labels, desired.OwnerReferences) && !waited {
+	delete(existing.Annotations, annRunnerCacheDown)
+	if !repairRunnerMeta(&existing.ObjectMeta, desired.Labels, desired.OwnerReferences) && !waited && !cacheDown {
 		return nil
 	}
 	if _, err := r.client.AppsV1().Deployments(existing.Namespace).Update(ctx, existing, metav1.UpdateOptions{}); err != nil {

@@ -515,6 +515,39 @@ describe("image update tick", () => {
     expect(held[1]).toContain("repo:later");
   });
 
+  // TEST_SCENARIO: a machine that comes up ready reads ready inside the move, on
+  // TEST_SCENARIO: the way to the hold it started from; the move has not ended,
+  // TEST_SCENARIO: so a fault that returns is the same hold and not news again.
+  it("says a hold once when a ready read comes back to the same fault", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    live = {
+      ...held(),
+      specStart: "ready",
+      readySince: new Date(Date.now() - 1000),
+      agentPodNotReadyReason: undefined,
+    };
+    listed[0] = live;
+    await m.tick();
+    live = held();
+    listed[0] = live;
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(1);
+  });
+
   // TEST_SCENARIO: the marker only keeps a line from repeating while the move
   // TEST_SCENARIO: lasts. A move that ended and started again on the same image,
   // TEST_SCENARIO: held again on the same fault, is news the second time too.

@@ -131,7 +131,6 @@ export function createImageUpdate(deps: {
       }
       return;
     }
-    heldOn.delete(id);
     if (!failed) {
       const since =
         live.readySince?.getTime() ?? readySeen.get(id) ?? Date.now();
