@@ -18,6 +18,10 @@ const SFTP_SERVER_CANDIDATES = [
 // UNIT_BOUNDARY_DESCRIPTION: where a VM guest keeps sshd's own files — its host key, its config and the keys the CLI registers — rather than in the agent's home. They are the platform's and they are tiny, and they are needed exactly when the agent's storage is full, which is the one time its home refuses a write: the guest runs as root and its /run is a tmpfs that no pool guard covers, so registering a key costs no room on the disk whose filling shut the door. Nothing here outlives the machine, and neither does a key registered for one session. A container keeps them in its home instead (server.ts): its runtime is not root and /run is not writable, and no guard fills its volume. The environment file is in the home on both, sshd reading it there and nowhere else, so a session into a full home gets a shell without the replayed environment until its owner frees room.
 export const SSH_RUNTIME_DIR = "/run/dam/ssh";
 
+// UNIT_BOUNDARY_DESCRIPTION: the directory sshd's files go in, chosen once at start: the runtime's own where the machine boots a VM, which is the one whose guest mounts the platform share at VM_SHARE_DIR and runs as root over a tmpfs /run, and the home's where it does not, since a container's /run is root's and its uid cannot write there. It is the choice the whole ssh fix turns on: made the other way, a full home refuses the directory and its owner cannot get in to free it.
+export const sshDirFor = (vmShare: boolean, homeDir: string): string =>
+  vmShare ? SSH_RUNTIME_DIR : join(homeDir, ".ssh");
+
 export interface PreparedSshd {
   sshdPath: string;
   configPath: string;

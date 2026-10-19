@@ -9,7 +9,11 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { createSshService, SSH_RUNTIME_DIR } from "../../modules/ssh.js";
+import {
+  createSshService,
+  sshDirFor,
+  SSH_RUNTIME_DIR,
+} from "../../modules/ssh.js";
 
 // TEST_OVERVIEW: a VM agent whose storage is full is the one its owner has to get into to free space, and registering the CLI's key was the write it refused first: `mkdir '/home/agent/.ssh'` fails with ENOSPC. So sshd's own files take a directory of the runtime's, off the agent's home, and registering a key writes only there.
 
@@ -27,6 +31,18 @@ describe("createSshService", () => {
     );
     expect((await stat(sshDir)).mode & 0o777).toBe(0o700);
     expect(SSH_RUNTIME_DIR).toBe("/run/dam/ssh");
+  });
+
+  // TEST_SCENARIO: the key a connection registers lands in the directory the runtime names only where the machine boots a VM, which is the case the whole fix turns on: choosing the home's directory again would restore the lockout a full home causes, and every test above would still pass, since they hand their own directory in. The choice is asserted here on both branches, and the server is asserted to make it through this function rather than spelling out a directory of its own.
+  it("takes sshd's directory from the runtime's where the guest mounts the share", async () => {
+    expect(sshDirFor(true, "/home/agent")).toBe(SSH_RUNTIME_DIR);
+    expect(sshDirFor(false, "/home/agent")).toBe("/home/agent/.ssh");
+    const server = await readFile(
+      new URL("../../server.ts", import.meta.url),
+      "utf8",
+    );
+    expect(server).toContain("sshDirFor(existsSync(VM_SHARE_DIR), homeDir)");
+    expect(server).not.toContain('join(homeDir, ".ssh")');
   });
 
   // TEST_SCENARIO: a full home is the one the owner has to get into to free it, so a connection registers its key with the home's own directory refusing every write: the key lands in the runtime's directory, and nothing is written home.

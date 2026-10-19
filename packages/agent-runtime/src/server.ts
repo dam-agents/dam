@@ -57,7 +57,7 @@ import {
 import {
   createSshService,
   prepareSshd,
-  SSH_RUNTIME_DIR,
+  sshDirFor,
   spawnSshd,
   type PreparedSshd,
 } from "./modules/ssh.js";
@@ -217,9 +217,7 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
   });
 // UNIT_BOUNDARY_DESCRIPTION: sshd's files go outside the agent's home only where nothing else fills that home and /run is writable: a VM guest runs as root over a tmpfs /run with the platform share at /platform, so a full home there cannot lock its owner out of the machine; a container and a dev run keep them in the home, which is the one path their uid may write — a container's /run is root's and it has no share, and its volume no pool guard.
 const VM_SHARE_DIR = "/platform";
-const sshDir = existsSync(VM_SHARE_DIR)
-  ? SSH_RUNTIME_DIR
-  : join(homeDir, ".ssh");
+const sshDir = sshDirFor(existsSync(VM_SHARE_DIR), homeDir);
 const sshService = createSshService(sshDir);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
