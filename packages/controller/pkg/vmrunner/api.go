@@ -157,7 +157,7 @@ type RunnerPressure struct {
 	WorkingSetMiB int    `json:"workingSetMiB,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit. The read also lists each machine, which the api-server shows and the controller does not need.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit, and every machine it holds. The memory pass reads a machine's memory off that one read rather than asking the runner about each machine in turn, so it needs the same figures a status carries for a running machine.
 type RunnerUsage struct {
 	Storage struct {
 		UsedBytes   int64 `json:"usedBytes"`
@@ -167,6 +167,18 @@ type RunnerUsage struct {
 		LimitMiB     int64 `json:"limitMiB"`
 		CommittedMiB int64 `json:"committedMiB"`
 	} `json:"memory"`
+	Machines []MachineUsage `json:"machines"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one machine as the usage read lists it: the state and the memory a status reports for a running machine, without the rest of a status.
+type MachineUsage struct {
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	CPUs      int    `json:"cpus"`
+	MemoryMiB int    `json:"memoryMiB,omitempty"`
+	UsedMiB   int    `json:"usedMiB,omitempty"`
+	Warming   bool   `json:"warming"`
+	DiskGiB   int    `json:"diskGiB,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release. Runtime means the release's runner does not load in this pod; the name is older than that meaning.

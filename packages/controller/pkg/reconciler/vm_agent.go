@@ -33,12 +33,14 @@ const vmBackendEnv = "PLATFORM_BACKEND"
 const (
 	// UNIT_BOUNDARY_DESCRIPTION: how soon an agent is reconciled again when
 	// UNIT_BOUNDARY_DESCRIPTION: its runner could not be reached, which only a
-	// UNIT_BOUNDARY_DESCRIPTION: full reconcile can fix, and how often every
-	// UNIT_BOUNDARY_DESCRIPTION: vm agent is reconciled anyway. A machine on
-	// UNIT_BOUNDARY_DESCRIPTION: its way up is watched by a long poll on its
-	// UNIT_BOUNDARY_DESCRIPTION: runner instead; the health poll is the
-	// UNIT_BOUNDARY_DESCRIPTION: backstop, and the only thing that notices a
-	// UNIT_BOUNDARY_DESCRIPTION: ready guest going quiet.
+	// UNIT_BOUNDARY_DESCRIPTION: full reconcile can fix, and how often a vm
+	// UNIT_BOUNDARY_DESCRIPTION: agent that is not ready is reconciled anyway. A
+	// UNIT_BOUNDARY_DESCRIPTION: machine's status, on its way up, failed, or
+	// UNIT_BOUNDARY_DESCRIPTION: running and ready, is watched by a long poll on
+	// UNIT_BOUNDARY_DESCRIPTION: its runner instead, so a settled agent is
+	// UNIT_BOUNDARY_DESCRIPTION: reconciled only when something changes; the
+	// UNIT_BOUNDARY_DESCRIPTION: health poll is the backstop for what has not
+	// UNIT_BOUNDARY_DESCRIPTION: reached a status a watch can hold.
 	vmReadinessPoll   = 3 * time.Second
 	vmNotReadyPollMax = time.Minute
 	vmHealthPoll      = time.Minute
@@ -216,7 +218,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
-	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady || st.Reason == vmrunner.ReasonCopyingDisk) || !running && !machineStopped(st) {
+	// UNIT_BOUNDARY_DESCRIPTION: a running machine is watched by its long poll whether or not it is ready: a ready guest going quiet or being restarted by the runner moves the machine's status, and that read is what notices it, so the backstop of reconciling every running agent every minute is not needed to find out. A machine that should run but reports a failure is left off the watch and to the health poll, because the runner answers a failed attempt with a new status version, and a watch on it would reconcile the agent as fast as it fails; on its way up it is watched, since its guest can answer before the start call returns. A machine that should not run is watched until it stops.
+	watched := st.Ready || st.Reason == "" || st.Reason == vmrunner.ReasonNotReady || st.Reason == vmrunner.ReasonCopyingDisk
+	if running && watched || !running && !machineStopped(st) {
 		r.watchMachine(runner, name, st.Version)
 	} else {
 		r.unwatchMachine(name)
@@ -653,13 +657,17 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		msg = "machine is " + st.State
 	}
 	if r.requeue != nil {
-		poll := vmHealthPoll
 		if runnerReached {
 			r.notReadyPolls.Delete(agent.Name)
-		} else {
-			poll = r.nextNotReadyPoll(agent.Name)
 		}
-		r.requeue(agent.Name, poll)
+		// UNIT_BOUNDARY_DESCRIPTION: a ready machine is not requeued: its watch on the runner requeues the Agent the moment the machine's status moves, so nothing would come of reconciling a settled agent minute after minute. Everything short of ready is looked at again, on the readiness poll while the runner is out of reach and on the health poll otherwise, which is what notices a start that never completes and a machine that fails as fast as the runner retries it.
+		if !st.Ready {
+			poll := vmHealthPoll
+			if !runnerReached {
+				poll = r.nextNotReadyPoll(agent.Name)
+			}
+			r.requeue(agent.Name, poll)
+		}
 	}
 	reason := st.Reason
 	switch reason {

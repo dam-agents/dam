@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,6 +61,9 @@ type fakeNode struct {
 	onName func()
 	usage  vmrunner.RunnerUsage
 	onPut  func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: what the controller this test builds asked the runner, so a test can hold a reconcile or a memory pass to the reads it costs: one status read per machine is work a usage read that lists every machine already answers.
+	statusReads int
+	usageReads  int
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
@@ -96,7 +100,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			return
 		}
 		if r.URL.Path == "/usage" {
-			require.NoError(t, json.NewEncoder(w).Encode(n.usage))
+			n.usageReads++
+			usage := n.usage
+			usage.Machines = n.usageMachines()
+			require.NoError(t, json.NewEncoder(w).Encode(usage))
 			return
 		}
 		if r.URL.Path == "/machines" {
@@ -142,6 +149,9 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodGet:
+			if !r.URL.Query().Has("wait") {
+				n.statusReads++
+			}
 			if r.URL.Query().Has("wait") {
 				n.waits++
 				since, err := strconv.ParseUint(r.URL.Query().Get("since"), 10, 64)
@@ -166,6 +176,23 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	}))
 	t.Cleanup(srv.Close)
 	return n, srv
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the machines a usage read lists, built from the statuses the runner holds as its own read builds them from what it recorded.
+func (n *fakeNode) usageMachines() []vmrunner.MachineUsage {
+	out := []vmrunner.MachineUsage{}
+	for id, st := range n.statuses {
+		out = append(out, vmrunner.MachineUsage{ID: id, State: st.State, CPUs: st.CPUs, MemoryMiB: st.MemoryMiB, UsedMiB: st.UsedMiB, Warming: st.Warming, DiskGiB: st.DiskGiB})
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: forgets the reads so far, so a test measures one pass.
+func (n *fakeNode) forgetReads() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.statusReads, n.usageReads = 0, 0
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: stores a machine's status under a new version, as the runner moves the version on every change it reports.
@@ -398,6 +425,12 @@ func (l *requeueLog) all() []time.Duration {
 	return append([]time.Duration(nil), l.asked...)
 }
 
+func (l *requeueLog) forget() {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.asked = nil
+}
+
 func (l *requeueLog) last() time.Duration {
 	all := l.all()
 	if len(all) == 0 {
@@ -520,8 +553,11 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 		"the guest answering ends the watch")
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	assert.False(t, r.watchingMachine("my-agent"), "a ready machine is not watched")
-	assert.Equal(t, vmHealthPoll, requeued.last(), "a ready machine is still polled, just slowly — nothing else would notice its guest dying")
+	assert.True(t, r.watchingMachine("my-agent"), "a ready machine is watched: nothing else notices its guest going quiet")
+	requeued.forget()
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: false})
+	require.Eventually(t, func() bool { return slices.Contains(requeued.all(), time.Duration(0)) }, 5*time.Second, time.Millisecond,
+		"a settled agent is reconciled only when its machine's status moves")
 }
 
 // TEST_SCENARIO: a vm machine boots one image for every harness, so the Agent's spec.harness reaches the guest as PLATFORM_HARNESS to pick which one runs. The owner's secretRef is applied after it and may override it, as it may any env in the owner's own sandbox. An Agent with no harness sets nothing, leaving the image's default.

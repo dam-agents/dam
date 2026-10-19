@@ -134,8 +134,13 @@ pub struct MemoryUsage {
 pub struct MachineUsage {
     pub id: String,
     pub state: String,
+    // UNIT_BOUNDARY_DESCRIPTION: the memory figures a status reports for a running machine, so the controller's memory pass reads every machine from this one read instead of a status read each. The measured use is kept out of the status version, so a figure that moves at every probe wakes nothing.
+    pub cpus: i32,
+    #[serde(rename = "memoryMiB", skip_serializing_if = "is_zero")]
+    pub memory_mib: i32,
     #[serde(rename = "usedMiB", skip_serializing_if = "is_zero")]
     pub used_mib: i32,
+    pub warming: bool,
     #[serde(rename = "diskGiB", skip_serializing_if = "is_zero")]
     pub disk_gib: i32,
     #[serde(rename = "diskUsedBytes", skip_serializing_if = "is_zero")]
@@ -370,7 +375,10 @@ mod tests {
                 machines: vec![MachineUsage {
                     id: "agent-a".into(),
                     state: STATE_RUNNING.into(),
+                    cpus: 2,
+                    memory_mib: 2048,
                     used_mib: 640,
+                    warming: true,
                     disk_gib: 100,
                     disk_used_bytes: 8589934592,
                     cpu_milli: 350,

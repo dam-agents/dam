@@ -213,6 +213,33 @@ func TestTheMemoryPassReconcilesOnlyWhenThePodRequestWouldMove(t *testing.T) {
 	assert.Equal(t, 0, resizeCalls(r), "the pass leaves the resize to the reconcile")
 }
 
+// TEST_SCENARIO: a pass over an owner costs their runner one read, however many agents the owner runs: the usage read lists every machine with the memory figures a status carries for a running machine, where asking about each machine in turn was a round trip per running agent every half minute.
+func TestAMemoryPassReadsTheOwnersRunnerOnce(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	peers := []*apiv1.Agent{agent}
+	r.vmRunning.Store(agent.Name, true)
+	node.set(agent.Name, measured(700))
+	for _, name := range []string{"peer-a", "peer-b", "peer-c"} {
+		peerVMAgent(t, r, name, "4Gi", "20Gi", true)
+		node.set(name, measured(700))
+		r.vmRunning.Store(name, true)
+		peer := vmAgentCR()
+		peer.Name = name
+		peers = append(peers, peer)
+	}
+
+	node.forgetReads()
+	r.ownerMemoryPass(ctx, testOwner, peers, nil)
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	assert.Equal(t, 1, node.usageReads, "one read answers for every machine of the owner")
+	assert.Equal(t, 0, node.statusReads, "a pass asks the runner about no machine in turn")
+	assert.Equal(t, measured(700), r.liveMachine("peer-a"), "the figures come from the same read")
+}
+
 // TEST_SCENARIO: the runner's pressure signal is the kernel's view, which is what kills the runner, so a pass on it hibernates an idle peer even while the counted demand is well under the threshold, and even when that peer alone does not cover the measured overshoot. The signal repeats while pressure lasts, so for a while after it freed room it hibernates nothing more, and it never runs beside the owner's other pass.
 func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T) {
 	agent := vmAgentCR()

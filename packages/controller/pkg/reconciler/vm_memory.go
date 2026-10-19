@@ -175,12 +175,12 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 // UNIT_BOUNDARY_DESCRIPTION: a running machine's use is learned only when its
 // UNIT_BOUNDARY_DESCRIPTION: agent reconciles, which a settled agent does every
 // UNIT_BOUNDARY_DESCRIPTION: few minutes, while guests grow within seconds. So
-// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner about their
-// UNIT_BOUNDARY_DESCRIPTION: running machines, hibernates idle agents of an
-// UNIT_BOUNDARY_DESCRIPTION: owner under pressure, and returns one agent of each
-// UNIT_BOUNDARY_DESCRIPTION: owner whose runner pod's request differs from what
-// UNIT_BOUNDARY_DESCRIPTION: their counts call for, for the caller to reconcile
-// UNIT_BOUNDARY_DESCRIPTION: so the request follows them.
+// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner, in one read,
+// UNIT_BOUNDARY_DESCRIPTION: about their running machines, hibernates idle
+// UNIT_BOUNDARY_DESCRIPTION: agents of an owner under pressure, and returns one
+// UNIT_BOUNDARY_DESCRIPTION: agent of each owner whose runner pod's request
+// UNIT_BOUNDARY_DESCRIPTION: differs from what their counts call for, for the
+// UNIT_BOUNDARY_DESCRIPTION: caller to reconcile so the request follows them.
 func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	if r.agentCache == nil || !r.config.VM.Enabled {
 		return nil
@@ -228,6 +228,7 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	}
 	r.refreshVMPool(ctx, owner)
 	var first *apiv1.Agent
+	var up []string
 	for _, a := range agents {
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil || !running {
@@ -236,14 +237,23 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 		if first == nil {
 			first = a
 		}
-		status, err := runner.Status(ctx, a.Name)
-		if err != nil {
-			continue
-		}
-		r.noteMachineUse(a.Name, status)
+		up = append(up, a.Name)
 	}
 	if first == nil {
 		return "", false
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it.
+	usage, err := runner.Usage(ctx)
+	if err != nil {
+		return "", false
+	}
+	held := make(map[string]vmrunner.MachineUsage, len(usage.Machines))
+	for _, m := range usage.Machines {
+		held[m.ID] = m
+	}
+	for _, name := range up {
+		m := held[name]
+		r.noteMachineUse(name, vmrunner.MachineStatus{State: m.State, CPUs: m.CPUs, MemoryMiB: m.MemoryMiB, UsedMiB: m.UsedMiB, Warming: m.Warming})
 	}
 	demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
 	if err != nil {
