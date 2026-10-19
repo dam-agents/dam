@@ -11,6 +11,7 @@ import { z } from "zod";
 import type { StartupItemConfig } from "../domain/startup-items.js";
 
 const CTL = "/usr/local/lib/platform-startup/ctl";
+const OPENRC_BOOTED = "/run/openrc/softlevel";
 const CTL_TIMEOUT_MS = 30_000;
 
 const listSchema = z.object({
@@ -24,7 +25,7 @@ const listSchema = z.object({
 });
 
 export interface StartupItemStore {
-  readonly available: boolean;
+  available(): boolean;
   list(): StartupItemConfig[];
   setDisabled(id: string, disabled: boolean): boolean;
   remove(id: string): boolean;
@@ -36,9 +37,10 @@ export interface StartupItemStore {
  * UNIT_BOUNDARY_DESCRIPTION: The agent's Startup Items as the image keeps
  * them: the list in `~/.platform/startup.json`, which the agent edits with
  * `platform-startup` and the user's Disable writes into, and the image's
- * `ctl`, which starts and stops one item. A machine whose image has no `ctl`
- * (an image built before Startup Items) has none, and a list that does not
- * parse reads as empty, as `ctl` reads it.
+ * `ctl`, which starts and stops one item. Only a vm machine, which openrc
+ * booted, has them: a container agent runs the same image without openrc, and
+ * an image built before Startup Items has no `ctl`. A list that does not parse
+ * reads as empty, as `ctl` reads it.
  */
 export function createStartupItemStore(agentHome: string): StartupItemStore {
   const listPath = join(agentHome, ".platform", "startup.json");
@@ -63,7 +65,7 @@ export function createStartupItemStore(agentHome: string): StartupItemStore {
   }
 
   return {
-    available: existsSync(CTL),
+    available: () => existsSync(CTL) && existsSync(OPENRC_BOOTED),
 
     list() {
       return read().items.map((item) => ({

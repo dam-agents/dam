@@ -16,7 +16,7 @@ export const FINISHED_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
 export interface TrackedRow {
   identity: string;
   key: string;
-  kind: "harness-task" | "detached" | "startup-item";
+  kind: "harness-task" | "detached";
   procKey: string | null;
   command: string;
   startedAt: string;
@@ -91,8 +91,8 @@ export function finishedFrom(
  * finished: it ended by exit. A Harness Task whose matched process is gone
  * also finished, even while the harness still reports it, because the harness
  * reports only at the end of a turn. It is held back as exited until the report
- * drops it, so a later match cannot list it twice. Turn Processes keep no
- * history. CPU is the tick delta of the whole tree against a baseline sample.
+ * drops it, so a later match cannot list it twice. Turn Processes and Startup
+ * Items keep no history: an item's log is its history. CPU is the tick delta of the whole tree against a baseline sample.
  */
 export function assembleInventory(input: {
   trees: ProcessTree[];
@@ -151,7 +151,7 @@ export function assembleInventory(input: {
         : null,
     };
     running.push(row);
-    if (tree.kind === "turn") continue;
+    if (tree.kind === "turn" || tree.kind === "startup-item") continue;
     tracked.push({
       identity: tree.identity,
       key: row.key,

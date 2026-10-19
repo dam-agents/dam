@@ -78,8 +78,8 @@ export function platformOwnPids(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Sorts the pod's process table into the three
- * kinds the Processes panel lists, one tree per root. The platform's own
+ * UNIT_BOUNDARY_DESCRIPTION: Sorts the pod's process table into the kinds
+ * the Processes panel lists, one tree per root. The platform's own
  * processes are never listed: PID 1, agent-runtime and its ancestors, and
  * agent-runtime's direct children (the chat harnesses, the pod service, PTYs,
  * sshd). There is one chat harness per lease, and each is read the same way.
@@ -96,8 +96,8 @@ export function platformOwnPids(
  * its root is only a forked copy of a tool shell, the row shows the command
  * below it. Such a tree that carries PLATFORM_STARTUP is a Startup Item
  * instead, one row per item: the loop that runs it is the root, and the row
- * shows the item's own command below it. Work under an attached PTY or SSH shell is not listed until it
- * detaches.
+ * shows the item's own command below it. Work under an attached PTY or SSH
+ * shell is not listed until it detaches.
  */
 export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
   const { processes } = input.snapshot;

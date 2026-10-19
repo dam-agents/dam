@@ -359,7 +359,7 @@ export function createProcessesService(
   }
 
   function listStartupItems(running: ProcessRow[]) {
-    if (!deps.startupItems.available) return [];
+    if (!deps.startupItems.available()) return [];
     return startupItemsFrom(
       deps.startupItems.list(),
       running,
@@ -370,9 +370,7 @@ export function createProcessesService(
 
   function startupItemLog(key: string): string | null {
     const id = /^startup:(.+)$/.exec(key)?.[1];
-    if (!id || !deps.startupItems.list().some((item) => item.id === id))
-      return null;
-    return deps.startupItems.logPath(id);
+    return id && knownStartupItem(id) ? deps.startupItems.logPath(id) : null;
   }
 
   async function runStartupItem(
@@ -386,7 +384,7 @@ export function createProcessesService(
   }
 
   function knownStartupItem(id: string) {
-    if (!deps.startupItems.available) return null;
+    if (!deps.startupItems.available()) return null;
     return deps.startupItems.list().find((item) => item.id === id) ?? null;
   }
 
@@ -491,7 +489,7 @@ export function createProcessesService(
         `the user stopped ${tree.kind} ${key} (${tree.members.length} process(es))`,
       );
 
-      if (tree.kind !== "turn") {
+      if (tree.kind !== "turn" && tree.kind !== "startup-item") {
         const now = new Date().toISOString();
         tracked = tracked.filter((t) => t.identity !== tree.identity);
         const doc = deps.document.read();
@@ -533,7 +531,8 @@ export function createProcessesService(
       if (item.disabled)
         return err({
           kind: "NotAllowed",
-          message: "This login item is disabled. Enable it to start it.",
+          message:
+            "This login item is off. Turn on Start when the agent wakes first.",
         });
       deps.log(`the user restarted Startup Item ${id}`);
       return runStartupItem("restart", id);

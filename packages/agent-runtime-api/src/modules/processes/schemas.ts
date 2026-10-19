@@ -41,7 +41,7 @@ export const processRowSchema = z.object({
 
 export const finishedRowSchema = z.object({
   key: z.string(),
-  kind: z.enum(["harness-task", "detached", "startup-item"]),
+  kind: z.enum(["harness-task", "detached"]),
   command: z.string(),
   startedAt: z.string(),
   finishedAt: z.string(),
@@ -71,7 +71,6 @@ export const startupItemSchema = z.object({
   command: z.string(),
   disabled: z.boolean(),
   running: z.boolean(),
-  rowKey: z.string().nullable(),
   outputPath: z.string(),
 });
 

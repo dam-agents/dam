@@ -34,7 +34,6 @@ function item(over: Partial<StartupItem>): StartupItem {
     command: "npm run serve",
     disabled: false,
     running: false,
-    rowKey: null,
     outputPath: "/home/agent/.platform/startup-logs/web.log",
     ...over,
   };
@@ -48,7 +47,7 @@ describe("login items", () => {
       running,
       finished: [],
       pendingRestart: null,
-      startupItems: [item({ running: true, rowKey: "item" })],
+      startupItems: [item({ running: true })],
     };
 
     const listed = groupProcesses(running, false).flatMap((g) => g.rows);

@@ -20,7 +20,7 @@ export function LoginItemRow({
   openOutputKey,
   onOpenOutput,
 }: Props) {
-  const outputKey = item.rowKey ?? loginItemOutputKey(item.id);
+  const outputKey = loginItemOutputKey(item.id);
   const outputOpen = outputKey === openOutputKey;
   const toggleOutput = () => onOpenOutput(outputKey);
 
