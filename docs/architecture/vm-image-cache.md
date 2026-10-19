@@ -90,6 +90,6 @@ The socket cannot tell one runner from another either, since the service checks 
 
 **An install with no registry stages trees beside the cache's.** Local development has no registry for its own images, so the install stages each one as a tree with its launch record in the same node directory, named after the image reference (`image:stage-vm`), and a runner boots a staged tree before it asks the service.
 The install hands the staging the directory its own values derived, so an overlay or a `--set` that moves the root moves the staged trees with it.
-A staging run on its own has no such values: it renders the chart without them, so an operator who restages by hand names that same directory (`VM_IMAGE_DIR`).
+A staging run on its own has no such values: it renders the chart without them, so an operator who restages by hand names that same directory (`VM_IMAGE_DIR`), which the runner's refusal of an archive left in its directory states.
 A staged name never looks like a cache entry's, which is named by digest, so eviction never takes one and a reference that would turn into an entry's name is refused.
 The service still runs there; it preloads nothing it can reach, and backs off.

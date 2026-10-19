@@ -1864,8 +1864,9 @@ impl Server {
         let archive = cache::archive_path(&self.config.image_dir, image);
         if archive.exists() {
             return Err(unusable(format!(
-                "{} is a staged image archive, which the runner does not boot; restage the image with `mise run image:stage-vm`",
-                archive.display()
+                "{} is a staged image archive, which the runner does not boot; restage the image with `VM_IMAGE_DIR={} mise run image:stage-vm <image>`, so the tree lands where this runner looks",
+                archive.display(),
+                self.config.image_dir.display()
             )));
         }
         Ok(None)

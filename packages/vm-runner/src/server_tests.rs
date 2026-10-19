@@ -1482,7 +1482,7 @@ async fn an_image_is_fetched_once_for_every_machine_that_wants_it() {
     );
 }
 
-// TEST_SCENARIO: an install with no registry once staged `docker save` archives in the image directory, and nothing boots one any more: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init. An archive left there by hand is refused as an image problem whose message says how to restage it, rather than booted into a guest that never starts its agent, and the registry is not asked instead.
+// TEST_SCENARIO: an install with no registry once staged `docker save` archives in the image directory, and nothing boots one any more: smolvm flattens an archive inside the guest, which no guest does since platform-init became its init. An archive left there by hand is refused as an image problem whose message says how to restage it into the directory this runner looks in — the staging run by hand cannot learn that directory itself — rather than booted into a guest that never starts its agent, and the registry is not asked instead.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let h = Harness::new("archive");
@@ -1503,6 +1503,13 @@ async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     assert!(
         status.message.contains("mise run image:stage-vm"),
         "{status:?}"
+    );
+    assert!(
+        status.message.contains(&format!(
+            "VM_IMAGE_DIR={} mise run image:stage-vm",
+            images.display()
+        )),
+        "the message does not name the directory this runner looks in: {status:?}"
     );
     assert!(h.fake.calls().is_empty());
     assert_eq!(h.crane_calls(), 0);

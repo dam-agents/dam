@@ -21,7 +21,7 @@ IMAGE_DIR="${VM_IMAGE_DIR:-$(helm template platform "$MISE_CONFIG_ROOT/helm" \
 # the node's own root, where the next prune or eviction of the cache would take
 # them for its own.
 [ -n "$IMAGE_DIR" ] || {
-  echo "image:stage-vm: the chart named no node image cache directory — set virtualization.imageCache.hostPath in the install's values, helm/values-local.yaml or the overlay cluster:install was given" >&2
+  echo "image:stage-vm: helm/values-local.yaml names no node image cache directory, and no VM_IMAGE_DIR was given — set virtualization.imageCache.hostPath in that file, or hand in the directory the install's runners mount as VM_IMAGE_DIR" >&2
   exit 1
 }
 work="$(mktemp -d)"
