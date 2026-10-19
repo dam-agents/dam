@@ -35,7 +35,8 @@ export const newestOfTier = (
   const tiered = chatModels(ids).filter((id) =>
     id.toLowerCase().includes(tier),
   );
-  return tiered.length ? [...tiered].sort(compareModelVersions).at(-1)! : null;
+  const sorted = [...tiered].sort(compareModelVersions);
+  return sorted[sorted.length - 1] ?? null;
 };
 
 export const claudeTierOf = (name: string): ClaudeTier | null => {
