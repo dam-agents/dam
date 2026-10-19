@@ -53,10 +53,14 @@ function fakeRepo(
       const r = rows.find((x) => x.id === id);
       if (r) r.status = "revoked";
     },
-    setSource: async (id, source) => {
+    restorePresetSource: async (id) => {
       const r = rows.find((x) => x.id === id && x.status === "active");
-      if (r) r.source = source;
+      if (r?.presetSource) {
+        r.source = r.presetSource;
+        delete r.presetSource;
+      }
     },
+    markPresetUnderConnections: async () => {},
     updateTakeOwnership: async () => null,
     listForAgent: async (agentId) =>
       rows.filter((r) => r.agentId === agentId && r.status === "active"),
@@ -291,7 +295,7 @@ describe("egress-rule-writer: inbox verdicts reconverge the same way (#2322)", (
 describe("connection-rules-sync: threads port into the inserted rule", () => {
   it("passes the connection host's port through to the repository", async () => {
     const { repo, rows } = fakeRepo();
-    const sync = createConnectionRulesSync({ repo, trustedHosts: [] });
+    const sync = createConnectionRulesSync({ repo });
 
     await sync.syncForAgent({
       agentId: "a1",
@@ -311,8 +315,10 @@ describe("connection-rules-sync: threads port into the inserted rule", () => {
   });
 });
 
-describe("connection-rules-sync: a revoked Connection hands a trusted host back to the preset", () => {
-  const anthropicRow = (source: EgressRuleRow["source"]): EgressRuleRow => ({
+describe("connection-rules-sync: a revoked Connection hands a taken-over preset row back", () => {
+  const connectionRow = (
+    presetSource?: EgressRuleRow["source"],
+  ): EgressRuleRow => ({
     id: "r1",
     agentId: "a1",
     host: "api.anthropic.com",
@@ -322,19 +328,15 @@ describe("connection-rules-sync: a revoked Connection hands a trusted host back 
     decidedBy: "sub-1",
     decidedAt: new Date(0),
     status: "active",
-    source,
+    source: "connection:conn-1",
+    ...(presetSource ? { presetSource } : {}),
   });
 
-  const revokeConn1 = async (preset: "trusted" | "none") => {
-    const seeded = anthropicRow("connection:conn-1");
+  const revokeConn1 = async (seeded: EgressRuleRow) => {
     const { repo, rows } = fakeRepo([seeded], {
       listConnectionDerivedForAgent: async () => [seeded],
-      getPresetForAgent: async () => preset,
     });
-    await createConnectionRulesSync({
-      repo,
-      trustedHosts: ["api.anthropic.com"],
-    }).syncForAgent({
+    await createConnectionRulesSync({ repo }).syncForAgent({
       agentId: "a1",
       decidedBy: "sub-1",
       grants: new Map(),
@@ -344,16 +346,17 @@ describe("connection-rules-sync: a revoked Connection hands a trusted host back 
   };
 
   // TEST_SCENARIO: the trusted preset seeds api.anthropic.com; granting an Anthropic Connection takes that row over, and revoking the Connection (a switch to LiteLLM) used to revoke it, so Claude Code's own calls to the host raised an approval nobody expected. The row must go back to the preset.
-  it("keeps a trusted host's row as a preset row on an agent with the trusted preset", async () => {
-    const rows = await revokeConn1("trusted");
+  it("gives a row the Connection took over from the preset back to the preset", async () => {
+    const rows = await revokeConn1(connectionRow("preset:trusted"));
 
     expect(rows).toEqual([
       expect.objectContaining({ status: "active", source: "preset:trusted" }),
     ]);
   });
 
-  it("revokes the row on an agent without the trusted preset", async () => {
-    const rows = await revokeConn1("none");
+  // TEST_SCENARIO: a user who revoked the preset row of a host, then granted a Connection for it, holds a row the Connection inserted fresh; revoking the Connection must not bring back the allow the user turned off.
+  it("revokes a row the Connection inserted, even for a trusted host", async () => {
+    const rows = await revokeConn1(connectionRow());
 
     expect(rows).toEqual([expect.objectContaining({ status: "revoked" })]);
   });
@@ -396,6 +399,9 @@ describe("preset-seeder: the trusted preset is one write", () => {
       revokePresetRowsForAgent: async () => {
         calls.push("revoke");
       },
+      markPresetUnderConnections: async (_agentId, marked, source) => {
+        calls.push(`mark:${marked.length}:${source}`);
+      },
       insert: async () => {
         throw new Error("per-host insert");
       },
@@ -411,7 +417,7 @@ describe("preset-seeder: the trusted preset is one write", () => {
       "trusted",
       "owner-1",
     );
-    expect(calls).toEqual(["revoke", "insertAll:3"]);
+    expect(calls).toEqual(["revoke", "insertAll:3", "mark:3:preset:trusted"]);
     expect(rows.map((r) => [r.host, r.source])).toEqual(
       hosts.map((h) => [h, "preset:trusted"]),
     );

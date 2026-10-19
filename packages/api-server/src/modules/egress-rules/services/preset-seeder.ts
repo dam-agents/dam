@@ -39,6 +39,11 @@ export function createPresetSeeder(deps: {
           source: "preset:trusted",
         })),
       );
+      await deps.repo.markPresetUnderConnections(
+        agentId,
+        deps.trustedHosts,
+        "preset:trusted",
+      );
     },
   };
 }

@@ -105,12 +105,9 @@ export function createL7PromotionReconcile(
 
 export { createAgentL7HostsPort };
 
-export function createConnectionRulesSyncAdapter(
-  db: Db,
-  trustedHosts: readonly string[],
-): ConnectionRulesSync {
+export function createConnectionRulesSyncAdapter(db: Db): ConnectionRulesSync {
   const repo = createEgressRulesRepository(db);
-  return createConnectionRulesSync({ repo, trustedHosts });
+  return createConnectionRulesSync({ repo });
 }
 
 export function createEgressRulesCleanupHook(

@@ -652,6 +652,13 @@
       "when": 1792409278615,
       "tag": "0092_fold_telegram_bindings_into_chats",
       "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792430964809,
+      "tag": "0093_egress_rule_preset_source",
+      "breakpoints": true
     }
   ]
 }

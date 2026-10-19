@@ -33,19 +33,8 @@ function normalizePath(p: string | undefined | null): string {
   return p && p.length > 0 ? p : "*";
 }
 
-function isHostWide(row: {
-  port?: number;
-  method: string;
-  pathPattern: string;
-}): boolean {
-  return (
-    row.port === undefined && row.method === "*" && row.pathPattern === "*"
-  );
-}
-
 export function createConnectionRulesSync(deps: {
   repo: EgressRulesRepository;
-  trustedHosts: readonly string[];
 }): ConnectionRulesSync {
   return {
     async adoptSources({ agentId, fromSources, toSource }) {
@@ -79,19 +68,12 @@ export function createConnectionRulesSync(deps: {
         }
       }
 
-      let preset: Awaited<ReturnType<typeof deps.repo.getPresetForAgent>>;
       for (const [triple, row] of currentByTriple) {
         if (desiredTriples.has(triple)) continue;
         const connId = row.source.slice(SOURCE_PREFIX.length);
         if (!ownedSourceIds.has(connId)) continue;
-        if (isHostWide(row) && deps.trustedHosts.includes(row.host)) {
-          preset ??= await deps.repo.getPresetForAgent(agentId);
-          if (preset === "trusted") {
-            await deps.repo.setSource(row.id, "preset:trusted");
-            continue;
-          }
-        }
-        await deps.repo.revoke(row.id);
+        if (row.presetSource) await deps.repo.restorePresetSource(row.id);
+        else await deps.repo.revoke(row.id);
       }
 
       for (const [connId, { hosts }] of grants) {
