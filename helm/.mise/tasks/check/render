@@ -176,3 +176,15 @@ for ns in platform-a platform-b; do
 done
 [ "$(node_lost_expr platform-a)" != "$(node_lost_expr platform-b)" ] \
   || { echo "the node-loss alert reads the same in two installations, so one fires on the other's runners" >&2; exit 1; }
+# The controller watches nodes for readiness, so its read-only node role must
+# let it watch as well as list: a list-only role leaves the watch failing and
+# the cache refreshed only by the factory's resync.
+nodes_verbs=$(helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set virtualization.runner.scc=hostmount-anyuid --set agentNamespace=platform-agents \
+  --show-only templates/controller/rbac.yaml |
+  yq -o=json '.' |
+  jq -s '[.[] | select(.kind == "ClusterRole" and (.metadata.name | test("-vm-nodes-read$")))
+    | .rules[] | select(.resources == ["nodes"]) | .verbs[]]')
+jq -e 'index("list") != null and index("watch") != null' <<<"$nodes_verbs" >/dev/null \
+  || { echo "the controller's node ClusterRole does not let it watch nodes: $nodes_verbs" >&2; exit 1; }
