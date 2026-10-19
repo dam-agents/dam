@@ -8,12 +8,13 @@ use std::time::{Duration, Instant};
 use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_REBOOT, HELD_RUNTIME};
 use vm_runner::release::{self, FILES, REBOOT_ID, RUNNER, RUNTIME_ID};
 
+// UNIT_BOUNDARY_DESCRIPTION: the machine is logged only once the traps are set, so a test that waits for a runner's machine to appear knows the runner takes its stop. The loader forwards a stop as soon as it spawned the process, and on macOS it forwards without waiting for a handler to exist, so a stop that arrives earlier kills the shell outright and fails the loader.
 const RUNS: &str = r#"#!/bin/sh
 [ "$1" = --help ] && exit 0
 echo "$0 $*" >> "$RUNNER_LOG"
 sleep 1000 &
-echo $! >> "$MACHINE_LOG"
 trap 'exit 0' USR1 TERM
+echo $! >> "$MACHINE_LOG"
 while :; do sleep 0.1; done
 "#;
 
@@ -312,8 +313,8 @@ fn a_release_declaring_another_reboot_key_is_held_and_hands_nothing_over() {
     pod.stage_declaring("runner:3", RUNS, "runtime-a", Some("generation-1"));
     pod.name("runner:3");
     wait_for(
-        "the hand-off to runner:3, which declares the pod's key",
-        || pod.status().running == "runner:3",
+        "the hand-off to runner:3, which declares the pod's key, and its machine, so it takes the stop",
+        || pod.status().running == "runner:3" && lines(&dir.join("machines")).len() == 2,
     );
     assert!(
         alive(&machine),
@@ -336,9 +337,10 @@ fn a_pod_that_declares_a_reboot_key_takes_a_keyless_release_in_place() {
 
     pod.stage("runner:2", RUNS, "runtime-a");
     pod.name("runner:2");
-    wait_for("the hand-off to runner:2, which declares no key", || {
-        pod.status().running == "runner:2"
-    });
+    wait_for(
+        "the hand-off to runner:2, which declares no key, and its machine, so it takes the stop",
+        || pod.status().running == "runner:2" && lines(&dir.join("machines")).len() == 2,
+    );
     assert!(
         alive(&machine),
         "the rollback to a release built before keys stopped the machine"

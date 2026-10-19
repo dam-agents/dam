@@ -1129,7 +1129,7 @@ func TestAShrunkenShareStillOffersAStuckRunnerTheCorrectedRelease(t *testing.T) 
 	}
 }
 
-// TEST_SCENARIO: a release that must reboot its machines is named, and the sweep settles that hand-off as the loader holds it, as it does for an owner with nothing running; the pod roll that follows finds no free place in the width. The time the release was named survives that turn, so a loader that then hangs — taking neither the release nor answering at all — still rolls the pod at the unreachable timeout.
+// TEST_SCENARIO: a release that must reboot its machines is named, and the sweep settles that hand-off as the loader holds it, as it does for an owner with nothing running; the pod roll that follows finds no free place in the width. The time the release was named survives that turn. A loader that then stops answering the release read leaves the pod alone while that time is fresh, and the pod rolls once it passes the unreachable timeout.
 func TestARebootHoldKeepsTheTimeItsReleaseWasNamedUntilThePodRolls(t *testing.T) {
 	ctx := context.Background()
 	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
@@ -1151,13 +1151,12 @@ func TestARebootHoldKeepsTheTimeItsReleaseWasNamedUntilThePodRolls(t *testing.T)
 	assert.Contains(t, runnerAnnotations(t, r, "owner-a"), annRunnerReleaseNamedAt, "a pod roll that takes no place yet keeps the time its release was named")
 
 	require.NoError(t, r.client.AppsV1().Deployments("test-agents").Delete(ctx, r.runnerName("owner-b"), metav1.DeleteOptions{}))
-	reachable := r.runnerEndpoint
-	r.runnerEndpoint = func(owner string) string {
-		if owner == "owner-a" {
-			return "https://127.0.0.1:1"
-		}
-		return reachable(owner)
-	}
+	reads := nodes["owner-a"].releaseReadCount()
+	nodes["owner-a"].refuseReleaseReads()
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Greater(t, nodes["owner-a"].releaseReadCount(), reads, "the controller read the release again, and the read failed")
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "a loader that has only just stopped answering keeps its pod")
+
 	setRunnerAnnotation(t, r, "owner-a", annRunnerReleaseNamedAt, time.Now().Add(-runnerReleaseUnreachableRoll-time.Minute).UTC().Format(time.RFC3339))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "the runner that never answered is rolled onto the release it was named")
