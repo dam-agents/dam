@@ -50,7 +50,7 @@ fn fatal_line(message: &str) -> String {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a line the runner must be able to read as well as the boot log. The boot log is on the guest's disk, which the host never reads, and before it is open stderr is /dev/null. The kernel log reaches the machine's console, whose end the runner puts in the Agent's status when a boot fails or goes quiet, so these lines go there too.
+// UNIT_BOUNDARY_DESCRIPTION: a line the runner must be able to read as well as the boot log. The boot log is on the guest's disk, which the host never reads, and before it is open stderr is /dev/null. The kernel log reaches the machine's console, whose end the runner puts in the Agent's status when a boot fails or goes quiet, so these lines go there too. The steps of a boot are among them, so a boot the host cut short says how far it had got.
 fn announce(message: &str) {
     log(format_args!("{message}"));
     let _ = OpenOptions::new()
@@ -102,7 +102,7 @@ pub fn run() -> ! {
     let disk = machine.disk.clone();
     open_boot_log(&disk);
 
-    logf!("storage disk mounted at {}", disk.display());
+    announce(&format!("storage disk mounted at {}", disk.display()));
     claim_layout(&disk);
     fresh_root(&disk, &machine);
     vm::serve();
@@ -372,7 +372,7 @@ fn stop_propagation() {
 // UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout the storage mount boots (vm::mount_storage), and gets the mark now; a mark that names an older layout means the disk is not what its mark says, and the boot stops rather than guess. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
 fn claim_layout(root: &Path) {
     match mark_layout(root, guest::LAYOUT_VERSION) {
-        Ok(Some(version)) => logf!("marked the disk as layout {version}"),
+        Ok(Some(version)) => announce(&format!("marked the disk as layout {version}")),
         Ok(None) => {}
         Err(e) => fatal!("reading the disk's layout: {e}"),
     }
@@ -438,17 +438,19 @@ fn fresh_root(disk: &Path, machine: &vm::Machine) {
         if !out_of_room(&e) {
             return Err(e);
         }
-        logf!("{e}; deleting what earlier boots left to delete, and trying again");
+        announce(&format!(
+            "{e}; deleting what earlier boots left to delete, and trying again"
+        ));
         free_room_for_boot(disk);
         make()
     }) {
         fatal!("{e}");
     }
     match (fresh, booting.as_deref()) {
-        (None, _) => logf!(
+        (None, _) => announce(&format!(
             "keeping the root of the last boot, which ran this image too ({})",
             booting.as_deref().unwrap_or_default()
-        ),
+        )),
         (Some(reason), Some(booting)) => {
             if let Err(e) = write_record(&layers.image, format!("{booting}\n").as_bytes()) {
                 fatal!(
@@ -456,9 +458,9 @@ fn fresh_root(disk: &Path, machine: &vm::Machine) {
                     layers.image.display()
                 );
             }
-            logf!("booting on a fresh root: {reason}");
+            announce(&format!("booting on a fresh root: {reason}"));
         }
-        (Some(reason), None) => logf!("booting on a fresh root: {reason}"),
+        (Some(reason), None) => announce(&format!("booting on a fresh root: {reason}")),
     }
     if let Err(e) = layers.fresh_scratch(&machine.image, stamp) {
         fatal!("{e}");
