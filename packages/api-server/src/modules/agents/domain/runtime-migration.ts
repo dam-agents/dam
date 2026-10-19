@@ -120,7 +120,10 @@ export function runtimeMigrationOf(
   if (!requested && !condition) return undefined;
   let phase: RuntimeMigrationPhase;
   let message = condition?.message || undefined;
-  if (!requested) phase = signals.vm ? "verified" : "aborting";
+  // UNIT_BOUNDARY_DESCRIPTION: a machine that booted from the copy is the Agent's runtime whatever the annotations say now, so a request withdrawn after that reads as verified and the switch still runs; tearing the machine down instead would destroy what the guest has written since.
+  if (!requested)
+    phase =
+      signals.vm || condition?.reason === "Verified" ? "verified" : "aborting";
   else if (condition)
     phase = CONDITION_PHASES[condition.reason ?? ""] ?? "requested";
   else {
@@ -133,6 +136,17 @@ export function runtimeMigrationOf(
     ...(message ? { message } : {}),
     ...(attempts > 0 ? { attempts } : {}),
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an Agent carries a request nobody has decided yet, which is the only shape the sweep promotes. A request the api-server decided names its target; one whose write the controller has begun reads as its phase; and one whose abort the controller is still cleaning up reads as `aborting`. Only a request with no target and no phase past its own is undecided, so a withdrawn request is never decided again from a list read that predates it.
+export function runtimeMigrationUndecided(agent: {
+  runtimeMigration?: RuntimeMigration;
+  runtimeMigrationTarget?: string;
+}): boolean {
+  return (
+    agent.runtimeMigration?.phase === "requested" &&
+    !agent.runtimeMigrationTarget
+  );
 }
 
 export type AgentMount = NonNullable<AgentSpec["mounts"]>[number];

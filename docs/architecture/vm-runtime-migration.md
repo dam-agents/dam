@@ -126,9 +126,22 @@ A request an earlier api-server decided is left alone, so annotating an Agent wh
 **Watch it.** The Agent's `RuntimeMigrating` condition names the phase and why it waits, and the Agent's status counts the copy attempts; the page badges the Agent with the same phase, since it is the owner's to see, not to start.
 A migration that cannot finish fails on its own after three copy attempts or six hours, and at the first attempt when the home cannot fit the machine.
 
-**Abort it.** Until it is verified, remove the request and its companions: `kubectl annotate agent <agent> -n <agent-namespace> agent-platform.ai/runtime-migration- agent-platform.ai/runtime-migration-target- agent-platform.ai/runtime-migration-retry-`.
-The controller treats that as an abort: it deletes the copy Job and the machine with its seed, removes the condition, and the container resumes on its old volumes, since the spec was never switched.
-A verified migration cannot be aborted: the machine is the Agent now, and what the copy missed is recovered from the retained volumes.
+**Abort it.** Until it is verified, remove the request and its companions in one write, conditioned on the phase you read: a boot that verifies in between makes the write fail rather than letting the abort land late.
+
+```sh
+agent=<agent>; ns=<agent-namespace>
+phase=$(kubectl get agent "$agent" -n "$ns" -o jsonpath='{.status.conditions[?(@.type=="RuntimeMigrating")].reason}')
+# Refuse a move that already finished: the machine is the Agent's runtime by then, and its disk holds what the guest has written since the boot.
+case "$phase" in Verified|"") echo "not abortable (phase: ${phase:-none})"; exit 1;; esac
+rv=$(kubectl get agent "$agent" -n "$ns" -o jsonpath='{.metadata.resourceVersion}')
+kubectl annotate agent "$agent" -n "$ns" --resource-version="$rv" \
+  agent-platform.ai/runtime-migration- agent-platform.ai/runtime-migration-target- agent-platform.ai/runtime-migration-retry-
+```
+
+A conflict on that write means the Agent changed since the read — a phase the boot moved on to, or another writer — and the abort must be read and decided again from a fresh read.
+The controller treats a withdrawn request before the verified boot as an abort: it deletes the copy Job and the machine with its seed, removes the condition, and the container resumes on its old volumes, since the spec was never switched.
+A verified migration cannot be aborted, by the guard above or by a write that skips it: the controller leaves a verified machine standing, the verified phase survives a withdrawn request, and the api-server switches the spec, so a late abort completes the move instead of destroying what the guest has written.
+What the copy missed is recovered from the retained volumes.
 
 **Retry one.** Set `agent-platform.ai/runtime-migration-retry` to the current time in RFC 3339 on a failed migration — `kubectl annotate agent <agent> -n <agent-namespace> agent-platform.ai/runtime-migration-retry="$(date -u +%Y-%m-%dT%H:%M:%SZ)" --overwrite` — and the controller starts over from the preflight with a fresh machine.
 A value that is not a readable time is kept and reads as no retry at all, so a typo leaves the failed move where it was.

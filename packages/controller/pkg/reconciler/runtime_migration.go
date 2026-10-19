@@ -394,6 +394,10 @@ func (r *AgentReconciler) continueRuntimeMigration(ctx context.Context, agent *a
 			apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionRuntimeMigrating)
 			s.RuntimeMigrationAttempts = 0
 		})
+	case !m.requested && m.phase == apiv1.ReasonRuntimeMigrationVerified && !agent.Spec.IsVM():
+		// UNIT_BOUNDARY_DESCRIPTION: the machine booted from the copy, so its disk is where the Agent's data is now and the runtime writes to it; withdrawing the request that late an undo is not, and tearing the machine down here would destroy what the guest has written since. The api-server switches the spec, which is the only way out.
+		slog.Info("runtime migration: the request was withdrawn after the verified boot, so the machine stands and the Backend switch decides it", "agent", agent.Name)
+		return nil
 	case !m.requested || m.midUndoRequest(agent.Annotations):
 		return r.clearRuntimeMigration(ctx, agent, false)
 	case !m.target:

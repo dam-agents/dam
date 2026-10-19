@@ -17,6 +17,7 @@ import {
   runtimeMigrationRefusalReasons,
   runtimeMigrationRequest,
   runtimeMigrationSwitchSpec,
+  runtimeMigrationUndecided,
   type RuntimeMigrationContext,
   type RuntimeMigrationRefusal,
 } from "../domain/runtime-migration.js";
@@ -78,38 +79,44 @@ export function executeRuntimeMigration(
     migration: (agent: InfraAgent) => Promise<RuntimeMigrationContext>;
   },
 ) {
-  return async (id: string): Promise<Outcome<RuntimeMigrationRefusal>> => {
-    const result = await decideAndWrite<RuntimeMigrationRefusal>(
-      deps,
-      id,
-      async (agent) => {
-        const migration = await deps.migration(agent);
-        // UNIT_BOUNDARY_DESCRIPTION: the request this decides is the operator's, so it is not a migration standing in its way; any other phase is.
-        const standing =
-          agent.runtimeMigration?.phase === "requested"
-            ? undefined
-            : agent.runtimeMigration;
-        const refusal = runtimeMigrationRefusal(
-          { ...agent, runtimeMigration: standing },
-          migration,
-        );
-        if (refusal) return { error: refusal };
-        const { target } = runtimeMigrationRequest(
-          agent.spec,
-          migration.defaultStorageSize,
-          migration.defaultMounts,
-        );
-        const annotations: Record<string, string | null> = {
-          [RUNTIME_MIGRATION_KEY]: "requested",
-          [RUNTIME_MIGRATION_TARGET_KEY]: JSON.stringify(target),
-          [RUNTIME_MIGRATION_SNAPSHOT_KEY]: null,
-          [RUNTIME_MIGRATION_RETRY_KEY]: null,
-        };
-        return {
-          write: { annotations, resourceVersion: agent.resourceVersion },
-        };
-      },
-    );
+  return async (
+    id: string,
+  ): Promise<Outcome<RuntimeMigrationRefusal | { type: "NotRequested" }>> => {
+    const result = await decideAndWrite<
+      RuntimeMigrationRefusal | { type: "NotRequested" }
+    >(deps, id, async (agent) => {
+      // UNIT_BOUNDARY_DESCRIPTION: the list this Agent came from may be a tick old, so the request is checked on the live read. One the operator withdrew in the meantime leaves no migration behind, or one the controller is still clearing up, and is not promoted back into a move nobody asked for; a request that is still there, whatever phase it reached, is decided as before.
+      if (
+        !agent.runtimeMigration ||
+        agent.runtimeMigration.phase === "aborting"
+      )
+        return { error: { type: "NotRequested" as const } };
+      const migration = await deps.migration(agent);
+      // UNIT_BOUNDARY_DESCRIPTION: the request this decides is the operator's, so it is not a migration standing in its way; any other phase is.
+      const standing =
+        agent.runtimeMigration?.phase === "requested"
+          ? undefined
+          : agent.runtimeMigration;
+      const refusal = runtimeMigrationRefusal(
+        { ...agent, runtimeMigration: standing },
+        migration,
+      );
+      if (refusal) return { error: refusal };
+      const { target } = runtimeMigrationRequest(
+        agent.spec,
+        migration.defaultStorageSize,
+        migration.defaultMounts,
+      );
+      const annotations: Record<string, string | null> = {
+        [RUNTIME_MIGRATION_KEY]: "requested",
+        [RUNTIME_MIGRATION_TARGET_KEY]: JSON.stringify(target),
+        [RUNTIME_MIGRATION_SNAPSHOT_KEY]: null,
+        [RUNTIME_MIGRATION_RETRY_KEY]: null,
+      };
+      return {
+        write: { annotations, resourceVersion: agent.resourceVersion },
+      };
+    });
     if (result.ok) emitUpdated(result.value);
     if (result.ok)
       securityLog("info", "agent.runtime-migrate", {
@@ -120,7 +127,7 @@ export function executeRuntimeMigration(
         result: "success",
         detail: { fromBackend: "container", toBackend: "vm" },
       });
-    else
+    else if (result.error.type !== "NotRequested")
       securityLog("warn", "agent.runtime-migrate", {
         category: "resource",
         actor: deps.owner ?? null,
@@ -155,13 +162,6 @@ export function createRuntimeMigrationSwitch(deps: {
   migration: (agent: InfraAgent) => Promise<RuntimeMigrationContext>;
   log: (message: string) => void;
 }): RuntimeMigrationSwitch {
-  function operatorRequested(agent: InfraAgent): boolean {
-    return (
-      agent.runtimeMigration?.phase === "requested" &&
-      !agent.runtimeMigrationTarget
-    );
-  }
-
   async function promote(agent: InfraAgent): Promise<void> {
     const started = await executeRuntimeMigration({
       owner: undefined,
@@ -170,17 +170,35 @@ export function createRuntimeMigrationSwitch(deps: {
       migration: deps.migration,
     })(agent.id);
     if (started.ok) return;
-    const reasons = runtimeMigrationRefusalReasons(started.error);
+    if (started.error.type === "NotRequested") {
+      deps.log(
+        `[runtime-migration] ${agent.id} was asked to move and the request is gone; it is left where it is`,
+      );
+      return;
+    }
     deps.log(
-      `[runtime-migration] ${agent.id} was asked to move and is not taken up: ${reasons.join("; ")}`,
+      `[runtime-migration] ${agent.id} was asked to move and is not taken up: ${runtimeMigrationRefusalReasons(started.error).join("; ")}`,
     );
     // UNIT_BOUNDARY_DESCRIPTION: a refusal that says the move has not happened yet leaves the request standing; withdrawing it is what the controller reads as an abort.
     if (!runtimeMigrationCannotHappen(started.error)) return;
+    // UNIT_BOUNDARY_DESCRIPTION: the refusal was decided from a read that the operator may have overtaken by correcting the mounts and asking again, so the whole decision is made once more from a live read and the withdrawal is written against that read: a request that now passes is left to the next tick to promote, and one that is gone is not withdrawn at all.
+    const live = await deps.getAgent(agent.id);
+    if (!live || !runtimeMigrationUndecided(live)) return;
+    const refusal = runtimeMigrationRefusal(
+      { ...live, runtimeMigration: undefined },
+      await deps.migration(live),
+    );
+    if (!refusal || !runtimeMigrationCannotHappen(refusal)) {
+      deps.log(
+        `[runtime-migration] ${agent.id} was refused and the request changed since; the next tick decides it again`,
+      );
+      return;
+    }
     const withdrawn = await deps.writeMigration(agent.id, {
       annotations: REQUEST_KEYS_CLEARED,
-      resourceVersion: (await deps.getAgent(agent.id))?.resourceVersion,
+      resourceVersion: live.resourceVersion,
     });
-    if (withdrawn.ok) emitUpdated(agent);
+    if (withdrawn.ok) emitUpdated(withdrawn.value);
     else
       deps.log(
         `[runtime-migration] ${agent.id} was refused and its request could not be withdrawn (${withdrawn.reason}); the next tick decides it again`,
@@ -190,12 +208,15 @@ export function createRuntimeMigrationSwitch(deps: {
   async function switchOne(id: string): Promise<void> {
     const agent = await deps.getAgent(id);
     if (!agent || !runtimeMigrationReadyToSwitch(agent)) return;
-    const target = parseRuntimeMigrationTarget(agent.runtimeMigrationTarget);
+    let target = parseRuntimeMigrationTarget(agent.runtimeMigrationTarget);
     if (!target) {
-      deps.log(
-        `[runtime-migration] ${id} is verified but its target is not readable; not switching`,
-      );
-      return;
+      // UNIT_BOUNDARY_DESCRIPTION: an abort that reaches the cluster after the verified boot takes the target annotation with it, and the machine is the Agent's runtime by then whatever the annotations say. The shape is recomputed from the spec the request recorded it for, rather than read.
+      const context = await deps.migration(agent);
+      target = runtimeMigrationRequest(
+        agent.spec,
+        context.defaultStorageSize,
+        context.defaultMounts,
+      ).target;
     }
     const written = await deps.writeMigration(id, {
       spec: runtimeMigrationSwitchSpec(target),
@@ -219,7 +240,7 @@ export function createRuntimeMigrationSwitch(deps: {
       const agents = await deps.listAgents();
       for (const agent of agents) {
         try {
-          if (operatorRequested(agent)) await promote(agent);
+          if (runtimeMigrationUndecided(agent)) await promote(agent);
           else if (runtimeMigrationReadyToSwitch(agent))
             await switchOne(agent.id);
         } catch (e) {

@@ -21,6 +21,7 @@ import {
 import {
   movedStorageSize,
   runtimeMigrationOf,
+  runtimeMigrationReadyToSwitch,
   runtimeMigrationRefusalReasons,
   type AgentMount,
   type VmPoolCapacity,
@@ -126,7 +127,13 @@ function harness(opts?: {
   capacity?: VmPoolCapacity;
   homeBytes?: number | null;
 }) {
-  const agent = opts?.agent === undefined ? infraAgent() : opts.agent;
+  const asked = migrating("Requested").runtimeMigration;
+  const agent =
+    opts?.agent === undefined
+      ? migrating("Requested")
+      : opts.agent && !opts.agent.runtimeMigration
+        ? { ...opts.agent, ...(asked ? { runtimeMigration: asked } : {}) }
+        : opts.agent;
   const deps = writes(agent);
   const run = executeRuntimeMigration({
     owner: OWNER,
@@ -295,23 +302,32 @@ describe("runtime migration request", () => {
 
   // TEST_SCENARIO: a migration still running, or an abort whose vm side the controller is still removing, both refuse a new request: the controller would otherwise find its old condition on the new one.
   it("rejects while a runtime migration or its abort is still running", async () => {
-    for (const runtimeMigration of [
-      runtimeMigrationOf({
-        requested: "requested",
-        condition: { reason: "Copying" },
-        vm: false,
-      }),
-      runtimeMigrationOf({ condition: { reason: "Copying" }, vm: false }),
-    ]) {
-      const h = harness({
-        agent: infraAgent(runtimeMigration ? { runtimeMigration } : {}),
-      });
-      expect(await h.run("agent-1")).toEqual({
-        ok: false,
-        error: { type: "RuntimeMigrationInProgress" },
-      });
-      expect(h.writeMigration).not.toHaveBeenCalled();
-    }
+    const moving = runtimeMigrationOf({
+      requested: "requested",
+      condition: { reason: "Copying" },
+      vm: false,
+    });
+    const h = harness({
+      agent: infraAgent(moving ? { runtimeMigration: moving } : {}),
+    });
+    expect(await h.run("agent-1")).toEqual({
+      ok: false,
+      error: { type: "RuntimeMigrationInProgress" },
+    });
+    expect(h.writeMigration).not.toHaveBeenCalled();
+
+    const aborting = runtimeMigrationOf({
+      condition: { reason: "Copying" },
+      vm: false,
+    });
+    const aborted = harness({
+      agent: infraAgent(aborting ? { runtimeMigration: aborting } : {}),
+    });
+    expect(await aborted.run("agent-1")).toEqual({
+      ok: false,
+      error: { type: "NotRequested" },
+    });
+    expect(aborted.writeMigration).not.toHaveBeenCalled();
   });
 
   // TEST_SCENARIO: the storage migration moves the same workspace volume the runtime migration copies from; two copies at once would race on it.
@@ -480,6 +496,28 @@ describe("the Backend switch", () => {
     });
   });
 
+  // TEST_SCENARIO: an abort that arrives after the verified boot also takes the target annotation, and the switch still has to run: the shape is recomputed from the spec the request recorded it for, so the disk keeps its size.
+  it("switches a verified agent whose target went with the request", async () => {
+    const verified = migrating("Verified", {
+      spec: {
+        ...infraAgent().spec,
+        mounts: [{ path: "/home/agent", persist: true, size: "30Gi" }],
+      },
+    });
+    const s = switcher([verified]);
+    await s.sweep.tick();
+    expect(s.writeMigration).toHaveBeenCalledWith("agent-1", {
+      spec: {
+        backend: { type: "vm" },
+        runtimeClassName: null,
+        nodeSelector: null,
+        storageSize: "30Gi",
+      },
+      annotations: CLEARED,
+      resourceVersion: "41",
+    });
+  });
+
   // TEST_SCENARIO: nothing before the verified boot switches, and neither does an agent whose target cannot be read, which would otherwise be switched to a shape nobody asked for.
   it("leaves every other agent alone", async () => {
     const s = switcher([
@@ -612,6 +650,98 @@ describe("a move an operator asks for", () => {
       deps.writeMigration.mock.calls.map(([, patch]) => patch.annotations),
     ).not.toContainEqual(CLEARED);
     expect(logged.join("\n")).toMatch(/already moving/);
+  });
+
+  // TEST_SCENARIO: the list the sweep decides from is a tick old, so a request the operator withdrew before the decision is not promoted back into a migration nobody asked for: the live read is checked, and nothing is written against it.
+  it("leaves a request the operator withdrew before the tick decided it alone", async () => {
+    const asked = migrating("Requested");
+    const deps = writes(asked);
+    const live = infraAgent({ resourceVersion: "42" });
+    deps.getAgent = async () => live;
+    const logged: string[] = [];
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [asked],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: (message) => logged.push(message),
+    });
+    await sweep.tick();
+    expect(deps.writeMigration).not.toHaveBeenCalled();
+    expect(logged.join("\n")).toMatch(/the request is gone/);
+  });
+
+  // TEST_SCENARIO: a refusal was decided from a read the operator may have overtaken by correcting the mounts and asking again, so the withdrawal is decided once more from a live read and written against that read; the corrected request is left for the next tick to promote rather than cleared.
+  it("does not withdraw a request that changed since it was refused", async () => {
+    const refused = migrating("Requested", {
+      spec: {
+        ...infraAgent().spec,
+        mounts: [
+          { path: "/home/agent", persist: true },
+          { path: "/data", persist: true },
+        ],
+      },
+    });
+    const correctedRead = infraAgent({ resourceVersion: "42" });
+    correctedRead.runtimeMigration = migrating("Requested").runtimeMigration;
+    const deps = writes(refused, correctedRead, correctedRead);
+    const logged: string[] = [];
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [refused],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: (message) => logged.push(message),
+    });
+    await sweep.tick();
+    expect(
+      deps.writeMigration.mock.calls.map(([, patch]) => patch.annotations),
+    ).not.toContainEqual(CLEARED);
+    expect(logged.join("\n")).toMatch(/the request changed since/);
+  });
+
+  // TEST_SCENARIO: a refusal that still stands on a fresh read is withdrawn against that read's version, so a request the operator replaced or corrected in between is never cleared.
+  it("withdraws a refusal against the version it was decided on", async () => {
+    const refused = migrating("Requested", {
+      spec: {
+        ...infraAgent().spec,
+        mounts: [
+          { path: "/home/agent", persist: true },
+          { path: "/data", persist: true },
+        ],
+      },
+    });
+    const sameAgain = infraAgent({ resourceVersion: "43" });
+    sameAgain.runtimeMigration = migrating("Requested").runtimeMigration;
+    sameAgain.spec = {
+      ...sameAgain.spec,
+      mounts: [
+        { path: "/home/agent", persist: true },
+        { path: "/data", persist: true },
+      ],
+    };
+    const deps = writes(refused, sameAgain, sameAgain);
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [refused],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: () => {},
+    });
+    await sweep.tick();
+    expect(deps.writeMigration).toHaveBeenCalledWith("agent-1", {
+      annotations: CLEARED,
+      resourceVersion: "43",
+    });
   });
 
   // TEST_SCENARIO: a request that already names a target is the api-server's own decision from an earlier tick, and is not decided again.
@@ -760,6 +890,20 @@ describe("the agent view's runtime migration", () => {
     expect(viewOf({}, {}, condition("Copying")).runtimeMigration).toEqual({
       phase: "aborting",
     });
+  });
+
+  // TEST_SCENARIO: an abort that reaches the cluster after the verified boot takes the request with it, and the machine is the Agent's runtime by then: the view keeps the verified phase, so the switch still runs and the controller never tears the machine down.
+  it("keeps the verified phase when the request is withdrawn too late", () => {
+    const late = viewOf({}, {}, condition("Verified"));
+    expect(late.runtimeMigration).toEqual({ phase: "verified" });
+    expect(
+      runtimeMigrationReadyToSwitch({
+        spec: { name: "my-agent", image: "img" },
+        ...(late.runtimeMigration
+          ? { runtimeMigration: late.runtimeMigration }
+          : {}),
+      }),
+    ).toBe(true);
   });
 
   // TEST_SCENARIO: a request the previous controller took up carries its phase and message in annotations, and a newer controller may write a phase this api-server does not know yet; both still read as a running migration.

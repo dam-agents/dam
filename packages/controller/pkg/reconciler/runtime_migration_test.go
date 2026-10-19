@@ -335,6 +335,23 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	assert.Equal(t, int32(1), agentReplicas(t, r), "the container runs again")
 }
 
+// TEST_SCENARIO: an abort that reaches the cluster after the verified boot is not an undo. The machine booted from the copy, so its disk is where the Agent's data is now and the guest may have written to it: the controller leaves the machine and its condition alone and the Backend switch, which the api-server still runs from the verified phase, decides the Agent.
+func TestAnAbortThatArrivesAfterVerificationKeepsTheMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationVerified, time.Now())
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
+
+	agent = editStoredAgent(t, r, agent, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+	for range 2 {
+		require.NoError(t, r.Reconcile(ctx, agent))
+		agent = reloaded(t, r, agent)
+	}
+	requirePhase(t, agent, apiv1.ReasonRuntimeMigrationVerified)
+	assert.Empty(t, node.deleted, "the verified machine keeps the disk the guest wrote to")
+	assert.Equal(t, int32(0), agentReplicas(t, r), "the container does not come back beside it")
+}
+
 // TEST_SCENARIO: an abort leaves no target or retry behind, so a request the operator writes afterwards is one nobody has decided: the api-server writes its target, and until then the controller makes nothing on the vm side and reads the request as no undo at all.
 func TestAnUndecidedRequestIsNotAnUndo(t *testing.T) {
 	ctx := context.Background()
