@@ -152,7 +152,6 @@ jobs:
         uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
         with:
           working-directory: packages/vm-runner
-          save-on-pull-request: true
       # Every artifact's atime goes back to the epoch, so the ones this run
       # reads stand out afterwards; see the prune below.
       - run: |
