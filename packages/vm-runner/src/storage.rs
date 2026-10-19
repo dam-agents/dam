@@ -64,7 +64,7 @@ impl StorageUse {
             < u128::from(self.usable) * u128::from(CRITICAL_PERCENT)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `up` machines may still add to the claim before it reaches FULL_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. `up` counts the machines that are running or on their way up, since a group woken together writes as soon as it boots, and no machine at all reads as one.
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes each of `up` machines may still add to the claim before it reaches FULL_PERCENT, an even part of what is left. The guests share the claim and write at once, so a grant of the whole room to each could add up past it; a grant of a part is renewed at every look, so one guest that writes alone still reaches the level within a few looks. `up` counts the machines that are not asleep, since a group woken together writes as soon as it boots, and no machine at all reads as one.
     pub fn guest_room(&self, up: usize) -> u64 {
         let limit = u64::try_from(u128::from(self.usable) * u128::from(FULL_PERCENT) / 100)
             .unwrap_or(u64::MAX);
