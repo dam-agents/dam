@@ -48,54 +48,59 @@ async function hibernate(): Promise<void> {
   await waitAgentState(api, agentId, "hibernated");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: notes on the runner which of its VMMs are already running, so the one this spec's wake starts is the one that was not there before. A VMM is one machine's boot process, an `_boot-vm` of the runner's own binary, and its command line names nothing this test can ask after: the boot config beside it is written for the process, not about it. Running VMMs belong to other agents of the same owner, which this spec must not touch. The pattern is bracketed so the shell that carries it is not read as one of them.
-function noteRunningVMMs(id: string): void {
+// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that waits for this machine's own VMM to appear, SIGKILLs it the given delay after it appeared, and writes one line for the test: the process that died, the delay measured between its appearance and the kill, and the directory that named it — or, after two minutes, that no such VMM appeared, so a watcher never outlives the run that asked for it. The watcher starts before the wake, so a boot of this lane that lasts some 0.4 s is caught whole and the delay runs from the VMM's appearance rather than from a round trip that would arrive after it. A VMM is one machine's boot process, an `_boot-vm <vm dir>/boot-config.json` of the runner's own binary, and that directory is the machine's own: the `name` file smolvm keeps in it holds the machine's name, which is how a watcher tells this machine's VMM from another agent's.
+function watchForKill(id: string, afterMs: number): void {
+  const out = `/tmp/boot-matrix-kill-${id}-${afterMs}`;
   onRunnerHost(
     id,
     [
-      `seen=/tmp/boot-matrix-vmms-${id}`,
-      ": > $seen",
-      "for p in /proc/[0-9]*; do",
-      `  tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[_]boot-vm' || continue`,
-      "  basename $p >> $seen",
+      `out=${out}`,
+      ": > $out",
+      `cat > /tmp/boot-matrix-watch-${id}-${afterMs}.sh <<'WATCH'`,
+      `out=${out}`,
+      `now() { awk '{ printf "%d", $1 * 1000 }' /proc/uptime; }`,
+      `dir=$(grep -lx '${id}' /var/lib/platform/disks/.cache/smolvm/vms/*/name 2>/dev/null | head -1)`,
+      '[ -n "$dir" ] || { echo "no vm directory names ' +
+        id +
+        '" >> $out; exit 0; }',
+      'needle=$(dirname "$dir")/',
+      "pid=",
+      "deadline=$(( $(now) + 120000 ))",
+      'while [ -z "$pid" ]; do',
+      "  for p in /proc/[0-9]*/cmdline; do",
+      '    grep -qa -- "$needle" "$p" 2>/dev/null || continue',
+      "    pid=${p#/proc/}; pid=${pid%/cmdline}",
+      "    appeared=$(now)",
+      "    break",
+      "  done",
+      '  [ -n "$pid" ] && break',
+      '  [ "$(now)" -lt "$deadline" ] || { echo "no VMM in $needle appeared in 120s" >> $out; exit 0; }',
+      "  sleep 0.02",
       "done",
+      `sleep ${(afterMs / 1_000).toFixed(3)}`,
+      'if kill -9 "$pid" 2>/dev/null; then',
+      `  echo "killed $pid after $(( $(now) - appeared ))ms, from a wait of ${afterMs}ms, in $(basename "$(dirname "$dir")")/$(basename "$dir")" >> $out`,
+      "else",
+      '  echo "could not kill $pid: it had gone" >> $out',
+      "fi",
+      "WATCH",
+      `nohup sh /tmp/boot-matrix-watch-${id}-${afterMs}.sh >/dev/null 2>&1 &`,
     ].join("\n"),
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits on the runner for a VMM this spec's wake started, SIGKILLs it the given delay after it appeared, and answers the kill line that says which process died — or the ones it did see, when none was new. The wait runs on the runner so a boot that lasts seconds is still caught: a round trip from the test would arrive after it.
-function killNewVMM(id: string, afterMs: number): string {
+// UNIT_BOUNDARY_DESCRIPTION: waits on the runner for the watcher's line and answers it, so the test reads a boot it was not quick enough to watch itself.
+function killLine(id: string, afterMs: number): string {
   return onRunnerHost(
     id,
     [
-      `seen=/tmp/boot-matrix-vmms-${id}`,
-      '[ -f "$seen" ] || { echo "no seen file"; exit 1; }',
-      `delay=${(afterMs / 1_000).toFixed(2)}`,
-      "deadline=$(( $(date +%s) + 120 ))",
-      "pid=",
-      'while [ -z "$pid" ]; do',
-      "  for p in /proc/[0-9]*; do",
-      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[_]boot-vm' || continue`,
-      "    q=$(basename $p)",
-      "    grep -qx $q $seen && continue",
-      "    pid=$q",
-      "    break",
-      "  done",
-      '  [ -n "$pid" ] && break',
-      "  [ $(date +%s) -lt $deadline ] || break",
-      "  sleep 0.1",
+      `out=/tmp/boot-matrix-kill-${id}-${afterMs}`,
+      "i=0",
+      'while [ ! -s "$out" ] && [ $i -lt 2400 ]; do',
+      "  sleep 0.05",
+      "  i=$((i + 1))",
       "done",
-      'if [ -z "$pid" ]; then',
-      "  echo none new",
-      "  for p in /proc/[0-9]*; do",
-      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[_]boot-vm' || continue`,
-      `    echo saw $(basename $p) $(tr '\\0' ' ' < $p/cmdline | cut -c1-120)`,
-      "  done",
-      "  exit 0",
-      "fi",
-      'sleep "$delay"',
-      'kill -9 $pid || { echo "kill failed $pid"; exit 1; }',
-      `echo killed $pid`,
+      'cat "$out" 2>/dev/null || true',
     ].join("\n"),
   ).trim();
 }
@@ -130,13 +135,22 @@ test("comes back from its VMM being killed at points across a boot", async () =>
   test.setTimeout(1_200_000);
   for (const afterMs of KILL_DELAYS_MS) {
     await hibernate();
-    noteRunningVMMs(agentId);
+    watchForKill(agentId, afterMs);
     await api.agents.wake.mutate({ id: agentId });
-    const out = killNewVMM(agentId, afterMs);
+    const out = killLine(agentId, afterMs);
     console.log(
-      `[e2e] ${afterMs}ms after its VMM appeared: ${out.replace(/\n/g, " | ")}`,
+      `[e2e] a wait of ${afterMs}ms from its VMM's appearance: ${out}`,
     );
-    expect(out, `no VMM of ${agentId} was killed`).toMatch(/^killed \d+$/m);
+    const killed = /killed (\d+) after (\d+)ms/.exec(out);
+    expect(killed?.[0], `no VMM of ${agentId} was killed: ${out}`).toBeTruthy();
+    expect(
+      Number(killed?.[2]),
+      `the VMM was killed ${killed?.[2]}ms after it appeared, before the ${afterMs}ms wait ran out: ${out}`,
+    ).toBeGreaterThanOrEqual(afterMs);
+    expect(
+      Number(killed?.[2]),
+      `the VMM was killed ${killed?.[2]}ms after it appeared, far past the ${afterMs}ms wait: ${out}`,
+    ).toBeLessThan(afterMs + 500);
     await waitAgentState(api, agentId, "running", {
       timeoutMs: 600_000,
       failOnError: false,
@@ -147,13 +161,13 @@ test("comes back from its VMM being killed at points across a boot", async () =>
   }
 });
 
-// TEST_SCENARIO: a disk with no block left costs a boot the empty work layer it needs before it mounts anything. platform-init gives back only what a boot discards — its scratch folders and the layers earlier boots set aside — and then boots with the home untouched, so the agent comes back without anyone having to free room from outside a machine that cannot boot. A machine's disk is a sparse file the size of its owner's whole claim, so filling it to its last block takes what the claim holds, which on this lane is the node's disk: E2E_DISK_FILL_GIB is how a run against an install with room to spare opts in, with the most GiB it may allocate in the guest, and a cap below the disk's free space skips rather than leave a disk that is not full; unset, the case is skipped rather than run at the lane's expense. The filler sits in /tmp, which a boot empties anyway.
+// TEST_SCENARIO: a disk with no block left costs a boot the empty work layer it needs before it mounts anything. platform-init gives back only what a boot discards — its scratch folders and the layers earlier boots set aside — and then boots with the home untouched, so the agent comes back without anyone having to free room from outside a machine that cannot boot. A machine's disk is a sparse file on its owner's claim, and the filler only marks blocks in the guest's own filesystem, so it takes almost nothing from the claim; a filesystem that allocates those blocks instead writes them onto the claim, which on this lane is the node's disk, so E2E_DISK_FILL_GIB is the most GiB the filler may mark, a cap below the disk's free space skips rather than leave a disk that is not full, and unset skips the case. The filler sits in /tmp, which a boot empties anyway.
 test("boots a disk it found with no room left", async () => {
   test.setTimeout(900_000);
   const capGiB = Number(process.env.E2E_DISK_FILL_GIB ?? "");
   test.skip(
     !Number.isFinite(capGiB) || capGiB <= 0,
-    "a machine's disk is as big as its owner's claim, so filling it takes the claim's room, which on this lane is the node's disk; set E2E_DISK_FILL_GIB against an install with room to spare",
+    "the filler marks blocks in the guest's filesystem, and a filesystem that allocates them instead writes them onto the claim, which on this lane is the node's disk; set E2E_DISK_FILL_GIB to the most GiB the fill may mark",
   );
   const fill = inGuest(
     agentId,
@@ -221,7 +235,7 @@ test("boots on a disk whose layout mark came back empty", async () => {
       "sync",
       "echo emptied",
       "wc -c < /mnt/boot-matrix-disk/system/layout",
-      "umount /mnt/boot-matrix-disk",
+      "umount /mnt/boot-matrix-disk || true",
     ].join("\n"),
   );
   expect(
@@ -246,7 +260,7 @@ test("boots on a disk whose layout mark came back empty", async () => {
     agentId,
     [
       "echo count",
-      "grep -c 'marked the disk as layout 2' /var/log/platform/agent-runtime.log",
+      "grep -c 'marked the disk as layout 2' /var/log/platform/agent-runtime.log || true",
     ].join("\n"),
   );
   expect(
