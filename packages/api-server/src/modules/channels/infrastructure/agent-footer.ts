@@ -203,8 +203,9 @@ export function historyLegend(
   const base =
     'In the conversation history below, a line prefixed "you (this agent):" is ' +
     'your own earlier post in this channel; "<name> (another agent):" is a ' +
-    "different agent that posted here; everyone else is a human Slack user, " +
-    "prefixed with their Slack id";
+    "different agent that posted here; \"<name> (an app):\" is another app " +
+    "or an incoming webhook; everyone else is a human Slack user, prefixed " +
+    "with their Slack id";
   const bot = opts.botLabel
     ? ` A line prefixed "${opts.botLabel}:" came from the bot but carries no ` +
       "footer, so it is not yours unless you recognise it as your own."
@@ -272,7 +273,9 @@ export function labelHistoryMessage(
       : `${author.name || author.agentId} (another agent)`
     : bot.userId && message.user === bot.userId
       ? bot.label
-      : (message.user ?? "unknown");
+      : message.botId
+        ? `${message.botName || message.botId} (an app)`
+        : (message.user ?? "unknown");
   const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
   const edited = message.edited ? " (edited)" : "";
   const marker = opts.showThreadMarkers ? threadMarker(message) : "";

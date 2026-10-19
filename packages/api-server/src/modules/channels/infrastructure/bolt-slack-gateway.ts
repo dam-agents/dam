@@ -1,6 +1,7 @@
 import { App, LogLevel } from "@slack/bolt";
 import { formatError } from "../../../core/format-error.js";
 import { FileTooLargeError } from "./slack-gateway.js";
+import { renderSlackPostText } from "./slack-post-text.js";
 import { classifySlackSender } from "./slack-sender.js";
 import type { SlackInboundPost, SlackSelf } from "./slack-sender.js";
 import type {
@@ -79,6 +80,7 @@ function toSlackMessage(m: {
   user?: string;
   text?: string;
   blocks?: unknown;
+  attachments?: unknown;
   edited?: unknown;
   thread_ts?: string;
   reply_count?: number;
@@ -120,7 +122,7 @@ function toSlackMessage(m: {
   return {
     ts: m.ts,
     user: m.user,
-    text: m.text,
+    text: renderSlackPostText(m),
     blocks: m.blocks as SlackMessage["blocks"],
     ...(m.edited ? { edited: true } : {}),
     ...(m.thread_ts ? { threadTs: m.thread_ts } : {}),
@@ -301,7 +303,7 @@ export function createBoltSlackGateway(
           channel: event.channel,
           ts: event.ts,
           threadTs: event.thread_ts,
-          text: event.text ?? "",
+          text: renderSlackPostText(event),
           files: (event as { files?: SlackImageFile[] }).files,
           teamId: workspace,
           channelType: (event as { channel_type?: string }).channel_type,
@@ -315,6 +317,7 @@ export function createBoltSlackGateway(
           ts: string;
           thread_ts?: string;
           text?: string;
+          attachments?: unknown;
           team?: string;
           files?: SlackImageFile[];
         };
@@ -328,7 +331,7 @@ export function createBoltSlackGateway(
           channel: msg.channel,
           ts: msg.ts,
           threadTs: msg.thread_ts,
-          text: msg.text ?? "",
+          text: renderSlackPostText(msg),
           files: msg.files,
           teamId: workspace,
           channelType: msg.channel_type,
