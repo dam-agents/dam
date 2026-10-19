@@ -73,6 +73,8 @@ for refused in 'virtualization.imageCache.hostPath=' \
   'virtualization.imageCache.egressCidrs[0]=1.2.3.4/33' \
   'virtualization.imageCache.egressCidrs[0]=2001:::1/64' \
   'virtualization.imageCache.egressCidrs[0]=1:2:3:4:5:6:7:8:9/64' \
+  'virtualization.imageCache.egressCidrs[0]=::gggg/64' \
+  'virtualization.imageCache.egressCidrs[0]=1:2:3:4:5:6:7::8/64' \
   'virtualization.imageCache.peers[0].namespace=registry' \
   'virtualization.imageCache.peers[0].podLabels.app=registry' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=https' \
@@ -92,6 +94,7 @@ done
 # selects the cache pod itself, by the labels that pod carries.
 cache=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --set 'virtualization.imageCache.egressCidrs[0]=10.20.0.0/24' \
+  --set 'virtualization.imageCache.egressCidrs[1]=2001:db8::/32' \
   --set virtualization.imageCache.peers[0].namespace=registry \
   --set virtualization.imageCache.peers[0].podLabels.app=registry \
   --set virtualization.imageCache.peers[0].ports[0]=5000 \
@@ -106,6 +109,7 @@ jq -e -s '
   and $v4 == ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16"]
   and $v6 == ["::1/128", "fc00::/7", "fe80::/10"]
   and any($np.spec.egress[]; any(.to[]?; .ipBlock.cidr == "10.20.0.0/24"))
+  and any($np.spec.egress[]; any(.to[]?; .ipBlock.cidr == "2001:db8::/32"))
   and any($np.spec.egress[]; .to[0].podSelector.matchLabels == {"k8s-app": "kube-dns"})
   and any($np.spec.egress[]; .to[0].podSelector.matchLabels == {"app": "registry"}
     and .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "registry"

@@ -442,8 +442,9 @@ virtualization:
   # cannot pull its own image; it is fetched and unpacked here once, and the
   # next owner on that node boots the same tree without touching the
   # registry. It is this install's own directory under the one
-  # etc/openshift-node-config has the nodes create and label, named by its
-  # agent namespace, so the installs sharing a node never take each other's.
+  # etc/openshift-node-config has the nodes create and label, named
+  # `<release namespace>-<release name>`, so the installs sharing a node never
+  # take each other's.
   # An install with no registry (local dev) stages
   # pre-flattened trees here too, named after the image reference
   # (`mise run image:stage-vm`), which the runners boot before they ask the

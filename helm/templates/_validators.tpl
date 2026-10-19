@@ -341,7 +341,7 @@ replaces let through (`2001:::1/64`).
 {{- $compressed := eq (len $halves) 2 -}}
 {{- $fields := 0 -}}
 {{- $bad := or (gt (len $halves) 2) (hasPrefix ":" $right) (hasSuffix ":" $left) -}}
-{{- range $g := (splitList ":" (ternary $left (printf "%s:%s" $left $right) $compressed)) -}}
+{{- range $g := (splitList ":" (ternary (printf "%s:%s" $left $right) $left $compressed)) -}}
 {{- if $g -}}
 {{- if not (regexMatch "^[0-9a-fA-F]{1,4}$" $g) -}}{{- $bad = true -}}{{- end -}}
 {{- $fields = add1 $fields -}}
