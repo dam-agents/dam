@@ -67,8 +67,7 @@ function runningMachines(): number {
 
 // UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The vm lane's idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and the per-agent hibernation timeout a spec can set is a container backend setting the vm backend ignores; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
 async function keepAwake(id: string): Promise<void> {
-  if ((await api.agents.get.query({ id })).state !== "running")
-    await api.agents.wake.mutate({ id });
+  await api.agents.wake.mutate({ id });
   await waitAgentState(api, id, "running");
 }
 
@@ -121,12 +120,12 @@ test("room a vm agent frees goes back to its owner's claim", async () => {
     !runnerPod(probeId),
     "the Mac's host runner runs outside the cluster",
   );
+  await keepAwake(probeId);
   const before = machineDisks();
   const growth = () =>
     [...machineDisks()].map(
       ([dir, mib]) => [dir, mib - (before.get(dir) ?? 0)] as const,
     );
-  await keepAwake(probeId);
   inGuest(probeId, `head -c ${PROBE_MIB}M /dev/urandom > ${PROBE} && sync`);
   await waitFor(
     () => Math.max(...growth().map(([, delta]) => delta)),
@@ -156,6 +155,8 @@ test("room a vm agent frees goes back to its owner's claim", async () => {
 test("the guard gives a machine the room its share gains, and takes it back", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
+  await keepAwake(probeId);
+  await keepAwake(siblingId);
   const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
   for (const round of [1, 2]) {
     await keepAwake(probeId);

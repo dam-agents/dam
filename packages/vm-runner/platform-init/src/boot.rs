@@ -1515,6 +1515,10 @@ fn size_guard(guard: &mut File, root: &Path, size: u64) -> io::Result<()> {
     if size == held {
         return Ok(());
     }
+    // UNIT_BOUNDARY_DESCRIPTION: an empty file takes no allocation, so a guard held to nothing is a cut and not a preallocation the disk can refuse.
+    if size == 0 {
+        return guard.set_len(0);
+    }
     if size > held {
         return preallocate(guard, size);
     }
@@ -1636,7 +1640,7 @@ fn guard_pool() {
         let held = sized_held;
         POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
         if let (true, Some(e)) = (warn, error) {
-            logf!("WARNING: sizing the storage guard to {want} bytes, it holds {sized}: {e}");
+            logf!("WARNING: sizing the storage guard to {want} bytes, it holds {held}: {e}");
         }
         if (was < POOL_GUARD_FLOOR) != (held < POOL_GUARD_FLOOR) {
             announce(&if held < POOL_GUARD_FLOOR {
