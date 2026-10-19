@@ -230,7 +230,8 @@ virtualization:
     # read the image files a guest is served even where the image keeps them
     # from root. The runner drops every other capability, cannot escalate,
     # and runs under the runtime/default seccomp profile. That SCC refuses
-    # the hostPath `imageCache.hostPath` mounts, so on OpenShift this is
+    # the hostPath of the node image cache and the release directory, so on
+    # OpenShift this is
     # required. The same SCC also admits the node image cache, which sets its
     # own SELinux type (see `imageCache`), so it must have
     # `seLinuxContext.type: RunAsAny`. Empty = no extra binding rendered.
@@ -369,8 +370,8 @@ virtualization:
     # pods, through `rollout`. The stager is the only writer; runners mount
     # it read-only. Each install stages into its own subdirectory, named
     # after `agentNamespace`, because every stager keeps only the newest few
-    # releases in its directory. On OpenShift it needs `scc`, as
-    # `imageCache.hostPath` does: the stager labels the directory for
+    # releases in its directory. On OpenShift it needs `scc`, as the node
+    # image cache does: the stager labels the directory for
     # containers, as spc_t, so the confined runners can read it.
     releaseHostPath: /var/lib/platform-vm-runner-releases
     # How smolvm checks every VMM's syscalls, from after its device setup,
@@ -500,14 +501,26 @@ virtualization:
   # set with room to spare: pins are never evicted, so a budget below their
   # total leaves the cache permanently over it and saying so in its log.
   imageCache:
-    # This install's OWN directory on every node it runs on: the chart refuses
-    # one that is not, and one that sits in the release directory. Nodes are
-    # shared, and an install given another install's cache directory is a
-    # second writer of it — the two take turns unlinking each other's socket
-    # and serving each other's trees. End it with a component that names this
-    # install (e.g. /var/lib/platform-images/dam-dev), as
-    # `runner.releaseHostPath` takes its own per-install subdirectory.
+    # The root the node image caches live under: on every node a runner runs
+    # on, the chart keeps this install's cache in its own subdirectory of it,
+    # `<release namespace>-<release name>` — the pair the cluster already keeps
+    # unique. Nodes are shared, and an install given another install's cache
+    # directory is a second writer of it: the two take turns unlinking each
+    # other's socket and serving each other's trees. So the value is a root and
+    # never the directory itself, it is absolute, and it stays outside
+    # `runner.releaseHostPath`'s per-install subdirectory, which the release
+    # stager prunes.
     hostPath: ""
+    # The directory a previous release served, kept alive while the runners
+    # that release gave their mounts are still rolling out: the rollout waits
+    # out a busy owner's turn (`runner.rollout.idleWait`, a day by default), and
+    # until it reaches a runner, that runner dials the socket in the old
+    # directory. Setting this runs a second cache service over that directory,
+    # which preloads nothing; remove it once every runner has rolled. It has to
+    # be the whole host directory the previous release served, and to hold this
+    # install's new cache directory neither directly nor from above — so the
+    # new root is normally a sibling of it, not the same one.
+    legacyPath: ""
     budget: 20Gi
     preloadInterval: 5m
     # How the service resolves the registries it fetches from. `ClusterFirst`

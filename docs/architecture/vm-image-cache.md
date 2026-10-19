@@ -3,9 +3,9 @@
 Last verified: 2026-10-19
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
-That tree is never on the runner's claim: it lives in a **node cache**, the host directory `imageCache.hostPath` names, which every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
-The install must name it once the `vm` Backend is on, and the chart refuses one that does not: the path ends with a component that names this install — its release namespace, say — because nodes are shared and an install given another install's cache directory is a second writer of it.
-It refuses one inside the release directory too, which the stager prunes.
+That tree is never on the runner's claim: it lives in a **node cache**, a host directory every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
+The install names a root once the `vm` Backend is on — `imageCache.hostPath` — and the chart keeps this install's cache in its own subdirectory of it, `<release namespace>-<release name>`: nodes are shared, and an install given another install's cache directory is a second writer of it, so the directory is named after the pair the cluster already keeps unique rather than left to whoever sets the value.
+It refuses a root that is not a path on the node, and one whose subdirectory lands inside the release directory, which the stager prunes.
 It is a host directory, not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
 On OpenShift the runners need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
 Every tree it unpacks inherits that label, which is what lets the runners, still confined, boot from it; the label is set from the chart's OpenShift signal, and a service that cannot set it says so and exits rather than serve trees no runner could read.
@@ -24,6 +24,14 @@ The service unpacks with every capability dropped but the few that restoring an 
 No entry lands outside the tree: tar strips a leading `/` and refuses a member that names `..` or a path through a symlink, and the fetch fails on either.
 A tree keeps the setuid binaries its image carries, because a guest boots it as root on its own kernel and its `sudo` or `su` has to work there.
 The host never runs them: a hostPath takes no `nosuid` mount option, so the node directory is closed to every host uid but root, and a runner reads it as root through its idmapped mount, under no-new-privileges.
+
+**Moving that directory is a two-deploy change.**
+An upgrade that moves it reaches the runners that roll, and the rollout holds a runner back while its owner has a busy agent — up to `runner.rollout.idleWait`, a day by default — so for that long a runner still mounts the directory the release before gave it and dials the socket inside it.
+That socket is gone once the service serves the new directory, and a runner that dials it boots only the trees its own machines already hold.
+So the first deploy sets `imageCache.legacyPath` to the directory the previous release served, which runs a second cache service over it: the runner the roll has not reached keeps booting from it, and a tree it needs and does not hold is still fetched.
+That service pins nothing, so the window costs a second service over the old trees rather than a second copy of every harness image.
+The second deploy, once every runner has rolled, removes the key.
+The legacy directory may hold neither the install's new directory nor sit inside one: a service over a directory that holds the other's trees evicts them as its own least recently written.
 
 **An entry is named by the image it holds, not by the reference that asked for it.** A create resolves its reference to a digest and boots the tree stored under it, so two tags of one image share a tree and a mutable tag is never frozen at what it first named.
 The writer remembers what a tag resolved to for a few minutes; a pinned digest is never resolved, and a registry that cannot answer boots what the tag last resolved to.

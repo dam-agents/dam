@@ -15,13 +15,13 @@ Applying either file drains and reboots every node of the pools it reaches, one 
 
 The chart's defaults and the values an OpenShift install uses for them:
 
-| Path                                   | Chart value                                                            | Writer                  | Readers                                                 |
-| -------------------------------------- | ---------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
-| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath`                                | the release stager      | VM runners, read-only                                   |
-| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath` (no default: it names an install) | the image cache service | VM runners, read-only, and the cache's socket inside it |
-| `/var/lib/platform-harness-tools`      | none                                                                   | none                    | none                                                    |
+| Path                                   | Chart value                                                                                 | Writer                  | Readers                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
+| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath`                                                     | the release stager      | VM runners, read-only                                   |
+| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath` (no default: a root the chart names an install inside) | the image cache service | VM runners, read-only, and the cache's socket inside it |
+| `/var/lib/platform-harness-tools`      | none                                                                                        | none                    | none                                                    |
 
-Each install's cache directory is its own subdirectory of `/var/lib/platform-images`, its path ending with a component that names the install — its release namespace, say — and the chart refuses one that does not: the nodes are shared, and the service is the only writer of the directory it serves.
+Each install's cache directory is the chart's own subdirectory of this root, named `<release namespace>-<release name>` — the pair the cluster keeps unique — and the chart derives it, so no value can give two installs one directory: the nodes are shared, and the service is the only writer of the directory it serves.
 The kubelet creates that subdirectory on the node, for the `DirectoryOrCreate` volume of the cache pod, and the service labels it for containers as it opens it.
 
 `/var/lib/platform-harness-tools` held the harness tools before the default image baked them, and no pod mounts it any more.
@@ -46,11 +46,11 @@ Why this label and mechanism:
 
 ### Every node host path the platform mounts
 
-| Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                                                                 | Created by this MachineConfig                                       |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| `virtualization.imageCache.hostPath` (under `/var/lib/platform-images`)          | image cache service (writes); VM runners (read-only, from the controller)                                      | inherited from the directory above, then `container_file_t:s0` set by the cache service | the parent only: the kubelet creates the install's own subdirectory |
-| `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755`                                                 | yes                                                                 |
-| `/var/lib/kubelet/device-plugins`, `/dev`                                        | KVM device plugin ([`helm/extra/kvm-device-plugin.yaml`](../../helm/extra/kvm-device-plugin.yaml)), privileged | the host's own labels                                                                   | no: system paths, and the pod is privileged                         |
+| Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                                                                 | Created by this MachineConfig                                                                            |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `virtualization.imageCache.hostPath` (under `/var/lib/platform-images`)          | image cache service (writes); VM runners (read-only, from the controller)                                      | inherited from the directory above, then `container_file_t:s0` set by the cache service | the parent only: the kubelet creates the install's own `<release namespace>-<release name>` subdirectory |
+| `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755`                                                 | yes                                                                                                      |
+| `/var/lib/kubelet/device-plugins`, `/dev`                                        | KVM device plugin ([`helm/extra/kvm-device-plugin.yaml`](../../helm/extra/kvm-device-plugin.yaml)), privileged | the host's own labels                                                                   | no: system paths, and the pod is privileged                                                              |
 
 Every other volume the chart and the controller create is a claim, a ConfigMap, a Secret, a projected volume or an `emptyDir`.
 

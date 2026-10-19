@@ -68,7 +68,7 @@ virtualization:
   # trees in the node cache directory, which every runner mounts read-only and
   # boots a staged tree from before it asks the image cache service.
   imageCache:
-    hostPath: /var/lib/platform-vm-images/platform-agents
+    hostPath: /var/lib/platform-vm-images
 
 
 # Merges over the values.yaml catalog. Every template gets a local image

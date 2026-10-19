@@ -8,9 +8,14 @@
 # staged instead: no guest flattens one since platform-init became its init.
 set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
-# The directory values-local.yaml gives the runners, so a staged tree always
-# lands where they mount it.
-IMAGE_DIR="$(yq -r '.virtualization.imageCache.hostPath' "$MISE_CONFIG_ROOT/helm/values-local.yaml")"
+# The directory the chart gives the runners, derived from values-local.yaml's
+# root and the release, so a staged tree always lands where they mount it. The
+# controller's own environment carries it whatever else the values enable.
+IMAGE_DIR="$(helm template platform "$MISE_CONFIG_ROOT/helm" \
+  -f "$MISE_CONFIG_ROOT/helm/values-local.yaml" \
+  --show-only templates/controller/deployment.yaml \
+  | yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[].env[]
+      | select(.name == "AGENT_VM") | .value | fromjson | .runner.imageCacheHostPath')"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
