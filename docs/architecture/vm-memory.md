@@ -57,6 +57,7 @@ Counting a boot at half the pool would let only two machines boot at once; at th
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
 A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, which leaves the Agent awake with no machine: it holds nothing meanwhile.
 So neither the request, the CPU limit nor the pass that judges pressure counts it.
+Were it counted beside the machines the runner did admit, it would push the owner past the 90% threshold, and the pass would hibernate those to make room for the one the runner refused.
 Only the start being sized still counts itself, since the room it lacks is what its count is for.
 The figures a refusal quotes are the memory its owner's machines hold, the same that Home shows.
 The controller records the refusal where the runner answers the start, under the owner's lock, so the count is current before the Agent's status carries it.
