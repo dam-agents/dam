@@ -1113,3 +1113,19 @@ func TestAMarkedReleaseTheRunnerHoldsAsFailedDoesNotRoll(t *testing.T) {
 	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, testOwner), "the release failed on this runner, so the pod is not rolled onto it")
 }
+
+// TEST_SCENARIO: a runner that took the release by hand-off reports it running, but a hand-off reboots nothing, so its machines still boot the runtime they booted. The mark rolls that pod too: it is the operator saying this release must reach every machine by rebooting it. A runner whose pod already has the release does not roll again, since the pod's own image ends the roll before the mark is read.
+func TestAMarkedReleaseRollsARunnerThatAlreadyRunsIt(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t)
+	createRolloutRunner(t, r, testOwner)
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, testOwner)
+	r.config.VM.Runner.Image = runnerV2
+	r.config.VM.Runner.Rollout.RebootRequiredRelease = runnerV2
+	nodes[testOwner].release = vmrunner.RunnerRelease{Running: runnerV2, Target: runnerV2}
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, testOwner), "the pod rolls onto a release the runner already runs, which is what reboots its machines")
+	assert.Empty(t, nodes[testOwner].named, "nothing is handed off")
+}

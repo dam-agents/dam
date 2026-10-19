@@ -204,6 +204,7 @@ Give the nodes that directory first, with the chart changes above.
    The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, or `maxConcurrentPercent` of them where that is set, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
    Expect the whole roll to take about owners / width × (runner restart + machine boot), plus the idle waits.
 3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots.
+   The one exception is a release the chart marks `virtualization.runner.rollout.rebootRequiredRelease`: that release's fix reaches a machine only by rebooting it, so the controller rolls the runner pods onto it instead of handing off, under the same width, and those rolls do not wait for idle agents.
    The first live hand-off is the first proof of the hand-off on OpenShift; it happens at the next chart upgrade that changes the runner image.
 
 Watch the first hand-off:

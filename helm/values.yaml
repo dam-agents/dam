@@ -380,14 +380,16 @@ virtualization:
     # it without a restart: the controller names the release over the
     # runner's machine API, the pod's loader drains the old runner, starts
     # the new one from this directory, and the new runner adopts every
-    # machine still running, so no machine reboots. A release built against
-    # another VM runtime (a new smolvm, libkrun or crane) brings its runtime
-    # along: machines already running keep the runtime they booted, and
-    # machines started after the hand-off boot the new one. Only a release
-    # that cannot load in the pod (a newer base image's libc) still rolls the
-    # pods, through `rollout`. The stager is the only writer; runners mount
-    # it read-only. Each install stages into its own subdirectory, named
-    # after `agentNamespace`, because every stager keeps only the newest few
+    # machine still running, so no machine reboots, unless the release is
+    # the one `rollout.rebootRequiredRelease` names, which rolls the pods to
+    # reboot the machines. A release built against another VM runtime (a new
+    # smolvm, libkrun or crane) brings its runtime along: machines already
+    # running keep the runtime they booted, and machines started after the
+    # hand-off boot the new one. Only a release that cannot load in the pod
+    # (a newer base image's libc) still rolls the pods, through `rollout`.
+    # The stager is the only writer; runners mount it read-only. Each
+    # install stages into its own subdirectory, named after
+    # `agentNamespace`, because every stager keeps only the newest few
     # releases in its directory. On OpenShift it needs `scc`, as
     # `imageCache.hostPath` does: the stager labels the directory for
     # containers, as spc_t, so the confined runners can read it.
