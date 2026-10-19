@@ -295,11 +295,10 @@ Every guest is held to the claim's room as well: at each look the runner grants 
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
 The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
-The room the last look left the guest is marked on its console, which the runner carries into its usage read, so an agent that filled its disk while running says so ([budgets](budgets.md)).
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
 A clean stop empties it first, so the next boot does not start with its blocks taken.
 btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
-Eviction counts the file's blocks as free only while the grant has room, so a guest at its grant evicts its scratch while it runs.
+Eviction counts them as used once the grant is spent, so a guest at its grant evicts its scratch.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until btrfs discards them; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.

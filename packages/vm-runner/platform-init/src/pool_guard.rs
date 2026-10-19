@@ -92,7 +92,7 @@ pub fn credited(held: u64, keep: u64) -> u64 {
     keep.min(held)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the agent's room means for its writes, as one of three marks: nothing it writes lands below HOME_FULL_BYTES, its writes are held back below POOL_GUARD_FLOOR, and above that it writes as it likes. The gap between the two levels is the hysteresis: a home hovering on one of them is not marked again at every look.
+// UNIT_BOUNDARY_DESCRIPTION: what the agent's room means for its writes, as one of three marks: nothing it writes lands below HOME_FULL_BYTES, its writes are held back below POOL_GUARD_FLOOR, and above that it writes as it likes. A mark that gets worse is made at once; one that gets better holds until the room passes its level by ROOM_BAND. Without that band a room hovering on a level — an agent that fills and frees around one, a guard that moves by a step — alternates its mark at every look, and each look is a console line.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Room {
     Full,
@@ -100,10 +100,16 @@ pub enum Room {
     Room,
 }
 
-pub fn room_of(room: u64) -> Room {
-    if room < crate::guest::HOME_FULL_BYTES {
+// UNIT_BOUNDARY_DESCRIPTION: how far past its level the room must rise before a mark gets better: four of the guard's steps, so the guard moving a step at a time never flips one mark back and forth, and no more than a fifth of the floor, so the band stays below the next level up.
+const ROOM_BAND: u64 = 4 * POOL_GUARD_STEP;
+
+pub fn room_of(room: u64, was: Option<Room>) -> Room {
+    let full = crate::guest::HOME_FULL_BYTES;
+    if room < full || (was == Some(Room::Full) && room < full + ROOM_BAND) {
         Room::Full
-    } else if room < POOL_GUARD_FLOOR {
+    } else if room < POOL_GUARD_FLOOR
+        || (was == Some(Room::Held) && room < POOL_GUARD_FLOOR + ROOM_BAND)
+    {
         Room::Held
     } else {
         Room::Room
@@ -153,10 +159,38 @@ mod tests {
         assert_eq!(credited(512 * MIB, 512 * MIB), 512 * MIB);
         assert_eq!(credited(0, 8 * MIB), 0);
         assert_eq!(credited(512 * MIB, 0), 0);
-        assert_eq!(room_of(0), Room::Full);
-        assert_eq!(room_of(crate::guest::HOME_FULL_BYTES - 1), Room::Full);
-        assert_eq!(room_of(crate::guest::HOME_FULL_BYTES), Room::Held);
-        assert_eq!(room_of(POOL_GUARD_FLOOR), Room::Room);
+        assert_eq!(room_of(0, None), Room::Full);
+        assert_eq!(room_of(crate::guest::HOME_FULL_BYTES - 1, None), Room::Full);
+        assert_eq!(room_of(crate::guest::HOME_FULL_BYTES, None), Room::Held);
+        assert_eq!(room_of(POOL_GUARD_FLOOR, None), Room::Room);
+    }
+
+    // TEST_SCENARIO: a room that hovers on a level keeps the mark it had, so the console does not carry a line for every look: a full guest stays full until it clears the band, a held one stays held the same way, and a mark that gets worse is made at once, since the agent's writes fail sooner than the band allows.
+    #[test]
+    fn a_room_hovering_on_a_level_keeps_its_mark() {
+        let (full, floor) = (crate::guest::HOME_FULL_BYTES, POOL_GUARD_FLOOR);
+        assert_eq!(room_of(full + ROOM_BAND - 1, Some(Room::Full)), Room::Full);
+        assert_eq!(room_of(full + ROOM_BAND, Some(Room::Full)), Room::Held);
+        assert_eq!(room_of(floor + ROOM_BAND - 1, Some(Room::Held)), Room::Held);
+        assert_eq!(room_of(floor + ROOM_BAND, Some(Room::Held)), Room::Room);
+        assert_eq!(room_of(floor - 1, Some(Room::Room)), Room::Held);
+        assert_eq!(room_of(full - 1, Some(Room::Held)), Room::Full);
+
+        let mut mark = room_of(full - 1, None);
+        for room in [full, full + 1, full - 1, full + ROOM_BAND - 1, full] {
+            mark = room_of(room, Some(mark));
+            assert_eq!(mark, Room::Full, "{room}");
+        }
+        mark = room_of(full + ROOM_BAND, Some(mark));
+        for room in [
+            floor + ROOM_BAND - 1,
+            floor + ROOM_BAND - 2,
+            floor + ROOM_BAND - 1,
+        ] {
+            let next = room_of(room, Some(mark));
+            assert_eq!(next, Room::Held, "{room}");
+            mark = next;
+        }
     }
 
     // TEST_SCENARIO: the guard file leaves the guest what is left of its grant: the grant less what the guest wrote since it came, never less than the floor, and nothing held back without a grant or when the disk has less free than the grant anyway. A new grant counts from what the guest had written when it came.
