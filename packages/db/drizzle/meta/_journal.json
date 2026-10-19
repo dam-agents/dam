@@ -421,6 +421,13 @@
       "when": 1791189757317,
       "tag": "0059_sub_agent_outcome_delivery",
       "breakpoints": true
+    },
+    {
+      "idx": 60,
+      "version": "7",
+      "when": 1792437989396,
+      "tag": "0060_drop_litellm_disable_experimental_betas",
+      "breakpoints": true
     }
   ]
 }

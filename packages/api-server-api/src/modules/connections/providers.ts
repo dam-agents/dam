@@ -25,7 +25,6 @@ function liteLlmEnvMappings(
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy-placeholder" },
     { envName: "ANTHROPIC_BASE_URL", placeholder: baseUrl },
-    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "OPENAI_PROXY_URL", placeholder: baseUrl },
     ...Object.entries(proxy).map(([key, placeholder]) => ({
       envName: `OPENAI_PROXY_${key}`,
@@ -55,6 +54,7 @@ export function curveBenderEnvMappings(): EnvMapping[] {
       MAX_TOKENS: "32768",
       REASONING: "1",
     }),
+    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "262144" },
   ];
 }

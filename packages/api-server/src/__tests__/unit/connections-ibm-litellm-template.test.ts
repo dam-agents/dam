@@ -1,10 +1,11 @@
+import { readFileSync } from "node:fs";
 import { describe, it, expect } from "vitest";
 import type { Contribution, SecretRef } from "api-server-api";
 import { buildConnection } from "../../modules/connections/domain/build-connection.js";
 import { buildCatalog } from "../../modules/connections/domain/catalog.js";
 import { connectionSecretAnnotations } from "../../modules/connections/domain/connection-sds.js";
 
-// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads and the path rewrite that turns Bob's /inference/v1 calls into plain /v1, while leaving the model to the agent's Config panel.
+// TEST_OVERVIEW: the IBM LiteLLM connection is what points Bob at the proxy, so it must carry the gateway env Bob reads and the path rewrite that turns Bob's /inference/v1 calls into plain /v1, while leaving the model to the agent's Config panel. It must not carry the flag that moves Claude Code's permission classifier off the model call, which Curve Bender still needs.
 
 function mintRef(purpose: string): SecretRef {
   return { storeId: "k8s", path: `secret-${purpose}`, field: "" };
@@ -31,7 +32,44 @@ function envOf(contributions: Contribution[], name: string) {
   return contributions.find((c) => c.kind === "env" && c.name === name);
 }
 
+const DISABLE_BETAS = "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS";
+
 describe("ibm-litellm connection template", () => {
+  // TEST_SCENARIO: the proxy carries Claude Code's beta header and answers auto mode's permission check on the model call, which the flag would move to a client-side prompt the proxy's Sonnet model refuses — so a safe tool call would be denied.
+  it("sends the beta-off flag to Curve Bender only", async () => {
+    const ete = await buildIbmLitellm();
+    expect(envOf(ete.contributions, DISABLE_BETAS)).toBeUndefined();
+
+    const curveBender = await buildIbmLitellm("curve-bender");
+    expect(envOf(curveBender.contributions, DISABLE_BETAS)).toMatchObject({
+      placeholder: "1",
+    });
+  });
+
+  // TEST_SCENARIO: a Connection stores the preset's contributions when it is created, so the Connections made before the preset dropped the flag keep it until the migration takes it out — from those Connections only.
+  it("takes the flag out of the Connections made before the preset dropped it", async () => {
+    const migration = readFileSync(
+      new URL(
+        "../../../../db/drizzle/0060_drop_litellm_disable_experimental_betas.sql",
+        import.meta.url,
+      ),
+      "utf8",
+    );
+    const dropped = migration.match(
+      /\(item ->> 'name'\) IS DISTINCT FROM '([A-Z0-9_]+)'/,
+    )?.[1];
+    const templateId = migration.match(/c\.template_id = '([a-z-]+)'/)?.[1];
+
+    expect(dropped).toBe(DISABLE_BETAS);
+    expect(templateId).toBe("ibm-litellm");
+    expect(
+      (await buildIbmLitellm()).contributions.some(
+        (c) => c.kind === "env" && c.name === dropped,
+      ),
+    ).toBe(false);
+    expect(migration).toContain("UPDATE runtime_state_outbox");
+  });
+
   // TEST_SCENARIO: an agent granted this connection runs Bob against the proxy, so the gateway URL and a key placeholder must ride along — and the placeholder stays inert, since a key-shaped one has meant a different backend to some Bob versions.
   it("contributes the Bob gateway env with an inert key placeholder", async () => {
     const { contributions } = await buildIbmLitellm();
