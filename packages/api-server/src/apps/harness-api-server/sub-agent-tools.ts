@@ -352,7 +352,10 @@ export interface CatalogModelRef {
  * UNIT_BOUNDARY_DESCRIPTION: a model the agent's catalog does not list for
  * the target harness is refused before anything is created, naming what is
  * listed: a sub-agent on a model its harness refuses would otherwise sit
- * until its deadline. A harness the catalog has no view for is not checked.
+ * until its deadline. A harness the catalog has no view for is not checked,
+ * and neither is a model of a provider that lists nothing for the harness:
+ * the spawn's provider check then names the provider to attach or the one
+ * to name instead, which a list of models cannot.
  */
 function unlistedModel(
   model: string,
@@ -360,6 +363,8 @@ function unlistedModel(
 ): string | null {
   if (listed === null) return null;
   const wanted = parseQualifiedModel(model, { claudePrefix: true });
+  if (wanted !== null && !listed.some((m) => m.alias === wanted.alias))
+    return null;
   const found =
     wanted !== null &&
     listed.some(

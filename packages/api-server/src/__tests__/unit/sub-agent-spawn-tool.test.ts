@@ -161,11 +161,13 @@ describe("spawn_subagent harness config", () => {
     });
   });
 
-  /** TEST_SCENARIO: The agent names a model its providers do not list for
-   * the target harness (OpenAI's name for an IBM deployment). The spawn is
-   * refused naming the listed models, so no sub-agent sits on a refused
-   * model until its deadline; a listed one, in either spelling, spawns, and
-   * a harness the catalog has no view for is not checked. */
+  /** TEST_SCENARIO: The agent names a model its provider does not list for
+   * the target harness (IBM's deployment without its azure/ prefix). The
+   * spawn is refused naming the listed models, so no sub-agent sits on a
+   * refused model until its deadline; a listed one, in either spelling,
+   * spawns. A harness the catalog has no view for, or a provider that lists
+   * nothing for it, is left to the spawn's provider check, which names the
+   * fix. */
   it("refuses a model the catalog does not list for the harness", async () => {
     const listed = [
       {
@@ -175,24 +177,25 @@ describe("spawn_subagent harness config", () => {
       },
     ];
     const s = setup(undefined, async (h) => (h === "codex" ? listed : null));
-    const refused = (await s.spawn({ model: "openai/gpt-5.3-codex" })) as {
+    const refused = (await s.spawn({ model: "ibm/gpt-5.3-codex" })) as {
       content: { text: string }[];
     };
     expect(refused.content[0]!.text).toMatch(
-      /refused: no granted provider lists openai\/gpt-5.3-codex .*listed: ibm\/azure\/gpt-5.3-codex/,
+      /refused: no granted provider lists ibm\/gpt-5.3-codex .*listed: ibm\/azure\/gpt-5.3-codex/,
     );
     expect(s.spawned).toEqual([]);
     await s.spawn({ model: "claude/ibm/azure/GPT-5.3-codex" });
     expect(s.spawned[0]!.harnessConfig).toEqual({
       model: "ibm/azure/GPT-5.3-codex",
     });
-    await s.spawn({ harness: "pi", model: "openai/gpt-5.3-codex" });
-    expect(s.spawned).toHaveLength(2);
+    await s.spawn({ harness: "pi", model: "ibm/gpt-5.3-codex" });
+    await s.spawn({ model: "openai/gpt-5.3-codex" });
+    expect(s.spawned).toHaveLength(3);
     const bound = setup(
       async () => ({
         settings: {
           "platformSubagent.harness": "codex",
-          "platformSubagent.model": "anthropic/claude-sonnet-5-5",
+          "platformSubagent.model": "ibm/gpt-5.5",
         },
         harness: "claude-code",
         inherited: {},
@@ -205,7 +208,7 @@ describe("spawn_subagent harness config", () => {
       content: { text: string }[];
     };
     expect(refusedByBinding.content[0]!.text).toMatch(
-      /platform sub-agent setting names anthropic\/claude-sonnet-5-5.*Ask the user to change the setting/,
+      /platform sub-agent setting names ibm\/gpt-5\.5.*Ask the user to change the setting/,
     );
     expect(bound.spawned).toEqual([]);
   });
