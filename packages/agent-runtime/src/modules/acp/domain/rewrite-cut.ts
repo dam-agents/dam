@@ -1,7 +1,10 @@
 import { isNonNullObject, parseFrame } from "./frames.js";
 
 export type RewriteCut =
-  { kind: "start" } | { kind: "after"; entry: string } | { kind: "missing" };
+  | { kind: "start" }
+  | { kind: "after"; entry: string }
+  | { kind: "missing" }
+  | { kind: "absent" };
 
 interface UpdateFrame {
   line: string;
@@ -113,8 +116,53 @@ export function rewriteCutOf(
     messageId,
   );
   if (target === null) return { kind: "missing" };
+  return cutAbove(frames, target.first);
+}
+
+const AGENT_OUTPUT = new Set([
+  "agent_message_chunk",
+  "agent_thought_chunk",
+  "tool_call",
+  "tool_call_update",
+  "plan",
+]);
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Where taking back the newest message cuts the
+ * harness's own history: right before its last batch of user messages. A
+ * stopped turn adds the harness's own note of the stop to that batch, so the
+ * batch is taken by its place and only checked to hold the message — by id,
+ * or by containing the text the runtime's log echoed for it. Absent when the
+ * batch does not hold it, as when the harness dropped a prompt stopped before
+ * it began; missing when the agent already wrote after it; null when the
+ * history carries no entry stamps.
+ */
+export function takeBackCutOf(
+  historyLines: readonly string[],
+  logLines: readonly string[],
+  messageId: string,
+): RewriteCut | null {
+  const frames = updateFramesOf(historyLines);
+  if (!frames.some((f) => typeof f.platform.entry === "string")) return null;
+  const last = userMessagesOf(frames).at(-1);
+  if (last === undefined) return { kind: "absent" };
+  const sent = userMessagesOf(updateFramesOf(logLines)).find((m) =>
+    m.ids.has(messageId),
+  );
+  const holdsMessage =
+    last.ids.has(messageId) ||
+    (sent !== undefined && sent.text !== "" && last.text.includes(sent.text));
+  const answered = frames
+    .slice(last.first)
+    .some((f) => AGENT_OUTPUT.has(String(f.update.sessionUpdate)));
+  if (!holdsMessage) return { kind: "absent" };
+  if (answered) return { kind: "missing" };
+  return cutAbove(frames, last.first);
+}
+
+function cutAbove(frames: readonly UpdateFrame[], index: number): RewriteCut {
   const above = frames
-    .slice(0, target.first)
+    .slice(0, index)
     .reverse()
     .find((f) => typeof f.platform.entry === "string");
   return above

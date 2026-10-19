@@ -26,6 +26,7 @@ import (
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/kubernetes"
 	corelisters "k8s.io/client-go/listers/core/v1"
@@ -75,6 +76,7 @@ type AgentReconciler struct {
 	notReadyPolls         sync.Map
 	vmStartClocks         sync.Map
 	ownerless             sync.Map
+	orphanMachines        sync.Map
 	machineWatchMu        sync.Mutex
 	machineWatches        map[string]*machineWatch
 	pressureWatches       map[string]*machineWatch
@@ -775,8 +777,19 @@ func (r *AgentReconciler) ensureSecretOwnerReference(ctx context.Context, secret
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: cleans up after a deleted Agent. It runs on the controller's delete queue rather than in the informer's handler, because removing a vm agent's machine is a call to its owner's runner that can take seconds or fail outright; an error asks the queue to try again later, and every step is safe to repeat.
-func (r *AgentReconciler) Delete(ctx context.Context, name, owner string) error {
+// UNIT_BOUNDARY_DESCRIPTION: cleans up after a deleted Agent. It runs on the controller's delete queue rather than in the informer's handler, because removing a vm agent's machine is a call to its owner's runner that can take seconds or fail outright; an error asks the queue to try again later, and every step is safe to repeat. The Agent is read live first, because a queued cleanup can run three quarters of an hour after the delete: a name that another Agent holds now is left alone, with its machine, home and objects, and one the same Agent still holds waits for the queue.
+func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid types.UID) error {
+	live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	switch {
+	case err == nil && live.GetUID() != uid:
+		slog.Info("deleted agent cleanup: the name belongs to an agent created since, nothing is removed", "agent", name, "uid", uid, "live", live.GetUID())
+		return nil
+	case err == nil:
+		return fmt.Errorf("the deleted agent is still there")
+	case !errors.IsNotFound(err):
+		return fmt.Errorf("reading the deleted agent: %w", err)
+	}
+
 	r.deleteReleaseNsAgentResources(ctx, name)
 
 	r.deletePVCs(ctx, name)
