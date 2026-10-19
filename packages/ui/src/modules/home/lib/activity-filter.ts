@@ -48,8 +48,6 @@ export function isFiltered(filters: ActivityFilters): boolean {
   );
 }
 
-// Unchecking the last type leaves an empty set, which shows no sessions; the
-// menu's "Show all" turns them back on.
 export function toggleChannelType(
   filters: ActivityFilters,
   type: ChannelType,
