@@ -41,8 +41,30 @@ describe("workspace-command plugin", () => {
       "bootstrap",
       workDir,
       expect.any(Function),
+      undefined,
     );
     expect(existsSync(sentinel)).toBe(true);
+  });
+
+  // TEST_SCENARIO: a kit's install calls git or gh against a host only the agent's Connection authenticates, so the command runs with the agent's runtime env (its GH_ENTERPRISE_TOKEN placeholder), not the bare pod env.
+  it("runs the command with the agent's runtime env", async () => {
+    const root = mkdtempSync(join(tmpdir(), "ws-cmd-env-"));
+    const pluginStateDir = join(root, "state");
+    mkdirSync(pluginStateDir, { recursive: true });
+    const lines: string[] = [];
+    const handler = createWorkspaceCommandPlugin({
+      workDir: root,
+      log: (msg) => lines.push(msg),
+      spawnEnv: () => ({
+        ...process.env,
+        GH_ENTERPRISE_TOKEN: "platform:conn:aaa",
+      }),
+    }).bindEvent!("workspace-command", { impl: "workspace-command" });
+    await handler(
+      { command: 'echo "token=$GH_ENTERPRISE_TOKEN"' },
+      { eventId: "evt-1:1", agentHome: root, pluginStateDir, log: () => {} },
+    );
+    expect(lines).toContain("[workspace-command] token=platform:conn:aaa");
   });
 
   it("skips a second run once the sentinel exists", async () => {

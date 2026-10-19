@@ -18,7 +18,13 @@ const pressureUnservedBackoff = 10 * time.Minute
 // UNIT_BOUNDARY_DESCRIPTION: how long after a reclaim under pressure the owner's runner is not reclaimed for again on its signal. The machines it hibernated take seconds to stop, and until they have, the runner's working set still counts them, so a second signal would hibernate more agents for room already freed.
 const pressureReclaimCooldown = 15 * time.Second
 
-// UNIT_BOUNDARY_DESCRIPTION: starts the one pressure watch on the owner's runner, unless it is already running. Only a runner in the cluster with a memory limit reports pressure; the host runner admits against a share of the Mac's memory the controller never learns. The watch lives no longer than the reconciler's lifetime, and a failed read ends it, so the next reconcile of the owner's agents starts it again on a runner it can reach. An owner whose pool is unread is left to that next reconcile too.
+// UNIT_BOUNDARY_DESCRIPTION: how long a pressure watch that failed a read waits before asking again, doubling up to pressureReconnectMax. A settled agent no longer reconciles every minute, so a watch ended by one failed read — a runner restarting, a connection dropped — would be started again only by the next change or the five-minute sweep, and the counted threshold left in its place is the view the kernel's does not share.
+const (
+	pressureReconnect    = time.Second
+	pressureReconnectMax = 30 * time.Second
+)
+
+// UNIT_BOUNDARY_DESCRIPTION: starts the one pressure watch on the owner's runner, unless it is already running. Only a runner in the cluster with a read pool and a memory limit reports pressure; the host runner admits against a share of the Mac's memory the controller never learns. The watch lives no longer than the reconciler's lifetime, retries a read that failed, and ends only on a runner that does not serve the read, which the next reconcile asks again: a runner handed off to a newer release serves it without a new pod. An owner whose pool is unread is left to that next reconcile too.
 func (r *AgentReconciler) watchRunnerPressure(runner *vmrunner.Client, owner string) {
 	if r.lifetime == nil || r.config.VM.Runner.HostAddress != "" {
 		return
@@ -59,6 +65,7 @@ func (r *AgentReconciler) awaitRunnerPressure(ctx context.Context, w *machineWat
 		w.cancel()
 	}()
 	var since uint64
+	wait := pressureReconnect
 	for ctx.Err() == nil {
 		asked := time.Now()
 		p, err := runner.WaitPressure(ctx, since, vmStatusWait)
@@ -70,8 +77,14 @@ func (r *AgentReconciler) awaitRunnerPressure(ctx context.Context, w *machineWat
 			return
 		}
 		if err != nil {
-			return
+			select {
+			case <-ctx.Done():
+			case <-time.After(wait):
+			}
+			wait = min(2*wait, pressureReconnectMax)
+			continue
 		}
+		wait = pressureReconnect
 		if p.Version == since {
 			// UNIT_BOUNDARY_DESCRIPTION: a closing runner answers every wait at once, so an unchanged answer that came early waits out the rest of a second before asking again.
 			select {

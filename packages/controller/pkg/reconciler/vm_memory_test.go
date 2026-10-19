@@ -214,6 +214,65 @@ func TestTheMemoryPassReconcilesOnlyWhenThePodRequestWouldMove(t *testing.T) {
 	assert.Equal(t, 0, resizeCalls(r), "the pass leaves the resize to the reconcile")
 }
 
+// TEST_SCENARIO: a pass over an owner costs their runner one read, however many agents the owner runs: the usage read lists every machine with the memory figures a status carries for a running machine, where asking about each machine in turn was a round trip per running agent every half minute.
+func TestAMemoryPassReadsTheOwnersRunnerOnce(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	peers := []*apiv1.Agent{agent}
+	r.vmRunning.Store(agent.Name, true)
+	node.set(agent.Name, measured(700))
+	for _, name := range []string{"peer-a", "peer-b", "peer-c"} {
+		peerVMAgent(t, r, name, "4Gi", "20Gi", true)
+		node.set(name, measured(700))
+		r.vmRunning.Store(name, true)
+		peer := vmAgentCR()
+		peer.Name = name
+		peers = append(peers, peer)
+	}
+
+	node.forgetReads()
+	r.ownerMemoryPass(ctx, testOwner, peers, nil)
+
+	node.mu.Lock()
+	defer node.mu.Unlock()
+	assert.Equal(t, 1, node.usageReads, "one read answers for every machine of the owner")
+	assert.Equal(t, 0, node.statusReads, "a pass asks the runner about no machine in turn")
+	assert.Equal(t, measured(700), r.liveMachine("peer-a"), "the figures come from the same read")
+}
+
+// TEST_SCENARIO: a runner release older than the usage read's per-machine memory figures answers without them. Its machines are then read one status at a time, as before, so a warming machine counts at its warm-up floor rather than at the memory it happens to hold, and a machine still running at its old, larger size keeps that size when the pool has shrunk under it. A zero read as those figures would drop both, and the runner pod's memory limit could then fall below what its machines hold. The figures a read does list are the ones a status reports, so only the older shape is read machine by machine.
+func TestAMemoryPassOnAnOlderRunnerReadsEachMachineAsBefore(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	ctx := context.Background()
+
+	r.vmRunning.Store(agent.Name, true)
+	node.set(agent.Name, vmrunner.MachineStatus{State: vmrunner.StateRunning, UsedMiB: 300, Warming: true})
+	peerVMAgent(t, r, "shrunk-peer", "4Gi", "20Gi", true)
+	peer := vmAgentCR()
+	peer.Name = "shrunk-peer"
+	peer.Spec.Resources.Limits["memory"] = "4Gi"
+	r.vmRunning.Store("shrunk-peer", true)
+	node.set("shrunk-peer", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 4, MemoryMiB: 6144, UsedMiB: 6000})
+
+	node.mu.Lock()
+	node.legacyUsage = true
+	node.mu.Unlock()
+	node.forgetReads()
+	r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent, peer}, nil)
+
+	node.mu.Lock()
+	assert.Equal(t, 1, node.usageReads, "the read still answers for the owner's machines")
+	assert.Equal(t, 2, node.statusReads, "an older runner is asked about each machine in turn")
+	node.mu.Unlock()
+	assert.Equal(t, 1024, r.accountedMemoryMiB(ctx, testOwner, agent.Name, &agent.Spec),
+		"a warming machine counts at its warm-up floor, not at the 556 MiB it holds")
+	assert.Equal(t, 6144, r.accountedMemoryMiB(ctx, testOwner, "shrunk-peer", &peer.Spec),
+		"a machine still running at its old size counts at that size, though the pool has shrunk under it")
+}
+
 // TEST_SCENARIO: the runner's pressure signal is the kernel's view, which is what kills the runner, so a pass on it hibernates an idle peer even while the counted demand is well under the threshold, and even when that peer alone does not cover the measured overshoot. The signal repeats while pressure lasts, so for a while after it freed room it hibernates nothing more, and it never runs beside the owner's other pass.
 func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T) {
 	agent := vmAgentCR()
@@ -252,6 +311,35 @@ func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T)
 
 	r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, pressure)
 	assert.True(t, reclaimed("idle-a") && reclaimed("idle-b"), "the signal did not reclaim what it could")
+}
+
+// TEST_SCENARIO: under the runner's pressure signal the need comes from the kernel's working set, not from the usage read, so a read that fails must not end the pass: a fleet in trouble is still reclaimed, counting a machine never measured at its warm-up floor and a measured one at its last use, and the pass costs no status read per machine instead.
+func TestAPressurePassReclaimsWhenTheUsageReadFails(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")}}
+	ctx := context.Background()
+	peerVMAgent(t, r, "idle-peer", "4Gi", "20Gi", true)
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "idle-peer", "application/merge-patch+json",
+		[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+		metav1.PatchOptions{})
+	require.NoError(t, err)
+	node.mu.Lock()
+	node.statuses["idle-peer"] = measured(700)
+	node.usageFails = true
+	node.mu.Unlock()
+	r.vmRunning.Store(agent.Name, true)
+
+	pressure := &vmrunner.RunnerPressure{Version: 2, Pressured: true, LimitMiB: 8192, WorkingSetMiB: 8000}
+	r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, pressure)
+
+	peer, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, peer.GetAnnotations()[annReclaimedAt], "the pressure signal still frees an idle peer when the usage read fails")
+	node.mu.Lock()
+	assert.Equal(t, 0, node.statusReads, "a failed usage read does not fall back to a status read per machine")
+	node.mu.Unlock()
 }
 
 // TEST_SCENARIO: an agent whose status does not answer may be deep in a long turn with its guest saturated, so a reclaim hibernates it only on the runner's pressure signal, when no agent said it is idle, because the OOM kill it heads off would stop it anyway; an agent that answered busy is never hibernated.
@@ -539,7 +627,7 @@ func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 	assert.True(t, reclaimedAgent(t, r, "idle-a"), "the start needs 376 MiB, and the idlest agent that holds memory gives 956 MiB")
 }
 
-// TEST_SCENARIO: the pass reads a machine's status, and the runner restarts before the pass keeps that reading: a reconcile records the refusal the restart brought and drops the sample the pass had counted from. Kept after that answer, the older reading counted a machine the runner holds nothing of, which is the defect this branch fixes, reached from the other side. So the pass reads a status and keeps it under the owner's lock, the one a reconcile records the runner's answer under, and the two cannot cross.
+// TEST_SCENARIO: the pass reads the runner's usage, and the runner restarts before the pass keeps that reading: a reconcile records the refusal the restart brought and drops the sample the pass had counted from. Kept after that answer, the older reading counted a machine the runner holds nothing of, which is the defect this branch fixes, reached from the other side. So the pass reads usage and keeps it under the owner's lock, the one a reconcile records the runner's answer under, and the two cannot cross.
 func TestAStatusSampleThePassReadBeforeARefusalIsNotKeptAfterIt(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -548,17 +636,16 @@ func TestAStatusSampleThePassReadBeforeARefusalIsNotKeptAfterIt(t *testing.T) {
 	r.vmRunning.Store("my-agent", true)
 	listed := cachedAgent(t, r, "my-agent")
 
-	// UNIT_BOUNDARY_DESCRIPTION: the runner answers with the status it read, while the test holds that answer back, as a pass that reads it and pauses does.
+	// UNIT_BOUNDARY_DESCRIPTION: the runner answers with the machines it listed, while the test holds that answer back, as a pass that reads it and pauses does.
 	reading, release := make(chan struct{}), make(chan struct{})
-	var letGoOnce sync.Once
+	var letGoOnce, readOnce sync.Once
 	letGo := func() { letGoOnce.Do(func() { close(release) }) }
 	t.Cleanup(letGo)
-	node.onGet = func(id string) {
-		if id == "my-agent" {
-			node.onGet = nil
+	node.usageHook = func() {
+		readOnce.Do(func() {
 			close(reading)
 			<-release
-		}
+		})
 	}
 	passDone := make(chan struct{})
 	go func() {
@@ -570,7 +657,7 @@ func TestAStatusSampleThePassReadBeforeARefusalIsNotKeptAfterIt(t *testing.T) {
 		lock.Unlock()
 		letGo()
 		<-passDone
-		t.Fatal("the pass reads a status outside the owner lock: the reading it keeps can land after a refusal and count a machine the runner holds nothing of")
+		t.Fatal("the pass reads usage outside the owner lock: the reading it keeps can land after a refusal and count a machine the runner holds nothing of")
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the runner restarted meanwhile, so the machine is gone and its start is refused.
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})

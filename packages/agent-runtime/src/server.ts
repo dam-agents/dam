@@ -551,10 +551,8 @@ const runtimeChannel = await composeRuntimeChannel({
     }),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
-  onSnapshotProcessed: (contributions) => {
-    reconcileOnState?.(contributions);
-    setupGitCredentialHelper(contributions);
-  },
+  onContributionsApplied: setupGitCredentialHelper,
+  ...(reconcileOnState && { onSnapshotProcessed: reconcileOnState }),
 });
 
 const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);

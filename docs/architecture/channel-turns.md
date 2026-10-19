@@ -55,6 +55,7 @@ A few observations the diagram glosses over:
   That holds where the harness offers a way to say no; where it offers only ways to say yes the sole honest answer left is to cancel, which ends the whole turn rather than the one call in it.
   The relay never picks an approval to keep a turn alive; the one approval it ever picks is the allow-once below.
   What an Agent may do on a channel turn is therefore exactly what its session's permission mode lets it do *without* asking, which makes that mode the dial over channel behavior.
+  The turn contract hands the Agent that explanation, because the platform does not tell the sender: a call the permission check refused is the mode's doing, never a platform setting, and only the owner can change the mode.
   Codex has no such dial: its image runs it never asking, so it raises no prompt to refuse ([harness-config](harness-config.md)).
   The platform's own tool surface is kept outside that dial: asked about one of the two MCP servers the platform injects, the relay answers allow-once, so disposing of a turn, reporting an invocation result and reading a knowledge base survive a mode that asks — wherever the prompt offers allowing once at all, since that is the only approval the relay will pick.
   Reach on those tools is the platform's to enforce (per-Agent endpoint, mesh identity, the binding), never the harness's, so approving them widens nothing.
@@ -126,6 +127,10 @@ A few observations the diagram glosses over:
   Because a workspace's one bot posts for every Agent, a bot message's Slack user id cannot tell Agents apart — so the worker takes the Agent id from each message's [Agent Footer](#the-agent-footer): the reading Agent's own posts are marked as its own, another Agent's are named, and humans keep their Slack id.
   Names are resolved from those ids rather than read off the footer, so a renamed Agent's older posts carry its **current** name.
   A footer-less bot post is named as the bot itself — unattributable, so never the reader's own.
+  Another app's or an incoming webhook's post is named by the app's name, as a live post from it is.
+- **An app's post is read from where the app put it (Slack).** Apps and webhooks often leave a post's `text` empty or a short fallback, and put the content in legacy `attachments[]` or in `blocks`.
+  The gateway joins that content to `text`, drops what only repeats it, and caps what it adds, the same for history lines, `read_thread` and the live turn.
+  `rich_text` and `markdown` blocks count only when `text` is empty, because they are the copy of `text` that a person's post and an Agent's post carry; Slack's link previews and the Agent Footer never count.
 - **Ambient routing: one session per thread, plus one per channel.** On an ambient binding, a thread reply relays into that thread's own session — the same key a mention there would resume.
   Top-level messages share a single rolling **ambient session** per channel, so the agent follows the channel rather than starting cold per message.
   **All** ambient traffic is serialized per session and coalesced under the same rule as addressed traffic (above).

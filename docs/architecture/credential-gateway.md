@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -18,6 +18,7 @@ On the wire:
 
 1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`; the per-Agent gateway Service routes to the paired gateway pod.
    TLS egress arrives as HTTP CONNECT, plain HTTP in absolute form, forwarded without interception.
+   With a telemetry backend, plain HTTP to the gateway's own address on a reserved OTLP path goes to the collector instead, with no egress check, since it reaches nothing else (see [observability](observability.md#agent-export)).
 2. Envoy's outer listener (reach gated by NetworkPolicy) stamps the trusted attribution header on every request it forwards, or strips it where no telemetry backend is configured; either way the agent cannot supply its own (see [observability](observability.md)).
    CONNECT it terminates, routing the inner stream into an internal listener that reads SNI.
 3. Per-host filter chains terminate TLS with the leaf cert, run the credential injector(s) to add the configured header(s) (or rewrite `?<param>=<value>` into the URL — see below), then forward to a per-chain cluster pinned to the host (explicit upstream SNI, SAN-bound TLS validation).

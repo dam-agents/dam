@@ -70,6 +70,33 @@ describe("git protocol client", () => {
   });
 
   /**
+   * TEST_SCENARIO: A workspace seed's git must see the agent's runtime env —
+   * that is where its credential settings live — not only the pod's own. Git
+   * here resolves the seed's https URL only through config carried in the env
+   * the client is given, so a client that drops it fails the fetch.
+   */
+  it("should run git with the env it is given", async () => {
+    const url = "https://ghe.example.com/org/kit";
+    const client = createGitProtocolClient({
+      env: () => ({
+        ...process.env,
+        HOME: tmp,
+        GIT_CONFIG_COUNT: "1",
+        GIT_CONFIG_KEY_0: `url.file://${origin}.insteadOf`,
+        GIT_CONFIG_VALUE_0: url,
+      }),
+    });
+    const dest = path.join(tmp, "seeded");
+
+    const result = await client.fetchInto(url, dest, { ref: "main" });
+
+    expect(result).toEqual({ ok: true, value: undefined });
+    expect(await fs.readFile(path.join(dest, "SKILL.md"), "utf8")).toBe(
+      "# skill\n",
+    );
+  });
+
+  /**
    * TEST_SCENARIO: Reading the last commit that touched a file goes through
    * the capture path, so stdout must arrive intact and trimmed enough to use
    * as a sha.

@@ -1,6 +1,6 @@
 # VM image cache
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
 That tree is never on the runner's claim: it lives in a **node cache**, the host directory `imageCache.hostPath` names, which every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
@@ -20,6 +20,13 @@ The service unpacks with every capability dropped but the few that restoring an 
 No entry lands outside the tree: tar strips a leading `/` and refuses a member that names `..` or a path through a symlink, and the fetch fails on either.
 A tree keeps the setuid binaries its image carries, because a guest boots it as root on its own kernel and its `sudo` or `su` has to work there.
 The host never runs them: a hostPath takes no `nosuid` mount option, so the node directory is closed to every host uid but root, and a runner reads it as root through its idmapped mount, under no-new-privileges.
+
+**A node short of disk neither refuses the service nor evicts it first.**
+kubelet admits a critical pod while a node is under disk pressure and turns away every other one, so the class, `system-node-critical`, is what lets a replacement pod start at all while the pressure lasts.
+Among the pods it then evicts, kubelet takes those over their requests first, the lowest priority next, and the largest use above a request last: the request keeps the service out of the first group, where a pod with none stands at any use, and its class settles the rest.
+A cluster may reserve these classes for the namespaces that declare them.
+Such a cluster admits one only in a namespace whose ResourceQuota names the class, and refuses it as `insufficient quota to match these scopes`, so an operator installing on such a cluster creates that quota in the agent namespace, with a `pods` allowance of at least the node count.
+Plain Kubernetes and OpenShift set no such restriction; Google Kubernetes Engine sets one by default.
 
 **An entry is named by the image it holds, not by the reference that asked for it.** A create resolves its reference to a digest and boots the tree stored under it, so two tags of one image share a tree and a mutable tag is never frozen at what it first named.
 The writer remembers what a tag resolved to for a few minutes; a pinned digest is never resolved, and a registry that cannot answer boots what the tag last resolved to.

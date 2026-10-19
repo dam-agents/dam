@@ -226,6 +226,29 @@ describe("labelHistoryMessage", () => {
     ).toBe("U123: hey");
   });
 
+  /**
+   * TEST_SCENARIO: An app or webhook post has no Slack user, only a bot id and
+   * the app's name. The line names the app, the way a live post from it is
+   * named, instead of "unknown".
+   */
+  it("names an app's post from its bot name", () => {
+    const app: SlackMessage = {
+      text: "Pull request opened",
+      botId: "B-GH",
+      botName: "GitHub",
+    };
+    expect(
+      labelHistoryMessage(app, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe("GitHub (an app): Pull request opened");
+  });
+
+  it("falls back to the bot id for an app with no name", () => {
+    const app: SlackMessage = { text: "ping", botId: "B-HOOK" };
+    expect(
+      labelHistoryMessage(app, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe("B-HOOK (an app): ping");
+  });
+
   it("includes a human-readable timestamp when the message carries one", () => {
     const withTs: SlackMessage = { ts: "0.1", text: "hey", user: "U123" };
     expect(

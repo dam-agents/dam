@@ -33,6 +33,10 @@ pub trait Runtime: Send + Sync {
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         None
     }
+    // UNIT_BOUNDARY_DESCRIPTION: whether a VMM process holds the machine's directory now. It is the only evidence that a machine nothing has looked at is up, and its launch record cannot be read: only the process that booted it says whether it runs. A runtime that cannot look says yes, since a failed look has not shown that no VMM holds the machine, and reading it as stopped hands a live machine's room to the next start.
+    fn holds_vmm(&self, _id: &str) -> bool {
+        false
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the CPU time the machine's VMM has used since it started, in microseconds, or nothing when no VMM runs or the runtime cannot tell. Two readings a probe apart give the machine's share of the runner's CPU.
     fn cpu_usec(&self, _id: &str) -> Option<u64> {
         None
@@ -184,38 +188,51 @@ pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> Str
     out
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the processes still holding a machine's directory. Every VMM smolvm spawns names its machine's directory on its command line, so this finds a VMM a previous runner process left behind as well as one of ours. The trailing slash keeps a machine from matching another whose directory name it prefixes.
-pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> Vec<i32> {
+// UNIT_BOUNDARY_DESCRIPTION: the processes still holding a machine's directory. Every VMM smolvm spawns names its machine's directory on its command line, so this finds a VMM a previous runner process left behind as well as one of ours. The trailing slash keeps a machine from matching another whose directory name it prefixes. A scan that could not look answers with an error rather than with an empty list, since an empty list says no VMM holds the machine: only a process that exited mid-scan, leaving no command line at all, is that clean answer.
+pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> anyhow::Result<Vec<i32>> {
     let dir = vm_dir.to_string_lossy();
     if dir.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let needle = format!("{dir}/");
-    let Ok(entries) = fs::read_dir(proc_root) else {
-        #[cfg(target_os = "macos")]
-        return darwin::pids_with_arg(&needle);
-        #[cfg(not(target_os = "macos"))]
-        return Vec::new();
+    let entries = fs::read_dir(proc_root);
+    #[cfg(target_os = "macos")]
+    let Ok(entries) = entries
+    else {
+        return Ok(darwin::pids_with_arg(&needle));
     };
-    let mut pids: Vec<i32> = entries
-        .filter_map(Result::ok)
-        .filter_map(|e| {
-            let pid: i32 = e.file_name().to_str()?.parse().ok()?;
-            let cmdline = fs::read(e.path().join("cmdline")).ok()?;
-            String::from_utf8_lossy(&cmdline)
-                .contains(&needle)
-                .then_some(pid)
-        })
-        .collect();
+    #[cfg(not(target_os = "macos"))]
+    let entries = entries.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
+    let mut pids: Vec<i32> = Vec::new();
+    for entry in entries {
+        let entry = entry.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let cmdline = match fs::read(entry.path().join("cmdline")) {
+            Ok(cmdline) => cmdline,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                return Err(e).with_context(|| format!("reading the command line of process {pid}"))
+            }
+        };
+        if String::from_utf8_lossy(&cmdline).contains(&needle) {
+            pids.push(pid);
+        }
+    }
     pids.sort_unstable();
-    pids
+    Ok(pids)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: waits up to `limit` for the VMMs holding the machine's directory to exit, and returns the ones still there: those its command line names, and those in `seen`, found before a stop. A VMM's command line goes blank the moment it starts exiting, while its threads still hold its disks and published ports until the last of them exits — so a VMM the runner killed itself, or whose stop it went past, is only found through `seen`. smolvm's own stop waits for every thread since 1.18. A start issued before then is refused in a way that looks like a machine that can never start, or cannot bind the machine's port. A machine that is really stopped answers at once.
 pub fn vmms_left(proc_root: &Path, vm_dir: &Path, mut seen: Vec<i32>, limit: Duration) -> Vec<i32> {
     let deadline = Instant::now() + limit;
     loop {
-        seen.extend(orphan_pids(proc_root, vm_dir));
+        seen.extend(orphan_pids(proc_root, vm_dir).unwrap_or_default());
         seen.sort_unstable();
         seen.dedup();
         seen.retain(|&pid| !exited(proc_root, pid));
@@ -374,7 +391,7 @@ pub(crate) mod darwin {
 }
 
 pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
-    for pid in orphan_pids(proc_root, vm_dir) {
+    for pid in orphan_pids(proc_root, vm_dir).unwrap_or_default() {
         // SAFETY: kill(2) takes no pointers; a pid that has already exited returns ESRCH, which is ignored.
         unsafe {
             libc::kill(pid, libc::SIGKILL);
@@ -501,11 +518,17 @@ mod tests {
         let proc_root = Path::new("/proc");
         // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so the first scan can miss a process that has just started.
         let deadline = Instant::now() + Duration::from_secs(5);
-        while orphan_pids(proc_root, &vm_dir).is_empty() && Instant::now() < deadline {
+        while orphan_pids(proc_root, &vm_dir)
+            .unwrap_or_default()
+            .is_empty()
+            && Instant::now() < deadline
+        {
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert_eq!(orphan_pids(proc_root, &vm_dir), vec![pid]);
-        assert!(orphan_pids(proc_root, &dir.path().join("m")).is_empty());
+        assert_eq!(orphan_pids(proc_root, &vm_dir).unwrap(), vec![pid]);
+        assert!(orphan_pids(proc_root, &dir.path().join("m"))
+            .unwrap()
+            .is_empty());
 
         kill_orphans(proc_root, &vm_dir);
         vmm.wait().unwrap();
@@ -748,6 +771,27 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: a scan that cannot read a process's command line is not a scan that found no VMM. Read as one, a live machine whose launch record no longer decodes counts as zero at handoff and its storage share waits for no guest: an unknown scan must never answer "nothing holds this machine". A process that exited mid-scan leaves no command line at all, which is that clean answer, not a failure.
+    #[test]
+    fn a_scan_that_cannot_read_a_command_line_is_not_a_clean_none_found() {
+        let proc = TempDir::new("orphans-unreadable");
+        let dir = PathBuf::from("/home/smolvm/.cache/smolvm/vms/abc123");
+        fs::create_dir_all(proc.path().join("100").join("cmdline")).unwrap();
+        let scanned = orphan_pids(proc.path(), &dir);
+        assert!(
+            scanned.is_err(),
+            "an unreadable command line read as no VMM: {scanned:?}"
+        );
+
+        let proc = TempDir::new("orphans-exited");
+        fs::create_dir_all(proc.path().join("100")).unwrap();
+        assert_eq!(
+            orphan_pids(proc.path(), &dir).unwrap(),
+            Vec::<i32>::new(),
+            "a process that exited mid-scan read as a failed scan"
+        );
+    }
+
     // TEST_SCENARIO: a machine's VMM is found by its directory on the command line. Of three processes only the one naming this machine's directory is its VMM — not one for a machine whose directory name merely starts the same way, and not the runner itself.
     #[test]
     fn a_vmm_is_found_by_its_machines_directory_and_no_other() {
@@ -766,8 +810,8 @@ mod tests {
         fs::create_dir_all(proc.path().join("self")).unwrap();
         fs::write(proc.path().join("self/cmdline"), "vm-runner").unwrap();
 
-        assert_eq!(orphan_pids(proc.path(), &dir), vec![100]);
-        assert!(orphan_pids(proc.path(), Path::new("")).is_empty());
+        assert_eq!(orphan_pids(proc.path(), &dir).unwrap(), vec![100]);
+        assert!(orphan_pids(proc.path(), Path::new("")).unwrap().is_empty());
     }
 
     // TEST_SCENARIO: a start issued while the previous VMM still holds the disks is refused, which looks exactly like a machine that can never start. The wait is what breaks that, and a machine that is really stopped must not pay for it — both halves are asserted, since a wait that always returned true would pass the second alone.

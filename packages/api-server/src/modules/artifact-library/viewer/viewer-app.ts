@@ -2,6 +2,7 @@ import { Hono, type Context } from "hono";
 import { match } from "ts-pattern";
 
 import type { ArtifactKind } from "api-server-api";
+import type { ShareSessionCookie } from "../domain/share-session.js";
 import type { RenderTokenService } from "../services/render-token-service.js";
 import type { ShareAuthService } from "../services/share-auth-service.js";
 import type {
@@ -28,6 +29,7 @@ import { loginPath, readShareSession } from "./share-auth-routes.js";
 export interface ShareViewerAppDeps {
   viewer: ShareViewerService;
   auth: Pick<ShareAuthService, "getSession">;
+  sessionCookie: ShareSessionCookie;
   renderTokens: Pick<RenderTokenService, "mint">;
   brandName: string;
   uiBaseUrl: string;
@@ -81,7 +83,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         .with({ state: "ok" }, (r) => allowed(r.artifact))
         .with({ state: "restricted" }, async (r) => {
           c.header("Cache-Control", PRIVATE_NO_STORE);
-          const session = await readShareSession(c, auth);
+          const session = await readShareSession(c, auth, deps.sessionCookie);
           if (!session) {
             return denied(
               surface === "page"

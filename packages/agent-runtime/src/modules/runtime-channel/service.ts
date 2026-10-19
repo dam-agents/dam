@@ -21,6 +21,9 @@ export interface ApplyStateDeps {
   eventDispatcher: EventDispatcher;
   stateStore: StateStore;
   readHarnessConfig: () => Promise<HarnessConfigReport>;
+  onContributionsApplied?: (
+    contributions: ApplyStateInput["state"]["contributions"],
+  ) => Promise<void>;
   onSnapshotProcessed?: (
     contributions: ApplyStateInput["state"]["contributions"],
   ) => void;
@@ -93,6 +96,7 @@ export function createRuntimeChannelService(
     } else {
       deps.log(`[applyState] hash unchanged; skipping dispatch`);
     }
+    await deps.onContributionsApplied?.(input.state.contributions);
 
     const settledEvents = await processEvents(
       input.events,
