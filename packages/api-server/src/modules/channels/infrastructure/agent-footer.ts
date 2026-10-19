@@ -203,7 +203,7 @@ export function historyLegend(
   const base =
     'In the conversation history below, a line prefixed "you (this agent):" is ' +
     'your own earlier post in this channel; "<name> (another agent):" is a ' +
-    "different agent that posted here; \"<name> (an app):\" is another app " +
+    'different agent that posted here; "<name> (an app):" is another app ' +
     "or an incoming webhook; everyone else is a human Slack user, prefixed " +
     "with their Slack id";
   const bot = opts.botLabel

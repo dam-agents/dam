@@ -12,7 +12,8 @@ const GITHUB_APP_POST = {
   text: "",
   attachments: [
     {
-      fallback: "[dam-agents/dam] Pull request opened: #5412 fix(slack): read app posts",
+      fallback:
+        "[dam-agents/dam] Pull request opened: #5412 fix(slack): read app posts",
       pretext: "Pull request opened by octocat",
       title: "#5412 fix(slack): read app posts",
       text: "Apps put their content in attachments.",
