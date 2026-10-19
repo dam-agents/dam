@@ -212,7 +212,7 @@ fn guest_exec(id: &str, command: Vec<String>) -> anyhow::Result<()> {
     std::process::exit(code)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the OOM score a VMM asks for: the highest the kernel lets a process set for itself, which needs no capability, so that a machine that grows past the runner's memory is killed by itself, never the runner or the loader beside it, which each hold every machine of the owner. A cgroup whose memory.oom.group is 1 kills the whole pod anyway; the runner reports that on a gauge of its own.
+// UNIT_BOUNDARY_DESCRIPTION: the OOM score a VMM asks for: the highest the kernel lets a process set for itself, which needs no capability, so that a machine that grows past the runner's memory is killed by itself rather than the runner or the loader beside it, which each hold every machine of the owner. It decides the victim only where the node's kubelet leaves the pod's memory.oom.group at 0, which is its default: with the group set, one process's memory kills the whole pod whatever the scores say, and the runner reports that on a gauge of its own.
 const OOM_SCORE_ADJ: &str = "1000";
 
 // UNIT_BOUNDARY_DESCRIPTION: outranks the runner and the loader in the kernel's choice of victim, for this process alone. A failure is said on the console rather than fatal: a machine that cannot raise its score still boots.

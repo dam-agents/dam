@@ -415,6 +415,7 @@ pub enum Ended {
     Exited,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what waitpid(2) says of a pid: `Running` covers both a live process and one this process never was the parent of, which the caller tells apart by the record the loader leaves.
 pub fn ended(pid: i32) -> Ended {
     let mut status = 0;
     // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.

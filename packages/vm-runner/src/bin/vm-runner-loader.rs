@@ -118,6 +118,7 @@ async fn main() -> anyhow::Result<()> {
                     .exec()
                     .into());
             }
+            become_the_reaper_of_every_machine();
             let exits = exit_records(&args);
             let loader_dir = PathBuf::from(env(release::LOADER_DIR_ENV));
             let copies = loader_dir.join("releases");
@@ -157,7 +158,7 @@ struct Loader {
     runtimes: PathBuf,
     failed: Option<String>,
     unloadable: Option<(String, String)>,
-    // UNIT_BOUNDARY_DESCRIPTION: where a reaped VMM's signal is recorded for the runner that adopted its machine, which is the only way a kill is still named after a hand-off: the machine outlives the runner process, and the next runner is not its VMM's parent.
+    // UNIT_BOUNDARY_DESCRIPTION: where a reaped VMM's signal is recorded for the runner that adopted its machine, which is the only way a kill is still named after a hand-off: the machine outlives the runner process, and the next runner is not its VMM's parent. The loader inherits those VMMs because it asks to be the pod's subreaper, so this process is the one that reads their status.
     exits: PathBuf,
 }
 
@@ -474,6 +475,18 @@ async fn hand_off(pid: i32, exits: &Path) {
     signal_child(pid, libc::SIGKILL);
     while reap_children(pid, exits).is_none() {
         tokio::time::sleep(CATCH_POLL).await;
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: makes this loader the process the kernel hands a machine to when the runner that booted it goes away. The pod's init is catatonit, which inherits every orphan and reaps it without a word: the VMM's signal is the one fact about how a machine went down that nothing else records, and it would be gone before the loader could read it. A kernel that refuses leaves the pod's init to reap them, which is said on the console. Linux only, since the loader runs only in a Linux pod.
+fn become_the_reaper_of_every_machine() {
+    #[cfg(target_os = "linux")]
+    // SAFETY: prctl(2) with PR_SET_CHILD_SUBREAPER takes a flag and no pointers.
+    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
+        tracing::warn!(
+            error = %std::io::Error::last_os_error(),
+            "could not become the subreaper of this pod's machines; a VMM that outlives its runner is reaped by the pod's init, which records no signal"
+        );
     }
 }
 

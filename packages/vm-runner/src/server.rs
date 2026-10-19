@@ -570,13 +570,11 @@ impl Server {
             if locked(&self.exits).contains_key(&pid) {
                 continue;
             }
-            let signal = match self.runtime.vmm_pid(&id) {
-                Some(_) => match ended(pid) {
-                    Ended::Running => continue,
-                    Ended::Signalled(signal) => Some(signal),
-                    Ended::Exited => None,
-                },
-                None => match read_exit_record(&self.config.state_dir, pid) {
+            // UNIT_BOUNDARY_DESCRIPTION: a pid this process is not the parent of reads as nothing, which is every machine that outlived the runner that booted it: its death is the record the loader wrote, and reading it here is what keeps a hand-off from hiding a kill.
+            let signal = match ended(pid) {
+                Ended::Signalled(signal) => Some(signal),
+                Ended::Exited => None,
+                Ended::Running => match read_exit_record(&self.config.state_dir, pid) {
                     Some(signal) => signal,
                     None => continue,
                 },
