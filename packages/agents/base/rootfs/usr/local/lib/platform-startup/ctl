@@ -9,7 +9,7 @@
 // own child, not the group the item started.
 
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 
 const HOME = "/home/agent";
@@ -22,10 +22,12 @@ const LOOP = "/usr/local/lib/platform-startup/loop";
 // its PATH, a login shell finds Debian's, and the two take different options.
 const SSD = "/usr/lib/rc/sbin/start-stop-daemon";
 const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
-// The openrc service's cgroup. An item the runtime starts later joins it, as
-// one started at boot is in it, so a restart of the entrypoint, which ends the
-// entrypoint's cgroup, leaves every item running.
-const SERVICE_CGROUP = "/sys/fs/cgroup/openrc.platform-startup/cgroup.procs";
+// The cgroup every item runs in, of its own rather than openrc's, which
+// openrc removes once the service's start leaves it empty. An item started
+// at boot or later by the agent-runtime is then outside the entrypoint's
+// cgroup, so a restart of the entrypoint, which ends that cgroup, leaves every
+// item running.
+const ITEMS_CGROUP = "/sys/fs/cgroup/platform-startup";
 // An item gets what an openrc service gets, and the image names that in its
 // openrc config: never the caller's whole environment, which holds the agent's
 // credentials when the agent-runtime is the caller.
@@ -114,12 +116,11 @@ function stop(id) {
   rmSync(pidfile(id), { force: true });
 }
 
-if (existsSync(SERVICE_CGROUP)) {
-  try {
-    writeFileSync(SERVICE_CGROUP, String(process.pid));
-  } catch {
-    // An item started from here then stays in the caller's cgroup.
-  }
+try {
+  mkdirSync(ITEMS_CGROUP, { recursive: true });
+  writeFileSync(join(ITEMS_CGROUP, "cgroup.procs"), String(process.pid));
+} catch {
+  // A machine without a writable cgroup tree runs the items in the caller's.
 }
 
 const [action, id] = process.argv.slice(2);
