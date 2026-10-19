@@ -122,11 +122,11 @@ export function createImageUpdate(deps: {
     const failed = live.specStart === "failed";
     const nodeFault = NODE_FAULT_REASONS.has(live.agentPodNotReadyReason ?? "");
     if (failed && nodeFault) {
-      const reason = live.agentPodNotReadyReason!;
-      if (heldOn.get(id) !== reason) {
-        heldOn.set(id, reason);
+      const held = `${live.agentPodNotReadyReason!} ${live.spec.image}`;
+      if (heldOn.get(id) !== held) {
+        heldOn.set(id, held);
         deps.log(
-          `[image-update] ${id} holds its move to ${live.spec.image}: ${reason}, which is the node's fault and not the image's, so the image is not refused and the move is tried again`,
+          `[image-update] ${id} holds its move to ${live.spec.image}: ${live.agentPodNotReadyReason}, which is the node's fault and not the image's, so the image is not refused and the move is tried again`,
         );
       }
       return;
@@ -176,6 +176,8 @@ export function createImageUpdate(deps: {
         try {
           if (agent.specStart !== "ready" || !agent.imageUpdateFrom)
             readySeen.delete(agent.id);
+          if (!agent.specStart || !agent.imageUpdateFrom)
+            heldOn.delete(agent.id);
           if (agent.imageUpdateFrom && agent.specStart) {
             await settle(agent.id);
             continue;

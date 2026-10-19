@@ -488,6 +488,33 @@ describe("image update tick", () => {
     expect(String(held[0]![0])).toContain("MachineImageCacheUnreachable");
   });
 
+  // TEST_SCENARIO: the same node fault holds a second move too. A marker
+  // TEST_SCENARIO: keyed on the reason alone would keep the first move's line
+  // TEST_SCENARIO: and say nothing about the move to another image, which the
+  // TEST_SCENARIO: owner would then read as dropped.
+  it("announces a second move held on the same node fault", async () => {
+    const heldTo = (image: string) =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    let live = heldTo("repo:next");
+    const m = update([live], { live: () => live });
+    await m.tick();
+    live = heldTo("repo:later");
+    await m.tick();
+    expect(m.writeSpec).not.toHaveBeenCalled();
+    const held = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(held).toHaveLength(2);
+    expect(held[0]).toContain("repo:next");
+    expect(held[1]).toContain("repo:later");
+  });
+
   it("waits while a moved agent has not started on its new image", async () => {
     const m = update([
       agent({

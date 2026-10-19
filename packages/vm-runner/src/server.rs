@@ -199,7 +199,6 @@ pub struct Server {
     storage_short: std::sync::atomic::AtomicBool,
     storage_unmeasured: std::sync::atomic::AtomicBool,
     shed_request: Mutex<Option<(u64, String)>>,
-    hold_failure: Mutex<Option<String>>,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -300,7 +299,6 @@ impl Server {
             storage_short: std::sync::atomic::AtomicBool::new(false),
             storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
             shed_request: Mutex::new(None),
-            hold_failure: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -1705,14 +1703,7 @@ impl Server {
             return;
         }
         if let Err(e) = images.hold(&held) {
-            let note = format!("{e:#}");
-            let mut last = locked(&self.hold_failure);
-            if last.as_deref() != Some(note.as_str()) {
-                tracing::warn!(error = %note, "image cache: cannot hold the images this runner's machines boot");
-                *last = Some(note);
-            }
-        } else if locked(&self.hold_failure).take().is_some() {
-            tracing::info!("image cache: the images this runner's machines boot are held again");
+            tracing::warn!(error = %format!("{e:#}"), "image cache: cannot hold the images this runner's machines boot");
         }
     }
 

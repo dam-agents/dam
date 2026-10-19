@@ -183,6 +183,11 @@ func TestARunnerRollWaitsForItsAgentsToBeIdle(t *testing.T) {
 
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "its agent is busy")
+	heldEvents := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, heldEvents, 1, "the wait is announced once, not on every pass")
+	assert.Equal(t, reasonRollHeldForIdle, heldEvents[0].Reason)
+	assert.Equal(t, corev1.EventTypeNormal, heldEvents[0].Type)
+	assert.Contains(t, heldEvents[0].Message, "busy-owner-a")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "a waiting runner holds no place in the roll")
 	settleRunnerPod(t, r, "owner-b")
@@ -207,6 +212,12 @@ func TestARunnerRollWaitsForItsAgentsToBeIdle(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-c", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-c"), "the idle wait is over")
+	cEvents := eventsOn(t, r, r.runnerName("owner-c"))
+	require.Len(t, cEvents, 2, "the wait and its end are each announced once")
+	assert.Equal(t, reasonRollHeldForIdle, cEvents[0].Reason)
+	assert.Equal(t, reasonRollIdleWaitOver, cEvents[1].Reason)
+	assert.Equal(t, corev1.EventTypeWarning, cEvents[1].Type)
+	assert.Contains(t, cEvents[1].Message, "stayed busy for 24h1m0s")
 }
 
 // TEST_SCENARIO: a runner that cannot reach the node's image cache boots only the trees its machines already hold, so every image its owner has not booted yet is refused. Waiting out a busy agent would cost the owner every image move for the whole idle wait to protect one turn, so such a runner rolls at once, and says so with one Event naming the node directory it mounts and the refusal it gave. The wait itself is untouched for every other runner: the second owner's cache answers, so its busy agent still holds it back.

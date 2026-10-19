@@ -107,7 +107,7 @@ See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 ### Template upgrade
 
 Templates are captured at create time; an install upgrade reconfigures no existing Agent beyond its image.
-The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work, and back when the Agent cannot start or keep running on it.
+The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work, and back when the Agent cannot start or keep running on it — except for a start the node refused, which holds the move and leaves the upgrade waiting.
 Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
@@ -144,7 +144,7 @@ Three paths trigger a wake:
 
 Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, and a per-replica watch releases each wait the moment the condition flips and backs a read cache.
 A read bypasses that cache when its result decides a write — spec read-modify-write, the sleep flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.
-It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, or the guest did not boot, or one on a node the cluster has lost, which no wait brings back.
+It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, the runner cannot reach its node's image cache, or the guest did not boot, or one on a node the cluster has lost, which no wait brings back.
 Such a wake fails with that cause once it saw the refusal appear during its own poll, or once the refusal outlasted a ten-second grace, because its first polls can read the previous attempt's refusal.
 A vm start refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
 An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up; a node the cluster has lost is the opposite case, and no wait brings it back.
