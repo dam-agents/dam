@@ -9,12 +9,12 @@ import { acceptTerms } from "../../lib/auth.js";
 import {
   createAgentOn,
   inGuest,
+  onRunnerHost,
   refreshingToken,
   requireBackend,
   runnerPod,
   waitAgentState,
 } from "../../lib/backend.js";
-import { AGENT_NS, kubectl } from "../../lib/cluster.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 const PROBE = "/home/agent/e2e-storage-trim-probe";
@@ -35,16 +35,8 @@ let probeDisk = "";
 
 // UNIT_BOUNDARY_DESCRIPTION: what each machine's disk file takes on the owner's claim, in MiB, by the directory it sits in. A disk is sparse, so this is the room the machine has written and not the size it is sized at, and it is what the claim pays for that machine.
 function machineDisks(): Map<string, number> {
-  const table = kubectl(
-    "-n",
-    AGENT_NS,
-    "exec",
-    runnerPod(probeId),
-    "-c",
-    "vm-runner",
-    "--",
-    "sh",
-    "-c",
+  const table = onRunnerHost(
+    probeId,
     'for f in "$HOME"/.cache/smolvm/vms/*/storage.raw; do echo "$(basename "$(dirname "$f")") $(stat -c %b "$f")"; done',
   );
   return new Map(
@@ -60,20 +52,24 @@ function machineDisks(): Map<string, number> {
 
 // UNIT_BOUNDARY_DESCRIPTION: the claim as the runner reads it, in KiB, from the runner pod whose `$HOME` is the owner's claim.
 function claimKb(): { used: number; total: number } {
-  const line = kubectl(
-    "-n",
-    AGENT_NS,
-    "exec",
-    runnerPod(probeId),
-    "-c",
-    "vm-runner",
-    "--",
-    "sh",
-    "-c",
-    'df -Pk "$HOME" | tail -1',
-  );
-  const fields = line.split(/\s+/);
+  const fields = onRunnerHost(probeId, 'df -Pk "$HOME" | tail -1').split(/\s+/);
   return { used: Number(fields[2]), total: Number(fields[1]) };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the machines the runner divides the claim's room among now, from its own record of each machine: the machines it holds running, which is what it grants room to, and one for a count of none, as it reads an empty claim. The lane's shared agent counts too, so the count is not this spec's own two machines.
+function runningMachines(): number {
+  const count = onRunnerHost(
+    probeId,
+    `n=0; for f in /var/lib/platform/machines/*/spec.json; do grep -qF '"running":true' "$f" && n=$((n+1)); done; echo $n`,
+  );
+  return Math.max(Number(count.trim()) || 0, 1);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The vm lane's idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and the per-agent hibernation timeout a spec can set is a container backend setting the vm backend ignores; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
+async function keepAwake(id: string): Promise<void> {
+  if ((await api.agents.get.query({ id })).state !== "running")
+    await api.agents.wake.mutate({ id });
+  await waitAgentState(api, id, "running");
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the room the probe's guest can still write, in MiB: its share, less what it wrote, once the guard holds the rest.
@@ -101,15 +97,12 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
-  probeId = await createAgentOn(api, "vm", "e2e-storage-trim", harnessName, {
-    neverIdle: true,
-  });
+  probeId = await createAgentOn(api, "vm", "e2e-storage-trim", harnessName);
   siblingId = await createAgentOn(
     api,
     "vm",
     "e2e-storage-trim-peer",
     harnessName,
-    { neverIdle: true },
   );
   await waitAgentState(api, probeId, "running");
   await waitAgentState(api, siblingId, "running");
@@ -133,6 +126,7 @@ test("room a vm agent frees goes back to its owner's claim", async () => {
     [...machineDisks()].map(
       ([dir, mib]) => [dir, mib - (before.get(dir) ?? 0)] as const,
     );
+  await keepAwake(probeId);
   inGuest(probeId, `head -c ${PROBE_MIB}M /dev/urandom > ${PROBE} && sync`);
   await waitFor(
     () => Math.max(...growth().map(([, delta]) => delta)),
@@ -149,16 +143,13 @@ test("room a vm agent frees goes back to its owner's claim", async () => {
     Math.max(...grown.slice(1).map(([, delta]) => delta)),
     "no other machine's disk may take the probe",
   ).toBeLessThan(MOVE_MIB);
+  await keepAwake(probeId);
   inGuest(probeId, `rm -f ${PROBE} && sync`);
-  const freed = await waitFor(
+  await waitFor(
     () => machineDisks().get(probeDisk) ?? 0,
     (mib) => mib <= (before.get(probeDisk) ?? 0) + SLACK_MIB,
     "the deleted probe never left the claim",
   );
-  expect(
-    (before.get(probeDisk) ?? 0) + PROBE_MIB - freed,
-    "the delete must give back the room the probe took",
-  ).toBeGreaterThanOrEqual(PROBE_MIB - SLACK_MIB);
 });
 
 // TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
@@ -167,6 +158,7 @@ test("the guard gives a machine the room its share gains, and takes it back", as
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
   const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
   for (const round of [1, 2]) {
+    await keepAwake(probeId);
     const base = guestAvailMiB();
     await api.agents.delete.mutate({ id: siblingId });
     siblingId = "";
@@ -180,7 +172,6 @@ test("the guard gives a machine the room its share gains, and takes it back", as
       "vm",
       `e2e-storage-trim-peer-${round}`,
       harnessName,
-      { neverIdle: true },
     );
     await waitAgentState(api, siblingId, "running");
     await waitFor(
@@ -204,11 +195,12 @@ test("a writing agent stops at its share, not at the claim", async () => {
     !Number.isFinite(capGiB) || capGiB <= 0,
     "the fill marks blocks in the guest's filesystem, and a filesystem that allocates them instead writes them onto the claim, which on this lane is the node's disk; set E2E_DISK_FILL_GIB to the most GiB the fill may mark",
   );
+  await keepAwake(probeId);
   const out = inGuest(
     probeId,
     [
       "mkdir -p /tmp/e2e-fill",
-      `dd if=/dev/zero of=/tmp/e2e-fill/fill bs=1M count=$(( ${Math.round(capGiB)} * 1024 )) 2>&1 || true`,
+      `dd if=/dev/zero of=/tmp/e2e-fill/fill bs=1M count=$(( ${Math.floor(capGiB)} * 1024 )) 2>&1 || true`,
       `echo "avail=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`,
     ].join("\n"),
   );
@@ -217,7 +209,8 @@ test("a writing agent stops at its share, not at the claim", async () => {
     test.skip(true, "the cap ran out before the guest was full");
   }
   const claim = claimKb();
-  const running = 2;
+  const running = runningMachines();
+  await keepAwake(siblingId);
   expect(
     claim.used,
     `the claim holds ${claim.used} KiB of ${claim.total}, past its 95% ceiling and the floor of ${running} machines`,

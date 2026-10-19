@@ -1528,10 +1528,10 @@ fn size_guard(guard: &mut File, root: &Path, size: u64) -> io::Result<()> {
     guard.set_len(0)?;
     match preallocate(guard, size) {
         Ok(()) => Ok(()),
-        Err(e) => {
-            let _ = preallocate(guard, held);
-            Err(e)
-        }
+        Err(refused) => match preallocate(guard, held) {
+            Ok(()) => Err(refused),
+            Err(restore) => Err(restore),
+        },
     }
 }
 
@@ -1550,16 +1550,20 @@ fn guard_pool() {
     let home = Path::new(guest::AGENT_HOME);
     let mut state = PoolGuard::default();
     let mut moved: Option<std::time::Instant> = None;
+    let mut trim_failing = false;
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
-        let mut slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(guard) = slot.as_mut() else {
-            return;
+        // UNIT_BOUNDARY_DESCRIPTION: the guard is read and the disk is looked at outside POOL_GUARD, and the mutex is taken only to size the file: a stop's release takes it to empty the file, and a stop must never wait on a trim or a sync, which is unbounded work, because the host gives a stop 5 s of silence before it cuts the machine down.
+        let held = {
+            let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+            let Some(guard) = slot.as_ref() else {
+                return;
+            };
+            guard.metadata().map_or_else(
+                |_| POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed),
+                |info| info.blocks() * 512,
+            )
         };
-        let held = guard.metadata().map_or_else(
-            |_| POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed),
-            |info| info.blocks() * 512,
-        );
         POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
         let grant = fs::read_to_string(guest::STORAGE_ROOM_PATH)
             .ok()
@@ -1594,11 +1598,20 @@ fn guard_pool() {
             logf!("WARNING: syncing the disk before sizing the storage guard: {e}");
             continue;
         }
-        if let Err(e) = trim_freed(home) {
-            logf!("WARNING: trimming the disk before sizing the storage guard: {e}");
+        match trim_freed(home) {
+            Ok(_) => trim_failing = false,
+            Err(e) => {
+                if !std::mem::replace(&mut trim_failing, true) {
+                    logf!("WARNING: trimming the disk before sizing the storage guard: {e}");
+                }
+            }
         }
         let Some((want, mine)) = look(&mut state) else {
             continue;
+        };
+        let mut slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(guard) = slot.as_mut() else {
+            return;
         };
         moved = Some(std::time::Instant::now());
         let mut error = None;
@@ -1614,11 +1627,13 @@ fn guard_pool() {
         } else {
             (if size_to(want) { want } else { held }, error.is_some())
         };
+        let sized_held = guard.metadata().map_or(sized, |info| info.blocks() * 512);
+        drop(slot);
         if let Err(e) = flush_filesystem(home) {
             logf!("WARNING: syncing the disk after sizing the storage guard: {e}");
         }
         let was = held;
-        let held = guard.metadata().map_or(sized, |info| info.blocks() * 512);
+        let held = sized_held;
         POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
         if let (true, Some(e)) = (warn, error) {
             logf!("WARNING: sizing the storage guard to {want} bytes, it holds {sized}: {e}");
