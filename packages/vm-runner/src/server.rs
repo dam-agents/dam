@@ -1469,6 +1469,9 @@ impl Server {
                     disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
                     cpu_milli,
                     id,
+                    cpus: status.cpus,
+                    memory_mib: status.memory_mib,
+                    warming: status.warming,
                     state: status.state,
                     used_mib: status.used_mib,
                     disk_gib: status.disk_gib,
@@ -1502,6 +1505,7 @@ impl Server {
             },
             cpu,
             machines,
+            machine_figures: true,
         })
     }
 
@@ -1534,7 +1538,7 @@ impl Server {
         })
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK and at every start. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to, one at a time, split between the machines that are running or on their way up: a group woken together writes at once, so an even part of the room for the running ones alone would give each of them the whole room until the next look, and their writes together would pass the level the claim is held to. A machine that is neither running nor on its way up is granted nothing rather than a part, because a grant outlives the look that wrote it: a sleeping machine that woke, and booted before the next look, would boot on the room its share held while it slept, beside every sibling that woke with it. A grant of nothing is the floor platform-init keeps for a guest held at nothing, room for SSH keys, a shell and the agent's own state, so a wake that finds no look of its own writes no further, and a start publishes the room again before its guest boots. A claim that cannot be measured grants nothing, so no guest is held to the claim at all: the runner says so in the log, once per change, and its storage gauges read as no level rather than as an empty claim. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
+    // UNIT_BOUNDARY_DESCRIPTION: one look at the claim, every STORAGE_CHECK and at every start. Every machine's share gets a new grant of the bytes its guest may still add to the claim (StorageUse::guest_room), which platform-init holds the guest to, one at a time, split between the machines that are neither stopped nor absent: a stopping machine counts, since its guest can still write until the VMM is gone, and so does one whose recorded state is unknown, or not yet read, since a state not known to be stopped only makes every part smaller. A group woken together writes at once, so an even part of the room for the running ones alone would give each of them the whole room until the next look, and their writes together would pass the level the claim is held to. A machine that is stopped or absent is granted nothing rather than a part, because a grant outlives the look that wrote it: a stopped machine that is started before the next look would boot on the room its share held while it was stopped, beside every sibling started with it. A grant of nothing is the floor platform-init keeps for a guest held at nothing, room for SSH keys, a shell and the agent's own state, so a wake that finds no look of its own writes no further, and a start publishes the room again before its guest boots. A claim that cannot be measured grants nothing, so no guest is held to the claim at all: the runner says so in the log, once per change, and its storage gauges read as no level rather than as an empty claim. While it is short, every machine's share carries a request that its guest give back scratch: an id and the bytes asked of each running machine, its even part of what brings the claim SHED_STEP_PERCENT back under SHORT_PERCENT. A guest serves each request once, so a new one goes out only when the claim has filled SHED_STEP_PERCENT further since the last: the claim is mostly the agents' homes, which no guest gives back, and repeating the request would only have every guest delete its scratch again and again. What the guests keep beyond that is not the runner's to free.
     fn check_storage(&self) {
         // UNIT_BOUNDARY_DESCRIPTION: a look scans the machines and then writes every share, and the periodic look and a start's look run at once on different threads, so the whole of one holds this: a look that scanned before another must not write after it, which would leave a machine's guest with the room of a look that is no longer true, and the shares of a group summing past the room.
         let _looking = locked(&self.storage_look);
@@ -1899,7 +1903,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting up to a minute for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing. A machine known not to be running holds none, so no figure outlives its VMM.
+    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing. A machine known not to be running holds none, so no figure outlives its VMM.
     fn probe(self: &Arc<Self>, id: &str) {
         let Some((action, looked)) = locked(&self.machines)
             .entries

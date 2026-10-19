@@ -43,7 +43,13 @@ The trigger also marks the run as an Invocation, so the target types that sessio
 
 **A spawn may choose the model.** It can name the target's model, mode and harness settings — the choices the target's harness configuration offers — so one harness serves every model it runs, and a Driver can put one task to two models or a cheap model on a mechanical step.
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).
-The `spawn_subagent` tool also refuses a model the driver's catalog does not list for the named harness, and runs the driver session's subagent model, when set, on every spawn that names a harness, whatever the spawn names; a harness that does not list that model refuses the spawn naming the setting, and a spawn on an image alone keeps its own model.
+The `spawn_subagent` tool also refuses a model the driver's catalog does not list for the named harness.
+It resolves each choice in one order: the calling Session's **platform sub-agent settings**, then the spawn's own choice, then, on the Session's own harness, the Session's model and settings, then the harness defaults.
+The Session's settings follow only its model: once the settings or the spawn name a model, they stay behind, since they may not hold for it.
+A set harness binds: a spawn naming another is refused, and a spawn naming neither harness nor image gets it; a set model, mode or config option outranks the spawn's, and the result names what the settings set.
+The Session's harness supplies its model and each setting its harness binds, except model-valued ones, ones for the harness's own subagents, and a choice its catalog marks as waiting for a person's approval, since nobody is there to give one.
+A spawn on an image alone keeps its own choices, and a script spawn has no Session, so neither binds nor inherits.
+A Session whose settings cannot be read refuses the spawn rather than run it without them; a Session the runtime does not track has none.
 The driver SDK's spawn route takes the same provider-qualified names, folds Claude Code's `claude/` spelling, and refuses a bare or tier name as a bad request.
 The sub-agent inherits the driver's Connection of the provider its model names, or the first in its harness's home order when it names none.
 A Driver REST spawn checks only that the name is qualified, so a Driver comparing models reads which model the target ran.
@@ -56,9 +62,11 @@ The minted name keeps the target's prefix and its entropy either way, because th
 **The order is the workspace-event order.** The seed is queued with the create; the install is queued ahead of the task in the same delivery, so the harness opens its session on a workspace that is already seeded and bootstrapped ([runtime-delivery](runtime-delivery.md)).
 External skills are applied the way kit apply applies them, after the target is woken.
 
-**Provider Inheritance.** A target runs on its Driver's model provider; a spawn never names one.
-The platform takes the provider connections granted to the Driver and gives the target the first one its harness can run on.
+**Provider Inheritance.** A target runs on one of its Driver's model providers; a spawn never names one.
+The platform takes the provider connections granted to the Driver and gives the target the one its model names, else the first in its harness's home order that its harness can run on.
 A harness whose providers none of the Driver's match is refused before anything is created, since the target could not make its first model call and the Driver would get a failed run instead of a refused spawn.
+The refusal names the providers that would do, by their Settings names, and the fix: attach one the owner already holds on the agent's Providers page, else connect one in Settings first.
+`list_harnesses` tells the same ahead of a spawn, by the same rule: each harness with the provider a spawn naming no model runs on there, or the refusal a spawn there would get.
 An image target declares nothing, so nothing is narrowed.
 
 **Attenuation.** Beyond the provider, a target receives exactly the connections the spawn names, and each must already be granted to the Driver.

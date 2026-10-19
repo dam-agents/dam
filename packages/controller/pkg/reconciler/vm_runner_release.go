@@ -29,7 +29,7 @@ const (
 	// UNIT_BOUNDARY_DESCRIPTION: how long a runner may stay unreachable after the controller named it a new release before the pod is rolled. A hand-off leaves the machine API down for seconds; one still down after this is a loader that cannot bring up the new release or the one it replaced, and only a new pod gets the machines a working runner again.
 	runnerReleaseUnreachableRoll = 10 * time.Minute
 
-	// UNIT_BOUNDARY_DESCRIPTION: the shortest a hand-off of a runner with ready machines lasts. A release that reports running and adopts every machine can still refuse every ensure, and only an agent's reconcile ensures; each running agent reconciles at least once a health poll, so two polls give each of them an ensure against the new release before the next owner is named one. A runner with no ready machine has no ensure to wait for.
+	// UNIT_BOUNDARY_DESCRIPTION: the shortest a hand-off of a runner with ready machines lasts. A release that reports running and adopts every machine can still refuse every ensure, and only an agent's reconcile ensures; naming the release writes the runner's Deployment, which requeues every vm Agent of that owner, so each ensures against the new release at once and a refusal stalls the hand-off from there. This window is what gives such a refusal time to show before the next owner is named the release. A runner with no ready machine has no ensure to wait for.
 	runnerHandoffObserve = 2 * vmHealthPoll
 
 	// UNIT_BOUNDARY_DESCRIPTION: how often the sweep asks a runner with nothing running whether it took its release yet. The loader reads the release it is named every second.

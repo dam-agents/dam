@@ -14,6 +14,7 @@ import type {
 } from "./acp-runtime/acp-runtime.js";
 import {
   CONFIGURE_SESSION_METHOD,
+  isPlatformSubagentSetting,
   PIN_MODEL_METHOD,
   sessionSettingsSchema,
   type SessionSettings,
@@ -567,6 +568,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const settings = Object.fromEntries(
       Object.entries(previous ?? {}).filter(
         ([key, value]) =>
+          isPlatformSubagentSetting(key) ||
           !deps.settingsError?.(choice.harness, { [key]: value }, model),
       ),
     );

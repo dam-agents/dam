@@ -340,6 +340,7 @@ export async function composeRuntimeChannel(
             sessionModel: plugin?.sessionModel ?? false,
             ...(plugin?.sessionSettings && {
               sessionSettings: plugin.sessionSettings,
+              platformSubagentSettings: true,
             }),
             ...(nativeTemplates?.length && { nativeTemplates }),
           };

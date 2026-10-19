@@ -59,6 +59,9 @@ export const agentMetricsInputSchema = z.object({
   days: agentTelemetryShape.days.describe(
     "Window length in whole UTC days: today and the days before it.",
   ),
+  sessionId: agentTelemetryShape.sessionId.describe(
+    "Narrow to a single session. The spend (totals, per-model split, session and subagent rows) covers the calls the gateway recorded under that session and the sub-agents spawned from it; a harness run that the session started in its own shell, such as `claude -p`, is recorded with no session, so its spend is not included. The 'call' rows also include any harness run that session spawned. Omit to cover every session in the window.",
+  ),
   granularity: z
     .enum(["summary", "session", "call", "subagent"])
     .default("summary")

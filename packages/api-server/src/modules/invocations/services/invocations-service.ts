@@ -1,3 +1,4 @@
+import { match } from "ts-pattern";
 import { randomBytes } from "node:crypto";
 import { emit, EventType } from "../../../events.js";
 import Ajv, { type ValidateFunction } from "ajv";
@@ -26,6 +27,7 @@ import { getLogger } from "../../../core/logger.js";
 import {
   type DriverProvider,
   inheritProvider,
+  missingProviderMessage,
 } from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import {
@@ -79,10 +81,8 @@ export class ModelNameError extends Error {
 }
 
 export class ProviderMismatchError extends Error {
-  constructor(offered: ProviderPresetType[], runsOn: ProviderPresetType[]) {
-    super(
-      `the target cannot run on the driver's provider (${offered.join(", ")}); it runs on ${runsOn.join(", ")}`,
-    );
+  constructor(message: string) {
+    super(message);
     this.name = "ProviderMismatchError";
   }
 }
@@ -119,6 +119,7 @@ export interface SpawnInput {
   driverAgentId: string;
   driverGrantIds: string[];
   driverProviders: DriverProvider[];
+  attachableProviders?: ProviderPresetType[];
   target: SpawnTarget;
   setup: AgentSetup;
   connections: string[];
@@ -136,8 +137,19 @@ export interface RecordResult {
   errors?: string;
 }
 
+export type Reachability =
+  | { kind: "runs"; provider: ProviderPresetType }
+  | { kind: "refused"; reason: string }
+  | { kind: "unnarrowed" };
+
 export interface InvocationsService {
   spawn(input: SpawnInput): Promise<{ id: string }>;
+  reachability(
+    input: Pick<
+      SpawnInput,
+      "driverProviders" | "attachableProviders" | "target"
+    >,
+  ): Reachability;
   get(
     invocationId: string,
     driverAgentId: string,
@@ -196,6 +208,31 @@ export function createInvocationsService(deps: {
   }
 
   return {
+    reachability({ driverProviders, attachableProviders, target }) {
+      const provider = inheritProvider(driverProviders, {
+        runsOn: target.runsOn,
+        ...(target.harness && { harness: target.harness }),
+      });
+      return match(provider)
+        .with({ kind: "inherited" }, ({ id }): Reachability => {
+          const held = driverProviders.find((p) => p.id === id);
+          return held
+            ? { kind: "runs", provider: held.type }
+            : { kind: "unnarrowed" };
+        })
+        .with({ kind: "incompatible" }, (): Reachability => ({
+          kind: "refused",
+          reason: missingProviderMessage({
+            harness: target.harness,
+            runsOn: target.runsOn ?? [],
+            held: driverProviders.map((p) => p.type),
+            attachable: attachableProviders ?? [],
+          }),
+        }))
+        .with({ kind: "none" }, (): Reachability => ({ kind: "unnarrowed" }))
+        .exhaustive();
+    },
+
     async spawn(input) {
       const grantSet = new Set(input.driverGrantIds);
       const offending = input.connections.filter((c) => !grantSet.has(c));
@@ -224,8 +261,13 @@ export function createInvocationsService(deps: {
       });
       if (provider.kind === "incompatible")
         throw new ProviderMismatchError(
-          provider.offered,
-          input.target.runsOn ?? [],
+          missingProviderMessage({
+            harness: input.target.harness,
+            runsOn: input.target.runsOn ?? [],
+            alias: parsedModel?.alias,
+            held: input.driverProviders.map((p) => p.type),
+            attachable: input.attachableProviders ?? [],
+          }),
         );
 
       const created = createInputFromSetup(input.setup);

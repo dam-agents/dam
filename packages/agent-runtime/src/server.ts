@@ -303,8 +303,9 @@ const modelRouter = composeModelRouter({
   sessionModelOf: (sessionId) => {
     const choice = sessionChoiceOf?.(sessionId);
     const subagentModel = choice?.settings?.subagentModel ?? null;
-    if (!choice?.model && !subagentModel) return null;
-    return { model: choice?.model ?? null, subagentModel };
+    const subagentEffort = choice?.settings?.subagentEffort ?? null;
+    if (!choice?.model && !subagentModel && !subagentEffort) return null;
+    return { model: choice?.model ?? null, subagentModel, subagentEffort };
   },
   isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
   terminalSessionOf,
