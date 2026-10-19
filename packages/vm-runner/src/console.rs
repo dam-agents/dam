@@ -37,20 +37,39 @@ pub fn home_full(tail: &str) -> bool {
 const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
 const BOOT_REFUSED: &str = "platform-init: FATAL: ";
 
-// UNIT_BOUNDARY_DESCRIPTION: the marks platform-init prints on the console about a guest that keeps running: guest::GUEST_FULL while the agent's writes fail with no space left, guest::GUEST_NEARLY_FULL while it may write a little more before they do, and guest::GUEST_ROOM once its storage gave it room again. The last mark in the text decides, so a guest that freed space since is not reported full, and nothing is read as full when the text holds no mark at all.
+// UNIT_BOUNDARY_DESCRIPTION: the marks platform-init prints on the console about a guest that keeps running: guest::GUEST_FULL while the agent's writes fail with no space left, guest::GUEST_NEARLY_FULL while it may write a little more before they do, and guest::GUEST_ROOM once its storage gave it room again. The mark read is the one the guest made last, which is the one the kernel stamped latest: a cut of the log can leave a newer mark ahead of an older one (trim_with), so the file's order alone would keep a guest that has room reading as full for as long as it runs, with no line coming to correct it. A line the kernel did not stamp keeps the file's order, and nothing is read as full when the text holds no mark at all.
 pub fn room_full(text: &str) -> Option<bool> {
-    text.lines()
-        .rev()
-        .find(|line| {
-            [
-                crate::guest::GUEST_FULL,
-                crate::guest::GUEST_NEARLY_FULL,
-                crate::guest::GUEST_ROOM,
-            ]
-            .iter()
-            .any(|word| line.contains(word))
-        })
-        .map(|line| line.contains(crate::guest::GUEST_FULL))
+    const MARKS: [&str; 3] = [
+        crate::guest::GUEST_FULL,
+        crate::guest::GUEST_NEARLY_FULL,
+        crate::guest::GUEST_ROOM,
+    ];
+    let mut last: Option<(Option<f64>, bool)> = None;
+    for line in text
+        .lines()
+        .filter(|line| MARKS.iter().any(|word| line.contains(word)))
+    {
+        let at = uptime(line);
+        let later = match last {
+            Some((was, _)) => match (was, at) {
+                (Some(was), Some(at)) => at >= was,
+                _ => true,
+            },
+            None => true,
+        };
+        if later {
+            last = Some((at, line.contains(crate::guest::GUEST_FULL)));
+        }
+    }
+    last.map(|(_, full)| full)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long after its boot the kernel printed a line, from the "[   123.456789]" the kernel puts first on each of its console lines, or None for a line it did not stamp.
+fn uptime(line: &str) -> Option<f64> {
+    line.split(['[', ']'])
+        .skip(1)
+        .step_by(2)
+        .find_map(|field| field.trim().parse().ok())
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a machine's kernel log gained since `from` bytes, and the offset to read from next time: the whole lines written after it, and one that is still being written left for the next read. A log shorter than `from` was emptied by a new boot, so it is read whole. The log holds a line for every connection the VMM relays, so the marks a minute old are not at its end, which is why the runner keeps an offset per machine rather than reading the tail.
@@ -197,7 +216,7 @@ fn trim(path: &Path, size: u64) -> std::io::Result<()> {
     trim_with(path, size, &mut || {})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the cut, with `during` run where the VMM is free to append to the file the runner is rewriting: it holds the file open for the whole life of the machine, so what it writes there then is the case the order of the kept lines has to survive (a test drives one in, which a test of a lock-free rewrite cannot otherwise reach).
+// UNIT_BOUNDARY_DESCRIPTION: the cut, with `during` run at each point where the VMM is free to append to the file the runner is rewriting: it holds the file open for the whole life of the machine, so what it writes there then is the case the order of the kept lines has to survive (a test drives one in at each point, which a test of a lock-free rewrite cannot otherwise reach).
 fn trim_with(path: &Path, size: u64, during: &mut dyn FnMut()) -> std::io::Result<()> {
     let window = CONSOLE_TAIL_BYTES.saturating_mul(16).min(size);
     let mut kernel: std::collections::VecDeque<Vec<u8>> = Default::default();
@@ -222,11 +241,13 @@ fn trim_with(path: &Path, size: u64, during: &mut dyn FnMut()) -> std::io::Resul
     let mut out = fs::OpenOptions::new().read(true).append(true).open(path)?;
     out.set_len(0)?;
     during();
-    // UNIT_BOUNDARY_DESCRIPTION: an append the VMM made to the emptied file is at its start, before the lines this puts back, and the guest announces a mark only when its room changes: kept where it landed, the newest mark would read as older than the one before it, and the runner would call a guest full that has room. So it is taken out and put back after them. A line written between this read and the emptying that follows it is lost, as one written at any point of the cut already is.
+    // UNIT_BOUNDARY_DESCRIPTION: an append the VMM made to the emptied file is at its start, before the lines this puts back, so it is read here and put back after them.
     let mut fresh = Vec::new();
     out.seek(SeekFrom::Start(0))?;
     out.read_to_end(&mut fresh)?;
     out.set_len(0)?;
+    // UNIT_BOUNDARY_DESCRIPTION: from here to the end the file is emptied and refilled, and an append the VMM makes in that window is at the start of it, ahead of the kept lines and behind them in time: the order of the two is not this function's to keep, and the reader tells the marks apart by the kernel's stamp (room_full). A line written between the read above and this emptying is lost, as one written at any point of the cut already is.
+    during();
     out.write_all(&kept)?;
     out.write_all(&fresh)
 }
@@ -320,23 +341,33 @@ mod tests {
         ));
     }
 
-    // TEST_SCENARIO: a guest whose agent filled the disk keeps running, so platform-init marks it on the console instead of exiting: the last mark decides whether the guest has room, a guest that freed space since stops reading as full, one that may write a little more is not full either, and a text with no mark says nothing at all. The kernel log is read from where the last read stopped, so a mark a minute old is found among the connections the VMM logs, and a line still being written waits for the next read.
+    // TEST_SCENARIO: a guest whose agent filled the disk keeps running, so platform-init marks it on the console instead of exiting: the last mark the guest made decides whether it has room, a guest that freed space since stops reading as full, one that may write a little more is not full either, and a text with no mark says nothing at all. Each mark carries the kernel's time, so the newest one decides even where a cut of the log left it ahead of an older one; a line with no time keeps the file's order. The kernel log is read from where the last read stopped, so a mark a minute old is found among the connections the VMM logs, and a line still being written waits for the next read.
     #[test]
     fn a_running_guests_room_is_read_from_the_last_mark() {
         let full = format!(
             "[ 9.1] platform-init: {}: this agent may write nothing more until space is freed",
             crate::guest::GUEST_FULL
         );
-        let room = format!("[ 9.2] platform-init: {}", crate::guest::GUEST_ROOM);
+        let room = format!("[ 60.2] platform-init: {}", crate::guest::GUEST_ROOM);
         let nearly = format!(
-            "[ 9.15] platform-init: {}: this agent may write 4096 more bytes",
+            "[ 30.0] platform-init: {}: this agent may write 4096 more bytes",
             crate::guest::GUEST_NEARLY_FULL
         );
+        let bare = format!("platform-init: {}", crate::guest::GUEST_ROOM);
         assert_eq!(room_full(&full), Some(true));
         assert_eq!(room_full(&format!("{full}\n{nearly}")), Some(false));
-        assert_eq!(room_full(&format!("{nearly}\n{full}")), Some(true));
         assert_eq!(room_full(&format!("{full}\n{room}")), Some(false));
-        assert_eq!(room_full(&format!("{room}\n{full}")), Some(true));
+        assert_eq!(
+            room_full(&format!("{room}\n{full}")),
+            Some(false),
+            "the later stamp decides, wherever the cut left the line"
+        );
+        assert_eq!(
+            room_full(&format!("{bare}\n{full}")),
+            Some(true),
+            "a line with no stamp keeps the file's order"
+        );
+        assert_eq!(room_full(&format!("{full}\n{bare}")), Some(false));
         assert_eq!(
             room_full("[ 9.3] platform-init: FATAL: x; the agent's home is full"),
             None
@@ -475,10 +506,55 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the VMM appends to a log while the runner cuts it, and what it writes then must land after the lines the cut kept: platform-init marks the agent's room only when it changes, so a GUEST_FULL the cut moved behind a newer GUEST_ROOM reads as full for as long as the agent runs, with no line coming to correct it.
+    // TEST_SCENARIO: the VMM appends to a log while the runner cuts it, and what it writes while the log is emptied must not be lost by the emptying: platform-init marks the agent's room only when it changes, so a mark the cut dropped leaves the runner reading the mark before it for as long as the agent runs. What the VMM writes there is read back and put after the lines the cut kept.
     #[test]
-    fn a_line_the_vmm_writes_during_a_cut_lands_after_the_kept_lines() {
+    fn a_line_the_vmm_writes_while_the_log_is_emptied_is_kept() {
         let dir = TempDir::new("console-cut-race");
+        let (path, size, room) = a_cut_log_a_mark_can_land_in(&dir);
+        let mut calls = 0;
+        trim_with(&path, size, &mut || {
+            calls += 1;
+            if calls == 1 {
+                append(&path, &room);
+            }
+        })
+        .unwrap();
+        assert_eq!(calls, 2, "the VMM writes at both windows of a cut");
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains(crate::guest::GUEST_ROOM),
+            "the mark written during the cut was dropped: {text:.120}"
+        );
+        assert_eq!(room_full(&text), Some(false));
+    }
+
+    // TEST_SCENARIO: the window between reading that back and writing the kept lines is one where a mark lands ahead of them, so the file ends with a GUEST_FULL older than the GUEST_ROOM at its start. The guest announces a mark only when its room changes, so nothing corrects it: the runner reads the marks by the kernel's time, which puts the newer one first whatever the file's order, instead of calling a guest that has room full for as long as it runs.
+    #[test]
+    fn a_line_the_vmm_writes_behind_a_kept_mark_is_still_the_newest() {
+        let dir = TempDir::new("console-cut-window");
+        let (path, size, room) = a_cut_log_a_mark_can_land_in(&dir);
+        let mut calls = 0;
+        trim_with(&path, size, &mut || {
+            calls += 1;
+            if calls == 2 {
+                append(&path, &room);
+            }
+        })
+        .unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.find(crate::guest::GUEST_ROOM) < text.find(crate::guest::GUEST_FULL),
+            "the mark did not land ahead of the kept lines: {text:.120}"
+        );
+        assert_eq!(
+            room_full(&text),
+            Some(false),
+            "the newest mark was read as the oldest: {text:.120}"
+        );
+    }
+
+    // TEST_SCENARIO: the log both cuts above are made on: a GUEST_FULL at its start, then lines enough for the cut to keep only the start of it.
+    fn a_cut_log_a_mark_can_land_in(dir: &TempDir) -> (std::path::PathBuf, u64, String) {
         let path = dir.path().join(VMM_LOG);
         let full = format!(
             "[t ERROR init_or_kernel] [    9.1] platform-init: {}: this agent may write nothing more\n",
@@ -488,31 +564,22 @@ mod tests {
             "[t ERROR init_or_kernel] [   60.2] platform-init: {}: the agent's writes are no longer held back\n",
             crate::guest::GUEST_ROOM
         );
-        let mut vmm = full.clone();
+        let mut vmm = full;
         for i in 0..20_000 {
             vmm.push_str(&format!("[t WARN  smolvm_network::stack] guest SYN {i}\n"));
         }
         fs::write(&path, &vmm).unwrap();
         let size = fs::metadata(&path).unwrap().len();
+        (path, size, room)
+    }
 
-        let mut wrote = false;
-        let _ = trim_with(&path, size, &mut || {
-            fs::OpenOptions::new()
-                .append(true)
-                .open(&path)
-                .unwrap()
-                .write_all(room.as_bytes())
-                .unwrap();
-            wrote = true;
-        });
-        assert!(wrote, "the VMM wrote during the cut");
-
-        let text = fs::read_to_string(&path).unwrap();
-        assert_eq!(
-            room_full(&text),
-            Some(false),
-            "the newest mark lost its place: {text:.120}"
-        );
+    fn append(path: &Path, line: &str) {
+        fs::OpenOptions::new()
+            .append(true)
+            .open(path)
+            .unwrap()
+            .write_all(line.as_bytes())
+            .unwrap();
     }
 
     // TEST_SCENARIO: a line longer than the limit, with no newline in it or with a short line after it, keeps its end. The limit counts the console's bytes before any decoding, so bytes that are not UTF-8 and CRLF line ends give a tail of the stated size, cut at a character, and never a panic.
