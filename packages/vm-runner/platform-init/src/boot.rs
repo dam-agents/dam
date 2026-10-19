@@ -1617,10 +1617,10 @@ fn free_percent(path: &Path) -> Option<u64> {
     )
 }
 
+#[allow(clippy::unnecessary_cast)]
 fn free_percent_with(stat: libc::statvfs, held: u64, keep: u64) -> Option<u64> {
     let mut stat = stat;
     let size = (stat.f_frsize as u64).max(1);
-    #[allow(clippy::unnecessary_cast)]
     let credit = (credited(held, keep) / size) as libc::fsblkcnt_t;
     stat.f_bavail = stat.f_bavail.saturating_add(credit);
     free_share(&stat)
