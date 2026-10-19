@@ -4,6 +4,7 @@ import type {
   SessionPage,
   SessionRepository,
   SessionsService,
+  SessionSubAgentContext,
 } from "agent-runtime-api";
 
 import { noticeStream } from "../../../core/notice-stream.js";
@@ -85,6 +86,9 @@ async function readHarnessListing(
 }
 
 export function createSessionsService(deps: {
+  subAgentContextOf: (
+    meta: PlatformSessionMeta,
+  ) => Omit<SessionSubAgentContext, "settings">;
   openCaller: () => InProcessCaller;
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
@@ -240,7 +244,8 @@ export function createSessionsService(deps: {
         deps.sessionMetadata.isTombstoned(sessionId)
       )
         return null;
-      return deps.sessionMetadata.get(sessionId)?.meta.settings ?? {};
+      const meta = deps.sessionMetadata.get(sessionId)?.meta ?? {};
+      return { settings: meta.settings ?? {}, ...deps.subAgentContextOf(meta) };
     },
 
     async byRef(ref) {

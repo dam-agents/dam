@@ -288,10 +288,17 @@ beforeAll(async () => {
     defaultHarness: "claude-code",
     sessionOf: (req) => {
       const id = req.headers["x-test-session"] as string | undefined;
-      return id ? { sessionId: id } : null;
+      const parent = req.headers["x-test-parent"] as string | undefined;
+      return id
+        ? { sessionId: id, ...(parent && { parentSessionId: parent }) }
+        : null;
     },
     sessionModelOf: (id) =>
-      id === "s-cb" ? { model: "cb/rits/zai-org/glm-5-3" } : null,
+      id === "s-cb"
+        ? { model: "cb/rits/zai-org/glm-5-3" }
+        : id === "s-effort"
+          ? { model: null, subagentEffort: "low" }
+          : null,
     onCall: (r) => calls.push(r),
     port: 0,
     log: () => {},
@@ -470,6 +477,51 @@ describe("Bob's calls", () => {
       alias: "cb",
       upstreamId: "rits/zai-org/glm-5-3",
     });
+  });
+});
+
+describe("subagent effort", () => {
+  /** TEST_SCENARIO: The session set its subagents' effort to low. A call the
+   * harness marks as a subagent's runs at low in its dialect's field, while
+   * the session's own call keeps its effort, and a subagent call that
+   * carries no effort (the harness sends none to a model that takes none)
+   * gets none added. */
+  it("overwrites only the effort a subagent's call carries", async () => {
+    seen.length = 0;
+    const subagent = { "x-test-session": "child", "x-test-parent": "s-effort" };
+    await call(
+      "/v1/messages",
+      {
+        model: "claude/anthropic/claude-opus-4-8",
+        output_config: { effort: "high" },
+      },
+      subagent,
+    );
+    expect(seen.at(-1)?.body.output_config).toEqual({ effort: "low" });
+    await call(
+      "/v1/responses",
+      { model: "ibm/gpt-5.5", reasoning: { effort: "xhigh", summary: "auto" } },
+      { ...subagent, [HARNESS_HEADER]: "codex" },
+    );
+    expect(seen.at(-1)?.body.reasoning).toEqual({
+      effort: "low",
+      summary: "auto",
+    });
+    await call(
+      "/v1/messages",
+      {
+        model: "claude/anthropic/claude-opus-4-8",
+        output_config: { effort: "high" },
+      },
+      { "x-test-session": "s-effort" },
+    );
+    expect(seen.at(-1)?.body.output_config).toEqual({ effort: "high" });
+    await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-opus-4-8" },
+      subagent,
+    );
+    expect(seen.at(-1)?.body).not.toHaveProperty("output_config");
   });
 });
 

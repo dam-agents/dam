@@ -2,6 +2,7 @@ import type { Command } from "commander";
 import type { AgentService } from "../agent/index.js";
 import type { TokenProvider } from "../auth/index.js";
 import type { CompatService, ConfigService } from "../cli/index.js";
+import type { SpendService } from "../spend/index.js";
 import type { TrpcClient } from "../shared/trpc/trpc-client.js";
 import { buildTelemetryCommand } from "./commands/telemetry.js";
 import { createExportClient } from "./infrastructure/export-client.js";
@@ -13,6 +14,7 @@ export interface TelemetryModuleOptions {
   configService: ConfigService;
   compatService: CompatService;
   createAgentService: (host: string) => AgentService;
+  createSpendService: (host: string) => SpendService;
 }
 
 export interface TelemetryModule {
@@ -28,6 +30,7 @@ export function composeTelemetryModule(
         compatService: opts.compatService,
         configService: opts.configService,
         createAgentService: opts.createAgentService,
+        createSpendService: opts.createSpendService,
         createTelemetryService: (host) =>
           createTelemetryService({ trpc: opts.buildTrpc(host) }),
         createExportClient: (host) =>
