@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -134,15 +134,22 @@ A runner that cannot be reached is kept while its owner has any Agent at all; on
 The claim is marked as kept instead: on a cluster that shares its CRDs, a CRD event can make even a live List of Agents read empty for a while, so an owner who seems to have left is no proof that the disks are unused.
 The owner's next vm Agent builds its runner on that same claim, which drops the mark; a claim whose owner never comes back is left for an operator to find by the mark.
 
+**Node loss and the claim.** A runner is one pod on a claim only one node may attach, so when the node it sits on goes, or has not reported ready for longer than the kubelet's eviction toleration, the pod left behind keeps the claim and its replacement waits on Multi-Attach for as long as that holds: every agent of that owner is down, and none of them is booting.
+A node that stops reporting ready for less than that is not a loss: it comes back with the pod, so its owners' agents keep reading as still starting and their wakes wait the node out.
+Nothing in the controller breaks that deadlock.
+Deleting a pod whose node may still run it would boot a second VMM on the same disks, which is unrecoverable, and the runner's own host lock holds one node only.
+An operator fences the node first and then clears it out of service, so the cluster drops the pod and the claim reaches a ready node ([node loss](../notes/vm-runner-node-loss.md)).
+Meanwhile each affected agent carries the reason, the Warning Events on it name the node for the operator, and the install's alerts fire on how many runner pods the cluster holds on a node it has lost ([observability](observability.md#alerts)).
+
 **Credentials in place.** The runner re-reads its token file every few seconds and keeps the token it holds while the file is empty or unreadable, and the controller, refused, reads the token Secret once and tries again; a refusal that stands is reported as one, apart from an unreachable runner.
 Neither side rotates the token on its own, but one that changes — a Secret deleted and minted again — is honoured without restarting the pod.
 A changed token also voids every seed capability minted under the old one, since their key is derived from it; the copy Job's retry carries a new one.
 
 **Deletes and waits.** Removing a deleted Agent's machine runs from a queue that retries with backoff, off the informer's event path, so a runner that is restarting delays the cleanup and holds up nothing else; what is still left after the retries is the sweep's.
 An agent whose runner is not ready is looked at again with a backoff up to a minute, and the controller watches the runner Deployments, so a runner's pod becoming ready requeues its owner's vm agents at once.
-A reconcile reads the runner's Deployment and pods, and the agent's StatefulSets, from those watches and its own writes, not from the API server; a write or a resize sent from a copy that is behind fails on its resourceVersion and is decided again from a live read.
+A reconcile reads the runner's Deployment and pods, the agent's StatefulSets, and which nodes are ready, from those watches and its own writes, not from the API server — node readiness included, since an agent whose runner is not ready asks for it on every retry, and on a lost node those retries add up across the owner's agents; a write or a resize sent from a copy that is behind fails on its resourceVersion and is decided again from a live read.
 A pod is force-rolled only after a live read, and the gateway that decides whether a machine the agent no longer runs stays up is read live.
-What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner the kernel OOM-killed, on each agent it took down until that agent is ready again, read as still starting with the reason shown ([vm-memory](vm-memory.md)); a runner that cannot be reached, described without its in-cluster address.
+What an agent waits for is on its status: a certificate cert-manager has not issued, with cert-manager's own account; a runner pod the scheduler cannot place, under a reason of its own that the api-server reads as a failed start ([agent-lifecycle](agent-lifecycle.md#wake)), except a new pod whose state claim is still being bound, which reads as still starting for its first three minutes; a runner pod on a node the cluster has lost, under a reason of its own, read as a failed start because no wait outgrows it; a runner the kernel OOM-killed, on each agent it took down until that agent is ready again, read as still starting with the reason shown ([vm-memory](vm-memory.md)); a runner that cannot be reached, described without its in-cluster address.
 A reconcile that could not ensure the machine takes the Agent's readiness down with it.
 Hibernation does not wait for an unreachable runner: the gateway goes down anyway, readiness goes down, and the machine is stopped by the Agent's next reconcile.
 The Agent is published hibernated only once the runner reports the machine stopped, because a wake from hibernation trusts the first health check answer ([agent-lifecycle](agent-lifecycle.md#wake)).

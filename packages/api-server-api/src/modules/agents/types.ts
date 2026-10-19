@@ -30,6 +30,7 @@ export const TerminationCode = {
   MachineImageUnavailable: "MachineImageUnavailable",
   MachineBootFailed: "MachineBootFailed",
   MachineRunnerUnschedulable: "MachineRunnerUnschedulable",
+  MachineRunnerNodeLost: "MachineRunnerNodeLost",
   ImagePullFailure: "ImagePullFailure",
   InvalidImageName: "InvalidImageName",
   ContainerTerminated: "ContainerTerminated",
@@ -42,6 +43,7 @@ const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
   TerminationCode.MachineImageUnavailable,
   TerminationCode.MachineBootFailed,
   TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.MachineRunnerNodeLost,
   TerminationCode.ImagePullFailure,
   TerminationCode.InvalidImageName,
 ]);
