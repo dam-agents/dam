@@ -127,7 +127,7 @@ const agentBackend: NamedProject = {
 const prSkip =
   process.env.E2E_SCOPE === "pr"
     ? new RegExp(
-        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|24|25|26" : "12|18|21|24"})-`,
+        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|24|25|26|27" : "12|18|21|24"})-`,
       )
     : undefined;
 

@@ -37,6 +37,12 @@ function capacityOf(dfRow: string): number {
   return Number((fields[4] ?? "0%").replace("%", ""));
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the line of a helper script's output that follows its marker. The runner hands back stdout alone, so every script this spec runs prints a marker line before each piece of data it means to be read: a script's output read by the line it happens to land on breaks the moment the script prints one more or one fewer line before it.
+function after(output: string, marker: string): string {
+  const lines = output.split("\n");
+  return (lines[lines.indexOf(marker) + 1] ?? "").trim();
+}
+
 async function hibernate(): Promise<void> {
   await api.agents.sleep.mutate({ id: agentId });
   await waitAgentState(api, agentId, "hibernated");
@@ -63,6 +69,7 @@ function killNewVMM(id: string, afterMs: number): string {
     id,
     [
       `seen=/tmp/boot-matrix-vmms-${id}`,
+      '[ -f "$seen" ] || { echo "no seen file"; exit 1; }',
       `delay=${(afterMs / 1_000).toFixed(2)}`,
       "deadline=$(( $(date +%s) + 120 ))",
       "pid=",
@@ -87,7 +94,7 @@ function killNewVMM(id: string, afterMs: number): string {
       "  exit 0",
       "fi",
       'sleep "$delay"',
-      "kill -9 $pid",
+      'kill -9 $pid || { echo "kill failed $pid"; exit 1; }',
       `echo killed $pid`,
     ].join("\n"),
   ).trim();
@@ -140,7 +147,7 @@ test("comes back from its VMM being killed at points across a boot", async () =>
   }
 });
 
-// TEST_SCENARIO: a disk with no block left costs a boot the empty work layer it needs before it mounts anything. platform-init gives back only what a boot discards — its scratch folders and the layers earlier boots set aside — and then boots with the home untouched, so the agent comes back without anyone having to free room from outside a machine that cannot boot. A machine's disk is a sparse file the size of its owner's whole claim, so filling it to its last block takes what the claim holds, which on this lane is the node's disk: E2E_DISK_FILL_GIB is how a run against an install with room to spare opts in, with the most GiB it may allocate in the guest; unset, the case is skipped rather than run at the lane's expense. The filler sits in /tmp, which a boot empties anyway.
+// TEST_SCENARIO: a disk with no block left costs a boot the empty work layer it needs before it mounts anything. platform-init gives back only what a boot discards — its scratch folders and the layers earlier boots set aside — and then boots with the home untouched, so the agent comes back without anyone having to free room from outside a machine that cannot boot. A machine's disk is a sparse file the size of its owner's whole claim, so filling it to its last block takes what the claim holds, which on this lane is the node's disk: E2E_DISK_FILL_GIB is how a run against an install with room to spare opts in, with the most GiB it may allocate in the guest, and a cap below the disk's free space skips rather than leave a disk that is not full; unset, the case is skipped rather than run at the lane's expense. The filler sits in /tmp, which a boot empties anyway.
 test("boots a disk it found with no room left", async () => {
   test.setTimeout(900_000);
   const capGiB = Number(process.env.E2E_DISK_FILL_GIB ?? "");
@@ -151,22 +158,38 @@ test("boots a disk it found with no room left", async () => {
   const fill = inGuest(
     agentId,
     [
+      "echo before",
       "df -Pk /tmp | tail -1",
+      'free=$(df -Pk /tmp | tail -1 | awk "{ print \$4 }")',
+      `cap=$(( ${Math.round(capGiB)} * 1024 * 1024 ))`,
+      'if [ "$free" -gt "$cap" ]; then',
+      '  echo "cannot $free $cap"',
+      "  exit 0",
+      "fi",
       "i=0",
-      `while [ $i -lt ${Math.round(capGiB)} ]; do`,
-      "  fallocate -l 1G /tmp/boot-matrix-fill.$i || break",
-      "  i=$((i+1))",
+      "for step in 1048576 262144 65536 1024; do",
+      '  while [ "$i" -lt 8192 ]; do',
+      '    fallocate -l "${step}K" "/tmp/boot-matrix-fill.$i" || break',
+      "    i=$((i+1))",
+      "  done",
       "done",
       "sync",
+      "echo after",
       "df -Pk /tmp | tail -1",
     ].join("\n"),
   );
-  const [before = "", after = ""] = fill.trim().split("\n");
+  const refused = fill.split("\n").find((line) => line.startsWith("cannot "));
+  test.skip(
+    Boolean(refused),
+    `the cap is below the disk's free space, so this run cannot fill it: ${refused}`,
+  );
+  const before = after(fill, "before");
+  const left = after(fill, "after");
   console.log(`[e2e] the machine's disk before the fill: ${before}`);
-  console.log(`[e2e] the machine's disk when the fill stopped: ${after}`);
+  console.log(`[e2e] the machine's disk when the fill stopped: ${left}`);
   expect(
-    capacityOf(after),
-    `the disk was not filled: ${after}`,
+    capacityOf(left),
+    `the disk was not filled: ${left}`,
   ).toBeGreaterThanOrEqual(99);
 
   await hibernate();
@@ -192,20 +215,23 @@ test("boots on a disk whose layout mark came back empty", async () => {
     [
       "mkdir -p /mnt/boot-matrix-disk",
       "mount -t btrfs /dev/vda /mnt/boot-matrix-disk 2>&1",
+      "echo mark",
       "cat /mnt/boot-matrix-disk/system/layout",
       "truncate -s 0 /mnt/boot-matrix-disk/system/layout",
       "sync",
+      "echo emptied",
       "wc -c < /mnt/boot-matrix-disk/system/layout",
       "umount /mnt/boot-matrix-disk",
     ].join("\n"),
   );
   expect(
-    emptied,
+    after(emptied, "mark"),
     `the disk's layout mark was not there to empty: ${emptied}`,
-  ).toMatch(/^2$/m);
-  expect(emptied, `the mark did not read back empty: ${emptied}`).toMatch(
-    /^0$/m,
-  );
+  ).toBe("2");
+  expect(
+    after(emptied, "emptied"),
+    `the mark did not read back empty: ${emptied}`,
+  ).toBe("0");
 
   await hibernate();
   await api.agents.wake.mutate({ id: agentId });
@@ -218,10 +244,13 @@ test("boots on a disk whose layout mark came back empty", async () => {
   });
   const marked = inGuest(
     agentId,
-    "grep -c 'marked the disk as layout 2' /var/log/platform/agent-runtime.log",
+    [
+      "echo count",
+      "grep -c 'marked the disk as layout 2' /var/log/platform/agent-runtime.log",
+    ].join("\n"),
   );
   expect(
-    Number(marked.trim()),
+    Number(after(marked, "count")),
     `the boot did not mark the emptied disk: ${marked}`,
   ).toBeGreaterThan(0);
 });
@@ -241,21 +270,24 @@ test("refuses a start while the owner's claim is full", async () => {
       "used=$3",
       "avail=$4",
       "need=$(( ((used + avail) * 97 / 100) - used ))",
-      `cap=${Math.round(capGiB)} * 1024 * 1024`,
+      `cap=$(( ${Math.round(capGiB)} * 1024 * 1024 ))`,
       'if [ "$need" -gt "$cap" ]; then',
       '  echo "cannot $need $cap"',
       "  exit 0",
       "fi",
+      '[ "$need" -gt 0 ] || need=0',
       'fallocate -l "${need}K" /var/lib/platform/disks/e2e-claim-fill || dd if=/dev/zero of=/var/lib/platform/disks/e2e-claim-fill bs=1024 count="$need" 2>/dev/null || true',
       "sync",
+      "echo filled",
       "df -Pk /var/lib/platform/disks | tail -1",
     ].join("\n"),
   );
-  const [verdict = "", row = ""] = filled.trim().split("\n");
+  const [verdict = ""] = filled.trim().split("\n");
   test.skip(
     verdict.startsWith("cannot "),
     `the claim's filesystem is too big to fill under the cap: ${verdict}`,
   );
+  const row = after(filled, "filled");
   console.log(`[e2e] the owner's claim when the fill stopped: ${row}`);
   expect(
     capacityOf(row),
