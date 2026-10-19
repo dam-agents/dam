@@ -1,7 +1,8 @@
-// TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals.
-import { createElement } from "react";
+// TEST_OVERVIEW: The side panel's icon bar opens with a Close panel button at its top right while a tab is open, lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals.
+import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
+import { createStore } from "zustand/vanilla";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import {
@@ -9,6 +10,8 @@ import {
   SidePanelBar,
 } from "../../modules/sessions/components/side-panel-bar.js";
 import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
+import { createSidePanelSlice } from "../../modules/sessions/store/side-panel.js";
+import type { PlatformStore } from "../../store.js";
 
 function render(processes?: SidePanelBadge) {
   return renderToStaticMarkup(
@@ -186,4 +189,72 @@ it("draws the new layout's tiles, with the bar on the right edge", () => {
   );
   expect(order[1]).toBeGreaterThan(order[0]!);
   expect(order[2]).toBeGreaterThan(order[1]!);
+});
+
+function findByTestId(
+  node: ReactNode,
+  id: string,
+): { onClick: () => void } | null {
+  for (const child of Children.toArray(node)) {
+    if (
+      !isValidElement<{
+        children?: ReactNode;
+        "data-testid"?: string;
+        onClick: () => void;
+      }>(child)
+    )
+      continue;
+    if (child.props["data-testid"] === id) return child.props;
+    const found = findByTestId(child.props.children, id);
+    if (found) return found;
+  }
+  return null;
+}
+
+// TEST_SCENARIO: The X at the top right of an open panel closes it, in both layouts, without hunting for the active tab's icon.
+it.each([false, true])(
+  "closes the open panel from its X (tiles: %s)",
+  (tiles) => {
+    const store = createStore<PlatformStore>()(
+      (...a) => createSidePanelSlice(...a) as PlatformStore,
+    );
+    store.getState().setSidePanelTab("approvals");
+    const props = {
+      active: store.getState().sidePanelTab,
+      hidden: new Set<never>(),
+      onSelect: () => {},
+      onClose: () => store.getState().setSidePanelTab(null),
+      tiles,
+    };
+    const html = renderToStaticMarkup(
+      createElement(TooltipProvider, null, createElement(SidePanelBar, props)),
+    );
+    expect(html).toMatch(
+      /<button[^>]*aria-label="Close panel"[^>]*data-testid="side-panel-close"/,
+    );
+    expect(html.indexOf("side-panel-close")).toBeLessThan(
+      html.indexOf("side-panel-tab-"),
+    );
+    findByTestId(SidePanelBar(props), "side-panel-close")!.onClick();
+    expect(store.getState().sidePanelTab).toBeNull();
+  },
+);
+
+// TEST_SCENARIO: A closed panel keeps the X's slot but hides it, so the tab icons do not move when the panel opens.
+it("hides the X while the panel is closed", () => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SidePanelBar, {
+        active: null,
+        hidden: new Set<never>(),
+        onSelect: () => {},
+        onClose: () => {},
+      }),
+    ),
+  );
+  expect(html).toMatch(
+    /<button[^>]*class="[^"]*invisible[^"]*"[^>]*data-testid="side-panel-close"/,
+  );
 });

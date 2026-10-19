@@ -119,7 +119,7 @@ export function SidePanelShell({
       ? null
       : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
 
-  const closeMobilePanel = () => {
+  const closePanel = () => {
     setSidePanelTab(null);
     setMobileScreen("chat");
   };
@@ -214,7 +214,7 @@ export function SidePanelShell({
                 size="icon-sm"
                 aria-label={mobileBackLabel}
                 tooltip={mobileBackLabel}
-                onClick={closeMobilePanel}
+                onClick={closePanel}
               >
                 <ArrowLeft size={16} />
               </Button>
@@ -254,6 +254,7 @@ export function SidePanelShell({
           onSelect={onSelectTab}
           badges={badges}
           icons={icons}
+          onClose={closePanel}
         />
       </div>
     </div>
