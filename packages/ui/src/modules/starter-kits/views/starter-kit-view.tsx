@@ -45,7 +45,10 @@ import {
 } from "../../connections/api/queries.js";
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { useFeatures } from "../../features/api/queries.js";
+import {
+  useFeatures,
+  useInstallCapabilities,
+} from "../../features/api/queries.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -56,13 +59,10 @@ import { KitCategoryTag } from "../components/kit-category-tag.js";
 import { KitChannelsSection } from "../components/kit-channels-section.js";
 import { KitRequirementsList } from "../components/kit-requirements-list.js";
 import { KitScheduleCard } from "../components/kit-schedule-card.js";
-import { useKitDefaultVm } from "../hooks/use-kit-default-vm.js";
 import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
-  kitRunsOnVm,
-  VM_BACKEND_LABEL,
 } from "../lib/catalog-cards.js";
 import {
   buildStarterKitApplyInput,
@@ -310,7 +310,7 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
-  const vm = kitRunsOnVm(kit, useKitDefaultVm());
+  const vm = useInstallCapabilities().data?.virtualization;
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -447,11 +447,6 @@ function KitDetail({
             {skillCount > 0 && (
               <Badge variant="muted" size="sm">
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
-              </Badge>
-            )}
-            {vm === true && (
-              <Badge variant="muted" size="sm">
-                {VM_BACKEND_LABEL}
               </Badge>
             )}
           </div>

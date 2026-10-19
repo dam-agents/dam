@@ -9,23 +9,6 @@ import { type Backend, laneBackend } from "./lane.js";
 
 export { type Backend, laneBackend };
 
-export function onLaneBackend<T extends object>(input: T): T & { vm?: true } {
-  return laneBackend === "vm" ? { ...input, vm: true } : input;
-}
-
-export async function setVmSandboxes(
-  api: ApiClient,
-  enabled: boolean,
-): Promise<void> {
-  const flags = await api.features.setFlag.mutate({
-    feature: "vm-sandboxes",
-    enabled,
-  });
-  expect(flags["vm-sandboxes"], "the vm-sandboxes experiment flag").toBe(
-    enabled,
-  );
-}
-
 const tokenMaxAgeMs = 120_000;
 
 export function refreshingToken(): () => Promise<string> {
@@ -65,7 +48,7 @@ export async function createAgentOn(
   const created = await api.agents.create.mutate({
     name,
     templateId,
-    ...(backend === "vm" ? { vm: true } : {}),
+    vm: backend === "vm",
     ...(neverIdle ? { hibernationTimeoutMin: 0 } : {}),
   });
   expect(created.vm, `agent ${name} landed on the wrong backend`).toBe(

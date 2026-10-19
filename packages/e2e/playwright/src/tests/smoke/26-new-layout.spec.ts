@@ -14,11 +14,7 @@ import {
   createRefreshingApiClient,
 } from "../../lib/api-client.js";
 import { acceptTerms } from "../../lib/auth.js";
-import {
-  onLaneBackend,
-  refreshingToken,
-  waitAgentState,
-} from "../../lib/backend.js";
+import { refreshingToken, waitAgentState } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 test.describe.configure({ mode: "serial" });
@@ -49,9 +45,10 @@ test.beforeAll(async () => {
   await acceptTerms(api);
   for (const name of AGENTS) await deleteAgentIfPresent(api, name);
   for (const name of AGENTS) {
-    const { id } = await api.agents.create.mutate(
-      onLaneBackend({ name, templateId: harnessName }),
-    );
+    const { id } = await api.agents.create.mutate({
+      name,
+      templateId: harnessName,
+    });
     agentIds.set(name, id);
     await api.agents.sleep.mutate({ id });
   }

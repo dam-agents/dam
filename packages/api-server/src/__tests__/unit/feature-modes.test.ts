@@ -24,7 +24,6 @@ describe("feature modes", () => {
         "interactive-artifacts": "on",
         "agent-telemetry": "experimental",
         "advanced-connections": "experimental",
-        "vm-sandboxes": "experimental",
         "chat-forms": "experimental",
         "custom-avatars": "experimental",
         "platform-provider": "experimental",

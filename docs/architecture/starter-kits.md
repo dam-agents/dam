@@ -112,9 +112,8 @@ flowchart LR
 - **Kit Backend** — optional `backend: vm`: the kit's work needs a machine rather than a pod.
   An agent container drops every capability, so a workload that runs a container runtime or a whole cluster inside its sandbox can only exist on the `vm` Backend ([platform-topology](platform-topology.md)); the kit says so and apply passes it to the create, where the existing refusal for a microVM on an install without virtualization already sits, before anything is created.
   **Whether the install can run one is a capability, not a preference, and it decides visibility**: a `vm` kit is left out of the listing and reads as absent on a read when `virtualization.enabled` is off, for the same reason a disabled built-in kit never reaches the UI — a catalog that offers what this install cannot run wastes the user's time and ends in a parked agent.
-  The **per-user** flag is treated the opposite way.
-  `vm-sandboxes` is progressive disclosure rather than authorization ([features](features.md)), so it hides nothing here and shows a **New sandbox runtime** badge instead: the kit's own declaration is what makes the agent a microVM, the user is told which runtime they are getting before they create it, and the same kit is on offer to everyone on the install rather than appearing and disappearing with a settings toggle.
-  A kit that names no backend gets its owner's default runtime: a microVM when the owner opted into the new runtime on an install that can run one, or when the install pins the new runtime on, and a container otherwise ([features](features.md)); the kit then carries the badge whenever that default is a microVM.
+  A kit that names no backend gets its install's runtime: a microVM wherever virtualization is on, which is every new agent, and a container only on an install that cannot run one, where a `vm` kit is hidden anyway ([features](features.md)).
+  The kit therefore carries no runtime badge: on a given install every kit offered runs on the same Backend.
 - **Kit Egress** — optional `egressPreset` (`none`, `trusted` or `all`, the presets an agent's egress settings offer) and `egressRules`, a list of host rules in the shape a hand-written rule takes (`host`, optional `port`, `method`, `pathPattern`, `verdict`, which defaults to `allow`).
   Apply passes the preset to the create, which seeds from it exactly as when the user picks one; a kit that names none gets the create's default (`trusted`).
   The rules are then written with source `kit`, before anything else the apply queues, so the first session already runs under them.
@@ -139,7 +138,8 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  A kit on the `vm` backend, or a kit that names no backend whose default runtime is a microVM, gets none of it and shows no size: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
+  Every kit on an install with virtualization gets none of it and shows no size, since every agent there is a machine: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
+  Only an install that cannot run one, and so creates containers, shows a kit's size.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
   The catalog refresh resolves the ref to a commit and records it beside the declared ref (`seed.commit`), and apply hands both to the agent create as its workspace seed, so the `workspace-seed` event brings the repository in at that commit **on that branch**, tracking `origin/<ref>` — the same rail a plain create's `gitRepo` rides — ahead of `install` and the initialization session.

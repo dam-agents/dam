@@ -344,11 +344,11 @@ jobs:
     # device plugin comes from cluster:install, the node image cache directory
     # and the staged mock image from values-local.yaml once e2e:install sees
     # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
-    # rest by e2e:ci-images. The same variable makes the suite's global setup
-    # opt the e2e user into the vm-sandboxes experiment, so the UI creates vm
-    # agents, and the spec helpers create vm agents through the API. It also
-    # adds the runtime migration spec, which needs both Backends on one
-    # install, and runs it and the backend spec after the rest of the suite:
+    # rest by e2e:ci-images. Every agent the suite creates lands on a machine
+    # there, the UI's and the API's alike, because the install closes the
+    # container Backend. It also adds the runtime migration spec, which needs
+    # both Backends on one install, and runs it and the backend spec after the
+    # rest of the suite:
     # the backend spec deletes the user's VM runner, which runs every one of
     # the user's machines. It runs whenever the container lane does, so a
     # vm-only failure shows on the PR that caused it.
