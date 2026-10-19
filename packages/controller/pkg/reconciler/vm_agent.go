@@ -670,6 +670,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	case vmrunner.ReasonHomeFull:
 		reason = apiv1.ReasonHomeVolumeFull
 	}
+	ready := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionAgentPodReady)
 	running, _ := r.vmRunning.Load(agent.Name)
 	startedAt := func() time.Time {
 		v, _ := r.vmRunningSince.Load(agent.Name)
@@ -678,7 +679,7 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	}
 	killedAt := func() time.Time { return r.runnerOOMKilledAt(ctx, agent.Labels[envoyOwnerLabel]) }
 	// UNIT_BOUNDARY_DESCRIPTION: the kill is published over whatever the runner says about this agent afterwards, so an agent the restarted runner refused room, one a reclaim put to sleep, and one whose boot the restart broke all name the kill that took their machine, not the consequence they wear now.
-	if runnerOOMTookDown(apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionAgentPodReady), running == true, st.Ready, startedAt, killedAt) {
+	if runnerOOMTookDown(ready, running == true, st.Ready, startedAt, killedAt) {
 		reason = apiv1.ReasonRunnerOutOfMemory
 		msg = "Your VM agents ran out of memory together, so the ones that were running restarted. Disable agents you aren't using to free memory."
 	}
@@ -701,13 +702,19 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 			if runnerReached {
 				setStartFailure(s, failure, agent.Generation)
 			}
+			// UNIT_BOUNDARY_DESCRIPTION: the kill's reason is timed from the reconcile that first published it, not from the condition's status flip: `apimeta.SetStatusCondition` moves `LastTransitionTime` only when the status changes, so an agent that was already down before the kill kept the older flip's time and the episode would be over on its first read, publishing the kill on one reconcile and its own reason on the next.
+			if reason == apiv1.ReasonRunnerOutOfMemory && (ready == nil || ready.Reason != apiv1.ReasonRunnerOutOfMemory) {
+				if c := apimeta.FindStatusCondition(s.Conditions, apiv1.ConditionAgentPodReady); c != nil {
+					c.LastTransitionTime = metav1.NewTime(time.Now())
+				}
+			}
 		})
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long after an OOM kill of an owner's runner the kill is still what its agents' machines read as down: a boot after one takes seconds, but a restarted runner refuses room to some machines and a reclaim puts others to sleep, and those consequences of the kill land minutes later, on a remade runner pod that still carries the kill in its last termination. Past it the kill explains nothing the agent reads now, so the agent falls back to its own reason, which a boot that keeps failing needs in order to be seen as the failure it is.
 const runnerOOMEpisode = 10 * time.Minute
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the runner's OOM kill is what keeps this agent down: it should be running, it is not ready, and the kill is one of the episode that follows it, either because the agent already names it — a reason once published lasts through the runner's own restart, which replaces the pod record of the kill, and through a controller's restart, which knows no start time — or because the agent was already running when the kill happened. Every machine of the owner lived in the killed runner pod, so the kill took all of them down together, and whatever the restarted runner reports of this one afterwards — a boot that failed on the restart, a refused start for room, a machine's own kill reason — is that same taking down, not a fault of its own. One woken inside the episode was not running at the kill and carries nothing: a start the controller has not seen behind it is no evidence that the kill took it down, so it is left out rather than guessed at. An agent that is up again, one asleep at the kill, and one that never published readiness carry nothing either: the notice, the alert and the history all read a reason published while the agent is down, so none of them can show a machine that is up. A boot's own failure still reaches the owner on the start failure condition, which this does not touch, and a boot that keeps failing names itself once the episode is over.
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's OOM kill is what keeps this agent down: it should be running, it is not ready, and the kill is one of the episode that follows it, either because the agent already names it — a reason once published lasts through the runner's own restart, which replaces the pod record of the kill, and through a controller's restart, which knows no start time, and the publish carries the time it was first said, so the episode runs from the kill even on an agent that was down before it — or because the agent was already running when the kill happened. Every machine of the owner lived in the killed runner pod, so the kill took all of them down together, and whatever the restarted runner reports of this one afterwards — a boot that failed on the restart, a refused start for room, a machine's own kill reason — is that same taking down, not a fault of its own. One woken inside the episode was not running at the kill and carries nothing: a start the controller has not seen behind it is no evidence that the kill took it down, so it is left out rather than guessed at. An agent that is up again, one asleep at the kill, and one that never published readiness carry nothing either: the notice, the alert and the history all read a reason published while the agent is down, so none of them can show a machine that is up. A boot's own failure still reaches the owner on the start failure condition, which this does not touch, and a boot that keeps failing names itself once the episode is over.
 func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, startedAt, killedAt func() time.Time) bool {
 	if !running || ready || prev == nil {
 		return false

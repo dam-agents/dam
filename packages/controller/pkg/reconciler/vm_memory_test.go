@@ -213,7 +213,7 @@ func TestTheMemoryPassReconcilesOnlyWhenThePodRequestWouldMove(t *testing.T) {
 	assert.Equal(t, 0, resizeCalls(r), "the pass leaves the resize to the reconcile")
 }
 
-// TEST_SCENARIO: the runner's pressure signal is the kernel's view, which is what kills the runner, so a pass on it hibernates an idle peer even while the counted demand is well under the threshold, and even when that peer alone does not cover the measured overshoot. The signal repeats while pressure lasts, so for a while after it freed room it hibernates nothing more, and it never runs beside the owner's other pass.
+// TEST_SCENARIO: the runner's pressure signal is the kernel's view, which is what kills a machine, so a pass on it hibernates an idle peer even while the counted demand is well under the threshold, and even when that peer alone does not cover the measured overshoot. The signal repeats while pressure lasts, so for a while after it freed room it hibernates nothing more, and it never runs beside the owner's other pass.
 func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)

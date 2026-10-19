@@ -28,7 +28,7 @@ type runnerDemand struct {
 	vCPUs     int
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
 func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, spec *apiv1.AgentSpec) (int, error) {
 	var err error
 	limit := 0

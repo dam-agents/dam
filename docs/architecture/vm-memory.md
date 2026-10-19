@@ -15,7 +15,7 @@ A machine's new size reaches it at its next start.
 While a pool is unread the controller creates no claim and no Deployment for that owner and changes no size, and retries; a pool read once is kept when a later read fails, so a moment of trouble changes nothing.
 No reclaim is decided from an unread pool either: it is the pool that says how much memory an owner's machines may hold.
 
-**Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit.
+**Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool.
 Every machine gets the install's vCPUs (`virtualization.runner.machineCPUs`); they are threads of the runner, so an idle machine costs nothing.
 The controller keeps the runner pod's CPU limit, resized in place, at the vCPUs of the machines that should be running plus one machine's worth for the runner itself and the VMMs' own threads, never above the owner's CPU pool: their UserBudget's `cpu`, else a CPU limit the install sets.
 Unless the pool caps it lower, a guest is never throttled below its vCPUs, and one runaway VMM cannot take the whole node.
@@ -77,7 +77,7 @@ A refused start is retried once their machines have stopped.
 No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).
 Because a running machine's use reaches the controller only when its agent reconciles, the controller also asks each owner's runner about its running machines every 30 seconds, which is what pressure is judged from and what moves the request between reconciles.
 That pass reconciles one of the owner's agents only when the request their counts call for differs from the runner pod's, so a count held within its step wakes nothing.
-The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since the kernel's view is the one that kills the runner.
+The runner's own pressure signal runs the same pass for that owner at once, without waiting for the counted threshold, since a machine's kill is decided by the kernel's own view of the cgroup.
 Its need is the larger of the counted and the measured overshoot of the 80% target, and it may hibernate fewer agents than cover it: near an OOM kill, freeing some memory beats freeing none.
 When no candidate says it is idle, this pass alone hibernates the candidates that did not answer, as a last resort, because the kill would stop them too; one that answered busy is never hibernated.
 The controller holds one watch on each owner's pressure, and a pass on it hibernates nothing more for fifteen seconds after any reclaim of that owner hibernated agents, because the runner's measured working set still holds their machines until they have stopped.

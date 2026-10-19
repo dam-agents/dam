@@ -1588,6 +1588,60 @@ func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	assert.Contains(t, cond.Message, "disk is full")
 }
 
+// TEST_SCENARIO: an agent that was down before the runner's kill carried a condition flip from long before it, and a publish that changes only the reason moves no transition time — so a kill timed from that flip would be outside its episode on the first read, and the agent would name the kill on one reconcile and its own reason on the next, all the way through the episode. The reason carries the time it was first published instead, so the reconcile after it still reads the kill.
+func TestTheKillTheRunnerReportsIsNotOvertakenByTheAgentsOwnReason(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	r.vmRunning.Store(agent.Name, true)
+	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, unstructured.SetNestedSlice(stored.Object, []any{map[string]any{
+		"type":               apiv1.ConditionAgentPodReady,
+		"status":             string(metav1.ConditionFalse),
+		"reason":             vmrunner.ReasonNotReady,
+		"message":            "machine is stopped",
+		"lastTransitionTime": metav1.NewTime(time.Now().Add(-20 * time.Minute)).Format(time.RFC3339),
+	}}, "status", "conditions"))
+	seeded, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	agent, err = FromCacheObject[apiv1.Agent](seeded)
+	require.NoError(t, err)
+	runner, err := r.client.CoreV1().Pods("test-agents").Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(time.Now().Add(-time.Minute)),
+		}},
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	read := func() *metav1.Condition {
+		obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+		require.NoError(t, err)
+		got, err := FromCacheObject[apiv1.Agent](obj)
+		require.NoError(t, err)
+		return apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	}
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonNotReady, Message: "machine is stopped"}, true))
+	first := read()
+	require.NotNil(t, first)
+	require.Equal(t, apiv1.ReasonRunnerOutOfMemory, first.Reason)
+	assert.WithinDuration(t, time.Now(), first.LastTransitionTime.Time, time.Minute,
+		"the episode is timed from this publish, not from a flip twenty minutes old")
+
+	// TEST_SCENARIO: the next reconcile reads the condition this one wrote, exactly as a reconciler working from the API would.
+	agent.Status.Conditions = []metav1.Condition{*first}
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonNotReady, Message: "machine is stopped"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, read().Reason, "the reconcile after the kill's publish names the kill again")
+}
+
 // TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
 func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 	ctx := context.Background()

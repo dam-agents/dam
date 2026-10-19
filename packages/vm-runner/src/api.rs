@@ -172,7 +172,7 @@ pub struct RunnerReleaseName {
     pub release: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills the runner by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills a machine of it by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct RunnerPressure {

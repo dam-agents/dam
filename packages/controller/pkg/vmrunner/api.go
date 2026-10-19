@@ -153,7 +153,7 @@ type RunnerReleaseName struct {
 	Release string `json:"release"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills the runner by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills a machine of it by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
 type RunnerPressure struct {
 	Version       uint64 `json:"version,omitempty"`
 	Pressured     bool   `json:"pressured"`
