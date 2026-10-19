@@ -71,7 +71,8 @@ const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
  * strip of agent avatars, each badged with how many of its sessions are
  * unread or wait for an approval. The right column lists conversations: under
  * All, the sessions that need the user and then every session by latest
- * activity; under one agent, that agent's own session list.
+ * activity; under one agent, that agent's own session list. Both columns
+ * carry the one session filter, which they share.
  */
 export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
   const { agents, openAgentId } = useSidebarAgents();
@@ -527,6 +528,8 @@ function AgentColumn({
 }) {
   const startSession = useStartSession();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const filters = useStore((s) => s.sidebarActivityFilters);
+  const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const go = (fn: () => void) => () => {
     fn();
     onNavigate?.();
@@ -542,6 +545,7 @@ function AgentColumn({
         title={agent.name}
         actions={
           <>
+            <ActivityFilterMenu filters={filters} onChange={setFilters} />
             <HeaderIcon
               label="New session"
               onClick={go(() => startSession(agent.id))}
