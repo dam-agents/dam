@@ -274,6 +274,17 @@ describe("applyUpdate — turn boundaries", () => {
     expect(out).toEqual([]);
   });
 
+  test("a self-closed plumbing tag hides none of the user's text after it", () => {
+    const text = 'hello <agent-message from="a"/> keep me </agent-message> bye';
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: { type: "text" as const, text },
+    });
+    expect(out).toHaveLength(1);
+    expect(out[0].parts).toEqual([{ kind: "text", text }]);
+  });
+
   test("a system wrapper with nested elements still closes the active bubble", () => {
     const start: Message[] = [
       userMsg("u1", "go"),

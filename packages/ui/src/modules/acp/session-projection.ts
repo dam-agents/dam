@@ -48,7 +48,7 @@ const PLUMBING_TAGS = [
   "user-prompt-submit-hook",
 ];
 const PLUMBING_RE = new RegExp(
-  `<(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*)?>[\\s\\S]*?<\\/\\1>`,
+  `<(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*(?<!/))?>[\\s\\S]*?<\\/\\1>`,
   "g",
 );
 function stripPlumbing(raw: string): string {
