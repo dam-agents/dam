@@ -5,6 +5,7 @@
 // TEST_OVERVIEW: and a failure distinctly. A settled agent carries no badge.
 import { describe, expect, test } from "vitest";
 
+import { overlayDescription } from "../../modules/agents/lib/overlay-copy.js";
 import { runtimeMigrationBadge } from "../../modules/agents/utils/runtime-migration.js";
 import type { AgentView, RuntimeMigrationView } from "../../types.js";
 
@@ -24,6 +25,17 @@ function migration(
 ): RuntimeMigrationView {
   return { phase, ...extra };
 }
+
+// TEST_SCENARIO: a failed move says so in the overlay and names the operator who ends it, rather than promising a return the owner has no way to bring about.
+test("a failed move's overlay names the operator", () => {
+  const sentence = overlayDescription("migrating", {
+    ...agent({ runtimeMigration: migration("failed") }),
+    workspaceFailures: [],
+  } as AgentView);
+  expect(sentence).toMatch(/failed/);
+  expect(sentence).toContain("operator");
+  expect(sentence).not.toMatch(/a few minutes/);
+});
 
 describe("runtimeMigrationBadge", () => {
   // TEST_SCENARIO: an agent with no migration under way is badged for nothing, on either runtime: a container agent is one nobody has come to move yet.
