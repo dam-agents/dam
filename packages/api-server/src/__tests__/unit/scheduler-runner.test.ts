@@ -106,6 +106,8 @@ function makeDeps(opts?: {
 }) {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
+  let storedLastRun = opts?.lastRun;
+  const stampedResults: { result: string; nextRun?: Date | null }[] = [];
   const nextRuns: (Date | null)[] = [];
   const stampedFires: string[] = [];
   const enqueued: Date[] = [];
@@ -132,7 +134,7 @@ function makeDeps(opts?: {
             opts?.storedNextRun,
             opts?.cron,
             opts?.precheck,
-            opts?.lastRun,
+            storedLastRun,
             opts?.enabled,
             opts?.choices,
           )
@@ -149,6 +151,7 @@ function makeDeps(opts?: {
     ) {
       if (tx) calls.push(`record:${result}`);
       fires.push({ result, nextRun });
+      storedLastRun = WAKE_STAMP;
     },
     async transaction<T>(fn: (tx: unknown) => Promise<T>) {
       calls.push("begin");
@@ -162,7 +165,9 @@ function makeDeps(opts?: {
     async stampFire(_id: string, result: string) {
       stampedFires.push(result);
     },
-    async stampResult() {},
+    async stampResult(_id: string, result: string, nextRun?: Date | null) {
+      stampedResults.push({ result, nextRun });
+    },
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
       patches.push(patch);
     },
@@ -235,6 +240,8 @@ function makeDeps(opts?: {
     runner,
     calls,
     fires,
+    stampedResults,
+    lastRun: () => storedLastRun,
     nextRuns,
     stampedFires,
     enqueued,
@@ -299,12 +306,14 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
    * fire fails with a reason the schedules page shows rather than running on
    * a provider that would refuse it or being skipped silently. */
   it("fails the fire when no granted provider fits", async () => {
-    const { runner, fires, events } = makeDeps({ firePair: async () => null });
+    const { runner, stampedResults, events } = makeDeps({
+      firePair: async () => null,
+    });
     await expect(
       runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
     ).rejects.toThrow(/no model provider/);
     expect(events).toEqual([]);
-    expect(fires[0]?.result).toMatch(/no model provider granted/);
+    expect(stampedResults[0]?.result).toMatch(/no model provider granted/);
   });
 
   /** TEST_SCENARIO: The schedule names a harness, a qualified model and a
@@ -352,7 +361,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
    * its model names. The fire fails with that reason on the schedule rather
    * than running on a substitute model. */
   it("fails the fire with the reason a choice no longer holds", async () => {
-    const { runner, fires, events } = makeDeps({
+    const { runner, stampedResults, events } = makeDeps({
       choices: { model: "openai/gpt-5.5" },
       validateSessionChoices: async () => "this agent holds no openai provider",
       firePair: async () => {
@@ -363,7 +372,68 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
       runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
     ).rejects.toThrow(/holds no openai provider/);
     expect(events).toEqual([]);
-    expect(fires[0]?.result).toMatch(/holds no openai provider/);
+    expect(stampedResults[0]?.result).toMatch(/holds no openai provider/);
+  });
+
+  /** TEST_SCENARIO: A refusal happens before the trigger is committed, so the
+   * occurrence runs nothing. It records the reason and arms the next
+   * occurrence, leaving the last-run stamp where it was — a stamp that moves
+   * makes a refused schedule look alive and says work happened when it did
+   * not. */
+  it("records a refused fire without moving the last run", async () => {
+    const { runner, fires, stampedResults, enqueued, events, lastRun } =
+      makeDeps({
+        lastRun: "2026-06-12T09:00:00.000Z",
+        choices: { model: "openai/gpt-5.5" },
+        validateSessionChoices: async () =>
+          "this agent holds no openai provider",
+      });
+
+    await expect(
+      runner.buildFireHandler()(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
+    ).rejects.toThrow(/holds no openai provider/);
+
+    expect(fires).toEqual([]);
+    expect(lastRun()).toBe("2026-06-12T09:00:00.000Z");
+    expect(stampedResults).toEqual([
+      {
+        result: "this agent holds no openai provider",
+        nextRun: new Date("2026-06-12T11:00:00Z"),
+      },
+    ]);
+    expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
+    expect(events).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: the payload's lastRunAt is the Precheck's "anything new
+   * since last time?" baseline: an older stamp makes the check look again, a
+   * newer one makes it skip the window. A refused fire must leave that
+   * baseline on the last run that happened. */
+  it("keeps the Precheck's baseline on the last run that happened", async () => {
+    let refusal: string | undefined = "this agent holds no openai provider";
+    const { runner, payloads } = makeDeps({
+      precheck: "test -f /tmp/ready",
+      lastRun: "2026-06-12T09:00:00.000Z",
+      choices: { model: "openai/gpt-5.5" },
+      validateSessionChoices: async () => refusal,
+      firePair: async () => ({
+        harness: "codex",
+        provider: "conn-oai",
+        model: "openai/gpt-5.5",
+      }),
+    });
+    const fire = runner.buildFireHandler();
+
+    await expect(
+      fire(SCHEDULE_ID, new Date("2026-06-12T10:30:00Z")),
+    ).rejects.toThrow(/holds no openai provider/);
+    refusal = undefined;
+    await fire(SCHEDULE_ID, new Date("2026-06-12T11:30:00Z"));
+
+    expect(payloads).toHaveLength(1);
+    expect(payloads[0]).toMatchObject({
+      lastRunAt: "2026-06-12T09:00:00.000Z",
+    });
   });
 });
 
@@ -947,6 +1017,29 @@ describe("scheduler-runner runNow", () => {
     );
 
     expect(stampedFires).toEqual(["k8s api unreachable"]);
+  });
+
+  // TEST_SCENARIO: the owner is watching this one, so a fire refused before its trigger is committed must reach them with the reason — a plain Error is redacted to "internal server error" on the way out, which is exactly the case where nobody can act on it.
+  it("reports a refused fire with its reason", async () => {
+    const { runner } = makeDeps({
+      choices: { model: "openai/gpt-5.5" },
+      validateSessionChoices: async () => "this agent holds no openai provider",
+    });
+
+    await expect(runner.runNow(SCHEDULE_ID)).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: "this agent holds no openai provider",
+    });
+  });
+
+  // TEST_SCENARIO: the same reason has to arrive when the fire is refused because no granted provider can run the agent's harness at all.
+  it("reports a fire with no provider for its harness by its reason", async () => {
+    const { runner } = makeDeps({ firePair: async () => null });
+
+    await expect(runner.runNow(SCHEDULE_ID)).rejects.toMatchObject({
+      code: "PRECONDITION_FAILED",
+      message: expect.stringMatching(/no model provider granted/),
+    });
   });
 });
 

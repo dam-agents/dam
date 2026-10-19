@@ -1,3 +1,4 @@
+import { TRPCError } from "@trpc/server";
 import { match } from "ts-pattern";
 import { nextUtcMidnight, OnceResult } from "api-server-api";
 import type {
@@ -187,7 +188,8 @@ export function createSchedulerRunner(
         sched.agentId,
         choices,
       );
-      if (refusal) throw new Error(refusal);
+      if (refusal)
+        throw new TRPCError({ code: "PRECONDITION_FAILED", message: refusal });
     }
     const pair = continues
       ? undefined
@@ -196,9 +198,11 @@ export function createSchedulerRunner(
           ...(sched.spec.model && { model: sched.spec.model }),
         });
     if (pair === null)
-      throw new Error(
-        "no model provider granted to this agent can run its harness; grant one to run this schedule",
-      );
+      throw new TRPCError({
+        code: "PRECONDITION_FAILED",
+        message:
+          "no model provider granted to this agent can run its harness; grant one to run this schedule",
+      });
     if (pair) {
       firedHarness.set(sched, pair.harness);
       payload.harness = pair.harness;
@@ -446,7 +450,10 @@ export function createSchedulerRunner(
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
       const after = lastAttempt ? nextFireAt(spec, now()) : fireAt;
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      if (stage === "commit")
+        await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
+      else
+        await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
       if (lastAttempt) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
         await emitFired(sched, "failure");

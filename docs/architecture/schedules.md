@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -57,6 +57,10 @@ A fire on an Agent a [runtime migration](vm-runtime-migration.md) holds down —
 A fire on a [disabled](agent-lifecycle.md#disable) Agent is held too, reading `held: agent disabled`, and a one-time task due while it is disabled is recorded missed rather than left to wait for an enable.
 A fire whose payer is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is held the same way, reading `held: spend limit reached for today` or `held: spend ceiling reached for today`.
 That check runs once the fire's provider Connection is chosen, so a limit on that Connection counts as well.
+
+A fire refused before step 1 — the schedule's own choices no longer hold, or no granted provider can run its harness — starts nothing, so it records the reason and arms the next occurrence without moving the last-run stamp.
+That stamp is the last fire that actually ran, and a Precheck told otherwise would skip a window's work on the strength of a fire that never happened.
+The refusal comes back at every occurrence until the schedule's choices are edited.
 
 An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice.
 That safety net ends where a fire is settled.
@@ -190,7 +194,8 @@ There a schedule with no model runs on the harness's **default**, never on the m
 The one-shot SQL migration carries its dry-run count query in its comment.
 
 **A refused fire is a failed run.** The fire still settles, so it is not redelivered, and the runtime reports a failed *run*, a stage distinct from a broken Precheck.
-The schedule's last result shows the reason (a one-time task records it as its result), and the last-run stamp stays put, since a Precheck measures "anything new since last time?"
+A refusal the api-server can see for itself, before the trigger is committed, needs no report: it writes the same reason and never becomes a run at all.
+The schedule's last result shows the reason (a one-time task records it as its result), the schedule's card in the panel shows it in the failure colour, and the last-run stamp stays put, since a Precheck measures "anything new since last time?"
 from it.
 A switch the harness refuses at fire time leaves the unprompted session behind, empty.
 Follow-up turns keep the session's model as far as the harness restores it on reload.
@@ -228,3 +233,4 @@ Two cases refuse outright.
 A one-time schedule has no cadence to try out, and a run beside its own would do the task twice.
 And an Agent from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending: a scheduled fire is *held* there because nobody is watching; here somebody is, so the refusal is reported rather than the fire quietly vanishing.
 An Agent at a spend limit or the Spend Ceiling is refused the same way, with the reason.
+A schedule whose saved choices no longer hold is refused with the reason a fire would fail with, so the owner reads what to fix instead of a generic failure.

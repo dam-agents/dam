@@ -20,7 +20,7 @@ import {
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
 import { scheduleOnceState } from "../lib/once-schedule.js";
 import {
-  lastRunStatus,
+  cardOutcome,
   precheckAlert,
   runNowConfirmText,
   runNowStartedText,
@@ -58,10 +58,7 @@ export function ScheduleCard({
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
   const stopReason = enabled ? status?.stopReason : undefined;
   const onceState = scheduleOnceState(schedule);
-  const onceOutcome =
-    onceState && onceState !== "pending"
-      ? lastRunStatus(status?.lastResult)
-      : null;
+  const outcome = cardOutcome(schedule);
 
   const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
 
@@ -148,11 +145,11 @@ export function ScheduleCard({
                 </span>
               </>
             )}
-            {onceOutcome && (
+            {outcome && (
               <>
                 <span aria-hidden>·</span>
-                <span className={cn("truncate", onceOutcome.className)}>
-                  {onceOutcome.label}
+                <span className={cn("truncate", outcome.className)}>
+                  {outcome.label}
                 </span>
               </>
             )}
