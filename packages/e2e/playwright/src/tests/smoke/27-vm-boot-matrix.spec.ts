@@ -24,16 +24,12 @@ test.describe.configure({ mode: "serial" });
 
 const markerPath = "e2e-boot-matrix-marker.txt";
 
-const KILL_POINTS = [0.2, 0.4, 0.6, 0.85];
+const KILL_DELAYS_MS = [0, 250, 750, 1_500];
 
 let api: ApiClient;
 const token = refreshingToken();
 let agentId = "";
 const marker = `home-survives-${randomUUID()}`;
-
-function millis(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
 
 // UNIT_BOUNDARY_DESCRIPTION: the fields of one `df -Pk` row: 1024-block size, used and available, then the capacity as a percentage.
 function capacityOf(dfRow: string): number {
@@ -46,31 +42,43 @@ async function hibernate(): Promise<void> {
   await waitAgentState(api, agentId, "hibernated");
 }
 
-async function bootAndTime(): Promise<number> {
-  await hibernate();
-  const started = Date.now();
-  await api.agents.wake.mutate({ id: agentId });
-  await waitAgentState(api, agentId, "running", { timeoutMs: 300_000 });
-  return Date.now() - started;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: SIGKILLs the VMM of this agent's machine and answers how many it killed. A VMM is the runner's `_boot-vm` child, given the boot config of one machine, and that config names the machine's share under its owner's state directory, so the process is picked by the agent id rather than by being the only one running: another agent of the same owner may be up beside it. The patterns are bracketed so they cannot match the shell that runs them.
-function killMachineVMM(id: string): number {
-  const out = onRunnerHost(
+// UNIT_BOUNDARY_DESCRIPTION: waits on the runner for this agent's machine to have a VMM, SIGKILLs it the given delay after it appeared, and answers the kill line that says which process died — or the processes it did see, when none matched. A VMM is one machine's boot process, given the boot config of that machine, and the config names the machine's share under its owner's state directory, so the process is picked by the agent id rather than by being the only one running: another agent of the same owner may be up beside it. The wait runs on the runner so a boot that lasts seconds is still caught: a round trip from the test would arrive after it. The patterns are bracketed so they cannot match the shell that runs them.
+function killMachineVMM(id: string, afterMs: number): string {
+  return onRunnerHost(
     id,
     [
-      "killed=0",
-      "for p in /proc/[0-9]*; do",
-      '  [ -r "$p/cmdline" ] || continue',
-      '  cfg=$(tr "\\0" "\\n" < "$p/cmdline" 2>/dev/null | grep -e "boot-config[.]json" | head -1)',
-      '  [ -n "$cfg" ] && [ -r "$cfg" ] || continue',
-      `  grep -q "machines/${id}/" "$cfg" || continue`,
-      '  kill -9 "${p#/proc/}" && killed=$((killed + 1))',
+      `id=${id}`,
+      `delay=${(afterMs / 1_000).toFixed(2)}`,
+      "vmm() {",
+      "  for p in /proc/[0-9]*; do",
+      "    [ -r $p/cmdline ] || continue",
+      `    cfg=$(tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -e 'boot-config[.]json' | head -1)`,
+      '    [ -n "$cfg" ] && [ -r "$cfg" ] || continue',
+      `    grep -q "machines/$id/" "$cfg" && basename $p`,
+      "  done",
+      "}",
+      "deadline=$(( $(date +%s) + 120 ))",
+      "pid=",
+      'while [ -z "$pid" ]; do',
+      "  pid=$(vmm | head -1)",
+      '  [ -n "$pid" ] && break',
+      "  [ $(date +%s) -lt $deadline ] || break",
+      "  sleep 0.1",
       "done",
-      'echo "$killed"',
+      'if [ -z "$pid" ]; then',
+      "  echo none matched $id",
+      "  for p in /proc/[0-9]*; do",
+      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q boot-config || continue`,
+      `    echo saw $(basename $p) $(tr '\\0' ' ' < $p/cmdline | cut -c1-200)`,
+      "  done",
+      "  exit 0",
+      "fi",
+      'sleep "$delay"',
+      `echo killing $(tr '\\0' ' ' < /proc/$pid/cmdline | cut -c1-200)`,
+      "kill -9 $pid",
+      `echo killed $pid`,
     ].join("\n"),
-  );
-  return Number(out.trim());
+  ).trim();
 }
 
 test.beforeAll(async () => {
@@ -98,24 +106,17 @@ test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
-// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The agent's machine is killed at four points across a boot its own lane measured, and after each the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and platform-init seeds nothing over a home that is already on the disk.
+// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The agent's machine is killed at four points of a boot: the moment its VMM appeared, then 0.25 s, 0.75 s and 1.5 s later, which spans the few seconds a boot of this lane takes. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and platform-init seeds nothing over a home that is already on the disk.
 test("comes back from its VMM being killed at points across a boot", async () => {
   test.setTimeout(1_200_000);
-  const clean = await bootAndTime();
-  console.log(`[e2e] a clean boot of ${agentId} took ${clean}ms`);
-  for (const point of KILL_POINTS) {
+  for (const afterMs of KILL_DELAYS_MS) {
     await hibernate();
     await api.agents.wake.mutate({ id: agentId });
-    await millis(Math.round(clean * point));
-    const state = (await api.agents.get.query({ id: agentId })).state;
-    const killed = killMachineVMM(agentId);
+    const out = killMachineVMM(agentId, afterMs);
     console.log(
-      `[e2e] killed ${killed} VMM(s) ${Math.round(point * 100)}% into a boot; the agent read ${state}`,
+      `[e2e] ${afterMs}ms after its VMM appeared: ${out.replace(/\n/g, " | ")}`,
     );
-    expect(
-      killed,
-      `no VMM of ${agentId} was running ${Math.round(point * 100)}% into a ${clean}ms boot`,
-    ).toBeGreaterThan(0);
+    expect(out, `no VMM of ${agentId} was killed`).toMatch(/^killed \d+$/m);
     await waitAgentState(api, agentId, "running", {
       timeoutMs: 600_000,
       failOnError: false,
