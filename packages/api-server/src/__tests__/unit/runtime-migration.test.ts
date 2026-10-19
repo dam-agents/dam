@@ -688,7 +688,6 @@ function viewOf(
   annotations: Record<string, string>,
   spec?: object,
   status?: object,
-  virtualizationEnabled = true,
 ) {
   const infra = parseInfraAgent({
     metadata: { name: "agent-1", annotations },
@@ -705,11 +704,6 @@ function viewOf(
     runtimeFeaturesOf(null),
     [],
     [],
-    {
-      virtualizationEnabled,
-      defaultMounts: CHART_MOUNTS,
-      defaultStorageSize: "10Gi",
-    },
   );
   return toAgentView(agent);
 }
@@ -783,55 +777,6 @@ describe("the agent view's runtime migration", () => {
       viewOf({ [REQUEST]: "requested" }, {}, condition("Verifying"))
         .runtimeMigration?.phase,
     ).toBe("requested");
-  });
-
-  // TEST_SCENARIO: the view offers the migration from the same refusal the request checks, so the browser never offers a move the request then refuses: not while a storage migration runs, not when the install has no VM runner, not for an Agent that does not persist HOME, and not while a migration of its own is under way, failed or being undone.
-  it("does not offer a migration the request would refuse", () => {
-    expect(
-      viewOf({ "agent-platform.ai/storage-migration": "running" })
-        .runtimeMigratable,
-    ).toBe(false);
-    expect(viewOf({}, undefined, undefined, false).runtimeMigratable).toBe(
-      false,
-    );
-    expect(
-      viewOf({}, { mounts: [{ path: "/tmp", persist: false }] })
-        .runtimeMigratable,
-    ).toBe(false);
-    expect(
-      viewOf({ [REQUEST]: "requested" }, {}, condition("Failed"))
-        .runtimeMigratable,
-    ).toBe(false);
-    expect(viewOf({}, {}, condition("Copying")).runtimeMigratable).toBe(false);
-  });
-
-  it("offers the migration only to a container agent that persists nothing but HOME", () => {
-    expect(viewOf({}).runtimeMigratable).toBe(true);
-    expect(viewOf({}, { backend: { type: "vm" } }).runtimeMigratable).toBe(
-      false,
-    );
-    expect(
-      viewOf(
-        {},
-        {
-          mounts: [
-            { path: "/home/agent", persist: true },
-            { path: "/tmp", persist: false },
-          ],
-        },
-      ).runtimeMigratable,
-    ).toBe(true);
-    expect(
-      viewOf(
-        {},
-        {
-          mounts: [
-            { path: "/home/agent", persist: true },
-            { path: "/data", persist: true },
-          ],
-        },
-      ).runtimeMigratable,
-    ).toBe(false);
   });
 });
 

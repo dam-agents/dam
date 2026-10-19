@@ -141,7 +141,6 @@ export interface Agent {
   templateId?: string;
   templateUpdate?: TemplateUpdate;
   runtimeMigration?: RuntimeMigration;
-  runtimeMigratable?: boolean;
   spec: AgentSpec;
   state: AgentState;
   effectiveHibernationTimeoutMin: number;

@@ -56,7 +56,6 @@ import {
 import {
   type AgentMount,
   isVmBackend,
-  type RuntimeMigrationContext,
   type VmPoolCapacity,
 } from "../domain/runtime-migration.js";
 import {
@@ -615,12 +614,6 @@ export function createAgentsService(deps: {
     (SlackConversationRef & { label: SlackConversationLabel | null })[]
   >;
 }): AgentsService {
-  const runtimeMigrationContext: RuntimeMigrationContext = {
-    virtualizationEnabled: deps.virtualizationEnabled === true,
-    defaultMounts: deps.agentDefaultMounts,
-    defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
-  };
-
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
     secretRef: string | undefined,
@@ -751,7 +744,6 @@ export function createAgentsService(deps: {
       status.features,
       status.unsupportedKinds,
       status.workspaceFailures,
-      runtimeMigrationContext,
       checklists.get(infra.id),
     );
   }
@@ -885,7 +877,6 @@ export function createAgentsService(deps: {
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
-        runtimeMigrationContext,
         (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
@@ -955,7 +946,6 @@ export function createAgentsService(deps: {
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
           status?.workspaceFailures ?? [],
-          runtimeMigrationContext,
           checklistMap.get(infra.id),
         );
       });
@@ -1239,7 +1229,6 @@ export function createAgentsService(deps: {
         runtimeFeaturesOf(null),
         [],
         [],
-        runtimeMigrationContext,
       );
       securityLog("info", "agent.create", {
         category: "resource",

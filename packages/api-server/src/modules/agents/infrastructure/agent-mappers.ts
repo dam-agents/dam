@@ -70,9 +70,7 @@ import {
 import {
   runtimeMigrationHold,
   runtimeMigrationOf,
-  runtimeMigrationRefusal,
   type RuntimeMigrationHold,
-  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
@@ -424,7 +422,6 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
-  runtimeMigrationContext: RuntimeMigrationContext,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
@@ -436,8 +433,6 @@ export function assembleAgent(
     ...(infra.runtimeMigration
       ? { runtimeMigration: infra.runtimeMigration }
       : {}),
-    runtimeMigratable:
-      runtimeMigrationRefusal(infra, runtimeMigrationContext) === null,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(

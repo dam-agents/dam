@@ -103,10 +103,6 @@ test("a container agent holds a HOME file and a session", async ({ page }) => {
   expect(agent.vm, "the agent to migrate starts on the container Backend").toBe(
     false,
   );
-  expect(
-    agent.runtimeMigratable,
-    "the mock agent persists nothing outside HOME, so it can be migrated",
-  ).toBe(true);
 
   await writeHomeFile(token, agentId, markerPath, marker);
   await expectHomeFile(token, agentId, markerPath, marker, {
