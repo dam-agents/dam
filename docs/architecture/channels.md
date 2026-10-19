@@ -116,7 +116,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 ## Topology
 
 Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the channel manager that supervises lifecycle, the ACP relay for inbound, and the per-Agent MCP endpoint for outbound.
-The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (conversation → Agent).
+The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (chat → Agent).
 Telegram's token comes from Helm values; Slack's app-level token does too, but a Slack bot token is per workspace and comes from the install handshake.
 
 ### Slack — platform channel
