@@ -20,6 +20,7 @@ import { useStore } from "../../../store.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { GettingStartedPanel } from "../../getting-started/components/getting-started-panel.js";
 import { ApprovalsPanel } from "../../home/components/approvals-panel.js";
+import { holdBackEntry } from "../../platform/lib/back-entry.js";
 import {
   maximizableView,
   shownSidePanelWidth,
@@ -139,7 +140,14 @@ export function SidePanelShell({
       setMobileScreen("chat");
     };
     document.addEventListener("keydown", onKeyDown);
-    return () => document.removeEventListener("keydown", onKeyDown);
+    const releaseBackEntry = holdBackEntry(() => {
+      setSidePanelTab(null);
+      setMobileScreen("chat");
+    });
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      releaseBackEntry();
+    };
   }, [mobileOverlay, setSidePanelTab, setMobileScreen]);
 
   return (
