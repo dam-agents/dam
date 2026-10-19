@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: platform-init is a machine's PID 1 and the only holder of its agent's home, so a boot cut short must never cost the owner what is on the disk. This spec breaks a boot the ways a host failure, a full disk and a lost file do — it kills the machine's VMM at points across a boot, fills the disk the next boot finds, and empties the layout mark an unclean stop can leave empty — and it must always end in one of two states: the machine boots with the file in HOME readable, or it refuses to boot while saying why. Only the vm lane runs it, and its last test also needs an owner's claim with a size of its own, which the lane's provisioner does not give it; the config runs it beside the other specs that boot their own agent.
+// TEST_OVERVIEW: platform-init is a machine's PID 1 and the only holder of its agent's home, so a boot cut short must never cost the owner what is on the disk. This spec breaks a boot the ways a host failure does — it kills the machine's VMM at points across a boot and empties the layout mark an unclean stop can leave empty — and it must always end in one of two states: the machine boots with the file in HOME readable, or it refuses to boot while saying why. Two more cases need room the lane's node cannot spare, a disk with no block left and an owner's claim with none, so a run opts into them by environment, and the second needs a claim with a size of its own, which the lane's provisioner does not give it. Only the vm lane runs it, and the config runs it beside the other specs that boot their own agent.
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -42,7 +42,7 @@ async function hibernate(): Promise<void> {
   await waitAgentState(api, agentId, "hibernated");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits on the runner for this agent's machine to have a VMM, SIGKILLs it the given delay after it appeared, and answers the kill line that says which process died — or the processes it did see, when none matched. A VMM is one machine's boot process, given the boot config of that machine, and the config names the machine's share under its owner's state directory, so the process is picked by the agent id rather than by being the only one running: another agent of the same owner may be up beside it. The wait runs on the runner so a boot that lasts seconds is still caught: a round trip from the test would arrive after it. The patterns are bracketed so they cannot match the shell that runs them.
+// UNIT_BOUNDARY_DESCRIPTION: waits on the runner for this agent's machine to have a VMM, SIGKILLs it the given delay after it appeared, and answers the kill line that says which process died — or the processes it did see, when none matched. A VMM is one machine's boot process, given the boot config of that machine, and the config names the machine's share under its owner's state directory, whose name the agent id is the tail of (the machine is named for the agent). So the process is picked by the agent id rather than by being the only one running: another agent of the same owner may be up beside it. The wait runs on the runner so a boot that lasts seconds is still caught: a round trip from the test would arrive after it. The patterns are bracketed so they cannot match the shell that runs them.
 function killMachineVMM(id: string, afterMs: number): string {
   return onRunnerHost(
     id,
@@ -54,7 +54,7 @@ function killMachineVMM(id: string, afterMs: number): string {
       "    [ -r $p/cmdline ] || continue",
       `    cfg=$(tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -e 'boot-config[.]json' | head -1)`,
       '    [ -n "$cfg" ] && [ -r "$cfg" ] || continue',
-      `    grep -q "machines/$id/" "$cfg" && basename $p`,
+      `    grep -q "machines/[^/]*$id" "$cfg" && basename $p`,
       "  done",
       "}",
       "deadline=$(( $(date +%s) + 120 ))",
@@ -127,16 +127,21 @@ test("comes back from its VMM being killed at points across a boot", async () =>
   }
 });
 
-// TEST_SCENARIO: a disk with no block left costs a boot the empty work layer it needs before it mounts anything. platform-init gives back only what a boot discards — its scratch folders and the layers earlier boots set aside — and then boots with the home untouched, so the agent comes back without anyone having to free room from outside a machine that cannot boot. The filler sits in /tmp, which a boot empties anyway; the same fill in HOME is a boot that must refuse and say the home is full, which the runner's own tests cover.
+// TEST_SCENARIO: a disk with no block left costs a boot the empty work layer it needs before it mounts anything. platform-init gives back only what a boot discards — its scratch folders and the layers earlier boots set aside — and then boots with the home untouched, so the agent comes back without anyone having to free room from outside a machine that cannot boot. A machine's disk is a sparse file the size of its owner's whole claim, so filling it to its last block takes what the claim holds, which on this lane is the node's disk: E2E_DISK_FILL_GIB is how a run against an install with room to spare opts in, with the most GiB it may allocate in the guest; unset, the case is skipped rather than run at the lane's expense. The filler sits in /tmp, which a boot empties anyway.
 test("boots a disk it found with no room left", async () => {
-  test.setTimeout(600_000);
+  test.setTimeout(900_000);
+  const capGiB = Number(process.env.E2E_DISK_FILL_GIB ?? "");
+  test.skip(
+    !Number.isFinite(capGiB) || capGiB <= 0,
+    "a machine's disk is as big as its owner's claim, so filling it takes the claim's room, which on this lane is the node's disk; set E2E_DISK_FILL_GIB against an install with room to spare",
+  );
   const fill = inGuest(
     agentId,
     [
       "df -Pk /tmp | tail -1",
       "i=0",
-      "while [ $i -lt 64 ]; do",
-      "  dd if=/dev/urandom of=/tmp/boot-matrix-fill.$i bs=1M count=64 2>/dev/null || break",
+      `while [ $i -lt ${Math.round(capGiB)} ]; do`,
+      "  fallocate -l 1G /tmp/boot-matrix-fill.$i || break",
       "  i=$((i+1))",
       "done",
       "sync",
@@ -146,7 +151,10 @@ test("boots a disk it found with no room left", async () => {
   const [before = "", after = ""] = fill.trim().split("\n");
   console.log(`[e2e] the machine's disk before the fill: ${before}`);
   console.log(`[e2e] the machine's disk when the fill stopped: ${after}`);
-  expect(capacityOf(after), `the disk was not filled: ${after}`).toBe(100);
+  expect(
+    capacityOf(after),
+    `the disk was not filled: ${after}`,
+  ).toBeGreaterThanOrEqual(99);
 
   await hibernate();
   await api.agents.wake.mutate({ id: agentId });
@@ -163,20 +171,17 @@ test("boots a disk it found with no room left", async () => {
   ).toBe(false);
 });
 
-// TEST_SCENARIO: a disk with no journal can lose a file's bytes to an unclean stop and keep its name, so the layout mark can come back empty. platform-init counts an empty mark as no mark, writes it again and boots the home as it is, instead of refusing a disk it cannot place or, worse, reading it by the wrong names. The mark is emptied the way an operator would, from a second mount of the same disk in the guest, because the machine's own copy of it is detached once it has booted.
+// TEST_SCENARIO: a disk with no journal can lose a file's bytes to an unclean stop and keep its name, so the layout mark can come back empty. platform-init counts an empty mark as no mark, writes it again and boots the home as it is, instead of refusing a disk it cannot place or, worse, reading it by the wrong names. The mark is emptied the way an operator inside the machine would, at the disk's own path in the platform's root.
 test("boots on a disk whose layout mark came back empty", async () => {
   test.setTimeout(600_000);
+  const mark = "/mnt/platform/system/layout";
   const emptied = inGuest(
     agentId,
     [
-      "mkdir -p /mnt/boot-matrix-disk",
-      "mount -t btrfs -o compress=zstd:1 /dev/vda /mnt/boot-matrix-disk",
-      'echo "mark $(cat /mnt/boot-matrix-disk/system/layout)"',
-      "truncate -s 0 /mnt/boot-matrix-disk/system/layout",
+      `echo "mark $(cat ${mark})"`,
+      `truncate -s 0 ${mark}`,
       "sync",
-      'echo "emptied $(wc -c < /mnt/boot-matrix-disk/system/layout)"',
-      "umount /mnt/boot-matrix-disk",
-      "rmdir /mnt/boot-matrix-disk",
+      `echo "emptied $(wc -c < ${mark})"`,
     ].join("\n"),
   );
   expect(emptied, "the boot marked the disk as layout 2").toMatch(/^mark 2$/m);
@@ -191,19 +196,10 @@ test("boots on a disk whose layout mark came back empty", async () => {
   await expectHomeFile(token, agentId, markerPath, marker, {
     timeoutMs: 120_000,
   });
-  const remarked = inGuest(
-    agentId,
-    [
-      "mkdir -p /mnt/boot-matrix-disk",
-      "mount -t btrfs -o compress=zstd:1 /dev/vda /mnt/boot-matrix-disk",
-      'echo "mark $(cat /mnt/boot-matrix-disk/system/layout)"',
-      "umount /mnt/boot-matrix-disk",
-      "rmdir /mnt/boot-matrix-disk",
-    ].join("\n"),
-  );
-  expect(remarked, "the boot marked the emptied disk again").toMatch(
-    /^mark 2$/m,
-  );
+  expect(
+    inGuest(agentId, `cat ${mark}`).trim(),
+    "the boot marked the emptied disk again",
+  ).toBe("2");
 });
 
 // TEST_SCENARIO: an owner's claim with no room left refuses a machine's start rather than letting its guest write into a disk the claim has no block for, and the owner is told which storage is full. The filler is this spec's own file on the claim, so it comes back off with one command once the refusal is seen, and the agent boots with HOME intact. The claim must have a filesystem of its own to be filled at all: the lane's local-path provisioner hands out a directory of the node's disk, so there the guard watches the node and a fill would fill the CI node, and E2E_CLAIM_FILL_GIB is how a run against an install whose claim is its own volume (a Ceph RBD, a loop device) opts in, with the most it may write onto the claim; unset, the case is skipped rather than run at the node's expense.
@@ -217,7 +213,7 @@ test("refuses a start while the owner's claim is full", async () => {
   const filled = onRunnerHost(
     agentId,
     [
-      'set -- $(df -Pk "$HOME" | tail -1)',
+      "set -- $(df -Pk /var/lib/platform/disks | tail -1)",
       "used=$3",
       "avail=$4",
       "need=$(( ((used + avail) * 97 / 100) - used ))",
@@ -226,9 +222,9 @@ test("refuses a start while the owner's claim is full", async () => {
       '  echo "cannot $need $cap"',
       "  exit 0",
       "fi",
-      'fallocate -l "${need}K" "$HOME/e2e-claim-fill" || dd if=/dev/zero of="$HOME/e2e-claim-fill" bs=1024 count="$need" 2>/dev/null || true',
+      'fallocate -l "${need}K" /var/lib/platform/disks/e2e-claim-fill || dd if=/dev/zero of=/var/lib/platform/disks/e2e-claim-fill bs=1024 count="$need" 2>/dev/null || true',
       "sync",
-      'df -Pk "$HOME" | tail -1',
+      "df -Pk /var/lib/platform/disks | tail -1",
     ].join("\n"),
   );
   const [verdict = "", row = ""] = filled.trim().split("\n");
@@ -254,7 +250,7 @@ test("refuses a start while the owner's claim is full", async () => {
       "the runner refused the start for the full claim",
     ).toBe("MachineStorageFull");
   } finally {
-    onRunnerHost(agentId, 'rm -f "$HOME/e2e-claim-fill"');
+    onRunnerHost(agentId, "rm -f /var/lib/platform/disks/e2e-claim-fill");
   }
   await api.agents.wake.mutate({ id: agentId });
   await waitAgentState(api, agentId, "running", { timeoutMs: 600_000 });

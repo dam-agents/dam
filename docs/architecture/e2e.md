@@ -17,7 +17,8 @@ The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the
 The specs are grouped into Playwright **projects**, one per area, whose dependencies chain the state they share: the auth project stores the user's login, the agent project creates the suite's mock Agent and the Connection its chat turns need, and the chain project drives that Agent through messages, Sessions, Slack and egress.
 A spec that boots and drives an Agent of its own runs in a project after those, one at a time, because each of them competes for the same cluster's compute.
 Two specs exist for one lane only: the runtime migration needs an install with both Backends, so it runs in the vm lane, and the agent backend spec deletes its owner's VM runner, which runs every other machine of that user, so the config runs it after the rest of the suite.
-A third, the boot matrix, breaks a machine's boot the ways a host failure and a full disk do — it kills the machine's VMM and fills the disk under it — so only the vm lane can run it, and it runs with the other specs that boot an Agent of their own, one at a time, for the compute they would otherwise share.
+A third, the boot matrix, breaks a machine's boot the ways a host failure does — it kills the machine's VMM at points of a boot and empties the disk's layout mark — so only the vm lane can run it, and it runs with the other specs that boot an Agent of their own, one at a time, for the compute they would otherwise share.
+Its cases that need room a CI node cannot spare, a disk with no block left and a claim with none, are opt-in through `E2E_DISK_FILL_GIB` and `E2E_CLAIM_FILL_GIB`, since a machine's disk is a sparse file on its owner's claim and filling either fills what the claim sits on.
 The tier under `src/tests/full/` is on demand: a local run asks for it, and no CI run takes it.
 
 ## Scope: what a pull request runs
