@@ -61,6 +61,7 @@ import {
   EGRESS_PRESET_DETAIL,
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
+  kitRunsOnVm,
 } from "../lib/catalog-cards.js";
 import {
   buildStarterKitApplyInput,
@@ -309,7 +310,7 @@ function KitDetail({
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
   const { answered, vm: installVm } = useVmRuntime();
-  const vm = kit.backend === "vm" || installVm;
+  const runsOnVm = kitRunsOnVm(kit, answered ? installVm : undefined);
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -407,12 +408,12 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || !answered || vm) return null;
+    if (!kit.resources || !budget.data || runsOnVm !== false) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, answered, vm, budget.data]);
+  }, [kit.resources, runsOnVm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;

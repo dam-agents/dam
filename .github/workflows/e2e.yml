@@ -449,7 +449,8 @@ jobs:
       - *e2e-playwright-cache
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, each agent's boots, each a machine
-      # start under nested virtualization, and the backend and runtime
+      # start under nested virtualization or, for the migration spec's legacy
+      # Agent, a container start, and the backend and runtime
       # migration specs, which run after the rest of the suite.
       - run: *e2e-run
         timeout-minutes: 70

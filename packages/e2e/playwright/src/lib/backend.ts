@@ -30,12 +30,13 @@ export async function requireBackend(
   api: ApiClient,
   backend: Backend,
 ): Promise<void> {
-  if (backend !== "vm") return;
   const install = await api.features.install.query();
   expect(
     install.virtualization,
-    "a vm project runs only against an install with virtualization.enabled; reinstall with E2E_VIRTUALIZATION=1",
-  ).toBe(true);
+    backend === "vm"
+      ? "a vm project runs only against an install with virtualization.enabled; reinstall with E2E_VIRTUALIZATION=1"
+      : "a container project runs only against an install without virtualization.enabled; reinstall without E2E_VIRTUALIZATION=1",
+  ).toBe(backend === "vm");
 }
 
 export async function createAgentOn(
