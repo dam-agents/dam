@@ -45,6 +45,7 @@ The trigger also marks the run as an Invocation, so the target types that sessio
 The choice is written into the target's own harness configuration in a delivery of its own, ahead of the task, so the one session already runs on it ([harness configuration](harness-config.md)).
 The `spawn_subagent` tool also refuses a model the driver's catalog does not list for the named harness.
 It resolves each choice in one order: the calling Session's **platform sub-agent settings**, then the spawn's own choice, then, on the Session's own harness, the Session's model and settings, then the harness defaults.
+The model has no harness default: a spawn onto a routed provider that ends with no model is refused at once, telling the agent to name one, since the target's runtime refuses a turn without a model ([harness configuration](harness-config.md)); a spawn of an image alone and one on Bedrock keep their own choices.
 The Session's settings follow only its model: once the settings or the spawn name a model, they stay behind, since they may not hold for it.
 A set harness binds: a spawn naming another is refused, and a spawn naming neither harness nor image gets it; a set model, mode or config option outranks the spawn's, and the result names what the settings set.
 The Session's harness supplies its model and each setting its harness binds, except model-valued ones, ones for the harness's own subagents, and a choice its catalog marks as waiting for a person's approval, since nobody is there to give one.
