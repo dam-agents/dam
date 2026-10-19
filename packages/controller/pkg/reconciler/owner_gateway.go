@@ -440,7 +440,9 @@ func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desir
 			return err
 		}
 		limit := runnerRollWidth(r.config.VM.Runner, total)
-		if others := slices.DeleteFunc(rolling, func(n string) bool { return n == existing.Name }); len(others) >= limit {
+		// UNIT_BOUNDARY_DESCRIPTION: a gateway already mid-roll takes a corrective template change in the place it holds: a share of a shrunken fleet can be smaller than the number of gateways on it, and counting those would leave each of them stuck behind the others.
+		midRoll := slices.Contains(rolling, existing.Name)
+		if others := slices.DeleteFunc(rolling, func(n string) bool { return n == existing.Name }); !midRoll && len(others) >= limit {
 			slog.Info("owner gateway: the template changed, waiting for other owner gateways to finish rolling", "deployment", existing.Name, "rolling", others)
 			return nil
 		}

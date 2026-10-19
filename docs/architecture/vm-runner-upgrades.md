@@ -34,7 +34,7 @@ So a published chart pins the runner image by digest, and a rebuild that changes
 
 A [runner](vm-runner.md) pod's machines are its processes, so restarting the pod reboots every machine of its owner.
 Most runner changes do not need the pod restarted: what changes is the runner process, not the VMMs it started.
-Every install with runner pods therefore names a node directory for runner releases ([values](../../helm/values.yaml)), and the chart refuses one that clears it; each pod takes a new runner image from there in place, without rebooting a machine, unless that release declares a reboot key its pod does not run, which rolls the pod instead (below).
+Every install with runner pods therefore names a node directory for runner releases ([values](../../helm/values.yaml)), and the chart refuses one that clears it; each pod takes a new runner image from there in place, without rebooting a machine, unless that release declares a reboot key its pod does not run, which rolls the pod instead (below; a pod whose own release declares no key takes it in place).
 On OpenShift the directory the kubelet creates carries the host's own SELinux label, which a confined runner may not read, so the stager labels it, and everything it stages, for containers at the plain level every runner's own categories can read; to set that label it runs as the unconfined container type, as the [image cache](vm-image-cache.md) service does, under the SCC the install names for its runners.
 A cluster admin can instead have the nodes create and label the directory themselves, with the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/).
 
@@ -72,7 +72,7 @@ The runner records the runtime each machine booted, and manages a machine on ano
 That reboot is the safety for a new runtime, and it waits on the machine failing: a fix a running guest needs — a new libkrun, guest kernel or platform-init — reaches it only when a hand-off's machine errs or goes quiet.
 So a release declares which of what a machine booted it changes, as a reboot key it carries in its release directory (`reboot-id`, written by the image build from [`packages/vm-runner/reboot-id`](../../packages/vm-runner/reboot-id)): a runner refuses a release whose key differs from the one it runs, holding it as `reboot`, and each owner's runner pod rolls onto that release instead, rebooting that owner's machines.
 The key is compared whole and never parsed, and a release that changes nothing a machine booted carries the key before it, so the pods it reaches take it in place.
-A release built before keys declares none, and nothing compares it: it is handed off as any release was.
+A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod rolls for a reason of its own.
 That roll does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
 It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
 The runner's own answer is what the controller rolls on: a release it holds as `reboot` ends the hand-off, and the pod roll that follows takes its own place in the width.

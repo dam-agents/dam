@@ -192,7 +192,7 @@ pub struct RunnerPressure {
     #[serde(rename = "workingSetMiB", skip_serializing_if = "is_zero")]
     pub working_set_mib: i32,
 }
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another. `runtime` keeps its wire name from when it also meant another VM runtime.
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other three never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc — runs only in a new pod; one that declares another reboot key than this pod's release reboots the pod, which is what reboots its machines; and one that exited right after it took over is not tried again until the controller names another. `runtime` keeps its wire name from when it also meant another VM runtime.
 pub const HELD_UNSTAGED: &str = "unstaged";
 pub const HELD_RUNTIME: &str = "runtime";
 pub const HELD_REBOOT: &str = "reboot";

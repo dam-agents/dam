@@ -454,3 +454,48 @@ func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 	}, metav1.CreateOptions{})
 	require.NoError(t, err, "a gateway pod starts only once its leaf is issued")
 }
+
+// TEST_SCENARIO: a share of a fleet that shrinks can be smaller than the number of gateways still mid-roll, so every broken gateway would wait on the others for a corrective template change that never comes. A gateway already mid-roll takes the change in the place it holds.
+func TestOwnerGateway_AMidRollGatewayTakesACorrectiveChangeWhenTheFleetShrinks(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupReconciler(t, agentCR())
+	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d", "owner-e"}
+	for _, owner := range owners {
+		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
+	}
+	r.config.EnvoyImage = "envoy:next"
+	r.rollOwnerGateways(ctx)
+
+	var broken, idle []string
+	for _, owner := range owners {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		if dep.Spec.Template.Spec.Containers[0].Image == "envoy:next" {
+			broken = append(broken, owner)
+		} else {
+			idle = append(idle, owner)
+		}
+	}
+	require.Len(t, broken, 3, "half of five rounds up to three, and their pods never became ready")
+	for _, owner := range idle {
+		require.NoError(t, r.client.AppsV1().Deployments(r.config.Namespace).Delete(ctx, ownerGatewayName("platform", owner), metav1.DeleteOptions{}))
+	}
+	old := time.Now().Add(-time.Hour)
+	for _, owner := range broken {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		metav1.SetMetaDataAnnotation(&dep.ObjectMeta, annRunnerRolledAt, old.UTC().Format(time.RFC3339))
+		_, err = r.client.AppsV1().Deployments(r.config.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+
+	r.config.EnvoyImage = "envoy:next-again"
+	r.rollOwnerGateways(ctx)
+
+	for _, owner := range broken {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, "envoy:next-again", dep.Spec.Template.Spec.Containers[0].Image, "a gateway mid-roll takes the change in the place it holds, where a share of a shrunken fleet would hold all three back")
+	}
+}

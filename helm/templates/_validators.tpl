@@ -286,7 +286,7 @@ none.
 {{- define "platform.validate.vmRunnerPodsNeedAReleaseDirectory" -}}
 {{- $v := .Values.virtualization -}}
 {{- if and $v.enabled (not $v.runner.hostAddress) (not $v.runner.releaseHostPath) -}}
-{{- fail "virtualization.runner.releaseHostPath is required with virtualization.enabled: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine (unless that release declares another reboot key than the pod runs: its pods roll, which reboots them). Set it to a node directory such as /var/lib/platform-vm-runner-releases; each install stages into its own subdirectory of it." -}}
+{{- fail "virtualization.runner.releaseHostPath is required with virtualization.enabled: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine (unless that release declares another reboot key than the pod's release, which rolls the pods and reboots them; a pod whose release declares no key takes it in place). Set it to a node directory such as /var/lib/platform-vm-runner-releases; each install stages into its own subdirectory of it." -}}
 {{- end -}}
 {{- end -}}
 
@@ -310,7 +310,7 @@ Fail at render instead, naming what took each one's place.
 {{- fail "virtualization.runner.ingressCidrs is no longer read. The runner's NetworkPolicy is the only gate on its published ports, admitting the api-server and the controller. Remove the key." -}}
 {{- end -}}
 {{- if hasKey $runner "releaseSameRuntimeOnly" -}}
-{{- fail "virtualization.runner.releaseSameRuntimeOnly is no longer read: a runner release built against another VM runtime is handed off in place (unless it declares another reboot key than the pod runs, which rolls the pods instead), and a machine whose runtime errors, or whose guest goes quiet, is rebooted onto the runner's own runtime. To leave the new runtime, configure the previous runner image again. Remove the key." -}}
+{{- fail "virtualization.runner.releaseSameRuntimeOnly is no longer read: a runner release built against another VM runtime is handed off in place (unless it declares another reboot key than the pod's release, which rolls the pods instead; a pod whose release declares no key takes it in place), and a machine whose runtime errors, or whose guest goes quiet, is rebooted onto the runner's own runtime. To leave the new runtime, configure the previous runner image again. Remove the key." -}}
 {{- end -}}
 {{- if or (hasKey $runner "dnsCidrs") (hasKey $runner "clusterDns") -}}
 {{- fail "virtualization.runner.dnsCidrs and virtualization.runner.clusterDns are no longer read. A runner never resolves a name: the node image cache service (virtualization.imageCache) fetches every image, so the runner's NetworkPolicy admits no resolver. Remove the keys." -}}

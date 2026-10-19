@@ -206,7 +206,8 @@ virtualization:
     # in the image keeps, so an upgrade that leaves the runner unchanged doesn't
     # roll the pod and stop every machine (unless this release declares a
     # reboot key the pod it reaches does not run, which rolls the pods to
-    # reboot them). A digest wins over the tag.
+    # reboot them; a pod whose own release declares no key takes it in
+    # place). A digest wins over the tag.
     image:
       repository: quay.io/dam-agents/vm-runner
       tag: ""
@@ -362,6 +363,8 @@ virtualization:
     # does not run (`packages/vm-runner/reboot-id`): a runner refuses it, its
     # pod rolls instead, and that roll does not wait for a busy agent, so the
     # fix reaches every machine within the roll rather than after `idleWait`.
+    # A pod built from a release that declares no key takes the release in
+    # place, since there is nothing to compare it with.
     # A roll for a changed pod shape keeps its idle wait. A runner that
     # already holds the release as failed keeps its pod: a pod on the release
     # would fail the same way and take its machines with it.
@@ -381,12 +384,13 @@ virtualization:
     # the new one from this directory, and the new runner adopts every
     # machine still running, so no machine reboots, unless the release
     # declares a reboot key the pod it reaches does not run, which rolls the
-    # pods to reboot the machines. A release built against another VM runtime
+    # pods to reboot the machines, while a pod whose own release declares no
+    # key takes it in place. A release built against another VM runtime
     # (a new smolvm, libkrun or crane) brings its runtime along: machines
     # already running keep the runtime they booted, and machines started after
     # the hand-off boot the new one. A release the pod's loader cannot load (a
     # newer base image's libc) rolls the pods through `rollout` too, as does
-    # a release declaring another reboot key.
+    # a release declaring another reboot key than its pod's release.
     # The stager is the only writer; runners mount it read-only. Each
     # install stages into its own subdirectory, named after
     # `agentNamespace`, because every stager keeps only the newest few
