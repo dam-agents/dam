@@ -332,9 +332,10 @@ the API server: four decimal octets and a prefix up to 32, or an RFC 4291
 group form — hex fields, at most one `::`, an optional dotted IPv4 tail in the
 last two, and no more fields than the shape holds, which the pattern this
 replaces let through (`2001:::1/64`). The prefix is decimal with no leading
-zero: `netip.ParsePrefix` refuses `10.0.0.0/08`, and the API server's parser
-reads it the same way, so a render that took it would leave the controller
-unable to start on a configuration the cluster had accepted.
+zero: `netip.ParsePrefix` refuses `10.0.0.0/08`, which `net.ParseCIDR` takes,
+so a `controller.gatewayEgress` range written that way kept the controller from
+starting, and a range a policy carries reaches consumers with parsers of their
+own.
 */}}
 {{- define "platform.validate.cidr" -}}
 {{- $value := toString .value -}}
@@ -373,7 +374,7 @@ unable to start on a configuration the cluster had accepted.
 {{- end -}}
 {{- end -}}
 {{- if not $valid -}}
-{{- fail (printf "%s entry %q is not an address/prefix — four decimal octets and a prefix up to 32, or hex groups and a prefix up to 128, the prefix written without a leading zero. Kubernetes rejects the whole NetworkPolicy on one entry it cannot parse, and the controller refuses to start on one its own parser cannot read, which leaves the pod it names ungated until the next apply lands." .name $value) -}}
+{{- fail (printf "%s entry %q is not an address/prefix — four decimal octets and a prefix up to 32, or hex groups and a prefix up to 128, the prefix written without a leading zero. Kubernetes rejects the whole NetworkPolicy on one entry its parser cannot read, which leaves the pod it names ungated until the next apply, and the controller will not start on a `controller.gatewayEgress` range its own parser refuses." .name $value) -}}
 {{- end -}}
 {{- end -}}
 
