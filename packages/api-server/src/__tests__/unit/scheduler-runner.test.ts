@@ -31,6 +31,7 @@ function makeSchedule(
   cron = "0 * * * *",
   precheck?: string,
   lastRun?: string,
+  lastResult?: string,
   enabled = true,
   choices?: {
     harness?: string;
@@ -41,6 +42,7 @@ function makeSchedule(
   const status = {
     ...(storedNextRun ? { nextRun: storedNextRun } : {}),
     ...(lastRun ? { lastRun } : {}),
+    ...(lastResult ? { lastResult } : {}),
   };
   return {
     id: SCHEDULE_ID,
@@ -83,6 +85,7 @@ function makeDeps(opts?: {
   cron?: string;
   precheck?: string;
   lastRun?: string;
+  lastResult?: string;
   onboardingPending?: boolean;
   once?: boolean;
   onceResult?: string;
@@ -107,7 +110,7 @@ function makeDeps(opts?: {
   const calls: string[] = [];
   const fires: { result: string; nextRun: Date | null }[] = [];
   let storedLastRun = opts?.lastRun;
-  const stampedResults: { result: string; nextRun?: Date | null }[] = [];
+  const stampedResults: { result: string | null; nextRun?: Date | null }[] = [];
   const nextRuns: (Date | null)[] = [];
   const stampedFires: string[] = [];
   const enqueued: Date[] = [];
@@ -135,6 +138,7 @@ function makeDeps(opts?: {
             opts?.cron,
             opts?.precheck,
             storedLastRun,
+            opts?.lastResult,
             opts?.enabled,
             opts?.choices,
           )
@@ -165,7 +169,11 @@ function makeDeps(opts?: {
     async stampFire(_id: string, result: string) {
       stampedFires.push(result);
     },
-    async stampResult(_id: string, result: string, nextRun?: Date | null) {
+    async stampResult(
+      _id: string,
+      result: string | null,
+      nextRun?: Date | null,
+    ) {
       stampedResults.push({ result, nextRun });
     },
     async applyStatusPatch(_id: string, patch: ScheduleStatusPatch) {
@@ -438,10 +446,11 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
 });
 
 describe("scheduler-runner fire", () => {
-  // TEST_SCENARIO: a disabled agent does nothing, so a recurring fire neither commits a trigger nor wakes it; the occurrence is held with a reason the schedules page shows, and the next one is armed for when the agent is enabled again.
+  // TEST_SCENARIO: a disabled agent does nothing, so a recurring fire neither commits a trigger nor wakes it; the occurrence is held with a reason the schedules page shows, and the next one is armed for when the agent is enabled again. A held fire never ran, so it leaves the last-run stamp on the run that did.
   it("holds the occurrence while the agent is disabled", async () => {
-    const { runner, calls, fires, enqueued } = makeDeps({
+    const { runner, calls, stampedResults, enqueued, lastRun } = makeDeps({
       agentDisabled: true,
+      lastRun: "2026-06-12T09:00:00.000Z",
     });
 
     await runner.buildFireHandler()(
@@ -450,18 +459,19 @@ describe("scheduler-runner fire", () => {
     );
 
     expect(calls).toEqual([]);
-    expect(fires).toEqual([
+    expect(stampedResults).toEqual([
       {
         result: "held: agent disabled",
         nextRun: new Date("2026-06-12T11:00:00Z"),
       },
     ]);
+    expect(lastRun()).toBe("2026-06-12T09:00:00.000Z");
     expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
   });
 
   // TEST_SCENARIO: while an agent moves to the new runtime the controller holds it down, so a fire would only wait out the wake and read as a failed run. The occurrence is held with a reason the schedules page shows, and the next one is armed as usual.
   it("holds the occurrence while the agent is moving to the new runtime", async () => {
-    const { runner, calls, fires, enqueued } = makeDeps({
+    const { runner, calls, stampedResults, enqueued } = makeDeps({
       runtimeMigrating: true,
     });
 
@@ -471,7 +481,7 @@ describe("scheduler-runner fire", () => {
     );
 
     expect(calls).toEqual([]);
-    expect(fires).toEqual([
+    expect(stampedResults).toEqual([
       {
         result: "held: moving to the new runtime",
         nextRun: new Date("2026-06-12T11:00:00Z"),
@@ -481,7 +491,7 @@ describe("scheduler-runner fire", () => {
   });
 
   it("holds the occurrence while the agent has not finished onboarding, and keeps the cadence", async () => {
-    const { runner, calls, fires, enqueued } = makeDeps({
+    const { runner, calls, stampedResults, enqueued } = makeDeps({
       onboardingPending: true,
     });
 
@@ -491,7 +501,7 @@ describe("scheduler-runner fire", () => {
     );
 
     expect(calls).toEqual([]);
-    expect(fires).toEqual([
+    expect(stampedResults).toEqual([
       {
         result: "held: onboarding not complete",
         nextRun: new Date("2026-06-12T11:00:00Z"),
@@ -820,6 +830,57 @@ describe("scheduler-runner precheck", () => {
 
     expect(fires).toHaveLength(0);
     expect(enqueued).toHaveLength(1);
+  });
+
+  // TEST_SCENARIO: a fire that commits is a schedule working again, so the refusal it showed before must go — a prechecked fire writes no result of its own, and a failure left standing reads as a schedule that is still broken.
+  it("clears a refused fire's reason once a fire commits", async () => {
+    const { runner, stampedResults, enqueued } = makeDeps({
+      precheck: "true",
+      lastResult: "this agent holds no openai provider",
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(stampedResults).toEqual([
+      { result: null, nextRun: new Date("2026-06-12T11:00:00Z") },
+    ]);
+    expect(enqueued).toEqual([new Date("2026-06-12T11:00:00Z")]);
+  });
+
+  // TEST_SCENARIO: the precheck decides the outcome, so a result the runtime reported for the last run must survive the next fire arming.
+  it("keeps the last run's result when a prechecked fire commits", async () => {
+    const { runner, stampedResults, nextRuns } = makeDeps({
+      precheck: "true",
+      lastResult: "success",
+    });
+
+    await runner.buildFireHandler()(
+      SCHEDULE_ID,
+      new Date("2026-06-12T10:30:00Z"),
+    );
+
+    expect(stampedResults).toEqual([]);
+    expect(nextRuns).toEqual([new Date("2026-06-12T11:00:00Z")]);
+  });
+
+  // TEST_SCENARIO: a decline says the check found nothing to do, which is the schedule working again — the refusal it showed before must not outlive the verdict.
+  it("a decline clears a refusal it settles", async () => {
+    const { runner, patches } = makeDeps({
+      precheck: "true",
+      lastResult: "this agent holds no openai provider",
+    });
+
+    await runner.reportFire({
+      scheduleId: SCHEDULE_ID,
+      eventId: `${SCHEDULE_ID}:0`,
+      ranPrecheck: "true",
+      outcome: "declined",
+    });
+
+    expect(patches[0]?.lastFiredResult).toBeNull();
   });
 
   // TEST_SCENARIO: the runner hands the verdict to the transition rather than deciding the columns itself.

@@ -66,7 +66,11 @@ export interface SchedulesRepository {
   ): Promise<void>;
   transaction<T>(fn: (tx: DbTx) => Promise<T>): Promise<T>;
   stampFire(id: string, result: string): Promise<void>;
-  stampResult(id: string, result: string, nextRun?: Date | null): Promise<void>;
+  stampResult(
+    id: string,
+    result: string | null,
+    nextRun?: Date | null,
+  ): Promise<void>;
   applyStatusPatch(id: string, patch: ScheduleStatusPatch): Promise<void>;
   clearPrecheckStatus(id: string): Promise<void>;
   setNextRun(id: string, nextRun: Date | null): Promise<void>;
@@ -313,7 +317,7 @@ export function createSchedulesRepository(db: Db): SchedulesRepository {
         .update(schedulesTable)
         .set({
           ...(patch.lastFiredAt ? { lastFiredAt: patch.lastFiredAt } : {}),
-          ...(patch.lastFiredResult
+          ...(patch.lastFiredResult !== undefined
             ? { lastFiredResult: patch.lastFiredResult }
             : {}),
           lastDeclinedAt: patch.lastDeclinedAt,

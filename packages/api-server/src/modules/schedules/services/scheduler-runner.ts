@@ -12,7 +12,10 @@ import type { SchedulesRepository } from "../infrastructure/schedules-repository
 import type { ScheduleQueue } from "../infrastructure/schedule-queue.js";
 import { nextFireAt, triggerExpiry } from "../domain/recurrences.js";
 import { onceFireAction, onceFireAt } from "../domain/once.js";
-import { statusForVerdict } from "../domain/status-transitions.js";
+import {
+  isFailureResult,
+  statusForVerdict,
+} from "../domain/status-transitions.js";
 import type { AgentActivityStamp } from "../../agents/index.js";
 import type {
   EventLifecycleTransition,
@@ -402,7 +405,7 @@ export function createSchedulerRunner(
     if (spec.type === "once") return fireOnce(sched, spec, fireAt, lastAttempt);
     const hold = async (result: string) => {
       const after = nextFireAt(spec, now());
-      await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
+      await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
       if (after) await deps.queue.enqueue(scheduleId, after, now());
     };
     if (await deps.onboardingPending?.(sched.agentId)) {
@@ -462,8 +465,10 @@ export function createSchedulerRunner(
     }
 
     const next = nextFireAt(spec, now());
-    if (spec.precheck) await deps.repo.setNextRun(scheduleId, next);
-    else await deps.repo.recordFire(scheduleId, "success", next);
+    if (!spec.precheck) await deps.repo.recordFire(scheduleId, "success", next);
+    else if (isFailureResult(sched.status?.lastResult))
+      await deps.repo.stampResult(scheduleId, null, next);
+    else await deps.repo.setNextRun(scheduleId, next);
     if (next) await deps.queue.enqueue(scheduleId, next, now());
     noteFire("success");
     await emitFired(sched, "success");
@@ -569,7 +574,12 @@ export function createSchedulerRunner(
       else if (sched.spec.precheck === input.ranPrecheck)
         await deps.repo.applyStatusPatch(
           input.scheduleId,
-          statusForVerdict(verdict, now(), input.detail ?? "precheck failed"),
+          statusForVerdict(
+            verdict,
+            now(),
+            input.detail ?? "precheck failed",
+            sched.status?.lastResult,
+          ),
         );
       else
         log(
