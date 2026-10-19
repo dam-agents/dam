@@ -59,6 +59,23 @@ The **host label** is the Environment's name with a random suffix, so two Agents
 Endpoint names carry no hyphen, so the first hyphen of an address splits the endpoint from the host.
 Without `environments.domain` Environments have no addresses.
 
+**One wildcard Ingress** for `*.<environments.domain>`, which the chart renders with the domain, sends every address and the sign-in host `signin.<environments.domain>` to the api-server.
+It carries one wildcard certificate, from `environments.ingress.tls.secretName`, which cert-manager can issue through an issuer with a DNS-01 solver named in `environments.ingress.annotations`; on OpenShift the Ingress becomes a wildcard Route, which the cluster allows once with `WildcardsAllowed`.
+The local cluster serves `*.env.localhost` over plain HTTP.
+
+**The gate.** The api-server reads the Environment and endpoint from the host name, before any other route, and relays HTTP and WebSocket to the Environment's runtime, which forwards to that endpoint's port on the Environment's own loopback and nowhere else.
+The api-server names the declared ports on every request, so a port the Environment did not declare is refused, and so are the runtime's own ports.
+
+- **Who may open it.** In this slice only the owner, by their platform sign-in.
+- **Sign-in** happens once, on the sign-in host, with an identity provider client of its own whose tokens the platform's API refuses.
+  The sign-in host hands the address the visitor came from a code that works once, for that address only, within a minute, and the address trades it for a session cookie of its own: `__Host-platform-env` over HTTPS, scoped to that one origin, so no other Environment can set or read it.
+  Every address reserves `/.platform/` for the hand-off and sign-out, which never reach the app.
+- **Cookies and headers.** The relay never passes on the platform's session cookie or an `Authorization` header, passes on every cookie the app set itself, and never lets the app set the session cookie.
+  The original host and scheme go on as `X-Forwarded-Host` and `X-Forwarded-Proto`.
+- **Wake.** A request to a sleeping Environment wakes it and waits until its runtime answers.
+  Requests refresh its activity at most once a minute, and no open connection holds it awake, so a forgotten tab lets it sleep.
+- **Every response is uncacheable**, and the security log records each new session and each refusal.
+
 ## Surfaces
 
 **The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to a vm Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).

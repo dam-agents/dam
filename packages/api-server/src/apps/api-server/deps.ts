@@ -1,4 +1,5 @@
 import type { CoreV1Api } from "@kubernetes/client-node";
+import type { EnvironmentGate } from "../../modules/environments/index.js";
 import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
@@ -139,6 +140,7 @@ export interface ApiServerDeps {
   surfaceAttribution: SurfaceAttribution;
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
+  environmentGate: EnvironmentGate;
   publicAgentPageService: PublicAgentPageService;
   gettingStarted: GettingStartedModule;
   sidebarOrder: SidebarOrderModule;

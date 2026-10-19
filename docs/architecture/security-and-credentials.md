@@ -91,6 +91,7 @@ The user agent flow:
 3. The api-server's `sub` claim becomes `agent-platform.ai/owner=<sub>` on every resource the user creates (Agent CR, K8s credential Secret, etc.).
 
 The realm holds a **dedicated public client** for the artifact share host ([artifact-library](artifact-library.md#the-share-host--trust-boundary)): PKCE-only, redirect pinned to that host's sign-in callback, and no `platform-api` audience, so its tokens are rejected by the api-server.
+A second one serves Environment sign-in ([environments](environments.md#addresses)) the same way, its redirect pinned to the sign-in host under the environments domain.
 A restricted-link viewer thus gets an identity on the share origin without the app's tokens ever being valid there.
 
 Two interstitials can take the browser off the page the user asked for: the login redirect above, and the Terms-of-Use gate.

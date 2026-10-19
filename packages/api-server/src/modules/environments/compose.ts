@@ -1,3 +1,19 @@
+import type { Redis } from "ioredis";
+import { createRemoteJWKSet } from "jose";
+import { createRedisTtlStore } from "../../core/ttl-store.js";
+import {
+  createKeycloakShareIdentity,
+  keycloakShareJwksUrl,
+} from "../artifact-library/index.js";
+import { domainOf, LOGIN_TTL_MS, SESSION_TTL_MS } from "./domain/gate.js";
+import {
+  createEnvironmentGate,
+  noEnvironmentGate,
+  SIGNIN_LABEL,
+  type EnvironmentGate,
+} from "./gate/environment-gate.js";
+import { createEnvironmentSignIn } from "./services/environment-signin.js";
+import { podBaseUrl } from "../agents/infrastructure/k8s.js";
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
@@ -151,4 +167,76 @@ export function composeEnvironmentsOver(
         );
     },
   };
+}
+
+const HANDOFF_TTL_MS = 60_000;
+
+export interface ComposeEnvironmentGateDeps {
+  db: Db;
+  redis: Redis;
+  urlTemplate: string | null;
+  keycloak: {
+    externalUrl: string;
+    internalUrl: string;
+    realm: string;
+    clientId: string;
+  };
+  ensureReady: (agentId: string) => Promise<unknown>;
+  stampActivity: (agentId: string) => Promise<void>;
+  namespace: string;
+  brandName: string;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The front for Environment addresses, or a gate
+ * that passes every request on when the install serves no Environments (no
+ * environments domain). The sign-in host is `signin.<domain>`, whose callback
+ * the identity provider's environments client names; sign-ins, hand-off codes
+ * and sessions live in Redis, so any api-server replica serves any step.
+ */
+export function composeEnvironmentGate(
+  deps: ComposeEnvironmentGateDeps,
+): EnvironmentGate {
+  const template = deps.urlTemplate;
+  const domain = domainOf(template);
+  if (template === null || domain === null) return noEnvironmentGate;
+  const addressUrl = (address: string) => template.replace("{host}", address);
+  const signInUrl = addressUrl(SIGNIN_LABEL);
+  const keycloak = {
+    keycloakExternalUrl: deps.keycloak.externalUrl,
+    keycloakUrl: deps.keycloak.internalUrl,
+    realm: deps.keycloak.realm,
+  };
+  return createEnvironmentGate({
+    domain,
+    scheme: template.startsWith("https:") ? "https" : "http",
+    addressUrl,
+    repo: createEnvironmentsRepository(deps.db),
+    signIn: createEnvironmentSignIn({
+      provider: createKeycloakShareIdentity(
+        {
+          ...keycloak,
+          clientId: deps.keycloak.clientId,
+          callbackUrl: new URL("/.platform/callback", signInUrl).href,
+        },
+        {
+          fetch: globalThis.fetch,
+          idTokenKey: createRemoteJWKSet(keycloakShareJwksUrl(keycloak)),
+        },
+      ),
+      pending: createRedisTtlStore(deps.redis, "env:login", LOGIN_TTL_MS),
+      handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
+      sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
+      addressUrl,
+      signInUrl,
+      now: () => Date.now(),
+    }),
+    ensureReady: deps.ensureReady,
+    stampActivity: deps.stampActivity,
+    upstream: (agentId) => {
+      const [host, port] = podBaseUrl(agentId, deps.namespace).split(":");
+      return { host: host!, port: Number(port) };
+    },
+    brandName: deps.brandName,
+  });
 }

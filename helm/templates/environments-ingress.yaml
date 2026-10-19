@@ -1,0 +1,46 @@
+{{- /* The one wildcard Ingress for Environment addresses,
+       `<endpoint>-<environment>.<environments.domain>`, and the sign-in host
+       `signin.<environments.domain>`: every name under the domain goes to the
+       api-server, which finds the Environment from the host name. Rendered
+       only with a domain. On OpenShift it becomes a wildcard Route, which the
+       cluster must allow once (WildcardsAllowed). */ -}}
+{{- with .Values.environments.domain }}
+{{- $env := $.Values.environments.ingress }}
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: {{ include "platform.fullname" $ }}-environments
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+    app.kubernetes.io/component: environments
+  annotations:
+    {{- with $.Values.ingress.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    {{- with $env.annotations }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+    route.openshift.io/wildcard-policy: Subdomain
+spec:
+  {{- with $.Values.ingress.className }}
+  ingressClassName: {{ . }}
+  {{- end }}
+  {{- with $env.tls.secretName }}
+  tls:
+    - secretName: {{ . }}
+      hosts:
+        - {{ printf "*.%s" $.Values.environments.domain | quote }}
+  {{- end }}
+  rules:
+    - host: {{ printf "*.%s" . | quote }}
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: {{ include "platform.apiserver.fullname" $ }}
+                port:
+                  name: http
+{{- end }}

@@ -24,6 +24,7 @@ import {
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
   INVOCATIONS_ACTIVE_KEY,
+  LAST_ACTIVITY_KEY,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
@@ -254,7 +255,10 @@ import {
   composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
-import { composeEnvironments } from "./modules/environments/index.js";
+import {
+  composeEnvironmentGate,
+  composeEnvironments,
+} from "./modules/environments/index.js";
 import {
   composeApprovalsSystem,
   composeSpendLimitQuestions,
@@ -527,6 +531,26 @@ export async function bootstrap() {
       clientId: config.keycloakShareClientId,
     },
     shareBaseUrl: config.shareBaseUrl,
+  });
+  const environmentGate = composeEnvironmentGate({
+    db,
+    redis: sharedRedis,
+    urlTemplate: config.environmentsUrl,
+    keycloak: {
+      externalUrl: config.keycloakExternalUrl,
+      internalUrl: config.keycloakUrl,
+      realm: config.keycloakRealm,
+      clientId: config.keycloakEnvironmentsClientId,
+    },
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    stampActivity: (agentId) =>
+      agentsRepo.patchAnnotation(
+        agentId,
+        LAST_ACTIVITY_KEY,
+        new Date().toISOString(),
+      ),
+    namespace: config.namespace,
+    brandName: config.brand.name,
   });
   const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
@@ -2068,6 +2092,7 @@ export async function bootstrap() {
     surfaceAttribution,
     slackOauthCallbackUrl,
     shareHostGate,
+    environmentGate,
     publicAgentPageService,
     gettingStarted,
     sidebarOrder,
