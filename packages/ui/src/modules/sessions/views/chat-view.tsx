@@ -707,13 +707,21 @@ export function ChatView() {
     hiddenTabs,
     dockedTab !== null,
   );
-  const [phoneHiddenDock, setPhoneHiddenDock] = useState<SidePanelTab | null>(
-    null,
-  );
-  if (phoneHiddenDock !== null && sidePanelTab !== null)
-    setPhoneHiddenDock(null);
+  const dockedItem =
+    dockedTab &&
+    [
+      dockedTab,
+      openBrowserAgentId,
+      openDelegation?.id,
+      openFilePath,
+      openArtifactId,
+      openChangesAgentId,
+      openProcessOutputKey,
+    ].join("\n");
+  const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
+  if (phoneHiddenDock !== null && classicTab !== null) setPhoneHiddenDock(null);
   const dockHiddenOnPhone =
-    phoneHiddenDock !== null && phoneHiddenDock === dockedTab;
+    phoneHiddenDock !== null && phoneHiddenDock === dockedItem;
   const revealDock = () => {
     setPhoneHiddenDock(null);
     if (classicTab !== null) setSidePanelTab(null);
@@ -1358,7 +1366,7 @@ export function ChatView() {
               : null
           }
           onClosePanel={() => {
-            setPhoneHiddenDock(dockedTab);
+            setPhoneHiddenDock(dockedItem);
             setSidePanelTab(null);
             setMobileScreen("chat");
           }}

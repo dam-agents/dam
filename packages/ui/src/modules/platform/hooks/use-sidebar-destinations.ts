@@ -1,7 +1,6 @@
 import {
   Book,
   type CarbonIconType,
-  Folders,
   Gift,
   Home,
   Settings,
@@ -9,6 +8,7 @@ import {
 
 import { DOCS_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
+import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 
 export interface SidebarDestination {
   label: string;
@@ -36,7 +36,7 @@ export function useSidebarDestinations() {
   };
   const artifacts: SidebarDestination = {
     label: "Artifacts",
-    icon: Folders,
+    icon: ArtifactIcon,
     active: artifactsOpen,
     navigate: () => {
       setSidePanelTab("artifacts");

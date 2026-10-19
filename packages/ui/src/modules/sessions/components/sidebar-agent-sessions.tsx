@@ -160,7 +160,7 @@ function SessionPreview({
               session={session}
               active={false}
               working={item.working}
-              needsApproval={false}
+              needsApproval={item.needsApproval}
               unread={item.unread}
               conversation={conversationOf(item.session)}
               className={ROW_CLASS}

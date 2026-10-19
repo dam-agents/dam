@@ -3,7 +3,7 @@ import {
   Book,
   Branch,
   type CarbonIconType,
-  Folders,
+  Folder,
   Globe,
   Notification,
   Task,
@@ -26,7 +26,7 @@ export const SIDE_PANEL_TABS: readonly {
   icon: CarbonIconType;
 }[] = [
   { tab: "artifacts", label: "Artifacts", icon: ArtifactIcon },
-  { tab: "files", label: "Files", icon: Folders },
+  { tab: "files", label: "Files", icon: Folder },
   { tab: "changes", label: "Changes", icon: Branch },
   { tab: "browser", label: "Browser", icon: Globe },
   { tab: "processes", label: "Processes", icon: Activity },

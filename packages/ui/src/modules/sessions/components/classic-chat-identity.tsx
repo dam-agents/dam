@@ -96,6 +96,7 @@ export function ClassicChatIdentity({
           variant="ghost"
           size="icon-sm"
           aria-label="Files and artifacts"
+          tooltip="Files and artifacts"
           data-testid="open-agent-files"
           className="md:hidden"
           onClick={() => setMobileScreen("files")}
