@@ -26,6 +26,7 @@ import { getLogger } from "../../../core/logger.js";
 import {
   type DriverProvider,
   inheritProvider,
+  missingProviderMessage,
 } from "../domain/provider-inheritance.js";
 import { buildInvocationPrompt } from "../domain/invocation-prompt.js";
 import {
@@ -79,10 +80,8 @@ export class ModelNameError extends Error {
 }
 
 export class ProviderMismatchError extends Error {
-  constructor(offered: ProviderPresetType[], runsOn: ProviderPresetType[]) {
-    super(
-      `the target cannot run on the driver's provider (${offered.join(", ")}); it runs on ${runsOn.join(", ")}`,
-    );
+  constructor(message: string) {
+    super(message);
     this.name = "ProviderMismatchError";
   }
 }
@@ -119,6 +118,7 @@ export interface SpawnInput {
   driverAgentId: string;
   driverGrantIds: string[];
   driverProviders: DriverProvider[];
+  attachableProviders?: ProviderPresetType[];
   target: SpawnTarget;
   setup: AgentSetup;
   connections: string[];
@@ -224,8 +224,12 @@ export function createInvocationsService(deps: {
       });
       if (provider.kind === "incompatible")
         throw new ProviderMismatchError(
-          provider.offered,
-          input.target.runsOn ?? [],
+          missingProviderMessage({
+            harness: input.target.harness,
+            runsOn: input.target.runsOn ?? [],
+            alias: parsedModel?.alias,
+            attachable: input.attachableProviders ?? [],
+          }),
         );
 
       const created = createInputFromSetup(input.setup);

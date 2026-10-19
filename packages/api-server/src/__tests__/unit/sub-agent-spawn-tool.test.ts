@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { SessionSubAgentContext } from "agent-runtime-api";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { registerSubAgentTools } from "../../apps/harness-api-server/sub-agent-tools.js";
 import type {
@@ -10,9 +11,10 @@ import type {
  * TEST_OVERVIEW: spawn_subagent hands the spawn route what the driver SDK
  * would: the model, mode and config options the agent passes flat become the
  * request's harness config, so the platform records them and runs its checks,
- * every spawn runs on the calling session's subagent model when the user
- * set one, a model the catalog does not list for the harness is refused, and
- * a spawn that names none of them sends no harness config at all.
+ * the calling session's platform sub-agent settings bind, a sub-agent on the
+ * session's own harness takes the session's model and settings, a model the
+ * catalog does not list for the harness is refused, and a spawn that names
+ * none of them sends no harness config at all.
  */
 
 type Handler = (
@@ -21,7 +23,7 @@ type Handler = (
 ) => Promise<unknown>;
 
 function setup(
-  subagentModel?: () => Promise<string | null>,
+  sessionContext?: () => Promise<SessionSubAgentContext | null>,
   catalogModels?: (
     harness: string,
   ) => Promise<{ alias: string; upstreamId: string; name: string }[] | null>,
@@ -46,7 +48,7 @@ function setup(
   registerSubAgentTools(server, {
     ops,
     awaits: { markAwaited: async () => {}, markCollected: async () => {} },
-    ...(subagentModel && { subagentModel }),
+    ...(sessionContext && { sessionContext }),
     ...(catalogModels && { catalogModels }),
     spawningSession: spawningSession ?? (async () => null),
   });
@@ -89,42 +91,66 @@ describe("spawn_subagent harness config", () => {
     expect(s.spawned[0]!.harnessConfig).toBeUndefined();
   });
 
-  /** TEST_SCENARIO: The user set a subagent model on the calling session, in
-   * Claude Code's own spelling. Every spawn on a named harness runs on it,
-   * in the provider-qualified form the spawn route takes, whatever model the
-   * spawn names; a spawn on an image alone keeps its own model, since no
-   * harness view can check the setting against it; a session with no
-   * setting keeps the spawn's own model, and one whose value is no
-   * provider-qualified name (a tier word) sends none. */
-  it("runs every spawn on the session's subagent model", async () => {
-    const set = setup(async () => "claude/ibm/azure/gpt-5.3-codex");
-    await set.spawn({});
-    expect(set.spawned[0]!.harnessConfig).toEqual({
-      model: "ibm/azure/gpt-5.3-codex",
+  /** TEST_SCENARIO: The session sets its platform sub-agents to Codex on
+   * one model and effort. A spawn naming another harness is refused, a spawn
+   * naming none runs on Codex, and the set values outrank the spawn's own,
+   * which still fill what the setting leaves open; a spawn on an image alone
+   * keeps its own choices. On the session's own harness, with no setting,
+   * the sub-agent takes the session's model and settings below whatever the
+   * spawn names. */
+  it("binds the session's platform sub-agent settings, else inherits on its own harness", async () => {
+    const context = (settings: Record<string, string>) => async () => ({
+      settings,
+      harness: "claude-code",
+      inherited: {
+        model: "anthropic/claude-opus-5-5",
+        mode: "bypassPermissions",
+        configOptions: { effort: "high", cacheTtl: "1h" },
+      },
     });
-    const result = (await set.spawn({ model: "cb/rits/zai-org/glm-5-3" })) as {
+    const set = setup(
+      context({
+        "platformSubagent.harness": "codex",
+        "platformSubagent.model": "ibm/azure/gpt-5.5",
+        "platformSubagent.effort": "low",
+      }),
+    );
+    const refused = (await set.spawn({ harness: "pi" })) as {
       content: { text: string }[];
     };
-    expect(set.spawned[1]!.harnessConfig).toEqual({
-      model: "ibm/azure/gpt-5.3-codex",
-    });
-    expect(result.content[0]!.text).toMatch(/model argument is ignored/);
-    await set.spawn({
+    expect(refused.content[0]!.text).toMatch(
+      /runs every sub-agent on codex, not pi/,
+    );
+    const result = (await set.spawn({
       harness: undefined,
-      image: "ghcr.io/x/y:1",
-      model: "cb/rits/zai-org/glm-5-3",
+      model: "openai/gpt-5.5",
+      configOptions: { effort: "xhigh" },
+      mode: "full",
+    })) as { content: { text: string }[] };
+    expect(set.spawned[0]!.harness).toBe("codex");
+    expect(set.spawned[0]!.harnessConfig).toEqual({
+      model: "ibm/azure/gpt-5.5",
+      mode: "full",
+      configOptions: { effort: "low" },
     });
-    expect(set.spawned[2]!.harnessConfig).toEqual({
-      model: "cb/rits/zai-org/glm-5-3",
+    expect(result.content[0]!.text).toMatch(
+      /harness codex, model ibm\/azure\/gpt-5\.5, effort low/,
+    );
+    await set.spawn({ harness: undefined, image: "ghcr.io/x/y:1" });
+    expect(set.spawned[1]!.harnessConfig).toBeUndefined();
+
+    const own = setup(context({}));
+    await own.spawn({
+      harness: "claude-code",
+      configOptions: { effort: "low" },
     });
-    const unset = setup(async () => null);
-    await unset.spawn({ model: "cb/rits/zai-org/glm-5-3" });
-    expect(unset.spawned[0]!.harnessConfig).toEqual({
-      model: "cb/rits/zai-org/glm-5-3",
+    expect(own.spawned[0]!.harnessConfig).toEqual({
+      model: "anthropic/claude-opus-5-5",
+      mode: "bypassPermissions",
+      configOptions: { effort: "low", cacheTtl: "1h" },
     });
-    const tier = setup(async () => "sonnet");
-    await tier.spawn({});
-    expect(tier.spawned[0]!.harnessConfig).toBeUndefined();
+    await own.spawn({});
+    expect(own.spawned[1]!.harnessConfig).toBeUndefined();
   });
 
   /** TEST_SCENARIO: The agent names a model its providers do not list for
@@ -155,7 +181,14 @@ describe("spawn_subagent harness config", () => {
     await s.spawn({ harness: "pi", model: "openai/gpt-5.3-codex" });
     expect(s.spawned).toHaveLength(2);
     const bound = setup(
-      async () => "claude/anthropic/claude-sonnet-5-5",
+      async () => ({
+        settings: {
+          "platformSubagent.harness": "codex",
+          "platformSubagent.model": "anthropic/claude-sonnet-5-5",
+        },
+        harness: "claude-code",
+        inherited: {},
+      }),
       async (h) => (h === "codex" ? listed : null),
     );
     const refusedByBinding = (await bound.spawn({
@@ -164,7 +197,7 @@ describe("spawn_subagent harness config", () => {
       content: { text: string }[];
     };
     expect(refusedByBinding.content[0]!.text).toMatch(
-      /session's subagent model setting \(anthropic\/claude-sonnet-5-5\) binds every sub-agent.*clear the session's subagent model/,
+      /platform sub-agent setting names anthropic\/claude-sonnet-5-5.*Ask the user to change the setting/,
     );
     expect(bound.spawned).toEqual([]);
   });

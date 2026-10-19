@@ -1,6 +1,10 @@
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
 import {
+  platformSubagentChoice,
+  type SessionSubAgentContext,
+} from "agent-runtime-api";
+import {
   formatQualifiedModel,
   parseQualifiedModel,
   spawnInvocationRequestSchema,
@@ -41,7 +45,7 @@ const SPAWN_DESCRIPTION = `Spawn a platform sub-agent: a separate agent in its o
 - checked-result: a result the platform validates against a schema.
 A need the request does not bear out is refused: different-harness on your own harness, own-setup without seed, install, env or skills, more-resources without resources or a vm backend.
 
-The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on your model provider; connections you pass must be your own grants (see list_connections). A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
+The sub-agent runs one prompt to completion unattended, reports one result matching the JSON Schema you give, and is then removed. It cannot ask you anything, so the prompt must let it finish on its own. It runs on one of your model providers that its harness runs on (list_harnesses shows which, or what is missing); connections you pass must be your own grants (see list_connections). The user may set this session's platform sub-agents to a harness, model, mode or config option: those then bind, and the result names them. A setup step that fails fails the sub-agent at once with the reason. Returns the sub-agent id at once; call await_subagents with it to get the result. Do not retry this call blindly after an error: a duplicate call is a second sub-agent.`;
 
 const AWAIT_DESCRIPTION = `Wait for sub-agents you started with spawn_subagent. Returns as soon as any of them finishes, or after about four minutes, listing which are done (with their result), which failed (with the reason), and which are still running. Call it again with the still-running ids to keep waiting, or end your turn: a sub-agent that finishes while nothing waits on it is delivered to you as a new turn. An id that is not one of your sub-agents comes back under unknown. If the call itself fails with a connection or transport error, the sub-agents keep running: call it again with the same ids.`;
 
@@ -71,7 +75,7 @@ const spawnInput = {
     'JSON Schema the result must match, e.g. {"type":"integer"} or {"type":"object","properties":{"pass":{"type":"boolean"}},"required":["pass"]}. The platform checks shape only, never truth.',
   ),
   harness: spawnShape.harness.describe(
-    "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image.",
+    "Harness to run on, as named by list_harnesses (e.g. claude-code). Pass this or image; with neither, the harness the user set for this session's platform sub-agents.",
   ),
   image: spawnShape.image.describe(
     "A custom image to run instead of the default one. Pass harness too only when the image carries that harness.",
@@ -106,7 +110,7 @@ const spawnInput = {
     .min(1)
     .optional()
     .describe(
-      "Model the sub-agent runs, provider-qualified (ibm/gpt-5.5, claude/ibm/aws/claude-sonnet-5-5 on claude-code). Ignored when the user set a subagent model on this session: the sub-agent then runs on that model. Otherwise it must be a model this agent's providers list for the target harness; the refusal names the listed ones. Unset, the harness's default model.",
+      "Model the sub-agent runs, provider-qualified (ibm/gpt-5.5, claude/ibm/aws/claude-sonnet-5-5 on claude-code). Ignored when the user set a model for this session's platform sub-agents. It must be a model this agent's providers list for the target harness; the refusal names the listed ones. Unset, this session's model on your own harness, else the harness's default model.",
     ),
   mode: z
     .string()
@@ -238,21 +242,87 @@ function summarize(settled: Settled[]) {
   };
 }
 
+type SpawnArgs = {
+  harness?: string | undefined;
+  image?: string | undefined;
+  model?: string | undefined;
+  mode?: string | undefined;
+  configOptions?: Record<string, string> | undefined;
+};
+
+export type ResolvedSubAgent =
+  | {
+      ok: true;
+      harness?: string;
+      model?: string;
+      mode?: string;
+      configOptions?: Record<string, string>;
+      modelFrom?: "setting" | "spawn" | "session";
+      bound: string[];
+    }
+  | { ok: false; message: string };
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the session's subagent model, when the user set
- * one, is the model every platform sub-agent spawned from the session on a
- * named harness runs on, whatever the spawn names, as it is for the
- * harness's own subagents; a spawn on an image alone names no harness to
- * check it against and keeps its own model. The setting is spelled the way
- * the calling harness names models; the spawn route takes the
- * provider-qualified form.
+ * UNIT_BOUNDARY_DESCRIPTION: what a platform sub-agent runs on, setting by
+ * setting. The session's platform sub-agent settings bind: a spawn on
+ * another harness is refused, a spawn naming none gets the set one, and a
+ * set model, mode or config option outranks the spawn's. Below them the
+ * spawn's own choice, then, on the session's own harness, the session's
+ * model and settings, then the harness defaults. A spawn on an image alone
+ * keeps its own choices.
  */
-async function sessionSubagentModel(
-  read: (() => Promise<string | null>) | undefined,
-): Promise<string | null> {
-  const value = await read?.();
-  const parsed = parseQualifiedModel(value, { claudePrefix: true });
-  return parsed ? formatQualifiedModel(parsed.alias, parsed.upstreamId) : null;
+export function resolveSubAgent(
+  args: SpawnArgs,
+  session: SessionSubAgentContext | null,
+): ResolvedSubAgent {
+  const set = session ? platformSubagentChoice(session.settings) : null;
+  if (set?.harness && args.harness && args.harness !== set.harness)
+    return {
+      ok: false,
+      message: `this session's platform sub-agent setting runs every sub-agent on ${set.harness}, not ${args.harness}. Spawn on ${set.harness}, or ask the user to change the setting`,
+    };
+  const harness =
+    args.harness ?? (args.image ? undefined : (set?.harness ?? undefined));
+  const bound = set?.harness && harness === set.harness ? set : null;
+  const inherited =
+    harness !== undefined && harness === session?.harness
+      ? session.inherited
+      : {};
+  const modelFrom = bound?.model
+    ? "setting"
+    : args.model !== undefined
+      ? "spawn"
+      : inherited.model !== undefined
+        ? "session"
+        : undefined;
+  const model =
+    canonicalModel(bound?.model) ??
+    canonicalModel(args.model) ??
+    inherited.model;
+  const mode = bound?.mode ?? args.mode ?? inherited.mode;
+  const configOptions = {
+    ...inherited.configOptions,
+    ...args.configOptions,
+    ...bound?.configOptions,
+  };
+  return {
+    ok: true,
+    ...(harness !== undefined && { harness }),
+    ...(model !== undefined && { model }),
+    ...(mode !== undefined && { mode }),
+    ...(Object.keys(configOptions).length > 0 && { configOptions }),
+    ...(modelFrom && { modelFrom }),
+    bound: bound
+      ? [
+          `harness ${bound.harness}`,
+          ...(bound.model ? [`model ${canonicalModel(bound.model)}`] : []),
+          ...(bound.mode ? [`mode ${bound.mode}`] : []),
+          ...Object.entries(bound.configOptions ?? {}).map(
+            ([id, value]) => `${id} ${value}`,
+          ),
+        ]
+      : [],
+  };
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a model named the way Claude Code spells it (`claude/<alias>/<id>`) folds to the provider-qualified form the spawn route takes; a bare name stays as it is, for the route to refuse by name.
@@ -298,7 +368,7 @@ export function registerSubAgentTools(
     awaits: SubAgentAwaitMarks;
     spawningSession: () => Promise<string | null>;
     requestSignal?: AbortSignal;
-    subagentModel?: () => Promise<string | null>;
+    sessionContext?: () => Promise<SessionSubAgentContext | null>;
     catalogModels?: (harness: string) => Promise<CatalogModelRef[] | null>;
     waitMs?: number;
     pollMs?: number;
@@ -311,16 +381,16 @@ export function registerSubAgentTools(
   server.tool("spawn_subagent", SPAWN_DESCRIPTION, spawnInput, (args) =>
     run(async () => {
       const { needs, ...rest } = args;
-      const sessionModel =
-        rest.harness !== undefined
-          ? await sessionSubagentModel(deps.subagentModel)
-          : null;
-      const model = sessionModel ?? canonicalModel(rest.model);
+      const session = (await deps.sessionContext?.()) ?? null;
+      const resolved = resolveSubAgent(rest, session);
+      if (!resolved.ok)
+        return errorResult(`spawn_subagent refused: ${resolved.message}`);
+      const { ok: _ok, bound, modelFrom, ...choice } = resolved;
       const parsed = spawnInvocationRequestSchema.safeParse(
         withHarnessConfig({
           ...rest,
+          ...choice,
           schema: schemaFromText(rest.schema),
-          ...(model !== undefined && model !== null && { model }),
         }),
       );
       if (!parsed.success) {
@@ -329,20 +399,25 @@ export function registerSubAgentTools(
         );
       }
       const body = parsed.data;
-      if (model && body.harness && deps.catalogModels) {
+      if (
+        choice.model &&
+        modelFrom !== "session" &&
+        body.harness &&
+        deps.catalogModels
+      ) {
         const unlisted = unlistedModel(
-          model,
+          choice.model,
           await deps.catalogModels(body.harness),
         );
         if (unlisted)
           return errorResult(
-            sessionModel
-              ? `spawn_subagent refused: this session's subagent model setting (${model}) binds every sub-agent, and ${unlisted}. Spawn on a harness that lists it, or clear the session's subagent model.`
+            modelFrom === "setting"
+              ? `spawn_subagent refused: this session's platform sub-agent setting names ${choice.model}, and ${unlisted}. Ask the user to change the setting.`
               : `spawn_subagent refused: ${unlisted}`,
           );
       }
       const [harness, driverSessionId] = await Promise.all([
-        ops.harness(),
+        session ? Promise.resolve(session.harness) : ops.harness(),
         deps.spawningSession(),
       ]);
       const unmet = unmetNeed(needs, body, harness);
@@ -363,9 +438,9 @@ export function registerSubAgentTools(
         [
           `[invoke] spawned ${tag} -> ${outcome.id}`,
           `needs: ${needs.join(", ")}`,
-          ...(sessionModel
+          ...(bound.length > 0
             ? [
-                `model: ${sessionModel} (the session's subagent model; a model argument is ignored while the user has it set)`,
+                `set by this session's platform sub-agent settings: ${bound.join(", ")} (arguments for these are ignored)`,
               ]
             : []),
           JSON.stringify({ id: outcome.id }),
@@ -456,7 +531,7 @@ export function registerSubAgentTools(
 
   server.tool(
     "list_harnesses",
-    "List the harnesses and images a sub-agent can run on, each with its harness name and effective size. Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
+    "List the harnesses and images a sub-agent can run on, each with its harness name, effective size, and the provider it would run on, or why this agent cannot run it (relay that to the user). Use the harness name in spawn_subagent. If it is not obvious which fits, ask the user.",
     {},
     () => run(async () => json({ images: await ops.images() })),
   );

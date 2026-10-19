@@ -25,6 +25,7 @@ const log = [
 
 function service(live: string[], stored: string[] | null = null) {
   return createSessionsService({
+    subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
     openCaller: () => {
       throw new Error("no harness");
     },

@@ -1367,14 +1367,11 @@ export function createMcpSession(
       }
     },
     requestSignal: deps.requestSignal,
-    subagentModel: async () => {
+    sessionContext: async () => {
       const ref = deps.sessionRef;
       if (!ref) return null;
       try {
-        const { settings } = await runtimeClient.sessions.settings.query({
-          ref,
-        });
-        return settings.subagentModel ?? null;
+        return await runtimeClient.sessions.settings.query({ ref });
       } catch {
         return null;
       }

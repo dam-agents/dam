@@ -4,7 +4,6 @@ import type {
 } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 
-import { settingsForModel } from "../../modules/sessions/components/session-settings-controls.js";
 import {
   catalogSettled,
   type ModelGroup,
@@ -13,6 +12,7 @@ import {
   sameModel,
   sameSideGroups,
 } from "../../modules/sessions/lib/catalog-groups.js";
+import { settingsForModel } from "../../modules/sessions/lib/session-settings.js";
 
 /**
  * TEST_OVERVIEW: The model list asks the pod again until its catalog has

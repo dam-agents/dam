@@ -29,6 +29,10 @@ export {
   type SpawnInput,
 } from "./services/invocations-service.js";
 export { createTargetAdmission } from "./services/target-admission.js";
+export {
+  inheritProvider,
+  type DriverProvider,
+} from "./domain/provider-inheritance.js";
 export { isInvocationTargetName } from "./domain/target-name.js";
 export { REPORT_GRACE_MS } from "./services/target-reaper.js";
 export { createPodSessionClient } from "./infrastructure/pod-session-client.js";
