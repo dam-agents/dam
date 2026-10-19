@@ -126,13 +126,19 @@ func (r *AgentReconciler) refusedWithoutMachine(a *apiv1.Agent) bool {
 	if ready != nil && ready.Reason == apiv1.ReasonOverBudget {
 		return true
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: the status carries the runner's reason, except that a full home is published as HomeVolumeFull, since the page and the UI name a volume rather than the runner's word for it.
 	podReady := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionAgentPodReady)
-	return podReady != nil && podReady.Reason == vmrunner.ReasonStorageFull
+	return podReady != nil && (refusedReason(podReady.Reason) || podReady.Reason == apiv1.ReasonHomeVolumeFull)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room or for storage holds nothing, so it counts toward nothing; any other answer means the runner holds it.
+// UNIT_BOUNDARY_DESCRIPTION: the runner answers a start it will not run with a reason, and leaves the reason of a start that failed on the machine afterwards — a full home, an image it cannot fetch, a missing seed, a boot that failed — until an action succeeds. Both leave the machine holding nothing, so both count toward nothing.
 func refusedReason(reason string) bool {
-	return reason == vmrunner.ReasonOutOfCapacity || reason == vmrunner.ReasonStorageFull
+	switch reason {
+	case vmrunner.ReasonOutOfCapacity, vmrunner.ReasonStorageFull, vmrunner.ReasonHomeFull,
+		vmrunner.ReasonImageUnavailable, vmrunner.ReasonSeedMissing, vmrunner.ReasonBootFailed:
+		return true
+	}
+	return false
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner keeps a refusal's reason after it admits the retry — it clears it only when that action completes — so the reason alone does not say the machine holds nothing. A refusal with nothing running or in flight does: the machine holds its memory while it boots, restarts or stops, and while it runs, whatever a refusal from an attempt before says.

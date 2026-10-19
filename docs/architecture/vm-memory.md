@@ -55,12 +55,12 @@ The harness starts only once the guest answers, about a second after the boot, a
 The runner reports a machine warming up in its status, and the controller counts it the same way.
 Counting a boot at half the pool would let only two machines boot at once; at the floor, as many machines warm up together as the pool holds floors, and a runner roll or many wakes at once start the rest in waves as the first ones warm up, each refused start retried within 30 seconds ([budgets](budgets.md)).
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
-A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, which leaves the Agent awake with no machine: it holds nothing meanwhile.
+A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, a home that is full, an image it cannot fetch, a seed that is missing or a boot that failed, which all leave the Agent awake with no machine: it holds nothing meanwhile.
 A machine that boots, restarts or stops holds its memory meanwhile, and the runner keeps a refusal's reason until the action it admitted completes, so the reason alone says nothing: what counts is a refusal with nothing running or in flight.
 So the CPU limit and the pass that judges pressure count it at nothing.
 Were it counted beside the machines the runner did admit, it would push the owner past the 90% threshold, and the pass would hibernate those to make room for the one the runner refused.
-Only the start being sized still counts itself, since the room it lacks is what its count is for.
-The figures a refusal quotes are the memory its owner's machines hold, the same that Home shows.
+Only the refused start's own reclaim and the figures its refusal quotes still count it, since the room it lacks is what its count is for.
+The memory a refusal quotes as in use is what its owner's machines hold, the same that Home shows.
 The controller records the runner's answer where it gives it, under the owner's lock, so the count is current before the Agent's status carries it, and the pass keeps each status it reads under that same lock, so a reading taken before a refusal cannot outlast it.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.

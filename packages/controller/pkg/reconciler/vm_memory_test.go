@@ -453,6 +453,8 @@ func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
 	}{
 		{name: "parked for room", conditions: `[{"type":"` + apiv1.ConditionReady + `","status":"False","reason":"` + apiv1.ReasonOverBudget + `"}]`},
 		{name: "refused for storage", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonStorageFull + `"}]`},
+		{name: "a home that is full", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonHomeFull + `"}]`},
+		{name: "a boot that failed", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonBootFailed + `"}]`},
 		{name: "refusal recorded before its status", recorded: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -466,7 +468,7 @@ func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
 				require.NoError(t, err)
 			}
 			if tc.recorded {
-				r.vmAnswers.Store("peer", true)
+				r.vmAnswers.Store("peer", refusedAnswer(vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonImageUnavailable}))
 			}
 
 			d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
