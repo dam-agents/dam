@@ -104,12 +104,12 @@ for refused in 'virtualization.imageCache.hostPath=' \
     exit 1
   fi
 done
-# A prefix length written with a leading zero is decimal to the controller's
-# own parser and octal to Helm, which reads `/07` as 7 (`/08` as 0, so the
-# opens-every-range rule refused it whichever grammar the chart kept): an
-# install rendered, and the controller then refused to start. The refusal has
-# to be this one, since the loop above takes any failure, and `/07` fails
-# there for no other reason.
+# A prefix length written with a leading zero is octal to Helm's integer
+# conversion and refused outright by the controller's own parser: `/07` passed
+# the render as prefix 7, and the controller then would not start. (`/08` is no
+# octal number, so Helm read it as 0 and the opens-every-range rule refused it
+# whichever grammar the chart kept.) The refusal has to be this one, since the
+# loop above takes any failure, and `/07` fails there for no other reason.
 for leading in 'virtualization.imageCache.egressCidrs[0]=10.0.0.0/07' \
   'virtualization.imageCache.egressCidrs[0]=2001:db8::/064' \
   'controller.gatewayEgress.extraCidrs[0]=10.0.0.0/07'; do
