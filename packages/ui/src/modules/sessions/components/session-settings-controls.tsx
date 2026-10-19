@@ -1,86 +1,32 @@
-import type {
-  HarnessCapability,
-  HarnessConfigCurrent,
+import type { HarnessCapability } from "agent-runtime-api";
+import {
+  modelConstraintsFor,
+  platformSubagentChoice,
+  SUBAGENT_MODEL_SETTING,
 } from "agent-runtime-api";
-import { modelConstraintsFor } from "agent-runtime-api";
 import { Fragment, useId, useState } from "react";
 
 import { DisclosureToggle } from "@/components/ui/disclosure";
 import { Select } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
 
+import { useHarnessCatalog } from "../api/session-pair.js";
+import { harnessDisplayName } from "../lib/session-pair-options.js";
 import {
-  findModel,
-  type ModelGroup,
-  sameSideGroups,
-} from "../lib/catalog-groups.js";
-
-export function sessionSettingOptions(
-  capability: HarnessCapability | undefined,
-) {
-  return (
-    capability?.harnessConfigCatalog?.options.filter(
-      (o) => o.id !== "model" && capability.sessionSettings?.includes(o.id),
-    ) ?? []
-  );
-}
-
-export function settingDefaults(
-  capability: HarnessCapability | undefined,
-  configured: HarnessConfigCurrent | null | undefined,
-): Record<string, string> {
-  return Object.fromEntries(
-    sessionSettingOptions(capability).flatMap((o) => {
-      const value =
-        (o.id === "mode"
-          ? configured?.mode
-          : configured?.configOptions[o.id]) ?? o.default;
-      return value &&
-        (o.choices.some((c) => c.value === value) || isModelOption(o))
-        ? [[o.id, value]]
-        : [];
-    }),
-  );
-}
-
-const isModelOption = (o: { category: string; choices: readonly unknown[] }) =>
-  o.category === "model" && o.choices.length === 0;
+  isModelOption,
+  sessionSettingOptions,
+} from "../lib/session-settings.js";
+import { PlatformSubagentSettings } from "./platform-subagent-settings.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the settings a newly picked model keeps. A value
- * the model's constraints exclude (Haiku takes no effort) and a subagent
- * model on the other side of the router/native split are dropped, since the
- * runtime refuses either; a value it cannot judge stays.
- */
-export function settingsForModel(
-  capability: HarnessCapability | undefined,
-  groups: readonly ModelGroup[],
-  model: string | null,
-  settings: Readonly<Record<string, string>>,
-): Record<string, string> {
-  const allowed = modelConstraintsFor(capability?.harnessConfigCatalog, model);
-  const side = sameSideGroups(groups, model);
-  return Object.fromEntries(
-    Object.entries(settings).filter(([id, value]) => {
-      const option = capability?.harnessConfigCatalog?.options.find(
-        (o) => o.id === id,
-      );
-      if (option && isModelOption(option)) {
-        const hit = findModel(groups, value);
-        return !hit || side.includes(hit.group);
-      }
-      const only = allowed?.[id];
-      return !only || only.includes(value);
-    }),
-  );
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a model-valued setting picks the model for the
- * session's subagents, so it sits in a section of its own; every other
- * setting is the session's.
+ * UNIT_BOUNDARY_DESCRIPTION: the session's own settings, then a Subagents
+ * section in two parts: the settings for the harness's own subagents, which
+ * run in this sandbox, and what the session's platform sub-agents run on.
+ * A change hands over every setting it touches; an empty value is unset.
  */
 export function SessionSettingsControls({
+  agentId,
+  carried,
   capability,
   model,
   settings,
@@ -89,37 +35,67 @@ export function SessionSettingsControls({
   disabled = false,
   onChange,
 }: {
+  agentId: string;
+  carried: readonly HarnessCapability[];
   capability: HarnessCapability | undefined;
   model: string | null;
   settings: Readonly<Record<string, string>>;
   defaults: Readonly<Record<string, string>>;
   modelChoices?: readonly { value: string; name: string }[];
   disabled?: boolean;
-  onChange: (id: string, value: string) => void;
+  onChange: (changes: Record<string, string>) => void;
 }) {
   const id = useId();
   const [subagentsOpen, setSubagentsOpen] = useState(false);
+  const { data: harnessCatalog } = useHarnessCatalog();
+  const catalog = capability?.harnessConfigCatalog;
   const options = sessionSettingOptions(capability).filter(
     (o) => !isModelOption(o) || modelChoices.length > 0,
   );
-  if (options.length === 0) return null;
+  const platform =
+    capability?.platformSubagentSettings === true && carried.length > 0;
+  if (options.length === 0 && !platform) return null;
+  const subagentModel =
+    settings[SUBAGENT_MODEL_SETTING] ??
+    defaults[SUBAGENT_MODEL_SETTING] ??
+    null;
   const rows = options.map((o) => {
-    const allowed = modelConstraintsFor(
-      capability?.harnessConfigCatalog,
-      model,
-    )?.[o.id];
     const modelValued = isModelOption(o);
+    const forSubagents = modelValued || o.subagents === true;
+    const allowed = modelConstraintsFor(
+      catalog,
+      forSubagents ? subagentModel : model,
+    )?.[o.id];
     const value =
       settings[o.id] ??
       defaults[o.id] ??
-      (modelValued ? "" : o.choices[0]?.value);
+      (modelValued || forSubagents ? "" : o.choices[0]?.value);
     const choices = modelValued
       ? [{ value: "", name: "Same as session" }, ...modelChoices]
-      : o.choices.filter(
-          (c) => !allowed || allowed.includes(c.value) || c.value === value,
-        );
-    return { option: o, modelValued, value, choices };
+      : [
+          ...(forSubagents ? [{ value: "", name: "Same as session" }] : []),
+          ...o.choices.filter(
+            (c) => !allowed || allowed.includes(c.value) || c.value === value,
+          ),
+        ];
+    return { option: o, modelValued, forSubagents, value, choices };
   });
+  const change = (optionId: string, value: string): Record<string, string> => {
+    if (optionId !== SUBAGENT_MODEL_SETTING) return { [optionId]: value };
+    const allowed = modelConstraintsFor(catalog, value || null);
+    const dropped = rows.filter(
+      (r) =>
+        r.forSubagents &&
+        !r.modelValued &&
+        r.value &&
+        allowed?.[r.option.id] &&
+        !allowed[r.option.id]!.includes(r.value),
+    );
+    return {
+      ...Object.fromEntries(dropped.map((r) => [r.option.id, ""])),
+      [optionId]: value,
+    };
+  };
   const row = (
     { option: o, value, choices }: (typeof rows)[number],
     label: string,
@@ -134,7 +110,7 @@ export function SessionSettingsControls({
         variant="ghost"
         disabled={disabled}
         value={value ?? ""}
-        onChange={(e) => onChange(o.id, e.target.value)}
+        onChange={(e) => onChange(change(o.id, e.target.value))}
       >
         {value !== undefined && !choices.some((c) => c.value === value) && (
           <option value={value}>{value}</option>
@@ -147,10 +123,24 @@ export function SessionSettingsControls({
       </Select>
     </Fragment>
   );
-  const own = rows.filter((r) => !r.modelValued);
-  const subagent = rows.filter((r) => r.modelValued);
+  const own = rows.filter((r) => !r.forSubagents);
+  const subagent = rows.filter((r) => r.forSubagents);
+  const platformHarness = platformSubagentChoice(settings)?.harness;
+  const summary = [
+    ...subagent
+      .filter((r) => r.value)
+      .map((r) => r.choices.find((c) => c.value === r.value)?.name ?? r.value),
+    ...(platformHarness
+      ? [
+          `Platform: ${harnessDisplayName(platformHarness, harnessCatalog?.harnesses) ?? platformHarness}`,
+        ]
+      : []),
+  ];
   const grid =
     "grid grid-cols-[auto_minmax(0,1fr)] items-center gap-x-3 gap-y-1 text-xs";
+  const heading =
+    "col-span-2 pt-1 text-[11px] font-medium text-muted-foreground";
+  const subgrid = "col-span-2 grid grid-cols-subgrid items-center gap-y-1";
   return (
     <div
       role="group"
@@ -160,7 +150,7 @@ export function SessionSettingsControls({
       {own.length > 0 && (
         <div className={grid}>{own.map((r) => row(r, r.option.name))}</div>
       )}
-      {subagent.length > 0 && (
+      {(subagent.length > 0 || platform) && (
         <div
           role="group"
           aria-label="Subagents"
@@ -176,21 +166,45 @@ export function SessionSettingsControls({
             className="text-muted-foreground hover:text-foreground"
           >
             <span>Subagents</span>
-            {!subagentsOpen && (
+            {!subagentsOpen && summary.length > 0 && (
               <span className="min-w-0 truncate text-foreground">
-                {subagent
-                  .map(
-                    (r) =>
-                      r.choices.find((c) => c.value === r.value)?.name ??
-                      r.value,
-                  )
-                  .join(" · ")}
+                {summary.join(" · ")}
               </span>
             )}
           </DisclosureToggle>
           {subagentsOpen && (
             <div className={cn(grid, "pl-5")}>
-              {subagent.map((r) => row(r, subagentLabel(r.option.name)))}
+              {subagent.length > 0 && (
+                <div
+                  role="group"
+                  aria-labelledby={`${id}-sandbox-heading`}
+                  className={subgrid}
+                >
+                  <span id={`${id}-sandbox-heading`} className={heading}>
+                    In this sandbox
+                  </span>
+                  {subagent.map((r) => row(r, subagentLabel(r.option.name)))}
+                </div>
+              )}
+              {platform && (
+                <div
+                  role="group"
+                  aria-labelledby={`${id}-platform-heading`}
+                  className={subgrid}
+                >
+                  <span id={`${id}-platform-heading`} className={heading}>
+                    Platform sub-agents
+                  </span>
+                  <PlatformSubagentSettings
+                    agentId={agentId}
+                    carried={carried}
+                    settings={settings}
+                    idPrefix={id}
+                    disabled={disabled}
+                    onChange={onChange}
+                  />
+                </div>
+              )}
             </div>
           )}
         </div>

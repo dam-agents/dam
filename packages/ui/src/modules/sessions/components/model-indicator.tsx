@@ -35,14 +35,11 @@ import {
   harnessDisplayName,
   modelProviderLabel,
 } from "../lib/session-pair-options.js";
+import { settingDefaults, settingsForModel } from "../lib/session-settings.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
-import {
-  SessionSettingsControls,
-  settingDefaults,
-  settingsForModel,
-} from "./session-settings-controls.js";
+import { SessionSettingsControls } from "./session-settings-controls.js";
 
 interface Props {
   agentId: string;
@@ -259,6 +256,8 @@ export function ModelIndicator({
         {capability?.sessionSettings && (
           <div className="border-t border-border pt-2 empty:hidden">
             <SessionSettingsControls
+              agentId={agentId}
+              carried={carried}
               capability={capability}
               model={model}
               settings={settings}
@@ -269,7 +268,7 @@ export function ModelIndicator({
                   name: `${m.upstreamId} · ${g.displayName}`,
                 })),
               )}
-              onChange={(id, value) => onConfigure({ [id]: value })}
+              onChange={onConfigure}
             />
           </div>
         )}
