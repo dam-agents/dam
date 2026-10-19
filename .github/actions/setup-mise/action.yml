@@ -73,7 +73,7 @@ runs:
     # Only the full install is cached, on x64 alone: a subset installs in
     # seconds without one (mirror-images: 3 s), and on arm64 only
     # build-images installs everything, on main.
-    - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+    - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
       with:
         version: "2026.10.5"
         install_args: ${{ inputs.install_args }}
