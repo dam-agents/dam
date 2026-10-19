@@ -83,6 +83,13 @@ func settleRunnerPod(t *testing.T, r *AgentReconciler, owner string) {
 	require.NoError(t, err)
 }
 
+func runnerPodRevision(t *testing.T, r *AgentReconciler, owner string) string {
+	t.Helper()
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(owner), metav1.GetOptions{})
+	require.NoError(t, err)
+	return dep.Spec.Template.Annotations[annRunnerRollRevision]
+}
+
 func runnerImageOf(t *testing.T, r *AgentReconciler, owner string) string {
 	t.Helper()
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(owner), metav1.GetOptions{})
@@ -1146,10 +1153,12 @@ func TestAMarkedReleaseRollsBackARunnerHandedOffAway(t *testing.T) {
 
 	settled := time.Now().Add(-time.Hour)
 	setRolledAt(t, r, testOwner, settled)
+	revision := runnerPodRevision(t, r, testOwner)
 	r.config.VM.Runner.Image = runnerV1
 	r.config.VM.Runner.Rollout.RebootRequiredRelease = runnerV1
 	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
-	assert.Equal(t, runnerV1, runnerImageOf(t, r, testOwner), "the pod is on the marked release's own image, so its template does not change")
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, testOwner), "the pod is on the marked release's own image")
+	assert.NotEqual(t, revision, runnerPodRevision(t, r, testOwner), "the pod template takes a new revision, which is what restarts the pod and so reboots its machines")
 	assert.NotEqual(t, settled.UTC().Format(time.RFC3339), runnerAnnotations(t, r, testOwner)[annRunnerRolledAt], "it rolls anyway: the runner answers the release before, so its machines never booted the marked one")
 	assert.Equal(t, []string{runnerV2}, nodes[testOwner].named, "and nothing is handed back: a hand-off reboots nothing")
 }

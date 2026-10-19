@@ -74,6 +74,7 @@ So a release an operator names as requiring a reboot is not handed off at all: e
 The mark names the release it was set for, so it lapses by itself: once the chart configures another release, the mark names one the install does not run, and nothing reads it.
 It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
 A runner that took another release by hand-off keeps the image it booted, so its pod's image is no proof the marked release reaches it: the runner's own answer decides, and one running another release rolls back onto the marked one, which is the reboot its machines need.
+Such a roll writes the pod template the pod already has, and a Deployment update that changes nothing restarts nothing, so every roll whose template would be identical stamps a revision on it: the restart is what reboots the machines, and the stamp is left out of the pod hash, since it says when the roll happened rather than what the pod is.
 A runner that already holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the mark does not overrule what the runner reported.
 Leaving a runtime otherwise is configuring the release before it again, which the same hand-off takes.
 platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce a guest does not confirm, which the runner ends with a power-off, costs no more than a power cut and not the agent's last writes.

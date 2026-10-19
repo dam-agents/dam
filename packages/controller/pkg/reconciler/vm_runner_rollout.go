@@ -25,9 +25,11 @@ import (
 const (
 	annRunnerTemplate = "agent-platform.ai/runner-template"
 	annRunnerRolledAt = "agent-platform.ai/runner-rolled-at"
-	annRunnerAwaiting = "agent-platform.ai/runner-awaiting"
-	annRunnerStalled  = "agent-platform.ai/runner-roll-stalled"
-	annRunnerBusy     = "agent-platform.ai/runner-busy-since"
+	// UNIT_BOUNDARY_DESCRIPTION: the revision stamped on a rolled pod's template, so a roll whose template would otherwise be identical still restarts the pod: a marked release rolls a pod that already has its image, and a Deployment update that changes nothing restarts nothing, so the machines would never reboot. The hash leaves it out, since it says when the roll happened, not what the pod is.
+	annRunnerRollRevision = "agent-platform.ai/runner-roll-revision"
+	annRunnerAwaiting     = "agent-platform.ai/runner-awaiting"
+	annRunnerStalled      = "agent-platform.ai/runner-roll-stalled"
+	annRunnerBusy         = "agent-platform.ai/runner-busy-since"
 
 	defaultRunnerSettleTimeout = 10 * time.Minute
 	defaultRunnerIdleWait      = 24 * time.Hour
@@ -155,6 +157,9 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 	}
 	dep.Annotations[annRunnerTemplate] = hash
 	dep.Annotations[annRunnerRolledAt] = time.Now().UTC().Format(time.RFC3339)
+	if forRelease {
+		metav1.SetMetaDataAnnotation(&dep.Spec.Template.ObjectMeta, annRunnerRollRevision, time.Now().UTC().Format(time.RFC3339Nano))
+	}
 	if len(ready) > 0 {
 		dep.Annotations[annRunnerAwaiting] = strings.Join(ready, ",")
 	}
