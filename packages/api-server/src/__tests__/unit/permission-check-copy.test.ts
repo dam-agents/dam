@@ -13,8 +13,15 @@ describe("channel permission-check guidance", () => {
     const text = channelPermissionCheckGuidance;
 
     expect(text).toContain("permission mode");
-    expect(text).toContain("Nothing in this conversation can approve it");
+    expect(text).toContain("Nothing in this conversation can approve the rest");
     expect(text).toContain("your owner can change the agent's mode");
+  });
+
+  it("keeps the platform's own tools out of the refusal rule", () => {
+    const text = channelPermissionCheckGuidance;
+
+    expect(text).toContain("every tool but the platform's own");
+    expect(text).toContain("the relay allows once");
   });
 
   it("names the setting each harness actually has", () => {

@@ -55,7 +55,7 @@ A few observations the diagram glosses over:
   That holds where the harness offers a way to say no; where it offers only ways to say yes the sole honest answer left is to cancel, which ends the whole turn rather than the one call in it.
   The relay never picks an approval to keep a turn alive; the one approval it ever picks is the allow-once below.
   What an Agent may do on a channel turn is therefore exactly what its session's permission mode lets it do *without* asking, which makes that mode the dial over channel behavior.
-  The turn contract hands the Agent that explanation, because the sender is never told by the platform: a call the permission check refused is the mode's doing, never a platform setting, and only the owner can change the mode.
+  The turn contract hands the Agent that explanation, because the platform does not tell the sender: a call the permission check refused is the mode's doing, never a platform setting, and only the owner can change the mode.
   Codex has no such dial: its image runs it never asking, so it raises no prompt to refuse ([harness-config](harness-config.md)).
   The platform's own tool surface is kept outside that dial: asked about one of the two MCP servers the platform injects, the relay answers allow-once, so disposing of a turn, reporting an invocation result and reading a knowledge base survive a mode that asks — wherever the prompt offers allowing once at all, since that is the only approval the relay will pick.
   Reach on those tools is the platform's to enforce (per-Agent endpoint, mesh identity, the binding), never the harness's, so approving them widens nothing.
