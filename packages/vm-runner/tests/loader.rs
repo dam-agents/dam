@@ -5,8 +5,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Child, Command};
 use std::time::{Duration, Instant};
 
-use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_RUNTIME};
-use vm_runner::release::{self, FILES, RUNNER, RUNTIME_ID};
+use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_REBOOT, HELD_RUNTIME};
+use vm_runner::release::{self, FILES, REBOOT_ID, RUNNER, RUNTIME_ID};
 
 const RUNS: &str = r#"#!/bin/sh
 [ "$1" = --help ] && exit 0
@@ -117,12 +117,25 @@ impl Pod {
     }
 
     fn stage(&self, release: &str, script: &str, runtime: &str) {
+        self.stage_declaring(release, script, runtime, None);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: stages a release that declares the reboot key its machines were booted by, or none at all for one built before keys. The stager copies the key with the rest of the release, since it is part of what the release changes in a machine.
+    fn stage_declaring(&self, release: &str, script: &str, runtime: &str, key: Option<&str>) {
         let image = self.dir.join(format!("image-{}", release::key(release)));
         release_dir(&image, script, runtime);
+        if let Some(key) = key {
+            std::fs::write(image.join(REBOOT_ID), key).unwrap();
+        }
         let tree = self.dir.join(format!("runtime-tree-{runtime}"));
         std::fs::create_dir_all(&tree).unwrap();
         std::fs::write(tree.join("smolvm"), runtime).unwrap();
         release::stage(&image, &tree, &self.dir.join("releases"), release, 10).unwrap();
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the reboot key the pod's own release declares, which its loader compares every release it is named against.
+    fn boots(&self, key: &str) {
+        std::fs::write(self.dir.join("builtin").join(REBOOT_ID), key).unwrap();
     }
 }
 
@@ -265,5 +278,76 @@ fn a_stop_during_a_hand_off_reaches_the_next_runner() {
         "{:?}",
         lines(&log)
     );
+    assert!(exited.success(), "the loader exited with {exited}");
+}
+
+// TEST_SCENARIO: a release declaring another reboot key than the pod's is held as rebooting, since only a new pod reboots the machines onto what it changes: the loader keeps the release it runs, the machines it booted stay up, and nothing of the new release is started. The same release declaring the pod's key is handed off as any release was.
+#[test]
+fn a_release_declaring_another_reboot_key_is_held_and_hands_nothing_over() {
+    let mut pod = Pod::start("reboot", RUNS);
+    let dir = pod.dir.clone();
+    wait_for("the pod's own runner", || {
+        pod.status().running == "runner:1" && lines(&dir.join("machines")).len() == 1
+    });
+    let machine = lines(&dir.join("machines"))[0].clone();
+    pod.boots("generation-1");
+
+    pod.stage_declaring("runner:2", RUNS, "runtime-a", Some("generation-2"));
+    pod.name("runner:2");
+    wait_for("runner:2 to be held as rebooting", || {
+        pod.status().held == HELD_REBOOT
+    });
+    let status = pod.status();
+    assert_eq!(
+        (status.running.as_str(), status.target.as_str()),
+        ("runner:1", "runner:2")
+    );
+    assert!(alive(&machine), "the hold stopped the machine it booted");
+    assert_eq!(
+        lines(&dir.join("runners")).len(),
+        1,
+        "the loader started a release it held"
+    );
+
+    pod.stage_declaring("runner:3", RUNS, "runtime-a", Some("generation-1"));
+    pod.name("runner:3");
+    wait_for(
+        "the hand-off to runner:3, which declares the pod's key",
+        || pod.status().running == "runner:3",
+    );
+    assert!(
+        alive(&machine),
+        "a hand-off between two releases of one key stopped the machine"
+    );
+    let exited = pod.terminate();
+    assert!(exited.success(), "the loader exited with {exited}");
+}
+
+// TEST_SCENARIO: rolling a pod back to a release built before keys hands off in place: the pod declares a key and the release none, so nothing compares them, and the machine that was running keeps running on the older release.
+#[test]
+fn a_pod_that_declares_a_reboot_key_takes_a_keyless_release_in_place() {
+    let mut pod = Pod::start("rollback-to-keyless", RUNS);
+    let dir = pod.dir.clone();
+    wait_for("the pod's own runner", || {
+        pod.status().running == "runner:1" && lines(&dir.join("machines")).len() == 1
+    });
+    let machine = lines(&dir.join("machines"))[0].clone();
+    pod.boots("generation-2");
+
+    pod.stage("runner:2", RUNS, "runtime-a");
+    pod.name("runner:2");
+    wait_for("the hand-off to runner:2, which declares no key", || {
+        pod.status().running == "runner:2"
+    });
+    assert!(
+        alive(&machine),
+        "the rollback to a release built before keys stopped the machine"
+    );
+    assert_eq!(
+        pod.status().held,
+        "",
+        "a release that declares no key is not held"
+    );
+    let exited = pod.terminate();
     assert!(exited.success(), "the loader exited with {exited}");
 }
