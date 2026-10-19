@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -76,7 +76,7 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
   SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([persistence](persistence.md#per-agent-pvcs)).
   The entrypoint prepares sshd.
-  The image's build gives uid 0 the agent's home, so OpenSSH keeps its keys there.
+  The image's build gives uid 0 the agent's home, so a login's own keys and known hosts are kept there; what admits a connection — sshd's host key, its config and the keys a connection registers — lives outside the home ([cli](cli.md#ssh-access)).
   The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
   The cache is the runtime's alone: no harness or command it starts inherits it.
 

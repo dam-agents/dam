@@ -1935,21 +1935,26 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether a running guest's agent has room to write, from the marks platform-init prints on the console (guest::GUEST_FULL and guest::GUEST_ROOM): the room its storage grant leaves it, so a guest whose agent filled its disk says so while it keeps running, which neither a boot that failed nor an entrypoint that exited can. The kernel log is read from where the last probe stopped, since the VMM logs a line for every connection it relays and a mark from a minute ago is not at its end; a boot starts the read again. A runtime that keeps no log leaves the machine unmarked.
+    // UNIT_BOUNDARY_DESCRIPTION: whether a running guest's agent has room to write, from the marks platform-init prints on the console (guest::GUEST_FULL and guest::GUEST_ROOM): the room its storage grant leaves it, so a guest whose agent filled its disk says so while it keeps running, which neither a boot that failed nor an entrypoint that exited can. The kernel log is read from where the last probe stopped, since the VMM logs a line for every connection it relays and a mark from a minute ago is not at its end; a boot starts the read again. The file is read outside the lock, so a boot that starts meanwhile would make this probe's offset and mark the old boot's: the write is dropped when the machine's boot is no longer the one the read began on.
     fn note_guest_room(&self, id: &str) {
         let Some(path) = self.runtime.kernel_log(id) else {
             return;
         };
-        let from = locked(&self.machines)
+        let (from, boot) = locked(&self.machines)
             .entries
             .get(id)
-            .map_or(0, |entry| entry.kernel_read);
+            .map_or((0, None), |entry| {
+                (entry.kernel_read, entry.boot.as_ref().map(|b| b.at))
+            });
         let (read, text) = kernel_since(&path, from);
         let mark = room_full(&text);
         let mut machines = locked(&self.machines);
         let Some(entry) = machines.entries.get_mut(id) else {
             return;
         };
+        if entry.boot.as_ref().map(|b| b.at) != boot {
+            return;
+        }
         entry.kernel_read = read;
         if let Some(full) = mark {
             entry.guest_full = full;
