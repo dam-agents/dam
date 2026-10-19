@@ -142,6 +142,7 @@ func TestTheStatesAndReasonsAreTheOnesTheRunnerReports(t *testing.T) {
 	}, vocabulary.States)
 	assert.Equal(t, []string{
 		ReasonNotReady, ReasonOutOfCapacity, ReasonImageUnavailable, ReasonImageCacheUnreachable, ReasonBootFailed, ReasonSeedMissing, ReasonStorageFull, ReasonHomeFull, ReasonCopyingDisk,
+		ReasonOOMKilled, ReasonSeccompKilled,
 	}, vocabulary.Reasons)
 	assert.Equal(t, int32(SeedExitPermanent), vocabulary.SeedExitPermanent)
 	assert.Equal(t, []string{HeldUnstaged, HeldRuntime, HeldReboot, HeldFailed}, vocabulary.ReleaseHolds)

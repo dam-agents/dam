@@ -136,6 +136,10 @@ const (
 	ReasonImageCacheUnreachable = "MachineImageCacheUnreachable"
 	// UNIT_BOUNDARY_DESCRIPTION: a first boot that copies a disk before the guest answers — a conversion to btrfs or a migration seed's restore. The runner holds such a boot for up to six hours, so it is a boot in progress, never a start failure.
 	ReasonCopyingDisk = "MachineCopyingDisk"
+	// UNIT_BOUNDARY_DESCRIPTION: a machine whose VMM the kernel killed for memory, which the runner reports from the VMM's exit signal until the guest answers again. Every machine of an owner shares the runner's cgroup, so what grows past it costs one machine a restart, not the owner every machine.
+	ReasonOOMKilled = "MachineOOMKilled"
+	// UNIT_BOUNDARY_DESCRIPTION: a machine whose VMM a seccomp filter killed: the guest made a call the runner's filter forbids, and reads as a machine that restarted once rather than one that flaps. The runner reports it from the VMM's exit signal until the guest answers again.
+	ReasonSeccompKilled = "MachineSeccompKilled"
 )
 
 // UNIT_BOUNDARY_DESCRIPTION: which runner release a runner pod runs, as its loader last wrote it: the one running, the one the controller asked for, and, when the two differ, why the loader holds on to the one running.
@@ -151,7 +155,7 @@ type RunnerReleaseName struct {
 	Release string `json:"release"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills the runner by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit: the working set the kernel kills a machine of it by, read off its cgroup, and whether it is past the pressure threshold. Version moves when pressure starts or ends and again while it lasts.
 type RunnerPressure struct {
 	Version       uint64 `json:"version,omitempty"`
 	Pressured     bool   `json:"pressured"`

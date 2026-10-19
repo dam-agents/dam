@@ -180,7 +180,7 @@ pub struct RunnerReleaseName {
     pub release: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills the runner by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills a machine of it by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct RunnerPressure {
@@ -269,6 +269,10 @@ pub const REASON_STORAGE_FULL: &str = "MachineStorageFull";
 pub const REASON_HOME_FULL: &str = "MachineHomeFull";
 // UNIT_BOUNDARY_DESCRIPTION: a boot that copies a disk before its guest first answers — a migration seed's restore — and is still at it. It is no failure: the runner holds the boot up to plan::COPYING_RESTART, so the controller counts no start failure and no idle time against it.
 pub const REASON_COPYING_DISK: &str = "MachineCopyingDisk";
+// UNIT_BOUNDARY_DESCRIPTION: the kernel killed the machine's VMM to free memory — the OOM killer taking the largest process of the runner's cgroup, or the kubelet's eviction doing the same. It is not a failure of the machine's own: the runner starts it again at the controller's next ensure, and the reason says what took it down only until it is ready.
+pub const REASON_OOM_KILLED: &str = "MachineOOMKilled";
+// UNIT_BOUNDARY_DESCRIPTION: the machine's own seccomp filter killed its VMM, for a call outside the allowlist `virtualization.runner.seccomp: enforce` installs. The guest is gone with the call it made, so the reason names the policy rather than leaving the agent to read as one that flapped.
+pub const REASON_SECCOMP_KILLED: &str = "MachineSeccompKilled";
 
 #[cfg(test)]
 mod tests {
@@ -471,6 +475,8 @@ mod tests {
                 REASON_STORAGE_FULL,
                 REASON_HOME_FULL,
                 REASON_COPYING_DISK,
+                REASON_OOM_KILLED,
+                REASON_SECCOMP_KILLED,
             ])
         );
         assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);

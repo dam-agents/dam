@@ -248,7 +248,7 @@ fn a_hold_cannot_drop_what_another_holds() {
     assert!(cache.digest_entry(&held).exists());
 }
 
-// TEST_SCENARIO: any runner on a node may hold over the shared socket, so what a hold makes the service remember is bounded: a digest with no entry on disk is not held at all, and a call naming more digests than any runner's machines could boot is refused whole.
+// TEST_SCENARIO: any runner of the install on a node may hold over that install's socket, so what a hold makes the service remember is bounded: a digest with no entry on disk is not held at all, and a call naming more digests than any runner's machines could boot is refused whole.
 #[test]
 fn a_hold_is_bounded_by_what_the_cache_holds() {
     let f = Fixture::new("hold-bounded", PUBLIC_CRANE);
@@ -366,7 +366,7 @@ fn a_preload_pass_fetches_what_is_missing_and_pins_it() {
     assert_eq!(f.calls("export"), exports, "a warm cache was fetched again");
 }
 
-// TEST_SCENARIO: every owner's runner on a node shares the cache, so an image one owner fetched with credentials is not another's to boot by naming it. A caller with no credential, or one the registry refuses, is refused the cached entry as an image problem; one whose credential reads the manifest boots the tree already there without fetching it again. What is known about an entry is kept in memory, so after a restart the check is made again and still fails closed.
+// TEST_SCENARIO: every owner's runner of the install on a node shares the cache, so an image one owner fetched with credentials is not another's to boot by naming it. A caller with no credential, or one the registry refuses, is refused the cached entry as an image problem; one whose credential reads the manifest boots the tree already there without fetching it again. What is known about an entry is kept in memory, so after a restart the check is made again and still fails closed.
 #[test]
 fn a_private_entry_is_served_only_to_credentials_that_read_it() {
     let f = Fixture::new("private", PRIVATE_CRANE);
@@ -640,7 +640,7 @@ fn fetches_under_way_count_against_the_ceiling() {
     assert_eq!(locked(&cache.memory).in_flight, 0);
 }
 
-// TEST_SCENARIO: a hold is how eviction knows a tree is in use, and every runner on the node can make the service resolve any digest. A resolve that fails leaves nothing on disk and so holds nothing, or naming digests that do not exist would grow what the service remembers without bound.
+// TEST_SCENARIO: a hold is how eviction knows a tree is in use, and every runner of the install on the node can make the service resolve any digest. A resolve that fails leaves nothing on disk and so holds nothing, or naming digests that do not exist would grow what the service remembers without bound.
 #[test]
 fn a_resolve_that_fails_holds_nothing() {
     let f = Fixture::new("hold-failed", PUBLIC_CRANE);

@@ -18,6 +18,7 @@ import {
   createExtAuthzGate,
   type EgressAttendance,
   type EgressRuleMatcher,
+  type ProviderScopes,
   type ExtAuthzDecision,
   type ExtAuthzGate,
   type AgentIdentityResolver,
@@ -64,6 +65,7 @@ interface ComposeApprovalsSystemDeps {
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
+  providerScopes: ProviderScopes;
   attendance: EgressAttendance;
   spend: SpendCheck;
   wrapperFrameSender: WrapperFrameSender;
@@ -85,6 +87,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     bus: deps.bus,
     identityResolver: deps.identityResolver,
     ruleMatcher: deps.ruleMatcher,
+    providerScopes: deps.providerScopes,
     attendance: deps.attendance,
     spend: deps.spend,
     questions: createSpendLimitQuestions({ repo }),

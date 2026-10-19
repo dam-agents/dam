@@ -180,7 +180,7 @@ flowchart LR
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
-  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
+  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent, then the side panel's close X — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
   It returns to the list from a back control and maximizes through the side panel's edge tab, as an open file does.
   Deleting the artifact a preview is showing closes that preview.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.

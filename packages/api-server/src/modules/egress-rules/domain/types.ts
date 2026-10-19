@@ -12,4 +12,5 @@ export interface EgressRuleRow {
   decidedAt: Date;
   status: "active" | "revoked";
   source: EgressRuleSource;
+  presetSource?: EgressRuleSource;
 }
