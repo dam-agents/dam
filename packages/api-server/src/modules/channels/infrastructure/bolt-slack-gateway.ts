@@ -266,7 +266,7 @@ export function createBoltSlackGateway(
         appToken: deps.appToken,
         socketMode: true,
         ignoreSelf: false,
-        logLevel: LogLevel.DEBUG,
+        logLevel: LogLevel.INFO,
         authorize: async ({ teamId }) => {
           const auth = await testedAuthFor(teamId ?? NO_WORKSPACE);
           if (!auth) throw new Error(`${INSTALL_TOKEN_MISSING}: ${teamId}`);

@@ -13,6 +13,7 @@ A machine's new size reaches it at its next start.
 
 **An unread pool is unknown, not the install's default.** A controller that has not read an owner's UserBudget has no pool for them, and the install's default is smaller than some owners' pools and larger than others, so it stands in for none: a claim built at it can never come down again, a memory limit built at it falls under the machines already running on it, and a machine sized from it is sized past the pool its owner meant.
 While a pool is unread the controller creates no claim and no Deployment for that owner and changes no size, and retries; a pool read once is kept when a later read fails, so a moment of trouble changes nothing.
+A claim and a runner that already exist are left as they are, and an agent that should stop still stops: neither needs a size from the pool.
 No reclaim is decided from an unread pool either: it is the pool that says how much memory an owner's machines may hold.
 
 **Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit.
@@ -46,7 +47,7 @@ The guest writes the page descriptors of added RAM into that RAM itself, so huge
 **The runner measures every running machine.** Its health prober reads the resident memory of each running machine's VMM at every probe and reports it in the machine's status.
 The owner sees the same figures on the home dashboard: what is committed against the pool, and each agent's share of it ([budgets](budgets.md)).
 The figure is kept out of what moves the status version, so it never wakes a waiting status read on its own.
-A probe that cannot read the figure keeps the last one it read, so a failed measurement never counts a guest as holding nothing.
+A probe that cannot read the figure, or the machine's state, keeps the last figure it read, so a failed read never counts a guest as holding nothing, and admission counts such a machine at least at its warm-up floor while that figure stands, since a figure from before the failure is not what it holds now.
 
 **The runner watches its own memory.** Every second it reads its working set off its cgroup — what the cgroup charges less the file cache the kernel can drop, the figure the kubelet reads — against its limit.
 At 95% the runner is under pressure, and it stays so until the working set falls below 90%.
@@ -60,7 +61,7 @@ A running machine whose stored spec cannot be read — a corrupt file, or one a 
 The harness starts only once the guest answers, about a second after the boot, and grows to 2 to 3 GiB within the next minute, so a machine measured right after its boot holds little of what it will hold; the warm-up is a fixed time rather than one that ends at the guest's answer, since the answer is when the growth begins.
 The runner reports a machine warming up in its status, and the controller counts it the same way.
 Counting a boot at half the pool would let only two machines boot at once; at the floor, as many machines warm up together as the pool holds floors, and a runner roll or many wakes at once start the rest in waves as the first ones warm up, each refused start retried within 30 seconds ([budgets](budgets.md)).
-Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
+Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below, and only the request keeps a figure the probe could not refresh below the warm-up floor: the status carries the last figure the runner read, so the request built from it can sit below admission for that machine.
 A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, a home that is full, an image it cannot fetch, a seed that is missing or a boot that failed, which all leave the Agent awake with no machine: it holds nothing meanwhile.
 A machine that boots, restarts or stops holds its memory meanwhile, and the runner keeps a refusal's reason until the action it admitted completes, so the reason alone says nothing: what counts is a refusal with nothing running or in flight.
 So the CPU limit and the pass that judges pressure count it at nothing.
@@ -70,7 +71,12 @@ The memory a refusal quotes as in use is what its owner's machines hold, the sam
 The controller records the runner's answer where it gives it, under the owner's lock, so the count is current before the Agent's status carries it, and the pass keeps each status it reads under that same lock, so a reading taken before a refusal cannot outlast it.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
-A machine whose own state cannot be read is counted as a running one: at its measured use plus headroom, never more than its size while the spec reads, at least its warm-up floor until it is measured, and at the whole handout when its spec cannot be read and it was never measured — an unknown VMM is not an absent one.
+A machine whose own state cannot be read counts as a running one only when something says a VMM may hold it: this runner measured it, or a VMM process holds its directory.
+A look for that VMM that could not read a process's command line counts as one that found a VMM: it has not shown that none holds the machine, and a process that exited mid-look leaves no command line at all, which is the clean answer.
+Counted, it counts as a running machine does: at its measured use plus headroom, never more than its size while the spec reads, at least its warm-up floor until it is measured or while the figure it holds is one no probe could refresh, and at the whole handout when its spec cannot be read and it was never measured.
+A machine whose spec cannot be read counts the same way with no size to bound it: at the warm-up floor while it warms up or while the figure it holds is one no probe could refresh, and at the whole handout there when no floor is configured, since the handout is the most any one machine can hold.
+A machine the runtime says is stopped or gone holds nothing, so the figure a probe last measured goes with its VMM: a stopped machine is not probed again, and the figure would otherwise outlive it and count as evidence that a VMM still holds a machine whose record later stops decoding.
+A record that no longer decodes is not that evidence: a stopped or hibernated machine's record fails the same way, and counting it would hold its room against every start its owner makes — an unknown VMM is not an absent one, and an unreadable record is not a running one.
 That limit is the one the kernel holds the runner to, read off its cgroup's `memory.max` at every admission and pressure sample, so a limit resized in place counts at once; a runner with no cgroup v2 limit to read uses the limit it was started with.
 
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit.

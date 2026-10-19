@@ -214,6 +214,18 @@ host=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --set virtualization.i
   --set virtualization.runner.hostAddress=192.168.5.2 --set controller.gatewayEgress.clusterDns=null)
 ! grep -q 'component: vm-image-cache' <<<"$host" ||
   { echo "a render for the host runner rendered the node image cache" >&2; exit 1; }
+# A node short of disk turns away every pod but a critical one, and among the
+# pods it evicts it takes those over their ephemeral-storage request first,
+# then the lowest priority: the cache pod had neither, so a pressured node
+# refused it on arrival and reached it first when it reclaimed — and the cache
+# is in the boot path. Both settings must render, and no ephemeral-storage
+# limit beside the request, since a pod over its limit is evicted first too.
+cache=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --show-only templates/controller/vm-image-cache.yaml |
+  yq -o=json 'select(.kind == "DaemonSet") | .spec.template.spec')
+jq -e '.priorityClassName == "system-node-critical"
+  and .containers[0].resources.requests["ephemeral-storage"] == "128Mi"
+  and .containers[0].resources.limits["ephemeral-storage"] == null' <<<"$cache" >/dev/null ||
+  { echo "the node image cache is the first pod a node short of disk would evict: $cache" >&2; exit 1; }
 # Runner pods take a new runner image only from the node's release directory,
 # so an install that clears it fails the render.
 if helm template platform . "${COMMON[@]}" "${VM[@]}" \
