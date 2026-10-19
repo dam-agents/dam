@@ -11,10 +11,7 @@ import type {
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { noticeStream } from "../../core/notice-stream.js";
-import {
-  mergedSpawnEnv,
-  type LeaseEnvReader,
-} from "../../core/runtime-env.js";
+import { mergedSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   contributionDrivers,
   eventDrivers,
