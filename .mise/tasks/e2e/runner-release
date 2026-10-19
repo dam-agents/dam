@@ -13,14 +13,14 @@
 # so the second release is the first one's runtime and binaries: what a spec
 # sees is the reboot a release declares, and nothing else.
 #
-# It is read as the image tar the lane already has, and the layers it shares
-# with the first release are already in the cluster's image store, so nothing is
-# downloaded again and no layer is copied on import.
+# It is read as the image the lane already has, a tar or the layout a build left, and the
+# layers it shares with the first release are already in the cluster's image store, so
+# nothing is downloaded again and no layer is copied on import.
 set -euo pipefail
 key="${usage_key:?}"
 name="platform-vm-runner:$key"
-base="$(.mise/tasks/image/resolve tar-path vm-runner)"
-[ -f "$base" ] || { echo "e2e:runner-release: no runner image tar at $base" >&2; exit 1; }
+base="$(.mise/tasks/image/resolve import-path vm-runner)"
+[ -e "$base" ] || { echo "e2e:runner-release: no runner image at $base" >&2; exit 1; }
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 mkdir -p "$work/root/usr/local/libexec/vm-runner"
