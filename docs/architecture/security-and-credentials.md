@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -245,6 +245,11 @@ Requests that arrive together, as a browser's parallel connections to one host d
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
+A request a deny rule refuses on a TLS-terminated chain gets a 403 whose body names the rule and says the egress gateway refused it, not the upstream, so a harness shows the cause instead of a bare 403; the SNI-only catch-all can only close the connection.
+
+**Model provider hosts.** A model provider Connection granted to the Agent passes the gate on its own hosts, ports and paths even where a rule denies them, logged with basis *provider*.
+A model call refused at the gate ends the session, and a deny written while another provider was attached — for the host a harness also calls for its own settings — would otherwise break the provider attached later.
+A rule that allows the request decides first, so the override is read only when no rule allows it.
 
 **Spend limits.** On a metered model call, the gate also checks the payer's spend limits, after identity and before the rules ([spend-limits](spend-limits.md#limits)).
 At a limit it refuses at once, with a response shaped for the call's API path instead of the bare 403, and files a spend-limit question instead of an egress approval; it never holds such a call.
