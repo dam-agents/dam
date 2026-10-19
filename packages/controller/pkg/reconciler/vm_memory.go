@@ -242,18 +242,28 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	if first == nil {
 		return "", false
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it.
+	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it. A runner that does not mark its machines with the memory figures is older than them — a runner release the controller has not rolled yet — and is asked about each machine in turn, as it was before, since its zeroes would count a warming machine at its measured use and forget the size a machine still runs at.
 	usage, err := runner.Usage(ctx)
 	if err != nil {
 		return "", false
 	}
-	held := make(map[string]vmrunner.MachineUsage, len(usage.Machines))
-	for _, m := range usage.Machines {
-		held[m.ID] = m
-	}
-	for _, name := range up {
-		m := held[name]
-		r.noteMachineUse(name, vmrunner.MachineStatus{State: m.State, CPUs: m.CPUs, MemoryMiB: m.MemoryMiB, UsedMiB: m.UsedMiB, Warming: m.Warming})
+	if usage.MachineFigures {
+		held := make(map[string]vmrunner.MachineUsage, len(usage.Machines))
+		for _, m := range usage.Machines {
+			held[m.ID] = m
+		}
+		for _, name := range up {
+			m := held[name]
+			r.noteMachineUse(name, vmrunner.MachineStatus{State: m.State, CPUs: m.CPUs, MemoryMiB: m.MemoryMiB, UsedMiB: m.UsedMiB, Warming: m.Warming})
+		}
+	} else {
+		for _, name := range up {
+			status, err := runner.Status(ctx, name)
+			if err != nil {
+				continue
+			}
+			r.noteMachineUse(name, status)
+		}
 	}
 	demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
 	if err != nil {

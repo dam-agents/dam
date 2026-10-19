@@ -1505,6 +1505,7 @@ impl Server {
             },
             cpu,
             machines,
+            machine_figures: true,
         })
     }
 

@@ -64,6 +64,8 @@ type fakeNode struct {
 	// UNIT_BOUNDARY_DESCRIPTION: what the controller this test builds asked the runner, so a test can hold a reconcile or a memory pass to the reads it costs: one status read per machine is work a usage read that lists every machine already answers.
 	statusReads int
 	usageReads  int
+	// UNIT_BOUNDARY_DESCRIPTION: answers the usage read a runner release older than the per-machine memory figures did, which lists each machine without them and without the mark that says they are there.
+	legacyUsage bool
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
@@ -103,6 +105,7 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			n.usageReads++
 			usage := n.usage
 			usage.Machines = n.usageMachines()
+			usage.MachineFigures = !n.legacyUsage
 			require.NoError(t, json.NewEncoder(w).Encode(usage))
 			return
 		}
@@ -178,11 +181,15 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	return n, srv
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the machines a usage read lists, built from the statuses the runner holds as its own read builds them from what it recorded.
+// UNIT_BOUNDARY_DESCRIPTION: the machines a usage read lists, built from the statuses the runner holds as its own read builds them from what it recorded, without their memory figures when the runner is older than them.
 func (n *fakeNode) usageMachines() []vmrunner.MachineUsage {
 	out := []vmrunner.MachineUsage{}
 	for id, st := range n.statuses {
-		out = append(out, vmrunner.MachineUsage{ID: id, State: st.State, CPUs: st.CPUs, MemoryMiB: st.MemoryMiB, UsedMiB: st.UsedMiB, Warming: st.Warming, DiskGiB: st.DiskGiB})
+		m := vmrunner.MachineUsage{ID: id, State: st.State, UsedMiB: st.UsedMiB, DiskGiB: st.DiskGiB}
+		if !n.legacyUsage {
+			m.CPUs, m.MemoryMiB, m.Warming = st.CPUs, st.MemoryMiB, st.Warming
+		}
+		out = append(out, m)
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out

@@ -240,6 +240,38 @@ func TestAMemoryPassReadsTheOwnersRunnerOnce(t *testing.T) {
 	assert.Equal(t, measured(700), r.liveMachine("peer-a"), "the figures come from the same read")
 }
 
+// TEST_SCENARIO: a runner release older than the usage read's per-machine memory figures answers without them. Its machines are then read one status at a time, as before, so a warming machine counts at its warm-up floor rather than at the memory it happens to hold, and a machine still running at its old, larger size keeps that size when the pool has shrunk under it. A zero read as those figures would drop both, and the runner pod's memory limit could then fall below what its machines hold. The figures a read does list are the ones a status reports, so only the older shape is read machine by machine.
+func TestAMemoryPassOnAnOlderRunnerReadsEachMachineAsBefore(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	ctx := context.Background()
+
+	r.vmRunning.Store(agent.Name, true)
+	node.set(agent.Name, vmrunner.MachineStatus{State: vmrunner.StateRunning, UsedMiB: 300, Warming: true})
+	peerVMAgent(t, r, "shrunk-peer", "4Gi", "20Gi", true)
+	peer := vmAgentCR()
+	peer.Name = "shrunk-peer"
+	peer.Spec.Resources.Limits["memory"] = "4Gi"
+	r.vmRunning.Store("shrunk-peer", true)
+	node.set("shrunk-peer", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 4, MemoryMiB: 6144, UsedMiB: 6000})
+
+	node.mu.Lock()
+	node.legacyUsage = true
+	node.mu.Unlock()
+	node.forgetReads()
+	r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent, peer}, nil)
+
+	node.mu.Lock()
+	assert.Equal(t, 1, node.usageReads, "the read still answers for the owner's machines")
+	assert.Equal(t, 2, node.statusReads, "an older runner is asked about each machine in turn")
+	node.mu.Unlock()
+	assert.Equal(t, 1024, r.accountedMemoryMiB(ctx, testOwner, agent.Name, &agent.Spec),
+		"a warming machine counts at its warm-up floor, not at the 556 MiB it holds")
+	assert.Equal(t, 6144, r.accountedMemoryMiB(ctx, testOwner, "shrunk-peer", &peer.Spec),
+		"a machine still running at its old size counts at that size, though the pool has shrunk under it")
+}
+
 // TEST_SCENARIO: the runner's pressure signal is the kernel's view, which is what kills the runner, so a pass on it hibernates an idle peer even while the counted demand is well under the threshold, and even when that peer alone does not cover the measured overshoot. The signal repeats while pressure lasts, so for a while after it freed room it hibernates nothing more, and it never runs beside the owner's other pass.
 func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T) {
 	agent := vmAgentCR()

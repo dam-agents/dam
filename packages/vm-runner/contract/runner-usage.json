@@ -26,5 +26,6 @@
       "diskUsedBytes": 8589934592,
       "cpuMilli": 350
     }
-  ]
+  ],
+  "machineFigures": true
 }
