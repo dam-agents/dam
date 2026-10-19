@@ -38,7 +38,9 @@ try {
 
   settings.permissions = {
     ...settings.permissions,
-    defaultMode: settings.permissions?.defaultMode ?? "auto",
+    defaultMode:
+      settings.permissions?.defaultMode ??
+      (/haiku/i.test(settings.model ?? "") ? "default" : "auto"),
   };
 
   mkdirSync(dirname(path), { recursive: true });

@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test that Claude Code's settings sync gives a settings file that names no mode the auto default"
+//MISE description="Test that Claude Code's settings sync gives a settings file that names no mode a mode the model's catalog allows"
 //MISE sources=["claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", ".mise/tasks/test/claude-default-mode"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -24,12 +24,15 @@ const permissionsAfter = (initial) => {
   }
 };
 
-// TEST_SCENARIO: A settings file that names no mode starts in auto, which the image seeds and the terminal launcher asks for, because the ACP adapter's own fallback is the manual mode that asks before each tool call.
-assert.equal(permissionsAfter({ permissions: { allow: ["Read"] } }).defaultMode, "auto");
-assert.deepEqual(permissionsAfter({ permissions: { allow: ["Read"] } }).allow, ["Read"]);
+// TEST_SCENARIO: A settings file that names no mode starts in auto, the catalog's default, which the ACP adapter would not reach on its own: its fallback is the mode that asks before each tool call.
+assert.equal(permissionsAfter({ model: "opus", permissions: { allow: ["Read"] } }).defaultMode, "auto");
+assert.deepEqual(permissionsAfter({ model: "opus", permissions: { allow: ["Read"] } }).allow, ["Read"]);
 assert.equal(permissionsAfter({}).defaultMode, "auto");
 assert.equal(permissionsAfter(undefined).defaultMode, "auto");
+// TEST_SCENARIO: Haiku's catalog constraints exclude auto, so a settings file on that model starts in the mode that asks instead.
+assert.equal(permissionsAfter({ model: "haiku" }).defaultMode, "default");
+assert.equal(permissionsAfter({ model: "ibm/aws/claude-haiku-4-5" }).defaultMode, "default");
 // TEST_SCENARIO: A mode the owner picked stays as it is, the asking ones included.
 for (const mode of ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"])
-  assert.equal(permissionsAfter({ permissions: { defaultMode: mode } }).defaultMode, mode);
-console.log("Claude Code's settings sync gives a settings file that names no mode the auto default");
+  assert.equal(permissionsAfter({ model: "opus", permissions: { defaultMode: mode } }).defaultMode, mode);
+console.log("Claude Code's settings sync gives a settings file that names no mode a mode the model's catalog allows");
