@@ -61,6 +61,13 @@ The harness starts only once the guest answers, about a second after the boot, a
 The runner reports a machine warming up in its status, and the controller counts it the same way.
 Counting a boot at half the pool would let only two machines boot at once; at the floor, as many machines warm up together as the pool holds floors, and a runner roll or many wakes at once start the rest in waves as the first ones warm up, each refused start retried within 30 seconds ([budgets](budgets.md)).
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
+A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, a home that is full, an image it cannot fetch, a seed that is missing or a boot that failed, which all leave the Agent awake with no machine: it holds nothing meanwhile.
+A machine that boots, restarts or stops holds its memory meanwhile, and the runner keeps a refusal's reason until the action it admitted completes, so the reason alone says nothing: what counts is a refusal with nothing running or in flight.
+So the CPU limit and the pass that judges pressure count it at nothing.
+Were it counted beside the machines the runner did admit, it would push the owner past the 90% threshold, and the pass would hibernate those to make room for the one the runner refused.
+Only the refused start's own reclaim and the figures its refusal quotes still count it, since the room it lacks is what its count is for.
+The memory a refusal quotes as in use is what its owner's machines hold, the same that Home shows.
+The controller records the runner's answer where it gives it, under the owner's lock, so the count is current before the Agent's status carries it, and the pass keeps each status it reads under that same lock, so a reading taken before a refusal cannot outlast it.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
 A machine whose own state cannot be read is counted as a running one: at its measured use plus headroom, never more than its size while the spec reads, at least its warm-up floor until it is measured, and at the whole handout when its spec cannot be read and it was never measured — an unknown VMM is not an absent one.
@@ -72,6 +79,7 @@ A cluster without in-place resize keeps the install's request.
 A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's vm Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
 
 **Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, saying it is idle when asked (one that does not answer may be mid-turn with its guest saturated, so it is spared), longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
+A machine the runner refused frees nothing, so the reclaim passes it over for one that holds memory.
 An agent whose cold boot is still in progress is not hibernated for a refused start or past the 90% threshold, since its last activity is the wake that began a boot which can outlast the idle floor; the runner's pressure signal may still take it, as the OOM kill would stop it too.
 A refused start is retried once their machines have stopped.
 No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).
