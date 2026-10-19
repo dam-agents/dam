@@ -1,0 +1,49 @@
+#!/bin/sh
+# Runs one Startup Item, $PLATFORM_STARTUP_COMMAND, in a session and process
+# group of its own. A failed exit starts it again after 1, 2, 4… up to 60
+# seconds, the delay going back to 1 once a run lasted a minute; a clean exit
+# ends it, so a one-shot setup runs once per boot. SIGTERM stops the item's
+# whole group, killing what is left of it after 8 seconds, and ends the loop.
+delay=1
+stopping=
+child=
+trap 'stopping=1; [ -n "$child" ] && kill -TERM "-$child" 2>/dev/null' TERM INT
+
+stop_group() {
+	tries=0
+	while kill -0 "-$child" 2>/dev/null && [ "$tries" -lt 80 ]; do
+		sleep 0.1
+		tries=$((tries + 1))
+	done
+	kill -KILL "-$child" 2>/dev/null
+}
+
+while :; do
+	started=$(date +%s)
+	setsid sh -c "$PLATFORM_STARTUP_COMMAND" </dev/null &
+	child=$!
+	# wait returns early when a signal arrives; only a stop or the item's own
+	# exit ends the wait.
+	while :; do
+		wait "$child"
+		status=$?
+		[ -n "$stopping" ] && break
+		kill -0 "$child" 2>/dev/null || break
+	done
+	if [ -n "$stopping" ]; then
+		stop_group
+		exit 0
+	fi
+	child=
+	if [ "$status" -eq 0 ]; then
+		echo "platform-startup: $PLATFORM_STARTUP exited 0 and is done until the next boot"
+		exit 0
+	fi
+	[ $(($(date +%s) - started)) -ge 60 ] && delay=1
+	echo "platform-startup: $PLATFORM_STARTUP exited $status; starting it again in ${delay}s"
+	sleep "$delay" &
+	wait $!
+	[ -n "$stopping" ] && exit 0
+	delay=$((delay * 2))
+	[ "$delay" -gt 60 ] && delay=60
+done

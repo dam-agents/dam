@@ -1,0 +1,150 @@
+#!/usr/bin/env node
+
+// Starts and stops the agent's Startup Items for the platform-startup openrc
+// service and the agent-runtime. The list is ~/.platform/startup.json; each
+// item runs as `loop`, started by openrc's start-stop-daemon with a pidfile of
+// its own, and every process it starts carries PLATFORM_STARTUP=<id>, by
+// which the Processes panel lists it. `loop`, not supervise-daemon, restarts a
+// failed item: supervise-daemon restarts a clean exit too and stops only its
+// own child, not the group the item started.
+
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+
+const HOME = "/home/agent";
+const LIST = join(HOME, ".platform", "startup.json");
+const LOG_DIR = join(HOME, ".platform", "startup-logs");
+const WORK_DIR = join(HOME, "work");
+const PID_DIR = "/run/platform-startup";
+const LOOP = "/usr/local/lib/platform-startup/loop";
+// openrc's own start-stop-daemon, by path: an openrc service finds it first on
+// its PATH, a login shell finds Debian's, and the two take different options.
+const SSD = "/usr/lib/rc/sbin/start-stop-daemon";
+const ID = /^[a-z0-9][a-z0-9-]{0,39}$/;
+// The openrc service's cgroup. An item the runtime starts later joins it, as
+// one started at boot is in it, so a restart of the entrypoint, which ends the
+// entrypoint's cgroup, leaves every item running.
+const SERVICE_CGROUP = "/sys/fs/cgroup/openrc.platform-startup/cgroup.procs";
+// An item gets what an openrc service gets, and the image names that in its
+// openrc config: never the caller's whole environment, which holds the agent's
+// credentials when the agent-runtime is the caller.
+const RC_CONF = "/etc/rc.conf.d/platform.conf";
+
+function itemEnv(item) {
+  let allowed = ["PATH"];
+  try {
+    const conf = readFileSync(RC_CONF, "utf8").match(/^rc_env_allow="([^"]*)"/m);
+    if (conf) allowed = conf[1].split(/\s+/).filter(Boolean);
+  } catch {
+    // PATH alone
+  }
+  const env = {};
+  for (const name of allowed) if (process.env[name] !== undefined) env[name] = process.env[name];
+  return {
+    ...env,
+    HOME,
+    PLATFORM_STARTUP: item.id,
+    PLATFORM_STARTUP_COMMAND: item.command,
+  };
+}
+
+function fail(message) {
+  process.stderr.write(`platform-startup: ${message}\n`);
+  process.exit(1);
+}
+
+function readItems() {
+  try {
+    const parsed = JSON.parse(readFileSync(LIST, "utf8"));
+    return Array.isArray(parsed.items)
+      ? parsed.items.filter((i) => ID.test(i?.id) && typeof i.command === "string")
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function pidfile(id) {
+  return join(PID_DIR, `${id}.pid`);
+}
+
+// The item's loop is running: its pidfile names a live process that is that
+// item's loop, not a later process that took over the pid.
+function running(id) {
+  try {
+    const pid = Number(readFileSync(pidfile(id), "utf8"));
+    const environ = readFileSync(`/proc/${pid}/environ`, "latin1").split("\0");
+    return (
+      readFileSync(`/proc/${pid}/cmdline`, "latin1").includes(LOOP) &&
+      environ.includes(`PLATFORM_STARTUP=${id}`)
+    );
+  } catch {
+    return false;
+  }
+}
+
+function start(item) {
+  if (running(item.id)) return;
+  mkdirSync(PID_DIR, { recursive: true });
+  mkdirSync(LOG_DIR, { recursive: true });
+  mkdirSync(WORK_DIR, { recursive: true });
+  const log = join(LOG_DIR, `${item.id}.log`);
+  spawnSync(
+    SSD,
+    [
+      "--start",
+      "--background",
+      "--make-pidfile",
+      "--pidfile", pidfile(item.id),
+      "--chdir", WORK_DIR,
+      "--stdout", log,
+      "--stderr", log,
+      "--exec", LOOP,
+    ],
+    { env: itemEnv(item), stdio: ["ignore", "inherit", "inherit"] },
+  );
+}
+
+function stop(id) {
+  if (!running(id)) return;
+  spawnSync(SSD, ["--stop", "--pidfile", pidfile(id), "--retry", "TERM/10/KILL/5"], {
+    stdio: ["ignore", "inherit", "inherit"],
+  });
+  rmSync(pidfile(id), { force: true });
+}
+
+if (existsSync(SERVICE_CGROUP)) {
+  try {
+    writeFileSync(SERVICE_CGROUP, String(process.pid));
+  } catch {
+    // An item started from here then stays in the caller's cgroup.
+  }
+}
+
+const [action, id] = process.argv.slice(2);
+const items = readItems();
+const one = () => items.find((i) => i.id === id) ?? fail(`no Startup Item ${id}`);
+
+switch (action) {
+  case "boot":
+    for (const item of items) if (!item.disabled) start(item);
+    break;
+  case "shutdown":
+    for (const item of items) stop(item.id);
+    break;
+  case "start":
+    if (one().disabled) fail(`${id} is disabled`);
+    start(one());
+    break;
+  case "stop":
+    stop(id);
+    break;
+  case "restart":
+    if (one().disabled) fail(`${id} is disabled`);
+    stop(id);
+    start(one());
+    break;
+  default:
+    fail("usage: ctl boot|shutdown|start <id>|stop <id>|restart <id>");
+}
