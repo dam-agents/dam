@@ -299,7 +299,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a running machine asked to stop is stopped, and one already down is left alone, or the runner stops the same machine every minute.
+    // TEST_SCENARIO: a running machine asked to stop is stopped, and one already down is left alone, or the controller's stop, sent with every reconcile, stops it again and again.
     #[test]
     fn a_stop_reaches_a_running_machine_and_leaves_a_stopped_one_alone() {
         let stop = MachineSpec {
