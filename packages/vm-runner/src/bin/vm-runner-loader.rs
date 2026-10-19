@@ -171,7 +171,7 @@ struct Release {
 
 struct Running {
     release: Release,
-    // UNIT_BOUNDARY_DESCRIPTION: the runner's pid rather than a handle to wait on: the loader reaps every child itself, because after a hand-off the machines' VMMs are its children too and a death it does not read is a death nothing records — the next runner is not their parent and cannot read their status.
+    // UNIT_BOUNDARY_DESCRIPTION: the runner's pid rather than a handle to wait on: the loader reaps every child itself, because after a hand-off the machines' VMMs are its children too and a death it does not read is a death nothing records — the next runner is not their parent and cannot read their status. The runner is started with `std::process::Command`, not tokio's, whose dropped handle reaps the child in the background and would read the very status this reap waits for.
     pid: i32,
     started: Instant,
     replaced: Option<Release>,
@@ -251,7 +251,7 @@ impl Loader {
 
     fn spawn(&self, release: Release, replaced: Option<Release>) -> anyhow::Result<Running> {
         let builtin = self.builtin();
-        let child = Command::new(release.dir.join(RUNNER))
+        let child = std::process::Command::new(release.dir.join(RUNNER))
             .args(release::args_for(
                 &self.args,
                 &[
@@ -260,7 +260,7 @@ impl Loader {
                 ],
             ))
             .spawn()?;
-        let pid = i32::try_from(child.id().unwrap_or_default())
+        let pid = i32::try_from(child.id())
             .map_err(|e| anyhow::anyhow!("the runner's pid is not one: {e}"))?;
         tracing::info!(release = release.name, dir = %release.dir.display(), runtime = %release.runtime.display(), pid, "started the runner");
         Ok(Running {
@@ -497,7 +497,7 @@ async fn stop(pid: i32, exits: &Path) -> anyhow::Result<i32> {
 // UNIT_BOUNDARY_DESCRIPTION: whether the child has a SIGTERM handler, from the caught-signal mask Linux shows in its status. The spawn returns only once the child has exec'd, so the mask is the runner's own and not the loader's it was forked from. Elsewhere there is no such mask to read, and the loader runs only in a Linux pod.
 fn catches_term(#[cfg_attr(not(target_os = "linux"), allow(unused_variables))] pid: i32) -> bool {
     #[cfg(target_os = "linux")]
-    if let Some(status) = std::fs::read_to_string(format!("/proc/{pid}/status")).ok() {
+    if let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
         return status
             .lines()
             .find_map(|line| line.strip_prefix("SigCgt:"))
