@@ -79,7 +79,7 @@ export function runNowStartedText(schedule: Schedule): string {
     : `Started "${schedule.name}" — the run appears under View results.`;
 }
 
-interface LastRunStatus {
+export interface LastRunStatus {
   label: string;
   className: string;
   failed: boolean;
@@ -122,7 +122,7 @@ export function cardOutcome(schedule: Schedule): LastRunStatus | null {
 }
 
 export interface RunOutcomeLine {
-  when: string | null;
+  lastRun: string | null;
   label: string;
   className: string;
 }
@@ -132,7 +132,7 @@ export function runOutcomeLine(schedule: Schedule): RunOutcomeLine | null {
   if (!status) return null;
   const lastRun = schedule.status?.lastRun;
   return {
-    when: lastRun ? formatRunTime(lastRun) : null,
+    lastRun: lastRun ? formatRunTime(lastRun) : null,
     label: status.label,
     className: status.className,
   };

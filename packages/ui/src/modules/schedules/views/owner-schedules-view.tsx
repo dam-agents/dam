@@ -74,7 +74,9 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
               className="mt-0.5 line-clamp-2 text-sm text-muted-foreground"
               title={outcome.label}
             >
-              {outcome.when ? `Last run ${outcome.when} · ` : ""}
+              {outcome.lastRun && (
+                <span className="block">{`Last run ${outcome.lastRun}`}</span>
+              )}
               <span className={outcome.className}>{outcome.label}</span>
             </p>
           )

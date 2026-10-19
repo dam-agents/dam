@@ -40,11 +40,10 @@ function OutcomeLine({ schedule }: { schedule: Schedule }) {
   if (!line) return null;
   return (
     <p className="px-5 pt-4 pb-4 text-sm text-muted-foreground md:px-6">
-      {line.when ? `Last run ${line.when}` : ""}
-      <span className={line.className}>
-        {line.when ? " — " : ""}
-        {line.label}
-      </span>
+      {line.lastRun && (
+        <span className="block">{`Last run ${line.lastRun}`}</span>
+      )}
+      <span className={line.className}>{line.label}</span>
     </p>
   );
 }
