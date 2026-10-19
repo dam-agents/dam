@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -106,6 +106,7 @@ A few observations the diagram glosses over:
   The one place several top-level messages still merge is a 1:1 DM, where no tag is needed and a thought really does arrive in pieces — there the queue is per sender, and a turn carrying several of them gives each its own reply target, so a reply naming none is refused.
   On Telegram the conversation is the chat.
 - **A session key is adapter-specific.** Slack pairs the conversation with the thread; Telegram uses the conversation (chat plus optional forum topic).
+  A reply in a supergroup is not a conversation of its own: Telegram marks it with a thread id too, which the worker drops on arrival, so the reply lands in its chat's session and is answered in the chat.
   Slack's pairing is what isolates an Agent's bindings from each other — a thread id is unique only inside its conversation, so a bare one would cross channels.
   Nothing in a store guards the key: Slack serializes turns per (Agent, session key) across the session match and the prompt, so concurrent first messages cannot mint duplicate sessions.
   Outside a 1:1 DM the addressed queue is keyed the same way, so an addressed turn and a read-along one landing in the same thread arrive through separate queues: the per-key serialization still runs them one at a time, but nothing fixes which goes first.

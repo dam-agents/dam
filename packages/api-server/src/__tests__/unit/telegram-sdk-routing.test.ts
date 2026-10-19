@@ -8,6 +8,7 @@ import {
   createTelegramMessageHandler,
   type TelegramInboundMessage,
 } from "../../modules/channels/infrastructure/telegram.js";
+import { TelegramConversationAdapter } from "../../modules/channels/infrastructure/telegram-conversation-adapter.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
 
@@ -413,5 +414,95 @@ describe("telegram adapter update routing", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("telegram conversation of a group message", () => {
+  const BOT = { id: 4242, is_bot: true, first_name: "Krodo" };
+  const GROUP = { id: -1001234567890, type: "supergroup", title: "Team" };
+  const JANE = { id: 7, is_bot: false, first_name: "Jane" };
+  const mention = (text: string) => ({
+    date: 0,
+    text: `@krodo_bot ${text}`,
+    entities: [{ offset: 0, length: 10, type: "mention" }],
+    from: JANE,
+  });
+
+  async function routedThreadIds(message: object): Promise<string[]> {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { ...BOT, username: "krodo_bot", message_id: 1 },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    );
+    try {
+      const adapter = new TelegramConversationAdapter({
+        botToken: "4242:test",
+        mode: "webhook",
+        allowUnverifiedWebhooks: true,
+      });
+      const seen: string[] = [];
+      const chat = createTelegramChat({
+        adapter: adapter as never,
+        state: createMemoryState(),
+        handleMessage: async (thread) => {
+          seen.push(thread.id);
+        },
+      });
+      await chat.initialize();
+      await adapter.handleWebhook(
+        new Request("https://example.test/telegram", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ update_id: 1, message }),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return seen;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  /**
+   * TEST_SCENARIO: The reported bug. In a supergroup Telegram puts a thread id
+   * on every reply, and the stock adapter made that reply a conversation of
+   * its own, which no binding knew. A reply belongs to its chat.
+   */
+  it("routes a reply in a supergroup to its chat", async () => {
+    const seen = await routedThreadIds({
+      ...mention("what about this?"),
+      message_id: 13,
+      message_thread_id: 12,
+      reply_to_message: {
+        message_id: 12,
+        date: 0,
+        text: "an earlier answer",
+        from: BOT,
+        chat: GROUP,
+      },
+      chat: GROUP,
+    });
+    expect(seen).toEqual([`telegram:${GROUP.id}`]);
+  });
+
+  /**
+   * TEST_SCENARIO: A forum topic is a conversation of its own: its messages
+   * keep the topic, so the agent's answer is posted back into that topic.
+   */
+  it("keeps a forum topic as its own conversation", async () => {
+    const seen = await routedThreadIds({
+      ...mention("in a topic"),
+      message_id: 15,
+      message_thread_id: 99,
+      is_topic_message: true,
+      chat: { ...GROUP, is_forum: true },
+    });
+    expect(seen).toEqual([`telegram:${GROUP.id}:99`]);
   });
 });

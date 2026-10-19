@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -45,7 +45,7 @@ Channels split along a structural axis that has real consequences for secrets an
   The operator configures the app once via Helm values; on Slack each workspace adds its own bot token by completing the install handshake, and per-Agent config stays just *which conversation this Agent listens to*.
   Both messengers are platform channels today.
   On Slack, identity linking ties messenger users to Keycloak subs at the workspace level.
-- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram *conversation* binds to exactly one Agent — the owner consents by completing an in-chat `/bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
+- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram *chat* binds to exactly one Agent — the owner consents by completing an in-chat `/bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
 
 ### Shared access — the one model
 
@@ -186,7 +186,8 @@ flowchart LR
 ```
 
 The bot token comes from Helm values and lives in api-server env, like the Slack tokens.
-A conversation binds to exactly one Agent in its binding table (the conversation id is the primary key); the single bot polls for the whole install and resolves each inbound message to its chat's binding.
+A chat binds to exactly one Agent in its binding table (the conversation id is the primary key); the single bot polls for the whole install and resolves each inbound message to its chat's binding, a forum topic's message included.
+A topic bound on its own before bindings covered the chat keeps its row, and is found when its chat has none.
 The relay path is single-track — the main pod handles every turn.
 
 ## Adapters
