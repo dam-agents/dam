@@ -24,6 +24,9 @@ const OVERLAY_DESCRIPTION: Record<AgentDisplayState, string> = {
     "The agent is moving to the new sandbox runtime. It is back once its " +
     "data has been copied, which takes a few minutes.",
 };
+const MIGRATION_FAILED =
+  "The agent's move to the new sandbox runtime failed. It is back once an " +
+  "operator finishes or undoes the move.";
 
 export function overlayDescription(
   state: AgentDisplayState,
@@ -36,6 +39,8 @@ export function overlayDescription(
   if (state === "over_budget" && budget)
     return `${budget[0].toUpperCase()}${budget.slice(1)}${budget.endsWith(".") ? "" : "."}`;
   if (state === "over_budget" && agent.vm) return VM_MEMORY_FULL;
+  if (state === "migrating" && agent.runtimeMigration?.phase === "failed")
+    return MIGRATION_FAILED;
   const reclaimed = reclaimSentence(agent);
   if (state === "hibernated" && reclaimed) return reclaimed;
   if (state === "preparing_workspace") {

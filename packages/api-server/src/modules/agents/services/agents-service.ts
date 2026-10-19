@@ -1473,7 +1473,7 @@ export function createAgentsService(deps: {
         throw new TRPCError({
           code: "CONFLICT",
           message:
-            "This agent is moving to the new runtime and is not running; abort the move to stop it",
+            "This agent is moving to the new runtime and is not running; it can be stopped once the move ends",
         });
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,

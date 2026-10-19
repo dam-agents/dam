@@ -98,7 +98,7 @@ const LEGACY_PHASES: Record<string, RuntimeMigrationPhase> = {
   booting: "booting",
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the migration the browser is shown. With the request withdrawn but the condition still there, the controller is still removing the vm side of an abort, or finishing one whose Backend has switched. A phase this api-server does not know yet still means the migration is running, so it reads as "requested" rather than as no migration at all. A migration can be aborted until its machine has booted from the copy, and retried only once it has failed.
+// UNIT_BOUNDARY_DESCRIPTION: the migration the browser is shown. With the request withdrawn but the condition still there, the controller is still removing the vm side of an abort, or finishing one whose Backend has switched. A phase this api-server does not know yet still means the migration is running, so it reads as "requested" rather than as no migration at all. An operator can abort it until its machine has booted from the copy, and retry it once it has failed.
 export function runtimeMigrationOf(
   signals: RuntimeMigrationSignals,
 ): RuntimeMigration | undefined {

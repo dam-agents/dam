@@ -21,6 +21,16 @@ import {
 } from "../domain/runtime-migration.js";
 import { ok, err } from "../../../core/result.js";
 import { securityLog } from "../../../core/security-log.js";
+import { emit, EventType } from "../../../events.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: tells an open page that the Agent it shows has changed, since a move is asked for from outside the app and nothing else would refresh the row.
+function emitUpdated(agent: InfraAgent): void {
+  emit({
+    type: EventType.AgentUpdated,
+    agentId: agent.id,
+    ...(agent.owner ? { ownerSub: agent.owner } : {}),
+  });
+}
 
 export type { RuntimeMigrationWrite };
 
@@ -99,6 +109,7 @@ export function executeRuntimeMigration(
         };
       },
     );
+    if (result.ok) emitUpdated(result.value);
     if (result.ok)
       securityLog("info", "agent.runtime-migrate", {
         category: "resource",
@@ -163,10 +174,15 @@ export function createRuntimeMigrationSwitch(deps: {
       `[runtime-migration] ${agent.id} was asked to move and is refused: ${reasons.join("; ")}`,
     );
     if (started.error.type === "AgentNotFound") return;
-    await deps.writeMigration(agent.id, {
+    const withdrawn = await deps.writeMigration(agent.id, {
       annotations: REQUEST_KEYS_CLEARED,
       resourceVersion: (await deps.getAgent(agent.id))?.resourceVersion,
     });
+    if (withdrawn.ok) emitUpdated(agent);
+    else
+      deps.log(
+        `[runtime-migration] ${agent.id} was refused and its request could not be withdrawn (${withdrawn.reason}); the next tick decides it again`,
+      );
   }
 
   async function switchOne(id: string): Promise<void> {
@@ -185,6 +201,7 @@ export function createRuntimeMigrationSwitch(deps: {
       resourceVersion: agent.resourceVersion,
     });
     if (!written.ok) return;
+    emitUpdated(agent);
     securityLog("info", "agent.runtime-migrate.switched", {
       category: "resource",
       actor: null,

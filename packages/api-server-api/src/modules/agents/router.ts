@@ -114,7 +114,7 @@ export const agentsRouter = t.router({
       throw new TRPCError({
         code: "CONFLICT",
         message: res.error.failed
-          ? "This agent's move to the new runtime failed; retry or abort the move to wake it"
+          ? "This agent's move to the new runtime failed and it waits on an operator to finish or undo the move"
           : "This agent is moving to the new runtime and wakes once the move is done",
       });
     }),
@@ -145,7 +145,7 @@ export const agentsRouter = t.router({
       throw new TRPCError({
         code: "CONFLICT",
         message:
-          "This agent is moving to the new runtime; abort the move to disable it",
+          "This agent is moving to the new runtime; it can be disabled once the move ends",
       });
     }),
 
