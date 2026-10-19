@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Every side panel's top bar ends with a Close panel X, after the panel's own actions and behind a vertical border; clicking it closes the whole panel, or runs the panel's own close when it brings one.
+// TEST_OVERVIEW: Every side panel's top bar ends with a Close panel X, after the panel's own actions and behind a vertical border; clicking it closes the whole panel, or runs the panel's own close when it brings one, and hands focus to the rail's open tab.
 import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
@@ -20,13 +20,19 @@ store.current = createStore<PlatformStore>()(
   (...a) => createSidePanelSlice(...a) as PlatformStore,
 );
 
-function closeButton(node: ReactNode): { onClick: () => void } {
+type Click = (e: {
+  currentTarget: { closest: (s: string) => unknown };
+}) => void;
+
+const outsidePanel = { currentTarget: { closest: () => null } };
+
+function closeButton(node: ReactNode): { onClick: Click } {
   for (const child of Children.toArray(node)) {
     if (
       !isValidElement<{
         children?: ReactNode;
         "data-testid"?: string;
-        onClick: () => void;
+        onClick: Click;
       }>(child)
     )
       continue;
@@ -62,7 +68,7 @@ it("ends the panel's top bar with the X, behind a border", () => {
 // TEST_SCENARIO: Clicking the X closes the open panel.
 it("closes the side panel", () => {
   store.current.getState().setSidePanelTab("approvals");
-  closeButton(SidePanelCloseButton({})).onClick();
+  closeButton(SidePanelCloseButton({})).onClick(outsidePanel);
   expect(store.current.getState().sidePanelTab).toBeNull();
 });
 
@@ -75,6 +81,33 @@ it("runs the panel's own close when it brings one", () => {
         closed = true;
       },
     }),
-  ).onClick();
+  ).onClick(outsidePanel);
   expect(closed).toBe(true);
+});
+
+// TEST_SCENARIO: The X unmounts with the panel, so focus moves to the open tab's rail button first, not to the page start; with no open tab in the rail, such as a delegation, the rail's first button takes it.
+it.each([
+  ["the open tab", true, "open-tab"],
+  ["the rail's first button", false, "first-button"],
+])("hands focus to %s", (_, pressed, expected) => {
+  const focused: string[] = [];
+  const button = (id: string) => ({ focus: () => focused.push(id) });
+  const bar = {
+    querySelector: (s: string) =>
+      s === '[aria-pressed="true"]'
+        ? pressed
+          ? button("open-tab")
+          : null
+        : button("first-button"),
+  };
+  const panel = {
+    querySelector: (s: string) =>
+      s === '[data-testid="side-panel-bar"]' ? bar : null,
+  };
+  closeButton(SidePanelCloseButton({ onClose: () => {} })).onClick({
+    currentTarget: {
+      closest: (s) => (s === '[data-testid="side-panel"]' ? panel : null),
+    },
+  });
+  expect(focused).toEqual([expected]);
 });

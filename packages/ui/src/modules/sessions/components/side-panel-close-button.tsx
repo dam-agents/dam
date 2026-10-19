@@ -7,8 +7,9 @@ import { useStore } from "../../../store.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The X that ends every side panel's top bar,
  * behind a vertical border so it does not read as one of the panel's own
- * actions. It closes the whole panel; a phone hides it, because the
- * full-screen panel there has its own back button.
+ * actions. It closes the whole panel and hands focus to the rail's open tab,
+ * which stays on screen; a phone hides it, because the full-screen panel
+ * there has its own back button.
  */
 export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
   return (
@@ -19,7 +20,16 @@ export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
         aria-label="Close panel"
         tooltip="Close panel"
         data-testid="side-panel-close"
-        onClick={onClose ?? (() => useStore.getState().setSidePanelTab(null))}
+        onClick={(e) => {
+          const bar = e.currentTarget
+            .closest('[data-testid="side-panel"]')
+            ?.querySelector('[data-testid="side-panel-bar"]');
+          (
+            bar?.querySelector<HTMLElement>('[aria-pressed="true"]') ??
+            bar?.querySelector<HTMLElement>("button")
+          )?.focus();
+          (onClose ?? (() => useStore.getState().setSidePanelTab(null)))();
+        }}
       >
         <Close size={16} />
       </Button>
