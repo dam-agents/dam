@@ -710,6 +710,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     isSessionRunning,
 
+    toolCallsOpen: (sessionId) =>
+      leaseOfSession(sessionId)?.runtime.toolCallsOpen(sessionId) ?? false,
+
     sessionChoice: (sessionId) => sessionChoice(sessionId, false),
 
     sessionFrames(sessionId) {

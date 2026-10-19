@@ -90,7 +90,6 @@ export interface ComposeAcpOptions {
     sessionId: string,
     end: { stopReason: string | null; error: string | null },
   ) => void;
-  onHarnessExited?: () => void;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
   providerAliases: () => string[];
@@ -348,10 +347,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
           });
         },
         backgroundWork: scoped.backgroundWork,
-        onHarnessExited: () => {
-          scoped.onHarnessExited();
-          opts.onHarnessExited?.();
-        },
+        onHarnessExited: scoped.onHarnessExited,
         ...(opts.onTurnEnded && { onTurnEnded: opts.onTurnEnded }),
         sessionSettingFrames: (sessionId) => [
           ...modelFrames(

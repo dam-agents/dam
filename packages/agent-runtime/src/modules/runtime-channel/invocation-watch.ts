@@ -10,8 +10,8 @@ export interface InvocationWatch {
     sessionId: string,
     end: { stopReason: string | null; error: string | null },
   ): void;
-  harnessExited(): void;
-  modelAnswered(sessionId: string | null): void;
+  modelCallStarted(sessionId: string | null): void;
+  modelCallEnded(sessionId: string | null, answered: boolean): void;
   modelError(
     sessionId: string | null,
     error: { status: number; text: string; permanent: boolean },
@@ -21,6 +21,7 @@ export interface InvocationWatch {
 export interface InvocationWatchDeps {
   reporter: { report(input: EventReportInput): Promise<void> };
   holdsWork: (sessionId: string) => boolean;
+  toolRunning: (sessionId: string) => boolean;
   stallMs?: number;
   log: (msg: string) => void;
 }
@@ -29,42 +30,48 @@ export interface InvocationWatchDeps {
  * UNIT_BOUNDARY_DESCRIPTION: A sub-agent's pod runs one turn, and only a
  * reported result ends its Invocation; a turn that stops without one would
  * otherwise hold the Invocation as running until its deadline. The watch
- * follows that one turn and reports its trigger event as failed, with the
- * cause, as soon as the sub-agent can no longer produce a result: its turn
- * ended or failed, its harness exited, or a model call the provider refused
- * outright was answered by no successful call within stallMs — Codex,
- * refused its first call, goes quiet without ending the turn. A turn that
- * leaves background work or sub-agents of its own behind may still go on to
- * report, so its clean end is left to the deadline. The api-server fails only a running
- * Invocation, so a turn that did report its result is never failed.
+ * follows that turn and reports its trigger event as failed, with the cause,
+ * as soon as the sub-agent can no longer produce a result: its turn failed,
+ * its harness exited under it, its turn ended with nothing left running, or
+ * a model call the provider refused outright was followed by no completed
+ * call within stallMs while no model or tool call ran — Codex, refused its first call,
+ * goes quiet without ending the turn. A turn that ends with background work
+ * or sub-agents of its own still running may go on in a later turn, so the
+ * watch stays on the session. A pod restart needs no watch: the liveness sweep
+ * fails a sub-agent whose pod restarted. The api-server fails only a running Invocation, so a run that did
+ * report its result is never failed.
  */
 export function createInvocationWatch(
   deps: InvocationWatchDeps,
 ): InvocationWatch {
   const stallMs = deps.stallMs ?? DEFAULT_STALL_MS;
-  let watched: {
-    sessionId: string;
-    eventId: string;
-    lastError: string | null;
-    stall: ReturnType<typeof setTimeout> | null;
-  } | null = null;
+  let run: { sessionId: string; eventId: string } | null = null;
+  let lastError: string | null = null;
+  let stall: ReturnType<typeof setTimeout> | null = null;
+  let callsInFlight = 0;
 
   function clearStall(): void {
-    if (watched?.stall) clearTimeout(watched.stall);
-    if (watched) watched.stall = null;
+    if (stall) clearTimeout(stall);
+    stall = null;
   }
 
   function fail(cause: string): void {
-    if (!watched) return;
+    if (!run) return;
+    const { eventId } = run;
     clearStall();
-    const { eventId, lastError } = watched;
-    watched = null;
+    run = null;
     const detail = (
       lastError ? `${cause}; its last model call failed: ${lastError}` : cause
     ).slice(0, DETAIL_MAX);
+    lastError = null;
     deps.log(`[invocation] failing the run: ${detail}`);
     deps.reporter
-      .report({ eventId, outcome: "failed", stage: "run", detail })
+      .report({
+        eventId,
+        outcome: "failed",
+        stage: "run",
+        detail,
+      })
       .catch((err: unknown) =>
         deps.log(
           `[invocation] run failure report failed: ${(err as Error).message}`,
@@ -73,12 +80,27 @@ export function createInvocationWatch(
   }
 
   const isWatched = (sessionId: string | null): boolean =>
-    sessionId !== null && watched?.sessionId === sessionId;
+    sessionId !== null && run?.sessionId === sessionId;
+
+  function armStall(sessionId: string): void {
+    stall = setTimeout(() => {
+      stall = null;
+      if (!isWatched(sessionId)) return;
+      if (callsInFlight > 0 || deps.toolRunning(sessionId)) {
+        armStall(sessionId);
+        return;
+      }
+      fail("the sub-agent stopped after a refused model call");
+    }, stallMs);
+    stall.unref?.();
+  }
 
   return {
     watch(sessionId, eventId) {
       clearStall();
-      watched = { sessionId, eventId, lastError: null, stall: null };
+      lastError = null;
+      callsInFlight = 0;
+      run = { sessionId, eventId };
     },
 
     turnEnded(sessionId, { stopReason, error }) {
@@ -89,10 +111,8 @@ export function createInvocationWatch(
       }
       if (deps.holdsWork(sessionId)) {
         deps.log(
-          `[invocation] turn ended with work still running; leaving the run to its deadline`,
+          `[invocation] turn ended with work still running; watching its next turn`,
         );
-        clearStall();
-        watched = null;
         return;
       }
       fail(
@@ -100,29 +120,25 @@ export function createInvocationWatch(
       );
     },
 
-    harnessExited() {
-      fail("the sub-agent's harness exited before it reported a result");
+    modelCallStarted(sessionId) {
+      if (isWatched(sessionId)) callsInFlight++;
     },
 
-    modelAnswered(sessionId) {
-      if (!isWatched(sessionId) || !watched) return;
+    modelCallEnded(sessionId, answered) {
+      if (!isWatched(sessionId)) return;
+      callsInFlight = Math.max(callsInFlight - 1, 0);
+      if (!answered) return;
       clearStall();
-      watched.lastError = null;
+      lastError = null;
     },
 
     modelError(sessionId, { status, text, permanent }) {
-      if (!isWatched(sessionId) || !watched) return;
-      watched.lastError = `${status} ${text.replace(/\s+/g, " ").trim()}`.slice(
+      if (sessionId === null || !isWatched(sessionId)) return;
+      lastError = `${status} ${text.replace(/\s+/g, " ").trim()}`.slice(
         0,
         MODEL_ERROR_MAX,
       );
-      if (!permanent || watched.stall) return;
-      const stall = setTimeout(
-        () => fail("the sub-agent stopped after a refused model call"),
-        stallMs,
-      );
-      stall.unref?.();
-      watched.stall = stall;
+      if (permanent && !stall) armStall(sessionId);
     },
   };
 }

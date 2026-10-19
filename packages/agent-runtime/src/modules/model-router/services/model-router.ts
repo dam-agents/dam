@@ -96,18 +96,14 @@ export interface ModelRouterDeps {
   ) => Record<string, unknown>;
   extensions?: readonly RouterExtension[];
   onCall?: (record: ModelCallRecord) => void;
-  onAnswered?: (session: string | null) => void;
+  onCallStarted?: (session: string | null) => void;
+  onCallEnded?: (session: string | null, answered: boolean) => void;
   onRefused?: (refusal: ModelRefusal) => void;
   fetchImpl?: typeof globalThis.fetch;
   port?: number;
   log: (msg: string) => void;
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a model call the router or the provider refused,
- * with the text the harness got back; permanent when retrying the same call
- * cannot succeed.
- */
 export interface ModelRefusal {
   session: string | null;
   status: number;
@@ -286,6 +282,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
         dialect,
         `provider '${entry.alias}' has no endpoint in this pod's env`,
       );
+    deps.onCallStarted?.(session);
     const stream = body.stream === true;
     const prepared =
       deps.prepareBody?.(body, { entry, dialect, stream }) ?? body;
@@ -313,6 +310,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const record = (status: number, usage: ModelUsage | null): void => {
       if (recorded) return;
       recorded = true;
+      deps.onCallEnded?.(session, status < 400 && usage !== null);
       if (!billed) return;
       const reported = Number(
         upstreamHeaders?.get("x-litellm-response-cost") ?? "",
@@ -437,7 +435,6 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       res.end(explained);
       return;
     }
-    deps.onAnswered?.(session);
     res.writeHead(upstream.status, resHeaders);
     if (!upstream.body) {
       onceSent(() => record(upstream.status, null));

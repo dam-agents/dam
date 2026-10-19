@@ -49,6 +49,9 @@ function withContext(task: string, context: string | undefined): string {
  */
 const CATALOG_WAIT_MS = 10_000;
 
+const START_ATTEMPTS = 3;
+const START_RETRY_MS = 5_000;
+
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;
@@ -212,28 +215,41 @@ export function createTriggerPlugin(deps: {
     );
   };
 
-  /**
-   * UNIT_BOUNDARY_DESCRIPTION: a sub-agent's trigger is its one turn, so a
-   * run that cannot start fails it at once rather than at its deadline, and
-   * a run that starts is watched until it reports its result.
-   */
   const runInvocation = async (
     payload: TriggerEventPayload,
     eventId: string,
   ): Promise<void> => {
-    try {
-      deps.invocationWatch?.watch(
-        await startSession(payload, payload.task),
-        eventId,
-      );
-    } catch (err) {
-      const detail =
-        err instanceof SessionModelError
-          ? err.message
-          : `the run could not start: ${(err as Error).message}`;
-      deps.log(`[trigger] ${payload.scheduleId} ${detail}`);
-      void report(refusedReport(eventId, detail.slice(0, DETAIL_MAX)));
+    for (let attempt = 1; ; attempt++) {
+      try {
+        deps.invocationWatch?.watch(
+          await startSession(payload, payload.task),
+          eventId,
+        );
+        return;
+      } catch (err) {
+        if (err instanceof SessionModelError || attempt >= START_ATTEMPTS) {
+          failInvocation(payload, eventId, err);
+          return;
+        }
+        deps.log(
+          `[trigger] ${payload.scheduleId} start attempt ${attempt} failed: ${(err as Error).message}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, START_RETRY_MS));
+      }
     }
+  };
+
+  const failInvocation = (
+    payload: TriggerEventPayload,
+    eventId: string,
+    err: unknown,
+  ): void => {
+    const detail =
+      err instanceof SessionModelError
+        ? err.message
+        : `the run could not start: ${(err as Error).message}`;
+    deps.log(`[trigger] ${payload.scheduleId} ${detail}`);
+    void report(refusedReport(eventId, detail.slice(0, DETAIL_MAX)));
   };
 
   const fire = async (

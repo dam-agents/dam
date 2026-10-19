@@ -257,17 +257,15 @@ if (envStore.ready()) void modelCatalog.refresh();
 modelCatalog.start();
 
 const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the watch is composed before the Model Router
- * and the ACP runtime that feed it, so what it reads of them is bound late.
- */
 let sessionHoldsWork: (sessionId: string) => boolean = () => false;
+let sessionToolRunning: (sessionId: string) => boolean = () => false;
 const invocationWatch = createInvocationWatch({
   reporter: {
     report: (input) =>
       harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
   },
   holdsWork: (sessionId) => sessionHoldsWork(sessionId),
+  toolRunning: (sessionId) => sessionToolRunning(sessionId),
   log: (msg) => process.stderr.write(`${msg}\n`),
 });
 const modelCallExporter = createModelCallExporter({
@@ -294,7 +292,9 @@ const modelRouter = composeModelRouter({
   defaultHarness,
   port: config.PLATFORM_MODEL_ROUTER_PORT,
   onCall: (record) => modelCallExporter.record(record),
-  onAnswered: (session) => invocationWatch.modelAnswered(session),
+  onCallStarted: (session) => invocationWatch.modelCallStarted(session),
+  onCallEnded: (session, answered) =>
+    invocationWatch.modelCallEnded(session, answered),
   onRefused: ({ session, ...error }) =>
     invocationWatch.modelError(session, error),
   log: modelRouterLog,
@@ -468,7 +468,6 @@ const {
   onArtifactTouch: artifactTouchReporter.report,
   onToolActivity: changes.onToolActivity,
   onTurnEnded: (sessionId, end) => invocationWatch.turnEnded(sessionId, end),
-  onHarnessExited: () => invocationWatch.harnessExited(),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
   beforeSpawn: () =>
@@ -491,6 +490,7 @@ const {
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 sessionHoldsWork = (sessionId) =>
   backgroundWork.hasWork(sessionId) || subAgentSessions.spawnedAny(sessionId);
+sessionToolRunning = (sessionId) => acpRuntime.toolCallsOpen(sessionId);
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,

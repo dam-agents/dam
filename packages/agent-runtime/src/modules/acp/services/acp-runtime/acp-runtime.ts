@@ -131,6 +131,7 @@ export interface AcpRuntime {
   prestart(): void;
   status(): AcpRuntimeStatus;
   isSessionRunning(sessionId: string): boolean;
+  toolCallsOpen(sessionId: string): boolean;
   sessionFrames(sessionId: string): { frames: string[]; truncated: boolean };
   resetSession(sessionId: string): void;
   markSessionCold(sessionId: string): void;
@@ -264,6 +265,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   let shuttingDown = false;
   let processExiting = false;
+  let harnessExiting = false;
 
   const autonomousTurns = createAutonomousTurns({
     onEnded: (sessionId, turnId) =>
@@ -333,6 +335,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
+      if (harnessExiting)
+        deps.onTurnEnded?.(sessionId, {
+          stopReason: null,
+          error: "the harness exited mid-turn",
+        });
       const unstoredPrompt = processExiting
         ? undefined
         : deps.activeTurns.promptOf(sessionId);
@@ -368,6 +375,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.log?.(
         `${String(dropped.length)} queued prompt(s) for ${sessionId} undelivered: ${cause}`,
       );
+      if (harnessExiting)
+        deps.onTurnEnded?.(sessionId, {
+          stopReason: null,
+          error: "the harness exited before it took the prompt",
+        });
       if (cause !== "park-expired") return;
       maybeCloseIdleSession(sessionId);
       lease.maybeRecycle();
@@ -766,6 +778,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.clear();
     rehydrateLoadIds.clear();
     orphanedHarnessLoads.clear();
+    harnessExiting = reason === "agent-exited";
     promptScheduler.clear();
     autonomousTurns.clear();
     runTextBuffers.clear();
@@ -775,6 +788,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     harnessColdSessions.clear();
     appliedSettings.clear();
     rehydratingSessions.clear();
+    harnessExiting = false;
     sessionCloseSupported = true;
     sessionResumeSupported = false;
     harnessSteers = false;
@@ -1611,7 +1625,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             });
             reportTurnEnd(sid, buffer);
           }
-          if (turnEnded)
+          if (turnEnded && !lost)
             deps.onTurnEnded?.(sid, {
               stopReason,
               error:
@@ -2091,6 +2105,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     isSessionRunning(sessionId) {
       return sessionIsRunning(sessionId);
+    },
+
+    toolCallsOpen(sessionId) {
+      return (openToolCalls.get(sessionId)?.size ?? 0) > 0;
     },
 
     sessionFrames(sessionId) {

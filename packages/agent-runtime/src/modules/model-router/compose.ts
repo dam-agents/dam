@@ -25,7 +25,8 @@ export interface ComposeModelRouterOpts {
   defaultHarness: string;
   sessionModelOf?: (sessionId: string) => SessionModelChoice | null;
   onCall?: (record: ModelCallRecord) => void;
-  onAnswered?: (session: string | null) => void;
+  onCallStarted?: (session: string | null) => void;
+  onCallEnded?: (session: string | null, answered: boolean) => void;
   onRefused?: (refusal: ModelRefusal) => void;
   port?: number;
   log: (msg: string) => void;
@@ -63,7 +64,8 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
       ),
     extensions: [createCatalogEndpoints(opts.catalog)],
     ...(opts.onCall && { onCall: opts.onCall }),
-    ...(opts.onAnswered && { onAnswered: opts.onAnswered }),
+    ...(opts.onCallStarted && { onCallStarted: opts.onCallStarted }),
+    ...(opts.onCallEnded && { onCallEnded: opts.onCallEnded }),
     ...(opts.onRefused && { onRefused: opts.onRefused }),
     ...(opts.port !== undefined && { port: opts.port }),
     log: opts.log,
