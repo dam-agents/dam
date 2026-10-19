@@ -5,11 +5,7 @@ import { labelVariants } from "@/components/ui/label";
 
 import { useStore } from "../../../../store.js";
 import type { SessionView } from "../../../../types.js";
-import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
 import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
-import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
-import type { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
-import { manualOrder } from "../../../agents/lib/sidebar-order.js";
 import {
   useFeatures,
   useInstallCapabilities,
@@ -31,24 +27,19 @@ import {
   unpinSession,
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
+import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
 
 const ROW_CLASS = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 
-type OrderActions = ReturnType<typeof useSidebarOrderActions>;
-
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's own Session list in the new layout's sidebar: every Session the Agent lists, its pinned ones in their own section above the rest, the next page loaded when the list scrolls near its end, and the manual order applied and set by drag and drop. Rename and Delete wake the Agent and run once it answers, as in the current layout's list.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's own Session list in the new layout's sidebar: every Session the Agent lists, its pinned ones in their own section above the rest, the next page loaded when the list scrolls near its end, and the Sessions ordered by last activity, newest first. Rename and Delete wake the Agent and run once it answers, as in the current layout's list.
  */
 export function AgentSessionList({
   agentId,
-  order,
-  orderActions,
   onNavigate,
 }: {
   agentId: string;
-  order: readonly string[];
-  orderActions: OrderActions;
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
@@ -82,7 +73,7 @@ export function AgentSessionList({
     if (canFetch && pinMissing && !list.provisional) void fetchNextPage();
   }, [canFetch, pinMissing, list.provisional, fetchNextPage]);
 
-  const rows = manualOrder(
+  const rows = newestFirst(
     list.sessions
       .map((session) => ({ session, state: list.rowState(session) }))
       .filter(({ session, state }) =>
@@ -91,14 +82,12 @@ export function AgentSessionList({
           filters,
         ),
       ),
-    order,
+    (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
-    (row) => row.session.createdAt,
   );
   const isPinned = (id: string) => pins.has(pinKey(agentId, id));
   const pinned = rows.filter((row) => isPinned(row.session.sessionId));
   const rest = rows.filter((row) => !isPinned(row.session.sessionId));
-  const shown = [...pinned, ...rest].map((row) => row.session.sessionId);
 
   const remove = async (s: SessionView) => {
     const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
@@ -111,23 +100,15 @@ export function AgentSessionList({
     )
       actWhenAwake(`delete:${s.sessionId}`, async () => {
         if (!(await deleteSession(s.sessionId, agentId))) return;
-        orderActions.forgetSession(agentId, s.sessionId);
         unpinSession(pinKey(agentId, s.sessionId));
       });
   };
 
   const row = ({ session: s, state }: (typeof rows)[number]) => (
-    <OrderedRow
-      key={s.sessionId}
-      agentId={agentId}
-      sessionId={s.sessionId}
-      shown={shown}
-      orderActions={orderActions}
-    >
+    <div key={s.sessionId} className="relative">
       <SessionRow
         session={s}
         {...state}
-        reorderable={orderActions.ready}
         className={ROW_CLASS}
         pinned={isPinned(s.sessionId)}
         onTogglePin={() => togglePinnedSession(pinKey(agentId, s.sessionId))}
@@ -153,7 +134,7 @@ export function AgentSessionList({
             }),
         })}
       />
-    </OrderedRow>
+    </div>
   );
 
   return (
@@ -197,34 +178,6 @@ export function AgentSessionList({
           onClose={() => setRenaming(null)}
         />
       )}
-    </div>
-  );
-}
-
-function OrderedRow({
-  agentId,
-  sessionId,
-  shown,
-  orderActions,
-  children,
-}: {
-  agentId: string;
-  sessionId: string;
-  shown: readonly string[];
-  orderActions: OrderActions;
-  children: ReactNode;
-}) {
-  const drag = useOrderDrag({
-    scope: `sessions:${agentId}`,
-    id: sessionId,
-    ready: orderActions.ready,
-    onMove: (id, drop) => orderActions.moveSession(agentId, shown, id, drop),
-    onStep: (id, step) => orderActions.stepSession(agentId, shown, id, step),
-  });
-  return (
-    <div {...drag.dragProps} className="relative">
-      {children}
-      <OrderDropIndicator at={drag.indicator} />
     </div>
   );
 }

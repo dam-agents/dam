@@ -12,8 +12,3 @@ export const sidebarOrderSchema = z.object({
 export const sidebarOrderAgentsInputSchema = z.object({
   agentIds: z.array(orderedIdSchema).max(SIDEBAR_ORDER_MAX),
 });
-
-export const sidebarOrderSessionsInputSchema = z.object({
-  agentId: orderedIdSchema,
-  sessionIds: z.array(orderedIdSchema).max(SIDEBAR_ORDER_MAX),
-});

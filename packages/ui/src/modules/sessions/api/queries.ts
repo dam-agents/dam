@@ -2,9 +2,7 @@ import {
   type InfiniteData,
   skipToken,
   useInfiniteQuery,
-  useQueries,
   useQuery,
-  type UseQueryResult,
 } from "@tanstack/react-query";
 import type { SessionListCursor, SessionListQuery } from "agent-runtime-api";
 import {
@@ -274,28 +272,6 @@ export function useAgentSession(
         ? () => findAgentSession(agentId, sessionId)
         : skipToken,
     staleTime: 5_000,
-  });
-}
-
-function foundSessions(
-  results: UseQueryResult<SessionView | null>[],
-): SessionView[] {
-  return results.flatMap((result) => result.data ?? []);
-}
-
-export function useSessionsById(
-  agentId: string,
-  sessionIds: readonly string[],
-  options?: { enabled?: boolean },
-): SessionView[] {
-  const live = options?.enabled ?? true;
-  return useQueries({
-    queries: sessionIds.map((sessionId) => ({
-      queryKey: acpSessionsKeys.session(agentId, sessionId),
-      queryFn: live ? () => findAgentSession(agentId, sessionId) : skipToken,
-      staleTime: 5_000,
-    })),
-    combine: foundSessions,
   });
 }
 

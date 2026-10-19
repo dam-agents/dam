@@ -66,7 +66,6 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SessionRuntime;
   conversation?: string;
-  reorderable?: boolean;
   leading?: ReactNode;
   pinned?: boolean;
   onTogglePin?: () => void;
@@ -88,7 +87,6 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
-  reorderable = false,
   leading,
   pinned = false,
   onTogglePin,
@@ -197,9 +195,6 @@ export function SessionRow({
             title={titleLabel}
             aria-current={active ? "page" : undefined}
             aria-describedby={metaId}
-            aria-keyshortcuts={
-              reorderable ? "Alt+ArrowUp Alt+ArrowDown" : undefined
-            }
             className="flex min-w-0 items-center gap-1.5 text-left outline-none"
           >
             <span className={`text-sm min-w-0 truncate ${titleClass}`}>

@@ -154,6 +154,7 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import { useTakeBack } from "../hooks/use-take-back.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
@@ -280,6 +281,7 @@ export function ChatView() {
     loadOlderMessages,
     sendPrompt,
     rewriteFrom,
+    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
     configureSession,
@@ -375,13 +377,13 @@ export function ChatView() {
   const queuedPrompts = useStore((s) => s.queuedPrompts);
   const queueEmpty = queuedPrompts.length === 0;
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const canRewrite =
-    harnessForks &&
+  const rewritable =
     sessionView?.mode === SessionMode.Chat &&
     sessionView.type === SessionType.Regular &&
     !sessionView.threadTs &&
     !sessionView.scheduleId &&
     !sessionView.initialization;
+  const canRewrite = harnessForks && rewritable;
   const setupMessageId = sessionView?.initialization
     ? setupMessageOf(shown)
     : undefined;
@@ -390,6 +392,17 @@ export function ChatView() {
     arrivalsRef.current = newLiveArrivals(sessionId);
   const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
   const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
+  const takeBack = useTakeBack({
+    shown,
+    rewritePoints,
+    sessionId,
+    rewritable: rewritable === true,
+    harnessForks,
+    queuedPrompts,
+    title: sessionView?.title ?? null,
+    takeBackPrompt,
+    stop: stopAgent,
+  });
   const rewriting = useStore((s) => s.rewriting);
   const rewriteIndex = rewriting
     ? shown.findIndex((m) => m.id === rewriting.messageId)
@@ -1145,6 +1158,7 @@ export function ChatView() {
                 loadingSession={loadingSession}
                 onSend={sendWithA2uiData}
                 onStop={stopAgent}
+                onTakeBack={takeBack}
                 blockedReason={
                   noGrantedProvider
                     ? "No LLM provider connected to this agent."
