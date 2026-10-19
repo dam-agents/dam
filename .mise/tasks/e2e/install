@@ -49,6 +49,12 @@ if [ -n "${E2E_VIRTUALIZATION:-}" ]; then
   export PLATFORM_NESTED_VIRT=1
   INSTALL_ARGS+=(
     --set=virtualization.enabled=true
+    # A cache root of the lane's own, not values-local.yaml's. Every machine
+    # here boots a staged tree, and image:stage-vm takes the directory from the
+    # install's own values, so a staging that rendered the chart on its own
+    # would write the trees where no runner mounts and the first boot would
+    # fail.
+    --set=virtualization.imageCache.hostPath=/var/lib/vm-images
     --set=virtualization.runner.machineCPUs=1
     --set=virtualization.runner.bootMiB=1024
     --set=harnessTemplates.mock.resources.limits.cpu=1000m

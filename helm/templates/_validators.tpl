@@ -331,7 +331,10 @@ ungated until the next apply lands, so an entry is judged here rather than by
 the API server: four decimal octets and a prefix up to 32, or an RFC 4291
 group form — hex fields, at most one `::`, an optional dotted IPv4 tail in the
 last two, and no more fields than the shape holds, which the pattern this
-replaces let through (`2001:::1/64`).
+replaces let through (`2001:::1/64`). The prefix is decimal with no leading
+zero: `netip.ParsePrefix` refuses `10.0.0.0/08`, and the API server's parser
+reads it the same way, so a render that took it would leave the controller
+unable to start on a configuration the cluster had accepted.
 */}}
 {{- define "platform.validate.cidr" -}}
 {{- $value := toString .value -}}
@@ -343,7 +346,7 @@ replaces let through (`2001:::1/64`).
 {{- $addr := index $parts 0 -}}
 {{- $prefix := index $parts 1 -}}
 {{- if regexMatch $v4 $addr -}}
-{{- $valid = and (regexMatch "^[0-9]{1,2}$" $prefix) (le (int $prefix) 32) -}}
+{{- $valid = and (regexMatch "^(0|[1-9][0-9]?)$" $prefix) (le (int $prefix) 32) -}}
 {{- else if contains ":" $addr -}}
 {{- $head := $addr -}}
 {{- $tail := last (splitList ":" $addr) -}}
@@ -351,7 +354,7 @@ replaces let through (`2001:::1/64`).
 {{- $head = "" -}}
 {{- if regexMatch $v4 $tail -}}{{- $head = printf "%s0:0" (trimSuffix $tail $addr) -}}{{- end -}}
 {{- end -}}
-{{- if and $head (regexMatch "^[0-9]{1,3}$" $prefix) (le (int $prefix) 128) -}}
+{{- if and $head (regexMatch "^(0|[1-9][0-9]{0,2})$" $prefix) (le (int $prefix) 128) -}}
 {{- $halves := splitList "::" $head -}}
 {{- $left := index $halves 0 -}}
 {{- $right := "" -}}
@@ -370,7 +373,7 @@ replaces let through (`2001:::1/64`).
 {{- end -}}
 {{- end -}}
 {{- if not $valid -}}
-{{- fail (printf "%s entry %q is not an address/prefix — four decimal octets and a prefix up to 32, or hex groups and a prefix up to 128. Kubernetes rejects the whole NetworkPolicy on one entry it cannot parse, which leaves the pod it names ungated until the next apply lands." .name $value) -}}
+{{- fail (printf "%s entry %q is not an address/prefix — four decimal octets and a prefix up to 32, or hex groups and a prefix up to 128, the prefix written without a leading zero. Kubernetes rejects the whole NetworkPolicy on one entry it cannot parse, and the controller refuses to start on one its own parser cannot read, which leaves the pod it names ungated until the next apply lands." .name $value) -}}
 {{- end -}}
 {{- end -}}
 
