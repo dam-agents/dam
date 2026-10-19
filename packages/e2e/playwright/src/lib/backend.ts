@@ -10,6 +10,7 @@ import {
   type AgentCr,
   applyAgentCr,
   kubectl,
+  kubectlWithin,
   readAgentCr,
 } from "./cluster.js";
 import { type Backend, laneBackend } from "./lane.js";
@@ -359,9 +360,14 @@ export function runnerPod(agentId: string): string {
   ).split(" ")[0];
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root on the agent's VM runner, as an operator with the pod would: the owner's claim is $HOME, and a machine's VMM is a `_boot-vm` child of the runner.
-export function onRunnerHost(agentId: string, script: string): string {
-  return kubectl(
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root on the agent's VM runner, as an operator with the pod would: the owner's claim is $HOME, and a machine's VMM is a `_boot-vm` child of the runner. A script that may run for minutes takes a deadline, so a command a full disk wedged cannot hold the suite.
+export function onRunnerHost(
+  agentId: string,
+  script: string,
+  { timeoutMs }: { timeoutMs?: number } = {},
+): string {
+  return kubectlWithin(
+    timeoutMs,
     "-n",
     AGENT_NS,
     "exec",
@@ -375,10 +381,85 @@ export function onRunnerHost(agentId: string, script: string): string {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
-export function inGuest(agentId: string, script: string): string {
-  const pod = runnerPod(agentId);
+// UNIT_BOUNDARY_DESCRIPTION: the start failures the agent's own runner reported, as the error of each: a machine action the runner could not finish says so in its log, which outlives the Agent status a recovery clears. A boot the owner's start began and a signal cut short is named here, with the signal that ended the VMM.
+export function runnerStartFailures(agentId: string): string[] {
+  const logs = kubectl(
+    "-n",
+    AGENT_NS,
+    "logs",
+    "-l",
+    hostSelector(agentId, "vm"),
+    "--tail=-1",
+  );
+  return logs.split("\n").flatMap((line) => {
+    try {
+      const { fields } = JSON.parse(line) as {
+        fields?: Record<string, unknown>;
+      };
+      return fields?.machine === agentId &&
+        fields.message === "machine action failed" &&
+        fields.op === "starting" &&
+        typeof fields.error === "string"
+        ? [fields.error]
+        : [];
+    } catch {
+      return [];
+    }
+  });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what provisions the claim the agent's runner keeps its machines' disks on, which is the owner's storage: the provisioner of the claim's StorageClass, or the class's name where the cluster serves it without one. A provisioner that hands out a directory of the node makes the claim part of the node's own disk, which nothing may fill.
+export function runnerClaimProvisioner(agentId: string): string {
+  const claim = kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pod",
+    runnerPod(agentId),
+    "-o",
+    String.raw`jsonpath={.spec.volumes[?(@.name=="state")].persistentVolumeClaim.claimName}`,
+  );
+  if (!claim) return "";
+  const named = kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pvc",
+    claim,
+    "-o",
+    "jsonpath={.spec.storageClassName}",
+  );
+  const class_ = named
+    ? named
+    : kubectl(
+        "-n",
+        AGENT_NS,
+        "get",
+        "storageclass",
+        "-o",
+        String.raw`jsonpath={.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}`,
+      );
+  if (!class_) return "";
   return kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "storageclass",
+    class_,
+    "-o",
+    "jsonpath={.provisioner}",
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
+export function inGuest(
+  agentId: string,
+  script: string,
+  { timeoutMs }: { timeoutMs?: number } = {},
+): string {
+  const pod = runnerPod(agentId);
+  return kubectlWithin(
+    timeoutMs,
     "-n",
     AGENT_NS,
     "exec",

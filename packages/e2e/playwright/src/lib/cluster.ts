@@ -15,14 +15,27 @@ function kubeconfig(): string {
 }
 
 export function kubectl(...args: string[]): string {
-  return runKubectl(args, "ignore");
+  return kubectlWithin(undefined, ...args);
 }
 
-function runKubectl(args: string[], stdin: "ignore" | string): string {
+// UNIT_BOUNDARY_DESCRIPTION: the same call with a deadline, for a remote command that may run for minutes: without one the call blocks this process until the pod answers. A deadline kills the local kubectl, not the command it started in the pod.
+export function kubectlWithin(
+  timeoutMs: number | undefined,
+  ...args: string[]
+): string {
+  return runKubectl(args, "ignore", timeoutMs);
+}
+
+function runKubectl(
+  args: string[],
+  stdin: "ignore" | string,
+  timeoutMs?: number,
+): string {
   return execFileSync("kubectl", ["--kubeconfig", kubeconfig(), ...args], {
     encoding: "utf8",
     stdio: [stdin === "ignore" ? stdin : "pipe", "pipe", "pipe"],
     ...(stdin === "ignore" ? {} : { input: stdin }),
+    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
   }).trim();
 }
 
