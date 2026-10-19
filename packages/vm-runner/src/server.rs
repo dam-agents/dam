@@ -132,7 +132,7 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
-    // UNIT_BOUNDARY_DESCRIPTION: whether the guest's last mark says its agent has no room to write (guest::GUEST_FULL) rather than its room back (guest::GUEST_ROOM), and how much of the guest's kernel log the prober has read looking for those marks. A boot starts both again, the log holding one boot.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the guest's last mark says its agent has no room to write (guest::GUEST_FULL) rather than room it may still write into or room back (guest::GUEST_NEARLY_FULL, guest::GUEST_ROOM), and how much of the guest's kernel log the prober has read looking for those marks. A boot starts both again, the log holding one boot.
     guest_full: bool,
     kernel_read: u64,
     warming_since: Option<Instant>,
@@ -1935,7 +1935,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether a running guest's agent has room to write, from the marks platform-init prints on the console (guest::GUEST_FULL and guest::GUEST_ROOM): the room its storage grant leaves it, so a guest whose agent filled its disk says so while it keeps running, which neither a boot that failed nor an entrypoint that exited can. The kernel log is read from where the last probe stopped, since the VMM logs a line for every connection it relays and a mark from a minute ago is not at its end; a boot starts the read again. The file is read outside the lock, so a boot that starts meanwhile would make this probe's offset and mark the old boot's: the write is dropped when the machine's boot is no longer the one the read began on.
+    // UNIT_BOUNDARY_DESCRIPTION: whether a running guest's agent has room to write, from the marks platform-init prints on the console (guest::GUEST_FULL, guest::GUEST_NEARLY_FULL, guest::GUEST_ROOM): the room its storage grant leaves it, so a guest whose agent filled its disk says so while it keeps running, which neither a boot that failed nor an entrypoint that exited can. The kernel log is read from where the last probe stopped, since the VMM logs a line for every connection it relays and a mark from a minute ago is not at its end; a boot starts the read again. The file is read outside the lock, so a boot that starts meanwhile would make this probe's offset and mark the old boot's: the write is dropped when the machine's boot is no longer the one the read began on.
     fn note_guest_room(&self, id: &str) {
         let Some(path) = self.runtime.kernel_log(id) else {
             return;

@@ -8,6 +8,7 @@ import {
   memoryBar,
   poolWarning,
   storageBar,
+  storageRows,
 } from "../lib/pools.js";
 import { RESOURCE_ICON } from "../lib/resource-icons.js";
 import { CpuRow } from "./cpu-row.js";
@@ -37,8 +38,8 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
     );
   }
   const { memory, storage } = usage;
-  // UNIT_BOUNDARY_DESCRIPTION: an agent can be out of room while the pool is not near full, since the guard gives each running agent only its part of the pool: the breakdown that names it opens on either, not only on the pool's own level.
-  const fullHome = usage.agents.some((share) => share.homeFull);
+  // UNIT_BOUNDARY_DESCRIPTION: an agent can be out of room while the pool is not near full, since the guard gives each running agent only its part of the pool: the breakdown that names it opens on either, not only on the pool's own level, and it reads the rows it renders rather than the shares behind them.
+  const rows = storageRows(usage, vmAgents);
   const slackLogin = usage.slackUnlinked
     ? `/${getBrand().short} login`
     : undefined;
@@ -74,8 +75,8 @@ export function PoolUsage({ agents }: { agents: readonly AgentView[] }) {
           slackLogin,
         )}
       />
-      {(storage.level !== "ok" || fullHome) && (
-        <StorageBreakdown usage={usage} agents={vmAgents} />
+      {(storage.level !== "ok" || rows.some((row) => row.homeFull)) && (
+        <StorageBreakdown rows={rows} />
       )}
       {usage.cpu && <CpuRow cpu={usage.cpu} usage={usage} agents={vmAgents} />}
     </div>

@@ -100,6 +100,26 @@ pub enum Room {
     Room,
 }
 
+impl Room {
+    // UNIT_BOUNDARY_DESCRIPTION: the line a mark puts on the guest's console, which is the only way the runner hears it (vm-runner's console::room_full reads the words back): each of the three carries its own word, so the marks that say the writes are not failing are heard as well as the one that says they are.
+    pub fn line(self, room: u64) -> String {
+        match self {
+            Room::Full => format!(
+                "{}: this agent may write nothing more until space is freed",
+                crate::guest::GUEST_FULL
+            ),
+            Room::Held => format!(
+                "{}: this agent may write {room} more bytes before its writes fail with no space left",
+                crate::guest::GUEST_NEARLY_FULL
+            ),
+            Room::Room => format!(
+                "{}: this agent's writes are no longer held back",
+                crate::guest::GUEST_ROOM
+            ),
+        }
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: how far past its level the room must rise before a mark gets better: four of the guard's steps, so the guard moving a step at a time never flips one mark back and forth, and no more than a fifth of the floor, so the band stays below the next level up.
 const ROOM_BAND: u64 = 4 * POOL_GUARD_STEP;
 
@@ -163,6 +183,14 @@ mod tests {
         assert_eq!(room_of(crate::guest::HOME_FULL_BYTES - 1, None), Room::Full);
         assert_eq!(room_of(crate::guest::HOME_FULL_BYTES, None), Room::Held);
         assert_eq!(room_of(POOL_GUARD_FLOOR, None), Room::Room);
+        assert!(
+            Room::Full.line(0).contains(crate::guest::GUEST_FULL),
+            "a mark that carries no word leaves the last one the runner heard standing"
+        );
+        assert!(Room::Held.line(1).contains(crate::guest::GUEST_NEARLY_FULL));
+        assert!(Room::Room.line(1).contains(crate::guest::GUEST_ROOM));
+        assert!(!Room::Held.line(1).contains(crate::guest::GUEST_FULL));
+        assert!(!Room::Room.line(1).contains(crate::guest::GUEST_FULL));
     }
 
     // TEST_SCENARIO: a room that hovers on a level keeps the mark it had, so the console does not carry a line for every look: a full guest stays full until it clears the band, a held one stays held the same way, and a mark that gets worse is made at once, since the agent's writes fail sooner than the band allows.

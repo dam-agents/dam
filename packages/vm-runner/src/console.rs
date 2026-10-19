@@ -37,12 +37,18 @@ pub fn home_full(tail: &str) -> bool {
 const ENTRYPOINT_EXITED: &str = "platform-init: the image entrypoint ";
 const BOOT_REFUSED: &str = "platform-init: FATAL: ";
 
-// UNIT_BOUNDARY_DESCRIPTION: the marks platform-init prints on the console about a guest that keeps running: guest::GUEST_FULL while the agent's writes fail with no space left, and guest::GUEST_ROOM once its storage gave it room again. The last mark in the text decides, so a guest that freed space since is not reported full, and nothing is read as full when the text holds neither.
+// UNIT_BOUNDARY_DESCRIPTION: the marks platform-init prints on the console about a guest that keeps running: guest::GUEST_FULL while the agent's writes fail with no space left, guest::GUEST_NEARLY_FULL while it may write a little more before they do, and guest::GUEST_ROOM once its storage gave it room again. The last mark in the text decides, so a guest that freed space since is not reported full, and nothing is read as full when the text holds no mark at all.
 pub fn room_full(text: &str) -> Option<bool> {
     text.lines()
         .rev()
         .find(|line| {
-            line.contains(crate::guest::GUEST_FULL) || line.contains(crate::guest::GUEST_ROOM)
+            [
+                crate::guest::GUEST_FULL,
+                crate::guest::GUEST_NEARLY_FULL,
+                crate::guest::GUEST_ROOM,
+            ]
+            .iter()
+            .any(|word| line.contains(word))
         })
         .map(|line| line.contains(crate::guest::GUEST_FULL))
 }
@@ -301,7 +307,7 @@ mod tests {
         ));
     }
 
-    // TEST_SCENARIO: a guest whose agent filled the disk keeps running, so platform-init marks it on the console instead of exiting: the last mark decides whether the guest has room, a guest that freed space since stops reading as full, and a text with neither mark says nothing at all. The kernel log is read from where the last read stopped, so a mark a minute old is found among the connections the VMM logs, and a line still being written waits for the next read.
+    // TEST_SCENARIO: a guest whose agent filled the disk keeps running, so platform-init marks it on the console instead of exiting: the last mark decides whether the guest has room, a guest that freed space since stops reading as full, one that may write a little more is not full either, and a text with no mark says nothing at all. The kernel log is read from where the last read stopped, so a mark a minute old is found among the connections the VMM logs, and a line still being written waits for the next read.
     #[test]
     fn a_running_guests_room_is_read_from_the_last_mark() {
         let full = format!(
@@ -309,7 +315,13 @@ mod tests {
             crate::guest::GUEST_FULL
         );
         let room = format!("[ 9.2] platform-init: {}", crate::guest::GUEST_ROOM);
+        let nearly = format!(
+            "[ 9.15] platform-init: {}: this agent may write 4096 more bytes",
+            crate::guest::GUEST_NEARLY_FULL
+        );
         assert_eq!(room_full(&full), Some(true));
+        assert_eq!(room_full(&format!("{full}\n{nearly}")), Some(false));
+        assert_eq!(room_full(&format!("{nearly}\n{full}")), Some(true));
         assert_eq!(room_full(&format!("{full}\n{room}")), Some(false));
         assert_eq!(room_full(&format!("{room}\n{full}")), Some(true));
         assert_eq!(

@@ -1,8 +1,5 @@
-import type { BudgetVmUsage } from "api-server-api";
-
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
-import { formatBytes, STORAGE_PARTS, storageRows } from "../lib/pools.js";
+import { formatBytes, STORAGE_PARTS, type StorageRow } from "../lib/pools.js";
 
 const PART_HINT: Record<string, string> = {
   [STORAGE_PARTS.seeds]:
@@ -11,13 +8,11 @@ const PART_HINT: Record<string, string> = {
 };
 
 interface Props {
-  usage: BudgetVmUsage;
-  agents: readonly AgentView[];
+  rows: StorageRow[];
 }
 
-export function StorageBreakdown({ usage, agents }: Props) {
+export function StorageBreakdown({ rows }: Props) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const rows = storageRows(usage, agents);
   return (
     <section
       aria-label="What fills your storage"
