@@ -64,9 +64,11 @@ Only hard failures count: a gateway that is starting, rolling, hibernated or par
 **Rotation.** A credential rewritten in place — a rotation, or a refreshed OAuth token — needs no roll: Envoy watches the mounted SDS and credentials files and swaps the new value in.
 The kubelet, though, rewrites a mounted Secret only when it syncs the pod, which on its own happens about once a minute.
 So the controller watches the credential Secrets the api-server writes, keeping their metadata only, and on a change reconciles that owner's Agents.
-The reconcile stamps the gateway pod with an annotation derived from the resource versions of the credential Secrets it mounts; a changed annotation makes the kubelet sync the pod at once, and the new value is in use within seconds.
-The annotation carries no credential, the pod's spec and its StatefulSet's template stay unchanged so nothing restarts, and the gateway gains no access to the API.
-If the stamp fails, or the kubelet syncs before its own copy of the Secret has caught up, the periodic sync still delivers the value within about a minute.
+The reconcile stamps the gateway pod with an annotation derived from the resource versions of the credential Secrets it mounts; a changed annotation makes the kubelet sync the pod at once.
+That sync can come before the kubelet's own copy of the Secret has the new version, so the reconcile comes back about five seconds later and stamps a second annotation with the same revision, which syncs the pod once more.
+The new value is therefore in use within about ten seconds.
+The annotations carry no credential, the pod's spec and its StatefulSet's template stay unchanged so nothing restarts, and the gateway gains no access to the API.
+If both stamps fail, the periodic sync still delivers the value within about a minute and a half, the upper bound of the pickup time.
 
 A host's L7 chain can opt into HTTP/2 so credential injection also covers gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
 
@@ -154,6 +156,7 @@ A request that reaches the harness address by another spelling, outside the guar
 
 **Credentials and leaf.** The controller copies the keys the gateway reads, from every Secret granted to any of the owner's vm Agents, into one per-owner Secret, each key prefixed with its Secret's name; a Secret not granted, or another owner's, never enters it.
 The controller writes it only when its content changes, so a grant, a revocation or a rotation reaches the mounted files without a restart.
+Its pod is stamped twice per content hash of that Secret, as an agent's own gateway pod is per revision (**Rotation**, above), so a rotation is in use as soon.
 One leaf names every host any of the agents intercepts, from the same issuer, so a machine's CA is unchanged.
 The resolver is one CoreDNS with one block per agent's resolver port, each answering with that agent's ClusterIP and reading its file again on change.
 
