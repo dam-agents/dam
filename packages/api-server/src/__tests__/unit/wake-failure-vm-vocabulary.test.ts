@@ -22,7 +22,10 @@ const vocabulary = JSON.parse(
   ),
 ) as { reasons: string[] };
 
-const controllerOnlyReasons = new Set(["MachineRunnerUnschedulable"]);
+const controllerOnlyReasons = new Set([
+  "MachineRunnerUnschedulable",
+  "MachineRunnerNodeLost",
+]);
 
 const machineReasons = [...POD_FAILURE_REASONS].filter((r) =>
   r.startsWith("Machine"),

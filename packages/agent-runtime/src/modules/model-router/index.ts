@@ -1,5 +1,9 @@
 export { composeModelRouter } from "./compose.js";
-export { sessionOf, type SessionHandle } from "./domain/session-of.js";
+export {
+  SESSION_HEADER,
+  sessionOf,
+  type SessionHandle,
+} from "./domain/session-of.js";
 export {
   applyReplayRules,
   dropUnsupportedReasoning,
@@ -23,7 +27,6 @@ export { routerEnvFor, tierModels } from "./domain/harness-env.js";
 export { classify, normalizePath } from "./domain/classify.js";
 export { upstreamWireOf, upstreamUrl } from "./domain/upstream.js";
 export {
-  costUsdMicros,
   createUsageScanner,
   traceOf,
   usageOfBody,

@@ -1,12 +1,19 @@
 import { Command } from "commander";
 import {
+  formatSpendAmount,
+  spendTurnWindows,
   TELEMETRY_DEFAULT_SINCE_HOURS,
   TELEMETRY_MAX_SINCE_HOURS,
+  type SpendAmount,
+  type TurnSummary,
 } from "api-server-api";
 
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import type { CompatService, ConfigService } from "../../cli/index.js";
+import { ok, type Result } from "../../../result.js";
+import type { AuthRequiredError, TransportError } from "../../shared/errors.js";
+import type { SpendService } from "../../spend/index.js";
 import {
   EXIT_INVALID_INPUT,
   EXIT_RUNTIME_FAILURE,
@@ -50,12 +57,44 @@ function sinceHoursOf(raw: string | undefined, fallback: number): number {
 }
 
 const secs = (ms: number) => `${(ms / 1000).toFixed(1)}s`;
-const usd = (n: number) => (n > 0 && n < 0.01 ? "<$0.01" : `$${n.toFixed(2)}`);
+
+function costText(amounts: readonly SpendAmount[] | undefined): string {
+  const shown = (amounts ?? []).filter(
+    (a) => a.unit !== "free" && a.costMicros > 0,
+  );
+  if (shown.length === 0) return "—";
+  return shown.map((a) => formatSpendAmount(a.costMicros, a.unit)).join(" + ");
+}
+
+async function turnSpendOf(
+  spend: SpendService,
+  query: { agentId: string; sessionId: string },
+  turns: readonly TurnSummary[],
+): Promise<
+  Result<Map<string, SpendAmount[]>, TransportError | AuthRequiredError>
+> {
+  const windows = spendTurnWindows(turns);
+  if (windows.length === 0) return ok(new Map());
+  const result = await spend.turns({
+    ...query,
+    windows: windows.map(({ from, to }) => ({ from, to })),
+  });
+  if (!result.ok) return result;
+  return ok(
+    new Map(
+      windows.map((w, i) => [
+        w.turn.turnId,
+        result.value.windows[i]?.amounts ?? [],
+      ]),
+    ),
+  );
+}
 
 interface Deps {
   compatService: CompatService;
   configService: ConfigService;
   createAgentService: (host: string) => AgentService;
+  createSpendService: (host: string) => SpendService;
   createTelemetryService: (host: string) => TelemetryService;
   createExportClient: (host: string) => {
     run: (req: ExportRequest) => Promise<ExportOutcome>;
@@ -79,7 +118,9 @@ export function buildTelemetryCommand(deps: Deps): Command {
 
   telemetry
     .command("show", { isDefault: true })
-    .description("List the turns a session ran, with their cost and shape")
+    .description(
+      "List the turns a session ran, with their shape and the cost the platform measured",
+    )
     .argument("<agent>", "Agent Ref — name or 'agent-…' ID")
     .requiredOption("--session <id>", "the session to read")
     .option(
@@ -93,7 +134,8 @@ export function buildTelemetryCommand(deps: Deps): Command {
     .option("--json", "emit raw JSON instead of the default report")
     .addHelpText(
       "after",
-      "\nExamples:\n  dam telemetry my-agent --session sess-abc123\n  dam telemetry my-agent --session sess-abc123 --since 168 --json\n",
+      "\nThe cost is the spend the platform measured for this Agent's own calls that started in each turn; sub-agents' calls are not in it.\n" +
+        "\nExamples:\n  dam telemetry my-agent --session sess-abc123\n  dam telemetry my-agent --session sess-abc123 --since 168 --json\n",
     )
     .action(
       async (
@@ -128,6 +170,12 @@ export function buildTelemetryCommand(deps: Deps): Command {
           process.exit(EXIT_RUNTIME_FAILURE);
         }
         const { turns } = result.value;
+        const spend = await turnSpendOf(
+          deps.createSpendService(host),
+          { agentId: agent.id, sessionId: opts.session },
+          turns,
+        );
+        exitOnServiceError(spend, host);
 
         if (opts.json) {
           return writeStdoutAndExit(
@@ -135,7 +183,10 @@ export function buildTelemetryCommand(deps: Deps): Command {
               agentId: agent.id,
               sessionId: opts.session,
               sinceHours,
-              turns,
+              turns: turns.map((t) => ({
+                ...t,
+                spend: spend.value.get(t.turnId) ?? null,
+              })),
             })}\n`,
             EXIT_SUCCESS,
           );
@@ -157,7 +208,7 @@ export function buildTelemetryCommand(deps: Deps): Command {
               String(t.calls),
               String(t.spanCount),
               String(t.recordCount),
-              t.costUsd > 0 ? usd(t.costUsd) : "—",
+              costText(spend.value.get(t.turnId)),
             ]),
           ]),
           EXIT_SUCCESS,

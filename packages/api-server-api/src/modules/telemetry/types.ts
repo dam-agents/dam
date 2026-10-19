@@ -32,7 +32,6 @@ export interface TurnSummary {
   traceIds: string[];
   models: string[];
   calls: number;
-  costUsd: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;

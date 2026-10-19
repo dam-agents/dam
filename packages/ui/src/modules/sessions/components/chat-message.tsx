@@ -1,5 +1,5 @@
 import { StopFilledAlt } from "@carbon/icons-react";
-import type { TurnSummary } from "api-server-api";
+import type { SpendAmount, TurnSummary } from "api-server-api";
 import {
   memo,
   type ReactNode,
@@ -52,6 +52,7 @@ interface BaseProps {
   onDelete: (id: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
   turn?: TurnSummary;
+  turnSpend?: readonly SpendAmount[] | undefined;
   agentId?: string;
   sessionId?: string;
 }
@@ -128,6 +129,7 @@ export const ChatMessage = memo(function ChatMessage({
   onDelete,
   onLoadOlder,
   turn,
+  turnSpend,
   agentId,
   sessionId,
 }: Props) {
@@ -299,6 +301,7 @@ export const ChatMessage = memo(function ChatMessage({
           agentId={agentId}
           sessionId={sessionId}
           turn={turn}
+          spend={turnSpend}
           className="self-stretch"
         />
       )}

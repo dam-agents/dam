@@ -97,7 +97,8 @@ A request naming no Connection on a contested scope is refused by that same step
 The gate reads the path with the prefix removed, so egress rules and approvals keep naming real paths.
 
 **Model-provider chains.** A chain whose credential comes from a model-provider Connection also carries the spend meter, directly after the address step and before the gate.
-On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, and sends a spend record per call to the api-server.
+On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, records the session and harness that the Model Router stamped, and sends a spend record per call to the api-server.
+On every chain, the gateway removes that stamp before the request leaves.
 The depth is on [spend-limits](spend-limits.md).
 
 ## Request signing

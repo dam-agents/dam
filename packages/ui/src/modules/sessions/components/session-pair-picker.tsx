@@ -50,14 +50,15 @@ import {
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
+import {
+  applySettingChanges,
+  settingDefaults,
+  settingsForModel,
+} from "../lib/session-settings.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
-import {
-  SessionSettingsControls,
-  settingDefaults,
-  settingsForModel,
-} from "./session-settings-controls.js";
+import { SessionSettingsControls } from "./session-settings-controls.js";
 
 interface Props {
   agentId: string;
@@ -338,6 +339,8 @@ export function SessionPairPicker({
           {pair && (
             <div className="border-t border-border px-2 pt-2 empty:hidden">
               <SessionSettingsControls
+                agentId={agentId}
+                carried={carried}
                 capability={capability}
                 model={pair.model}
                 settings={settings}
@@ -348,15 +351,12 @@ export function SessionPairPicker({
                     name: `${m.upstreamId} · ${g.displayName}`,
                   })),
                 )}
-                onChange={(id, value) => {
-                  const rest = Object.fromEntries(
-                    Object.entries(settings).filter(([key]) => key !== id),
-                  );
+                onChange={(changes) =>
                   choose({
                     ...pair,
-                    settings: value === "" ? rest : { ...rest, [id]: value },
-                  });
-                }}
+                    settings: applySettingChanges(settings, changes),
+                  })
+                }
               />
             </div>
           )}

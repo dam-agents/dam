@@ -4,6 +4,7 @@ import type {
   SessionPage,
   SessionRepository,
   SessionsService,
+  SessionSubAgentContext,
 } from "agent-runtime-api";
 
 import { noticeStream } from "../../../core/notice-stream.js";
@@ -13,11 +14,9 @@ import {
   type ListedHarnessSession,
 } from "../domain/session-list.js";
 import { historyTailStart } from "../domain/replay-tail.js";
-import { spendBySession, spendTotal } from "../domain/session-spend.js";
 import type { DelegationFramesStore } from "../infrastructure/delegation-frames-store.js";
 import type { HistoryProvider } from "../infrastructure/history-provider.js";
 import type { InProcessCaller } from "../infrastructure/in-process-request.js";
-import type { SpendProvider } from "../infrastructure/spend-provider.js";
 import type { PlatformSessionOf } from "../infrastructure/terminal-session-pins.js";
 import type {
   PlatformSessionMeta,
@@ -87,6 +86,9 @@ async function readHarnessListing(
 }
 
 export function createSessionsService(deps: {
+  subAgentContextOf: (
+    meta: PlatformSessionMeta,
+  ) => Omit<SessionSubAgentContext, "settings">;
   openCaller: () => InProcessCaller;
   sessionMetadata: SessionMetadataStore;
   isRunning: (sessionId: string) => boolean;
@@ -94,7 +96,6 @@ export function createSessionsService(deps: {
   sessionFrames: (sessionId: string) => SessionHistory;
   delegations: DelegationFramesStore;
   historyProvider?: HistoryProvider;
-  spendProvider?: SpendProvider;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   log: (msg: string) => void;
@@ -180,10 +181,7 @@ export function createSessionsService(deps: {
   return {
     async list(query?: SessionListQuery): Promise<SessionPage> {
       const platformSessionOf = deps.terminalSessionPins?.();
-      const [{ listed, complete }, spendRows] = await Promise.all([
-        listedWithinGrace(),
-        deps.spendProvider?.read() ?? Promise.resolve(null),
-      ]);
+      const { listed, complete } = await listedWithinGrace();
       const composed = composeSessionList(listed, deps.sessionMetadata.all(), {
         isTombstoned: (sessionId) =>
           deps.sessionMetadata.isTombstoned(sessionId),
@@ -191,32 +189,7 @@ export function createSessionsService(deps: {
         platformSessionOf,
       });
       const paged = withRepositories(pageSessions(composed, query));
-      const page: SessionPage = complete
-        ? paged
-        : { ...paged, incomplete: true };
-      if (!deps.spendProvider || !spendRows) return page;
-      const spend = spendBySession(
-        spendRows,
-        deps.spendProvider.unit,
-        platformSessionOf,
-      );
-      return {
-        ...page,
-        sessions: page.sessions.map((session) => {
-          const cost = spend.get(session.sessionId);
-          return cost ? { ...session, spend: cost } : session;
-        }),
-      };
-    },
-
-    async spend({ from, to }) {
-      if (!deps.spendProvider) return null;
-      const rows = await deps.spendProvider.read();
-      if (!rows) throw new Error("the harness did not report session spend");
-      return spendTotal(rows, deps.spendProvider.unit, {
-        from: Date.parse(from),
-        to: Date.parse(to),
-      });
+      return complete ? paged : { ...paged, incomplete: true };
     },
 
     /**
@@ -271,7 +244,8 @@ export function createSessionsService(deps: {
         deps.sessionMetadata.isTombstoned(sessionId)
       )
         return null;
-      return deps.sessionMetadata.get(sessionId)?.meta.settings ?? {};
+      const meta = deps.sessionMetadata.get(sessionId)?.meta ?? {};
+      return { settings: meta.settings ?? {}, ...deps.subAgentContextOf(meta) };
     },
 
     async byRef(ref) {

@@ -45,7 +45,7 @@ Channels split along a structural axis that has real consequences for secrets an
   The operator configures the app once via Helm values; on Slack each workspace adds its own bot token by completing the install handshake, and per-Agent config stays just *which conversation this Agent listens to*.
   Both messengers are platform channels today.
   On Slack, identity linking ties messenger users to Keycloak subs at the workspace level.
-- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram *conversation* binds to exactly one Agent — the owner consents by completing an in-chat `/bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
+- Telegram's variant: there is no workspace to anchor per-user identity in, so a Telegram *chat* binds to exactly one Agent — the owner consents by completing an in-chat `/bind` plus a web agent-picker flow — and anyone in the bound chat may drive that Agent.
 
 ### Shared access — the one model
 
@@ -53,7 +53,7 @@ The binding itself is the authorization: anyone the messenger admits to the conv
 There is no per-person access mode, no identity link required to drive a turn, and no allow-list.
 Every turn relays single-track to the main agent pod; the **binding owner's** Terms-of-Use acceptance gates each turn (the terms bind the party whose credentials run it, not the member who typed); the security log records each allow with basis *place* and the sender's Slack user id, or for a bot post which Agent or app wrote it; and the prompt text is speaker-labelled with the sender's Slack mention, or the Agent's or app's name, so a multi-speaker session stays attributable inside the conversation itself.
 
-Telegram is structurally identical — with no workspace to anchor per-user identity, consent attaches to the conversation and everyone in the bound chat drives the Agent.
+Telegram is structurally identical — with no workspace to anchor per-user identity, consent covers the whole chat, every forum topic and reply in it included, and everyone in the bound chat drives the Agent.
 
 Members use every granted Connection and Satellite; the UI warns, never blocks, when a group binding and grants meet.
 
@@ -116,7 +116,7 @@ One cross-cutting concern is owned elsewhere and only summarized here:
 ## Topology
 
 Both adapters share the same shape inside the api-server — a worker that owns the messenger socket, the channel manager that supervises lifecycle, the ACP relay for inbound, and the per-Agent MCP endpoint for outbound.
-The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (conversation → Agent).
+The interesting parts are where the two diverge: Slack hangs off a workspace-wide identity link table; Telegram hangs off its own binding table (chat → Agent).
 Telegram's token comes from Helm values; Slack's app-level token does too, but a Slack bot token is per workspace and comes from the install handshake.
 
 ### Slack — platform channel
@@ -186,7 +186,8 @@ flowchart LR
 ```
 
 The bot token comes from Helm values and lives in api-server env, like the Slack tokens.
-A conversation binds to exactly one Agent in its binding table (the conversation id is the primary key); the single bot polls for the whole install and resolves each inbound message to its chat's binding.
+A chat binds to exactly one Agent in its binding table (the chat's id is the primary key); the single bot polls for the whole install and resolves each inbound message to its chat's binding, a forum topic's message included.
+A forum topic or a reply chain never has a row of its own.
 The relay path is single-track — the main pod handles every turn.
 
 ## Adapters
@@ -318,6 +319,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
   The emoji is the Agent's emoji avatar if it has one, else the robot face, unless the conversation's binding names custom emoji: whoever connects or edits the conversation can switch them on and name the workspace's emoji for each of the eight characters, prefilled `<brand.short>-agent-1` to `-8` in the order the set was drawn.
   The names are trusted as given — Slack shows an unknown name as literal text — and a post to a conversation the Agent is not connected to uses the robot face.
   When such a post reaches another Agent, the opening is removed first, so a peer named at the start of the reply is still addressed.
+  Slack returns the line break after the opening as spaces, so the opening is found by its shape — an emoji in any form, then the bold name — and is removed only in a workspace where the platform signs posts.
   Platform notices (a failed turn, a slow start) are the platform speaking and always post as the app.
 - **Omit the capability entirely**, when no partial answer is possible: checked once proactively, not per call, and the affordance drops out of the tool list rather than staying registered to fail forever.
   **No Slack capability takes this path.** It is the tool list that would have to carry the verdict, and a tool list is per Agent while a grant is per workspace — so with several installed there is always a partial answer to give, and the rule above selects the first strategy for every one of them.
@@ -332,7 +334,7 @@ The agent persona above is the one exception and fails closed: the cost of guess
   The client fetches nothing new until every update it handed over is handled, so an inbound message is only queued there; waiting on its turn would stop the bot reading every chat.
 - **Token provenance.** The operator creates one bot via `@BotFather` and sets the token in Helm values; it reaches the api-server as env.
   No per-Agent Secrets, no token at rest in Postgres.
-- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent attaches to the *conversation*: someone sends `/bind` (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing *their own* Agents.
+- **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent covers the whole *chat*, all its forum topics included: someone sends `/bind` anywhere in it (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing *their own* Agents.
   The bot posts a confirmation in the chat.
   The chat's members never authenticate.
   `/unbind` releases the binding, and the owner can also disconnect a bound chat from the web UI — the bot posts a farewell note in the chat before the binding is released.
@@ -351,7 +353,7 @@ A channel message becoming an agent turn — the inbound relay into an ACP sessi
 
 ## Per-Agent vs. platform channel
 
-Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm, a Slack bot token per workspace from its install handshake — and a conversation→Agent binding table, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
+Both messengers are platform channels: credentials belong to the install rather than to an Agent — Telegram's token and Slack's app-level token from Helm, a Slack bot token per workspace from its install handshake — and a binding table, keyed by conversation on Slack and by chat on Telegram, differing mainly in where the binding is gestured — Slack from the UI/CLI, an in-chat `/platform bind`, or the link the bot posts when it is invited; Telegram from an in-chat `/bind` plus the web agent picker.
 The verbs match; the spelling follows each messenger — Slack prefixes its registered slash command, Telegram uses bare ones.
 Future channels (WhatsApp Business, Discord, SMS) follow the same pattern — the Telegram flow is the template for messengers without a workspace identity to anchor per-user links against.
 

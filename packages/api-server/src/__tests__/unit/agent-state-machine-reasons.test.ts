@@ -38,6 +38,10 @@ describe("computeAgentState with a machine reason", () => {
     expect(computeAgentState(notReady("MachineStorageFull"))).toBe("error");
   });
 
+  it("reads a runner whose node the cluster has lost as an error, not as one still starting", () => {
+    expect(computeAgentState(notReady("MachineRunnerNodeLost"))).toBe("error");
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");

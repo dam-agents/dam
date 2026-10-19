@@ -12,7 +12,7 @@ export {
 } from "./services/metrics-service.js";
 export {
   createAgentTelemetry,
-  createUnavailableAgentTelemetry,
+  type AgentSpendPort,
   type AgentTelemetryService,
 } from "./services/agent-telemetry.js";
 export { registerAgentTelemetryTools } from "./mcp-tools.js";

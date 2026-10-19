@@ -297,7 +297,7 @@ export function runnerGrows(
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the pod hosting a vm agent's machine: the agent's owner's VM runner, which every call into that machine goes through (`vm-runner exec`). An empty result means there is no such pod, which is the case on a Mac host runner that runs its machines outside the cluster; the lookup ranges over the list rather than indexing it, because kubectl fails a jsonpath into an index an empty list does not have, and only a real kubectl failure may throw here.
+// UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from. An empty result means there is no such pod, which is how a Mac host runner runs its machines, outside the cluster; the lookup ranges over the list rather than indexing it, because kubectl fails a jsonpath into an index an empty list does not have.
 export function runnerPod(agentId: string): string {
   const pods = kubectl(
     "-n",
@@ -310,6 +310,22 @@ export function runnerPod(agentId: string): string {
     'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}',
   );
   return pods.split("\n")[0];
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root on the agent's VM runner, as an operator with the pod would: the owner's claim is $HOME, and a machine's VMM is a `_boot-vm` child of the runner.
+export function onRunnerHost(agentId: string, script: string): string {
+  return kubectl(
+    "-n",
+    AGENT_NS,
+    "exec",
+    runnerPod(agentId),
+    "-c",
+    "vm-runner",
+    "--",
+    "sh",
+    "-c",
+    script,
+  );
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
@@ -333,6 +349,7 @@ export function inGuest(agentId: string, script: string): string {
     script,
   );
 }
+
 export async function deleteBackendHost(
   agentId: string,
   backend: Backend,

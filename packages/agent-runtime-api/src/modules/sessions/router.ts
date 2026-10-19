@@ -6,7 +6,6 @@ import {
   sessionHistoryInputSchema,
   sessionListInputSchema,
   sessionSettingsInputSchema,
-  sessionSpendInputSchema,
   setSessionTitleInputSchema,
   storeDelegationFramesInputSchema,
 } from "./schemas.js";
@@ -15,10 +14,6 @@ export const sessionsRouter = t.router({
   list: t.procedure
     .input(sessionListInputSchema)
     .query(({ ctx, input }) => ctx.sessions.list(input)),
-
-  spend: t.procedure
-    .input(sessionSpendInputSchema)
-    .query(({ ctx, input }) => ctx.sessions.spend(input)),
 
   history: t.procedure
     .input(sessionHistoryInputSchema)
@@ -39,10 +34,10 @@ export const sessionsRouter = t.router({
   settings: t.procedure
     .input(sessionSettingsInputSchema)
     .query(async ({ ctx, input }) => {
-      const settings = await ctx.sessions.settings(input);
-      if (settings === null)
+      const context = await ctx.sessions.settings(input);
+      if (context === null)
         throw new TRPCError({ code: "NOT_FOUND", message: "no such session" });
-      return { settings };
+      return context;
     }),
   byRef: t.procedure
     .input(sessionByRefInputSchema)

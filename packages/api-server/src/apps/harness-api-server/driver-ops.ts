@@ -1,10 +1,13 @@
+import { match } from "ts-pattern";
 import type { z } from "zod";
 import {
+  PROVIDERS,
   providerTypeForTemplateId,
   type BudgetsService,
   type ConnectionsService,
   type HarnessCatalog,
   type InvocationView,
+  type ProviderPresetType,
   type spawnInvocationRequestSchema,
   type TemplatesService,
 } from "api-server-api";
@@ -20,6 +23,7 @@ import {
   ProviderMismatchError,
   SpendLimitReachedError,
   UnresolvableDriverError,
+  type DriverProvider,
   type InvocationOrigin,
   type InvocationsService,
   type SpawnInput,
@@ -133,18 +137,17 @@ function driverOps(
       ]);
       const driverGrantIds = granted.connections.map((g) => g.connectionId);
       const grantSet = new Set(driverGrantIds);
-      const driverProviders = owned.flatMap((cn) => {
-        const type = grantSet.has(cn.id)
-          ? providerTypeForTemplateId(cn.templateId)
-          : null;
-        return type ? [{ id: cn.id, type }] : [];
-      });
+      const { driverProviders, attachableProviders } = providersOf(
+        owned,
+        grantSet,
+      );
 
       try {
         const { id } = await invocations.spawn({
           driverAgentId: driverId,
           driverGrantIds,
           driverProviders,
+          attachableProviders,
           target,
           setup: {
             ...(body.seed ? { seed: body.seed } : {}),
@@ -230,7 +233,34 @@ function driverOps(
     },
 
     async images() {
-      const templates = await deps.templates.list();
+      const [templates, granted, owned] = await Promise.all([
+        deps.templates.list(),
+        conns.getAgentConnections(driverId),
+        conns.listConnections(),
+      ]);
+      const providers = providersOf(
+        owned,
+        new Set(granted.connections.map((g) => g.connectionId)),
+      );
+      const runsOn = (
+        harness: SpawnInput["target"]["harness"],
+        runsOnTypes: ProviderPresetType[] | undefined,
+      ) =>
+        match(
+          invocations.reachability({
+            ...providers,
+            target: {
+              ...(harness && { harness }),
+              ...(runsOnTypes && { runsOn: runsOnTypes }),
+            },
+          }),
+        )
+          .with({ kind: "runs" }, ({ provider }) => ({
+            provider: PROVIDERS[provider].displayName,
+          }))
+          .with({ kind: "refused" }, ({ reason }) => ({ unavailable: reason }))
+          .with({ kind: "unnarrowed" }, () => ({}))
+          .exhaustive();
       return templates.flatMap((t) => {
         const size = concreteResources(
           t.spec.resources,
@@ -245,6 +275,7 @@ function driverOps(
               description: h.description,
               harness: h.name,
               size,
+              ...runsOn(h.name, h.providers),
             }))
           : [
               {
@@ -254,6 +285,7 @@ function driverOps(
                 description: t.spec.description,
                 ...(t.spec.harness ? { harness: t.spec.harness } : {}),
                 size,
+                ...(t.spec.harness ? runsOn(undefined, t.spec.providers) : {}),
               },
             ];
       });
@@ -270,5 +302,29 @@ function driverOps(
         },
       };
     },
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the provider Connections the driver holds,
+ * which a sub-agent inherits from, and the ones its owner holds but has not
+ * attached to it, which a refused spawn names as the fix.
+ */
+function providersOf(
+  owned: readonly { id: string; templateId: string }[],
+  granted: ReadonlySet<string>,
+): {
+  driverProviders: DriverProvider[];
+  attachableProviders: ProviderPresetType[];
+} {
+  const typed = owned.flatMap((cn) => {
+    const type = providerTypeForTemplateId(cn.templateId);
+    return type ? [{ id: cn.id, type }] : [];
+  });
+  return {
+    driverProviders: typed.filter((p) => granted.has(p.id)),
+    attachableProviders: typed
+      .filter((p) => !granted.has(p.id))
+      .map((p) => p.type),
   };
 }

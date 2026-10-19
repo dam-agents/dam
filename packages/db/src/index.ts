@@ -48,7 +48,9 @@ export {
   satelliteJobs,
   resourceAlerts,
   avatarImages,
+  spendCalls,
   spendDaily,
+  spendMetering,
   spendLimits,
   spendLimitExtensions,
 } from "./schema.js";

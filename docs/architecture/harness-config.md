@@ -1,6 +1,6 @@
 # Harness configuration
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -54,6 +54,11 @@ Bob reads one settings file under its home and watches it, so each Bob lease poi
 Only Bob itself runs with the preload: its bootstrap reads the agent-wide choices from the shared file and writes the copy.
 The task store, rules and MCP configuration under `~/.bob` stay shared.
 A runtime without the `sessionSettings` capability keeps the Config panel's harness defaults instead.
+
+The same record holds the session's **platform sub-agent settings** under `platformSubagent.<id>`: a harness, its model, its mode and its config options, which a runtime that reports `platformSubagentSettings` for the session's harness on hello accepts whatever the manifest binds, since they configure another agent ([invocations](invocations.md#spawning)); the Subagents section offers them only then.
+They join no Harness Lease key and reach no harness; the api-server reads them when the session spawns, and the saved pair and schedules carry them with the rest.
+A mode or config option is checked against the chosen harness's catalog when it is set; the model, and a harness the agent no longer carries, only at spawn, so a stale choice never blocks the session's other settings; a choice the catalog marks `needsApproval` (Claude Code's asking modes, Bob's approvals on ask) is refused, because nobody is there to approve.
+The Subagents section shows them below the settings for the harness's own subagents: a harness, then its models and settings; picking another harness clears the rest.
 
 An unreadable setting is unavailable, not an unset default.
 Pi receives its selected provider and model as command-line options, because its extension loads after startup settings have been read; updating the saved defaults alone would leave the first turn on an earlier provider.
@@ -124,14 +129,17 @@ A routed harness answers its model list from the catalog; `harnessConfig.catalog
 agent-runtime runs one **Model Router** per pod, a loopback HTTP listener (`127.0.0.1:24180`, `PLATFORM_MODEL_ROUTER_PORT`) every harness process points its one base URL at, with `X-Platform-Harness` naming the caller.
 It passes through and never translates: the path classifies the dialect (`/v1/messages` and `count_tokens`: Messages; `/v1/chat/completions`: chat; `/v1/responses`: Responses; doubled slashes, pi-ai's `/v1/v1/` and Bob's `/inference` prefix folded first), the `model` resolves to a catalog entry, and the call leaves for that entry's Connection only when it serves the dialect, else it is refused with the reason.
 A qualified name resolves outright, case-insensitively on the upstream id; a bare name is looked for on the session's provider, then the harness's default provider, then the single provider listing it, and refused naming the candidates when several do.
-The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` ending in `_session_<uuid>`.
+The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` ending in `_session_<uuid>`, and Pi's `x-platform-session`, which its extension sets to the platform's session id.
+In a terminal, Codex and Bob run under their own id, which the router maps back to the platform's session id through the pins that their session-start hooks write (`terminalSessionPins`); Claude Code's terminal runs under the platform's id, and Pi's extension sends it.
+A Codex terminal also sends the platform's id in `x-platform-session` (`env_http_headers`), which names the session of a thread that has no pin, such as the TUI's title thread.
+The router stamps each forwarded call with `x-platform-session` (when it found a session) and `x-platform-harness`, and it never passes the stamp that a harness sent; the gateway's [meter](spend-limits.md#meter) records the stamp and removes it before the provider.
 
 The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, the platform provider, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
 It adds Anthropic's OAuth beta flag to a call bound for the subscription Connection, removes it from every other call, and passes the other `anthropic-beta` flags as sent, so one Claude Code process mixes the subscription with any routed provider.
 The body goes out with `model` rewritten to the upstream id; the response comes back with only its model field rewritten to the name the harness asked for, so transcripts record the provider.
 No retries: a second model call is a second bill.
 An upstream error keeps its status and headers, and its message gets a lead sentence that names the provider, the model, the API and the harness, so the harness shows where the call failed; a [spend refusal](spend-limits.md#refusal) passes unchanged.
-Each call is reported once with its Connection, upstream model, dialect, harness and session, the source of [spend](metrics.md).
+Each call is reported once on the telemetry rail with its tokens, Connection, upstream model, dialect, harness and session, and no cost: every spend figure reads the gateway's [meter](spend-limits.md#ledger).
 
 **Replay rules** apply by target, since the router cannot know which model wrote a history: for a Claude model, every assistant message but the last has its thinking blocks turned into `<thinking>…</thinking>` text; for a Responses target other than OpenAI, reasoning items and `client_metadata` are dropped and a tool-less request's tool items become text; for OpenAI only reasoning items with a non-empty `content` array are dropped; chat completions replay unchanged.
 The router also fits the output budget to the catalog's limit, drops a reasoning effort sent to a model that does not reason, and adds `include_usage` to a streamed chat completion so its final chunk carries the usage.
@@ -140,8 +148,12 @@ The effort level Claude Code persists, sent as `output_config.effort`, is rewrit
 Beyond the model routes the router serves each harness's **catalog endpoint** from its view: `/v1/models` in the OpenAI list shape (`display_name` and `description` for Claude Code's picker, a `metadata` extension Pi registers its provider from), `/codex/models` in Codex's `ModelInfo` shape (a missing field makes Codex drop the catalog silently), `/inference/v1/model/info` in LiteLLM's shape for Bob, `HEAD /api/hello` for Claude Code's probe; Bob's `/admin/v1/*` calls get a JSON 404.
 A catalog request waits up to ten seconds for the pod's first listing and answers 503 while a provider has not listed, which a harness retries rather than caches.
 A harness whose manifest says `modelFromSession` (Bob, one settings-file model per process) gets the session's model on every call; a tier alias its subagents ask for (`premium-ide`, `explorer`), and on Codex (`bareNamesFromSession`) any bare name, is mapped the same way.
-A session's **subagent model** is one setting delivered three ways: Claude Code reads `CLAUDE_CODE_SUBAGENT_MODEL` at process start, forced (`CLAUDE_CODE_SUBAGENT_MODEL_FORCE`) over the Agent tool's model argument and an agent definition's model, so the session runs in a process of its own; Bob's and Codex's subagent calls carry a parent marker (`X-Parent-Task-Id`, a child `thread-id`) and the router sends them to the session's choice, nothing written to the harness (manifest binding `router: true`); a platform sub-agent spawned from the session runs on it, whatever model the spawn names.
-Pi's calls carry no session marker and its image has no subagents, so Pi has no such setting.
+A session's **subagent model** is one setting delivered three ways: Claude Code reads `CLAUDE_CODE_SUBAGENT_MODEL` at process start, forced (`CLAUDE_CODE_SUBAGENT_MODEL_FORCE`) over the Agent tool's model argument and an agent definition's model, so the session runs in a process of its own; Bob's and Codex's subagent calls carry a parent marker (`X-Parent-Task-Id`, a child `thread-id`) and the router sends them to the session's choice, nothing written to the harness (manifest binding `router: true`).
+A session's **subagent effort** (Claude Code, Codex) is a `router: true` setting too: the router writes it over the effort a call marked as a subagent's carries (`output_config.effort`, `reasoning.effort`, `reasoning_effort`), and leaves a call that carries none alone, since the harness sends none to a model that takes none.
+Its catalog option says `subagents: true`, so its model constraints come from the subagent model, not the session's.
+A session on a native Connection (Bedrock) sends no call through the router, so its subagent effort has no effect.
+Both settings reach only the harness's own subagents; a platform sub-agent follows the session's platform sub-agent settings ([session settings](#session-settings)).
+Pi's image has no subagents, so Pi has neither setting.
 
 ## Model discovery and the agent's default model
 

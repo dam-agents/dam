@@ -1,6 +1,6 @@
 import { Bot, Chat, StopFilledAlt } from "@carbon/icons-react";
 import type { DelegationNode, TurnSummary } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
 import { CARD_SURFACE } from "@/components/ui/card";
@@ -12,6 +12,7 @@ import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
 import type { AgentState } from "../../../types.js";
 import { ToolContentBlock } from "../../sessions/components/tool-chip.js";
+import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { useStopDelegation } from "../api/mutations.js";
 import {
@@ -46,6 +47,8 @@ export function DelegationCard({
   const state = delegationState(node, agentStates.get(node.id));
   const failed = state === "failed";
   const turn = turns?.[node.id];
+  const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
+  const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
   const model = delegationModel(node.requestedModel, turn?.models);
 
   return (
@@ -88,6 +91,7 @@ export function DelegationCard({
           agentId={driverAgentId}
           invocationId={node.id}
           turn={turn}
+          spend={turnSpend?.get(turn.turnId)}
           className="-mt-1 mb-1.5"
           triggerClassName="ml-[58px]"
         />

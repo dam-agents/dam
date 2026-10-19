@@ -53,19 +53,6 @@ describe("runtimeBySession folds sessions under their trace root", () => {
     const [traceRootCte] = sql.split("session_root AS");
     expect(traceRootCte).not.toContain("{sessionId:String}");
   });
-
-  it("narrows a multi-session read to those sessions while roots stay unfiltered", async () => {
-    const { client, queries } = fakeClient([]);
-    await createClickhouseReader(client).runtimeBySession(["a-1"], {
-      fromIso: "2026-10-01T00:00:00.000Z",
-      sessionIds: ["s-1", "s-2"],
-    });
-    const [traceRootCte, rest] = queries[0].split("session_root AS");
-    expect(traceRootCte).not.toContain("{sessionIds:Array(String)}");
-    expect(rest).toContain(
-      "LogAttributes['session.id'] IN {sessionIds:Array(String)}",
-    );
-  });
 });
 
 describe("spendByAgent labels the bar from the agent's own rows", () => {
@@ -91,65 +78,6 @@ describe("spendByAgent labels the bar from the agent's own rows", () => {
     );
     expect(out).toEqual([
       { agentId: "root-driver", agentName: "", costUsd: 1.5 },
-    ]);
-  });
-});
-
-describe("spendBySubAgent groups a Driver's spend by sub-agent", () => {
-  // TEST_SCENARIO: The sub-agent rows must stay behind the same owner gate as every other read, so a Driver only ever sees sub-agents whose rows carry its own gateway-stamped id; and they must leave out the Driver's own calls, which carry no invocation id.
-  it("gates on the owner allowlist and keeps only sub-agent rows", async () => {
-    const { client, queries } = fakeClient([]);
-    await createClickhouseReader(client).spendBySubAgent(
-      ["driver-a"],
-      { hours: 24 },
-      11,
-    );
-    expect(queries).toHaveLength(1);
-    const sql = queries[0];
-    expect(sql).toContain(
-      "ResourceAttributes['platform.agent.id'] IN {agentIds:Array(String)}",
-    );
-    expect(sql).toContain("ResourceAttributes['platform.invocation.id'] != ''");
-    expect(sql).toContain("GROUP BY subAgentId");
-    expect(sql).toContain("LIMIT {limit:UInt32}");
-  });
-
-  // TEST_SCENARIO: The store answers numbers as strings and the model list unordered, with an empty name for a call that reported no model. The row must carry numbers and a stable list of real model names, so a Driver comparing models reads them as they are.
-  it("maps a store row to dollars and a sorted model list", async () => {
-    const { client } = fakeClient([
-      {
-        subAgentId: "inv-1",
-        models: ["sonnet", "", "haiku"],
-        calls: "3",
-        totalDurationMs: "1200",
-        inputTokens: "10",
-        outputTokens: "5",
-        cacheReadTokens: "0",
-        cacheCreationTokens: "0",
-        costUsd: "0.42",
-        firstAt: "2026-10-01 00:00:00",
-        lastAt: "2026-10-01 00:05:00",
-      },
-    ]);
-    const out = await createClickhouseReader(client).spendBySubAgent(
-      ["driver-a"],
-      { hours: 24 },
-      11,
-    );
-    expect(out).toEqual([
-      {
-        subAgentId: "inv-1",
-        models: ["haiku", "sonnet"],
-        calls: 3,
-        totalDurationMs: 1200,
-        inputTokens: 10,
-        outputTokens: 5,
-        cacheReadTokens: 0,
-        cacheCreationTokens: 0,
-        costUsd: 0.42,
-        firstAt: "2026-10-01 00:00:00",
-        lastAt: "2026-10-01 00:05:00",
-      },
     ]);
   });
 });

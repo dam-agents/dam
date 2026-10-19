@@ -146,6 +146,19 @@ export function createGrantedConnectionTemplates(db: Db): {
   };
 }
 
+export function createConnectionNames(db: Db): {
+  namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async namesOf(ownerSub) {
+      return new Map(
+        (await repo.listByOwner(ownerSub)).map((c) => [c.id, c.name]),
+      );
+    },
+  };
+}
+
 export function composeConnectionsForOwner(opts: {
   ownerId: string;
   db: Db;

@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -60,8 +61,24 @@ type fakeNode struct {
 	onName func()
 	usage  vmrunner.RunnerUsage
 	onPut  func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: what the controller this test builds asked the runner, so a test can hold a reconcile or a memory pass to the reads it costs: one status read per machine is work a usage read that lists every machine already answers.
+	statusReads int
+	usageReads  int
+	// UNIT_BOUNDARY_DESCRIPTION: answers the usage read a runner release older than the per-machine memory figures did, which lists each machine without them and without the mark that says they are there.
+	legacyUsage bool
+	// UNIT_BOUNDARY_DESCRIPTION: a status read holds the runner's lock nowhere while it runs, so a test can hold one answer back and let a reconcile record the runner's next answer meanwhile.
+	onGet func(id string)
+	// UNIT_BOUNDARY_DESCRIPTION: the usage read answers from the machines it listed before the test was told, so a test can hold the answer back and let a reconcile record the runner's next answer meanwhile.
+	usageHook func()
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
+	// UNIT_BOUNDARY_DESCRIPTION: the next pressure read fails with a 500, as a runner restarting answers one, and the reads after it answer with the pressure the test set.
+	pressureFails bool
+	// UNIT_BOUNDARY_DESCRIPTION: the usage read answers a 500, as a runner whose read failed does.
+	usageFails bool
+	// UNIT_BOUNDARY_DESCRIPTION: how many pressure reads arrived, so a test holds a watch to asking the runner again rather than ending on a failed read.
+	pressureReads int
+	pressure      vmrunner.RunnerPressure
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
 	stopsSlowly bool
 }
@@ -96,7 +113,30 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			return
 		}
 		if r.URL.Path == "/usage" {
-			require.NoError(t, json.NewEncoder(w).Encode(n.usage))
+			n.usageReads++
+			if n.usageFails {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
+			usage := n.usage
+			usage.Machines = n.usageMachines()
+			usage.MachineFigures = !n.legacyUsage
+			if hook := n.usageHook; hook != nil {
+				n.mu.Unlock()
+				hook()
+				n.mu.Lock()
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(usage))
+			return
+		}
+		if r.URL.Path == "/pressure" {
+			n.pressureReads++
+			if n.pressureFails {
+				n.pressureFails = false
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(n.pressure))
 			return
 		}
 		if r.URL.Path == "/machines" {
@@ -142,6 +182,9 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodGet:
+			if !r.URL.Query().Has("wait") {
+				n.statusReads++
+			}
 			if r.URL.Query().Has("wait") {
 				n.waits++
 				since, err := strconv.ParseUint(r.URL.Query().Get("since"), 10, 64)
@@ -157,6 +200,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			if !ok {
 				st.State = vmrunner.StateAbsent
 			}
+			if hook := n.onGet; hook != nil {
+				n.mu.Unlock()
+				hook(id)
+				n.mu.Lock()
+			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodDelete:
 			n.deleted = append(n.deleted, id)
@@ -166,6 +214,27 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	}))
 	t.Cleanup(srv.Close)
 	return n, srv
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the machines a usage read lists, built from the statuses the runner holds as its own read builds them from what it recorded, without their memory figures when the runner is older than them.
+func (n *fakeNode) usageMachines() []vmrunner.MachineUsage {
+	out := []vmrunner.MachineUsage{}
+	for id, st := range n.statuses {
+		m := vmrunner.MachineUsage{ID: id, State: st.State, UsedMiB: st.UsedMiB, DiskGiB: st.DiskGiB}
+		if !n.legacyUsage {
+			m.CPUs, m.MemoryMiB, m.Warming = st.CPUs, st.MemoryMiB, st.Warming
+		}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: forgets the reads so far, so a test measures one pass.
+func (n *fakeNode) forgetReads() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.statusReads, n.usageReads = 0, 0
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: stores a machine's status under a new version, as the runner moves the version on every change it reports.
@@ -192,6 +261,19 @@ func (n *fakeNode) waitingReads() int {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.waits
+}
+
+func (n *fakeNode) pressureReadCount() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.pressureReads
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: sets the pressure the runner reports and makes its next read fail, as a runner restarting does.
+func (n *fakeNode) pressureAfterAFailedRead(p vmrunner.RunnerPressure) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.pressure, n.pressureFails = p, true
 }
 
 func (n *fakeNode) spec(id string) vmrunner.MachineSpec {
@@ -308,6 +390,162 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	assert.Contains(t, msg, "cannot be scheduled")
 	assert.Contains(t, msg, "Insufficient devices.kubevirt.io/kvm",
 		"the scheduler's own account reaches the agent, not just the generic starting message")
+}
+
+// TEST_SCENARIO: the node an owner's runner pod sits on is gone or has been not ready past the kubelet's eviction toleration. The pod stays terminating there, its claim stays attached to it, and the replacement pod never gets the volume — so every agent of that owner is down until an operator brings the node back or fences it out of service. That is not a runner still starting: the agent says so under a reason of its own.
+func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
+	agent := vmAgentCR()
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	_, srv := newFakeNode(t)
+	dep := readyRunnerDeployment()
+	dep.Status.ReadyReplicas = 0
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      dep.Name + "-abc",
+			Namespace: "test-agents",
+			Labels:    vmRunnerSelector(testOwner),
+		},
+		Spec: corev1.PodSpec{NodeName: "node-a"},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, Conditions: []corev1.PodCondition{{
+			Type: corev1.PodReady, Status: corev1.ConditionFalse},
+		}},
+	}
+	node := &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionUnknown,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
+	}
+	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod, node)
+	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+		Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
+		ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
+		ReleaseHostPath: "/var/lib/platform-runner-releases",
+	}}
+	r.runnerEndpoint = func(string) string { return srv.URL }
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	msg, reason := "", ""
+	for _, c := range conds {
+		if m, ok := c.(map[string]interface{}); ok && m["type"] == apiv1.ConditionAgentPodReady {
+			msg, _ = m["message"].(string)
+			reason, _ = m["reason"].(string)
+		}
+	}
+	assert.Equal(t, apiv1.ReasonMachineRunnerNodeLost, reason, "a runner on a node the cluster has lost is not one still starting")
+	assert.NotContains(t, msg, "node-a", "the owner reads the message, and a node name is the operator's to act on")
+}
+
+// TEST_SCENARIO: a node's Ready goes off for a kubelet stall, a network blip or a runtime restart, and the pod stays on it; the node comes back with the pod inside the kubelet's eviction toleration. That heals, so it is not a loss: the agent keeps reading "still starting", its wakes wait out the budget instead of failing at once, and no Warning Event is written. A node not ready past the grace has begun evicting its pods, and a pod the cluster has begun deleting on a node it cannot reach is the eviction that never finishes, so both read as lost — while a pod terminating on a node that reports ready is a pod on its way out normally.
+func TestANodeThatOnlyBlipsIsNotLost(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status      corev1.ConditionStatus
+		since       time.Duration
+		terminating bool
+		want        string
+	}{
+		"not ready for a minute":         {status: corev1.ConditionFalse, since: time.Minute, want: vmrunner.ReasonNotReady},
+		"unknown for a minute":           {status: corev1.ConditionUnknown, since: time.Minute, want: vmrunner.ReasonNotReady},
+		"not ready past the grace":       {status: corev1.ConditionFalse, since: runnerNodeLostGrace + time.Minute, want: apiv1.ReasonMachineRunnerNodeLost},
+		"ready again":                    {status: corev1.ConditionTrue, since: time.Minute, want: vmrunner.ReasonNotReady},
+		"terminating on a ready node":    {status: corev1.ConditionTrue, since: time.Minute, terminating: true, want: vmrunner.ReasonNotReady},
+		"terminating on a blipping node": {status: corev1.ConditionFalse, since: time.Minute, terminating: true, want: apiv1.ReasonMachineRunnerNodeLost},
+		"terminating on a lost node":     {status: corev1.ConditionFalse, since: time.Hour, terminating: true, want: apiv1.ReasonMachineRunnerNodeLost},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "runner-abc", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
+				Spec:       corev1.PodSpec{NodeName: "node-a"},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			if tc.terminating {
+				pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+				pod.Finalizers = []string{"test"}
+			}
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+				Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+					Type: corev1.NodeReady, Status: tc.status,
+					LastTransitionTime: metav1.NewTime(time.Now().Add(-tc.since))}}},
+			}
+			r, _ := setupReconciler(t, vmAgentCR(), pod, node)
+
+			reason, _ := r.runnerNotReady(context.Background(), testOwner)
+			assert.Equal(t, tc.want, reason)
+		})
+	}
+}
+
+// TEST_SCENARIO: a lost node leaves a finished pod behind as well as a terminating one. A pod that has finished is not the owner's runner, so it must not speak over the replacement: the claim the replacement cannot attach, or the schedule it cannot get, is what the agent shows. A pod still terminating on that node does speak, because it is what keeps the claim.
+func TestAFinishedRunnerPodDoesNotSpeakForItsOwner(t *testing.T) {
+	unschedulable := corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+		Message: "0/15 nodes are available: 3 node(s) had volume node affinity conflict"}
+	for name, tc := range map[string]struct {
+		phase corev1.PodPhase
+		want  string
+	}{
+		"evicted on the lost node":     {phase: corev1.PodFailed, want: apiv1.ReasonMachineRunnerUnschedulable},
+		"terminating on the lost node": {phase: corev1.PodRunning, want: apiv1.ReasonMachineRunnerNodeLost},
+		"succeeded on the lost node":   {phase: corev1.PodSucceeded, want: apiv1.ReasonMachineRunnerUnschedulable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			agent := vmAgentCR()
+			agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+			_, srv := newFakeNode(t)
+			dep := readyRunnerDeployment()
+			dep.Status.ReadyReplicas = 0
+			old := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: dep.Name + "-old", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
+				Spec:       corev1.PodSpec{NodeName: "node-a"},
+				Status:     corev1.PodStatus{Phase: tc.phase},
+			}
+			if tc.phase == corev1.PodRunning {
+				old.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+				old.Finalizers = []string{"test"}
+			}
+			replacement := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: dep.Name + "-new", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
+				Status:     corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{unschedulable}},
+			}
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+				Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+					Type: corev1.NodeReady, Status: corev1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
+			}
+			r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), old, replacement, node)
+			r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+				Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
+				ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
+				ReleaseHostPath: "/var/lib/platform-runner-releases",
+			}}
+			r.runnerEndpoint = func(string) string { return srv.URL }
+
+			require.NoError(t, r.Reconcile(context.Background(), agent))
+
+			reason := podReadyReason(t, r)
+			assert.Equal(t, tc.want, reason)
+		})
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the reason on the agent's PodReady condition, as an operator reads it.
+func podReadyReason(t *testing.T, r *AgentReconciler) string {
+	t.Helper()
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	reason := ""
+	for _, c := range conds {
+		if m, ok := c.(map[string]interface{}); ok && m["type"] == apiv1.ConditionAgentPodReady {
+			reason, _ = m["reason"].(string)
+		}
+	}
+	return reason
 }
 
 // TEST_SCENARIO: a new owner's runner pod is created together with its state claim, so the scheduler first reports the claim unbound while the volume is still provisioned. That is a runner still starting, not a failed start the user's first agent shows as an error.
@@ -518,10 +756,18 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	require.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond,
 		"the guest answering ends the watch")
+	ready := len(requeued.all())
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	assert.False(t, r.watchingMachine("my-agent"), "a ready machine is not watched")
-	assert.Equal(t, vmHealthPoll, requeued.last(), "a ready machine is still polled, just slowly — nothing else would notice its guest dying")
+	assert.True(t, r.watchingMachine("my-agent"), "a ready machine is watched: nothing else notices its guest going quiet")
+	assert.Len(t, requeued.all(), ready, "and its reconcile schedules no poll: the watch is what puts the Agent back")
+	waits := node.waitingReads()
+	require.Eventually(t, func() bool { return node.waitingReads() > waits+2 }, 5*time.Second, time.Millisecond,
+		"the watch keeps reading the machine")
+	assert.Len(t, requeued.all(), ready, "a status that did not move requeues nothing, however often it is read")
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: false})
+	require.Eventually(t, func() bool { return slices.Contains(requeued.all(), time.Duration(0)) }, 5*time.Second, time.Millisecond,
+		"a settled agent is reconciled only when its machine's status moves")
 }
 
 // TEST_SCENARIO: a vm machine boots one image for every harness, so the Agent's spec.harness reaches the guest as PLATFORM_HARNESS to pick which one runs. The owner's secretRef is applied after it and may override it, as it may any env in the owner's own sandbox. An Agent with no harness sets nothing, leaving the image's default.
@@ -732,6 +978,21 @@ func TestAMachineWatchEndsWithTheReconcilersLifetime(t *testing.T) {
 	assert.Len(t, requeued.all(), before, "an ended lifetime requeues nothing")
 }
 
+// TEST_SCENARIO: the runner's pressure read is the controller's only view of the kernel's, and a settled agent no longer reconciles every minute to start a watch that ended. A read that fails — the runner restarting, a connection dropped — is asked again by the watch itself, before any reconcile and before the five-minute sweep, and the watch goes on asking once the runner answers.
+func TestAPressureWatchAsksAgainAfterAFailedRead(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")}}
+	node.pressureAfterAFailedRead(vmrunner.RunnerPressure{Version: 1, Pressured: true, LimitMiB: 8192, WorkingSetMiB: 8000})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	require.Eventually(t, func() bool { return node.pressureReadCount() >= 1 }, 5*time.Second, time.Millisecond,
+		"the reconcile starts the owner's pressure watch")
+	require.Eventually(t, func() bool { return node.pressureReadCount() >= 3 }, 5*time.Second, time.Millisecond,
+		"the watch asks again after a failed read, and goes on asking once the runner answered")
+	assert.NotContains(t, requeued.all(), time.Duration(0), "the watch reclaims by itself, without a reconcile behind it")
+}
+
 func markGatewayReady(t *testing.T, r *AgentReconciler) {
 	t.Helper()
 	ctx := context.Background()
@@ -771,12 +1032,12 @@ func TestAWakeScalesTheGatewayUpBeforeItStartsTheMachine(t *testing.T) {
 	assert.Equal(t, int32(1), gatewayAtStart, "the gateway is already scaled up when the machine is asked to run")
 }
 
-// TEST_SCENARIO: the retry of an agent the runner refused must not scale its gateway up ahead of the runner call either, or each 30 s retry would start and stop a gateway pod.
+// TEST_SCENARIO: the retry of an agent the runner refused must not scale its gateway up ahead of the runner call either, or each 30 s retry would start and stop a gateway pod. The refusal is also the runner's answer rather than a line on the Agent, so it counts before the status carries it, and the answer that admits the machine replaces it: a machine the runner admits counts while it boots, before it is a live machine to count by.
 func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason)
 
@@ -786,8 +1047,21 @@ func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	require.NoError(t, err)
 	cached, err := FromCacheObject[apiv1.Agent](u)
 	require.NoError(t, err)
+	unparked := *cached
+	unparked.Status.Conditions = nil
+	require.True(t, r.refusedWithoutMachine(&unparked), "a refusal counts from the runner's answer, with nothing on the status to read it from")
+
 	require.NoError(t, r.Reconcile(ctx, cached))
 	assert.Equal(t, int32(0), gatewayAtRetry, "the gateway stays down while the runner is asked again")
+
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity})
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.False(t, r.refusedWithoutMachine(cached), "a machine the runner admitted counts while it boots, whatever park the status still carries")
+	elsewhere := vmAgentCR()
+	elsewhere.Name = "elsewhere"
+	demand, err := r.heldRunnerDemand(ctx, testOwner, elsewhere, false)
+	require.NoError(t, err)
+	assert.Equal(t, 3072, demand.memoryMiB, "the admitted machine still holds its boot floor, though its answer repeats the refusal's reason")
 }
 
 // TEST_SCENARIO: on a wake the machine often answers before its gateway pod is ready, and the gateway pod turning ready starts a reconcile. That reconcile publishes Ready once the gateway is applied, before it calls the runner, because the status already holds the machine ready for this generation.

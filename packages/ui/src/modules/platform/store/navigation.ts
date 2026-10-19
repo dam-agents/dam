@@ -17,6 +17,7 @@ export interface NavigationSlice {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
+  usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
@@ -24,7 +25,11 @@ export interface NavigationSlice {
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
   navigateBack: () => void;
-  navigateToSettings: (tab?: SettingsTab) => void;
+  navigateToSettings: (
+    tab?: SettingsTab,
+    options?: { period?: string },
+  ) => void;
+  setUsagePeriod: (period: string) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   setKitBrowserOpen: (open: boolean) => void;
@@ -68,10 +73,14 @@ export const createNavigationSlice: StateCreator<
   [],
   NavigationSlice
 > = (set, get) => ({
-  ...routeToNavigationState(parseRoute(initialPath())),
+  ...routeToNavigationState(parseRoute(initialPath(), window.location.search)),
   kitBrowserOpen: false,
   hydrateRoute: () =>
-    set(routeToNavigationState(parseRoute(window.location.pathname))),
+    set(
+      routeToNavigationState(
+        parseRoute(window.location.pathname, window.location.search),
+      ),
+    ),
   setView: (v) =>
     leaveView(get, () => {
       history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
@@ -81,16 +90,34 @@ export const createNavigationSlice: StateCreator<
     if (history.state === IN_APP_ENTRY) history.back();
     else get().setView("home");
   },
-  navigateToSettings: (tab) =>
+  navigateToSettings: (tab, options) =>
     leaveView(get, () => {
       const settingsTab = tab ?? "account";
+      const period = options?.period ?? null;
       history.pushState(
         null,
         "",
-        routeToPath({ view: "settings", settingsTab }),
+        routeToPath({
+          view: "settings",
+          settingsTab,
+          ...(period ? { period } : {}),
+        }),
       );
-      set({ view: "settings", settingsTab, agentId: null });
+      set({
+        view: "settings",
+        settingsTab,
+        usagePeriod: period,
+        agentId: null,
+      });
     }),
+  setUsagePeriod: (period) => {
+    history.replaceState(
+      history.state,
+      "",
+      routeToPath({ view: "settings", settingsTab: "usage", period }),
+    );
+    set({ usagePeriod: period });
+  },
   navigateToSandboxHome: (agentId, section = "setup") =>
     leaveView(get, () => {
       history.pushState(

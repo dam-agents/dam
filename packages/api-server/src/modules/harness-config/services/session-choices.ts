@@ -1,6 +1,8 @@
 import {
   type HarnessCapability,
   routesByModelName,
+  isPlatformSubagentSetting,
+  platformSubagentSettingsError,
   sessionSettingsError,
   type SessionSettings,
 } from "agent-runtime-api";
@@ -159,10 +161,18 @@ export function createSessionChoicesValidator(deps: {
     }
     if (choices.settings !== undefined) {
       const unsupported = Object.keys(choices.settings).find(
-        (id) => !harnessCapability?.sessionSettings?.includes(id),
+        (id) =>
+          !(isPlatformSubagentSetting(id)
+            ? harnessCapability?.platformSubagentSettings
+            : harnessCapability?.sessionSettings?.includes(id)),
       );
       if (unsupported)
         return `the ${harness} harness cannot set ${unsupported} for a schedule`;
+      const platform = platformSubagentSettingsError(
+        choices.settings,
+        (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
+      );
+      if (platform) return platform;
       const invalid = sessionSettingsError(
         harnessCapability?.harnessConfigCatalog,
         choices.settings,

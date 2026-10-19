@@ -161,6 +161,7 @@ export const triggerEventPayload = z.object({
   task: z.string().min(1),
   sessionMode: z.enum(["continuous", "fresh"]).optional(),
   once: z.literal(true).optional(),
+  invocation: z.literal(true).optional(),
   origin: onceOrigin.optional(),
   harness: z.string().min(1).optional(),
   provider: z.string().min(1).optional(),
@@ -325,6 +326,7 @@ export const harnessConfigChoice = z.object({
   value: z.string().min(1),
   name: z.string().min(1),
   description: z.string().optional(),
+  needsApproval: z.boolean().optional(),
 });
 export type HarnessConfigChoice = z.infer<typeof harnessConfigChoice>;
 
@@ -335,6 +337,7 @@ export const harnessConfigOptionGroup = z.object({
   category: z.string().min(1),
   default: z.string().min(1).optional(),
   choices: z.array(harnessConfigChoice),
+  subagents: z.boolean().optional(),
 });
 
 export const harnessConfigCatalog = z.object({
@@ -366,6 +369,7 @@ export const harnessCapability = z.object({
   sessionModel: z.boolean(),
   sessionSettings: z.array(z.string().min(1)).optional(),
   nativeTemplates: z.array(z.string().min(1)).optional(),
+  platformSubagentSettings: z.boolean().optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
 export function routesSessionPairs(

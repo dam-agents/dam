@@ -288,10 +288,17 @@ beforeAll(async () => {
     defaultHarness: "claude-code",
     sessionOf: (req) => {
       const id = req.headers["x-test-session"] as string | undefined;
-      return id ? { sessionId: id } : null;
+      const parent = req.headers["x-test-parent"] as string | undefined;
+      return id
+        ? { sessionId: id, ...(parent && { parentSessionId: parent }) }
+        : null;
     },
     sessionModelOf: (id) =>
-      id === "s-cb" ? { model: "cb/rits/zai-org/glm-5-3" } : null,
+      id === "s-cb"
+        ? { model: "cb/rits/zai-org/glm-5-3" }
+        : id === "s-effort"
+          ? { model: null, subagentEffort: "low" }
+          : null,
     onCall: (r) => calls.push(r),
     port: 0,
     log: () => {},
@@ -336,7 +343,7 @@ describe("routing by qualified name", () => {
    * `claude/` prefix, lowercased; the call leaves for Curve Bender's host with
    * its placeholder as a bearer and the upstream id spelled as served, and the
    * client's own credential is dropped. The same body naming IBM leaves for
-   * IBM with IBM's placeholder. */
+   * IBM with IBM's placeholder, stamped with the harness. */
   it("sends each call to its provider with that provider's placeholder", async () => {
     seen.length = 0;
     const a = await call(
@@ -362,7 +369,7 @@ describe("routing by qualified name", () => {
     expect(seen[1]!.headers.authorization).toBe(
       "Bearer platform:conn:conn-ibm",
     );
-    expect(seen[1]!.headers[HARNESS_HEADER]).toBeUndefined();
+    expect(seen[1]!.headers[HARNESS_HEADER]).toBe("claude-code");
     expect(seen[1]!.body.model).toBe("aws/claude-opus-4-8");
   });
 
@@ -473,6 +480,51 @@ describe("Bob's calls", () => {
   });
 });
 
+describe("subagent effort", () => {
+  /** TEST_SCENARIO: The session set its subagents' effort to low. A call the
+   * harness marks as a subagent's runs at low in its dialect's field, while
+   * the session's own call keeps its effort, and a subagent call that
+   * carries no effort (the harness sends none to a model that takes none)
+   * gets none added. */
+  it("overwrites only the effort a subagent's call carries", async () => {
+    seen.length = 0;
+    const subagent = { "x-test-session": "child", "x-test-parent": "s-effort" };
+    await call(
+      "/v1/messages",
+      {
+        model: "claude/anthropic/claude-opus-4-8",
+        output_config: { effort: "high" },
+      },
+      subagent,
+    );
+    expect(seen.at(-1)?.body.output_config).toEqual({ effort: "low" });
+    await call(
+      "/v1/responses",
+      { model: "ibm/gpt-5.5", reasoning: { effort: "xhigh", summary: "auto" } },
+      { ...subagent, [HARNESS_HEADER]: "codex" },
+    );
+    expect(seen.at(-1)?.body.reasoning).toEqual({
+      effort: "low",
+      summary: "auto",
+    });
+    await call(
+      "/v1/messages",
+      {
+        model: "claude/anthropic/claude-opus-4-8",
+        output_config: { effort: "high" },
+      },
+      { "x-test-session": "s-effort" },
+    );
+    expect(seen.at(-1)?.body.output_config).toEqual({ effort: "high" });
+    await call(
+      "/v1/messages",
+      { model: "claude/anthropic/claude-opus-4-8" },
+      subagent,
+    );
+    expect(seen.at(-1)?.body).not.toHaveProperty("output_config");
+  });
+});
+
 describe("bare names", () => {
   /** TEST_SCENARIO: `gpt-5.5` is listed by IBM and Curve Bender. With a
    * session on Curve Bender it goes there; with no session it goes to the
@@ -559,12 +611,12 @@ describe("response model rewrite", () => {
   });
 
   /** TEST_SCENARIO: Every forwarded call is reported once with its Connection,
-   * upstream model, dialect, harness and status. A streamed Messages call
-   * reports the tokens its `message_start` and `message_delta` events
-   * carried; the catalog has no price for the model, so the record is
-   * unpriced rather than free. A chat completion answered without a usage
-   * field is uncounted. The harness's trace context rides along. */
-  it("reports each call with its usage, marking unpriced and usage-less ones", async () => {
+   * upstream model, dialect, harness and status, and no cost: the gateway
+   * measures that. A streamed Messages call reports the tokens its
+   * `message_start` and `message_delta` events carried. A chat completion
+   * answered without a usage field is uncounted. The harness's trace context
+   * rides along. */
+  it("reports each call with its usage, marking usage-less ones", async () => {
     await call(
       "/v1/messages",
       { model: "claude/ibm/aws/claude-opus-4-8", stream: true },
@@ -588,8 +640,7 @@ describe("response model rewrite", () => {
         cacheReadTokens: 0,
         cacheCreationTokens: 0,
       },
-      costUsdMicros: null,
-      uncounted: "unpriced",
+      uncounted: null,
       trace: {
         traceId: "0af7651916cd43dd8448eb211c80319c",
         spanId: "b7ad6b7169203331",

@@ -61,6 +61,11 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: no server can run it right now. " +
             "Tell an admin."
           );
+        case "MachineRunnerNodeLost":
+          return (
+            "This agent can't start right now: the server running its owner's " +
+            "agents is down. Tell an admin."
+          );
         case "RunnerOutOfMemory":
           return (
             "This agent restarted: its owner's agents ran out of memory " +

@@ -6,7 +6,6 @@ import {
   AGENT_TELEMETRY_MAX_LIMIT,
   METRICS_DEFAULT_LIMIT,
   METRICS_MAX_LIMIT,
-  METRICS_MAX_SESSION_IDS,
   METRICS_MAX_SINCE_HOURS,
 } from "./constants.js";
 
@@ -25,12 +24,6 @@ export const metricsOverviewInputSchema = z.object({
     .positive()
     .max(METRICS_MAX_LIMIT)
     .default(METRICS_DEFAULT_LIMIT),
-});
-
-export const metricsSessionCostsInputSchema = z.object({
-  agentId: z.string().min(1),
-  sessionIds: z.array(z.string().min(1)).min(1).max(METRICS_MAX_SESSION_IDS),
-  from: z.string().datetime().optional(),
 });
 
 const agentTelemetryShape = {
@@ -63,11 +56,17 @@ export const agentTelemetryInputSchema = z.object(agentTelemetryShape);
 
 export const agentMetricsInputSchema = z.object({
   ...agentTelemetryShape,
+  days: agentTelemetryShape.days.describe(
+    "Window length in whole UTC days: today and the days before it.",
+  ),
+  sessionId: agentTelemetryShape.sessionId.describe(
+    "Narrow to a single session. The spend (totals, per-model split, session and subagent rows) covers the calls the gateway recorded under that session and the sub-agents spawned from it; a harness run that the session started in its own shell, such as `claude -p`, is recorded with no session, so its spend is not included. The 'call' rows also include any harness run that session spawned. Omit to cover every session in the window.",
+  ),
   granularity: z
     .enum(["summary", "session", "call", "subagent"])
     .default("summary")
     .describe(
-      "Detail level. 'summary': window totals and the per-model split. 'session': adds a row per session — calls, model time, tokens, cost, first/last activity. 'call': adds a row per LLM call — model, request latency, tokens, context size, cost. 'subagent': adds a row per platform sub-agent you spawned, directly or through another sub-agent, keyed by the id spawn_subagent returned — models, calls, model time, tokens, cost, first/last activity.",
+      "Detail level. 'summary': window totals per unit and the per-model split. 'session': adds a row per session — its spend with the part of the sub-agents spawned from it, calls, model time, tokens, first/last day. 'call': adds a row per LLM call from your own telemetry — model, request latency, tokens, context size, no cost. 'subagent': adds a row per platform sub-agent you spawned, directly or through another sub-agent, keyed by the id spawn_subagent returned — its own spend, models, calls, model time, tokens, first/last day.",
     ),
 });
 
