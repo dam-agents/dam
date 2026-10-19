@@ -3505,15 +3505,19 @@ async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
     );
 }
 
-// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine.
+// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine. The figure it keeps is one no probe could refresh, so admission counts it at the warm-up floor until a look reads the machine again.
 #[tokio::test]
 async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
     let h = Harness::new("state-unread");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
+    h.machine("m1", |m| {
+        m.warming_since = Some(Instant::now() - 2 * crate::capacity::WARMUP)
+    });
     *locked(&h.fake.resident) = Some(700);
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 700);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 700);
 
     locked(&h.fake.state_fails_until_start).insert("m1".to_string());
     h.server.probe("m1");
@@ -3523,10 +3527,16 @@ async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
         status.used_mib, 700,
         "an unread state counted the machine as holding nothing"
     );
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a figure an unread state could not refresh was counted below the machine's warm-up floor"
+    );
 
     locked(&h.fake.state_fails_until_start).remove("m1");
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 700);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 700);
 }
 
 // TEST_SCENARIO: a spec that cannot be read says nothing about what the machine holds or how long its boot has been up, and the status that zeroed both over an unreadable spec made the controller count a measured machine at its floor. Neither is read off the spec, so both are still reported; only what the spec carries is missing.
