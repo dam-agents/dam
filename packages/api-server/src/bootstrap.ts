@@ -54,6 +54,7 @@ import {
   storeAvatarImage,
   sweepAvatarImages,
 } from "./modules/agents/index.js";
+import { createAgentRuntimeClient } from "./modules/runtime-delivery/infrastructure/agent-runtime-client.js";
 import {
   composePrStateResolver,
   connectScanCacheBus,
@@ -1858,6 +1859,33 @@ export async function bootstrap() {
     getAgent: (id) => liveAgentsRepo.getLive(id, undefined),
     writeMigration: (id, patch) =>
       liveAgentsRepo.writeRuntimeMigration(id, undefined, patch),
+    migration: async (agent) => {
+      const install = agentsInstallSettings(config);
+      // UNIT_BOUNDARY_DESCRIPTION: the pool is the owner's own runner's figures, and the home is what the Agent's runtime measured on its volume; either unreadable refuses nothing, since the runner stops what it has no room for on its own.
+      const [capacity, homeBytes] = await Promise.all([
+        composeStorageGate({
+          k8s: k8sClient,
+          owner: agent.owner ?? "",
+          vmPool: {
+            storage: config.vmPoolStorage,
+            memory: config.vmPoolMemory,
+          },
+        })
+          .readCapacity()
+          .catch(() => null),
+        createAgentRuntimeClient(agent.id, config.namespace)
+          .homeVolume()
+          .then((v) => (v ? Math.max(0, v.totalBytes - v.freeBytes) : null))
+          .catch(() => null),
+      ]);
+      return {
+        virtualizationEnabled: install.virtualizationEnabled,
+        defaultMounts: install.agentDefaultMounts,
+        defaultStorageSize: install.agentDefaultStorageSize,
+        capacity,
+        homeBytes,
+      };
+    },
     log: (message) => process.stderr.write(`${message}\n`),
   });
   await periodicJobs.register("runtime-migration-switch", 2_000, () =>

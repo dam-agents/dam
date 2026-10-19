@@ -214,16 +214,6 @@ export interface RuntimeMigrationView {
   phase: RuntimeMigrationPhase;
   message?: string;
   attempts?: number;
-  abortable: boolean;
-  retryable: boolean;
-}
-
-export interface RuntimeMigrationPlanView {
-  unmovable: { path: string; reason: string }[];
-  bootsSleepingAgent: boolean;
-  retentionMs: number | null;
-  allowed: boolean;
-  refusal: { type: string; reasons: string[] } | null;
 }
 
 interface QuietWindowView {

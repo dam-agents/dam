@@ -68,9 +68,9 @@ import {
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
 import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
+import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
-import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
@@ -1297,7 +1297,7 @@ export function ChatView() {
               </button>
               {agentView && (
                 <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-                  <VmRuntimeBadge
+                  <RuntimeMigrationBadge
                     agent={agentView}
                     labelClassName="@max-[279px]:sr-only"
                   />

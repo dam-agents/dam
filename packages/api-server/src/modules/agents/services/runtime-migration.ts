@@ -1,9 +1,4 @@
 import type {
-  AbortRuntimeMigrationError,
-  MigrateRuntimeError,
-  RetryRuntimeMigrationError,
-} from "api-server-api";
-import type {
   RuntimeMigrationWrite,
   RuntimeMigrationWriteResult,
 } from "../infrastructure/agents-repository.js";
@@ -15,16 +10,14 @@ import {
   RUNTIME_MIGRATION_TARGET_KEY,
 } from "../infrastructure/labels.js";
 import {
-  abortRuntimeMigrationRefusal,
-  parseRuntimeMigrationSnapshot,
   parseRuntimeMigrationTarget,
-  retryRuntimeMigrationRefusal,
   runtimeMigrationReadyToSwitch,
   runtimeMigrationRefusal,
+  runtimeMigrationRefusalReasons,
   runtimeMigrationRequest,
-  runtimeMigrationRestoreSpec,
   runtimeMigrationSwitchSpec,
   type RuntimeMigrationContext,
+  type RuntimeMigrationRefusal,
 } from "../domain/runtime-migration.js";
 import { ok, err } from "../../../core/result.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -45,20 +38,20 @@ interface WriteDeps {
 // UNIT_BOUNDARY_DESCRIPTION: how often a write that lost the race with the controller's status write is decided again from a fresh read. The controller writes status a handful of times per phase, so a second read almost always settles it.
 const WRITE_ATTEMPTS = 3;
 
-type WriteRefusal = { type: "AgentNotFound" } | { type: "ConcurrentUpdate" };
-
-// UNIT_BOUNDARY_DESCRIPTION: reads the Agent live, decides from what it read, and writes against that version. When the controller wrote in between, the write conflicts and the decision is made again from a fresh read, so an abort never lands on a migration that has just been verified. An Agent that keeps changing past the attempts is refused as changing, for the user to try again, rather than failing the request.
+// UNIT_BOUNDARY_DESCRIPTION: reads the Agent live, decides from what it read, and writes against that version, so a decision is never made from an Agent the controller has moved on from.
 async function decideAndWrite<E>(
   deps: WriteDeps,
   id: string,
   decide: (
     agent: InfraAgent,
-  ) => { error: E } | { write: RuntimeMigrationWrite },
-): Promise<Outcome<E | WriteRefusal>> {
+  ) => Promise<{ error: E } | { write: RuntimeMigrationWrite }>,
+): Promise<
+  Outcome<E | { type: "AgentNotFound" } | { type: "ConcurrentUpdate" }>
+> {
   for (let attempt = 0; attempt < WRITE_ATTEMPTS; attempt++) {
     const agent = await deps.getAgent(id);
     if (!agent) return err({ type: "AgentNotFound" as const });
-    const decision = decide(agent);
+    const decision = await decide(agent);
     if ("error" in decision) return err(decision.error);
     const written = await deps.writeMigration(id, decision.write);
     if (written.ok) return ok(written.value);
@@ -68,28 +61,37 @@ async function decideAndWrite<E>(
   return err({ type: "ConcurrentUpdate" as const });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: requests the move of one container Agent to the vm Backend. No spec is written: the request records the target shape and a snapshot of the fields the switch will change, and the controller builds the machine beside the container from them.
+// UNIT_BOUNDARY_DESCRIPTION: turns an operator's request into a decided one. No spec is written: the request records the target shape, and the controller builds the machine beside the container from it. A move the api-server refuses is withdrawn again, since a request nobody can carry out would leave the Agent waiting on a machine that is never made, and the reasons go to the log the operator reads.
 export function executeRuntimeMigration(
   deps: WriteDeps & {
-    migration: RuntimeMigrationContext;
+    migration: (agent: InfraAgent) => Promise<RuntimeMigrationContext>;
   },
 ) {
-  return async (id: string): Promise<Outcome<MigrateRuntimeError>> => {
-    const result = await decideAndWrite<MigrateRuntimeError>(
+  return async (id: string): Promise<Outcome<RuntimeMigrationRefusal>> => {
+    const result = await decideAndWrite<RuntimeMigrationRefusal>(
       deps,
       id,
-      (agent) => {
-        const refusal = runtimeMigrationRefusal(agent, deps.migration);
+      async (agent) => {
+        const migration = await deps.migration(agent);
+        // UNIT_BOUNDARY_DESCRIPTION: the request this decides is the operator's, so it is not a migration standing in its way; any other phase is.
+        const standing =
+          agent.runtimeMigration?.phase === "requested"
+            ? undefined
+            : agent.runtimeMigration;
+        const refusal = runtimeMigrationRefusal(
+          { ...agent, runtimeMigration: standing },
+          migration,
+        );
         if (refusal) return { error: refusal };
-        const { target, snapshot } = runtimeMigrationRequest(
+        const { target } = runtimeMigrationRequest(
           agent.spec,
-          deps.migration.defaultStorageSize,
-          deps.migration.defaultMounts,
+          migration.defaultStorageSize,
+          migration.defaultMounts,
         );
         const annotations: Record<string, string | null> = {
           [RUNTIME_MIGRATION_KEY]: "requested",
           [RUNTIME_MIGRATION_TARGET_KEY]: JSON.stringify(target),
-          [RUNTIME_MIGRATION_SNAPSHOT_KEY]: JSON.stringify(snapshot),
+          [RUNTIME_MIGRATION_SNAPSHOT_KEY]: null,
           [RUNTIME_MIGRATION_RETRY_KEY]: null,
         };
         return {
@@ -101,10 +103,19 @@ export function executeRuntimeMigration(
       securityLog("info", "agent.runtime-migrate", {
         category: "resource",
         actor: deps.owner ?? null,
-        actorKind: "user",
+        actorKind: "system",
         agentId: id,
         result: "success",
         detail: { fromBackend: "container", toBackend: "vm" },
+      });
+    else
+      securityLog("warn", "agent.runtime-migrate", {
+        category: "resource",
+        actor: deps.owner ?? null,
+        actorKind: "system",
+        agentId: id,
+        result: "failure",
+        reason: runtimeMigrationRefusalReasons(result.error).join("; "),
       });
     return result;
   };
@@ -117,66 +128,11 @@ const REQUEST_KEYS_CLEARED: Record<string, null> = {
   [RUNTIME_MIGRATION_RETRY_KEY]: null,
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: takes the Agent back to the container before its machine has booted from the copy. The request is withdrawn and the snapshot's fields are written back; the controller then removes the machine, its seed and the copy Job, and the container resumes on its old volumes, which it never let go of.
-export function executeAbortRuntimeMigration(deps: WriteDeps) {
-  return async (id: string): Promise<Outcome<AbortRuntimeMigrationError>> => {
-    const result = await decideAndWrite<AbortRuntimeMigrationError>(
-      deps,
-      id,
-      (agent) => {
-        const refusal = abortRuntimeMigrationRefusal(agent);
-        if (refusal) return { error: refusal };
-        const snapshot = parseRuntimeMigrationSnapshot(
-          agent.runtimeMigrationSnapshot,
-        );
-        return {
-          write: {
-            ...(snapshot
-              ? { spec: runtimeMigrationRestoreSpec(snapshot) }
-              : {}),
-            annotations: REQUEST_KEYS_CLEARED,
-            resourceVersion: agent.resourceVersion,
-          },
-        };
-      },
-    );
-    if (result.ok)
-      securityLog("info", "agent.runtime-migrate.abort", {
-        category: "resource",
-        actor: deps.owner ?? null,
-        actorKind: "user",
-        agentId: id,
-        result: "success",
-      });
-    return result;
-  };
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: asks the controller to start a failed migration over. The stamp is compared with the time the migration failed, so a retry asked before the failure it would answer is never taken as one.
-export function executeRetryRuntimeMigration(
-  deps: WriteDeps & { now?: () => Date },
-) {
-  return async (id: string): Promise<Outcome<RetryRuntimeMigrationError>> =>
-    decideAndWrite<RetryRuntimeMigrationError>(deps, id, (agent) => {
-      const refusal = retryRuntimeMigrationRefusal(agent);
-      if (refusal) return { error: refusal };
-      const at = (deps.now?.() ?? new Date()).toISOString();
-      return {
-        write: {
-          annotations: {
-            [RUNTIME_MIGRATION_RETRY_KEY]: `${at.slice(0, 19)}Z`,
-          },
-          resourceVersion: agent.resourceVersion,
-        },
-      };
-    });
-}
-
 export interface RuntimeMigrationSwitch {
   tick(): Promise<void>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: switches the Backend of every Agent whose machine the controller reports booted from its copy. The api-server is the only spec writer, so this is the one place a migration becomes permanent: the spec takes the target shape, and the request is withdrawn in the same write. Each switch is decided from a live read and written against it, and one that cannot be read or written is left for the next tick.
+// UNIT_BOUNDARY_DESCRIPTION: the api-server's whole part in a migration an operator asked for. The trigger is one annotation on the Agent, `agent-platform.ai/runtime-migration: requested`, which only someone with the cluster can write; a request without a target shape is that request, and the api-server decides it here as it would any move, writing the target or withdrawing the request and logging the refusal. The second half switches the Backend of every Agent whose machine the controller reports booted from its copy: the api-server is the only spec writer, so that is the one place a migration becomes permanent. Each write is decided from a live read and written against it, and one that cannot be read or written is left for the next tick.
 export function createRuntimeMigrationSwitch(deps: {
   listAgents: () => Promise<InfraAgent[]>;
   getAgent: (id: string) => Promise<InfraAgent | null>;
@@ -184,8 +140,35 @@ export function createRuntimeMigrationSwitch(deps: {
     id: string,
     patch: RuntimeMigrationWrite,
   ) => Promise<RuntimeMigrationWriteResult>;
+  migration: (agent: InfraAgent) => Promise<RuntimeMigrationContext>;
   log: (message: string) => void;
 }): RuntimeMigrationSwitch {
+  function operatorRequested(agent: InfraAgent): boolean {
+    return (
+      agent.runtimeMigration?.phase === "requested" &&
+      !agent.runtimeMigrationTarget
+    );
+  }
+
+  async function promote(agent: InfraAgent): Promise<void> {
+    const started = await executeRuntimeMigration({
+      owner: undefined,
+      getAgent: deps.getAgent,
+      writeMigration: deps.writeMigration,
+      migration: deps.migration,
+    })(agent.id);
+    if (started.ok) return;
+    const reasons = runtimeMigrationRefusalReasons(started.error);
+    deps.log(
+      `[runtime-migration] ${agent.id} was asked to move and is refused: ${reasons.join("; ")}`,
+    );
+    if (started.error.type === "AgentNotFound") return;
+    await deps.writeMigration(agent.id, {
+      annotations: REQUEST_KEYS_CLEARED,
+      resourceVersion: (await deps.getAgent(agent.id))?.resourceVersion,
+    });
+  }
+
   async function switchOne(id: string): Promise<void> {
     const agent = await deps.getAgent(id);
     if (!agent || !runtimeMigrationReadyToSwitch(agent)) return;
@@ -216,12 +199,13 @@ export function createRuntimeMigrationSwitch(deps: {
     async tick() {
       const agents = await deps.listAgents();
       for (const agent of agents) {
-        if (!runtimeMigrationReadyToSwitch(agent)) continue;
         try {
-          await switchOne(agent.id);
+          if (operatorRequested(agent)) await promote(agent);
+          else if (runtimeMigrationReadyToSwitch(agent))
+            await switchOne(agent.id);
         } catch (e) {
           deps.log(
-            `[runtime-migration] switching ${agent.id} failed: ${e instanceof Error ? e.message : String(e)}`,
+            `[runtime-migration] ${agent.id} could not be moved on: ${e instanceof Error ? e.message : String(e)}`,
           );
         }
       }

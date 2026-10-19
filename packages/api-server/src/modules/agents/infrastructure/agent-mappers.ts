@@ -49,7 +49,6 @@ import {
   RUNTIME_MIGRATING_CONDITION,
   RUNTIME_MIGRATION_KEY,
   RUNTIME_MIGRATION_MESSAGE_KEY,
-  RUNTIME_MIGRATION_SNAPSHOT_KEY,
   RUNTIME_MIGRATION_SOURCE_KEY,
   RUNTIME_MIGRATION_TARGET_KEY,
   DISABLED_KEY,
@@ -143,7 +142,6 @@ export interface InfraAgent {
   runtimeMigration?: RuntimeMigration;
   runtimeMigrationHold?: RuntimeMigrationHold;
   runtimeMigrationTarget?: string;
-  runtimeMigrationSnapshot?: string;
   storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -365,11 +363,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ),
     ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
       ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
-      : {}),
-    ...(annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY]
-      ? {
-          runtimeMigrationSnapshot: annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY],
-        }
       : {}),
     storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:

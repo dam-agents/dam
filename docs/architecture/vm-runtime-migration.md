@@ -2,18 +2,18 @@
 
 Last verified: 2026-10-19
 
-A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it to the owner of any container Agent on an install that can run a machine, which is the only install where one could move.
+A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at an operator's request, and can be undone until the Agent's machine has booted from the copy; it exists only to carry Agents made before the microVM was the default, since no page offers it and every Agent created on an install that can virtualize already runs on a machine.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
 An Agent whose mounts persist any other path — outside `HOME`, or a volume of its own inside it — is refused with each such path named, rather than moved without it; a mount that is not persisted, such as `/tmp`, is carried by nothing and refuses nothing.
-The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved or still clearing up an earlier move, and one mid-way through a storage migration; the UI offers the move from that same refusal.
+The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved or still clearing up an earlier move, and one mid-way through a storage migration.
 Starting the move is also refused when the owner's [VM pool](budgets.md#what-is-counted) cannot hold it: the move needs about twice what `HOME` holds on that pool's storage — the seed until the switch, and as much again on the machine's first disk — up to the level the runner itself refuses a seed at, and the pool needs the memory for one more machine, which may grow to half of it.
 What `HOME` holds is what the Agent's own runtime measured on its volume: the volume's size is the most it may hold, and a home judged by that would never move off a workspace it is nowhere near filling.
 An Agent that is not running cannot be measured — its volume has nothing mounted on it to ask — so it is refused on nothing there and the runner stops a copy that does not fit on its own.
 A measurement larger than the volume's own size is not the home: a claim backed by a directory on a node is mounted from a filesystem the whole node shares, so it is read as the volume at most.
 The pool is the figures the owner's runner last reported, and, for an owner with no runner yet, the sizes the install creates it at, each replaced by the owner's [UserBudget](budgets.md#the-ceiling) where it names one.
-Those figures come from the runner's own [usage read](vm-runner.md), so the plan says them before the user agrees, and an unreadable pool refuses nothing, since the runner refuses what it has no room for on its own.
-Otherwise it writes a request and no spec: the **target** shape and a **snapshot** of every field the switch will change.
-That write, and every later one — an abort, a retry, the switch — is conditioned on the version of the Agent it was decided from, so a change in between — a storage migration starting, a second request, the controller's status — fails it as a conflict, decided again from a fresh read and reported to retry if it keeps losing.
+Those figures come from the runner's own [usage read](vm-runner.md), and an unreadable pool refuses nothing, since the runner refuses what it has no room for on its own.
+Otherwise it writes a request and no spec: the **target** shape the switch will write.
+That write, and every later one — the switch — is conditioned on the version of the Agent it was decided from, so a change in between — a storage migration starting, a second request, the controller's status — fails it as a conflict, decided again from a fresh read and reported to retry if it keeps losing.
 The container spec stays the Agent's spec until the machine has proven the copy, so the api-server stays the only spec writer and the switch is its write, not the controller's.
 The rest is the controller's, and every step is derived from cluster state and from the migration's status condition — its phase, its reason and the copy attempts — so a restart resumes it.
 It first makes the owner's runner and the machine, stopped, in the target shape, while the container keeps running and keeps its Service: that **preflight** proves the runner schedules, the image is fetched and unpacked and the disk is made before the Agent loses anything, and whatever it waits on is its reason.
@@ -31,10 +31,10 @@ The runner looks at the storage every 64 MiB of an upload, and stops it as stora
 A write that finds the storage full anyway is reported as storage full too, not as the runner's own error.
 A failed migration keeps a container it had stopped stopped and one it never stopped running, until the user retries or aborts.
 A **retry** starts over from the preflight with a fresh machine, since a boot that failed may have seeded part of its disk.
-An **abort** is valid in every phase before verified: the api-server withdraws the request and writes the snapshot's fields back, and the controller deletes the copy Job and the machine with its seed and removes the condition; the old volumes never lost their labels, so the container resumes on them as they were.
-An abort does not wait on a runner that cannot be reached, since that is when a user most needs the container back: the controller marks the machine it could not delete as left on the Agent (`agent-platform.ai/runtime-migration-machine-left`) and removes the condition anyway.
+An **abort** is valid in every phase before verified: withdrawing the request — which an operator does by removing its annotations — stops the api-server switching anything, and the controller deletes the copy Job and the machine with its seed and removes the condition; the old volumes never lost their labels, so the container resumes on them as they were.
+The spec was never switched, so the container resumes as it was; an abort does not wait on a runner that cannot be reached, since that is when the Agent most needs the container back: the controller marks the machine it could not delete as left on the Agent (`agent-platform.ai/runtime-migration-machine-left`) and removes the condition anyway.
 Such an Agent no longer claims a machine of its name, so the [orphan sweep](vm-runner.md#runner-lifecycle) deletes it once the runner answers and no sweep has found an Agent for it in half an hour, and then drops the mark; a new migration of the Agent deletes it first, so its machine starts on a fresh disk.
-Both writes carry the version they were decided from — the api-server's abort against the controller's status, the controller's verified mark against the request — so exactly one of an abort and a verified boot wins.
+Both writes carry the version they were decided from — the operator's abort against the controller's status, the controller's verified mark against the request — so exactly one of an abort and a verified boot wins.
 The copy Job waits for the runner to accept its connection before it uploads, because a policy engine admits a new pod to the runner's ingress rule only after the pod exists.
 
 **The copy Job holds a seed capability, never the runner's token.** The Job parses what an agent wrote, and the token drives every route for every machine of the owner, so the controller mints the Job a capability instead: an HMAC over the machine, the seed scope, a random nonce and an expiry, keyed with a key derived from the runner's token under a fixed label, so the runner checks it with no second secret to distribute and the Job cannot work the token back out of it.
@@ -117,9 +117,17 @@ Volumes of a migration that has not switched yet are not retained: they are stil
 **Extend the window.** Overwrite the time with `kubectl annotate pvc <name> -n <agent-namespace> agent-platform.ai/retained-until=<RFC 3339 time> --overwrite`.
 A value that is not a readable time is kept and warned about, never read as expired, so a typo never deletes the only copy.
 
-**Unstick a migration.** The Agent's `RuntimeMigrating` condition names the phase and why it waits, and the Agent's status counts the copy attempts.
+**Start a migration.** Annotate the Agent, and nothing else: `kubectl annotate agent <agent> -n <agent-namespace> agent-platform.ai/runtime-migration=requested --overwrite`.
+A request without a target shape is the whole trigger, and only someone with the cluster can write one.
+Within two seconds the api-server decides it as it decides any move: it either writes the target shape to `agent-platform.ai/runtime-migration-target` and leaves the rest to the controller, or withdraws the request and logs the refusal reasons under `[runtime-migration]` on its stderr.
+Nothing is started for an Agent that already runs on a machine, that persists a path the machine cannot carry, whose owner's pool has no room, or that the install cannot virtualize.
+A request an earlier api-server decided is left alone, so annotating an Agent whose move is already under way changes nothing.
+
+**Watch it.** The Agent's `RuntimeMigrating` condition names the phase and why it waits, and the Agent's status counts the copy attempts; the page badges the Agent with the same phase, since it is the owner's to see, not to start.
 A migration that cannot finish fails on its own after three copy attempts or six hours, and at the first attempt when the home cannot fit the machine.
-Until it is verified it can be aborted, which returns the Agent to the container on its old volumes, or, once failed, retried, which starts over with a fresh machine; the Agent's owner does either from the Agent's row.
-An operator without the UI withdraws the request by removing the `agent-platform.ai/runtime-migration` annotation and its `-target`, `-snapshot` and `-retry` companions, which the controller treats as an abort; the spec was never switched, and the `-snapshot` annotation, read before it is removed, holds the fields as they were.
-A retry by hand sets `agent-platform.ai/runtime-migration-retry` to the current time.
+
+**Abort it.** Until it is verified, remove the request and its companions: `kubectl annotate agent <agent> -n <agent-namespace> agent-platform.ai/runtime-migration- agent-platform.ai/runtime-migration-target- agent-platform.ai/runtime-migration-retry-`.
+The controller treats that as an abort: it deletes the copy Job and the machine with its seed, removes the condition, and the container resumes on its old volumes, since the spec was never switched.
 A verified migration cannot be aborted: the machine is the Agent now, and what the copy missed is recovered from the retained volumes.
+
+**Retry one.** Set `agent-platform.ai/runtime-migration-retry` to the current time on a failed migration; the controller starts over from the preflight with a fresh machine.
