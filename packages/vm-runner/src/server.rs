@@ -108,7 +108,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `resident_stale` is whether the last probe of the machine could not read that figure, which admission counts at least at the warm-up floor while it stands, because a figure from before the failure is not what the machine holds now. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -130,6 +130,7 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
+    resident_stale: bool,
     warming_since: Option<Instant>,
     cpu: Option<(Instant, u64)>,
     cpu_milli: u64,
@@ -309,13 +310,26 @@ impl Server {
                     tracing::warn!(machine = %id, error = %e, "republishing machine port");
                 }
             }
-            if server.runtime.state(&id).ok() == Some(State::Running) {
-                let resident = server.runtime.resident_mib(&id);
-                locked(&server.machines)
-                    .entries
-                    .entry(id)
-                    .or_default()
-                    .resident_mib = resident;
+            match server.runtime.state(&id) {
+                Ok(State::Running) => {
+                    let resident = server.runtime.resident_mib(&id);
+                    locked(&server.machines)
+                        .entries
+                        .entry(id)
+                        .or_default()
+                        .resident_mib = resident;
+                }
+                // UNIT_BOUNDARY_DESCRIPTION: a record this runner cannot read is not a machine that holds nothing: when a VMM process holds its directory, the machine is recorded as unknown so the runner counts it, as admission does, until a look reads it again. Left unrecorded, a running machine would be missing from everything counted off the entries — the storage every guest may add — and the others would be granted its room.
+                Ok(_) => {}
+                Err(e) => {
+                    if server.runtime.holds_vmm(&id) {
+                        locked(&server.machines).entries.entry(id).or_default().seen = Some(Seen {
+                            state: State::Unknown,
+                            ready: false,
+                            error: Some(format!("{e:#}")),
+                        });
+                    }
+                }
             }
         }
         server.hold_images();
@@ -1546,23 +1560,23 @@ impl Server {
                 share.is_dir().then_some((id, share))
             })
             .collect();
-        let (up, running) = {
+        let up: BTreeSet<String> = {
             let machines = locked(&self.machines);
-            let (mut up, mut running) = (BTreeSet::new(), 0);
-            for (id, entry) in &machines.entries {
-                let state = entry
-                    .action
-                    .map(Action::state)
-                    .or(entry.seen.as_ref().map(|s| s.state));
-                if state == Some(State::Running) {
-                    running += 1;
-                }
-                if !matches!(state, Some(State::Stopped | State::Absent)) {
-                    up.insert(id.clone());
-                }
-            }
-            (up, running)
+            machines
+                .entries
+                .iter()
+                .filter(|(_, entry)| {
+                    let state = entry
+                        .action
+                        .map(Action::state)
+                        .or(entry.seen.as_ref().map(|s| s.state));
+                    !matches!(state, Some(State::Stopped | State::Absent))
+                })
+                .map(|(id, _)| id.clone())
+                .collect()
         };
+        // UNIT_BOUNDARY_DESCRIPTION: the shed request is split among the machines that hold data now, so a machine a look has not seen yet, or one on its way up, takes no part of it: only a running guest frees anything. A machine whose record cannot be read counts as running here on the same evidence admission asks for, so a restart on an undecodable record does not leave the shortage to the others.
+        let running = up.iter().filter(|id| self.known_running(id)).count();
         let storage = (self.config.measure_storage)();
         let look = self.versions.fetch_add(1, Ordering::Relaxed);
         for (id, share) in &shares {
@@ -1724,11 +1738,12 @@ impl Server {
             .is_some_and(MachineEntry::warming)
     }
 
-    fn resident(&self, id: &str) -> Option<i32> {
+    // UNIT_BOUNDARY_DESCRIPTION: what the prober last measured the machine holding, with whether that figure is from before a read that has failed since, which admission counts at least at the warm-up floor.
+    fn resident(&self, id: &str) -> Option<(i32, bool)> {
         locked(&self.machines)
             .entries
             .get(id)
-            .and_then(|e| e.resident_mib)
+            .and_then(|e| e.resident_mib.map(|mib| (mib, e.resident_stale)))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the memory each machine a worker is converging holds or is about to. A machine being created has no spec on disk yet, so without this two creates racing each other would both fit into the room for one. What counts is the action in flight as well as the spec stored behind it: a machine still booting holds its memory even when the spec behind the boot is a stop, and a restart may be moving between the applied size and the desired one, so it is counted at the larger of the two.
@@ -1929,8 +1944,12 @@ impl Server {
             if !unread {
                 if !running {
                     entry.resident_mib = None;
+                    entry.resident_stale = false;
                 } else if resident.is_some() {
                     entry.resident_mib = resident;
+                    entry.resident_stale = false;
+                } else {
+                    entry.resident_stale = entry.resident_mib.is_some();
                 }
                 entry.cpu_milli = match (entry.cpu, cpu) {
                     (Some((from, before)), Some((to, now))) if now >= before => {
@@ -1998,14 +2017,27 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state is unknown counts as running, which is what a launch record that cannot be read records: the room of a VMM that may be up is not room to hand to another, and its spec cannot be matched to a size either, so it is counted at the whole handout.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state cannot be read counts as running only when something says a VMM may hold it — this runner measured it, or a VMM process holds its directory — because a record that no longer decodes would otherwise hold the whole handout on a stopped machine and refuse every start for its owner.
     fn known_running(&self, id: &str) -> bool {
-        let recorded = locked(&self.machines)
+        let (recorded, measured) = locked(&self.machines)
             .entries
             .get(id)
-            .and_then(|e| e.seen.as_ref().map(|seen| seen.state));
-        let state = recorded.unwrap_or_else(|| self.runtime.state(id).unwrap_or(State::Unknown));
-        matches!(state, State::Running | State::Unknown)
+            .map(|e| {
+                (
+                    e.seen.as_ref().map(|seen| seen.state),
+                    e.resident_mib.is_some(),
+                )
+            })
+            .unwrap_or_default();
+        match recorded {
+            Some(State::Running) => true,
+            Some(State::Unknown) => measured || self.runtime.holds_vmm(id),
+            Some(_) => false,
+            None => match self.runtime.state(id) {
+                Ok(state) => state == State::Running,
+                Err(_) => measured || self.runtime.holds_vmm(id),
+            },
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.

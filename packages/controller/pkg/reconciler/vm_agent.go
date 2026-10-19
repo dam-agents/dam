@@ -168,8 +168,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if pullErr != nil {
 		return vmrunner.MachineStatus{}, false, pullErr
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: a machine that should stop is sized from its spec when the pool cannot be read. A stop acts on no size, and refusing it would leave a machine up that the controller asked to stop, holding everything the stop releases.
 	memoryMiB, err := r.machineMemoryMiB(ctx, owner, spec)
-	if err != nil {
+	if err != nil && running {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the machine: %w", err)
 	}
 

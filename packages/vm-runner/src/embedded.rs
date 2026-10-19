@@ -358,6 +358,10 @@ impl Runtime for Smolvm {
         resident_mib(&self.proc_root, record.pid?)
     }
 
+    fn holds_vmm(&self, id: &str) -> bool {
+        !orphan_pids(&self.proc_root, &vm_data_dir(id)).is_empty()
+    }
+
     fn cpu_usec(&self, id: &str) -> Option<u64> {
         let record = self.record(id).ok()??;
         if !record.is_process_alive() {

@@ -33,6 +33,10 @@ pub trait Runtime: Send + Sync {
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         None
     }
+    // UNIT_BOUNDARY_DESCRIPTION: whether a VMM process holds the machine's directory now. It is the only evidence that a machine nothing has looked at is up, and its launch record cannot be read: only the process that booted it says whether it runs. A runtime that cannot tell says no, which counts such a machine as stopped.
+    fn holds_vmm(&self, _id: &str) -> bool {
+        false
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the CPU time the machine's VMM has used since it started, in microseconds, or nothing when no VMM runs or the runtime cannot tell. Two readings a probe apart give the machine's share of the runner's CPU.
     fn cpu_usec(&self, _id: &str) -> Option<u64> {
         None
