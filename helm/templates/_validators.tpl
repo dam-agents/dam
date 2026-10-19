@@ -391,6 +391,9 @@ its name is checked as the label value it is rendered as.
 {{- $label := `^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$` -}}
 {{- $prefix := `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` -}}
 {{- range $key, $value := (.labels | default dict) -}}
+{{- if not (and (kindIs "string" $key) (kindIs "string" $value)) -}}
+{{- fail (printf "%s label %v: %v has to be a string on both sides — a YAML number or boolean renders as one, and Kubernetes refuses the whole NetworkPolicy whose matchLabels holds it, which leaves the pod it names ungated until the next apply lands." $.name $key $value) -}}
+{{- end -}}
 {{- $parts := splitList "/" (toString $key) -}}
 {{- $field := last $parts -}}
 {{- $ok := and (le (len $parts) 2) (regexMatch $label $field) (le (len $field) 63) -}}
@@ -399,7 +402,7 @@ its name is checked as the label value it is rendered as.
 {{- end -}}
 {{- $text := toString $value -}}
 {{- if or (not $ok) (and $text (not (and (regexMatch $label $text) (le (len $text) 63)))) -}}
-{{- fail (printf "%s label %q: %q is not a label the API server takes — a key is a name of at most 63 alphanumerics, dashes, underscores and dots beginning and ending alphanumeric, optionally under a DNS prefix and a /; a value is the same or empty. Kubernetes rejects the whole NetworkPolicy on one it cannot use, which leaves the pod it names ungated until the next apply lands." .name (toString $key) $text) -}}
+{{- fail (printf "%s label %q: %q is not a label the API server takes — a key is a name of at most 63 alphanumerics, dashes, underscores and dots beginning and ending alphanumeric, optionally under a DNS prefix and a /; a value is the same or empty. Kubernetes rejects the whole NetworkPolicy on one it cannot use, which leaves the pod it names ungated until the next apply lands." $.name (toString $key) $text) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -427,6 +430,10 @@ reopen every range the policy exists to close.
 {{- define "platform.validate.vmImageCacheEgress" -}}
 {{- if .Values.virtualization.enabled -}}
 {{- $cache := .Values.virtualization.imageCache | default dict -}}
+{{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict -}}
+{{- if and (eq ($cache.dnsPolicy | default "ClusterFirst") "ClusterFirst") (not (and $dns.namespace $dns.podLabels)) -}}
+{{- fail "virtualization.imageCache.dnsPolicy is ClusterFirst but controller.gatewayEgress.clusterDns names no namespace and podLabels, so the cache policy admits no DNS pod: every registry lookup fails, and a machine boots only the trees the cache already holds. Name the cluster DNS pods, or set imageCache.dnsPolicy=Default and admit the node's resolver in imageCache.egressCidrs." -}}
+{{- end -}}
 {{- range ($cache.egressCidrs | default list) -}}
 {{- $entry := toString . -}}
 {{- include "platform.validate.cidr" (dict "name" "virtualization.imageCache.egressCidrs" "value" $entry) -}}

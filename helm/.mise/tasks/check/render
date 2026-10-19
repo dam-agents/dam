@@ -81,6 +81,9 @@ for refused in 'virtualization.imageCache.hostPath=' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=0' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=65536' \
   'virtualization.imageCache.peers[0].namespace=Registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=443' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=5000,virtualization.imageCache.peers[0].ports[0]=443' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.tier=true,virtualization.imageCache.peers[0].ports[0]=443' \
+  'controller.gatewayEgress.clusterDns=null' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=-bad-,virtualization.imageCache.peers[0].ports[0]=443' \
   "virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=$(printf 'a%.0s' {1..64}),virtualization.imageCache.peers[0].ports[0]=443" \
   'controller.gatewayEgress.clusterDns.namespace=Kube-System' \
@@ -136,6 +139,12 @@ helm template platform . "${COMMON[@]}" "${VM[@]}" \
   --show-only templates/controller/vm-image-cache.yaml \
   | grep -q 'dns.operator.openshift.io/daemonset-dns: default' \
   || { echo "a render with a prefixed label and a namespaced registry did not reach the cache policy" >&2; exit 1; }
+# A cache that resolves through the node instead is a supported install: it
+# names no cluster DNS pods, and its egress policy admits the resolver by range.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.dnsPolicy=Default --set controller.gatewayEgress.clusterDns=null \
+  --show-only templates/controller/vm-image-cache.yaml >/dev/null \
+  || { echo "a render with dnsPolicy=Default and no cluster DNS pods failed, but that install admits its resolver by range" >&2; exit 1; }
 # The cache directory is the install's own by construction: the value is a root
 # and the chart names this install inside it, so no two installs can be given
 # one directory — the pair it is named after is the one the cluster keeps
