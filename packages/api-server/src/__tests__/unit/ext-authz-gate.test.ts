@@ -10,7 +10,9 @@ import {
   type ApprovalResolved,
 } from "../../events.js";
 
-const noSpend = { checkCall: async () => ({ verdict: "allow" as const, rule: anyRule }) };
+const noSpend = {
+  checkCall: async () => ({ verdict: "allow" as const, rule: anyRule }),
+};
 const noQuestions = { ask: async () => {} };
 
 interface FakeRepo {
@@ -506,7 +508,10 @@ describe("ext-authz gate", () => {
   it("denies a path with a dot segment without reading rules or holding", async () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
-    const ruleMatch = vi.fn(async () => ({ verdict: "allow" as const, rule: anyRule }));
+    const ruleMatch = vi.fn(async () => ({
+      verdict: "allow" as const,
+      rule: anyRule,
+    }));
     const gate = createExtAuthzGate({
       repo: repo.repo,
       bus: bus.bus,
@@ -554,7 +559,10 @@ describe("ext-authz gate", () => {
   // TEST_SCENARIO: the agent writes the Host header, and DNS and GitHub ignore its letter case, so `API.GitHub.com` must meet the rules for api.github.com rather than slip past them to a wildcard allow.
   it("asks the rules with the host in lower case", async () => {
     const repo = makeFakeRepo();
-    const ruleMatch = vi.fn(async () => ({ verdict: "deny" as const, rule: anyRule }));
+    const ruleMatch = vi.fn(async () => ({
+      verdict: "deny" as const,
+      rule: anyRule,
+    }));
     const gate = createExtAuthzGate({
       repo: repo.repo,
       bus: makeFakeBus().bus,
@@ -592,7 +600,10 @@ describe("ext-authz gate", () => {
   it("allows the platform host only on its own port, and asks the rules with port and scheme", async () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
-    const ruleMatch = vi.fn(async () => ({ verdict: "deny" as const, rule: anyRule }));
+    const ruleMatch = vi.fn(async () => ({
+      verdict: "deny" as const,
+      rule: anyRule,
+    }));
     const gate = createExtAuthzGate({
       repo: repo.repo,
       bus: bus.bus,
@@ -677,7 +688,9 @@ describe("ext-authz gate", () => {
       path: "/v1/messages",
     };
     const gateWith = (
-      ruleMatch: Parameters<typeof createExtAuthzGate>[0]["ruleMatcher"]["match"],
+      ruleMatch: Parameters<
+        typeof createExtAuthzGate
+      >[0]["ruleMatcher"]["match"],
       covers: Parameters<
         typeof createExtAuthzGate
       >[0]["providerScopes"]["covers"],
@@ -919,7 +932,9 @@ describe("ext-authz gate", () => {
           hasInteractiveSession: async () => false,
         },
         identityResolver,
-        ruleMatcher: { match: async () => ({ verdict: "allow", rule: anyRule }) },
+        ruleMatcher: {
+          match: async () => ({ verdict: "allow", rule: anyRule }),
+        },
         providerScopes: noProviderScopes,
         holdSeconds: 1800,
         spend: noSpend,

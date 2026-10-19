@@ -56,7 +56,11 @@ describe("scopeCovers", () => {
 
   it("does not cover another path, host or port", () => {
     expect(
-      scopeCovers(openai, { ...request, host: "api.openai.com", path: "/v2/x" }),
+      scopeCovers(openai, {
+        ...request,
+        host: "api.openai.com",
+        path: "/v2/x",
+      }),
     ).toBe(false);
     expect(
       scopeCovers(openai, { ...request, host: "openai.com", path: "/v1/x" }),

@@ -38,7 +38,9 @@ function isHostWide(row: {
   method: string;
   pathPattern: string;
 }): boolean {
-  return row.port === undefined && row.method === "*" && row.pathPattern === "*";
+  return (
+    row.port === undefined && row.method === "*" && row.pathPattern === "*"
+  );
 }
 
 export function createConnectionRulesSync(deps: {
