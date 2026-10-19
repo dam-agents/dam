@@ -64,7 +64,8 @@ export function SidebarAgents({
     onNavigate?.();
   };
 
-  const shownAgentIds = agents.map((agent) => agent.id);
+  const shownAgents = showFolded ? agents : active;
+  const shownAgentIds = shownAgents.map((agent) => agent.id);
   const row = (agent: AgentView) => {
     const current = agent.id === openAgentId;
     const open = isOpen(agent.id);
@@ -148,9 +149,7 @@ export function SidebarAgents({
           Recent sessions can't be loaded right now.
         </p>
       )}
-      <ul className="flex flex-col gap-px">
-        {(showFolded ? agents : active).map(row)}
-      </ul>
+      <ul className="flex flex-col gap-px">{shownAgents.map(row)}</ul>
       {folded.length > 0 && (
         <button
           type="button"

@@ -162,8 +162,8 @@ import { useSessionWatch } from "../hooks/use-session-watch.js";
 import { useTakeBack } from "../hooks/use-take-back.js";
 import {
   classicAppTab,
+  classicDockToggle,
   classicPanel,
-  CLOSED_DOCK,
 } from "../lib/classic-chat-layout.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
@@ -257,7 +257,6 @@ export function ChatView() {
   );
   const openBrowser = useOpenBrowser();
   const closeBrowser = useStore((s) => s.setOpenBrowser);
-  const confirmDockDiscard = useStore((s) => s.confirmDockDiscard);
   const openChangesAgentId = useStore((s) =>
     s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
   );
@@ -708,10 +707,26 @@ export function ChatView() {
     hiddenTabs,
     dockedTab !== null,
   );
-  const closeDocked = async () => {
-    if (!(await confirmDockDiscard())) return;
-    useStore.setState(CLOSED_DOCK);
+  const [phoneHiddenDock, setPhoneHiddenDock] = useState<SidePanelTab | null>(
+    null,
+  );
+  if (phoneHiddenDock !== null && sidePanelTab !== null)
+    setPhoneHiddenDock(null);
+  const dockHiddenOnPhone =
+    phoneHiddenDock !== null && phoneHiddenDock === dockedTab;
+  const revealDock = () => {
+    setPhoneHiddenDock(null);
+    if (classicTab !== null) setSidePanelTab(null);
   };
+  const classicToggle = (item: "browser" | "changes") =>
+    classicDockToggle({
+      docked: docked[item],
+      front: dockedTab === item,
+      panel: shownClassicPanel,
+      hiddenOnPhone: dockHiddenOnPhone,
+    });
+  const browserToggle = classicToggle("browser");
+  const changesToggle = classicToggle("changes");
   const onSidePanelTab = (tab: SidePanelTab) => {
     const selection = selectSidePanelTab(tab, activeTab, docked);
     if (selection.kind === "collapse") setSidePanelTab(null);
@@ -1281,16 +1296,26 @@ export function ChatView() {
               name={selectedAgentName}
               display={agentDisplay}
               canOpenBrowser={canOpenBrowser}
-              browserOpen={docked.browser}
-              changesOpen={docked.changes}
+              browserOpen={browserToggle.pressed}
+              changesOpen={changesToggle.pressed}
               onToggleBrowser={() => {
                 if (!selectedAgent) return;
-                if (docked.browser) closeBrowser(null);
+                if (browserToggle.click === "close") closeBrowser(null);
+                else if (browserToggle.click === "open")
+                  void openBrowser(selectedAgent);
+                else if (dockedTab === "browser") revealDock();
                 else void openBrowser(selectedAgent);
               }}
-              onToggleChanges={() =>
-                void toggleChanges(docked.changes ? null : selectedAgent)
-              }
+              onToggleChanges={() => {
+                if (!selectedAgent) return;
+                if (changesToggle.click === "close") void toggleChanges(null);
+                else if (
+                  changesToggle.click === "reveal" &&
+                  dockedTab === "changes"
+                )
+                  revealDock();
+                else void toggleChanges(selectedAgent);
+              }}
               onConfigure={handleConfigureSandbox}
             />
           }
@@ -1325,6 +1350,7 @@ export function ChatView() {
           processesEnabled={processesEnabled}
           onOpenFile={openFileHandler}
           panel={shownClassicPanel}
+          dockHiddenOnPhone={dockHiddenOnPhone}
           dock={dock}
           maximizable={
             shownClassicPanel === "dock"
@@ -1332,7 +1358,7 @@ export function ChatView() {
               : null
           }
           onClosePanel={() => {
-            if (shownClassicPanel === "dock") return void closeDocked();
+            setPhoneHiddenDock(dockedTab);
             setSidePanelTab(null);
             setMobileScreen("chat");
           }}

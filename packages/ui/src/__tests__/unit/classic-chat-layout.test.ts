@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classicAppTab,
   classicColumns,
+  classicDockToggle,
   classicPanel,
 } from "../../modules/sessions/lib/classic-chat-layout.js";
 import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
@@ -110,5 +111,39 @@ describe("how the columns share the width", () => {
         panelMaximized: false,
       }).panelW,
     ).toBe(320);
+  });
+});
+
+describe("the top bar's browser and changes toggles", () => {
+  const base = { docked: true, front: true, hiddenOnPhone: false } as const;
+
+  it("TEST_SCENARIO: an item the slot shows is pressed, and a click closes it", () => {
+    expect(classicDockToggle({ ...base, panel: "dock" })).toEqual({
+      pressed: true,
+      click: "close",
+    });
+  });
+
+  it("TEST_SCENARIO: an item docked behind Approvals or Get started is not pressed, and a click brings it back instead of closing it", () => {
+    for (const panel of ["approvals", "getting-started"] as const)
+      expect(classicDockToggle({ ...base, panel })).toEqual({
+        pressed: false,
+        click: "reveal",
+      });
+  });
+
+  it("TEST_SCENARIO: an item a phone user hid with Back to chat is not pressed, and a click brings it back", () => {
+    expect(
+      classicDockToggle({ ...base, panel: "dock", hiddenOnPhone: true }),
+    ).toEqual({ pressed: false, click: "reveal" });
+  });
+
+  it("TEST_SCENARIO: an item another docked item covers is not pressed; an item not docked opens", () => {
+    expect(classicDockToggle({ ...base, panel: "dock", front: false })).toEqual(
+      { pressed: false, click: "reveal" },
+    );
+    expect(
+      classicDockToggle({ ...base, docked: false, panel: "dock" }),
+    ).toEqual({ pressed: false, click: "open" });
   });
 });

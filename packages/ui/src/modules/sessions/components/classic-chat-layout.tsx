@@ -68,6 +68,7 @@ export function ClassicChatLayout({
   processesEnabled,
   onOpenFile,
   panel,
+  dockHiddenOnPhone,
   dock,
   maximizable,
   onClosePanel,
@@ -82,6 +83,7 @@ export function ClassicChatLayout({
   processesEnabled: boolean;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
   panel: ClassicPanel | null;
+  dockHiddenOnPhone: boolean;
   dock: ReactNode;
   maximizable: string | null;
   onClosePanel: () => void;
@@ -258,6 +260,7 @@ export function ClassicChatLayout({
             className={cn(
               "flex flex-col bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
               panel === null && "hidden",
+              panel === "dock" && dockHiddenOnPhone && "max-md:hidden",
               panelFills
                 ? "md:flex-1 md:min-w-0"
                 : panelW !== null
