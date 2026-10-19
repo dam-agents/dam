@@ -261,12 +261,12 @@ describe("share host sign-in", () => {
    */
   it("signs out the share host's own session, not a planted one", async () => {
     const s = setup();
-    const own = (await signIn(s, "/a/xyz"))
-      .headers.get("set-cookie")!
+    const own = (await signIn(s, "/a/xyz")).headers
+      .get("set-cookie")!
       .split(";")[0]!;
     const ownId = own.split("=")[1]!;
-    const plantedId = (await signIn(s, "/a/xyz"))
-      .headers.get("set-cookie")!
+    const plantedId = (await signIn(s, "/a/xyz")).headers
+      .get("set-cookie")!
       .split(";")[0]!
       .split("=")[1]!;
 
