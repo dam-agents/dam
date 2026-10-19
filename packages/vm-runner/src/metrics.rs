@@ -3,6 +3,7 @@ use std::fmt::Write;
 use std::sync::Mutex;
 use std::time::Duration;
 
+use crate::api::{REASON_OOM_KILLED, REASON_SECCOMP_KILLED};
 use crate::plan::Action;
 
 // UNIT_BOUNDARY_DESCRIPTION: what a runner measures about its own machines, its image cache and its cgroup's memory and CPU, for the platform's collector to scrape, under the series names the platform's dashboards and alerts select. Every label value is a `&'static str` from a fixed set — an operation, an outcome, a failure reason, a cache result — and never a machine, an image or an owner: a machine id or an image reference would grow a series per agent, and the runner exists per owner, so either would be a person's identity in disguise. Written out by hand rather than through a metrics library, because the one already in the lock installs a process-wide recorder that would also export whatever smolvm records, under labels this file does not choose.
@@ -85,7 +86,8 @@ impl Default for Metrics {
             ready: Histogram::new(BOOT_BUCKETS),
             fetches: Histogram::new(FETCH_BUCKETS),
             restarts: 0,
-            kills: BTreeMap::new(),
+            // UNIT_BOUNDARY_DESCRIPTION: both reasons are there from the first scrape, at zero, so a dashboard's `increase()` counts the first kill of a runner's life instead of starting from it.
+            kills: BTreeMap::from([(REASON_OOM_KILLED, 0), (REASON_SECCOMP_KILLED, 0)]),
             failures: BTreeMap::new(),
             refusals: 0,
             lookups: BTreeMap::new(),
@@ -421,6 +423,29 @@ fn histogram(out: &mut String, name: &str, help: &str, keys: &[&str], h: &Histog
 mod tests {
     use super::*;
 
+    // TEST_SCENARIO: a counter family that first appears at its first event starts at 1, and `increase()` over a window that holds that event misses it, so a runner that has killed no machine still reports both reasons at zero. A dashboard's OOM panel then counts the first kill of a runner's life.
+    #[test]
+    fn both_kill_reasons_are_reported_before_the_first_kill() {
+        let text = Metrics::default().render(&Gauges {
+            budget_bytes: 0,
+            limit_mib: 0,
+            reserve_mib: 0,
+            committed_mib: None,
+            storage: None,
+            cpu: None,
+            cpu_limit_milli: None,
+            working_set_mib: None,
+            pressured: None,
+            oom_group: None,
+        });
+        for line in [
+            "platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 0",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 0",
+        ] {
+            assert!(text.lines().any(|l| l == line), "missing {line}\n{text}");
+        }
+    }
+
     // TEST_SCENARIO: the platform's dashboards and alerts select these series by name, type and label names, and a renamed or dropped series moves a panel without failing anything else. The whole set is spelled out here, in the order a scrape exposes it, and a scrape exposes nothing beyond it; the label names of every labelled family are pinned through a sample of each, and a gauge the runner could not count reads as NaN.
     #[test]
     fn a_scrape_exposes_exactly_the_series_the_dashboards_select() {
@@ -484,6 +509,7 @@ mod tests {
             "platform_vm_runner_machine_start_duration_seconds_bucket{op=\"create\",outcome=\"ok\",le=\"600\"} 1",
             "platform_vm_runner_machine_ready_seconds_bucket{op=\"create\",le=\"+Inf\"} 1",
             "platform_vm_runner_machine_operation_failures_total{op=\"create\",reason=\"MachineBootFailed\"} 1",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 0",
             "platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 1",
             "platform_vm_runner_image_cache_lookups_total{result=\"hit\"} 1",
             "platform_vm_runner_image_fetch_duration_seconds_bucket{outcome=\"failed\",le=\"1200\"} 1",
@@ -535,6 +561,7 @@ mod tests {
             "platform_vm_runner_machine_operation_duration_seconds_count{op=\"create\",outcome=\"ok\"} 2",
             "platform_vm_runner_machine_operation_failures_total{op=\"wake\",reason=\"MachineBootFailed\"} 1",
             "platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 1",
+            "platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 0",
             "platform_vm_runner_image_cache_lookups_total{result=\"miss\"} 1",
             "platform_vm_runner_memory_committed_mib 2048",
             "platform_vm_runner_storage_used_bytes 75",

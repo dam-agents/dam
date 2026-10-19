@@ -3271,11 +3271,224 @@ async fn a_vmm_the_runner_is_stopping_is_not_a_kill_to_report() {
         REASON_OOM_KILLED,
         "the runner's own stop was reported as a kill"
     );
-    assert!(
-        !h.server.metrics_text().contains("machine_kills_total{"),
-        "the runner's own stop was counted:\n{}",
-        h.server.metrics_text()
-    );
+    assert_no_kill_counted(&h);
     let _ = vmm.wait();
     h.settle("m1").await;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: fails when the runner counted a kill it did not make: both reasons read zero, since a family that first appears at its first event is missed by `increase()`.
+fn assert_no_kill_counted(h: &Harness) {
+    let text = h.server.metrics_text();
+    for reason in [REASON_OOM_KILLED, REASON_SECCOMP_KILLED] {
+        let line = format!("platform_vm_runner_machine_kills_total{{reason=\"{reason}\"}} 0");
+        assert!(
+            text.lines().any(|l| l == line),
+            "a kill was counted:\n{text}"
+        );
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: stands a process in for a machine's VMM, kills it with `signal`, and reaps until the runner says what took the machine down, giving that status back. The stand-in is waited on, so a test leaves no process behind.
+fn kill_vmm(h: &Harness, id: &str, signal: libc::c_int) -> MachineStatus {
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm(id, pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, signal) };
+    let deadline = Instant::now() + ACTION_DEADLINE;
+    let status = loop {
+        h.server.reap_killed();
+        let status = h.server.status(id);
+        if !status.reason.is_empty() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let mut st = 0;
+            // SAFETY: WNOHANG never blocks and the status word is a valid local.
+            let reaped = unsafe { libc::waitpid(pid, &mut st, libc::WNOHANG) };
+            // SAFETY: kill(2) takes no pointers.
+            let alive = unsafe { libc::kill(pid, 0) };
+            panic!(
+                "{id}: the kill was never reported: {status:?} waitpid={reaped} alive={alive} errno={:?}",
+                std::io::Error::last_os_error()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let _ = vmm.wait();
+    status
+}
+
+// TEST_SCENARIO: a probe takes the machine's `looked` before it asks the guest, and a kill lands while it is out. The probe's answer arrives afterwards, and must not put the dead machine back to running over the kill it reported: what the reap recorded moves `looked` with it, so the older answer is dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_probe_that_looked_before_the_kill_cannot_undo_it() {
+    let h = Harness::new("stale-probe");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let looked = h.machine("m1", |e| e.looked);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    h.server.record(
+        "m1",
+        Seen {
+            state: State::Running,
+            ready: true,
+            error: None,
+        },
+        Some(looked),
+    );
+    let status = h.server.status("m1");
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+    assert_eq!(status.state, STATE_STOPPED, "{status:?}");
+}
+
+// TEST_SCENARIO: a restart stops the machine's VMM while its owner still asks it to run, so the spec alone is no guard and the action in flight is. The signal the restart's own stop sends is never reported as the kernel's memory kill, and never counted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restarts_stop_is_not_a_kill_to_report() {
+    let h = Harness::new("restart-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    *locked(&h.fake.stop_delay) = Duration::from_millis(300);
+    let mut next = spec(true);
+    next.revision = "r2".into();
+    h.server.put("m1", next).unwrap();
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..10 {
+        h.server.reap_killed();
+        assert_ne!(
+            h.server.status("m1").reason,
+            REASON_OOM_KILLED,
+            "the restart's own stop was reported as a kill"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_no_kill_counted(&h);
+    let _ = vmm.wait();
+    h.settle("m1").await;
+}
+
+// TEST_SCENARIO: a stop whose wait the runner gave up on keeps holding the machine until the runtime call returns, so the machine can be killed after its action ended and before the call did. That kill is the runner's, not the kernel's: the machine reports no reason while the call still holds it, and the kill is reported once the call returns.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_kill_a_runtime_call_still_holds_is_not_reported_before_it_returns() {
+    let h = Harness::new("held-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    let held = h.machine("m1", |e| e.calls.clone());
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..5 {
+        h.server.reap_killed();
+        assert_ne!(
+            h.server.status("m1").reason,
+            REASON_OOM_KILLED,
+            "a call still running on the machine was reported as a kill"
+        );
+    }
+    drop(held);
+    h.server.reap_killed();
+    assert_eq!(h.server.status("m1").reason, REASON_OOM_KILLED);
+    let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: the kill is said until the guest answers again, because the boot that follows it is what tells the controller to restart the agent; once the guest answers, the machine is up and the kill no longer explains it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kill_goes_when_the_guest_answers_again() {
+    let h = Harness::new("kill-cleared-by-guest");
+    h.server.put("m1", spec(true)).unwrap();
+    let running = h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    let _up = guest(running.port.try_into().unwrap());
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert!(
+        status.reason.is_empty(),
+        "the kill outlived the guest's answer: {status:?}"
+    );
+}
+
+// TEST_SCENARIO: an owner that asks the machine down ends the report at once: a hibernated machine says it is hibernated, not that the kernel killed it for memory it no longer asks for.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kill_goes_when_the_owner_asks_the_machine_down() {
+    let h = Harness::new("kill-cleared-by-owner");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    h.server.put("m1", spec(false)).unwrap();
+    assert!(
+        h.server.status("m1").reason.is_empty(),
+        "{:?}",
+        h.server.status("m1")
+    );
+}
+
+// TEST_SCENARIO: a SIGKILL is the kernel's OOM killer's only when the runner's cgroup counted an OOM kill since the last reap, so an operator's `kill -9` on a VMM restarts the machine with no memory reason; a SIGKILL the cgroup did count is the kernel's, and says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sigkill_the_cgroup_did_not_count_is_not_a_memory_kill() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    let counted = |kills: u64| {
+        fs::write(
+            cgroup.join("memory.events"),
+            format!("low 0\nhigh 0\nmax 4\noom {kills}\noom_kill {kills}\noom_group_kill 0\n"),
+        )
+        .unwrap();
+    };
+    counted(0);
+    let h = Harness::with("cgroup-kill", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    // TEST_SCENARIO: the baseline the next reap compares against.
+    h.server.reap_killed();
+
+    // TEST_SCENARIO: a `kill -9` the cgroup counted nothing for is reaped and reported as nothing.
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..10 {
+        h.server.reap_killed();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "a kill the cgroup did not count was reported as memory"
+    );
+    assert_no_kill_counted(&h);
+    let _ = vmm.wait();
+    // TEST_SCENARIO: the operator stops the machine, so the pid the kernel frees is never read as the next machine's VMM.
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+
+    counted(1);
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    locked(&h.fake.states).insert("m2".into(), State::Running);
+    let status = kill_vmm(&h, "m2", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
 }

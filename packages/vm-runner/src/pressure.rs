@@ -46,6 +46,16 @@ pub fn oom_group(cgroup: &Path) -> Option<bool> {
     Some(read(cgroup, "memory.oom.group").ok()?.trim() == "1")
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how many processes of the runner's cgroup the kernel's OOM killer has killed since the cgroup was made, from `memory.events`' own oom_kill line. An operator's `kill -9`, and a container runtime's, leave that line alone, so it is what tells the kernel's kill from any other signal. A cgroup that cannot be read says nothing.
+pub fn oom_kills(cgroup: &Path) -> Option<u64> {
+    let events = read(cgroup, "memory.events").ok()?;
+    let killed = events
+        .lines()
+        .find_map(|line| line.strip_prefix("oom_kill "))?
+        .trim();
+    killed.parse().ok()
+}
+
 fn read(cgroup: &Path, file: &str) -> anyhow::Result<String> {
     let path = cgroup.join(file);
     fs::read_to_string(&path).with_context(|| format!("reading {}", path.display()))
@@ -108,5 +118,20 @@ mod tests {
         fs::write(dir.path().join("memory.oom.group"), "1\n").unwrap();
         assert_eq!(oom_group(dir.path()), Some(true));
         assert_eq!(oom_group(&dir.path().join("absent")), None);
+    }
+
+    // TEST_SCENARIO: whether the kernel's OOM killer took a process of the runner's cgroup is read from the line an operator's `kill -9` never moves, so a machine killed by hand is never reported as one the kernel took for memory; a cgroup with no counter reads as nothing rather than as none.
+    #[test]
+    fn the_cgroup_counts_the_kills_its_oom_killer_made() {
+        let dir = TempDir::new("pressure-oom-kills");
+        fs::write(
+            dir.path().join("memory.events"),
+            "low 0\nhigh 0\nmax 4\noom 2\noom_kill 2\noom_group_kill 0\n",
+        )
+        .unwrap();
+        assert_eq!(oom_kills(dir.path()), Some(2));
+        fs::write(dir.path().join("memory.events"), "low 0\nhigh 0\n").unwrap();
+        assert_eq!(oom_kills(dir.path()), None);
+        assert_eq!(oom_kills(&dir.path().join("absent")), None);
     }
 }

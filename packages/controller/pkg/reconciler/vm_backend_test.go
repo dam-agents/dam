@@ -2002,12 +2002,13 @@ func TestMachineTrustedCAsAppendsTheExtraCAs(t *testing.T) {
 		machineTrustedCAs("-----BEGIN CERTIFICATE-----\nmitm\n-----END CERTIFICATE-----", &cfg))
 }
 
-// TEST_SCENARIO: the OOM kill of an owner's runner was reported only on the agents whose runner reason happened to be MachineNotReady, so an agent the restarted runner refused room, or one carrying a reason of its own, told its owner about that consequence and never about the kill — and the OOM notice and the Slack alert read nothing else. Every agent that should run now names the kill for the episode that follows it, from the runner pod's last termination alone; the reason they carried until then does not matter.
+// TEST_SCENARIO: the OOM kill of an owner's runner was reported only on the agents whose runner reason happened to be MachineNotReady, so an agent the restarted runner refused room, or one carrying a reason of its own, told its owner about that consequence and never about the kill — and the OOM notice and the Slack alert read nothing else. Every agent that was already running when the kill happened now names it for the episode that follows, from the runner pod's last termination alone, whatever reason it carries until then; an agent woken inside that episode carries nothing, since the kill did not take it down.
 func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 	r.vmRunning.Store(agent.Name, true)
+	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
 	agent.Status.Conditions = []metav1.Condition{{
 		Type: apiv1.ConditionAgentPodReady, Status: metav1.ConditionTrue, LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour)),
 	}}
@@ -2052,6 +2053,22 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	require.NoError(t, r.publishVMReadiness(ctx, agent,
 		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonBootFailed, Message: "the guest console ends: panic"}, true))
 	assert.Equal(t, vmrunner.ReasonBootFailed, reason(), "a boot's own failure, on a runner that was not killed")
+
+	// TEST_SCENARIO: a machine woken inside the episode was not running when the kill happened, so the kill is not what keeps it down: its own reason is what the agent reads.
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(time.Now().Add(-time.Minute)),
+		}},
+	}}
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.vmRunningSince.Store(agent.Name, time.Now())
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStarting, Reason: vmrunner.ReasonOOMKilled, Message: "the kernel killed the machine's VMM"}, true))
+	assert.Equal(t, vmrunner.ReasonOOMKilled, reason(), "a machine woken inside the episode, whose own boot the kill did not take down")
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a clientset whose Secret reads each take `delay`, outside the fake's own lock, which serialises every call it answers. The time a reconcile takes then counts the Secret reads it makes one after another.

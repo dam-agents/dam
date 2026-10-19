@@ -192,6 +192,9 @@ struct Machines {
     cpu: crate::cpu::Window,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what `oom_kills` holds until the first reap reads a cgroup's oom_kill count: a figure the cgroup could plausibly reach (u64::MAX), so a runner that reads no cgroup never mistakes it for a baseline.
+const OOM_KILLS_UNREAD: u64 = u64::MAX;
+
 pub struct Server {
     config: Config,
     runtime: Arc<dyn Runtime>,
@@ -203,6 +206,9 @@ pub struct Server {
     admission: Mutex<()>,
     ports: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
+    // UNIT_BOUNDARY_DESCRIPTION: the cgroup's oom_kill count as the last two reaps saw it, the baseline that says whether a SIGKILL that ended a machine was the kernel's OOM killer or a signal from outside: OOM_KILLS_UNREAD until the first reap reads it, since a runner with no cgroup to read falls back to the signal alone.
+    oom_kills: AtomicU64,
+    oom_kills_before: AtomicU64,
     shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
@@ -301,6 +307,8 @@ impl Server {
             admission: Mutex::new(()),
             ports: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
+            oom_kills: AtomicU64::new(OOM_KILLS_UNREAD),
+            oom_kills_before: AtomicU64::new(OOM_KILLS_UNREAD),
             shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
@@ -444,8 +452,24 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of every machine's VMM that has ended, and says on the machine what killed it: a VMM killed by a signal is a machine the kernel took for memory, or one its own seccomp filter killed, and either is said on the status with a counter of its own. It runs every second, ahead of the runtime's own sweep of these children in the same tick: that sweep discards the status, so a machine whose signal arrives between two of its probes, ten seconds apart, would otherwise restart with nothing said. Only a machine its owner asked to run is read — the runner's own stop, delete and start kill VMMs too — and those kills are guarded here by the action in flight and by the spec that asked the machine down. A kill is read once, and it goes when the guest answers, when its owner asks the machine down, and with the machine.
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of every machine's VMM that has ended, and says on the machine what killed it: a VMM killed by a signal is a machine the kernel took for memory, or one its own seccomp filter killed, and either is said on the status with a counter of its own. It runs every second, ahead of the runtime's own sweep of these children in the same tick: that sweep discards the status, so a machine whose signal arrives between two of its probes, ten seconds apart, would otherwise restart with nothing said. Only a machine its owner asked to run is read — the runner's own stop, delete and start kill VMMs too — and those kills are guarded here by the action in flight, by a runtime call still holding the machine after its wait gave up, and by the spec that asked the machine down. A SIGKILL counts as the kernel's only when the cgroup's own oom_kill count grew in the second this reap covers, so an operator's `kill -9` and a container runtime's stop are not reported as memory. A kill is read once, and it goes when the guest answers, when its owner asks the machine down, and with the machine.
     pub fn reap_killed(&self) {
+        let oom_kills = self
+            .config
+            .cgroup_dir
+            .as_ref()
+            .and_then(|cgroup| crate::pressure::oom_kills(cgroup));
+        let seen = match oom_kills {
+            Some(now) => self.oom_kills.swap(now, Ordering::Relaxed),
+            None => OOM_KILLS_UNREAD,
+        };
+        // UNIT_BOUNDARY_DESCRIPTION: the count is compared over two ticks, not one: the kernel counts a kill at the second it happens, and the death is read at the tick after it, so a tick that found no death must not spend the increment that explains the next one.
+        let before = seen.min(self.oom_kills_before.swap(seen, Ordering::Relaxed));
+        // UNIT_BOUNDARY_DESCRIPTION: a cgroup that cannot be read says nothing about who killed the machine, and the signal alone is all there is; one that can, and counted no kill over those two ticks, says the signal came from outside the kernel's OOM killer.
+        let kernel_took_one = match oom_kills {
+            Some(now) if before != OOM_KILLS_UNREAD => now > before,
+            _ => true,
+        };
         let settled: Vec<String> = locked(&self.machines)
             .entries
             .iter()
@@ -453,6 +477,7 @@ impl Server {
                 !e.converging
                     && !e.deleting
                     && e.action.is_none()
+                    && Arc::strong_count(&e.calls) == 1
                     && e.killed.is_none()
                     && e.desired.as_ref().is_some_and(|spec| spec.running)
             })
@@ -467,7 +492,11 @@ impl Server {
             };
             let reason = match signal {
                 libc::SIGSYS => REASON_SECCOMP_KILLED,
-                libc::SIGKILL => REASON_OOM_KILLED,
+                libc::SIGKILL if kernel_took_one => REASON_OOM_KILLED,
+                libc::SIGKILL => {
+                    tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal its cgroup did not count as an OOM kill, so it was not the kernel's; the machine restarts with no reason saying it ran out of memory");
+                    continue;
+                }
                 _ => {
                     tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal no reason on the status explains");
                     continue;
@@ -486,12 +515,13 @@ impl Server {
             let mut machines = locked(&self.machines);
             if let Some(entry) = machines.entries.get_mut(&id) {
                 entry.killed = Some(Killed { reason, message });
-                // UNIT_BOUNDARY_DESCRIPTION: the machine is stopped now, and says so rather than at its next probe: a status that read running would tell the controller the machine is up when its VMM is gone, and the kill it just reported would wake nobody.
+                // UNIT_BOUNDARY_DESCRIPTION: the machine is stopped now, and says so rather than at its next probe: a status that read running would tell the controller the machine is up when its VMM is gone, and the kill it just reported would wake nobody. `looked` moves with the record, so a probe that looked before the kill drops its older answer instead of recording the dead machine as running again.
                 entry.seen = Some(Seen {
                     state: State::Stopped,
                     ready: false,
                     error: None,
                 });
+                entry.looked += 1;
                 self.bump(entry);
             }
         }

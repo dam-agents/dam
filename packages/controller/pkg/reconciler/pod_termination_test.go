@@ -49,7 +49,7 @@ func TestTerminationReason_OtherMessagesStayContainerTerminated(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: an OOM kill of the runner takes every machine of its owner down at once — the runner pod is the cgroup, and the VMMs of all its machines live in it — so every agent that should be running names the kill while the episode lasts, whatever reason the restarted runner reports for it afterwards: a refused start for room, a reclaim, a boot the restart broke, or a machine the kernel killed again. The report ends with the episode window, so a boot that keeps failing after it is seen as the failure it is, and an agent that is up, asleep, or stopping carries nothing.
+// TEST_SCENARIO: an OOM kill of the runner takes every machine of its owner down at once — the runner pod is the cgroup, and the VMMs of all its machines live in it — so every agent that was already running names the kill while the episode lasts, whatever reason the restarted runner reports for it afterwards: a refused start for room, a reclaim, a boot the restart broke, or a machine the kernel killed again. The report ends with the episode window, so a boot that keeps failing after it is seen as the failure it is, and an agent that is up, asleep, woken after the kill, or stopping carries nothing.
 func TestARunnerOOMKillIsBlamedOnEveryAgentThatShouldRun(t *testing.T) {
 	now := time.Now()
 	killed := now.Add(-time.Minute)
@@ -72,17 +72,23 @@ func TestARunnerOOMKillIsBlamedOnEveryAgentThatShouldRun(t *testing.T) {
 	stale := down(apiv1.ReasonRunnerOutOfMemory)
 	stale.LastTransitionTime = metav1.NewTime(aged())
 	never := func() time.Time { return time.Time{} }
+	// TEST_SCENARIO: the agent was already awake when the kill landed, and the second woke after it.
+	runningAt := func() time.Time { return killed.Add(-time.Hour) }
+	wokenAt := func() time.Time { return killed.Add(time.Minute) }
 
-	assert.True(t, runnerOOMTookDown(up, true, false, at), "ready at the kill, down now")
-	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonOverBudget), true, false, at), "refused room by the restarted runner")
-	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonHibernated), true, false, at), "reclaimed after the kill")
-	assert.True(t, runnerOOMTookDown(down(vmrunner.ReasonBootFailed), true, false, at), "a boot the restart broke")
-	assert.True(t, runnerOOMTookDown(down(vmrunner.ReasonOOMKilled), true, false, at), "a machine killed again")
-	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonRunnerOutOfMemory), true, false, never), "the reason lasts through the runner's own restart")
-	assert.False(t, runnerOOMTookDown(up, true, true, at), "up again")
-	assert.False(t, runnerOOMTookDown(up, false, false, at), "asleep when the kill happened")
-	assert.False(t, runnerOOMTookDown(up, true, false, never), "no kill")
-	assert.False(t, runnerOOMTookDown(up, true, false, aged), "a kill older than the episode")
-	assert.False(t, runnerOOMTookDown(stale, true, false, never), "a reason carried past the episode")
-	assert.False(t, runnerOOMTookDown(nil, true, false, at), "an agent that never published readiness")
+	assert.True(t, runnerOOMTookDown(up, true, false, runningAt, at), "ready at the kill, down now")
+	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonOverBudget), true, false, runningAt, at), "refused room by the restarted runner")
+	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonHibernated), true, false, runningAt, at), "reclaimed after the kill")
+	assert.True(t, runnerOOMTookDown(down(vmrunner.ReasonBootFailed), true, false, runningAt, at), "a boot the restart broke")
+	assert.True(t, runnerOOMTookDown(down(vmrunner.ReasonOOMKilled), true, false, runningAt, at), "a machine killed again")
+	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonRunnerOutOfMemory), true, false, runningAt, never), "the reason lasts through the runner's own restart")
+	assert.True(t, runnerOOMTookDown(down(apiv1.ReasonRunnerOutOfMemory), true, false, never, never), "an agent that was down before the kill, its start unknown to this controller")
+	assert.False(t, runnerOOMTookDown(up, true, true, runningAt, at), "up again")
+	assert.False(t, runnerOOMTookDown(up, false, false, runningAt, at), "asleep when the kill happened")
+	assert.False(t, runnerOOMTookDown(up, true, false, wokenAt, at), "woken inside the episode, which the kill did not take down")
+	assert.False(t, runnerOOMTookDown(down(apiv1.ReasonRunnerOutOfMemory), true, false, wokenAt, never), "woken inside the episode, carrying the reason from a start that failed under it")
+	assert.False(t, runnerOOMTookDown(up, true, false, runningAt, never), "no kill")
+	assert.False(t, runnerOOMTookDown(up, true, false, runningAt, aged), "a kill older than the episode")
+	assert.False(t, runnerOOMTookDown(stale, true, false, runningAt, never), "a reason carried past the episode")
+	assert.False(t, runnerOOMTookDown(nil, true, false, runningAt, at), "an agent that never published readiness")
 }

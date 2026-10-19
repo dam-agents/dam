@@ -90,7 +90,16 @@ spec:
           annotations:
             summary: The kernel killed a VM to free memory on its node.
             description: >-
-              The runner at {{ "{{ $labels.instance }}" }} had {{ "{{ $value }}" }} machine(s) killed for memory in the last 15 minutes; each restarted under the reason MachineOOMKilled, and the user's other machines were untouched.
+              The runner at {{ "{{ $labels.instance }}" }} had {{ "{{ $value }}" }} machine(s) killed for memory in the last 15 minutes; each restarted under the reason MachineOOMKilled. The kernel kills the process in the cgroup that holds the most memory, which is a machine's VMM, so the user's other machines keep running unless the cgroup groups its OOM kills.
+        - alert: VMRunnerOOMGroupKills
+          expr: platform_vm_runner_memory_oom_group == 1
+          for: 10m
+          labels:
+            severity: critical
+          annotations:
+            summary: A VM runner's cgroup kills every machine in its pod for one machine's memory.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} runs in a cgroup whose memory.oom.group is 1, so the kernel takes the runner and every machine of that user down together when one of them runs out of memory; the machines come back one boot at a time instead of one machine restarting alone; the node's kubelet writes that setting, not the install.
         - alert: VMRunnerAdmissionRefusals
           expr: increase(platform_vm_runner_machine_admission_refusals_total[15m]) > 0
           for: 15m
