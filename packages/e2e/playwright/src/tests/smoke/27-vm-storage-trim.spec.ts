@@ -77,6 +77,10 @@ test.afterAll(async () => {
 // TEST_SCENARIO: an agent writes 300 MiB of random bytes, which compression cannot shrink, and deletes them. The claim must take them first and give them back after the delete: a claim that keeps them is room no message the owner is shown can free, since only deleting a whole agent frees a disk.
 test("room a vm agent frees goes back to its owner's claim", async () => {
   test.setTimeout(600_000);
+  test.skip(
+    !runnerPod(agentId),
+    "the Mac's host runner runs outside the cluster",
+  );
   const before = claimMiB();
   inGuest(agentId, `head -c ${PROBE_MIB}M /dev/urandom > ${PROBE} && sync`);
   const written = await waitForClaim(
@@ -84,9 +88,8 @@ test("room a vm agent frees goes back to its owner's claim", async () => {
     "the probe never reached the claim",
   );
   inGuest(agentId, `rm -f ${PROBE} && sync`);
-  const freed = await waitForClaim(
+  await waitForClaim(
     (mib) => mib <= written - PROBE_MIB + SLACK_MIB,
     "the deleted probe never left the claim",
   );
-  expect(written - freed).toBeGreaterThanOrEqual(PROBE_MIB - SLACK_MIB);
 });

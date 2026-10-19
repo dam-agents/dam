@@ -298,7 +298,7 @@ The agent that used it up gets room again once the claim has room, through a gra
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops.
 btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
-It empties the file before it sets any size, the clean stop's emptying included, since btrfs keeps a partly truncated preallocation's blocks, and trims first, since an extent it preallocated is beyond any later trim.
+It frees a shrink's tail before its length drops, since btrfs keeps a partly truncated preallocation's blocks, empties the file at a clean stop, and trims first, since an extent it preallocated is beyond any later trim.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until the next trim.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
