@@ -547,6 +547,34 @@ describe("image update tick", () => {
     expect(holds).toHaveLength(2);
   });
 
+  // TEST_SCENARIO: a spec write unsets the start state for the passes before the
+  // TEST_SCENARIO: conditions catch up, and a runner roll does it mid-move. The
+  // TEST_SCENARIO: move has not ended, so its notice is not news again.
+  it("says a hold once through a start state that goes unset mid-move", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    live = { ...held(), specStart: undefined };
+    listed[0] = live;
+    await m.tick();
+    live = held();
+    listed[0] = live;
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(1);
+  });
+
   // TEST_SCENARIO: an Agent deleted while its move is held leaves the service
   // TEST_SCENARIO: for good, so a marker kept for it is never read again and
   // TEST_SCENARIO: the map only grows. A later Agent on that id says its hold.
