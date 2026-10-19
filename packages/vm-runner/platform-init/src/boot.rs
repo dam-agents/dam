@@ -1509,11 +1509,12 @@ fn pool_guard(root: &Path) -> Option<File> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: sizes the guard file to `size` bytes of preallocated blocks, or leaves it at the `held` bytes it had when the disk refuses them, and reports the refusal. Growth extends the file, and the allocation adds only the blocks it gains. A shrink frees the blocks past `size` before the length drops: btrfs keeps a partly truncated preallocated extent's blocks allocated while the file's stat reports only its size, so a length alone gives the guest nothing back, and the guard then holds room it has told the guest it freed. Neither a growth nor a shrink empties the file, so a guard the disk refuses keeps what it held, and the guest is never left without one.
-fn size_guard(guard: &File, held: u64, size: u64) -> io::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: sizes the guard file to `size` bytes of preallocated blocks, or leaves it at the size it had when the disk refuses them, and reports the refusal. It reads that size from the file's own length rather than from the caller's count, because it is called more than once per look, each time with the size the disk last took, and a comparison with a stale count either skips a shrink or asks for less than the file already holds. Growth extends the file, and the allocation adds only the blocks it gains. A shrink frees the blocks past `size` before the length drops: btrfs keeps a partly truncated preallocated extent's blocks allocated while the file's stat reports only its size, so a length alone gives the guest nothing back, and the guard then holds room it has told the guest it freed. Neither a growth nor a shrink empties the file, so a guard the disk refuses keeps what it held, and the guest is never left without one.
+fn size_guard(guard: &File, size: u64) -> io::Result<()> {
     let fd = guard.as_raw_fd();
     let length =
         libc::off_t::try_from(size).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    let held = guard.metadata()?.len();
     if size == held {
         return Ok(());
     }
@@ -1601,7 +1602,7 @@ fn guard_pool() {
         };
         moved = Some(std::time::Instant::now());
         let mut error = None;
-        let mut size_to = |size: u64| match size_guard(guard, held, size) {
+        let mut size_to = |size: u64| match size_guard(guard, size) {
             Ok(()) => true,
             Err(e) => {
                 error = Some(e);
@@ -2821,7 +2822,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly freed while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The file is emptied and preallocated again, so preallocating 128 MiB takes 128 MiB and sizing back to 32 MiB gives 96 MiB back.
+    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly freed while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The guard frees the tail as blocks, so preallocating 128 MiB takes 128 MiB and sizing back to 32 MiB gives 96 MiB back.
     #[test]
     fn a_smaller_guard_gives_its_room_back() {
         let disk = TempDir::new("guard-resize");
@@ -2835,14 +2836,14 @@ mod tests {
             size * avail
         };
         let base = free();
-        size_guard(&guard, 0, 128 << 20).unwrap();
+        size_guard(&guard, 128 << 20).unwrap();
         let held = free();
         assert!(
             base.saturating_sub(held) >= 120 << 20,
             "128 MiB of blocks took {} MiB",
             base.saturating_sub(held) >> 20
         );
-        size_guard(&guard, 128 << 20, 32 << 20).unwrap();
+        size_guard(&guard, 32 << 20).unwrap();
         let after = free();
         assert!(
             after.saturating_sub(held) >= 88 << 20,
