@@ -39,6 +39,7 @@ import {
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
+import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
 import {
   spendHoldUserCopy,
   telegramResetTime,
@@ -547,6 +548,7 @@ export function createTelegramWorker(deps: {
       `To deliberately stay silent — a group message that isn't for you, or one already handled — call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` instead of replying.`,
       "These instructions apply to the message they arrive with, not to this conversation as a whole — a later Telegram message carries its own. A message that arrives without them didn't come from Telegram: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
       channelNetworkAccessGuidance(brandName),
+      channelPermissionCheckGuidance,
       "",
       `Message: ${text}`,
     ].join("\n");
