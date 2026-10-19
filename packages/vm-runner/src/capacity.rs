@@ -258,7 +258,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a running machine whose spec cannot be read holds memory all the same: a spec.json left corrupt, or one a runner of another schema wrote, is not a machine holding nothing, and admitting another machine beside it as if it held nothing is how the runner goes over its limit and the kernel kills it with every machine of its owner. The runner measured it on adoption, so it counts at that measurement plus headroom; one never measured counts at everything the runner hands out for machines, since its size is what is unknown.
+    // TEST_SCENARIO: a running machine whose spec cannot be read holds memory all the same: a spec.json left corrupt, or one a runner of another schema wrote, is not a machine holding nothing, and admitting another machine beside it as if it held nothing is how the runner goes over its limit and the kernel kills a machine of its owner. The runner measured it on adoption, so it counts at that measurement plus headroom; one never measured counts at everything the runner hands out for machines, since its size is what is unknown.
     #[test]
     fn a_running_machine_whose_spec_cannot_be_read_is_not_counted_as_nothing() {
         let dir = TempDir::new("unreadable");
@@ -406,7 +406,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the reserve is what the runner process and its VMM threads run in. Handing it to a machine is how the whole runner gets killed for going over its container limit — every machine on the node with it — so it is subtracted from what can be admitted, once, however many machines there are.
+    // TEST_SCENARIO: the reserve is what the runner process and its VMM threads run in. Handing it to a machine is how the runner goes over its container limit and the kernel kills a machine of it, so it is subtracted from what can be admitted, once, however many machines there are.
     #[test]
     fn the_reserve_is_never_handed_to_a_machine() {
         let dir = TempDir::new("reserve");

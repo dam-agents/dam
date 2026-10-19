@@ -144,6 +144,7 @@ The controller sets `StartFailed` for one of three reasons.
 Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
 Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
 A vm boot the runner reports as copying a disk before its guest answers does not count either: the runner holds it for up to six hours, and a move back would restart the machine and the copy with it.
+Nor does the boot that follows a machine the kernel killed for memory or the guest's own seccomp filter killed, by the reason the runner gives it (`MachineOOMKilled`, `MachineSeccompKilled`): the image is not what the kernel weighed, nor what made the call the filter forbids.
 Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
 The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
 It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.
