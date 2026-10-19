@@ -1,4 +1,11 @@
-import { mkdir, mkdtemp, readFile, stat } from "node:fs/promises";
+import {
+  chmod,
+  mkdir,
+  mkdtemp,
+  readFile,
+  stat,
+  writeFile,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
@@ -21,6 +28,28 @@ describe("createSshService", () => {
     expect((await stat(sshDir)).mode & 0o777).toBe(0o700);
     expect(SSH_RUNTIME_DIR).toBe("/run/dam/ssh");
   });
+
+  // TEST_SCENARIO: a full home is the one the owner has to get into to free it, so a connection registers its key with the home's own directory refusing every write: the key lands in the runtime's directory, and nothing is written home.
+  it.skipIf(process.getuid?.() === 0)(
+    "registers a key while the home refuses a write",
+    async () => {
+      const root = await mkdtemp(join(tmpdir(), "dam-ssh-"));
+      const sshHome = join(root, "home", ".ssh");
+      await mkdir(sshHome, { recursive: true });
+      await chmod(sshHome, 0o500);
+      const authorizedKeys = join(sshHome, "authorized_keys");
+      await expect(writeFile(authorizedKeys, "")).rejects.toThrow();
+
+      const sshDir = join(root, "run", "ssh");
+      const result = await createSshService(sshDir).authorizeKey(KEY);
+      await chmod(sshHome, 0o700);
+      expect(result.ok).toBe(true);
+      expect(await readFile(join(sshDir, "authorized_keys"), "utf8")).toContain(
+        KEY,
+      );
+      await expect(stat(authorizedKeys)).rejects.toThrow();
+    },
+  );
 
   // TEST_SCENARIO: a directory the runtime may not write — a container's /run, where only root may — is reported to the caller as an error result, so the CLI names the refusal instead of the mutation rejecting with nothing to say.
   it.skipIf(process.getuid?.() === 0)(

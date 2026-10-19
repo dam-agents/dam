@@ -194,6 +194,11 @@ pub fn trim_logs(id: &str, dir: &Path, cap: u64) -> bool {
 }
 
 fn trim(path: &Path, size: u64) -> std::io::Result<()> {
+    trim_with(path, size, &mut || {})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the cut, with `during` run where the VMM is free to append to the file the runner is rewriting: it holds the file open for the whole life of the machine, so what it writes there then is the case the order of the kept lines has to survive (a test drives one in, which a test of a lock-free rewrite cannot otherwise reach).
+fn trim_with(path: &Path, size: u64, during: &mut dyn FnMut()) -> std::io::Result<()> {
     let window = CONSOLE_TAIL_BYTES.saturating_mul(16).min(size);
     let mut kernel: std::collections::VecDeque<Vec<u8>> = Default::default();
     let mut kept = 0;
@@ -213,9 +218,17 @@ fn trim(path: &Path, size: u64) -> std::io::Result<()> {
     file.seek(SeekFrom::Start(size - window))?;
     let mut tail = Vec::new();
     file.take(window).read_to_end(&mut tail)?;
-    let mut out = fs::OpenOptions::new().append(true).open(path)?;
+    let kept: Vec<u8> = kernel.into_iter().flatten().chain(tail).collect();
+    let mut out = fs::OpenOptions::new().read(true).append(true).open(path)?;
     out.set_len(0)?;
-    out.write_all(&kernel.into_iter().flatten().chain(tail).collect::<Vec<_>>())
+    during();
+    // UNIT_BOUNDARY_DESCRIPTION: an append the VMM made to the emptied file is at its start, before the lines this puts back, and the guest announces a mark only when its room changes: kept where it landed, the newest mark would read as older than the one before it, and the runner would call a guest full that has room. So it is taken out and put back after them. A line written between this read and the emptying that follows it is lost, as one written at any point of the cut already is.
+    let mut fresh = Vec::new();
+    out.seek(SeekFrom::Start(0))?;
+    out.read_to_end(&mut fresh)?;
+    out.set_len(0)?;
+    out.write_all(&kept)?;
+    out.write_all(&fresh)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given: a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console, and a tail then only shows the boot this runner started, with a spec it holds. It runs after the last VMM was waited out and, if it had to be, killed; it empties the console even if that VMM somehow still holds it, because a console that keeps an earlier boot is the leak this prevents, while a few lines lost from a VMM being killed are not. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted. Both of the console's sources are emptied: smolvm removes the VMM log before a start as well, but the runner does not leave to the runtime a guarantee its own status depends on.
@@ -459,6 +472,46 @@ mod tests {
             fs::metadata(dir.path().join(CONSOLE_LOG)).unwrap().len(),
             small,
             "a log under its cap is left alone"
+        );
+    }
+
+    // TEST_SCENARIO: the VMM appends to a log while the runner cuts it, and what it writes then must land after the lines the cut kept: platform-init marks the agent's room only when it changes, so a GUEST_FULL the cut moved behind a newer GUEST_ROOM reads as full for as long as the agent runs, with no line coming to correct it.
+    #[test]
+    fn a_line_the_vmm_writes_during_a_cut_lands_after_the_kept_lines() {
+        let dir = TempDir::new("console-cut-race");
+        let path = dir.path().join(VMM_LOG);
+        let full = format!(
+            "[t ERROR init_or_kernel] [    9.1] platform-init: {}: this agent may write nothing more\n",
+            crate::guest::GUEST_FULL
+        );
+        let room = format!(
+            "[t ERROR init_or_kernel] [   60.2] platform-init: {}: the agent's writes are no longer held back\n",
+            crate::guest::GUEST_ROOM
+        );
+        let mut vmm = full.clone();
+        for i in 0..20_000 {
+            vmm.push_str(&format!("[t WARN  smolvm_network::stack] guest SYN {i}\n"));
+        }
+        fs::write(&path, &vmm).unwrap();
+        let size = fs::metadata(&path).unwrap().len();
+
+        let mut wrote = false;
+        let _ = trim_with(&path, size, &mut || {
+            fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(room.as_bytes())
+                .unwrap();
+            wrote = true;
+        });
+        assert!(wrote, "the VMM wrote during the cut");
+
+        let text = fs::read_to_string(&path).unwrap();
+        assert_eq!(
+            room_full(&text),
+            Some(false),
+            "the newest mark lost its place: {text:.120}"
         );
     }
 

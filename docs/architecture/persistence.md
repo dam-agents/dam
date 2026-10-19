@@ -252,7 +252,7 @@ They share the disk with the agent's work, so when it runs short, or the runner 
 An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
 Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
 An entry used in the last ten minutes stays, and so does one that is or holds a file a process has locked, by any kind of lock, the way `systemd-tmpfiles` leaves a locked entry.
-A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
+A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine, and so is a guest down to its grant's floor, whose room tells and not the share of the disk.
 A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
 Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
 An agent that exits with its home nearly out of space or inodes is reported as a full home.
@@ -298,7 +298,6 @@ A write past it fails inside the guest with "no space left on device", which the
 The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
 A clean stop empties it first, so the next boot does not start with its blocks taken.
 btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
-Eviction counts them as used once the grant is spent, so a guest at its grant evicts its scratch.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until btrfs discards them; the next look's grant accounts for them, and the 5% above 95% absorbs them between looks.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.

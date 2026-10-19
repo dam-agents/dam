@@ -87,11 +87,6 @@ pub fn guest_room(keep: u64, granted: bool, avail: u64) -> u64 {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the bytes of the guard's blocks that count as the guest's free space when eviction reads the disk: the room the last look left the guest, which is its own room held back rather than used, and no more than the blocks the guard really holds, so a guard whose file lags its size never counts room the disk does not have.
-pub fn credited(held: u64, keep: u64) -> u64 {
-    keep.min(held)
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: what the agent's room means for its writes, as one of three marks: nothing it writes lands below HOME_FULL_BYTES, its writes are held back below POOL_GUARD_FLOOR, and above that it writes as it likes. A mark that gets worse is made at once; one that gets better holds until the room passes its level by ROOM_BAND. Without that band a room hovering on a level — an agent that fills and frees around one, a guard that moves by a step — alternates its mark at every look, and each look is a console line.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum Room {
@@ -118,6 +113,91 @@ impl Room {
             ),
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the levels a pass evicts on, in percent of the disk: a disk with less than EVICT_BELOW_PERCENT free gets one pass, and the pass goes on until EVICT_UNTIL_PERCENT is free or nothing is left that EVICT_AGES allows. They are read on a guest no grant holds back: a grant makes the filesystem's own share useless (see eviction_pass), since the guard keeps it only as large as the grant leaves it.
+pub const EVICT_BELOW_PERCENT: u64 = 10;
+pub const EVICT_UNTIL_PERCENT: u64 = 20;
+pub const EVICT_AGES: [u64; 4] = [7 * 86_400, 86_400, 3_600, 600];
+// UNIT_BOUNDARY_DESCRIPTION: the age a pass on the owner's claim, or on a grant the agent used up, spares: the claim is mostly the agents' homes, which no eviction touches, so one that stays short would otherwise give every agent's /tmp a ten-minute life with nothing gained, and an agent at its grant would lose work a turn is still reading.
+pub const CLAIM_EVICT_AGE: u64 = 3_600;
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner's request that this machine give back scratch because the owner's claim is short, read from guest::STORAGE_SHORT_PATH: an id that changes with every new request, and the bytes asked of this machine. A mark from an older runner is empty, and is one request with no byte bound.
+#[derive(Debug, PartialEq)]
+pub struct ClaimRequest {
+    pub id: String,
+    pub bytes: Option<u64>,
+}
+
+pub fn parse_claim_request(text: &str) -> ClaimRequest {
+    let text = text.trim();
+    ClaimRequest {
+        id: text.to_string(),
+        bytes: text
+            .split_whitespace()
+            .nth(1)
+            .and_then(|bytes| bytes.parse().ok()),
+    }
+}
+
+pub fn disk_short(free: Option<u64>, percent: u64) -> bool {
+    free.is_some_and(|free| free < percent)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what one pass is for: the disk itself short of room, which a guest no grant holds back reads from the filesystem's share; the owner's claim short, on the runner's request; or a grant the agent has used up, which only its room tells.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum EvictionKind {
+    Disk,
+    Claim,
+    Grant,
+}
+
+#[derive(Debug, PartialEq)]
+pub struct EvictionPass {
+    pub kind: EvictionKind,
+    pub youngest: u64,
+    pub bytes: Option<u64>,
+}
+
+impl EvictionPass {
+    // UNIT_BOUNDARY_DESCRIPTION: whether the pass goes on to the next entry: while the disk is short, until EVICT_UNTIL_PERCENT is free; for a claim request, until the bytes asked for are freed; and for a grant used up, through every entry the age allows, since a room that only a new grant can give back cannot be read from here.
+    pub fn continues(&self, free: Option<u64>, freed: u64) -> bool {
+        match self.kind {
+            EvictionKind::Disk => disk_short(free, EVICT_UNTIL_PERCENT),
+            EvictionKind::Claim | EvictionKind::Grant => {
+                self.bytes.is_none_or(|bytes| freed < bytes)
+            }
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a look evicts, and how. A guest a grant holds back is not judged by the disk: its disk is the owner's whole claim, so a healthy grant is a small share of it — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and a pass on that share would give every agent's scratch a ten-minute life for no shortage at all. Nor is it judged by the filesystem's free blocks when it is out of room, since btrfs reports room it does not have: its room is what the guard leaves it (POOL_GUARD_KEEP), and a pass is run once that is down to the floor, which is the agent's last allowance and the point at which its writes fail. That pass spares CLAIM_EVICT_AGE like the claim's, because the agent's own disk is the one thing it must not lose work from. A disk whose room cannot be read is left alone unless a request or a grant asks for a pass.
+pub fn eviction_pass(
+    granted: bool,
+    room: u64,
+    free: Option<u64>,
+    request: Option<&ClaimRequest>,
+    served: Option<&str>,
+) -> Option<EvictionPass> {
+    if !granted && disk_short(free, EVICT_BELOW_PERCENT) {
+        return Some(EvictionPass {
+            kind: EvictionKind::Disk,
+            youngest: EVICT_AGES[EVICT_AGES.len() - 1],
+            bytes: None,
+        });
+    }
+    if let Some(request) = request.filter(|request| served != Some(request.id.as_str())) {
+        return Some(EvictionPass {
+            kind: EvictionKind::Claim,
+            youngest: CLAIM_EVICT_AGE,
+            bytes: request.bytes,
+        });
+    }
+    (granted && room < POOL_GUARD_FLOOR).then_some(EvictionPass {
+        kind: EvictionKind::Grant,
+        youngest: CLAIM_EVICT_AGE,
+        bytes: None,
+    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how far past its level the room must rise before a mark gets better: four of the guard's steps, so the guard moving a step at a time never flips one mark back and forth, and no more than a fifth of the floor, so the band stays below the next level up.
@@ -176,9 +256,6 @@ mod tests {
         assert_eq!(guest_room(4 << 30, true, 8 << 30), 4 << 30);
         assert_eq!(guest_room(4 << 30, true, MIB), MIB);
         assert_eq!(guest_room(0, false, 1 << 30), 1 << 30);
-        assert_eq!(credited(512 * MIB, 512 * MIB), 512 * MIB);
-        assert_eq!(credited(0, 8 * MIB), 0);
-        assert_eq!(credited(512 * MIB, 0), 0);
         assert_eq!(room_of(0, None), Room::Full);
         assert_eq!(room_of(crate::guest::HOME_FULL_BYTES - 1, None), Room::Full);
         assert_eq!(room_of(crate::guest::HOME_FULL_BYTES, None), Room::Held);
@@ -191,6 +268,104 @@ mod tests {
         assert!(Room::Room.line(1).contains(crate::guest::GUEST_ROOM));
         assert!(!Room::Held.line(1).contains(crate::guest::GUEST_FULL));
         assert!(!Room::Room.line(1).contains(crate::guest::GUEST_FULL));
+    }
+
+    // TEST_SCENARIO: a guest's own disk that is short is evicted on every look down to the last EVICT_AGES step, until it has room; a disk whose room cannot be read is left alone, since an unreadable disk is no proof of a shortage.
+    #[test]
+    fn a_short_disk_is_evicted_until_it_has_room() {
+        let pass = eviction_pass(false, 0, Some(5), None, None).unwrap();
+        assert_eq!((pass.kind, pass.youngest), (EvictionKind::Disk, 600));
+        assert!(pass.continues(Some(15), 1 << 40) && !pass.continues(Some(20), 0));
+        assert_eq!(eviction_pass(false, 0, Some(50), None, None), None);
+        assert_eq!(eviction_pass(false, 0, None, None, None), None);
+    }
+
+    // TEST_SCENARIO: a grant is an even part of the claim, so a healthy one is a small share of a disk sized at the whole claim — 4.5 GiB of 100 GiB with ten agents on a half-used pool — and that share alone reads as a disk in trouble on every look. Eviction is decided on the room the guard leaves, not on the share: nothing is evicted on while the grant still has room, and a grant that is spent evicts one pass of what the agent has not touched for CLAIM_EVICT_AGE, which is the agent's last allowance and not a disk shortage.
+    #[test]
+    fn a_healthy_grant_is_not_a_short_disk() {
+        let grant = 4_608 << 20;
+        let share = Some(9);
+        assert_eq!(eviction_pass(true, grant, share, None, None), None);
+        assert_eq!(
+            eviction_pass(true, POOL_GUARD_FLOOR, share, None, None),
+            None
+        );
+        let spent = eviction_pass(true, POOL_GUARD_FLOOR - 1, share, None, None).unwrap();
+        assert_eq!(
+            (spent.kind, spent.youngest),
+            (EvictionKind::Grant, CLAIM_EVICT_AGE)
+        );
+        assert!(spent.continues(share, 0) && spent.continues(share, u64::MAX));
+    }
+
+    // TEST_SCENARIO: btrfs's free space is an estimate that passes what the disk holds, so a guard at the disk's real end leaves the filesystem reporting room it cannot give, and the guest's room is nothing while the share reads as plenty. The guard marks that guest full, and the pass that gives it room back has to run on the room: judged by the share, nothing would ever be evicted and the agent would stay stuck.
+    #[test]
+    fn a_spent_grant_evicts_while_the_filesystem_still_reports_room() {
+        let gig = 1u64 << 30;
+        let optimistic = 8 * gig;
+        let mut guard = PoolGuard::default();
+        let grant = Some(("g1".to_string(), 4 * gig));
+
+        assert_eq!(
+            guard.size(grant.clone(), optimistic, 0),
+            optimistic - 4 * gig
+        );
+        assert_eq!(guest_room(guard.keep, true, optimistic), 4 * gig);
+        assert_eq!(
+            guard.size(grant.clone(), optimistic, 4 * gig),
+            optimistic - POOL_GUARD_FLOOR
+        );
+        assert_eq!(guest_room(guard.keep, true, optimistic), POOL_GUARD_FLOOR);
+        guard.size(grant, optimistic, 4 * gig + POOL_GUARD_FLOOR);
+
+        let room = guest_room(guard.keep, true, optimistic);
+        assert_eq!(room, 0);
+        assert_eq!(room_of(room, None), Room::Full);
+        let pass = eviction_pass(true, room, Some(80), None, None).unwrap();
+        assert_eq!(
+            (pass.kind, pass.youngest),
+            (EvictionKind::Grant, CLAIM_EVICT_AGE)
+        );
+    }
+
+    // TEST_SCENARIO: the owner's claim is mostly the agents' homes, which eviction never touches, so a claim that stays short must not give every agent's /tmp a ten-minute life. A request from the runner is served once, by a pass that keeps whatever was used in the last hour and stops at the bytes asked; only a new request, which the runner sends when the claim fills further, brings another pass. An older runner's empty mark is one unbounded request. A request is served before a spent grant's pass, so the bytes the runner asked for are what is freed first.
+    #[test]
+    fn a_short_claim_is_served_once_per_request_and_spares_recent_work() {
+        let request = parse_claim_request("17 1000\n");
+        assert_eq!(request.bytes, Some(1000));
+        let pass = eviction_pass(false, 0, Some(50), Some(&request), None).unwrap();
+        assert_eq!(
+            (pass.kind, pass.youngest),
+            (EvictionKind::Claim, CLAIM_EVICT_AGE)
+        );
+        assert!(pass.continues(Some(50), 999) && !pass.continues(Some(50), 1000));
+        assert_eq!(
+            eviction_pass(false, 0, Some(50), Some(&request), Some("17 1000")),
+            None
+        );
+        assert!(eviction_pass(
+            false,
+            0,
+            Some(50),
+            Some(&parse_claim_request("18 1000")),
+            Some("17 1000")
+        )
+        .is_some());
+        let legacy = parse_claim_request("");
+        assert_eq!(legacy.bytes, None);
+        assert!(eviction_pass(false, 0, Some(50), Some(&legacy), None)
+            .unwrap()
+            .continues(Some(50), u64::MAX));
+        assert_eq!(
+            eviction_pass(false, 0, Some(50), Some(&legacy), Some("")),
+            None
+        );
+        let both = eviction_pass(true, 0, Some(50), Some(&request), None).unwrap();
+        assert_eq!(
+            both.kind,
+            EvictionKind::Claim,
+            "a request the runner sent is served ahead of a spent grant, on the bytes it asked for"
+        );
     }
 
     // TEST_SCENARIO: a room that hovers on a level keeps the mark it had, so the console does not carry a line for every look: a full guest stays full until it clears the band, a held one stays held the same way, and a mark that gets worse is made at once, since the agent's writes fail sooner than the band allows.
