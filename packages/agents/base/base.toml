@@ -14,7 +14,7 @@ python = "3.12"
 kubectl = "latest"
 k3s = "latest"
 "npm:playwright" = "1.64.0"
-"npm:agent-browser" = "0.38.2"
+"npm:agent-browser" = "0.39.1"
 
 # The static bundle: trixie's docker.io is a release line behind.
 [tools."http:docker"]

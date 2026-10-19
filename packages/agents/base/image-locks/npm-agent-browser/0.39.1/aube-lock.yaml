@@ -9,16 +9,16 @@ importers:
   .:
     dependencies:
       agent-browser:
-        specifier: 0.38.2
-        version: 0.38.2
+        specifier: 0.39.1
+        version: 0.39.1
 
 packages:
 
-  agent-browser@0.38.2:
-    resolution: {integrity: sha512-b/7hvo2RrqocvybjB9kwpX12kGkxkFvtdJ4XPDoott5TLK2n3aPX+lYg7ALd+2YvPi2LrTKGzQYu/rxZC2Y7ZA==}
+  agent-browser@0.39.1:
+    resolution: {integrity: sha512-0zdIq0v2r9Gio7K5wIe/e2W9nyLoVC6tUGpGV+btuynBQT9aCgOk5IEIyK+6OtfKRzQjp96DQ/3akBqxccigTQ==}
     engines: {node: '>=24.0.0', pnpm: '>=11.0.0'}
     hasBin: true
 
 snapshots:
 
-  agent-browser@0.38.2: {}
+  agent-browser@0.39.1: {}
