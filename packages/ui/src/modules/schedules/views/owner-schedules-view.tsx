@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useOwnerSchedules } from "../api/queries.js";
+import { OutcomeLines } from "../components/outcome-lines.js";
 import {
   type OwnerScheduleRow,
   ownerScheduleRows,
@@ -70,15 +71,11 @@ function OwnerScheduleItem({ row }: { row: OwnerScheduleRow }) {
           <p className="mt-0.5 line-clamp-2 text-sm text-danger">{problem}</p>
         ) : (
           outcome && (
-            <p
+            <OutcomeLines
+              line={outcome}
               className="mt-0.5 line-clamp-2 text-sm text-muted-foreground"
-              title={outcome.label}
-            >
-              {outcome.lastRun && (
-                <span className="block">{`Last run ${outcome.lastRun}`}</span>
-              )}
-              <span className={outcome.className}>{outcome.label}</span>
-            </p>
+              title={outcome.resultText}
+            />
           )
         )}
       </div>

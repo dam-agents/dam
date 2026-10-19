@@ -11,6 +11,7 @@ import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { useScheduleSessions } from "../api/queries.js";
 import { runOutcomeLine } from "../lib/schedule-format.js";
+import { OutcomeLines } from "./outcome-lines.js";
 
 interface RowProps {
   session: SessionView;
@@ -35,16 +36,14 @@ function ResultRow({ session, onOpen }: RowProps) {
   );
 }
 
-function OutcomeLine({ schedule }: { schedule: Schedule }) {
+function OutcomeBlock({ schedule }: { schedule: Schedule }) {
   const line = runOutcomeLine(schedule);
   if (!line) return null;
   return (
-    <p className="px-5 pt-4 pb-4 text-sm text-muted-foreground md:px-6">
-      {line.lastRun && (
-        <span className="block">{`Last run ${line.lastRun}`}</span>
-      )}
-      <span className={line.className}>{line.label}</span>
-    </p>
+    <OutcomeLines
+      line={line}
+      className="px-5 pt-4 pb-4 text-sm text-muted-foreground md:px-6"
+    />
   );
 }
 
@@ -88,7 +87,7 @@ export function ScheduleResultsModal({
         onClose={onClose}
       />
       <DialogBody flush className="min-h-[50vh]">
-        <OutcomeLine schedule={schedule} />
+        <OutcomeBlock schedule={schedule} />
         {stopped && (
           <div className="px-5 py-4 md:px-6">
             <AgentSleepingCallout

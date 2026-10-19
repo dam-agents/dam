@@ -83,24 +83,24 @@ describe("runOutcomeLine", () => {
     const refused: Schedule = { ...base, status: { lastResult: refusal } };
 
     expect(runOutcomeLine(refused)).toEqual({
-      lastRun: null,
-      label: `Failed: ${refusal}`,
+      lastRunText: null,
+      resultText: `Last result: Failed: ${refusal}`,
       className: "text-danger",
     });
   });
 
-  // TEST_SCENARIO: the last run and the last result are two facts with two writers, so the line keeps them apart: a refusal after a successful run must not read as that run's outcome.
-  it("keeps the last run and the last result apart", () => {
+  // TEST_SCENARIO: the run time and the result carry their own qualifiers, so a refusal that follows a successful run cannot be read as that run's outcome.
+  it("gives the run time and the result their own qualifiers", () => {
     const ran: Schedule = {
       ...base,
       status: { lastRun: "2026-06-12T09:00:00.000Z", lastResult: "success" },
     };
 
     expect(runOutcomeLine(ran)).toMatchObject({
-      label: "Succeeded",
+      resultText: "Last result: Succeeded",
       className: "text-success",
     });
-    expect(runOutcomeLine(ran)?.lastRun).toBeTruthy();
+    expect(runOutcomeLine(ran)?.lastRunText).toBeTruthy();
   });
 
   // TEST_SCENARIO: a schedule that never fired and never failed carries no line, so the surfaces stay quiet about work that has not happened.

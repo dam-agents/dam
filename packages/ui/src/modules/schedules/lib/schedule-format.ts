@@ -122,8 +122,8 @@ export function cardOutcome(schedule: Schedule): LastRunStatus | null {
 }
 
 export interface RunOutcomeLine {
-  lastRun: string | null;
-  label: string;
+  lastRunText: string | null;
+  resultText: string;
   className: string;
 }
 
@@ -132,8 +132,8 @@ export function runOutcomeLine(schedule: Schedule): RunOutcomeLine | null {
   if (!status) return null;
   const lastRun = schedule.status?.lastRun;
   return {
-    lastRun: lastRun ? formatRunTime(lastRun) : null,
-    label: status.label,
+    lastRunText: lastRun ? formatRunTime(lastRun) : null,
+    resultText: `Last result: ${status.label}`,
     className: status.className,
   };
 }
