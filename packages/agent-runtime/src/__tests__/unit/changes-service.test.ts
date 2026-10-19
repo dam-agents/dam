@@ -305,6 +305,39 @@ describe("changes service", { timeout: 30_000 }, () => {
   });
 
   /**
+   * TEST_SCENARIO: The user's global excludes ignore *.log, but the
+   * repository itself would track one. Only the repository's own rules
+   * decide, so the edit still counts.
+   */
+  it("should record a repository for a file only the global excludes ignore", async () => {
+    await repository(home, { "notes.md": "a\n" });
+    const excludes = path.join(tmp, "global-ignore");
+    const config = path.join(tmp, "global-gitconfig");
+    await write(excludes, "*.log\n");
+    await write(config, `[core]\n\texcludesFile = ${excludes}\n`);
+    await write(path.join(home, "run.log"), "a\n");
+    const previous = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = config;
+    try {
+      expect((await git(home, "check-ignore", "run.log")).trim()).toBe(
+        "run.log",
+      );
+      await service.onToolActivity({
+        sessionId: "s1",
+        toolCallId: null,
+        started: false,
+        editedPaths: [path.join(home, "run.log")],
+        settled: false,
+      });
+    } finally {
+      if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = previous;
+    }
+
+    expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([home]);
+  });
+
+  /**
    * TEST_SCENARIO: After a restart, a repository a session edited outside the
    * roots is still listed from the persisted record, with its linked
    * worktrees, and the diff of each is served from the same record rather

@@ -18,7 +18,7 @@ The path is always part of what the user sees, because two worktrees of one repo
 agent-runtime finds repositories in two ways.
 It scans the working directory and the agent's home to a bounded depth, skipping dependency trees and the platform's reserved paths.
 A scan does not stop at a repository: the home can itself be a repository with others nested inside it, and each of them is its own entry, its files never counted as the parent's changes.
-It also adds the repository of every path a Session edited, wherever that path is.
+It also adds the repository of every path a Session edited, wherever that path is, unless that repository ignores the path.
 Every worktree git knows for a found repository is listed under it, also one outside the scanned roots.
 
 For each Change Set the runtime reports the size of its change against its **base** — the merge-base with the repository's default branch, the same diff a pull request shows — the commits ahead of that base, and whether anything is still uncommitted.
@@ -44,6 +44,7 @@ Notices are throttled; each one only tells the viewer to read the list again.
 agent-runtime records the repositories a Session touched, from two signals.
 An edit tool call names its files: the runtime reads each one as it passes through, including a streamed edit whose file arrives in a later update, and records the repository, the branch at that moment and when.
 A file the repository ignores is not its edit: a scratch directory under a `$HOME` repository that ignores everything but its own files does not count as `$HOME`.
+Only the repository's own ignore rules decide; the user's global excludes do not.
 A push names no file and may come from any shell command, so the runtime reads it from git itself, for every harness.
 It watches each repository's remote-tracking reflogs, one recursive watch per repository whatever its worktrees, from the first tool call after a start, and looks for new repositories again at most every five minutes.
 A watch costs nothing until git writes a push, and only the lines appended since the last read are read.

@@ -83,9 +83,11 @@ export async function locateFile(
   if (dir === null) return null;
   const location = await locateRepository(git, dir);
   if (location === null) return null;
-  const ignored = await git(dir, ["check-ignore", "--", path], {
-    okExitCodes: [1],
-  });
+  const ignored = await git(
+    dir,
+    ["-c", "core.excludesFile=", "check-ignore", "--", path],
+    { okExitCodes: [1] },
+  );
   return ignored.ok && ignored.value.trim() !== "" ? null : location;
 }
 
