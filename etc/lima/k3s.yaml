@@ -68,7 +68,11 @@ provision:
       # vCPUs, which the vm lane sees as agents stuck "starting". Red Hat
       # hosts default to `always`, and the runner's memory layout assumes it.
       # A sysfs write alone would be lost on reboot, so a unit re-applies it.
-      cat > /etc/systemd/system/transparent-hugepage.service << 'THP'
+      # A sandbox runs OpenRC or no init at all, and never reboots: there the
+      # one write is the whole job, and a sysfs this kernel won't take is a
+      # warning, not a failed provision.
+      if [ -d /run/systemd/system ]; then
+        cat > /etc/systemd/system/transparent-hugepage.service << 'THP'
       [Unit]
       Description=Pin transparent huge pages on for the nested VM runners
       After=local-fs.target
@@ -80,7 +84,10 @@ provision:
       [Install]
       WantedBy=multi-user.target
       THP
-      systemctl enable --now transparent-hugepage.service
+        systemctl enable --now transparent-hugepage.service
+      elif ! { echo always > /sys/kernel/mm/transparent_hugepage/enabled; } 2>/dev/null; then
+        echo "WARNING: transparent huge pages are not pinned on; nested VMs boot slowly." >&2
+      fi
       if [ ! -d /var/lib/rancher/k3s ]; then
         # Pinned: k3s ships the Gateway API CRDs through its own gateway-api-crd
         # chart, so GATEWAY_API_VERSION in .mise/tasks/cluster/install must match the
