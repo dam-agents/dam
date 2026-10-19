@@ -31,6 +31,20 @@ export type RuntimeMigrationRefusal =
   | { type: "VmMemoryInsufficient"; committedMiB: number; limitMiB: number }
   | { type: "ConcurrentUpdate" };
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a refusal says the move cannot happen, as opposed to one that says it has not happened yet: a request that lost a race, an Agent that vanished under the write, and an Agent already mid-move all leave the request to a later tick. Only the first kind is worth withdrawing, since withdrawing a request that stands is what the controller reads as an abort.
+export function runtimeMigrationCannotHappen(
+  refusal: RuntimeMigrationRefusal,
+): boolean {
+  switch (refusal.type) {
+    case "AgentNotFound":
+    case "ConcurrentUpdate":
+    case "RuntimeMigrationInProgress":
+      return false;
+    default:
+      return true;
+  }
+}
+
 const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
 
 // UNIT_BOUNDARY_DESCRIPTION: the words for a refused move, one sentence per reason, as an operator reading the api-server's log gets them.

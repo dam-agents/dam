@@ -585,7 +585,33 @@ describe("a move an operator asks for", () => {
     expect(
       deps.writeMigration.mock.calls.map(([, patch]) => patch.annotations),
     ).not.toContainEqual(CLEARED);
-    expect(logged).toEqual([]);
+    expect(logged.join("\n")).toMatch(
+      /changed while the move was being requested/,
+    );
+  });
+
+  // TEST_SCENARIO: a request that reads as moving was not refused for good — the controller had taken it up — so the request stands; withdrawing it is what the controller reads as an abort.
+  it("leaves a request the controller already took up standing", async () => {
+    const asked = migrating("Requested");
+    const deps = writes(asked);
+    const moving = migrating("Copying", { runtimeMigrationTarget: "{}" });
+    deps.getAgent = async () => moving;
+    const logged: string[] = [];
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [asked],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: (message) => logged.push(message),
+    });
+    await sweep.tick();
+    expect(
+      deps.writeMigration.mock.calls.map(([, patch]) => patch.annotations),
+    ).not.toContainEqual(CLEARED);
+    expect(logged.join("\n")).toMatch(/already moving/);
   });
 
   // TEST_SCENARIO: a request that already names a target is the api-server's own decision from an earlier tick, and is not decided again.

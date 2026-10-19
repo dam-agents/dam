@@ -123,6 +123,11 @@ func runtimeMigrationOfObject(u *unstructured.Unstructured) runtimeMigration {
 
 func (m runtimeMigration) active() bool { return m.requested || m.phase != "" }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a standing request landed in the middle of an undo. The api-server decides a request by writing its target in the same patch, so a request without one has not been decided: with a move's condition still on the Agent it arrived while the undo was owed, and the undo is finished first. Once the condition is gone the same request reads as a fresh one and starts.
+func (m runtimeMigration) midUndoRequest(annotations map[string]string) bool {
+	return annotations[annRuntimeMigration] != "" && annotations[annRuntimeMigrationTarget] == "" && m.recorded
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whether nothing of the Agent may run — neither the container, nor the machine, nor the gateway. That holds from the moment the container is stopped until the copy has landed: the old pod would keep writing to a volume being copied, and a machine that booted would seed its disk from the image and never look at the copy again. A boot is let through only with the seed it must come from recorded, since that is what the runner and platform-init hold the boot to. A migration that failed after the container was stopped keeps it stopped until an operator retries or aborts it; one that failed in preflight never stopped it.
 func (m runtimeMigration) holdsDown() bool {
 	switch m.phase {
@@ -387,7 +392,7 @@ func (r *AgentReconciler) continueRuntimeMigration(ctx context.Context, agent *a
 			apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionRuntimeMigrating)
 			s.RuntimeMigrationAttempts = 0
 		})
-	case !m.requested:
+	case !m.requested || m.midUndoRequest(agent.Annotations):
 		return r.clearRuntimeMigration(ctx, agent, false)
 	case m.phase == apiv1.ReasonRuntimeMigrationFailed:
 		if !m.retry.After(m.since) {

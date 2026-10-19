@@ -334,6 +334,31 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	assert.Equal(t, int32(1), agentReplicas(t, r), "the container runs again")
 }
 
+// TEST_SCENARIO: an operator's fresh request that lands while an undo is owed does not cancel it. A request without a target has not been decided by the api-server, so the undo is finished first: the machine and its seed go, the condition goes, and the request then reads as a fresh one and starts a move of its own.
+func TestARequestThatLandsMidUndoFinishesTheUndoFirst(t *testing.T) {
+	ctx := context.Background()
+	agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationCopying, time.Now())
+	agent.Annotations[annRuntimeMigrationSource] = "home-agent-my-agent-0"
+	r, node, _ := setupVMReconciler(t, agent)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Port: 31000})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	require.Equal(t, int32(0), agentReplicas(t, r))
+
+	agent = editStoredAgent(t, r, agent, func(u *unstructured.Unstructured) {
+		withoutAnnotations(annRuntimeMigrationTarget)(u)
+		ann := u.GetAnnotations()
+		ann[annRuntimeMigration] = runtimeMigrationRequested
+		u.SetAnnotations(ann)
+	})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	agent = reloaded(t, r, agent)
+	assert.Nil(t, migrationCondition(agent), "the undo finishes although a request stands")
+	assert.Contains(t, node.deleted, "my-agent")
+	assert.Equal(t, runtimeMigrationRequested, agent.Annotations[annRuntimeMigration], "the request is left for the api-server to decide")
+}
+
 // TEST_SCENARIO: an abort while the owner's runner cannot be reached still brings the container back at once. The machine the abort could not delete is marked as left on the Agent, and the orphan sweep removes it and the mark once the runner answers again.
 func TestAnAbortWithTheRunnerUnreachableBringsTheContainerBack(t *testing.T) {
 	ctx := context.Background()

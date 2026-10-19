@@ -13,7 +13,6 @@ function agent(extra: Partial<AgentView>): AgentView {
     id: "a",
     name: "a",
     vm: false,
-    runtimeMigratable: true,
     runtimeMigration: null,
     ...extra,
   } as AgentView;

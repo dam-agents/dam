@@ -11,6 +11,7 @@ import {
 } from "../infrastructure/labels.js";
 import {
   parseRuntimeMigrationTarget,
+  runtimeMigrationCannotHappen,
   runtimeMigrationReadyToSwitch,
   runtimeMigrationRefusal,
   runtimeMigrationRefusalReasons,
@@ -169,16 +170,12 @@ export function createRuntimeMigrationSwitch(deps: {
       migration: deps.migration,
     })(agent.id);
     if (started.ok) return;
-    // UNIT_BOUNDARY_DESCRIPTION: a race is not a refusal — the request stands and the next tick decides it again.
-    if (
-      started.error.type === "AgentNotFound" ||
-      started.error.type === "ConcurrentUpdate"
-    )
-      return;
     const reasons = runtimeMigrationRefusalReasons(started.error);
     deps.log(
-      `[runtime-migration] ${agent.id} was asked to move and is refused: ${reasons.join("; ")}`,
+      `[runtime-migration] ${agent.id} was asked to move and is not taken up: ${reasons.join("; ")}`,
     );
+    // UNIT_BOUNDARY_DESCRIPTION: a refusal that says the move has not happened yet leaves the request standing; withdrawing it is what the controller reads as an abort.
+    if (!runtimeMigrationCannotHappen(started.error)) return;
     const withdrawn = await deps.writeMigration(agent.id, {
       annotations: REQUEST_KEYS_CLEARED,
       resourceVersion: (await deps.getAgent(agent.id))?.resourceVersion,

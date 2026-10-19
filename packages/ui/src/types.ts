@@ -197,7 +197,6 @@ export interface AgentView {
   spawnedBy: string | null;
   vm: boolean;
   runtimeMigration: RuntimeMigrationView | null;
-  runtimeMigratable: boolean;
   kind?: AgentKind;
 }
 

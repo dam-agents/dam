@@ -2,7 +2,7 @@
 
 Last verified: 2026-10-19
 
-A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at an operator's request, and can be undone until the Agent's machine has booted from the copy; it exists only to carry Agents made before the microVM was the default, since no page offers it and every Agent created on an install that can virtualize already runs on a machine.
+A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at an operator's request, and can be undone until the Agent's machine has booted from the copy; it exists only to carry Agents made before the microVM was the default, since no page offers it and a create on an install that can virtualize lands on a machine unless it asks for a container.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
 An Agent whose mounts persist any other path — outside `HOME`, or a volume of its own inside it — is refused with each such path named, rather than moved without it; a mount that is not persisted, such as `/tmp`, is carried by nothing and refuses nothing.
 The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved, and one mid-way through a storage migration.
