@@ -307,6 +307,7 @@ done
 # is then refreshed only when the reflector relists after a failed watch.
 nodes_verbs=$(helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set virtualization.runner.scc=hostmount-anyuid --set agentNamespace=platform-agents \
   --show-only templates/controller/rbac.yaml |
   yq -o=json '.' |
