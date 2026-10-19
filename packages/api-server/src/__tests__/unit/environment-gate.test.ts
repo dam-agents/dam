@@ -111,8 +111,7 @@ async function world(opts: { signedInAs?: string } = {}) {
   closers.push(() => new Promise((r) => server.close(() => r())));
   const port = (server.address() as AddressInfo).port;
 
-  // fetch sets Host from the URL whatever it is given, so the test speaks
-  // HTTP itself to name an Environment address.
+  // UNIT_BOUNDARY_DESCRIPTION: a request to an Environment address. fetch sets Host from the URL whatever it is given, so the test speaks HTTP itself.
   function request(
     host: string,
     path: string,
@@ -147,9 +146,7 @@ async function world(opts: { signedInAs?: string } = {}) {
     });
   }
 
-  // The whole sign-in, as a browser walks it: the address sends the visitor to
-  // the sign-in host, the identity provider comes back to its callback, and
-  // the callback hands the address a code for a session of its own.
+  // UNIT_BOUNDARY_DESCRIPTION: the whole sign-in, as a browser walks it: the address sends the visitor to the sign-in host, the identity provider comes back to its callback, and the callback hands the address a code for a session of its own.
   async function signInTo(address: string): Promise<string> {
     const start = await request(`${address}.${DOMAIN}`, "/page?x=1", {
       accept: "text/html",
