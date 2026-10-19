@@ -159,7 +159,7 @@ type RunnerPressure struct {
 	WorkingSetMiB int    `json:"workingSetMiB,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit. The read also lists each machine, which the api-server shows and the controller does not need.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's usage read, as far as the controller reads it: the owner's claim and the memory admission counts against the limit, and every machine it holds. `MachineFigures` says whether each machine carries the memory figures a status reports, which the memory pass counts with instead of a status read each; a runner older than them leaves the mark out, and the pass then reads each machine's status as before, because a zero read as a machine's size and warm-up would count a warming machine at its measured use alone.
 type RunnerUsage struct {
 	Storage struct {
 		UsedBytes   int64 `json:"usedBytes"`
@@ -169,6 +169,19 @@ type RunnerUsage struct {
 		LimitMiB     int64 `json:"limitMiB"`
 		CommittedMiB int64 `json:"committedMiB"`
 	} `json:"memory"`
+	Machines       []MachineUsage `json:"machines"`
+	MachineFigures bool           `json:"machineFigures"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one machine as the usage read lists it. The memory figures are filled only when the read carries the mark above, so a caller reads them only under it.
+type MachineUsage struct {
+	ID        string `json:"id"`
+	State     string `json:"state"`
+	CPUs      int    `json:"cpus"`
+	MemoryMiB int    `json:"memoryMiB,omitempty"`
+	UsedMiB   int    `json:"usedMiB,omitempty"`
+	Warming   bool   `json:"warming"`
+	DiskGiB   int    `json:"diskGiB,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a runner can reach the node's image cache service right now, as its own connect reports it: the socket inside the runner's read-only mount of the node directory, and, when nothing serves it, the error a machine of that runner would be refused with. An empty error is a cache the runner reached.

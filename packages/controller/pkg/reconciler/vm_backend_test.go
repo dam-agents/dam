@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"slices"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -62,10 +63,24 @@ type fakeNode struct {
 	// UNIT_BOUNDARY_DESCRIPTION: what the fake runner answers to a read of its image cache: reachable unless a test says otherwise, and the refusal it reports when it is not.
 	imageCache vmrunner.RunnerImageCache
 	onPut      func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: what the controller this test builds asked the runner, so a test can hold a reconcile or a memory pass to the reads it costs: one status read per machine is work a usage read that lists every machine already answers.
+	statusReads int
+	usageReads  int
+	// UNIT_BOUNDARY_DESCRIPTION: answers the usage read a runner release older than the per-machine memory figures did, which lists each machine without them and without the mark that says they are there.
+	legacyUsage bool
 	// UNIT_BOUNDARY_DESCRIPTION: a status read holds the runner's lock nowhere while it runs, so a test can hold one answer back and let a reconcile record the runner's next answer meanwhile.
 	onGet func(id string)
+	// UNIT_BOUNDARY_DESCRIPTION: the usage read answers from the machines it listed before the test was told, so a test can hold the answer back and let a reconcile record the runner's next answer meanwhile.
+	usageHook func()
 	// UNIT_BOUNDARY_DESCRIPTION: every ensure is refused with a 500, as a runner release that runs but cannot manage machines refuses them.
 	refusesEnsures bool
+	// UNIT_BOUNDARY_DESCRIPTION: the next pressure read fails with a 500, as a runner restarting answers one, and the reads after it answer with the pressure the test set.
+	pressureFails bool
+	// UNIT_BOUNDARY_DESCRIPTION: the usage read answers a 500, as a runner whose read failed does.
+	usageFails bool
+	// UNIT_BOUNDARY_DESCRIPTION: how many pressure reads arrived, so a test holds a watch to asking the runner again rather than ending on a failed read.
+	pressureReads int
+	pressure      vmrunner.RunnerPressure
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
 	stopsSlowly bool
 }
@@ -104,7 +119,30 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			return
 		}
 		if r.URL.Path == "/usage" {
-			require.NoError(t, json.NewEncoder(w).Encode(n.usage))
+			n.usageReads++
+			if n.usageFails {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
+			usage := n.usage
+			usage.Machines = n.usageMachines()
+			usage.MachineFigures = !n.legacyUsage
+			if hook := n.usageHook; hook != nil {
+				n.mu.Unlock()
+				hook()
+				n.mu.Lock()
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(usage))
+			return
+		}
+		if r.URL.Path == "/pressure" {
+			n.pressureReads++
+			if n.pressureFails {
+				n.pressureFails = false
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(n.pressure))
 			return
 		}
 		if r.URL.Path == "/image-cache" {
@@ -154,6 +192,9 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodGet:
+			if !r.URL.Query().Has("wait") {
+				n.statusReads++
+			}
 			if r.URL.Query().Has("wait") {
 				n.waits++
 				since, err := strconv.ParseUint(r.URL.Query().Get("since"), 10, 64)
@@ -185,6 +226,27 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	return n, srv
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the machines a usage read lists, built from the statuses the runner holds as its own read builds them from what it recorded, without their memory figures when the runner is older than them.
+func (n *fakeNode) usageMachines() []vmrunner.MachineUsage {
+	out := []vmrunner.MachineUsage{}
+	for id, st := range n.statuses {
+		m := vmrunner.MachineUsage{ID: id, State: st.State, UsedMiB: st.UsedMiB, DiskGiB: st.DiskGiB}
+		if !n.legacyUsage {
+			m.CPUs, m.MemoryMiB, m.Warming = st.CPUs, st.MemoryMiB, st.Warming
+		}
+		out = append(out, m)
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
+	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: forgets the reads so far, so a test measures one pass.
+func (n *fakeNode) forgetReads() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.statusReads, n.usageReads = 0, 0
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: stores a machine's status under a new version, as the runner moves the version on every change it reports.
 func (n *fakeNode) set(id string, st vmrunner.MachineStatus) {
 	n.mu.Lock()
@@ -209,6 +271,19 @@ func (n *fakeNode) waitingReads() int {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.waits
+}
+
+func (n *fakeNode) pressureReadCount() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.pressureReads
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: sets the pressure the runner reports and makes its next read fail, as a runner restarting does.
+func (n *fakeNode) pressureAfterAFailedRead(p vmrunner.RunnerPressure) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.pressure, n.pressureFails = p, true
 }
 
 func (n *fakeNode) spec(id string) vmrunner.MachineSpec {
@@ -691,10 +766,18 @@ func TestVMBackendRunsAMachineOnTheSandboxNode(t *testing.T) {
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
 	require.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond,
 		"the guest answering ends the watch")
+	ready := len(requeued.all())
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.Equal(t, metav1.ConditionTrue, readyCondition(t, r, "my-agent").Status)
-	assert.False(t, r.watchingMachine("my-agent"), "a ready machine is not watched")
-	assert.Equal(t, vmHealthPoll, requeued.last(), "a ready machine is still polled, just slowly — nothing else would notice its guest dying")
+	assert.True(t, r.watchingMachine("my-agent"), "a ready machine is watched: nothing else notices its guest going quiet")
+	assert.Len(t, requeued.all(), ready, "and its reconcile schedules no poll: the watch is what puts the Agent back")
+	waits := node.waitingReads()
+	require.Eventually(t, func() bool { return node.waitingReads() > waits+2 }, 5*time.Second, time.Millisecond,
+		"the watch keeps reading the machine")
+	assert.Len(t, requeued.all(), ready, "a status that did not move requeues nothing, however often it is read")
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: false})
+	require.Eventually(t, func() bool { return slices.Contains(requeued.all(), time.Duration(0)) }, 5*time.Second, time.Millisecond,
+		"a settled agent is reconciled only when its machine's status moves")
 }
 
 // TEST_SCENARIO: a vm machine boots one image for every harness, so the Agent's spec.harness reaches the guest as PLATFORM_HARNESS to pick which one runs. The owner's secretRef is applied after it and may override it, as it may any env in the owner's own sandbox. An Agent with no harness sets nothing, leaving the image's default.
@@ -903,6 +986,21 @@ func TestAMachineWatchEndsWithTheReconcilersLifetime(t *testing.T) {
 	require.Eventually(t, func() bool { return !r.watchingMachine("my-agent") }, 5*time.Second, time.Millisecond,
 		"the watch ends with the lifetime")
 	assert.Len(t, requeued.all(), before, "an ended lifetime requeues nothing")
+}
+
+// TEST_SCENARIO: the runner's pressure read is the controller's only view of the kernel's, and a settled agent no longer reconciles every minute to start a watch that ended. A read that fails — the runner restarting, a connection dropped — is asked again by the watch itself, before any reconcile and before the five-minute sweep, and the watch goes on asking once the runner answers.
+func TestAPressureWatchAsksAgainAfterAFailedRead(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")}}
+	node.pressureAfterAFailedRead(vmrunner.RunnerPressure{Version: 1, Pressured: true, LimitMiB: 8192, WorkingSetMiB: 8000})
+
+	require.NoError(t, r.Reconcile(context.Background(), agent))
+	require.Eventually(t, func() bool { return node.pressureReadCount() >= 1 }, 5*time.Second, time.Millisecond,
+		"the reconcile starts the owner's pressure watch")
+	require.Eventually(t, func() bool { return node.pressureReadCount() >= 3 }, 5*time.Second, time.Millisecond,
+		"the watch asks again after a failed read, and goes on asking once the runner answered")
+	assert.NotContains(t, requeued.all(), time.Duration(0), "the watch reclaims by itself, without a reconcile behind it")
 }
 
 func markGatewayReady(t *testing.T, r *AgentReconciler) {

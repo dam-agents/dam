@@ -258,6 +258,86 @@ describe("changes service", { timeout: 30_000 }, () => {
   });
 
   /**
+   * TEST_SCENARIO: $HOME is a repository that ignores everything but its own
+   * files. A session that edits a file $HOME ignores — in a scratch directory
+   * with no repository of its own — has not touched $HOME, so it gets no
+   * record; an edit of a file $HOME re-includes, or tracks although a pattern
+   * ignores it, does.
+   */
+  it("should record a repository only for a file it does not ignore", async () => {
+    await repository(home, {
+      ".gitignore": "/*\n!/.gitignore\n!/notes.md\n",
+      "notes.md": "a\n",
+    });
+    await write(path.join(home, "forced.log"), "a\n");
+    await git(home, "add", "-f", "forced.log");
+    await git(home, "commit", "--quiet", "-m", "force-add");
+    await write(path.join(home, "work", "scratch", "a.txt"), "a\n");
+
+    await service.onToolActivity({
+      sessionId: "s1",
+      toolCallId: null,
+      started: false,
+      editedPaths: [path.join(home, "work", "scratch", "a.txt")],
+      settled: false,
+    });
+    expect(service.repositoriesOf("s1")).toEqual([]);
+
+    await write(path.join(home, "notes.md"), "b\n");
+    await service.onToolActivity({
+      sessionId: "s1",
+      toolCallId: null,
+      started: false,
+      editedPaths: [path.join(home, "notes.md")],
+      settled: false,
+    });
+    expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([home]);
+
+    await write(path.join(home, "forced.log"), "b\n");
+    await service.onToolActivity({
+      sessionId: "s2",
+      toolCallId: null,
+      started: false,
+      editedPaths: [path.join(home, "forced.log")],
+      settled: false,
+    });
+    expect(service.repositoriesOf("s2").map((r) => r.path)).toEqual([home]);
+  });
+
+  /**
+   * TEST_SCENARIO: The user's global excludes ignore *.log, but the
+   * repository itself would track one. Only the repository's own rules
+   * decide, so the edit still counts.
+   */
+  it("should record a repository for a file only the global excludes ignore", async () => {
+    await repository(home, { "notes.md": "a\n" });
+    const excludes = path.join(tmp, "global-ignore");
+    const config = path.join(tmp, "global-gitconfig");
+    await write(excludes, "*.log\n");
+    await write(config, `[core]\n\texcludesFile = ${excludes}\n`);
+    await write(path.join(home, "run.log"), "a\n");
+    const previous = process.env.GIT_CONFIG_GLOBAL;
+    process.env.GIT_CONFIG_GLOBAL = config;
+    try {
+      expect((await git(home, "check-ignore", "run.log")).trim()).toBe(
+        "run.log",
+      );
+      await service.onToolActivity({
+        sessionId: "s1",
+        toolCallId: null,
+        started: false,
+        editedPaths: [path.join(home, "run.log")],
+        settled: false,
+      });
+    } finally {
+      if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
+      else process.env.GIT_CONFIG_GLOBAL = previous;
+    }
+
+    expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([home]);
+  });
+
+  /**
    * TEST_SCENARIO: After a restart, a repository a session edited outside the
    * roots is still listed from the persisted record, with its linked
    * worktrees, and the diff of each is served from the same record rather

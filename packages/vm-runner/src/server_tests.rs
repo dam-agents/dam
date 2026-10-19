@@ -47,6 +47,7 @@ struct Fake {
     panic_on_state: AtomicBool,
     nests: AtomicBool,
     state_fails_until_start: Mutex<HashSet<String>>,
+    vmms: Mutex<HashSet<String>>,
     resident: Mutex<Option<i32>>,
     cpu: Mutex<Option<u64>>,
     state_reads: AtomicUsize,
@@ -69,6 +70,10 @@ impl Fake {
 impl Runtime for Fake {
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         *locked(&self.resident)
+    }
+
+    fn holds_vmm(&self, id: &str) -> bool {
+        locked(&self.vmms).contains(id)
     }
 
     fn cpu_usec(&self, _id: &str) -> Option<u64> {
@@ -3042,6 +3047,85 @@ async fn a_look_that_scanned_first_does_not_write_over_a_later_one() {
     }
 }
 
+// TEST_SCENARIO: the storage every guest may add is the claim's room split among the machines holding it, and a runner that starts on records it cannot read must not hand one machine's share to the others. A machine a VMM process still holds is recorded as unknown and counted, as admission counts it, so a restart changes no guest's grant while the record is unreadable.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_state_cannot_be_read_at_startup_still_counts_toward_the_storage_grant() {
+    let (h, claim) = with_claim("startup-unread");
+    let measured = claim.clone();
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    let grant = |h: &Harness, id: &str| {
+        std::fs::read_to_string(
+            h.dir
+                .join("machines")
+                .join(id)
+                .join(SHARE_DIR)
+                .join(share::STORAGE_ROOM_FILE),
+        )
+        .unwrap()
+        .split_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse::<u64>()
+        .unwrap()
+    };
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    assert_eq!(
+        grant(&h, "m1"),
+        20 << 30,
+        "two machines share the room below 95% of the claim"
+    );
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    locked(&h.fake.vmms).insert("m1".to_string());
+    let next = h
+        .hand_off(move |c| {
+            let measured = measured.clone();
+            c.measure_storage = Arc::new(move || *locked(&measured));
+        })
+        .await;
+    *locked(&claim) = filled(55);
+    next.server.check_storage();
+    assert_eq!(
+        grant(&next, "m2"),
+        20 << 30,
+        "a machine whose record cannot be read at startup was left out of the share, so the others were granted its room"
+    );
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a machine the runner is stopping frees all of its scratch by going down, so it takes no part of the request a short claim sends the others: while its stop is in flight the shortage is split among the machines that stay, and each is asked for its full part, not for a share the machine on its way out cannot give.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_on_its_way_down_takes_no_part_of_the_shed_request() {
+    let (h, claim) = with_claim("shed-stopping");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    *locked(&h.fake.stop_delay) = Duration::from_secs(2);
+    assert_eq!(
+        h.server.put("m1", spec(false)).unwrap().state,
+        STATE_STOPPING
+    );
+    *locked(&claim) = filled(80);
+    h.server.check_storage();
+    let request = std::fs::read_to_string(
+        h.dir
+            .join("machines/m2")
+            .join(SHARE_DIR)
+            .join(share::STORAGE_SHORT_FILE),
+    )
+    .unwrap();
+    assert_eq!(
+        request.split_whitespace().nth(1).unwrap(),
+        (10u64 << 30).to_string(),
+        "the machine on its way down took half of the shortage the machine that stays has to free"
+    );
+}
+
 // TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
@@ -3343,7 +3427,7 @@ async fn a_hand_off_admits_no_start_into_memory_adopted_machines_hold() {
     next.server.close().await;
 }
 
-// TEST_SCENARIO: a launch record that cannot be read says nothing about whether its machine runs, and a runner that read it as "not running" counted a live VMM as nothing: admission then handed its room to the next machine. It counts as running instead, at what it was measured holding or at its size, until the record reads again.
+// TEST_SCENARIO: a launch record that cannot be read says nothing about whether its machine runs, and a runner that read it as "not running" counted a live VMM as nothing: admission then handed its room to the next machine. It counts as running while a VMM process holds its directory, at what it was measured holding or at its size, until the record reads again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
     let tune = |c: &mut Config| c.memory_mib = 3000;
@@ -3353,6 +3437,7 @@ async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
     assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
 
     locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    locked(&h.fake.vmms).insert("m1".to_string());
     let next = h.hand_off(tune).await;
     assert_eq!(
         next.server.usage().unwrap().memory.committed_mib,
@@ -3364,15 +3449,78 @@ async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
     next.server.close().await;
 }
 
-// TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: admission counts the figure the last probe read, as the runner's adoption of a handed-off machine does, and not the whole handout. A machine that is not running reports none, so no figure outlives the VMM that held it.
+// TEST_SCENARIO: a record that no longer decodes is not evidence that a machine runs — a stopped or hibernated machine's record fails the same way, and a runner that counted every unreadable one as running held the whole handout for a machine holding nothing, refusing every start for its owner. Only a VMM process on its directory says a machine nothing has looked at is up; without one it holds no room.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_whose_launch_record_cannot_be_read_holds_no_room() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("stopped-record-unreadable", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    let next = h.hand_off(tune).await;
+    assert_eq!(
+        next.server.usage().unwrap().memory.committed_mib,
+        0,
+        "a stopped machine whose launch record cannot be read held room it does not use"
+    );
+    let started = next.server.put("m2", spec(true)).unwrap();
+    assert_eq!(
+        started.state, STATE_CREATING,
+        "the owner's next machine was refused for a machine that holds nothing: {started:?}"
+    );
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a stop takes the measurement with it. A machine measured while it ran, then stopped, whose launch record cannot be read and whose wake cannot be planned, is unknown with a figure from a VMM that is gone: counted, it holds room for a machine that holds nothing and refuses its owner's next start. The same runner throughout, since a hand-off rebuilds the entries and would hide what the stop left behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_keeps_no_measurement() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("stopped-measured", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(2048);
+    h.server.probe("m1");
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.server.status("m1").state, STATE_STOPPED);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    *locked(&h.fake.fail_start_once) = Some("the wake could not boot the machine".into());
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_UNKNOWN, "{status:?}");
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        0,
+        "a stopped machine's measurement outlived the VMM that held it"
+    );
+    let started = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(
+        started.state, STATE_CREATING,
+        "the owner's next machine was refused for a machine that holds nothing: {started:?}"
+    );
+    h.server.close().await;
+}
+
+// TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: the status keeps the figure the last probe read, as the runner's adoption of a handed-off machine does, and admission counts the machine at least at the warm-up floor instead of at that figure, which is from before the failure. A machine that is not running reports none, so no figure outlives the VMM that held it.
 #[tokio::test]
 async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
     let h = Harness::new("resident-unread");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
+    h.machine("m1", |m| {
+        m.warming_since = Some(Instant::now() - 2 * crate::capacity::WARMUP)
+    });
     *locked(&h.fake.resident) = Some(500);
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 500);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 500);
 
     *locked(&h.fake.resident) = None;
     h.server.probe("m1");
@@ -3380,6 +3528,11 @@ async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
         h.server.status("m1").used_mib,
         500,
         "a failed measurement counted the machine as holding nothing"
+    );
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a figure from before a failed read was counted below the machine's warm-up floor"
     );
 
     h.server.put("m1", spec(false)).unwrap();
@@ -3391,15 +3544,19 @@ async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
     );
 }
 
-// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine.
+// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine. The figure it keeps is one no probe could refresh, so admission counts it at the warm-up floor until a look reads the machine again.
 #[tokio::test]
 async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
     let h = Harness::new("state-unread");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
+    h.machine("m1", |m| {
+        m.warming_since = Some(Instant::now() - 2 * crate::capacity::WARMUP)
+    });
     *locked(&h.fake.resident) = Some(700);
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 700);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 700);
 
     locked(&h.fake.state_fails_until_start).insert("m1".to_string());
     h.server.probe("m1");
@@ -3409,10 +3566,16 @@ async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
         status.used_mib, 700,
         "an unread state counted the machine as holding nothing"
     );
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a figure an unread state could not refresh was counted below the machine's warm-up floor"
+    );
 
     locked(&h.fake.state_fails_until_start).remove("m1");
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 700);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 700);
 }
 
 // TEST_SCENARIO: a spec that cannot be read says nothing about what the machine holds or how long its boot has been up, and the status that zeroed both over an unreadable spec made the controller count a measured machine at its floor. Neither is read off the spec, so both are still reported; only what the spec carries is missing.

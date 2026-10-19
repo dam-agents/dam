@@ -68,14 +68,17 @@ func TestAnUnreadUserBudgetRefusesEverySizeItCannotUndo(t *testing.T) {
 	_, err = r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "a claim was built at the install's 100Gi and can never come down to the owner's 12Gi")
 
+	require.NoError(t, r.client.AppsV1().Deployments("test-agents").Delete(ctx, r.runnerName(testOwner), metav1.DeleteOptions{}))
 	require.ErrorIs(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true), errVMPoolUnread)
+	_, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "a runner was built at the install's default limit")
 
 	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
 	require.NoError(t, err)
 	_, sized := r.runnerPodWants(ctx, testOwner, pod, runnerDemand{memoryMiB: 2048, vCPUs: 4})
 	assert.False(t, sized, "the runner's memory limit was cut to the install's default under the machines running on it")
 
-	require.Error(t, r.Reconcile(ctx, agent))
+	require.ErrorContains(t, r.Reconcile(ctx, agent), errVMPoolUnread.Error())
 	assert.Zero(t, node.spec(agent.Name).MemoryMiB, "a machine was sized from the install's default and started")
 
 	unread = false
@@ -86,9 +89,110 @@ func TestAnUnreadUserBudgetRefusesEverySizeItCannotUndo(t *testing.T) {
 	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Storage: new(resource.MustParse("30Gi"))})
 	r.refreshVMPool(ctx, testOwner)
 	unread = true
-	ceiling, err := r.runnerStorageCeiling(ctx, testOwner)
+	kept, err := r.refreshVMPool(ctx, testOwner)
 	require.NoError(t, err, "a pool read once is kept when a later read fails")
-	assert.Equal(t, "30Gi", ceiling.String())
+	assert.Equal(t, "30Gi", kept.storage.String())
+	ceiling, err := r.runnerStorageCeiling(ctx, testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, "30Gi", ceiling.String(), "the pool read before the failed read still sizes the ceiling")
+}
+
+// TEST_SCENARIO: an API server that will not serve an owner's UserBudget must not fail that owner's whole runner reconcile. A runner already built keeps the pod and the limits it has, because what the install's default renders is another pod: rolling it would cut the limit under the machines running on it and reboot every one of them. A stop still goes through, since only the decisions that would set a size from the pool wait for the read — otherwise every reconcile of each of their agents marks a healthy agent not ready, and reclaim, hibernation and the migration stops all skip exactly the window when the controller knows least.
+func TestAnUnreadUserBudgetLeavesTheRunnerItHasAlone(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "8Gi")
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{
+		Storage: new(resource.MustParse("12Gi")),
+		Memory:  new(resource.MustParse("4Gi")),
+	})
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	before, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Equal(t, "4Gi", before.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().String())
+
+	unread := true
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("get", "userbudgets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !unread {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewServiceUnavailable("the API server is not serving UserBudgets")
+	})
+	r.vmPools.Delete(testOwner)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	after, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "4Gi", after.Spec.Template.Spec.Containers[0].Resources.Limits.Memory().String(),
+		"the runner's limit fell to the install's default under the machines running on it")
+	assert.Equal(t, before.Annotations[annRunnerTemplate], after.Annotations[annRunnerTemplate],
+		"the runner was rolled for a pool this process has not read")
+
+	require.ErrorContains(t, r.Reconcile(ctx, agent), "sizing the machine",
+		"the runner build failed the reconcile for a pool this process has not read")
+}
+
+// TEST_SCENARIO: a stop needs no size, so an unread pool must not hold it: an agent the controller has asked to stop still reaches its runner and the machine goes down at what the runner already has. Refusing that would leave a machine up that the controller asked to stop, holding the room its stop releases.
+func TestAnUnreadUserBudgetStillStopsAMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	agent.Annotations[annStopRequested] = "true"
+	r, node, _ := setupVMReconciler(t, agent)
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "8Gi")
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{
+		Storage: new(resource.MustParse("12Gi")),
+		Memory:  new(resource.MustParse("4Gi")),
+	})
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	unread := true
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("get", "userbudgets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !unread {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewServiceUnavailable("the API server is not serving UserBudgets")
+	})
+	r.vmPools.Delete(testOwner)
+
+	require.NoError(t, r.Reconcile(ctx, agent), "a stop was refused for a pool this process has not read")
+	assert.False(t, node.spec(agent.Name).Running, "the machine was left running for an unread pool")
+}
+
+// TEST_SCENARIO: a machine that should run is still refused while the pool is unread, because its size is the one the controller would have to guess. The agent reads as not ready and its start is retried once the budget can be read, which is what the refusal is for.
+func TestAnUnreadUserBudgetStillRefusesToSizeARunningMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "8Gi")
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{
+		Storage: new(resource.MustParse("12Gi")),
+		Memory:  new(resource.MustParse("4Gi")),
+	})
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
+	up := int32(1)
+	_, err := r.client.AppsV1().StatefulSets("test-agents").Create(ctx, &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName(agent.Name), Namespace: "test-agents"},
+		Spec:       appsv1.StatefulSetSpec{Replicas: &up},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	unread := true
+	r.dynamic.(*dynfake.FakeDynamicClient).PrependReactor("get", "userbudgets", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !unread {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewServiceUnavailable("the API server is not serving UserBudgets")
+	})
+	r.vmPools.Delete(testOwner)
+
+	require.ErrorContains(t, r.Reconcile(ctx, agent), errVMPoolUnread.Error(),
+		"a running machine was sized from a pool this process has not read")
 }
 
 // TEST_SCENARIO: an owner's UserBudget `storage` is the ceiling of their runner's claim. An owner without one keeps `runner.storage`, and a budget read before the change is read again by refreshVMPool, which the memory pass calls every 30 seconds.

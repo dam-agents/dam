@@ -156,7 +156,7 @@ func TestANewOwnersRunnerIsCreatedDuringARoll(t *testing.T) {
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-new"))
 }
 
-// TEST_SCENARIO: every vm agent reconciles its owner's runner about once a minute. While the rendered pod is unchanged the Deployment is not written at all, so nothing on it moves and no roll can start by accident.
+// TEST_SCENARIO: every vm agent reconciles its owner's runner whenever its machine changes, and the drift sweep brings it back every five minutes. While the rendered pod is unchanged the Deployment is not written at all, so nothing on it moves and no roll can start by accident.
 func TestAnUnchangedRunnerIsNotWritten(t *testing.T) {
 	ctx := context.Background()
 	r, _ := setupRolloutReconciler(t, "owner-a")

@@ -66,6 +66,17 @@ spec:
         istio.io/dataplane-mode: none
     spec:
       enableServiceLinks: false
+      {{- /*
+      kubelet admits a critical pod onto a node under disk pressure and turns
+      away every other one, so this class is what lets a replacement pod start
+      while the pressure lasts. Among the pods it evicts, it takes those over
+      their requests first and the lowest priority next, and the request in
+      `values.yaml` keeps this one out of the first group. The service is in
+      the boot path: losing it costs every machine on the node that boots an
+      image it does not already hold, and the DaemonSet controller replaces a
+      failed pod from a backoff that reaches fifteen minutes.
+      */}}
+      priorityClassName: system-node-critical
       {{- include "platform.imagePullSecrets" . | nindent 6 }}
       serviceAccountName: {{ $name }}
       automountServiceAccountToken: false

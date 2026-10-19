@@ -21,7 +21,7 @@ type vmPool struct {
 	storage *resource.Quantity
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget this process has never read has no pool, and that is not the same as an empty one. The install's default is smaller than some owners' pools and larger than others: sized from it, a claim grows to it and can never shrink again, a memory limit falls under the machines already running on it, and their next machine is sized past the pool they meant. Every caller that would set a size from the pool refuses and retries instead; one that only counts what the machines hold falls back to the install's limit for the while the pool is unknown.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget this process has never read has no pool, and that is not the same as an empty one. The install's default is smaller than some owners' pools and larger than others: sized from it, a claim grows to it and can never shrink again, a memory limit falls under the machines already running on it, and their next machine is sized past the pool they meant. Every caller that would set a size from the pool refuses and retries instead; one that only counts what the machines hold keeps counting from what it does know — an Agent's own memory where its share of the pool is unknown, and no limit at all — so a count is never built from a pool this process has not read.
 var errVMPoolUnread = errors.New("the owner's UserBudget is unread, so their VM pool is unknown")
 
 func (r *AgentReconciler) vmPoolOf(ctx context.Context, owner string) (vmPool, error) {
