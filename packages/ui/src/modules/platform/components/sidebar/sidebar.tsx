@@ -19,7 +19,9 @@ import { SidebarNavItem } from "./sidebar-nav-item.js";
 export function Sidebar() {
   const storedExpanded = useStore((s) => s.sidebarExpanded);
   const setExpanded = useStore((s) => s.setSidebarExpanded);
-  const sidePanelOpen = useStore((s) => s.sidePanelTab !== null);
+  const sidePanelOpen = useStore(
+    (s) => s.sidePanelTab !== null && s.view !== "chat",
+  );
   const wide = useIsWideDesktop();
   const crowded = sidePanelOpen && !wide;
   const [openedWhileCrowded, setOpenedWhileCrowded] = useState(false);

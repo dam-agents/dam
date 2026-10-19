@@ -32,10 +32,13 @@ test("exchange messages with the agent", async ({ page }) => {
     await openAgentChat(page, agentName, agentId);
   });
 
-  await test.step("the chat view has no top bar: the icon bar reaches the top edge and holds the bell", async () => {
-    const bar = page.getByTestId("side-panel-bar");
-    await expect(bar.getByTestId("side-panel-tab-approvals")).toBeVisible();
-    expect((await bar.boundingBox())?.y).toBe(0);
+  await test.step("with the new layout off, the chat view keeps its top bar, which holds the bell, and has no icon bar", async () => {
+    const bell = page.getByTestId("side-panel-tab-approvals");
+    await expect(bell).toBeVisible();
+    await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Show changes" }),
+    ).toBeVisible();
   });
 
   await test.step("the new session page names the agent", async () => {

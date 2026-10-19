@@ -6,6 +6,7 @@ Home answers one question: what has happened since you last looked, and what sti
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, a panel like the Artifacts panel beside it, that takes its room from the page.
+In an Agent's chat with the new layout off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
 
 ## What Home reads
 
@@ -66,6 +67,7 @@ The avatar strip keeps the same manual Agent order, set by drag and drop or with
 A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
 Pins are kept in the browser, so they do not follow the user to another device.
 The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.
 
