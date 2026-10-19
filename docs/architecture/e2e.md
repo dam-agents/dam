@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so it runs twice for every change, once per lane.
@@ -16,7 +16,10 @@ The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the
 
 The specs are grouped into Playwright **projects**, one per area, whose dependencies chain the state they share: the auth project stores the user's login, the agent project creates the suite's mock Agent and the Connection its chat turns need, and the chain project drives that Agent through messages, Sessions, Slack and egress.
 A spec that boots and drives an Agent of its own runs in a project after those, one at a time, because each of them competes for the same cluster's compute.
-Two specs exist for one lane only: the runtime migration needs an install with both Backends, so it runs in the vm lane, and the agent backend spec deletes its owner's VM runner, which runs every other machine of that user, so the config runs it after the rest of the suite.
+Four specs run in the vm lane alone: the runtime migration needs an install with both Backends, the harness tools and browser tabs specs drive what only a machine has, and the boot matrix breaks a machine's boot the ways a host failure does — it kills the machine's VMM at points of a boot and empties the disk's layout mark.
+The boot matrix runs with the other specs that boot an Agent of their own, one at a time, for the compute they would otherwise share.
+Its cases that need room a CI node cannot spare, a disk with no block left and a claim with none, are opt-in through `E2E_DISK_FILL_GIB` and `E2E_CLAIM_FILL_GIB`: a machine's disk is a sparse file on its owner's claim, that claim is a directory of the node's disk, and a fill takes that room whenever its filesystem allocates the blocks instead of marking them.
+The agent backend spec runs on both lanes, in each lane's own-agents project: on the container lane after the agent project, whose provider connection its chat input needs, and one at a time with the other specs that boot an Agent of their own, and on the vm lane after the rest of the suite, since the VM runner it deletes runs every other machine of that user.
 The tier under `src/tests/full/` is on demand: a local run asks for it, and no CI run takes it.
 
 ## Scope: what a pull request runs

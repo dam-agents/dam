@@ -576,6 +576,7 @@ const vmImageCacheSocket = vmRunnerImagesPath + "/.cache.sock"
 var vmRunnerEphemeralRequest = resource.MustParse("1Gi")
 
 // UNIT_BOUNDARY_DESCRIPTION: renders the owner's runner Deployment and hands it to the roll. Only an agent's reconcile may create one (create); the rollout sweep only offers an existing runner its turn, so a runner the orphan sweep has just removed is never brought back by it.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget cannot be read keeps the runner pod it has. Its limits and its memory came from the pool, and what the install's default would render is another pod: the roll would cut the limit under the machines already running on it and reboot every one of them. Only building a runner waits for the read, so a cold controller creates no runner and the owner's next start is refused until the budget reads again.
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string, refs []metav1.OwnerReference, create bool) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
@@ -598,6 +599,16 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	}
 	pool, err := r.vmPoolOf(ctx, owner)
 	if err != nil {
+		_, getErr := r.runnerDeployment(ctx, name, create)
+		switch {
+		case getErr == nil:
+			slog.Warn("vm runner: the owner's UserBudget is unread, the runner keeps the pod it has", "owner", owner, "error", err)
+			return nil
+		case !k8serrors.IsNotFound(getErr):
+			return getErr
+		case !create:
+			return nil
+		}
 		return err
 	}
 	if pool.memory != nil {
