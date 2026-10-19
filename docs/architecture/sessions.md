@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-15
+Last verified: 2026-10-20
 
 ## Session inside the pod
 
@@ -124,6 +124,8 @@ The UI then moves those prompts to a new chat, where they show as not delivered,
 When a session goes idle — no engaged channel, no prompt active or queued, no agent request pending — the runtime sends `session/close` to the harness; a parked queue counts as queued work, holding the release back until its window passes.
 The per-session subprocess is reaped; the next attach respawns it.
 Permission requests with no engaged channel time out after ten minutes, answered to the agent as an error so the tool call aborts cleanly.
+The runtime reports such a request to the api-server the moment no engaged channel can answer it — when the agent asks with nobody watching, or when the last viewer leaves before answering — and reports how it ended, answered or dropped.
+The api-server records it as a pending tool approval at once, so Home and the approvals bell show it with the time the agent asked, not first when someone opens the session; a verdict given there answers it, the session still unwatched ([home-feed](home-feed.md#what-home-reads)).
 A harness that leaves a cold re-attach unanswered — whichever verb it advertised for one — is wedged: that request's frames are suppressed and the process is recycled when work drains.
 
 One further condition holds that reap back: **background work the session reports**.

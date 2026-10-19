@@ -14,6 +14,7 @@ import {
   type Harness,
 } from "./acp-world.js";
 import { createAcpRuntime } from "../acp-runtime.js";
+import type { AgentRequestObserver } from "../pending-agent-requests.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import {
@@ -36,7 +37,8 @@ import {
  * answered without any process. A session whose model names a provider the
  * agent no longer holds is refused on its next prompt, not frozen. One client
  * connection reaches every process, so a question two harnesses ask with the
- * same request id must still be answered to the harness that asked it.
+ * same request id must still be answered to the harness that asked it, from
+ * whichever connection answers it.
  */
 
 const IDLE_CHECK_MS = 10_000;
@@ -53,7 +55,10 @@ const ALIAS_OF: Record<string, string> = {
   "conn-bedrock": "bedrock",
 };
 
-function createLeaseWorld(opts: { providers: string[] }) {
+function createLeaseWorld(opts: {
+  providers: string[];
+  agentRequests?: AgentRequestObserver;
+}) {
   let providers = opts.providers;
   let keptProcesses = 0;
   const metadata = createSessionMetadata();
@@ -95,8 +100,10 @@ function createLeaseWorld(opts: { providers: string[] }) {
     idleCheckMs: IDLE_CHECK_MS,
     leaseIdleMs: LEASE_IDLE_MS,
     log: () => {},
+    ...(opts.agentRequests && { agentRequests: opts.agentRequests }),
     createRuntime: (pair, scoped) =>
       createAcpRuntime({
+        ...(scoped.agentRequests && { agentRequests: scoped.agentRequests }),
         workingDir: "/workspace",
         idleReapDelayMs: IDLE_REAP_DELAY_MS,
         onArtifactTouch: () => {},
@@ -324,6 +331,68 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(world.harness("codex").answersTo(0)).toEqual([
       expect.objectContaining({ result: { outcome: "c" } }),
     ]);
+  });
+
+  /** TEST_SCENARIO: The agent asks while nobody watches the session. The
+   * platform hears of it under the id a client would see, and answers it later
+   * from a connection of its own that never saw the question; the answer must
+   * reach the harness that asked, under the id it asked with. */
+  it("takes the answer to an unwatched question from any connection", () => {
+    const heard: unknown[] = [];
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: {
+        waiting: (id) => heard.push(id),
+        answered: () => {},
+        abandoned: () => {},
+      },
+    });
+    const first = world.connect();
+    startSession(world, first, "claude-code", "s-a", 1, {});
+    first.disconnect();
+    world.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+    expect(heard).toHaveLength(1);
+
+    const platform = world.connect();
+    platform.send({ jsonrpc: "2.0", id: heard[0], result: { outcome: "x" } });
+    expect(world.harness("claude-code").answersTo(7)).toEqual([
+      expect.objectContaining({ result: { outcome: "x" } }),
+    ]);
+  });
+
+  /** TEST_SCENARIO: The pod restarted, and its first harness process asks
+   * again under the same request id. A verdict kept from before the restart
+   * names the earlier boot's request, so it must answer nothing. */
+  it("drops an answer under an id from before a restart", () => {
+    const heard: unknown[] = [];
+    const observer: AgentRequestObserver = {
+      waiting: (id) => heard.push(id),
+      answered: () => {},
+      abandoned: () => {},
+    };
+    const before = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const first = before.connect();
+    startSession(before, first, "claude-code", "s-a", 1, {});
+    first.disconnect();
+    before.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+
+    const after = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const reopened = after.connect();
+    startSession(after, reopened, "claude-code", "s-a", 1, {});
+    reopened.disconnect();
+    after.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+    expect(heard).toHaveLength(2);
+    expect(heard[1]).not.toEqual(heard[0]);
+
+    const platform = after.connect();
+    platform.send({ jsonrpc: "2.0", id: heard[0], result: { outcome: "x" } });
+    expect(after.harness("claude-code").answersTo(7)).toEqual([]);
   });
 
   /** TEST_SCENARIO: A permission prompt is still open when the page reloads,
