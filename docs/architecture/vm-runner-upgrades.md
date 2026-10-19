@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -77,6 +77,7 @@ That roll does not wait for the owner's agents to be idle, which would otherwise
 It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
 The runner's own answer is what the controller rolls on: a release it holds as `reboot` ends the hand-off, and the pod roll that follows takes its own place in the width.
 Such a roll writes the image that carries the release, which the pod does not have yet — a pod on the configured image already runs the release it declares — and that change to the pod template is what restarts it, rebooting the machines.
+The vm e2e lane's runner release spec rolls a live machine onto a release that declares a new key, and back onto the install's, so a key's roll reaches a running machine there and not only a fake runner.
 A runner that holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the refusal to reboot does not overrule what the runner reported.
 Leaving a runtime otherwise is configuring the release before it again, which the hand-off takes unless that release declares another key than the pod runs, which rolls the pod.
 platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce a guest does not confirm, which the runner ends with a power-off, costs no more than a power cut and not the agent's last writes.

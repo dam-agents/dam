@@ -24,7 +24,7 @@ import time
 from pathlib import Path
 
 p = argparse.ArgumentParser()
-p.add_argument("base", help="Base image reference, pinned by digest, or a local OCI layout directory")
+p.add_argument("base", help="Base image reference, pinned by digest, or a local OCI layout directory or a tar of one")
 p.add_argument("root", help="Directory whose tree becomes the layer, at / or --at")
 p.add_argument("tar", help="Image tar to write, or with --layout the OCI layout directory")
 p.add_argument("tag", help="Tag the tar carries")
@@ -46,7 +46,15 @@ args = p.parse_args()
 arch = {"aarch64": "arm64", "x86_64": "amd64"}.get(platform.machine(), platform.machine())
 cache = Path(os.environ.get("XDG_CACHE_HOME") or Path.home() / ".cache") / "platform-image-pack"
 cache.mkdir(parents=True, exist_ok=True)
+# In the cache, so the base's blobs are hard links rather than copies.
+work = Path(tempfile.mkdtemp(dir=cache, prefix="work."))
 base = Path(args.base)
+if base.is_file():
+    # A tar of a layout, as an oci task and image:pull leave an image: read as
+    # the layout it holds, so none of its layers is downloaded or copied.
+    base = work / "base"
+    with tarfile.open(Path(args.base)) as t:
+        t.extractall(base, filter="data")
 if not (base / "index.json").is_file():
     base = cache / hashlib.sha256(f"{args.base} {arch}".encode()).hexdigest()[:32]
     if not (base / "index.json").is_file():
@@ -102,8 +110,6 @@ def tree_tar(src, dest, owner, at="", owns=(), own_dirs=(), clear=0):
             t.add(Path(src, name), arcname=f"{at}/{name}" if at else name, filter=entry)
 
 
-# In the cache, so the base's blobs are hard links rather than copies.
-work = Path(tempfile.mkdtemp(dir=cache, prefix="work."))
 try:
     out = work / "oci"
     blobs = out / "blobs" / "sha256"

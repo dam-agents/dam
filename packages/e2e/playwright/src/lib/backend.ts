@@ -282,7 +282,7 @@ export function runnerGrows(
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from.
-function runnerPod(agentId: string): string {
+export function runnerPod(agentId: string): string {
   return kubectl(
     "-n",
     AGENT_NS,

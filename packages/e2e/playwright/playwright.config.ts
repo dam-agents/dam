@@ -124,6 +124,13 @@ const agentBackend: NamedProject = {
   use: { ...devices["Desktop Chrome"], storageState },
 };
 
+const runnerRelease: NamedProject = {
+  name: "runner-release",
+  testMatch: /28-.*\.spec\.ts$/,
+  dependencies: [agentBackend.name],
+  use: { ...devices["Desktop Chrome"], storageState },
+};
+
 const prSkip =
   process.env.E2E_SCOPE === "pr"
     ? new RegExp(
@@ -168,7 +175,10 @@ export default defineConfig({
       ],
     },
   },
-  projects: (laneBackend === "vm" ? [...suite, agentBackend] : suite)
+  projects: (laneBackend === "vm"
+    ? [...suite, agentBackend, runnerRelease]
+    : suite
+  )
     .filter(({ name }) => !prSkip || !prEmpty.has(name))
     .map((project) => (prSkip ? { ...project, testIgnore: prSkip } : project)),
 });

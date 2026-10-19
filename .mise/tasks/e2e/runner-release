@@ -1,0 +1,35 @@
+#!/usr/bin/env -S usage bash
+#MISE description="Derive and load a second VM runner release image: the lane's runner image, declaring a reboot key of its own"
+#MISE hide=true
+#MISE dir="{{cwd}}"
+#USAGE arg "<key>" help="The reboot key the second release declares, which is also its tag; e.g. runner-2"
+# A runner release reaches an owner's machines as a hand-off in place, unless the
+# release declares a reboot key its pod does not run, which rolls the pod and
+# reboots them (see packages/vm-runner/reboot-id and
+# docs/architecture/vm-runner-upgrades.md). The vm lane carries one release: the
+# runner image it builds or pulls, and no other. A spec that rolls a live guest
+# to a second release needs a second, so this derives one from that image,
+# changing nothing but the key, and imports it beside it. Only the key differs,
+# so the second release is the first one's runtime and binaries: what a spec
+# sees is the reboot a release declares, and nothing else.
+#
+# It is read as the image tar the lane already has, and the layers it shares
+# with the first release are already in the cluster's image store, so nothing is
+# downloaded again and no layer is copied on import.
+set -euo pipefail
+key="${usage_key:?}"
+name="platform-vm-runner:$key"
+base="$(.mise/tasks/image/resolve tar-path vm-runner)"
+[ -f "$base" ] || { echo "e2e:runner-release: no runner image tar at $base" >&2; exit 1; }
+work="$(mktemp -d)"
+trap 'rm -rf "$work"' EXIT
+mkdir -p "$work/root/usr/local/libexec/vm-runner"
+printf '%s\n' "$key" > "$work/root/usr/local/libexec/vm-runner/reboot-id"
+mise run image:pack -- "$base" "$work/root" "$work/second" "$name" --layout >&2
+manifest="$(jq -r '.manifests[0].digest' "$work/second/index.json")"
+last="$(jq -r '.layers[-1].digest' "$work/second/blobs/${manifest/://}")"
+declared="$(tar -xOf "$work/second/blobs/${last/://}" usr/local/libexec/vm-runner/reboot-id)"
+[ "$declared" = "$key" ] || { echo "e2e:runner-release: the image declares '$declared', not '$key'" >&2; exit 1; }
+tar -C "$work/second" -cf "$work/second.tar" $(ls -A "$work/second")
+mise run cluster:import -- "$work/second.tar" >&2
+echo "$name"
