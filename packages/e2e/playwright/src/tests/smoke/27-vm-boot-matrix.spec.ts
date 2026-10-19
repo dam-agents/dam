@@ -24,7 +24,7 @@ test.describe.configure({ mode: "serial" });
 
 const markerPath = "e2e-boot-matrix-marker.txt";
 
-const KILL_DELAYS_MS = [0, 250, 750, 1_500];
+const KILL_DELAYS_MS = [0, 100, 250, 400];
 
 let api: ApiClient;
 const token = refreshingToken();
@@ -50,7 +50,7 @@ function noteRunningVMMs(id: string): void {
       `seen=/tmp/boot-matrix-vmms-${id}`,
       ": > $seen",
       "for p in /proc/[0-9]*; do",
-      `  tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[-]_boot-vm' || continue`,
+      `  tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[_]boot-vm' || continue`,
       "  basename $p >> $seen",
       "done",
     ].join("\n"),
@@ -68,7 +68,7 @@ function killNewVMM(id: string, afterMs: number): string {
       "pid=",
       'while [ -z "$pid" ]; do',
       "  for p in /proc/[0-9]*; do",
-      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[-]_boot-vm' || continue`,
+      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[_]boot-vm' || continue`,
       "    q=$(basename $p)",
       "    grep -qx $q $seen && continue",
       "    pid=$q",
@@ -81,7 +81,7 @@ function killNewVMM(id: string, afterMs: number): string {
       'if [ -z "$pid" ]; then',
       "  echo none new",
       "  for p in /proc/[0-9]*; do",
-      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[-]_boot-vm' || continue`,
+      `    tr '\\0' '\\n' < $p/cmdline 2>/dev/null | grep -q -- '[_]boot-vm' || continue`,
       `    echo saw $(basename $p) $(tr '\\0' ' ' < $p/cmdline | cut -c1-120)`,
       "  done",
       "  exit 0",
@@ -118,7 +118,7 @@ test.afterAll(async () => {
   if (agentId) await api.agents.delete.mutate({ id: agentId });
 });
 
-// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The agent's machine is killed at four points of a boot: the moment its VMM appeared, then 0.25 s, 0.75 s and 1.5 s later, which spans the few seconds a boot of this lane takes. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and platform-init seeds nothing over a home that is already on the disk.
+// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The agent's machine is killed at four points of a boot: the moment its VMM appeared, then 0.1 s, 0.25 s and 0.4 s later, which spans a boot of this lane, some 0.4 s from the VMM's start to a guest that answers. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and platform-init seeds nothing over a home that is already on the disk.
 test("comes back from its VMM being killed at points across a boot", async () => {
   test.setTimeout(1_200_000);
   for (const afterMs of KILL_DELAYS_MS) {
