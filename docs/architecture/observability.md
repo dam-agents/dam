@@ -70,10 +70,14 @@ Bob Shell reads the standard OTLP exporter env too, but on it the harness also s
 Pi exports nothing itself: its image ships an extension that writes one log record per model call and one per prompt, shaped like Claude Code's records under Pi's own event names, and stays off unless its rail turns log export on.
 Four rails exist today — Claude Code's, Bob Shell's, Pi's and Codex's — and all point at the same collector over the same gateway egress; a further harness means a further rail, plus a reshaping step in the collector where its records do not match the shape the read path takes.
 
-- **Rides the agent's ordinary egress.** Claude Code's exporter, Pi's extension and Codex's exporter honour the agent's `HTTPS_PROXY`, so their telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below.
-  No new network path, and no credential is injected into the export.
-  This is a **precondition, not a convenience**: for a correctly configured rail the collector is reachable no other way, and an exporter that ignored the proxy would also miss the attribution stamp, so its records could never be attributed to a user.
+- **Rides the agent's ordinary egress.** Pi's extension and Codex's exporter honour the agent's `HTTPS_PROXY`, so their telemetry leaves through the paired gateway pod over HTTPS to the bundled collector — the same dedicated, MITM-terminating chain that performs the trusted attribution below.
+  No credential is injected into the export.
+  This is a **precondition, not a convenience**: for a correctly configured rail the collector is reachable only through the gateway, and an exporter that went around it would also miss the attribution stamp, so its records could never be attributed to a user.
   Honouring it is not automatic: Bob Shell's OTLP exporter builds its own HTTP agent, which the runtime's env-proxy support does not cover, so on the platform its export is attempted directly and dies at the agent's egress policy, silently — today Bob's spend reaches no collector, and the Bob rail is wired for the day its export goes through the proxy.
+  Claude Code reaches the same gateway by **another door**: plain HTTP to the gateway's own address, on a path the gateway reserves for OTLP and forwards to the collector, stamped like everything else it forwards.
+  Through the proxy, Claude Code's three exporters share one proxied socket, and an export that has to wait for it is dropped at its timeout — most of the log records, so most of the per-call spend, never arrived, for every long session alike.
+  Claude Code skips its proxy only for an exact `NO_PROXY` host, not a CIDR range, so the image's start-up shim names the gateway's address there, takes the endpoint from the proxy URL itself, and does so only when the rail says the gateway serves the path.
+  It is the same port and address as the proxy, so no network policy changes; the path has no egress check, because it reaches nothing but the collector, and the gateway leaves a successful export out of its egress access log.
 
 - **A malformed rail can redirect telemetry outward.** Bob's rail is the case that makes this explicit: its provider selection validates a key pair the platform's collector ignores but the harness insists on, and a rail that fails that validation is discarded whole — the harness then falls back to its **vendor's own external endpoint** rather than exporting nothing.
   So a rail value is not merely inert when wrong; for this harness a missing or malformed one changes *where the telemetry goes*.
@@ -281,7 +285,8 @@ The stamp is worth trusting because the agent cannot substitute its own on any r
 That gateway proxy is the agent's *whole* egress, not just its telemetry path — it also forwards ordinary requests to whatever host the agent names, and the collector answers to more names than the one the platform configures: short service DNS, its cluster address, a second port.
 Recognizing the collector in order to stamp selectively cannot be made exhaustive, and a name missed by that recognition would be a name on which the agent's own claim still counted.
 So **the gateway stamps every plaintext request it forwards for the agent, and the telemetry-terminating route alongside it**, overwriting whatever the agent set.
-Those two are the only ways to the collector's receivers — a host chain re-originates TLS towards its own upstream and cannot reach one — so telemetry arriving there carries the gateway's value whichever way it came.
+The reserved OTLP path is one of those plaintext requests, so it carries the same stamp.
+Those are the only ways to the collector's receivers — a host chain re-originates TLS towards its own upstream and cannot reach one — so telemetry arriving there carries the gateway's value whichever way it came.
 The collector depends on this: it sees a stamp and has no way to ask which route produced it.
 The trade is that an agent's id is visible to any plaintext destination it calls; what it buys is that no record can arrive unattributable, which is what the usage figures rest on.
 For the same reason the telemetry path **wins a collision** — where an owner's own egress rule names the collector's address, that rule's route gives way to the stamping one, so no setting an owner can reach costs their agent its attribution.
