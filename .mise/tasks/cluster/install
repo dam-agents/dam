@@ -178,6 +178,14 @@ if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
   exit 1
 fi
 
+# k3s writes the kubeconfig before the node registers, and OpenRC's `rc-service
+# restart` returns before the API answers: waiting for a node is what gives the
+# `kubectl wait --all` below something to wait for, since on none it errors out
+# at once with "no matching resources found".
+wait_for_nodes() {
+  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+}
+
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
   # A running systemd, not an installed systemctl: containers often ship the
@@ -194,6 +202,12 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     if [ ! -f "$KUBECONFIG" ]; then
       echo "Provisioning k3s on host (sandbox mode)..."
       "$MISE_CONFIG_ROOT/.mise/tasks/cluster/provision-host" "$LIMA_TEMPLATE"
+    elif ! pgrep -x k3s-server >/dev/null; then
+      # cluster:stop leaves the kubeconfig behind, so the provision above never
+      # runs again and nothing would start k3s: the wait below would then time
+      # out against an API that is not there.
+      echo "Starting the k3s service..."
+      k3s_service start
     fi
   elif ! pgrep -x k3s-server >/dev/null; then
     # With no supervisor nothing restarts k3s, so a kubeconfig left by an
@@ -241,7 +255,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   fi
   echo "Waiting for k3s to be ready..."
   for _ in $(seq 1 60); do [ -f "$KUBECONFIG" ] && break; sleep 2; done
-  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+  wait_for_nodes
 else
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
@@ -287,11 +301,8 @@ else
     exit 1
   fi
   echo "Waiting for k3s to be ready..."
-  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+  wait_for_nodes
 fi
-# k3s writes kubeconfig before the node registers; the for-loop above
-# ensures ≥1 node exists, otherwise `kubectl wait --all` would error
-# immediately with "no matching resources found".
 kubectl wait --for=condition=Ready node --all --timeout=120s
 
 # 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
@@ -312,15 +323,14 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     echo "Configuring k3s container log rotation (issue #244)..."
     as_root mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
     printf '%s' "$K3S_CONFIG_YAML" | as_root tee "$K3S_LOGROT_DROPIN" >/dev/null
-    rc=0
-    k3s_service restart || rc=$?
-    if [ "$rc" = 0 ]; then
-      kubectl wait --for=condition=Ready node --all --timeout=120s
-    elif [ "$rc" = "$K3S_NO_SERVICE" ]; then
+    if ! k3s_has_service; then
       echo "No service manager here — container log rotation applies the next time k3s starts."
     else
-      echo "FATAL: k3s did not restart (rc=$rc); container log rotation is not applied." >&2
-      exit 1
+      rc=0
+      k3s_service restart || rc=$?
+      [ "$rc" = 0 ] || { echo "FATAL: k3s did not restart (rc=$rc); container log rotation is not applied." >&2; exit 1; }
+      wait_for_nodes
+      kubectl wait --for=condition=Ready node --all --timeout=120s
     fi
   fi
 else

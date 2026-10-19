@@ -13,17 +13,18 @@ fi
 # The supervisor k3s runs under: OpenRC where the host installed its service
 # (k3s's own installer prefers it when openrc-run exists), systemd where it is
 # running, and neither in a sandbox that has no init system — cluster:install
-# starts k3s as a plain process there. That last case returns K3S_NO_SERVICE,
-# which is not a failure: the command never ran. Any other code is the
-# supervisor's own, and the caller must not read it as "nothing to stop".
-K3S_NO_SERVICE=127
+# starts k3s as a plain process there. Ask k3s_has_service first: a return code
+# cannot tell that case apart from a supervisor that failed, since a missing
+# rc-service exits 127 too.
+k3s_has_service() { [ -x /etc/init.d/k3s ] || [ -d /run/systemd/system ]; }
 k3s_service() { # start|stop|restart
   if [ -x /etc/init.d/k3s ]; then
     as_root rc-service k3s "$1"
   elif [ -d /run/systemd/system ]; then
     as_root systemctl "$1" k3s
   else
-    return "$K3S_NO_SERVICE"
+    echo "FATAL: no init system owns k3s here; test k3s_has_service first." >&2
+    return 1
   fi
 }
 
