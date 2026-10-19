@@ -1,5 +1,6 @@
 import type { Db } from "db";
 import type {
+  DefaultModelNotice,
   HarnessCatalog,
   HarnessConfigService,
   SessionPair,
@@ -24,6 +25,8 @@ import {
   type WakeStamp,
 } from "./services/default-conversion.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
+import { emit, EventType } from "../../events.js";
+import { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
 
 export function composeHarnessConfigModule(deps: {
   db: Db;
@@ -90,11 +93,24 @@ export function composeDefaultConverter(deps: {
   isRunning: (agentId: string) => Promise<boolean>;
   wake: (agentId: string) => Promise<WakeStamp | null>;
   lastHelloAt: (agentId: string) => Promise<number | null>;
+  ownerOf: (agentId: string) => Promise<string | undefined>;
   log: (msg: string) => void;
 }): DefaultConverter {
-  const { db, namespace, ...rest } = deps;
+  const { db, namespace, ownerOf, ...rest } = deps;
   const converter = createDefaultConverter({
     ...rest,
+    onSaved: (agentId) => {
+      void ownerOf(agentId)
+        .then((ownerSub) => {
+          if (ownerSub)
+            emit({ type: EventType.AttentionChanged, ownerSub, agentId });
+        })
+        .catch((err: Error) =>
+          deps.log(
+            `[default-conversion] ${agentId}: notify failed: ${err.message}`,
+          ),
+        );
+    },
     pairRepo: createSessionPairRepo(db),
     snapshotRepo: createHarnessConfigSnapshotRepo(db),
     catalogView: createRuntimeCatalogReader(namespace),
@@ -111,4 +127,10 @@ export function composeScheduleModelForFire(deps: {
     getCapabilities: deps.getCapabilities,
     snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
   });
+}
+
+export function composeDefaultModelNotices(
+  db: Db,
+): (agentIds: readonly string[]) => Promise<DefaultModelNotice[]> {
+  return createDefaultModelNoticeReader(db);
 }

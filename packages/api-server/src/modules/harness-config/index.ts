@@ -1,5 +1,6 @@
 export {
   composeDefaultConverter,
+  composeDefaultModelNotices,
   composeFirePair,
   composeScheduleModelForFire,
   composeHarnessConfigModule,

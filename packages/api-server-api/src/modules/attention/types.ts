@@ -2,7 +2,22 @@ import type { SessionMode, SessionType } from "../sessions/types.js";
 
 export const ATTENTION_FEED_LIMIT = 200;
 
-export type AttentionItemKind = "session" | "approval";
+export type AttentionItemKind = "session" | "approval" | "default-model";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: why an Agent's saved default needs its owner:
+ * none is set, its provider is no longer the Agent's, or the conversion of
+ * an old default runs it on another model than the one its setting named.
+ */
+export type DefaultModelState = "not-set" | "provider-gone" | "changed";
+
+export interface DefaultModelNotice {
+  agentId: string;
+  state: DefaultModelState;
+  harness: string;
+  model: string | null;
+  changedFrom: string | null;
+}
 
 export interface AttentionItem {
   agentId: string;
@@ -28,6 +43,7 @@ export interface DismissedEntry {
 export interface AttentionList {
   items: AttentionItem[];
   dismissed: DismissedEntry[];
+  defaultModels: DefaultModelNotice[];
 }
 
 export interface AttentionDismissal {

@@ -15,6 +15,8 @@ import type { AgentView } from "../../../types.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
+import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
+import { defaultModelBlocks } from "../../home/lib/default-model-copy.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
@@ -44,6 +46,7 @@ export function SidebarAgents({
     previewComplete,
   } = useSidebarAgents();
   const orderActions = useSidebarOrderActions();
+  const defaultModels = useDefaultModelNotices();
   const activity = useActivitySessions();
   const allAgents = useAgentsList();
   const attention = useMemo(
@@ -77,6 +80,7 @@ export function SidebarAgents({
         selected={current}
         current={current && !sessionOpen}
         unread={unreadAgentIds.has(agent.id)}
+        noDefaultModel={defaultModelBlocks(defaultModels.byAgent.get(agent.id))}
         orderReady={orderActions.ready}
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}

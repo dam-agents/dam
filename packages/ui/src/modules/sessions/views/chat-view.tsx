@@ -66,6 +66,7 @@ import {
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
+import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
@@ -801,6 +802,7 @@ export function ChatView() {
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />
       <WorkspaceFailureNotice agentId={selectedAgent} />
+      <DefaultModelNotice agentId={selectedAgent} />
     </>
   );
 

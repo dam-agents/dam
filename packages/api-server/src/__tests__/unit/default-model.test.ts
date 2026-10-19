@@ -2,7 +2,11 @@
 import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
-import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
+import {
+  convertedDefault,
+  convertedDefaultModel,
+} from "../../modules/harness-config/domain/default-conversion.js";
+import { defaultModelNoticeOf } from "../../modules/harness-config/domain/default-model-notice.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
 import { createScheduleModelForFire } from "../../modules/harness-config/services/schedule-model.js";
@@ -119,6 +123,22 @@ describe("convertedDefaultModel", () => {
     ).toBeNull();
   });
 
+  // TEST_SCENARIO: Haiku on a provider that lists none runs on its newest Sonnet, as the gateway served it before the Model Router, and is noted; Haiku where it is listed, or any other tier missing, is not substituted.
+  it("runs Haiku on the newest Sonnet only where the provider has no Haiku", () => {
+    const ibm = (setting: string, listed: string[]) =>
+      convertedDefault({ setting, alias: "ibm", listed, ran: [] });
+    expect(
+      ibm("haiku", ["aws/claude-sonnet-4-6", "aws/claude-sonnet-5-5"]),
+    ).toEqual({ model: "ibm/aws/claude-sonnet-5-5", changedFrom: "haiku" });
+    expect(
+      ibm("haiku", ["aws/claude-haiku-4-5", "aws/claude-sonnet-5-5"]),
+    ).toEqual({
+      model: "ibm/aws/claude-haiku-4-5",
+    });
+    expect(ibm("opus", ["aws/claude-sonnet-5-5"])).toBeNull();
+    expect(ibm("haiku", ["aws/gpt-5.5"])).toBeNull();
+  });
+
   // TEST_SCENARIO: a model id is kept in the provider's own spelling when the provider lists it, and dropped when it does not.
   it("keeps a listed model id and drops an unlisted one", () => {
     expect(convert("Claude-Opus-4-8")).toBe("anthropic/claude-opus-4-8");
@@ -196,6 +216,7 @@ describe("the one-time default conversion", () => {
     helloAfterWake?: boolean;
   }) => {
     const writes: SessionPair[] = [];
+    const notes: unknown[] = [];
     let saved = opts.saved ?? null;
     const ranQueries: number[] = [];
     const wakes: string[] = [];
@@ -206,10 +227,11 @@ describe("the one-time default conversion", () => {
       pairRepo: {
         read: async () => saved,
         write: async () => {},
-        writeIfEmpty: async (_id, pair) => {
+        writeIfEmpty: async (_id, pair, note) => {
           if (saved) return false;
           saved = pair;
           writes.push(pair);
+          if (note) notes.push(note);
           return true;
         },
         grantedProviders: async () => (opts.granted ?? [ANTHROPIC]) as never,
@@ -247,7 +269,14 @@ describe("the one-time default conversion", () => {
       log: () => {},
       sleep: async () => {},
     });
-    return { c, writes, ranQueries, wakes, catalogReads: () => catalogReads };
+    return {
+      c,
+      writes,
+      notes,
+      ranQueries,
+      wakes,
+      catalogReads: () => catalogReads,
+    };
   };
 
   // TEST_SCENARIO: an Agent from v0.2.21 holds one provider and a tier setting, so its default becomes that provider's newest model of the tier, saved once.
@@ -262,6 +291,17 @@ describe("the one-time default conversion", () => {
         model: "anthropic/claude-opus-5-5",
       },
     ]);
+  });
+
+  // TEST_SCENARIO: a Haiku setting on a provider with no Haiku saves the newest Sonnet together with a note, so the owner is told.
+  it("saves the Sonnet that replaces Haiku with a note", async () => {
+    const { c, writes, notes } = converter({
+      setting: "haiku",
+      catalog: view("listed", ["claude-sonnet-5-5", "claude-opus-5-5"]),
+    });
+    expect(await c.convert("a")).toBe("converted");
+    expect(writes[0]?.model).toBe("anthropic/claude-sonnet-5-5");
+    expect(notes).toEqual([{ changedFrom: "haiku" }]);
   });
 
   // TEST_SCENARIO: several providers fit, and nothing says which one the person meant, so the default is saved as not set for the owner to pick.
@@ -387,5 +427,37 @@ describe("a schedule model on a runtime that takes none per session", () => {
         "ibm/aws/claude-opus-4-8",
       ),
     ).toBe("ibm/aws/claude-opus-4-8");
+  });
+});
+
+describe("defaultModelNoticeOf", () => {
+  const pair = (model: string | null, provider: string | null = "anth") => ({
+    harness: "claude-code",
+    provider,
+    model,
+  });
+  const notice = (
+    p: SessionPair | null,
+    note: { changedFrom: string } | null = null,
+    granted: string[] = ["anth"],
+  ) =>
+    defaultModelNoticeOf({
+      agentId: "a",
+      pair: p,
+      note,
+      grantedProviders: new Set(granted),
+    })?.state ?? null;
+
+  // TEST_SCENARIO: the owner is told about a default with no model, one on a provider the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default and one that runs as saved say nothing.
+  it("names the state the owner must know about", () => {
+    expect(notice(null)).toBeNull();
+    expect(notice(pair(null, null))).toBe("not-set");
+    expect(notice(pair("ibm/aws/claude-opus-4-8", "lite"))).toBe(
+      "provider-gone",
+    );
+    expect(
+      notice(pair("anthropic/claude-sonnet-5-5"), { changedFrom: "haiku" }),
+    ).toBe("changed");
+    expect(notice(pair("anthropic/claude-opus-5-5"))).toBeNull();
   });
 });

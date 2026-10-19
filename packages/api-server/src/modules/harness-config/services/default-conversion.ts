@@ -1,7 +1,8 @@
 import { routesByModelName, type HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
 import { harnessFits } from "../../templates/index.js";
-import { convertedDefaultModel } from "../domain/default-conversion.js";
+import { convertedDefault } from "../domain/default-conversion.js";
+import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { FillableSessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { defaultHarnessOf } from "./harness-config-service.js";
@@ -58,6 +59,7 @@ export function createDefaultConverter(deps: {
   isRunning?: (agentId: string) => Promise<boolean>;
   wake?: (agentId: string) => Promise<WakeStamp | null>;
   lastHelloAt?: (agentId: string) => Promise<number | null>;
+  onSaved?: (agentId: string) => void;
   log: (msg: string) => void;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
@@ -78,11 +80,14 @@ export function createDefaultConverter(deps: {
   const save = async (
     agentId: string,
     pair: SessionPair,
+    note?: DefaultModelNote,
   ): Promise<DefaultConversion> => {
-    if (!(await deps.pairRepo.writeIfEmpty(agentId, pair))) return "saved";
+    if (!(await deps.pairRepo.writeIfEmpty(agentId, pair, note)))
+      return "saved";
     deps.log(
-      `[default-conversion] ${agentId}: ${pair.model === null ? "default not set" : `default set to ${pair.model}`} on ${pair.harness}`,
+      `[default-conversion] ${agentId}: ${pair.model === null ? "default not set" : `default set to ${pair.model}`} on ${pair.harness}${note ? ` (in place of ${note.changedFrom})` : ""}`,
     );
+    deps.onSaved?.(agentId);
     return pair.model === null ? "not-set" : "converted";
   };
 
@@ -114,14 +119,20 @@ export function createDefaultConverter(deps: {
       null;
     const needsRan =
       !setting?.trim() || setting.trim().toLowerCase() === "default";
-    const model = convertedDefaultModel({
+    const converted = convertedDefault({
       setting,
       alias: group.alias,
       listed:
         group.status === "listed" ? group.models.map((m) => m.upstreamId) : [],
       ran: needsRan ? await modelsRan(agentId) : [],
     });
-    return save(agentId, { harness, provider: provider.id, model });
+    return save(
+      agentId,
+      { harness, provider: provider.id, model: converted?.model ?? null },
+      converted?.changedFrom
+        ? { changedFrom: converted.changedFrom }
+        : undefined,
+    );
   };
 
   const polled = async (

@@ -979,6 +979,7 @@ export async function bootstrap() {
       (
         await runtimeDelivery.agentsRuntimeRepo.get(agentId)
       )?.runtimeLastHelloAt?.getTime() ?? null,
+    ownerOf: async (agentId) => (await agentsRepo.get(agentId))?.owner,
     log: (msg) => getLogger().info(msg),
   });
 

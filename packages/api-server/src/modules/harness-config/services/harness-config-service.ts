@@ -196,6 +196,11 @@ export function createHarnessConfigService(deps: {
       if (invalid)
         throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
       await deps.pairRepo.write(agentId, pair);
+      emit({
+        type: EventType.AttentionChanged,
+        ownerSub: deps.ownerSub,
+        agentId,
+      });
     },
   };
 

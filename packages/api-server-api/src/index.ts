@@ -576,6 +576,8 @@ export type {
   AttentionItem,
   AttentionList,
   AttentionService,
+  DefaultModelNotice,
+  DefaultModelState,
   DismissedEntry,
 } from "./modules/attention/types.js";
 export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";

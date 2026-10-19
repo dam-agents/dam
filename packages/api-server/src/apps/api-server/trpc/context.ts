@@ -8,6 +8,7 @@ import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructur
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
 import { TRPCError } from "@trpc/server";
 import {
+  composeDefaultModelNotices,
   composeHarnessConfigModule,
   NoDefaultModelError,
 } from "../../../modules/harness-config/index.js";
@@ -318,6 +319,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await createApprovalsRepository(db).getPending(approvalId))
           ?.ownerSub === user.sub,
       ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
+      defaultModelNotices: async () =>
+        composeDefaultModelNotices(db)(
+          (await agentsRepo.list(user.sub)).map((agent) => agent.id),
+        ),
     });
     const files = composeFilesModule(
       agentsRepo,

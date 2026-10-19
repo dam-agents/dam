@@ -10,7 +10,7 @@ In an Agent's chat with the new layout off, the chat has no icon bar: the bell s
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices) are a fourth, read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
@@ -104,6 +104,14 @@ Two consequences are worth stating plainly, because both are costs.
 A busy Agent now reports whether or not a human is looking — the watch is no longer scoped to who has a tab open.
 And the comparison state is in memory, held by whichever replica holds the lease: a row the retention trim removes is not known to be gone, so it is re-created on the next hold rather than staying deleted.
 That is harmless — the row is a fresh capture of live state — but it means retention trims history, not the present.
+
+## Default-model notices
+
+The bell also lists the Agents whose saved default needs their owner ([harness configuration](harness-config.md)): none is set, its provider is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+They are computed on every read from the Agent's saved default, its granted providers and the conversion's note, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
+A pending default, one still being converted, says nothing.
+The same notice puts a warning dot on the Agent in the sidebar, a banner above its chat and "Won't run" on its schedules that name no model; only the bell's card can be dismissed, per Agent and state, and a changed default is shown in the bell alone.
+Saving a default or converting one sends the owner the attention hint, and changing an Agent's providers refreshes the list in the tab that changed them.
 
 ## Seen, unread, and dismissed
 

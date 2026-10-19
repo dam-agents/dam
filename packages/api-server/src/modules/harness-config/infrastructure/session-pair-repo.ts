@@ -16,6 +16,7 @@ import {
   sessionPairSchema,
   type SessionPair,
 } from "api-server-api";
+import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { GrantedProvider } from "../domain/session-pair.js";
 
 export interface SessionPairRepo {
@@ -25,7 +26,11 @@ export interface SessionPairRepo {
 }
 
 export interface FillableSessionPairRepo extends SessionPairRepo {
-  writeIfEmpty(agentId: string, pair: SessionPair): Promise<boolean>;
+  writeIfEmpty(
+    agentId: string,
+    pair: SessionPair,
+    note?: DefaultModelNote,
+  ): Promise<boolean>;
 }
 
 export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
@@ -42,14 +47,14 @@ export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
     async write(agentId, pair) {
       await db
         .update(agentsTable)
-        .set({ sessionPair: pair })
+        .set({ sessionPair: pair, defaultModelNote: null })
         .where(eq(agentsTable.id, agentId));
     },
 
-    async writeIfEmpty(agentId, pair) {
+    async writeIfEmpty(agentId, pair, note) {
       const rows = await db
         .update(agentsTable)
-        .set({ sessionPair: pair })
+        .set({ sessionPair: pair, defaultModelNote: note ?? null })
         .where(
           and(eq(agentsTable.id, agentId), isNull(agentsTable.sessionPair)),
         )

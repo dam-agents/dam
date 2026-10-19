@@ -4,6 +4,7 @@ import {
   type AttentionItem,
   type AttentionList,
   type AttentionService,
+  type DefaultModelNotice,
   type SessionMode,
   type SessionType,
 } from "api-server-api";
@@ -30,19 +31,30 @@ function toItem(row: AttentionRecordRow): AttentionItem {
   };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a default-model notice is dismissed per Agent
+ * and state (`<agentId>:<state>`), so dismissing one state never hides a
+ * later one.
+ */
+const defaultModelNoticeAgent = (id: string): string =>
+  id.slice(0, Math.max(0, id.lastIndexOf(":")));
+
 export function createAttentionService(deps: {
   repo: AttentionRepository;
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
   ownsAgent: (agentId: string) => Promise<boolean>;
+  defaultModelNotices?: () => Promise<DefaultModelNotice[]>;
 }): AttentionService {
   return {
     async listForOwner(): Promise<AttentionList> {
-      const [records, dismissals] = await Promise.all([
+      const [records, dismissals, defaultModels] = await Promise.all([
         deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
         deps.repo.listDismissals(deps.ownerSub),
+        deps.defaultModelNotices?.() ?? [],
       ]);
       return {
+        defaultModels,
         items: records.map(toItem),
         dismissed: dismissals.map((d) => ({
           kind: d.kind,
@@ -79,11 +91,21 @@ export function createAttentionService(deps: {
           })),
       );
 
+      const defaultModels = await Promise.all(
+        items
+          .filter((item) => item.kind === "default-model")
+          .map(async (item) => ({
+            item,
+            owned: await deps.ownsAgent(defaultModelNoticeAgent(item.id)),
+          })),
+      );
+
       await deps.repo.setDismissals(
         deps.ownerSub,
         [
           ...sessions.filter((item) => owned.has(item.id)),
           ...approvals.filter((a) => a.owned).map((a) => a.item),
+          ...defaultModels.filter((d) => d.owned).map((d) => d.item),
         ].map((item) => ({ kind: item.kind, itemId: item.id })),
         at,
       );
