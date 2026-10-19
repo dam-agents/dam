@@ -1,7 +1,5 @@
 import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
-import { type ReactNode, useEffect, useRef, useState } from "react";
-
-import { labelVariants } from "@/components/ui/label";
+import { useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../../store.js";
 import type { SessionView } from "../../../../types.js";
@@ -29,17 +27,21 @@ import {
 } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
+import { activityTone, sessionContext } from "../../lib/sidebar-tree.js";
+import { ActivityDot } from "./activity-dot.js";
 
 const ROW_CLASS = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's own Session list in the new layout's sidebar: every Session the Agent lists, its pinned ones in their own section above the rest, the next page loaded when the list scrolls near its end, and the Sessions ordered by last activity, newest first. Rename and Delete wake the Agent and run once it answers, as in the current layout's list.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in the new layout's sidebar tree: every Session the Agent lists except those the Pinned section above already shows, each with its activity dot and context line, the next page loaded when the list scrolls near its end, and the Sessions ordered by last activity, newest first. Rename and Delete wake the Agent and run once it answers, as in the current layout's list.
  */
 export function AgentSessionList({
   agentId,
+  shownAbove,
   onNavigate,
 }: {
   agentId: string;
+  shownAbove: ReadonlySet<string>;
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
@@ -63,16 +65,6 @@ export function AgentSessionList({
   } = list;
   const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
   const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
-  const loadedIds = new Set(list.sessions.map((s) => s.sessionId));
-  const pinMissing = [...pins].some(
-    (key) =>
-      key.startsWith(`${agentId}:`) &&
-      !loadedIds.has(key.slice(agentId.length + 1)),
-  );
-  useEffect(() => {
-    if (canFetch && pinMissing && !list.provisional) void fetchNextPage();
-  }, [canFetch, pinMissing, list.provisional, fetchNextPage]);
-
   const rows = newestFirst(
     list.sessions
       .map((session) => ({ session, state: list.rowState(session) }))
@@ -86,8 +78,9 @@ export function AgentSessionList({
     (row) => row.session.sessionId,
   );
   const isPinned = (id: string) => pins.has(pinKey(agentId, id));
-  const pinned = rows.filter((row) => isPinned(row.session.sessionId));
-  const rest = rows.filter((row) => !isPinned(row.session.sessionId));
+  const shown = rows.filter(
+    (row) => !shownAbove.has(pinKey(agentId, row.session.sessionId)),
+  );
 
   const remove = async (s: SessionView) => {
     const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
@@ -109,6 +102,9 @@ export function AgentSessionList({
       <SessionRow
         session={s}
         {...state}
+        conversation={sessionContext(s, state.conversation)}
+        leading={<ActivityDot tone={activityTone(state)} />}
+        indicators={false}
         className={ROW_CLASS}
         pinned={isPinned(s.sessionId)}
         onTogglePin={() => togglePinnedSession(pinKey(agentId, s.sessionId))}
@@ -152,14 +148,7 @@ export function AgentSessionList({
             : "No sessions yet."}
         </p>
       )}
-      {pinned.length > 0 && (
-        <>
-          <ListLabel>Pinned</ListLabel>
-          {pinned.map(row)}
-          <ListLabel>Recent</ListLabel>
-        </>
-      )}
-      {rest.map(row)}
+      {shown.map(row)}
       {hasNextPage && <div ref={endRef} aria-hidden className="h-px" />}
       {isFetchingNextPage && <SessionListSkeleton />}
       {hasNextPage && fetchNextPageFailed && (
@@ -178,14 +167,6 @@ export function AgentSessionList({
           onClose={() => setRenaming(null)}
         />
       )}
-    </div>
-  );
-}
-
-function ListLabel({ children }: { children: ReactNode }) {
-  return (
-    <div className="px-2 pt-3 pb-1.5 first:pt-0">
-      <span className={labelVariants()}>{children}</span>
     </div>
   );
 }

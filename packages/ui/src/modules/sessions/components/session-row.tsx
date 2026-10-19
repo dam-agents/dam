@@ -66,6 +66,7 @@ interface Props {
   cost?: SpendSessionRow;
   conversation?: string;
   leading?: ReactNode;
+  indicators?: boolean;
   pinned?: boolean;
   onTogglePin?: () => void;
   onResume: () => void;
@@ -87,6 +88,7 @@ export function SessionRow({
   cost,
   conversation,
   leading,
+  indicators = true,
   pinned = false,
   onTogglePin,
   onResume,
@@ -223,16 +225,18 @@ export function SessionRow({
               pinned ? "ml-1" : "ml-auto",
             )}
           >
-            <SessionIndicators
-              scheduled={scheduled}
-              terminal={terminal}
-              messenger={messenger}
-              needsApproval={needsApproval}
-              working={working}
-              draft={draft}
-              backgroundWork={backgroundWork}
-              harness={s.harness ?? null}
-            />
+            {indicators && (
+              <SessionIndicators
+                scheduled={scheduled}
+                terminal={terminal}
+                messenger={messenger}
+                needsApproval={needsApproval}
+                working={working}
+                draft={draft}
+                backgroundWork={backgroundWork}
+                harness={s.harness ?? null}
+              />
+            )}
             <div
               className={cn(
                 "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",

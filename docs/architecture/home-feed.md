@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -57,14 +57,14 @@ It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) tha
 ## The new layout
 
 The **new layout** [experimental feature](features.md) replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
-The sidebar becomes two columns: a strip of Agent avatars, and a list of Sessions beside it.
-Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
-With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; waiting approvals show only as badges.
-With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
-The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
-A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
+The sidebar becomes one tree: every Agent is a row that opens to that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
+The Agent open in the page opens in the tree; any other Agent opens and closes from its row, and the open state lasts until the page reloads.
+An Agent row shows its unread mark while closed; its New session and actions buttons show on hover or keyboard focus, and a New session row ends its open list and a New agent row ends the tree.
+Each Session row has an activity dot (waiting approval, working, unread or idle) and a line naming its harness, model and source; a Session from the record alone has no model.
+The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
+A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list.
 Pins are kept in the browser, so they do not follow the user to another device.
-The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
+The Pinned section shows a pinned Session only while it is in the record; one that is not stays in its Agent's list, and deleting a Session drops its pin.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.
 

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is a strip of Agent avatars beside a list of Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, and a Session can be pinned to a section above the rest. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, and a Session can be pinned to a Pinned section above every Agent. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -38,6 +38,12 @@ async function setNewLayout(enabled: boolean): Promise<void> {
   expect(flags["new-layout"], "the new-layout experiment flag").toBe(enabled);
 }
 
+function agentNode(page: Page, name: string) {
+  return page.locator(
+    `[data-testid="sidebar-agent"][data-agent-name="${name}"]`,
+  );
+}
+
 async function openHome(page: Page): Promise<void> {
   await page.goto(baseUrl);
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
@@ -64,43 +70,45 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: with the experiment off, the user sees the current layout: no avatar strip, and Home lists the Agents as rows.
+// TEST_SCENARIO: with the experiment off, the user sees the current layout: no sidebar tree, and Home lists the Agents as rows.
 test("keeps the current layout while the experiment is off", async ({
   page,
 }) => {
   await setNewLayout(false);
   await openHome(page);
   await expect(page.getByTestId("agent-row").first()).toBeVisible();
-  await expect(page.getByTestId("sidebar-avatar-strip")).toHaveCount(0);
+  await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the avatar strip with the Agents in it, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's avatar opens its chat with its own Session list beside it.
-test("shows the strip, the dashboard and the tiled rail when on", async ({
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and a New agent row after them, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list with a New session row at its end, and that row opens the Agent's chat.
+test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
   await setNewLayout(true);
   await openHome(page);
-  const strip = page.getByTestId("sidebar-avatar-strip");
-  await expect(strip).toBeVisible();
-  for (const name of AGENTS)
-    await expect(strip.getByRole("button", { name })).toBeVisible();
+  const tree = page.getByTestId("sidebar-tree");
+  await expect(tree).toBeVisible();
+  for (const name of AGENTS) await expect(agentNode(page, name)).toBeVisible();
+  await expect(tree.getByTestId("sidebar-new-agent-row")).toBeVisible();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(page.getByTestId("agent-row")).toHaveCount(0);
   await expect(page.getByTestId("side-panel-docs")).toBeVisible();
 
-  await strip.getByRole("button", { name: AGENTS[0] }).click();
+  const node = agentNode(page, AGENTS[0]);
+  const row = node.getByTestId("sidebar-agent-row");
+  await row.click();
+  await expect(row).toHaveAttribute("aria-expanded", "true");
+  await node.getByTestId("sidebar-new-session-row").click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}`),
   );
-  await expect(
-    page.locator(
-      `[data-testid="sidebar-agent-column"][data-agent-name="${AGENTS[0]}"]`,
-    ),
-  ).toBeVisible();
+  await row.click();
+  await expect(row).toHaveAttribute("aria-expanded", "false");
+  await expect(node.getByTestId("sidebar-new-session-row")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: a pin moves a Session out of Recent into a Pinned section above it in the Agent's own list, and the pin survives a reload; unpinning returns it.
-test("pins a Session above the rest of the Agent's list", async ({ page }) => {
+// TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent.
+test("pins a Session above every Agent", async ({ page }) => {
   test.setTimeout(240_000);
   await setNewLayout(true);
   const name = AGENTS[0];
@@ -112,19 +120,26 @@ test("pins a Session above the rest of the Agent's list", async ({ page }) => {
   await sendMessageToAgent(page, "layout-pin-me");
   await expect(page.getByText(reply)).toBeVisible({ timeout: 60_000 });
 
-  const column = page.locator(
-    `[data-testid="sidebar-agent-column"][data-agent-name="${name}"]`,
-  );
-  const row = column.getByTestId("session-row").first();
+  const node = agentNode(page, name);
+  const pinnedSection = page.getByRole("region", { name: "Pinned" });
+  const row = node.getByTestId("session-row").first();
   await expect(row).toBeVisible({ timeout: 30_000 });
+  const sessionId = await row.getAttribute("data-session-id");
+  const inPinned = pinnedSection.locator(
+    `[data-testid="session-row"][data-session-id="${sessionId}"]`,
+  );
+  const inAgent = node.locator(
+    `[data-testid="session-row"][data-session-id="${sessionId}"]`,
+  );
   await row.hover();
   await row.getByTestId("session-pin-button").click();
-  await expect(column.getByText("Pinned", { exact: true })).toBeVisible();
-  await expect(row.getByLabel("Pinned")).toBeVisible();
+  await expect(inPinned).toBeVisible({ timeout: 30_000 });
+  await expect(inAgent).toHaveCount(0);
 
   await page.reload();
-  await expect(column.getByText("Pinned", { exact: true })).toBeVisible();
-  await row.hover();
-  await row.getByTestId("session-pin-button").click();
-  await expect(column.getByText("Pinned", { exact: true })).toHaveCount(0);
+  await expect(inPinned).toBeVisible({ timeout: 30_000 });
+  await inPinned.hover();
+  await inPinned.getByTestId("session-pin-button").click();
+  await expect(pinnedSection).toHaveCount(0);
+  await expect(inAgent).toBeVisible();
 });
