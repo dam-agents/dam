@@ -10,6 +10,7 @@ import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
 import { getErrorMessage } from "./lib/errors.js";
 import { emitToast } from "./lib/toast.js";
 import { showStorageFull } from "./modules/budgets/lib/storage-full.js";
+import { acpSessionsKeys } from "./modules/sessions/api/keys.js";
 import {
   isTermsStale,
   isTermsStaleError,
@@ -57,6 +58,9 @@ export const queryClient = new QueryClient({
     queries: {
       retry: 3,
       staleTime: 30_000,
+      refetchOnWindowFocus: false,
+      refetchOnReconnect: (query) =>
+        query.queryKey[0] === acpSessionsKeys.all[0],
     },
     mutations: {
       onSuccess: (_data, _vars, _ctx, mutation): Promise<unknown> =>
@@ -89,6 +93,6 @@ onlineManager.setEventListener((setOnline) =>
   subscribeApiHealth(() => {
     const connected = getApiHealthSnapshot() === "connected";
     setOnline(connected);
-    if (connected) queryClient.invalidateQueries();
+    if (connected) queryClient.invalidateQueries({ refetchType: "none" });
   }),
 );
