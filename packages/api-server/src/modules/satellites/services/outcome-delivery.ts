@@ -25,6 +25,7 @@ export interface OutcomeDeliveryDeps {
     ref: string,
     output: string,
   ) => Promise<string | null>;
+  pairFields?: (agentId: string) => Promise<Record<string, unknown>>;
   log: (msg: string) => void;
 }
 
@@ -99,7 +100,11 @@ export function createOutcomeDelivery(deps: OutcomeDeliveryDeps) {
         {
           id: `satellite-outcome:${agentId}:${refs[0]!}:${firedAt}`,
           kind: "satellite-outcome",
-          payload: { task, refs },
+          payload: {
+            task,
+            refs,
+            ...(await deps.pairFields?.(agentId)),
+          },
           expiresAt: new Date(firedAt + EVENT_TTL_MS),
         },
       ]);

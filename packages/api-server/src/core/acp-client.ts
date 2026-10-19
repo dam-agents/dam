@@ -477,7 +477,7 @@ const refusedForNoModel = (err: unknown): boolean =>
  * NoDefaultModelError from firePair. A runtime that never refuses (one older
  * than the refusal) is never pinned, so a session's own model is kept.
  */
-async function promptPinningDefault<T>(
+export async function promptPinningDefault<T>(
   connection: ClientConnection,
   sessionId: string,
   prompt: () => Promise<T>,

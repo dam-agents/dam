@@ -220,7 +220,6 @@ export function createHarnessConfigService(deps: {
     pair: SessionPair,
     granted: readonly { id: string; type: ProviderPresetType }[],
   ): Promise<SessionPair> {
-    if (pair.model === null) return pair;
     const model = qualifiedPairModel(pair.model);
     if (model === null)
       throw new TRPCError({

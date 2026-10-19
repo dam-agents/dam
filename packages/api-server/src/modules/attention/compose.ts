@@ -28,6 +28,7 @@ export function composeAttentionService(deps: {
     ...(deps.defaultModelNotices && {
       defaultModelNotices: deps.defaultModelNotices,
     }),
+    log: (message) => process.stderr.write(`${message}\n`),
   });
 }
 

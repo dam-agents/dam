@@ -45,6 +45,7 @@ import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  servesHarness,
   VENDORED_PRICE_TABLE,
 } from "./modules/model-catalog/index.js";
 import {
@@ -355,16 +356,25 @@ const nativeConnectionOf = (
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models
  * through the Model Router needs each session's model; one that runs on a
- * native Connection, or an agent holding no routed provider, keeps the
- * harness's own model configuration.
+ * native Connection, or an agent holding no provider whose API the harness
+ * speaks, keeps the harness's own model configuration. Before the pod's env
+ * arrives nothing is known, so a model is required.
  */
-const modelRequired = (harness: string): boolean =>
-  harnessManifests[harness]?.modelRouter !== undefined &&
-  nativeConnectionOf(harness, null) === null &&
-  envStore.state().providers.some((l) => {
-    const alias = l.template ? aliasForTemplateId(l.template) : null;
-    return alias !== null && PROVIDER_DIALECTS[alias].length > 0;
-  });
+const modelRequired = (harness: string): boolean => {
+  const binding = harnessManifests[harness]?.modelRouter;
+  if (binding === undefined) return false;
+  if (!envStore.ready()) return true;
+  return (
+    nativeConnectionOf(harness, null) === null &&
+    envStore.state().providers.some((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      return (
+        alias !== null &&
+        servesHarness({ dialects: PROVIDER_DIALECTS[alias] }, harness, binding)
+      );
+    })
+  );
+};
 const nativeEnv = (connectionId: string): Record<string, string> =>
   envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
 /**
@@ -678,22 +688,29 @@ function markTerminalSeen(sessionId: string): void {
  * UNIT_BOUNDARY_DESCRIPTION: a model whose provider the agent no longer holds
  * refuses the terminal with the provider-removed reason, and a missing model
  * on a harness that needs one with the no-model reason, as a chat prompt
- * would be refused.
+ * would be refused. A terminal session with no model of its own takes the
+ * one the client asks for on its harness.
  */
 function terminalLease(
   sessionId: string,
   requested: { harness?: string; model?: string },
+  fresh: boolean,
 ): { harness: string; model: string | null } | string {
   const meta = sessionMetadata.get(sessionId)?.meta;
-  const harness = meta?.harness ?? requested.harness ?? defaultHarness;
+  const harness =
+    meta?.harness ?? (fresh ? requested.harness : undefined) ?? defaultHarness;
   if (!Object.hasOwn(harnessManifests, harness))
     return `this agent does not carry the ${harness} harness`;
-  const chosen =
+  const stored =
     meta?.harness !== undefined
       ? acpRuntime.sessionChoice(sessionId).model
-      : requested.model !== undefined
-        ? canonicalModel(requested.model)
-        : null;
+      : null;
+  const asked =
+    requested.model !== undefined &&
+    (requested.harness === undefined || requested.harness === harness)
+      ? canonicalModel(requested.model)
+      : null;
+  const chosen = stored ?? asked;
   const alias = chosen ? parseQualifiedModel(chosen)?.alias : undefined;
   if (alias && !grantedAliases().includes(alias))
     return PROVIDER_REMOVED_REASON;
@@ -814,7 +831,7 @@ function attachPty(
         return;
       }
 
-      const lease = terminalLease(sessionId, opts.lease);
+      const lease = terminalLease(sessionId, opts.lease, opts.reset);
       if (typeof lease === "string") {
         ws.close(1008, lease);
         return;

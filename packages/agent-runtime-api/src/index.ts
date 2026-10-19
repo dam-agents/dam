@@ -230,6 +230,7 @@ export {
   onceOrigin,
   onceOriginMode,
   initializationEventPayload,
+  satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
   workspaceCommandEventPayload,
   workspaceSeedEventPayload,

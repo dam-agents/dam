@@ -2,10 +2,8 @@
 import { describe, expect, it } from "vitest";
 import type { HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
-import {
-  convertedDefault,
-  convertedDefaultModel,
-} from "../../modules/harness-config/domain/default-conversion.js";
+import { convertedDefault } from "../../modules/harness-config/domain/converted-default.js";
+import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
 import { defaultModelNoticeOf } from "../../modules/harness-config/domain/default-model-notice.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
@@ -438,26 +436,47 @@ describe("defaultModelNoticeOf", () => {
   });
   const notice = (
     p: SessionPair | null,
-    note: { changedFrom: string } | null = null,
-    granted: string[] = ["anth"],
+    opts: {
+      note?: { changedFrom: string };
+      aliases?: string[];
+      routed?: boolean;
+    } = {},
   ) =>
     defaultModelNoticeOf({
       agentId: "a",
+      routed: opts.routed ?? true,
       pair: p,
-      note,
-      grantedProviders: new Set(granted),
+      note: opts.note ?? null,
+      grantedAliases: new Set(opts.aliases ?? ["anthropic"]),
     })?.state ?? null;
 
-  // TEST_SCENARIO: the owner is told about a default with no model, one on a provider the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default and one that runs as saved say nothing.
+  // TEST_SCENARIO: the owner is told about a default with no model, one with no provider to pick from, one whose model names a provider alias the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default and one that runs as saved say nothing.
   it("names the state the owner must know about", () => {
     expect(notice(null)).toBeNull();
     expect(notice(pair(null, null))).toBe("not-set");
+    expect(notice(pair(null, null), { aliases: [] })).toBe("no-provider");
     expect(notice(pair("ibm/aws/claude-opus-4-8", "lite"))).toBe(
       "provider-gone",
     );
     expect(
-      notice(pair("anthropic/claude-sonnet-5-5"), { changedFrom: "haiku" }),
+      notice(pair("anthropic/claude-sonnet-5-5"), {
+        note: { changedFrom: "haiku" },
+      }),
     ).toBe("changed");
     expect(notice(pair("anthropic/claude-opus-5-5"))).toBeNull();
+  });
+
+  // TEST_SCENARIO: runs take the provider from the model's alias, so a replaced Connection of the same alias keeps the default running, and a pair naming no Connection is gone when no provider of its alias is held.
+  it("judges the provider by the model's alias, not the saved Connection id", () => {
+    expect(notice(pair("anthropic/claude-opus-5-5", "old-conn"))).toBeNull();
+    expect(notice(pair("ibm/aws/claude-opus-4-8", null))).toBe("provider-gone");
+  });
+
+  // TEST_SCENARIO: an Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
+  it("says nothing for an Agent off the Model Router", () => {
+    expect(notice(pair(null, null), { routed: false })).toBeNull();
+    expect(
+      notice(pair("ibm/aws/claude-opus-4-8", "lite"), { routed: false }),
+    ).toBeNull();
   });
 });

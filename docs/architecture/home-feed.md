@@ -107,10 +107,12 @@ That is harmless — the row is a fresh capture of live state — but it means r
 
 ## Default-model notices
 
-The bell also lists the Agents whose saved default needs their owner ([harness configuration](harness-config.md)): none is set, its provider is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+The bell also lists the Agents on the Model Router whose saved default needs their owner ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+An Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
 They are computed on every read from the Agent's saved default, its granted providers and the conversion's note, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
 A pending default, one still being converted, says nothing.
-The same notice puts a warning dot on the Agent in the sidebar, a banner above its chat and "Won't run" on its schedules that name no model; only the bell's card can be dismissed, per Agent and state, and a changed default is shown in the bell alone.
+The same notice puts a warning dot on the Agent in the sidebar, a banner above its chat and on Home, and "Won't run" on its schedules that name no model; only the bell's card can be dismissed, per Agent and state, and a changed default is shown in the bell alone.
+A dismissal is dropped once its notice no longer holds, so the same state coming back later is shown again, and an Agent's dismissals go with it.
 Saving a default or converting one sends the owner the attention hint, and changing an Agent's providers refreshes the list in the tab that changed them.
 
 ## Seen, unread, and dismissed

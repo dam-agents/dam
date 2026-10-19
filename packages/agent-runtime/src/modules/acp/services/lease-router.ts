@@ -114,6 +114,7 @@ const DEFAULT_IDLE_CHECK_MS = 30_000;
 const DEFAULT_LEASE_IDLE_MS = 10 * 60_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
 const ROUTED_ID = /^platform-lease-in-([0-9a-f]+)-(\d+)-(.+)$/s;
+const REWRITE_FROM_METHOD = "platform/rewriteFrom";
 
 const keyOf = (pair: LeasePair): string =>
   JSON.stringify([
@@ -618,7 +619,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       );
       return;
     }
-    if (method === "session/prompt" && missesModel(choice)) {
+    if (
+      (method === "session/prompt" || method === REWRITE_FROM_METHOD) &&
+      missesModel(choice)
+    ) {
       if (isRequest(frame)) refuse(real, frame.id, noModel());
       else
         deps.log(`dropped a prompt for ${sessionId}: the session has no model`);

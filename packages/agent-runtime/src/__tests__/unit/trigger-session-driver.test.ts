@@ -173,4 +173,26 @@ describe("createTriggerSessionDriver", () => {
       { sessionId: "s0", model: "ibm/opus" },
     ]);
   });
+
+  /** TEST_SCENARIO: a new Session whose model comes in its platform metadata
+   * (kit setup, outcome turns) runs; a resumed Session with no model and none
+   * to pin is refused before anything resumes it. */
+  it("reads the model from the metadata and refuses before resuming", async () => {
+    const { runtime, sent } = fakeRuntime();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => true,
+      modelMissing: () => true,
+    });
+    await driver.start({
+      task: "set up",
+      platformMeta: { mode: "chat", model: "ibm/opus" } as never,
+    });
+    expect(sent.map((f) => f.method)).toContain("session/new");
+    sent.length = 0;
+    await expect(
+      driver.start({ task: "go on", resumeSessionId: "s0" }),
+    ).rejects.toBeInstanceOf(NoSessionModelError);
+    expect(sent.map((f) => f.method)).not.toContain("session/resume");
+  });
 });

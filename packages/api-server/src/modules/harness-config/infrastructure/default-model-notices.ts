@@ -8,8 +8,11 @@ import {
   connections as connectionsTable,
   type Db,
 } from "db";
+import { routesByModelName } from "agent-runtime-api";
 import {
+  aliasForProviderType,
   PROVIDER_TEMPLATE_IDS,
+  providerTypeForTemplateId,
   sessionPairSchema,
   type DefaultModelNotice,
 } from "api-server-api";
@@ -35,6 +38,7 @@ export function createDefaultModelNoticeReader(
         id: agentsTable.id,
         pair: agentsTable.sessionPair,
         note: agentsTable.defaultModelNote,
+        capabilities: agentsTable.runtimeCapabilities,
       })
       .from(agentsTable)
       .where(
@@ -49,7 +53,7 @@ export function createDefaultModelNoticeReader(
     const grants = await db
       .select({
         agentId: connectionGrants.agentId,
-        connectionId: connectionGrants.connectionId,
+        templateId: connectionsTable.templateId,
       })
       .from(connectionGrants)
       .innerJoin(
@@ -66,19 +70,23 @@ export function createDefaultModelNoticeReader(
         ),
       );
     const granted = new Map<string, Set<string>>();
-    for (const g of grants)
-      granted.set(
-        g.agentId,
-        (granted.get(g.agentId) ?? new Set()).add(g.connectionId),
-      );
+    for (const g of grants) {
+      const type = providerTypeForTemplateId(g.templateId);
+      if (type)
+        granted.set(
+          g.agentId,
+          (granted.get(g.agentId) ?? new Set()).add(aliasForProviderType(type)),
+        );
+    }
     return withPair.flatMap((r) => {
       const pair = sessionPairSchema.safeParse(r.pair);
       const note = defaultModelNoteSchema.safeParse(r.note);
       const notice = defaultModelNoticeOf({
         agentId: r.id,
+        routed: routesByModelName(r.capabilities),
         pair: pair.success ? pair.data : null,
         note: note.success ? note.data : null,
-        grantedProviders: granted.get(r.id) ?? new Set(),
+        grantedAliases: granted.get(r.id) ?? new Set(),
       });
       return notice ? [notice] : [];
     });

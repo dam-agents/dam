@@ -73,10 +73,15 @@ export function createTriggerSessionDriver(deps: {
       model,
       keepSessionModel,
     }) {
+      const pins =
+        !!resumeSessionId &&
+        !!model &&
+        (!keepSessionModel || missing(resumeSessionId));
       if (
-        !resumeSessionId &&
-        !model &&
-        deps.modelRequired?.(platformMeta?.harness) === true
+        resumeSessionId
+          ? !pins && missing(resumeSessionId)
+          : !(model ?? platformMeta?.model) &&
+            deps.modelRequired?.(platformMeta?.harness) === true
       )
         throw new NoSessionModelError();
       const caller = createInProcessCaller((channel) =>
@@ -97,7 +102,7 @@ export function createTriggerSessionDriver(deps: {
         let openedOn: string | null;
 
         if (resumeSessionId) {
-          if (model && (!keepSessionModel || missing(resumeSessionId)))
+          if (pins && model)
             await caller
               .request(PIN_MODEL_METHOD, { sessionId: resumeSessionId, model })
               .catch((err: unknown) => {

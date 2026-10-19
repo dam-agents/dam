@@ -133,6 +133,7 @@ import {
 import {
   composeRuntimeDelivery,
   createBullConnection,
+  sessionPairFields,
 } from "./modules/runtime-delivery/index.js";
 import {
   createHarnessConfigSnapshotWriter,
@@ -620,6 +621,18 @@ export async function bootstrap() {
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
   });
+  const outcomePairFields = async (
+    agentId: string,
+  ): Promise<Record<string, unknown>> =>
+    sessionPairFields(
+      await firePair(agentId, {}).catch((err: unknown) => {
+        getLogger().info(
+          { err, agentId },
+          "outcome turn: no saved default to run it on",
+        );
+        return null;
+      }),
+    );
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),
   );
@@ -664,6 +677,7 @@ export async function bootstrap() {
 
   const outcomeDeliveryDeps = {
     repo: satellitesBoot.repo,
+    pairFields: outcomePairFields,
     bump: (
       agentId: string,
       events: Parameters<typeof runtimeDelivery.runtimeMutator.bump>[1],
@@ -1820,6 +1834,7 @@ export async function bootstrap() {
   );
   const subAgentOutcomes = composeSubAgentOutcomeDelivery({
     db,
+    pairFields: outcomePairFields,
     bump: (agentId, events) =>
       runtimeDelivery.runtimeMutator.bump(agentId, events),
     enqueue: (agentId) =>

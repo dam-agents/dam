@@ -31,13 +31,11 @@ function toItem(row: AttentionRecordRow): AttentionItem {
   };
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a default-model notice is dismissed per Agent
- * and state (`<agentId>:<state>`), so dismissing one state never hides a
- * later one.
- */
-const defaultModelNoticeAgent = (id: string): string =>
+const agentOfDefaultModelNoticeId = (id: string): string =>
   id.slice(0, Math.max(0, id.lastIndexOf(":")));
+
+const defaultModelNoticeId = (notice: DefaultModelNotice): string =>
+  `${notice.agentId}:${notice.state}`;
 
 export function createAttentionService(deps: {
   repo: AttentionRepository;
@@ -45,16 +43,34 @@ export function createAttentionService(deps: {
   ownsApproval: (approvalId: string) => Promise<boolean>;
   ownsAgent: (agentId: string) => Promise<boolean>;
   defaultModelNotices?: () => Promise<DefaultModelNotice[]>;
+  log?: (message: string) => void;
 }): AttentionService {
   return {
     async listForOwner(): Promise<AttentionList> {
-      const [records, dismissals, defaultModels] = await Promise.all([
+      const [records, allDismissals, notices] = await Promise.all([
         deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
         deps.repo.listDismissals(deps.ownerSub),
-        deps.defaultModelNotices?.() ?? [],
+        deps.defaultModelNotices?.().catch((err: Error) => {
+          deps.log?.(`[attention] default-model notices: ${err.message}`);
+          return null;
+        }) ?? [],
       ]);
+      const current = new Set((notices ?? []).map(defaultModelNoticeId));
+      const resolved =
+        notices === null
+          ? []
+          : allDismissals.filter(
+              (d) => d.kind === "default-model" && !current.has(d.itemId),
+            );
+      if (resolved.length > 0)
+        await deps.repo.deleteDismissals(
+          deps.ownerSub,
+          "default-model",
+          resolved.map((d) => d.itemId),
+        );
+      const dismissals = allDismissals.filter((d) => !resolved.includes(d));
       return {
-        defaultModels,
+        defaultModels: notices ?? [],
         items: records.map(toItem),
         dismissed: dismissals.map((d) => ({
           kind: d.kind,
@@ -96,7 +112,7 @@ export function createAttentionService(deps: {
           .filter((item) => item.kind === "default-model")
           .map(async (item) => ({
             item,
-            owned: await deps.ownsAgent(defaultModelNoticeAgent(item.id)),
+            owned: await deps.ownsAgent(agentOfDefaultModelNoticeId(item.id)),
           })),
       );
 

@@ -580,8 +580,9 @@ describe("acp-runtime: one harness process per harness", () => {
   /** TEST_SCENARIO: On a harness that reaches its models through the Model
    * Router, a session with no model never reaches the harness, which would
    * otherwise run a model the user never chose: session/new without one is
-   * refused as no-model, and an old session's prompt is refused (a prompt
-   * sent as a notification is dropped) until a model is pinned on it. */
+   * refused as no-model, and an old session's prompt or edited resend is
+   * refused (a prompt sent as a notification is dropped) until a model is
+   * pinned on it. */
   it("refuses a turn on a session with no model", () => {
     const world = createLeaseWorld({
       providers: ["conn-a"],
@@ -602,6 +603,15 @@ describe("acp-runtime: one harness process per harness", () => {
       jsonrpc: "2.0",
       method: "session/prompt",
       params: { sessionId: "old", prompt: [{ type: "text", text: "hi" }] },
+    });
+    client.send({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "platform/rewriteFrom",
+      params: { sessionId: "old", messageId: "m-1", prompt: [] },
+    });
+    expect(client.reply(5)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
 

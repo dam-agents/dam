@@ -1,7 +1,7 @@
 import { routesByModelName, type HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
 import { harnessFits } from "../../templates/index.js";
-import { convertedDefault } from "../domain/default-conversion.js";
+import { convertedDefault } from "../domain/converted-default.js";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { FillableSessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
