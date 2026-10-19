@@ -127,9 +127,9 @@ Metadata is layered per model, first answer wins: the listing itself (Bob's mode
 An Anthropic subscription (OAuth token) Connection is listed from Anthropic's model list like the key Connection and offered to Claude Code alone, since Anthropic accepts the token only from Claude Code; the router refuses it to any other harness by name.
 Bedrock is the one **native Connection**: its SigV4 signing is no header swap, so the router never lists or routes it, and every harness but Claude Code sees it as unsupported.
 Claude Code's view lists it under its alias with Claude Code's own tier names (`bedrock/sonnet`); a session on one runs in a Claude Code process of its own, started with the Connection's env instead of the router's, and switching between it and a routed model moves the session between processes once the running turn ends.
-Beside a routed provider, a session with no model runs on the router's default, and Bedrock's env reaches a process only when no routed provider serves the harness.
+Beside a routed provider, a turn with no model is refused (see **A turn with no model**), and a web terminal with none starts through the router on the harness's own default; Bedrock's env reaches a process only when no routed provider serves the harness.
 One process reaches either the router or Bedrock, so a session's subagent model is offered from, and must come from, the same side as its model.
-No model is the router side, since such a session runs on the router's default.
+No model counts as the router side, since a session without a Bedrock model reaches the router.
 A schedule's pair is checked at save against the model its fire resolves to (the schedule's own, else the saved default; with no default model the check passes and the fire reports the missing default), and each harness reports the templates it runs natively in its runtime capabilities.
 
 Each harness's manifest declares in its `modelRouter` section the dialects it speaks (Claude Code: Messages; Codex: Responses; Bob: chat; Pi: all three) and its name spelling (Claude Code's gateway discovery keeps only ids containing `claude`, lowercased, so it sees `claude/<alias>/<id>`); a harness's view of the catalog is the entries whose provider serves one of its dialects.

@@ -13,14 +13,22 @@ export function ApprovalsBanner() {
     defaultModelStopsRuns,
   );
   if (approvals.length === 0 && notices.length === 0) return null;
-  const { title, detail } =
-    approvals.length > 0
-      ? approvalsBannerCopy(approvals)
-      : {
-          title: `${String(notices.length)} ${notices.length === 1 ? "agent needs" : "agents need"} a default model`,
-          detail:
-            "Their schedules and Slack or Telegram turns won't run until you choose one",
-        };
+  const needDefault = `${String(notices.length)} ${notices.length === 1 ? "agent needs" : "agents need"} a default model`;
+  const approvalsCopy =
+    approvals.length > 0 ? approvalsBannerCopy(approvals) : null;
+  const { title, detail } = approvalsCopy
+    ? {
+        title: approvalsCopy.title,
+        detail:
+          notices.length > 0
+            ? `${approvalsCopy.detail} · ${needDefault}`
+            : approvalsCopy.detail,
+      }
+    : {
+        title: needDefault,
+        detail:
+          "Their schedules and Slack or Telegram turns won't run until you choose one",
+      };
 
   return (
     <button

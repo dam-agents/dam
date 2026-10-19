@@ -337,7 +337,7 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
    * that, so the first attempt records the reason, queues the next run and
    * ends the job instead of waking the agent again on every retry. */
   it("records a missing default on the first attempt without a retry", async () => {
-    const { runner, fires, events, enqueued } = makeDeps({
+    const { runner, stampedResults, events, enqueued } = makeDeps({
       firePair: async () => {
         throw new NoDefaultModelError();
       },
@@ -350,8 +350,10 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
       ),
     ).resolves.toBeUndefined();
     expect(events).toEqual([]);
-    expect(fires[0]?.result).toMatch(/no default model/);
-    expect(fires[0]?.nextRun).not.toEqual(new Date("2026-06-12T10:30:00Z"));
+    expect(stampedResults[0]?.result).toMatch(/no default model/);
+    expect(stampedResults[0]?.nextRun).not.toEqual(
+      new Date("2026-06-12T10:30:00Z"),
+    );
     expect(enqueued).toHaveLength(1);
   });
 
