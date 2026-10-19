@@ -539,13 +539,14 @@ impl Server {
         self.collect_exits();
         self.match_oom_kills();
         for (id, pid, signal) in self.reportable_kills() {
-            locked(&self.exits).remove(&pid);
             self.report_kill(&id, pid, signal);
         }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: says on the machine what took its VMM down, and counts it: a signal is the kernel taking the machine for memory, or the machine's own seccomp filter. A SIGKILL the cgroup did not count, and a signal no reason explains, are said on the console alone, since a reason would claim what nothing showed. Answers whether the machine now names a kill.
     fn report_kill(&self, id: &str, pid: i32, signal: i32) -> bool {
+        // UNIT_BOUNDARY_DESCRIPTION: the death is consumed wherever it was reported from, so a kill a boot's or a grow's own failure already said is not said again by a tick that collected the same status.
+        locked(&self.exits).remove(&pid);
         // UNIT_BOUNDARY_DESCRIPTION: the count is read before it is spent, so an OOM kill that landed since the last tick — the one that killed a booting or growing VMM, which no tick has seen — is credited to the machine in hand.
         self.match_oom_kills();
         let reason = match signal {
