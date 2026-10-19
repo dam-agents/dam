@@ -2135,9 +2135,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return {
       uiBaseUrl,
       agentId: instanceName,
-      label: agentFooterLabel(
-        resolved === instanceName ? undefined : resolved,
-      ),
+      label: agentFooterLabel(resolved === instanceName ? undefined : resolved),
       ...(sessionId ? { sessionId } : {}),
       ...(ambientRound ? { ambientRound } : {}),
     };

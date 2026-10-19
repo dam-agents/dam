@@ -66,9 +66,9 @@ describe("agent footer", () => {
     expect(agentFooterMrkdwn(withEmoji)).toBe(
       ":dam-agent-8: <http://ui/a/agent-8acde0e1a059835a|Sent by Buginator>",
     );
-    expect(parseAgentFooter({ blocks: [agentContextBlock(withEmoji)] })).toEqual(
-      { agentId: "agent-8acde0e1a059835a" },
-    );
+    expect(
+      parseAgentFooter({ blocks: [agentContextBlock(withEmoji)] }),
+    ).toEqual({ agentId: "agent-8acde0e1a059835a" });
   });
 
   it("links the label at the agent's public page", () => {
