@@ -72,6 +72,7 @@ That reboot is the safety for a new runtime, and it waits on the machine failing
 So a release an operator names as requiring a reboot is not handed off at all: each owner's runner pod rolls onto it, rebooting that owner's machines, and that roll does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
 The mark names the release it was set for, so it lapses by itself: once the chart configures another release, the mark names one the install does not run, and nothing reads it.
 It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
+A runner that already holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the mark does not overrule what the runner reported.
 Leaving a runtime otherwise is configuring the release before it again, which the same hand-off takes.
 platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce a guest does not confirm, which the runner ends with a power-off, costs no more than a power cut and not the agent's last writes.
 The loader keeps a runtime in the pod while any VMM still boots from it: it finds each VMM by its command line and reads the agent root the runner recorded beside the VMM's boot config at its start.

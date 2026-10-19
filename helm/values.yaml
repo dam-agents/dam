@@ -362,7 +362,9 @@ virtualization:
     # after `idleWait`. The value is the release it was set for, so it stops
     # applying once the chart configures another one: a value left behind
     # marks nothing. A roll for a changed pod shape keeps its idle wait
-    # either way.
+    # either way. A runner that already holds the release as failed keeps
+    # its pod: a pod on the release would fail the same way and take its
+    # machines with it.
     rollout:
       maxConcurrent: 1
       # Set instead of `maxConcurrent` to express the width as a percentage
