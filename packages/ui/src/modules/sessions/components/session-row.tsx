@@ -216,7 +216,10 @@ export function SessionRow({
             <PinFilled
               size={12}
               aria-label="Pinned"
-              className="ml-auto shrink-0 text-muted-foreground"
+              className={cn(
+                "ml-auto shrink-0 text-muted-foreground",
+                HOVER_YIELD,
+              )}
             />
           )}
           <div

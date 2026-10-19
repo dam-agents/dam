@@ -65,7 +65,7 @@ import { AgentSessionList } from "./agent-session-list.js";
 
 const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 const REVEAL =
-  "pointer-events-none opacity-0 transition-opacity group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 focus-within:pointer-events-auto focus-within:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
+  "pointer-events-none opacity-0 transition-opacity group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar as one tree: the pinned
@@ -249,7 +249,7 @@ function AgentNode({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left outline-none select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
+            "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent",
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"
               : "text-foreground",
@@ -261,13 +261,13 @@ function AgentNode({
               avatar={agent.avatar}
               size={20}
               mood={mood}
-              className="group-focus-within/agent:invisible group-hover/agent:invisible"
+              className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible"
             />
             <ChevronRight
               size={16}
               aria-hidden
               className={cn(
-                "invisible absolute text-muted-foreground transition-transform group-focus-within/agent:visible group-hover/agent:visible motion-reduce:transition-none",
+                "invisible absolute text-muted-foreground transition-transform group-has-[:focus-visible]/agent:visible group-hover/agent:visible motion-reduce:transition-none",
                 expanded && "rotate-90",
               )}
             />
@@ -282,7 +282,7 @@ function AgentNode({
             <>
               <span
                 aria-hidden
-                className="size-2 shrink-0 rounded-full bg-accent group-focus-within/agent:hidden group-hover/agent:hidden"
+                className="size-2 shrink-0 rounded-full bg-success group-has-[:focus-visible]/agent:hidden group-hover/agent:hidden"
               />
               <span className="sr-only">(unread)</span>
             </>
