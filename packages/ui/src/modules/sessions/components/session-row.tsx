@@ -216,10 +216,7 @@ export function SessionRow({
             <PinFilled
               size={12}
               aria-label="Pinned"
-              className={cn(
-                "ml-auto shrink-0 text-muted-foreground",
-                HOVER_YIELD,
-              )}
+              className="ml-auto shrink-0 text-muted-foreground group-has-[[data-row-actions]_:focus-visible]:hidden group-has-[[data-row-actions]_[data-state=open]]:hidden hover-capable:group-hover:hidden"
             />
           )}
           <div
@@ -241,6 +238,7 @@ export function SessionRow({
               />
             )}
             <div
+              data-row-actions
               className={cn(
                 "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
                 HOVER_ACTION,

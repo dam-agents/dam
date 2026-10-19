@@ -74,6 +74,16 @@ export function AgentSessionList({
   } = list;
   const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
   const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
+  const loadedIds = new Set(list.sessions.map((s) => s.sessionId));
+  const pinMissing = [...pins].some(
+    (key) =>
+      key.startsWith(`${agentId}:`) &&
+      !shownAbove.has(key) &&
+      !loadedIds.has(key.slice(agentId.length + 1)),
+  );
+  useEffect(() => {
+    if (canFetch && pinMissing && !list.provisional) void fetchNextPage();
+  }, [canFetch, pinMissing, list.provisional, fetchNextPage]);
   const rows = newestFirst(
     list.sessions
       .map((session) => ({ session, state: list.rowState(session) }))
