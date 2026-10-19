@@ -83,7 +83,7 @@ Pins are kept in the browser, so they do not follow the user to another device.
 The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
 An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
-With no Agent rows on that Home, an Agent's configuration page is where its runtime migration badge shows.
+With no Agent rows on that Home, an Agent's runtime migration badge shows nowhere else in the app: it reads on the agent row, in the chat header and in the overlay of an Agent that is not running.
 
 ## The producer
 

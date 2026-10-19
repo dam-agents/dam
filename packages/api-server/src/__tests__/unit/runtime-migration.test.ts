@@ -565,6 +565,29 @@ describe("a move an operator asks for", () => {
     ]);
   });
 
+  // TEST_SCENARIO: a request that lost a write race was not refused: it stands, so the next tick decides it again and nothing is withdrawn.
+  it("leaves a request that lost a write race standing", async () => {
+    const asked = migrating("Requested");
+    const deps = writes(asked);
+    deps.writeMigration.mockResolvedValue({ ok: false, reason: "conflict" });
+    const logged: string[] = [];
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [asked],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: (message) => logged.push(message),
+    });
+    await sweep.tick();
+    expect(
+      deps.writeMigration.mock.calls.map(([, patch]) => patch.annotations),
+    ).not.toContainEqual(CLEARED);
+    expect(logged).toEqual([]);
+  });
+
   // TEST_SCENARIO: a request that already names a target is the api-server's own decision from an earlier tick, and is not decided again.
   it("leaves a request that already names a target alone", async () => {
     const decided = migrating("Requested", { runtimeMigrationTarget: "{}" });

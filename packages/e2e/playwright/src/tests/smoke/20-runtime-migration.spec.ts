@@ -154,7 +154,7 @@ test("migrates to the vm Backend on an operator's request", async ({
       message: "the operator's request was not taken up",
     })
     .not.toBe("container settled running");
-  // UNIT_BOUNDARY_DESCRIPTION: nothing in the page asked for this move, so nothing invalidates the agent list; the reload is what reads the migration the annotation started.
+  // UNIT_BOUNDARY_DESCRIPTION: the page asked for nothing, so it waits for the published update rather than for its own write; the reload reads the phase the annotation started even if that update is missed.
   await page.reload();
   await expect(row.getByText(/^Migrating: /)).toBeVisible({ timeout: 60_000 });
   await expect

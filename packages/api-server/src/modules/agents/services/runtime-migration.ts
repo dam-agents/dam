@@ -169,11 +169,16 @@ export function createRuntimeMigrationSwitch(deps: {
       migration: deps.migration,
     })(agent.id);
     if (started.ok) return;
+    // UNIT_BOUNDARY_DESCRIPTION: a race is not a refusal — the request stands and the next tick decides it again.
+    if (
+      started.error.type === "AgentNotFound" ||
+      started.error.type === "ConcurrentUpdate"
+    )
+      return;
     const reasons = runtimeMigrationRefusalReasons(started.error);
     deps.log(
       `[runtime-migration] ${agent.id} was asked to move and is refused: ${reasons.join("; ")}`,
     );
-    if (started.error.type === "AgentNotFound") return;
     const withdrawn = await deps.writeMigration(agent.id, {
       annotations: REQUEST_KEYS_CLEARED,
       resourceVersion: (await deps.getAgent(agent.id))?.resourceVersion,
