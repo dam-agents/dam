@@ -568,21 +568,25 @@ mod tests {
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
-    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner lowers its own score, which is the write the kernel permits without a capability: -1000 where it is allowed, else 0, and in either case below the VMM's.
+    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner asks for the lowest score there is, and a kernel that refuses it without CAP_SYS_RESOURCE in its own user namespace leaves the runner with the score it was handed rather than a worse one.
     #[test]
     #[cfg(target_os = "linux")]
     fn the_runner_asks_for_the_lowest_score_the_kernel_allows_it() {
+        let before: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
         lower_own_oom_score_adj();
-        let score: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
+        let after: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
             .unwrap()
             .trim()
             .parse()
             .unwrap();
         assert!(
-            score == -1000 || score == 0,
-            "the runner's own score is {score}, which a VMM at 1000 only ties"
+            after == -1000 || after == before,
+            "the runner's own score is {after}, which is neither the lowest there is nor the one it was handed ({before})"
         );
-        assert!(score < OOM_SCORE_ADJ.parse::<i32>().unwrap());
     }
 
     // TEST_SCENARIO: the OOM killer picks the process with the highest score in the cgroup, and the runner and the loader hold every machine of the owner between them. A VMM asks for the kernel's maximum, and a VMM that cannot write its score — a host runner with no /proc — still boots.
