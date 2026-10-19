@@ -3,10 +3,12 @@
 set -eo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/cluster.sh"
 if [ -n "${IS_SANDBOX:-}" ]; then
-  if [ -d /run/systemd/system ]; then
+  if [ -d /run/systemd/system ] && [ ! -x /etc/init.d/k3s ]; then
     as_root systemctl stop k3s
   else
-    as_root pkill -x k3s-server || true
+    # An OpenRC k3s service supervises the process and respawns it
+    # (supervise-daemon, respawn_max=0), so it goes through rc-service.
+    k3s_service stop || as_root pkill -x k3s-server || true
     for _ in $(seq 1 30); do pgrep -x k3s-server >/dev/null || break; sleep 1; done
     # What k3s-killall.sh does on a supervised host; a plain process leaves it
     # all behind. Pods outlive k3s in their shims, their mounts stay, and their

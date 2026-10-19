@@ -7,7 +7,10 @@ set -eo pipefail
 STATUS_CMD="
 if [ -n \"${IS_SANDBOX:-}\" ]; then
   echo '=== k3s service ==='
-  as_root systemctl is-active k3s || true
+  if [ -x /etc/init.d/k3s ]; then as_root rc-service k3s status || true
+  elif [ -d /run/systemd/system ]; then as_root systemctl is-active k3s || true
+  else echo 'none — k3s runs as a plain process here'
+  fi
 else
   echo '=== Lima VM ==='
   limactl list

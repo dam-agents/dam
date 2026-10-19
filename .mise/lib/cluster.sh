@@ -10,6 +10,20 @@ else
   export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 fi
 
+# The supervisor k3s runs under: OpenRC where the host installed its service
+# (k3s's own installer prefers it when openrc-run exists), systemd where it is
+# running, and neither in a sandbox that has no init system — cluster:install
+# starts k3s as a plain process there, and this returns 1.
+k3s_service() { # start|stop|restart
+  if [ -x /etc/init.d/k3s ]; then
+    as_root rc-service k3s "$1"
+  elif [ -d /run/systemd/system ]; then
+    as_root systemctl "$1" k3s
+  else
+    return 1
+  fi
+}
+
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
 # names, and does nothing without it. CI's two lanes set it, and e2e:timings
 # turns the marks into the job's per-phase timing summary.
