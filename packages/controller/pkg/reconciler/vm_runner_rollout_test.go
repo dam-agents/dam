@@ -83,13 +83,6 @@ func settleRunnerPod(t *testing.T, r *AgentReconciler, owner string) {
 	require.NoError(t, err)
 }
 
-func runnerPodRevision(t *testing.T, r *AgentReconciler, owner string) string {
-	t.Helper()
-	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(owner), metav1.GetOptions{})
-	require.NoError(t, err)
-	return dep.Spec.Template.Annotations[annRunnerRollRevision]
-}
-
 func runnerImageOf(t *testing.T, r *AgentReconciler, owner string) string {
 	t.Helper()
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(owner), metav1.GetOptions{})
@@ -960,7 +953,7 @@ func TestARollWidthInPercentRollsThatManyOwnersAtOnce(t *testing.T) {
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, ours), "a settled roll frees its place")
 }
 
-// TEST_SCENARIO: a release declares that the machines booted before it must reboot onto it, which a hand-off cannot do: the runner holds the release as `reboot`, the hand-off ends, and the pod rolls onto it, which reboots its machines. That roll waits for no busy agent, since a machine booted by the release is the point; and it stamps a revision on a pod template that would otherwise be identical, which is what restarts the pod.
+// TEST_SCENARIO: a release declares that the machines booted before it must reboot onto it, which a hand-off cannot do: the runner holds the release as `reboot`, the hand-off ends, and the pod rolls onto it, which reboots its machines. That roll waits for no busy agent, since a machine booted by the release is the point.
 func TestAReleaseWhoseMachinesMustRebootRollsThePodWithoutWaitingForIdle(t *testing.T) {
 	ctx := context.Background()
 	r, nodes := setupRolloutReconciler(t)
@@ -970,7 +963,6 @@ func TestAReleaseWhoseMachinesMustRebootRollsThePodWithoutWaitingForIdle(t *test
 	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
 	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
 	r.busyProbe = func(context.Context, string) bool { return true }
-	revision := runnerPodRevision(t, r, testOwner)
 	r.config.VM.Runner.Image = runnerV2
 	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
 	require.Equal(t, []string{runnerV2}, nodes[testOwner].named, "the release is named first, as any release is")
@@ -979,7 +971,7 @@ func TestAReleaseWhoseMachinesMustRebootRollsThePodWithoutWaitingForIdle(t *test
 	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, testOwner), "the pod rolls onto the release, which reboots the machine")
 	assert.NotContains(t, runnerAnnotations(t, r, testOwner), annRunnerBusy, "the roll waits for no agent's turn")
-	assert.NotEqual(t, revision, runnerPodRevision(t, r, testOwner), "the pod template takes a new revision, which is what restarts the pod")
+	assert.NotEqual(t, runnerV1, runnerImageOf(t, r, testOwner), "the pod template takes the image that carries the release, and that change is what restarts the pod")
 	assert.Equal(t, []string{runnerV2}, nodes[testOwner].named, "the hand-off ends: the release is not named again")
 
 	settleRunnerPod(t, r, testOwner)

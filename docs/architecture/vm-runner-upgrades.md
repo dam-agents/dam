@@ -76,7 +76,7 @@ A release built before keys declares none, and so does a pod built from one: wit
 That roll does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
 It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
 The runner's own answer is what the controller rolls on: a release it holds as `reboot` ends the hand-off, and the pod roll that follows takes its own place in the width.
-Such a roll writes the pod template the pod already has, and a Deployment update that changes nothing restarts nothing, so every roll whose template would be identical stamps a revision on it: the restart is what reboots the machines, and the stamp is left out of the pod hash, since it says when the roll happened rather than what the pod is.
+Such a roll writes the image that carries the release, which the pod does not have yet — a pod on the configured image already runs the release it declares — and that change to the pod template is what restarts it, rebooting the machines.
 A runner that holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the refusal to reboot does not overrule what the runner reported.
 Leaving a runtime otherwise is configuring the release before it again, which the hand-off takes unless that release declares another key than the pod runs, which rolls the pod.
 platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce a guest does not confirm, which the runner ends with a power-off, costs no more than a power cut and not the agent's last writes.
@@ -105,7 +105,7 @@ Time the runner reports the release not staged on its node does not count either
 A hand-off in trouble is marked stalled on the runner's Deployment, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.
 A newer configured image resumes the release, starting with the runner that stalled, and so does an operator removing the stall annotation.
 A runner that needs a pod for the release ends its hand-off, and the pod roll that follows takes its own place.
-The pod's image is left out of what the roll compares, so a runner pod rolls for a change to its shape, and for a release that must reboot its machines, which stamps a revision on the template.
+The pod's image is left out of what the roll compares, so a runner pod rolls for a change to its shape, and a release that must reboot its machines rolls it with the image change that carries the release.
 A pod rendered by a controller from before releases were named over the machine API has a loader that reads only a mounted ConfigMap; its shape is not the one rendered now, so it rolls once, through the ordinary roll, and the roll removes the ConfigMap.
 The runner serves what its loader holds and why, with the reason drawn from a fixed vocabulary: not staged yet, built for another pod, rebooting its machines, or failed.
 The controller reads it for a runner whose pod image is not the configured one, which is every runner a release has yet to reach, and rolls the pod of one that holds the release as `reboot`.

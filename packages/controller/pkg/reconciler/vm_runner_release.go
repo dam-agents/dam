@@ -262,7 +262,6 @@ func (r *AgentReconciler) stallRunnerHandoffOnEnsure(ctx context.Context, owner 
 // UNIT_BOUNDARY_DESCRIPTION: the runner pod as the roll compares it. Its memory limit is the owner's pool, and its memory request is clamped to that pool, and the controller changes both on the running pod in place, so both are left out: a UserBudget that raises or lowers the pool restarts no machine, and a pod created later takes the pool rendered then. The pod's image is only the release it started with — the loader runs whichever one the controller names — so the image, and the env that tells the loader which release it is, are left out too: a new runner image alone changes no pod and restarts no machine.
 func runnerRollSpec(spec appsv1.DeploymentSpec) appsv1.DeploymentSpec {
 	spec = *spec.DeepCopy()
-	delete(spec.Template.Annotations, annRunnerRollRevision)
 	for i := range spec.Template.Spec.Containers {
 		c := &spec.Template.Spec.Containers[i]
 		delete(c.Resources.Limits, corev1.ResourceMemory)
