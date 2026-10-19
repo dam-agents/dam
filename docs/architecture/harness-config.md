@@ -65,8 +65,8 @@ Pi receives its selected provider and model as command-line options, because its
 A runtime with a harness that has a harness config but no `sessionSettings` predates per-session routing: its harnesses ignore a lease's model, and Pi then falls back to its built-in Anthropic default.
 For such an agent the chat shows an update notice instead of the picker, and new sessions, schedule fires and channel turns name no Session Pair, so they run on the agent's defaults.
 
-The ETE LiteLLM proxy cannot carry Claude Code's auto-mode permission classifier reliably: its failed classifier requests deny tool calls that are safe.
-So when an agent holds that provider, every Claude Code start changes an agent mode of `auto`, or no mode, to `bypassPermissions`.
+The ETE LiteLLM proxy serves Claude Code's auto-mode permission check on the model call itself, through the beta header the proxy accepts.
+Claude Code still starts in `bypassPermissions` whenever an agent holds that provider and the agent's mode is `auto` or unset: a check that fails denies tool calls that are safe, and nobody is there to approve them.
 Other modes stay, and so does a mode that one session picks for itself.
 The pod's isolation is the boundary then, also for what channel members ask a bound agent to do.
 
