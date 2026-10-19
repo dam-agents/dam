@@ -297,18 +297,22 @@ export function runnerGrows(
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the pod hosting a vm agent's machine: the agent's owner's VM runner, which every call into that machine goes through (`vm-runner exec`).
+// UNIT_BOUNDARY_DESCRIPTION: the pod hosting a vm agent's machine: the agent's owner's VM runner, which every call into that machine goes through (`vm-runner exec`). An empty result means there is no such pod, which is the case on a Mac host runner that runs its machines outside the cluster; kubectl reports an empty list as an error, so the lookup answers empty instead of throwing.
 export function runnerPod(agentId: string): string {
-  return kubectl(
-    "-n",
-    AGENT_NS,
-    "get",
-    "pod",
-    "-l",
-    hostSelector(agentId, "vm"),
-    "-o",
-    "jsonpath={.items[0].metadata.name}",
-  );
+  try {
+    return kubectl(
+      "-n",
+      AGENT_NS,
+      "get",
+      "pod",
+      "-l",
+      hostSelector(agentId, "vm"),
+      "-o",
+      "jsonpath={.items[0].metadata.name}",
+    );
+  } catch {
+    return "";
+  }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
