@@ -216,8 +216,11 @@ fn trim(path: &Path, size: u64) -> std::io::Result<()> {
     trim_with(path, size, &mut || {})
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how many times the cut reads the file again after emptying it: each pass keeps what the VMM wrote meanwhile, and the next one catches what it wrote while that was read. A writer that never pauses for one read would hold the cut open, so the loop is bounded: what a pass that ran out is left to the next cut, which comes TRIM_EVERY later.
+const TRIM_READS: usize = 4;
+
 // UNIT_BOUNDARY_DESCRIPTION: the cut, with `during` run at each point where the VMM is free to append to the file the runner is rewriting: it holds the file open for the whole life of the machine, so what it writes there then is the case the order of the kept lines has to survive (a test drives one in at each point, which a test of a lock-free rewrite cannot otherwise reach).
-fn trim_with(path: &Path, size: u64, during: &mut dyn FnMut()) -> std::io::Result<()> {
+pub(crate) fn trim_with(path: &Path, size: u64, during: &mut dyn FnMut()) -> std::io::Result<()> {
     let window = CONSOLE_TAIL_BYTES.saturating_mul(16).min(size);
     let mut kernel: std::collections::VecDeque<Vec<u8>> = Default::default();
     let mut kept = 0;
@@ -239,17 +242,24 @@ fn trim_with(path: &Path, size: u64, during: &mut dyn FnMut()) -> std::io::Resul
     file.take(window).read_to_end(&mut tail)?;
     let kept: Vec<u8> = kernel.into_iter().flatten().chain(tail).collect();
     let mut out = fs::OpenOptions::new().read(true).append(true).open(path)?;
-    out.set_len(0)?;
-    during();
-    // UNIT_BOUNDARY_DESCRIPTION: an append the VMM made to the emptied file is at its start, before the lines this puts back, so it is read here and put back after them.
-    let mut fresh = Vec::new();
-    out.seek(SeekFrom::Start(0))?;
-    out.read_to_end(&mut fresh)?;
-    out.set_len(0)?;
-    // UNIT_BOUNDARY_DESCRIPTION: from here to the end the file is emptied and refilled, and an append the VMM makes in that window is at the start of it, ahead of the kept lines and behind them in time: the order of the two is not this function's to keep, and the reader tells the marks apart by the kernel's stamp (room_full). A line written between the read above and this emptying is lost, as one written at any point of the cut already is.
+    // UNIT_BOUNDARY_DESCRIPTION: the file is emptied only after everything it holds has been read, and every emptying is followed by a read that keeps what the VMM wrote meanwhile: a line is lost only when it is written between the read and the emptying that follows it, and each pass of the loop reads again before it empties, so what a pass would have lost the next one keeps. What was read first is put back first: the lines past the end the cut was sized for, then each batch the VMM wrote during the cut. A line written after the last emptying is at the start of the file, ahead of the kept lines and behind them in time, which the reader sorts out by the kernel's stamp (room_full).
+    let mut landed = Vec::new();
+    let mut from = size;
+    for _ in 0..TRIM_READS {
+        out.seek(SeekFrom::Start(from))?;
+        let mut batch = Vec::new();
+        out.read_to_end(&mut batch)?;
+        out.set_len(0)?;
+        from = 0;
+        during();
+        if batch.is_empty() {
+            break;
+        }
+        landed.extend_from_slice(&batch);
+    }
     during();
     out.write_all(&kept)?;
-    out.write_all(&fresh)
+    out.write_all(&landed)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the console is on the runner's claim and outlives the runner, while the values that redact it are what this process was given: a restarted runner knows only the applied spec, and an earlier boot may have printed a value that spec no longer holds. So each start begins an empty console, and a tail then only shows the boot this runner started, with a spec it holds. It runs after the last VMM was waited out and, if it had to be, killed; it empties the console even if that VMM somehow still holds it, because a console that keeps an earlier boot is the leak this prevents, while a few lines lost from a VMM being killed are not. A console that cannot be emptied is removed, and one that cannot be removed either is reported, because its old lines would reach a status unredacted. Both of the console's sources are emptied: smolvm removes the VMM log before a start as well, but the runner does not leave to the runtime a guarantee its own status depends on.
@@ -506,7 +516,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the VMM appends to a log while the runner cuts it, and what it writes while the log is emptied must not be lost by the emptying: platform-init marks the agent's room only when it changes, so a mark the cut dropped leaves the runner reading the mark before it for as long as the agent runs. What the VMM writes there is read back and put after the lines the cut kept.
+    // TEST_SCENARIO: the VMM appends to a log while the runner cuts it, and what it writes while the log is emptied must not be lost by the emptying: platform-init marks the agent's room only when it changes, so a mark the cut dropped leaves the runner reading the mark before it for as long as the agent runs. What the VMM writes into the emptied file is read back and put after the lines the cut kept.
     #[test]
     fn a_line_the_vmm_writes_while_the_log_is_emptied_is_kept() {
         let dir = TempDir::new("console-cut-race");
@@ -524,6 +534,42 @@ mod tests {
         assert!(
             text.contains(crate::guest::GUEST_ROOM),
             "the mark written during the cut was dropped: {text:.120}"
+        );
+        assert_eq!(room_full(&text), Some(false));
+    }
+
+    // TEST_SCENARIO: a line written between the read of what the emptied file holds and the emptying that follows it is the one a cut can still lose, so the cut reads again before every emptying it makes: the mark is kept, and the reader still ends on the room the guest had last.
+    #[test]
+    fn a_line_the_vmm_writes_between_a_read_and_the_emptying_is_kept() {
+        let dir = TempDir::new("console-late-read");
+        let (path, size, room) = a_cut_log_a_mark_can_land_in(&dir);
+        let mut calls = 0;
+        trim_with(&path, size, &mut || {
+            calls += 1;
+            if calls == 1 {
+                append(&path, &room);
+            }
+        })
+        .unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains(crate::guest::GUEST_ROOM),
+            "a line written before the last emptying was lost with it: {text:.120}"
+        );
+        assert_eq!(room_full(&text), Some(false));
+    }
+
+    // TEST_SCENARIO: a log that grows between the caller measuring it and the cut reading it holds lines the cut was not sized for, and what the VMM wrote past that size is what the guest is saying now: the cut reads it before it empties the file and puts it after the lines it kept, so the newest mark is not dropped by the cut that was meant to keep it.
+    #[test]
+    fn a_line_the_vmm_writes_past_the_size_the_cut_was_sized_for_is_kept() {
+        let dir = TempDir::new("console-past-size");
+        let (path, size, room) = a_cut_log_a_mark_can_land_in(&dir);
+        append(&path, &room);
+        trim_with(&path, size, &mut || {}).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        assert!(
+            text.contains(crate::guest::GUEST_ROOM),
+            "a line written past the size the cut was sized for was lost: {text:.120}"
         );
         assert_eq!(room_full(&text), Some(false));
     }
