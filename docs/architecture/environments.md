@@ -38,6 +38,20 @@ A row in the `environments` table holds what only this module reads: its name am
 - **Delete.** The Owning Agent or the owner deletes an Environment at any time; it goes through the agents service, so the Agent's own cleanup runs.
   Deleting an Owning Agent deletes its Environments through the same cleanup, and the periodic sweep of agent artifacts catches any left behind.
 
+## The Environment Link
+
+The Owning Agent reaches each of its Environments over SSH, joined by their [VM runner](vm-runner.md) through a vsock port of each machine, never through the api-server or the pod network.
+The link is one-way: only the Owning Agent's machine can open it, the runner joins it only to an Environment that names that machine as its owner, and nothing in an Environment can open a connection back.
+
+- **`ssh env-<name>`** works from the Owning Agent with nothing to set up: the image's SSH config sends every `env-*` host through `platform-env proxy`, which finds the Environment by name with the `list_environments` tool, wakes it with `wake_environment` when it sleeps, and opens the link.
+  `scp`, `ssh -L` and streaming an image in, `docker save IMAGE | ssh env-<name> k3s ctr images import -`, work as with any host.
+- **No key to copy.** The proxy sends the agent's link key over the link before SSH starts, and the Environment trusts it until it next boots; only the Owning Agent reaches the link, so the link itself is the authorization.
+- **On the Environment**, an openrc service of the image, `platform-env`, accepts each connection and hands it to `sshd`; it starts only on a machine that is an Environment.
+  A shell gets the gateway and CA settings an openrc service gets, so `docker` and `k3s` pull as they do at boot.
+- **An open link keeps both machines awake.** Every process of a link, the proxy on the agent and `sshd` on the Environment, carries `PLATFORM_LINK`, and the runtime reads as busy while one runs.
+
+The guests use Python for the link's helper, since Node has no vsock.
+
 ## Addresses
 
 Each endpoint an Environment declares (`app` → 4444) gets an address of its own: `<endpoint>-<host>` under the install's environments domain (`environments.domain`), so each is its own origin and no Environment can read another's cookies or storage.
@@ -47,7 +61,7 @@ Without `environments.domain` Environments have no addresses.
 
 ## Surfaces
 
-**The Owning Agent** uses four platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `delete_environment` — offered only to a vm Agent that is not an Environment, while its owner has the feature on.
+**The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to a vm Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
 
 **The owner** lists an agent's Environments and extends or deletes one through the `environments` tRPC router, under the same scopes as the agent's own management.

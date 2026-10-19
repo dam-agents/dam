@@ -70,7 +70,7 @@ export interface LeaseRouterDeps {
   sessionMetadata: SessionMetadataStore;
   sessionDefaults?: SessionDefaultsStore;
   backgroundWork: BackgroundWorkRegistry;
-  keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
+  keepPolicy: Pick<KeepPolicy, "keptProcessCount" | "openLinkCount">;
   agentRequests: AgentRequestObserver;
   createRuntime: (
     pair: LeasePair,
@@ -918,7 +918,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       const all = [...leases.values()].map((l) => l.runtime.status());
       const keptProcesses = deps.keepPolicy.keptProcessCount();
       return {
-        idle: keptProcesses === 0 && all.every((s) => s.idle),
+        idle:
+          keptProcesses === 0 &&
+          deps.keepPolicy.openLinkCount() === 0 &&
+          all.every((s) => s.idle),
         backgroundWork: deps.backgroundWork.held(),
         keptProcesses,
       };

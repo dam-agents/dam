@@ -44,6 +44,7 @@ export interface EnvironmentsDeps {
   agents: AgentsService;
   config: EnvironmentsConfig;
   startCommand: (agentId: string, command: string) => Promise<void>;
+  wake: (agentId: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -51,6 +52,7 @@ export interface OwningAgentEnvironments {
   create(input: CreateEnvironmentInput): Promise<EnvironmentView>;
   list(): Promise<EnvironmentView[]>;
   update(name: string, input: UpdateEnvironmentInput): Promise<EnvironmentView>;
+  wake(name: string): Promise<void>;
   delete(name: string): Promise<void>;
 }
 
@@ -77,8 +79,9 @@ function refuse(
  * connections and no default model provider, so nothing in it can act as the
  * owning Agent; a row beside it holds its host label, endpoints, access list
  * and expiry. A `start` command becomes its first Startup Item through the
- * runtime channel. Deleting one deletes its Agent through the agents service,
- * so the Agent's own cleanup runs too.
+ * runtime channel. The owning Agent wakes a sleeping one before it opens the
+ * Environment Link, which reaches only a running machine. Deleting one deletes
+ * its Agent through the agents service, so the Agent's own cleanup runs too.
  */
 export function createEnvironmentsService(
   deps: EnvironmentsDeps,
@@ -241,6 +244,10 @@ export function createEnvironmentsService(
           { ...record, ...patch },
           await deps.agents.get(record.agentId),
         );
+      },
+
+      async wake(name) {
+        await deps.wake((await byName(name)).agentId);
       },
 
       async delete(name) {

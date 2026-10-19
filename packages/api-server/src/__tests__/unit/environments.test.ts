@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An owning vm Agent creates, lists, changes and deletes its own Environments, and the owner extends and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints, access list and expiry. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
+// TEST_OVERVIEW: An owning vm Agent creates, lists, changes, wakes and deletes its own Environments, and the owner extends and deletes them. An Environment is an Agent record that names its owning Agent, on the vm backend, with no default model provider and no egress preset, beside a row with its host label, endpoints, access list and expiry. The cap per agent, the expiry bound, the vm-only rule and name uniqueness are enforced, an empty update and an expiry outside the date range are refused, and an Environment is never listed as an agent; a `start` command becomes a Startup Item; another owner's Environment is not found. Each endpoint's address is `<endpoint>-<host>` under the install's environments URL, and the host label fits a DNS label with the longest endpoint name.
 import { describe, expect, it } from "vitest";
 import {
   listedAgents,
@@ -90,6 +90,7 @@ function setup(opts: { agents?: Partial<Agent>[]; max?: number } = {}) {
   const repo = memoryRepo();
   const agents = fakeAgents(opts.agents ?? [vmOwning]);
   const starts: [string, string][] = [];
+  const woken: string[] = [];
   const service = createEnvironmentsService({
     owner: OWNER,
     repo,
@@ -100,9 +101,10 @@ function setup(opts: { agents?: Partial<Agent>[]; max?: number } = {}) {
       expiryMaxDays: 30,
     },
     startCommand: async (id, command) => void starts.push([id, command]),
+    wake: async (id) => void woken.push(id),
     now: () => NOW,
   });
-  return { repo, agents, starts, service };
+  return { repo, agents, starts, woken, service };
 }
 
 describe("creating an Environment", () => {
@@ -240,6 +242,21 @@ describe("changing and deleting Environments", () => {
     await service.delete(env.id);
     expect(agents.deleted).toEqual([env.id]);
     expect(repo.rows).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: the owning Agent wakes a sleeping Environment by name before it opens the Environment Link, which reaches only a running machine; a name it does not own wakes nothing.
+  it("wakes its own Environment by name", async () => {
+    const { service, woken } = setup();
+    const mine = service.forOwningAgent(vmOwning.id!);
+    const env = await mine.create({
+      name: "a",
+      endpoints: [{ name: "app", port: 80 }],
+    });
+
+    await mine.wake("a");
+    expect(woken).toEqual([env.id]);
+    await expect(mine.wake("b")).rejects.toThrow(/no Environment named/);
+    expect(woken).toEqual([env.id]);
   });
 
   // TEST_SCENARIO: another owner's Environment is not found, by id or by name.

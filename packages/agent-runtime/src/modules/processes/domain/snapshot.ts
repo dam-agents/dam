@@ -13,6 +13,7 @@ export interface ScannedProcess {
   outputPath: string | null;
   keepMark: string | null;
   startupItem: string | null;
+  link: string | null;
 }
 
 export interface ProcSnapshot {

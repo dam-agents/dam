@@ -26,6 +26,7 @@ function proc(
     outputPath,
     keepMark: null,
     startupItem: null,
+    link: null,
   };
 }
 

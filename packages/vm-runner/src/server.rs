@@ -25,6 +25,7 @@ use crate::fetch::{failure_reason, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{Images, Resolved, ROOTFS_DIR};
 use crate::launch::{read_launch, ImageLaunch};
+use crate::link::{Links, Role};
 use crate::locked;
 use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
@@ -373,6 +374,7 @@ pub struct Server {
     config: Config,
     runtime: Arc<dyn Runtime>,
     forwarder: Forwarder,
+    links: Links,
     machines: Mutex<Machines>,
     settled: Condvar,
     changed: Condvar,
@@ -487,6 +489,11 @@ impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not. Each one the runtime finds running is measured before the runner admits anything, and the prober takes it from there: a runner that took the machines over in a hand-off or a restart would otherwise count each at the warm-up floor until the controller first asked about it, and admit a start into memory its running guests already hold.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
+        let dirs = runtime.clone();
+        let links = Links::new(
+            tokio::runtime::Handle::current(),
+            Arc::new(move |id: &str| dirs.vm_dir(id)),
+        );
         let lifetime = CancellationToken::new();
         // UNIT_BOUNDARY_DESCRIPTION: the OOM kill count this runner starts from is read now, before the machine API serves, and against what the runner it replaces last read, so an OOM kill that lands while the machines are handed over is still counted and still names the machine it took.
         let oom = OomKills {
@@ -502,6 +509,7 @@ impl Server {
             config,
             runtime,
             forwarder,
+            links,
             machines: Mutex::new(Machines::default()),
             settled: Condvar::new(),
             changed: Condvar::new(),
@@ -532,6 +540,9 @@ impl Server {
                 if let Err(e) = server.forwarder.publish(&id, port) {
                     tracing::warn!(machine = %id, error = %e, "republishing machine port");
                 }
+            }
+            if let Some(spec) = read_spec(&server.config.state_dir, &id) {
+                server.serve_link(&id, &spec);
             }
             match server.runtime.state(&id) {
                 Ok(State::Running) => {
@@ -995,6 +1006,7 @@ impl Server {
             let _ = tokio::task::spawn_blocking(move || server.stop_running(stopping)).await;
         }
         self.forwarder.unpublish_all();
+        self.links.stop_all();
         if let Some(images) = self.config.images.clone() {
             let _ = tokio::task::spawn_blocking(move || images.flush()).await;
         }
@@ -1055,6 +1067,7 @@ impl Server {
         locked(&self.machines).closed = true;
         self.changed.notify_all();
         self.forwarder.unpublish_all();
+        self.links.stop_all();
         self.lifetime.cancel();
         self.work.close();
     }
@@ -1297,6 +1310,7 @@ impl Server {
         }
         removed?;
         self.forwarder.unpublish(id);
+        self.links.stop(id);
         Ok(())
     }
 
@@ -1650,6 +1664,7 @@ impl Server {
         )?;
         write_spec(&self.config.state_dir, id, spec)?;
         self.forwarder.publish(id, port)?;
+        self.serve_link(id, spec);
         if !spec.running {
             return Ok(());
         }
@@ -1685,6 +1700,7 @@ impl Server {
         if port != 0 {
             self.forwarder.publish(id, port)?;
         }
+        self.serve_link(id, spec);
         if let Action::Restart { unhealthy } = action {
             if unhealthy {
                 if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
@@ -1836,6 +1852,24 @@ impl Server {
             .ok()
             .flatten()?;
         Some(Resolved { digest, launch })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: records a machine's part in the Environment Link where its VMM reads it at the next boot, and listens on an agent machine's end of the link or stops listening on an Environment's. Called at create, at every reshape and for every machine at runner start, so a machine an earlier runner made has its link from its next boot. A runner that cannot record or listen still runs the machine, which then has no link; the reason is logged, since the agent sees only a refused dial.
+    fn serve_link(&self, id: &str, spec: &MachineSpec) {
+        let role = Role::of_env(&spec.env);
+        if let Some(dir) = self.runtime.vm_dir(id) {
+            if let Err(e) = crate::link::write_role(&dir, &role) {
+                tracing::warn!(machine = %id, error = %e, "recording the environment link role");
+            }
+        }
+        match role {
+            Role::Agent => {
+                if let Err(e) = self.links.serve(id) {
+                    tracing::warn!(machine = %id, error = %e, "serving the environment link");
+                }
+            }
+            Role::Environment { .. } => self.links.stop(id),
+        }
     }
 
     fn start_machine(

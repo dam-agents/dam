@@ -32,6 +32,7 @@ function proc(pid: number, ppid: number, cmdline: string): ScannedProcess {
     outputPath: null,
     keepMark: null,
     startupItem: null,
+    link: null,
   };
 }
 

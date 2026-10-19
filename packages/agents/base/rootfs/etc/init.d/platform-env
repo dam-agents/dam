@@ -1,0 +1,25 @@
+#!/sbin/openrc-run
+# The Environment Link's end on an Environment: hands each connection its
+# owning agent opens over the link to sshd. In the default runlevel of every
+# vm machine, and it serves only on an Environment, which the controller marks
+# with PLATFORM_ENVIRONMENT_OF; on an agent's own machine it starts nothing.
+description="Environment Link sshd"
+command=/usr/local/bin/platform-env
+command_args=serve
+command_background=yes
+pidfile=/run/platform-env.pid
+output_log=/var/log/platform-env.log
+error_log=/var/log/platform-env.log
+
+start() {
+	if [ -z "${PLATFORM_ENVIRONMENT_OF:-}" ]; then
+		einfo "Not an Environment: no Environment Link to serve"
+		return 0
+	fi
+	default_start
+}
+
+stop() {
+	[ -f "$pidfile" ] || return 0
+	default_stop
+}

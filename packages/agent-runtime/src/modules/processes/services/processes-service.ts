@@ -142,8 +142,9 @@ function withDescendants(
  * decision and is never overruled by a later mark. Stop ends a row's whole
  * tree: SIGTERM first, SIGKILL after a grace period to what is left, never to
  * a process or group that took over a pid of the tree meanwhile. Each scan
- * publishes how many Detached Processes keep the agent awake, which makes the
- * runtime busy. It also reports a harness restart that waits for kept
+ * publishes how many Detached Processes keep the agent awake, and how many
+ * processes of an open Environment Link run (PLATFORM_LINK, on either end),
+ * each of which makes the runtime busy. It also reports a harness restart that waits for kept
  * Harness Tasks, and applies it on request. It lists the agent's Startup
  * Items, its own openrc services, beside the rows, and starts, stops,
  * disables and removes one for the user through openrc. Watchers get a data-less notice
@@ -292,8 +293,10 @@ export function createProcessesService(
     const keptDetached = inventory.running.filter(
       (row) => row.kind === "detached" && row.keepsAwake,
     ).length;
-    keepAlive = marks.length > 0 || keptDetached > 0;
+    const openLinks = snapshot.processes.filter((p) => p.link !== null).length;
+    keepAlive = marks.length > 0 || keptDetached > 0 || openLinks > 0;
     deps.keep.setKeptProcesses(keptDetached);
+    deps.keep.setOpenLinks(openLinks);
 
     const signature = `${noticeSignature(inventory.running)}|${JSON.stringify(
       deps.harnessWork.pendingRestart(),

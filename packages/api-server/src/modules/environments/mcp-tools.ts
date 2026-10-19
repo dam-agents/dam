@@ -48,7 +48,7 @@ export function registerEnvironmentTools(
 
   server.tool(
     "create_environment",
-    "Create an Environment: a sandbox of your own that runs software for other people and agents to open — typically one per pull request, running its build. It is a vm machine on the platform's image with Docker, k3s and openrc, with no harness and no connections, and it sleeps when nobody uses it and is deleted at its expiry. Name its endpoints (`app` → 4444): each gets its own address, returned here as `url` once the install serves Environments; give those addresses to an app that needs its public URL (an OIDC issuer, a redirect URI). `start` is a command it runs at every boot, as a Startup Item (an openrc user service in ~/.config/rc inside it), e.g. `docker compose up` or a script that starts k3s and deploys. Deploy into it over SSH (`ssh env-<name>` once the Environment link exists). `access` narrows who may open it to some of your owner's list of people; omit it to use the whole list.",
+    "Create an Environment: a sandbox of your own that runs software for other people and agents to open — typically one per pull request, running its build. It is a vm machine on the platform's image with Docker, k3s and openrc, with no harness and no connections, and it sleeps when nobody uses it and is deleted at its expiry. Name its endpoints (`app` → 4444): each gets its own address, returned here as `url` once the install serves Environments; give those addresses to an app that needs its public URL (an OIDC issuer, a redirect URI). `start` is a command it runs at every boot, as a Startup Item (an openrc user service in ~/.config/rc inside it), e.g. `docker compose up` or a script that starts k3s and deploys. Deploy into it over SSH: `ssh env-<name>` reaches it over a link only you can open, and `docker save IMAGE | ssh env-<name> k3s ctr images import -` ships an image in. `access` narrows who may open it to some of your owner's list of people; omit it to use the whole list.",
     {
       name: environmentNameSchema.describe(
         "Unique among your Environments, e.g. pr-42.",
@@ -110,6 +110,17 @@ export function registerEnvironmentTools(
           }),
         ),
       ),
+  );
+
+  server.tool(
+    "wake_environment",
+    "Wake one of your Environments that sleeps, so you can reach it over SSH. `ssh env-<name>` does this itself; it is here for a script that waits on the Environment some other way.",
+    { name: environmentNameSchema },
+    (args) =>
+      run(async () => {
+        await envs.wake(args.name);
+        return json({ waking: args.name });
+      }),
   );
 
   server.tool(

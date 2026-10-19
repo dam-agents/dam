@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A vm agent's Startup Items — its own openrc services, run as root from ~/.config/rc — reach the Processes panel, and the user controls them there. The scan takes the service name a supervise-daemon carries (RC_USER_SERVICES, RC_SVCNAME) beside the keep mark, and the supervisor's tree is one Startup Item row, keyed by the service, showing the service's own command, never keeping the agent awake. The panel's list joins the services on disk with those rows, so a disabled or exited service is listed too, with its log as output. The user's Disable removes the boot link and Remove deletes the script; Start, Stop and Restart go through rc-service, refusing a service that is off or unknown.
+// TEST_OVERVIEW: A vm agent's Startup Items — its own openrc services, run as root from ~/.config/rc — reach the Processes panel, and the user controls them there; an open Environment Link, seen in the same scan, keeps the agent busy. The scan takes the service name a supervise-daemon carries (RC_USER_SERVICES, RC_SVCNAME) beside the keep mark, and the supervisor's tree is one Startup Item row, keyed by the service, showing the service's own command, never keeping the agent awake. The panel's list joins the services on disk with those rows, so a disabled or exited service is listed too, with its log as output. The user's Disable removes the boot link and Remove deletes the script; Start, Stop and Restart go through rc-service, refusing a service that is off or unknown.
 import {
   existsSync,
   mkdirSync,
@@ -9,7 +9,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createFileDocumentStoreBackend } from "../../core/document-store.js";
 import { classifyProcesses } from "../../modules/processes/domain/classify.js";
 import { assembleInventory } from "../../modules/processes/domain/inventory.js";
@@ -50,6 +50,7 @@ function proc(
     outputPath: null,
     keepMark: null,
     startupItem,
+    link: null,
   };
 }
 
@@ -192,8 +193,8 @@ describe("a service no script names", () => {
 });
 
 describe("the process scan", () => {
-  // TEST_SCENARIO: the scan takes the service name a user-mode openrc supervisor carries, as it takes PLATFORM_KEEP, and nothing else, since the agent's credentials sit beside them; a system service's name is no Startup Item.
-  it("reads a user service's name and drops every other variable", async () => {
+  // TEST_SCENARIO: the scan takes the service name a user-mode openrc supervisor carries, and PLATFORM_LINK, as it takes PLATFORM_KEEP, and nothing else, since the agent's credentials sit beside them; a system service's name is no Startup Item.
+  it("reads a user service's name and PLATFORM_LINK and drops every other variable", async () => {
     const proc = mkdtempSync(join(tmpdir(), "proc-"));
     writeFileSync(join(proc, "uptime"), "1000.00 900.00\n");
     const dir = join(proc, "42");
@@ -206,7 +207,7 @@ describe("the process scan", () => {
     writeFileSync(join(dir, "cmdline"), "sh\0-c\0serve\0");
     writeFileSync(
       join(dir, "environ"),
-      "GH_TOKEN=platform:conn:abc\0RC_USER_SERVICES=yes\0RC_SVCNAME=web\0PATH=/bin\0",
+      "GH_TOKEN=platform:conn:abc\0RC_USER_SERVICES=yes\0RC_SVCNAME=web\0PLATFORM_LINK=env-a\0PATH=/bin\0",
     );
 
     const { processes } = await createProcessTable(proc).scan();
@@ -215,8 +216,63 @@ describe("the process scan", () => {
     expect(processes[0]).toMatchObject({
       startupItem: "web",
       keepMark: null,
+      link: "env-a",
     });
     expect(JSON.stringify(processes[0])).not.toContain("platform:conn");
+  });
+});
+
+describe("an open Environment Link", () => {
+  // TEST_SCENARIO: every process of an open Environment Link carries PLATFORM_LINK — the agent's SSH proxy and the Environment's sshd — and the scan publishes how many run, which makes the runtime busy whatever the keep decisions say, so neither machine hibernates during a long image import.
+  it("publishes how many link processes run", async () => {
+    const links: number[] = [];
+    let scanned: ScannedProcess[] = [
+      { ...proc(500, 1, "ssh env-pr-42"), link: null },
+      {
+        ...proc(501, 500, "python3 platform-env proxy env-pr-42"),
+        link: "env-pr-42",
+      },
+    ];
+    let now = 0;
+    const processes = createProcessesService({
+      table: {
+        scan: async () => ({ scannedAt: now, processes: scanned }),
+        bootId: async () => "boot",
+      },
+      document: openProcessesDocument(
+        createFileDocumentStoreBackend(mkdtempSync(join(tmpdir(), "state-"))),
+      ),
+      outputs: { tail: async (path) => ({ text: path, truncated: false }) },
+      signals: { send: () => true },
+      keep: {
+        setKeptProcesses: () => {},
+        setOpenLinks: (count: number) => links.push(count),
+        taskKeepChanged: () => {},
+      } as never,
+      runtimePid: RUNTIME,
+      harnessWork: {
+        harnesses: () => [],
+        reportedTasks: () => [],
+        forgetTask: () => {},
+        pendingRestart: () => null,
+        applyPendingRestart: () => false,
+        onChange: () => {},
+      },
+      startupItems: { available: () => false } as never,
+      log: () => {},
+    });
+
+    vi.spyOn(Date, "now").mockImplementation(() => now);
+    try {
+      await processes.list();
+      expect(links.at(-1)).toBe(1);
+      scanned = [];
+      now += 60_000;
+      await processes.list();
+      expect(links.at(-1)).toBe(0);
+    } finally {
+      vi.restoreAllMocks();
+    }
   });
 });
 
@@ -319,7 +375,11 @@ describe("the user's control of Startup Items", () => {
       document: openProcessesDocument(document),
       outputs: { tail: async (path) => ({ text: path, truncated: false }) },
       signals: { send: () => true },
-      keep: { setKeptProcesses: () => {}, taskKeepChanged: () => {} } as never,
+      keep: {
+        setKeptProcesses: () => {},
+        setOpenLinks: () => {},
+        taskKeepChanged: () => {},
+      } as never,
       runtimePid: RUNTIME,
       harnessWork: {
         harnesses: () => [],
