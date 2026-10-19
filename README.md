@@ -182,6 +182,16 @@ If you want to have Git run checks before every commit, run:
 mise generate git-pre-commit --write --task=check
 ```
 
+### The Rust build cache
+
+`cargo` in this repository runs through [mr boxington](https://mr-boxington.jdx.dev/), which keeps compiled crates in a content-addressed store and restores what another checkout or worktree already built.
+A second checkout builds the VM runner in about half the time, and CI shares the same cache through GitHub Actions.
+The tool and the `cargo` wrapper are declared in [`.mise/config.toml`](.mise/config.toml), so they are active in this repository alone and nothing changes in your global mise or editor configuration.
+
+The store collects as it fills, up to 60 GiB.
+Set a different budget with `MBX_GC_MAX_TOTAL_SIZE` in a `mise.local.toml`, run one command without the cache with `MBX_DISABLE=1 cargo …`, and read what the cache saved with `mbx stats`.
+The VM runner's own target directory becomes a symlink into the store, which [`prune-target`](packages/vm-runner/.mise/prune-target) tolerates: it removes the link, and the next build makes it again.
+
 See [`CONTRIBUTING.md`](CONTRIBUTING.md) for how to contribute and [`AGENTS.md`](AGENTS.md) for engineering conventions.
 
 ---

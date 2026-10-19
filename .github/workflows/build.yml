@@ -75,19 +75,6 @@ jobs:
     # its key has moved, every PR pays the full cold cost until the next main
     # push rewrites it. That run is the one this budget has to fit.
     timeout-minutes: 30
-    permissions:
-      contents: read
-      # Only to exchange for the cache bucket's credentials; see the mbx steps.
-      # The token grants no access by itself, and the role that writes is
-      # assumable from a push to main alone.
-      id-token: write
-    env:
-      # Loads `.mise/config.ci.toml`, which is where this job and no other
-      # wraps Cargo in mr boxington; see the mbx step below.
-      MISE_ENV: ci
-      # Empty until the repository has the cache bucket, its two roles and the
-      # variables named there; the build then runs with no Rust cache at all.
-      MBX_CACHE_ENABLED: ${{ vars.MBX_CACHE_REMOTE_URL != '' }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -113,25 +100,11 @@ jobs:
         run: |
           sha="${MATCHED##*-}"
           if [ -n "$sha" ] && git cat-file -e "$sha" 2>/dev/null &&
-            git diff --quiet "$sha" HEAD -- packages/vm-runner mise.lock .mise/config.toml mise.ci.lock .mise/config.ci.toml; then
+            git diff --quiet "$sha" HEAD -- packages/vm-runner mise.lock .mise/config.toml; then
             echo "needed=false" >> "$GITHUB_OUTPUT"
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
-      # Cargo's downloads only: the compiled target is mr boxington's, which
-      # keeps the crates it restored and does not carry the registry.
-      - id: cargo-cache
-        if: steps.rust-needed.outputs.needed == 'true'
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: &cargo-paths |
-            ~/.cargo/registry/index
-            ~/.cargo/registry/cache
-            ~/.cargo/git/db
-          key: &cargo-key cargo-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch') }}
-          restore-keys: |
-            cargo-${{ runner.os }}-check-test-
-            cargo-${{ runner.os }}-
       # build-images and e2e.yml's lanes restore the Go and pnpm caches too,
       # read-only.
       - id: go-cache
@@ -163,27 +136,17 @@ jobs:
           path: &pnpm-verified ~/.cache/pnpm/lockfile-verified.jsonl
           key: &pnpm-verified-key pnpm-lockfile-verified-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
-      # mr boxington's remote cache holds the compiled vm-runner crates: a push
-      # to main publishes what it built, and every other run only reads. mbx
-      # reads the event itself to decide, so no input below says which runs may
-      # write. The bucket needs OIDC credentials first, and the two roles keep
-      # the writing one away from pull request code.
-      - id: mbx-credentials
-        if: steps.rust-needed.outputs.needed == 'true' && env.MBX_CACHE_ENABLED == 'true'
-        uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
-        with:
-          role-to-assume: ${{ github.ref == 'refs/heads/main' && vars.MBX_CACHE_WRITE_ROLE || vars.MBX_CACHE_READ_ROLE }}
-          aws-region: ${{ vars.MBX_CACHE_REGION }}
-      # After setup-mise, whose Rust is the toolchain the remote's keys follow;
-      # it reuses the mbx mise installs. Releases keep their own cache: a
-      # release must not read one it did not build (see rust-release).
+      # mr boxington, whose compiled vm-runner crates this job's GitHub Actions
+      # cache entry holds: a push to main saves what it built, and every other
+      # run only restores, as the step it replaces did. It must come after
+      # setup-mise, which installs the mbx the action reuses and the rustc its
+      # cache key follows; the wrapper in `.mise/config.toml` is what puts the
+      # build's `cargo` through it. Releases keep their own cache: a release
+      # must not read one it did not build (see rust-release, and e2e's lane).
       - id: mbx
-        if: steps.rust-needed.outputs.needed == 'true' && env.MBX_CACHE_ENABLED == 'true'
+        if: steps.rust-needed.outputs.needed == 'true'
         uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
         with:
-          backend: remote
-          remote-url: ${{ vars.MBX_CACHE_REMOTE_URL }}
-          namespace: ${{ vars.MBX_CACHE_NAMESPACE }}
           working-directory: packages/vm-runner
       # Every artifact's atime goes back to the epoch, so the ones this run
       # reads stand out afterwards; see the prune below.
@@ -197,7 +160,7 @@ jobs:
       # platform-init's tests that need root (loop-mounted btrfs and ext4),
       # which the sandboxed, cached `test` cannot run. Only when the Rust cache
       # was needed: otherwise `test` replays, and this step alone would fill
-      # the target that the main push then saves as the mbx cache.
+      # the target that the main push then saves as the cache entry.
       - if: steps.rust-needed.outputs.needed == 'true'
         run: mise run //packages/vm-runner:test:root
       # Main saves only what this run compiled or read. A Go cache saved after
@@ -223,11 +186,6 @@ jobs:
         with:
           path: *go-paths
           key: *go-key
-      - if: ${{ inputs.main-push && steps.cargo-cache.outputs.cache-hit != 'true' && steps.rust-needed.outputs.needed == 'true' }}
-        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: *cargo-paths
-          key: *cargo-key
       - if: ${{ inputs.main-push && steps.pnpm-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -317,6 +275,11 @@ jobs:
     if: ${{ needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
+    # This job keeps the release build's own cache, so it wants Cargo's plain
+    # `target/` and not mr boxington's managed one in its place (see the
+    # wrapper in `.mise/config.toml`).
+    env:
+      MBX_DISABLE: "1"
     strategy:
       matrix:
         arch: ${{ fromJSON(needs.changes.outputs.image_archs) }}
