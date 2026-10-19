@@ -12,6 +12,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { toAgentView, type Agent, type AgentSpec } from "api-server-api";
 import { configureLogger } from "../../core/logger.js";
+import { events$, EventType } from "../../events.js";
 import {
   createRuntimeMigrationSwitch,
   executeRuntimeMigration,
@@ -75,6 +76,7 @@ function infraAgent(overrides?: Partial<InfraAgent>): InfraAgent {
     disabled: false,
     overBudget: false,
     podRestarts: 0,
+    owner: OWNER,
     ...overrides,
   };
 }
@@ -538,6 +540,29 @@ describe("a move an operator asks for", () => {
       resourceVersion: "41",
     });
     expect(logged.join("\n")).toMatch(/virtualization\.enabled/);
+  });
+
+  // TEST_SCENARIO: a move is asked for from outside the app, so nothing an open page does would refresh the row; each write the sweep makes publishes the Agent for its owner, and one it refuses without writing publishes nothing.
+  it("publishes the Agent it changes, and only then", async () => {
+    const asked = migrating("Requested");
+    const deps = writes(asked);
+    const seen: unknown[] = [];
+    const sub = events$().subscribe((event) => seen.push(event));
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [asked],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: () => {},
+    });
+    await sweep.tick();
+    sub.unsubscribe();
+    expect(seen).toEqual([
+      { type: EventType.AgentUpdated, agentId: asked.id, ownerSub: OWNER },
+    ]);
   });
 
   // TEST_SCENARIO: a request that already names a target is the api-server's own decision from an earlier tick, and is not decided again.
