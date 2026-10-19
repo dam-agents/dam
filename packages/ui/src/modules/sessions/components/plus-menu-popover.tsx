@@ -42,6 +42,7 @@ import type { CatalogProviderGroup } from "../../connections/lib/catalog-provide
 import type { PackIngredientKind } from "../../packs/data/packs.js";
 import { PACKS, REAL_PACKS } from "../../packs/data/packs.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
+import { AddSkillSourceModal } from "../../sandboxes/components/skills/add-skill-source-modal.js";
 import { SkillsSurface } from "../../sandboxes/components/skills/skills-surface.js";
 import { useSkillsDerivations } from "../../sandboxes/hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../sandboxes/hooks/use-skills-surface.js";
@@ -74,6 +75,7 @@ export function PlusMenuPopover({
   const [open, setOpen] = useState(false);
   const [panel, setPanel] = useState<Panel>("menu");
   const [catalogOpen, setCatalogOpen] = useState(false);
+  const [addSourceOpen, setAddSourceOpen] = useState(false);
 
   const maintenance = useConnectionMaintenance();
 
@@ -181,6 +183,10 @@ export function PlusMenuPopover({
                       onInsertSkillChip?.(name);
                       handleOpenChange(false);
                     }}
+                    onAddSource={() => {
+                      handleOpenChange(false);
+                      setTimeout(() => setAddSourceOpen(true), 150);
+                    }}
                     onDescribe={() => {
                       onPrefillInput?.("Create a skill that...");
                       handleOpenChange(false);
@@ -232,6 +238,13 @@ export function PlusMenuPopover({
         <ConnectionCatalogModal
           onClose={() => setCatalogOpen(false)}
           sandbox={{ grantedIds, onToggleGrant: toggleGrant }}
+        />
+      )}
+      {addSourceOpen && (
+        <AddSkillSourceModal
+          onClose={() => setAddSourceOpen(false)}
+          onCreate={async () => null}
+          onCreateSkills={async () => ({ ok: true as const })}
         />
       )}
       <ConnectionMaintenanceDialog maintenance={maintenance} />
@@ -468,12 +481,14 @@ function SkillsPanel({
   agentId,
   onBack,
   onManage,
+  onAddSource,
   onDescribe,
 }: {
   agentId: string | null;
   onBack: () => void;
   onManage: () => void;
   onSkillClick: (name: string) => void;
+  onAddSource: () => void;
   onDescribe: () => void;
 }) {
   return (
@@ -490,7 +505,7 @@ function SkillsPanel({
         />
       </div>
       <div className="sticky bottom-0 flex items-center justify-between border-t border-border bg-background px-3 py-2.5">
-        <Button variant="outline" size="sm" onClick={onManage}>
+        <Button variant="outline" size="sm" onClick={onAddSource}>
           <Add size={16} /> Add source
         </Button>
         <button

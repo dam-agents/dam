@@ -60,7 +60,7 @@ const RUNNING_FIXTURE: RunningItem[] = [
   },
   {
     id: "run-002",
-    agentId: AGENT_IDS.claudeCodeMain,
+    agentId: AGENT_IDS.codexResearch,
     agentName: "packaging-layouts",
     task: "Generating print-ready dielines for product boxes",
     startedAt: minsAgo(4),

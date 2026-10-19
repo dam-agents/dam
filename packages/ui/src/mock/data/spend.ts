@@ -48,8 +48,8 @@ export const spendBreakdown = {
       costUsd: 14.22,
     },
     {
-      agentId: AGENT_IDS.claudeCodeMain,
-      agentName: "code-review-bot",
+      agentId: AGENT_IDS.geminiPipeline,
+      agentName: "bug-triage",
       costUsd: 9.83,
     },
     {

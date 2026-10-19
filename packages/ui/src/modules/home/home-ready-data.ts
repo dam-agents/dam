@@ -34,7 +34,7 @@ const READY_FIXTURE: ReadyItem[] = [
   {
     id: "rdy-001",
     type: "pr_ready",
-    agentId: AGENT_IDS.claudeCodeMain,
+    agentId: AGENT_IDS.codexResearch,
     agentName: "packaging-layouts",
     title: "Product box dielines — ready for print review",
     subtitle: "6 packaging variants exported as press-ready PDFs",

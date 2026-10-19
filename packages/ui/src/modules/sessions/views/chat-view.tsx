@@ -208,6 +208,7 @@ export function ChatView() {
       null)
     : null;
   const goBack = useStore((s) => s.goBack);
+  const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
@@ -668,8 +669,7 @@ export function ChatView() {
             onNewChat={
               isMock
                 ? () => {
-                    resetSession();
-                    requestAnimationFrame(() => textareaRef.current?.focus());
+                    if (selectedAgent) selectAgent(selectedAgent);
                   }
                 : undefined
             }

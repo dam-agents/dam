@@ -58,8 +58,8 @@ const BLOCKED_FIXTURE: BlockedItem[] = [
   {
     id: "blk-002",
     type: "approval",
-    agentId: AGENT_IDS.claudeCodeMain,
-    agentName: "claude-code-main",
+    agentId: AGENT_IDS.geminiPipeline,
+    agentName: "bug-triage",
     runId: "run-nightly-release",
     runName: "Nightly release prep",
     blockedAt: minsAgo(4),
@@ -77,8 +77,8 @@ const BLOCKED_FIXTURE: BlockedItem[] = [
   {
     id: "blk-004",
     type: "run_failure",
-    agentId: AGENT_IDS.claudeCodeMain,
-    agentName: "claude-code-main",
+    agentId: AGENT_IDS.geminiPipeline,
+    agentName: "bug-triage",
     runId: "run-nightly-tests",
     runName: "Nightly test suite",
     blockedAt: hoursAgo(8),

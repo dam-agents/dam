@@ -235,7 +235,7 @@ function TopStripPreview() {
             <span>Sandboxes</span>
             <span className="text-border">/</span>
             <span className="text-foreground font-medium">
-              claude-code-main
+              ci-pipeline
             </span>
           </div>
           <div className="flex items-center gap-5">

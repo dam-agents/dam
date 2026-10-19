@@ -34,7 +34,7 @@ export function UpdatePatternsShowcase() {
             <strong className="font-semibold text-foreground">
               2 sandboxes are out of date.
             </strong>{" "}
-            claude-code-main and gemini-data-pipeline changed upstream since
+            ci-pipeline and gemini-data-pipeline changed upstream since
             they were installed.
           </p>
           <Button
@@ -57,7 +57,7 @@ export function UpdatePatternsShowcase() {
         <div className="flex items-center gap-3 rounded-xl border border-border bg-card px-4 py-3">
           <div className="flex-1">
             <p className="text-[15px] font-medium text-foreground">
-              claude-code-main
+              ci-pipeline
             </p>
             <p className="text-[13px] text-muted-foreground">
               Primary development sandbox running Claude Code

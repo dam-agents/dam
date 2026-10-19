@@ -157,7 +157,7 @@ const mockActivity = [
 
 const mockIdToAgentId: Record<string, string> = {
   a1: AGENT_IDS.codexResearch,
-  a2: AGENT_IDS.claudeCodeMain,
+  a2: AGENT_IDS.geminiPipeline,
 };
 
 const stateDotClass: Record<AgentState, string> = {

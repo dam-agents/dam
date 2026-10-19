@@ -41,7 +41,7 @@ export const schedules = [
   },
   {
     id: "sched-003",
-    agentId: AGENT_IDS.claudeCodeMain,
+    agentId: AGENT_IDS.codexResearch,
     name: "Weekly dependency update",
     type: "rrule",
     cron: null,

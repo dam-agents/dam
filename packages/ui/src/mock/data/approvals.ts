@@ -26,7 +26,7 @@ export const approvals = [
   {
     id: "apr-0002",
     type: "ext_authz" as const,
-    agentId: AGENT_IDS.claudeCodeMain,
+    agentId: AGENT_IDS.geminiPipeline,
     sessionId: "sess-002",
     payload: {
       kind: "ext_authz" as const,
@@ -79,7 +79,7 @@ export const approvals = [
   {
     id: "apr-0005",
     type: "ext_authz" as const,
-    agentId: AGENT_IDS.claudeCodeMain,
+    agentId: AGENT_IDS.geminiPipeline,
     sessionId: "sess-002",
     payload: {
       kind: "ext_authz" as const,
