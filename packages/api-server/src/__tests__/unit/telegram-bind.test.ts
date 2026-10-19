@@ -15,6 +15,7 @@ const OWNER = "kc|owner-1";
 
 async function harness(opts?: {
   owner?: string;
+  conversationId?: string;
   boundTo?: string | null;
   bindOutcome?: "bound" | "conflict";
   racedTo?: string | null;
@@ -25,7 +26,7 @@ async function harness(opts?: {
     store: createMemoryTtlStore(600_000, () => 1_000),
   });
   const flowId = await store.create({
-    conversationId: "chat-42",
+    conversationId: opts?.conversationId ?? "chat-42",
     telegramUserId: "tg-7",
     keycloakSub: OWNER,
     chatTitle: "Team chat",
@@ -76,6 +77,29 @@ describe("telegram bind flow", () => {
     expect(h.binding.postMessage).toHaveBeenCalledWith(
       "agent-1",
       "chat-42",
+      expect.stringContaining("my-agent"),
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: A bind flow can carry a forum topic's id: `/bind` stored
+   * one before a binding covered the whole chat. The binding it creates must
+   * still be the chat's, since every lookup goes by the chat.
+   */
+  it("binds the chat when the flow carries a forum topic's id", async () => {
+    const h = await harness({ conversationId: "telegram:-100777:99" });
+    await h.run("agent-1", h.flowId);
+    expect(h.binding.findAgentByConversation).toHaveBeenCalledWith(
+      "telegram:-100777",
+    );
+    expect(h.binding.bind).toHaveBeenCalledWith(
+      "telegram:-100777",
+      "agent-1",
+      OWNER,
+    );
+    expect(h.binding.postMessage).toHaveBeenCalledWith(
+      "agent-1",
+      "telegram:-100777",
       expect.stringContaining("my-agent"),
     );
   });

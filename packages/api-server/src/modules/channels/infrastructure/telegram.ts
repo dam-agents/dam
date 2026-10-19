@@ -16,8 +16,8 @@ import {
   type Thread,
   type StateAdapter,
 } from "chat";
-import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
+import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
 import {
   AcpSessionLoadError,
@@ -33,6 +33,7 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
+  telegramChatOf,
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
@@ -273,7 +274,8 @@ export function createTelegramMessageHandler(deps: {
   async function handleBind(thread: ThreadLike, telegramUserId: string) {
     if (await denyNonAdmin(thread, telegramUserId, "bind")) return;
 
-    const binding = await deps.conversations.findAgentByConversation(thread.id);
+    const chat = telegramChatOf(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(chat);
     if (binding) {
       await thread.post(
         "This chat is already connected to an agent. Send `/unbind` first to reconnect.",
@@ -285,7 +287,7 @@ export function createTelegramMessageHandler(deps: {
     const { state: oauthState, codeVerifier, codeChallenge } = generatePkce();
     await deps.pendingOAuthFlows.set(oauthState, {
       telegramUserId,
-      threadId: thread.id,
+      threadId: chat,
       codeVerifier,
       chatTitle,
       createdAt: Date.now(),
@@ -310,12 +312,13 @@ export function createTelegramMessageHandler(deps: {
   async function handleUnbind(thread: ThreadLike, telegramUserId: string) {
     if (await denyNonAdmin(thread, telegramUserId, "unbind")) return;
 
-    const binding = await deps.conversations.findAgentByConversation(thread.id);
+    const chat = telegramChatOf(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(chat);
     if (!binding) {
       await thread.post("This chat isn't connected to an agent.");
       return;
     }
-    await deps.conversations.unbind(thread.id);
+    await deps.conversations.unbind(chat);
     securityLog("info", "channel.chat_unbound", {
       category: "authz-list",
       actor: null,
@@ -323,7 +326,7 @@ export function createTelegramMessageHandler(deps: {
       surface: "telegram",
       agentId: binding.agentId,
       result: "success",
-      detail: { conversationId: thread.id, byTelegramUserId: telegramUserId },
+      detail: { conversationId: chat, byTelegramUserId: telegramUserId },
     });
     await thread.post("Chat disconnected. Send `/bind` to connect it again.");
   }
@@ -347,7 +350,9 @@ export function createTelegramMessageHandler(deps: {
       return;
     }
 
-    const binding = await deps.conversations.findAgentByConversation(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(
+      telegramChatOf(thread.id),
+    );
     if (!binding) {
       securityLog("warn", "channel.inbound.unauthorized", {
         category: "channel",
@@ -485,7 +490,7 @@ export function createTelegramWorker(deps: {
 
   let bot: {
     chat: Chat;
-    adapter: ReturnType<typeof createTelegramAdapter>;
+    adapter: TelegramConversationAdapter;
   } | null = null;
   let username: string | null = deps.configuredBotUsername ?? null;
   const lastThread = new Map<string, Thread>();
@@ -700,9 +705,12 @@ export function createTelegramWorker(deps: {
 
     async start() {
       if (bot) return;
-      let adapter: ReturnType<typeof createTelegramAdapter> | null = null;
+      let adapter: TelegramConversationAdapter | null = null;
       try {
-        const polling = createTelegramAdapter({ botToken, mode: "polling" });
+        const polling = new TelegramConversationAdapter({
+          botToken,
+          mode: "polling",
+        });
         adapter = polling;
         const handleMessage = createTelegramMessageHandler({
           conversations: deps.conversations,
@@ -792,8 +800,9 @@ export function createTelegramWorker(deps: {
         : text;
 
       if (conversationId) {
-        const binding =
-          await deps.conversations.findAgentByConversation(conversationId);
+        const binding = await deps.conversations.findAgentByConversation(
+          telegramChatOf(conversationId),
+        );
         if (!binding || binding.agentId !== agentId)
           return { error: "conversation is not connected to this agent" };
         try {
