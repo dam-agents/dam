@@ -127,10 +127,10 @@ A stop ends the item's whole group, and kills what is left of it after a few sec
 An item gets what an openrc service gets of the environment, which the image's openrc config names, `PATH` and the gateway's proxy and CA variables, and no credential placeholder; its output goes to a log of its own in the home.
 
 Every process of an item carries `PLATFORM_STARTUP=<id>`, which the process scan reads beside the keep mark, so the item's tree under the reaper is one **Startup Item** row rather than a Detached Process.
-The panel lists every configured item in a section of its own, running, exited or off, with its log as output, and keeps a running item's row out of the background groups and the header count.
+The panel lists every configured item in a section of its own, running, exited or off, with its log as output and history, and keeps a running item's row out of the background groups, the header count and the finished history.
 **An item never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark.
 The user restarts, stops, turns off or removes an item there, through the image's own control; turning one off is written into the list, so the next boot skips it, and `platform-startup` refuses to turn it on again or remove it, the same rule as a user's choice about a kept process.
-An image without the control lists no Startup Items.
+Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc, and an image without the control has none.
 
 **Stop.** The user can stop any listed process that has one: the runtime signals its whole tree — every descendant, and the process group its root leads — to terminate, and after a short grace kills what is left, matching each process by its start time so a reused pid is never hit.
 The row moves to the finished history as stopped by the user; a Turn Process just ends, and its tool call fails in front of the agent.
