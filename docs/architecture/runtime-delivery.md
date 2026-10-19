@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -192,7 +192,8 @@ The common contract:
 - It does the work (e.g. open an in-process ACP session for `trigger`, clone the seed repo for `workspace-seed`); it does NOT touch `runtime_events`.
 - An event settles when its handler **accepts** it, not when the work it started finishes.
   That distinction is what keeps a slow handler off the channel: `applyState` is serialized per agent, so anything awaited inside a handler stops every other contribution and event for that agent, and the api-server abandons the call after its own timeout.
-  A handler with work that can outlive the call — a schedule's Precheck is the one today — settles immediately and reports its outcome afterwards over the **event report** below.
+  A handler with work that can outlive the call settles immediately and reports its outcome afterwards over the **event report** below.
+  Two do: a schedule's Precheck, and a sub-agent's `trigger`, whose run the runtime watches and reports as failed when it can no longer produce a result ([invocations](invocations.md)).
   The cost is deliberate: work detached this way is lost if the pod dies before it finishes, because the event is already settled.
 
 A handler failure leaves the event unsettled, so it is redelivered on the next dispatch until it succeeds or expires; the events behind it in that apply keep running, except behind a failed workspace mutation, which holds them (above).

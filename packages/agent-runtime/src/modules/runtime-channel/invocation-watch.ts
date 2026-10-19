@@ -20,7 +20,7 @@ export interface InvocationWatch {
 
 export interface InvocationWatchDeps {
   reporter: { report(input: EventReportInput): Promise<void> };
-  holdsWork: (sessionId: string) => boolean;
+  holdsWork: (sessionId: string) => Promise<boolean>;
   toolRunning: (sessionId: string) => boolean;
   stallMs?: number;
   log: (msg: string) => void;
@@ -109,15 +109,18 @@ export function createInvocationWatch(
         fail(`the sub-agent's turn failed: ${error}`);
         return;
       }
-      if (deps.holdsWork(sessionId)) {
-        deps.log(
-          `[invocation] turn ended with work still running; watching its next turn`,
+      void deps.holdsWork(sessionId).then((holds) => {
+        if (!isWatched(sessionId)) return;
+        if (holds) {
+          deps.log(
+            `[invocation] turn ended with work still running; watching its next turn`,
+          );
+          return;
+        }
+        fail(
+          `the sub-agent's turn ended without a reported result (stop reason: ${stopReason ?? "end_turn"})`,
         );
-        return;
-      }
-      fail(
-        `the sub-agent's turn ended without a reported result (stop reason: ${stopReason ?? "end_turn"})`,
-      );
+      });
     },
 
     modelCallStarted(sessionId) {

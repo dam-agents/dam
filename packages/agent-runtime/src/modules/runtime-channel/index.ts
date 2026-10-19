@@ -5,6 +5,7 @@ export {
   createInvocationWatch,
   type InvocationWatch,
 } from "./invocation-watch.js";
+export { createSubAgentsRunning } from "./sub-agents-running.js";
 export {
   loadManifest,
   harnessConfigBindingOf,

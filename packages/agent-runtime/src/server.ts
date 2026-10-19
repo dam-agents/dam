@@ -90,6 +90,7 @@ import {
   createFilePlugin,
   createHarnessClient,
   createInvocationWatch,
+  createSubAgentsRunning,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
   loadManifest,
@@ -257,7 +258,13 @@ if (envStore.ready()) void modelCatalog.refresh();
 modelCatalog.start();
 
 const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
-let sessionHoldsWork: (sessionId: string) => boolean = () => false;
+let sessionHoldsWork: (sessionId: string) => Promise<boolean> = () =>
+  Promise.resolve(false);
+const subAgentsRunning = createSubAgentsRunning({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: platformAgentId,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
 let sessionToolRunning: (sessionId: string) => boolean = () => false;
 const invocationWatch = createInvocationWatch({
   reporter: {
@@ -488,8 +495,9 @@ const {
 });
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
-sessionHoldsWork = (sessionId) =>
-  backgroundWork.hasWork(sessionId) || subAgentSessions.spawnedAny(sessionId);
+sessionHoldsWork = async (sessionId) =>
+  backgroundWork.hasWork(sessionId) ||
+  (await subAgentsRunning(subAgentSessions.spawnedBy(sessionId)));
 sessionToolRunning = (sessionId) => acpRuntime.toolCallsOpen(sessionId);
 
 const { service: processesService, keepMarks } = processes.start({

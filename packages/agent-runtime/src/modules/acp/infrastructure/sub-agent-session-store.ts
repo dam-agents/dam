@@ -11,7 +11,7 @@ const stateSchema = z.object({
 export interface SubAgentSessionStore {
   record(sessionId: string, subAgentIds: string[]): void;
   sessionOf(subAgentIds: readonly string[]): string | null;
-  spawnedAny(sessionId: string): boolean;
+  spawnedBy(sessionId: string): string[];
 }
 
 /**
@@ -51,8 +51,10 @@ export function createSubAgentSessionStore(
       return null;
     },
 
-    spawnedAny(sessionId) {
-      return Object.values(store.read().sessions).includes(sessionId);
+    spawnedBy(sessionId) {
+      return Object.entries(store.read().sessions)
+        .filter(([, spawner]) => spawner === sessionId)
+        .map(([id]) => id);
     },
   };
 }
