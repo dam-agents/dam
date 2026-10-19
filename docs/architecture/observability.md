@@ -259,6 +259,7 @@ With `monitoring.enabled` the collector exports the pool series — the runners'
 That port is admitted from any source, since the cluster's Prometheus has no mesh identity to match, which is why it carries no series but these.
 The rules fire on a user's pool at 75% and 90% of its memory or storage, a runner throttled in a fifth of its CPU periods or past its memory pressure, refusals that last, a resize a node deferred or refused, the users' pools committing more than one and a half times what the nodes or the storage driver hold, runners reserving nine tenths of the nodes, and a node the cluster has stopped reporting ready with users' runners on it, which no wait clears ([node loss](../notes/vm-runner-node-loss.md)).
 No alert names a user; each critical one says how to find the user's agents from their Warning Events.
+The node-loss rule counts only the pods its own installation scrapes, because a Prometheus may serve several installations and a node lost to one is not a fault of the others; it keeps the namespace label so an alert instance says which installation it belongs to.
 
 ### Runtime migration
 

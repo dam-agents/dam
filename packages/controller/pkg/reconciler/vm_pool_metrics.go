@@ -69,6 +69,10 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 	pending := map[string]runnerCapacityState{}
 	lost := map[string]string{}
 	ready := r.nodesReady(ctx)
+	if ready == nil {
+		// UNIT_BOUNDARY_DESCRIPTION: an unreadable node list says nothing about any node, so this pass publishes nothing rather than reporting every runner as off a ready node: the last snapshot stands, the alert keeps its clock, and the next pass that can read the nodes does not announce the same loss again.
+		return telemetry.VMPool{}, nil, nil, nil, false
+	}
 	owners := map[string]bool{}
 	for i := range pods.Items {
 		pod := &pods.Items[i]
@@ -77,7 +81,7 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 			continue
 		}
 		owners[owner] = true
-		if node := pod.Spec.NodeName; node != "" && ready != nil && !ready[node] {
+		if node := pod.Spec.NodeName; node != "" && !ready[node] {
 			pool.NodeLost++
 			lost[owner] = node
 		}

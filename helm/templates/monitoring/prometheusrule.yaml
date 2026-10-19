@@ -76,7 +76,7 @@ spec:
             description: >-
               The runner at {{ "{{ $labels.instance }}" }} has been past its pressure threshold for 5 minutes; if it is killed, every machine of its user restarts.
         - alert: VMRunnerNodeLost
-          expr: sum(platform_vm_runner_node_lost) > 0
+          expr: sum by (namespace) (platform_vm_runner_node_lost{namespace="{{ .Release.Namespace }}"}) > 0
           for: 5m
           labels:
             severity: critical

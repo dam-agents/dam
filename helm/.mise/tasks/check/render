@@ -160,3 +160,19 @@ jq -e '(.containers[0].env[] | select(.name == "PLATFORM_PROVIDER_CA_FILE") | .v
   and any(.volumes[]; .name == "platform-provider-ca" and .configMap.name == "openshift-service-ca.crt"
     and .configMap.items == [{"key": "service-ca.crt", "path": "ca.crt"}])' <<<"$ca" >/dev/null ||
   { echo "apiServer.platformProvider.caConfigMap did not mount the CA file the api-server reads: $ca" >&2; exit 1; }
+# The node-loss alert counts one installation's runners only. Two installations
+# sharing a Prometheus would otherwise share one sum, so an affected one would
+# fire the other's alert as well, and the alert would name no installation.
+node_lost_expr() {
+  helm template platform . "${COMMON[@]}" "${MONITORING[@]}" --namespace "$1" \
+    --api-versions monitoring.coreos.com/v1/PrometheusRule \
+    --show-only templates/monitoring/prometheusrule.yaml |
+    yq -r '.spec.groups[].rules[] | select(.alert == "VMRunnerNodeLost") | .expr'
+}
+for ns in platform-a platform-b; do
+  expr=$(node_lost_expr "$ns")
+  grep -q 'sum by (namespace)' <<<"$expr" && [ "$(grep -o 'namespace="[^"]*"' <<<"$expr")" = "namespace=\"$ns\"" ] \
+    || { echo "VMRunnerNodeLost in $ns does not count that installation alone: $expr" >&2; exit 1; }
+done
+[ "$(node_lost_expr platform-a)" != "$(node_lost_expr platform-b)" ] \
+  || { echo "the node-loss alert reads the same in two installations, so one fires on the other's runners" >&2; exit 1; }

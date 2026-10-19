@@ -357,6 +357,68 @@ func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
 	assert.Contains(t, msg, "node-a", "the agent names the node an operator has to bring back or fence")
 }
 
+// TEST_SCENARIO: a lost node leaves a finished pod behind as well as a terminating one. A pod that has finished is not the owner's runner, so it must not speak over the replacement: the claim the replacement cannot attach, or the schedule it cannot get, is what the agent shows. A pod still terminating on that node does speak, because it is what keeps the claim.
+func TestAFinishedRunnerPodDoesNotSpeakForItsOwner(t *testing.T) {
+	unschedulable := corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
+		Message: "0/15 nodes are available: 3 node(s) had volume node affinity conflict"}
+	for name, tc := range map[string]struct {
+		phase corev1.PodPhase
+		want  string
+	}{
+		"evicted on the lost node":     {phase: corev1.PodFailed, want: apiv1.ReasonMachineRunnerUnschedulable},
+		"terminating on the lost node": {phase: corev1.PodRunning, want: apiv1.ReasonMachineRunnerNodeLost},
+		"succeeded on the lost node":   {phase: corev1.PodSucceeded, want: apiv1.ReasonMachineRunnerUnschedulable},
+	} {
+		t.Run(name, func(t *testing.T) {
+			agent := vmAgentCR()
+			agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+			_, srv := newFakeNode(t)
+			dep := readyRunnerDeployment()
+			dep.Status.ReadyReplicas = 0
+			old := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: dep.Name + "-old", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
+				Spec:       corev1.PodSpec{NodeName: "node-a"},
+				Status:     corev1.PodStatus{Phase: tc.phase},
+			}
+			if tc.phase == corev1.PodRunning {
+				old.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+				old.Finalizers = []string{"test"}
+			}
+			replacement := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: dep.Name + "-new", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
+				Status:     corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{unschedulable}},
+			}
+			r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), old, replacement)
+			r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
+				Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
+				ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",
+				ReleaseHostPath: "/var/lib/platform-runner-releases",
+			}}
+			r.runnerEndpoint = func(string) string { return srv.URL }
+
+			require.NoError(t, r.Reconcile(context.Background(), agent))
+
+			reason := podReadyReason(t, r)
+			assert.Equal(t, tc.want, reason)
+		})
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the reason on the agent's PodReady condition, as an operator reads it.
+func podReadyReason(t *testing.T, r *AgentReconciler) string {
+	t.Helper()
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	conds, _, _ := unstructured.NestedSlice(u.Object, "status", "conditions")
+	reason := ""
+	for _, c := range conds {
+		if m, ok := c.(map[string]interface{}); ok && m["type"] == apiv1.ConditionAgentPodReady {
+			reason, _ = m["reason"].(string)
+		}
+	}
+	return reason
+}
+
 // TEST_SCENARIO: a new owner's runner pod is created together with its state claim, so the scheduler first reports the claim unbound while the volume is still provisioned. That is a runner still starting, not a failed start the user's first agent shows as an error.
 func TestARunnerWaitingForItsNewVolumeIsStillStarting(t *testing.T) {
 	agent := vmAgentCR()

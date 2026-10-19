@@ -827,7 +827,7 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string, keepCl
 	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up, and so does a runner on a node the cluster has lost, which no wait outgrows.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up, and so does a runner on a node the cluster has lost, which no wait outgrows. A pod that has finished is not that runner: an evicted one is what a lost node leaves behind, and it must not speak over the replacement that is waiting for its claim.
 func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (string, string) {
 	const starting = "the owner's VM runner is still starting"
 	pods, err := r.runnerPods(ctx, owner, true)
@@ -836,7 +836,11 @@ func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (str
 	}
 	ready := r.nodesReady(ctx)
 	for i := range pods {
-		if node := pods[i].Spec.NodeName; ready != nil && node != "" && !ready[node] {
+		pod := &pods[i]
+		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		if node := pod.Spec.NodeName; ready != nil && node != "" && !ready[node] {
 			return apiv1.ReasonMachineRunnerNodeLost, "the owner's VM runner is on node " + node + ", which the cluster does not report ready; its machines cannot start until that node returns or is fenced"
 		}
 	}

@@ -44,11 +44,12 @@ export const GATEWAY_FAILURE_REASONS = new Set([
   ...POD_FAILURE_REASONS,
   "StuckOnSupersededRevision",
 ]);
-// UNIT_BOUNDARY_DESCRIPTION: the runner's refusals of a vm machine's start that a wait cannot outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, or the guest did not boot. A wake fails on one at once rather than at its timeout. An unschedulable runner is left out, because a node can free up or be added while the wake waits. A pull or boot still in progress reads MachineNotReady, so it never matches.
+// UNIT_BOUNDARY_DESCRIPTION: the refusals of a vm machine's start that a wait cannot outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, the guest did not boot, or the node holding the owner's runner is gone, which no wait brings back. A wake fails on one at once rather than at its timeout. An unschedulable runner is left out, because a node can free up or be added while the wake waits. A pull or boot still in progress reads MachineNotReady, so it never matches.
 export const REFUSED_START_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
   TerminationCode.MachineImageUnavailable,
   TerminationCode.MachineBootFailed,
+  TerminationCode.MachineRunnerNodeLost,
 ]);
 
 export function classifyWakeFailure(

@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -12,6 +13,9 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -131,6 +135,50 @@ func TestACriticalPoolNamesItsUserOncePerCrossing(t *testing.T) {
 // TEST_SCENARIO: the node holding an owner's runner is not ready. Every machine of that owner is gone with it, and no replacement can take the claim while the node keeps it, so the pool pass counts the pods there once and names the owner once by a Warning Event on their vm Agents — a node that stays lost is not announced on every pass. The controller never deletes the pod: two VMMs on one claim cannot be recovered, so an operator fences the node and clears it out of service.
 func TestARunnerOnALostNodeIsCountedAndNamesItsUserOnce(t *testing.T) {
 	r, _, _ := poolPassReconciler(t)
+	runnerPodOnANotReadyNode(t, r)
+	ctx := context.Background()
+
+	pool, _, _, _, ok := r.vmPool(ctx)
+	require.True(t, ok)
+	assert.Equal(t, int64(1), pool.NodeLost)
+
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "a node that stays lost is not announced again")
+}
+
+// TEST_SCENARIO: the node list itself fails on a later pass. That says nothing about any node, so the pass publishes nothing: the count the alert is timed on stands, the owner is not announced again, and the loss is not announced a second time once the read returns.
+func TestAPassThatCannotReadTheNodesKeepsTheLastOne(t *testing.T) {
+	r, _, _ := poolPassReconciler(t)
+	runnerPodOnANotReadyNode(t, r)
+	ctx := context.Background()
+	r.PoolPass(ctx)
+	require.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
+
+	unreadable := true
+	r.client.(*fake.Clientset).PrependReactor("list", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !unreadable {
+			return false, nil, nil
+		}
+		return true, nil, errors.New("the node list is unavailable")
+	})
+
+	_, _, _, _, ok := r.vmPool(ctx)
+	assert.False(t, ok, "a pass that cannot read the nodes publishes nothing")
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "an unreadable node list announced the loss again")
+	_, kept := r.nodeLostNotices.Load(testOwner)
+	assert.True(t, kept, "the lost node was forgotten while the nodes could not be read")
+
+	unreadable = false
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "the same loss was announced again once the nodes were readable")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's ready runner pod, moved onto a node the cluster reports not ready — one of the two pods a lost node leaves behind.
+func runnerPodOnANotReadyNode(t *testing.T, r *AgentReconciler) {
+	t.Helper()
 	ctx := context.Background()
 	pods := r.client.CoreV1().Pods("test-agents")
 	pod, err := pods.Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
@@ -144,15 +192,6 @@ func TestARunnerOnALostNodeIsCountedAndNamesItsUserOnce(t *testing.T) {
 			Type: corev1.NodeReady, Status: corev1.ConditionFalse}}},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
-
-	pool, _, _, _, ok := r.vmPool(ctx)
-	require.True(t, ok)
-	assert.Equal(t, int64(1), pool.NodeLost)
-
-	r.PoolPass(ctx)
-	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
-	r.PoolPass(ctx)
-	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "a node that stays lost is not announced again")
 }
 
 // TEST_SCENARIO: a controller that restarts while a pool stays critical does not name its user again, since the Event it wrote before the restart is still there; a pool critical for another resource still is.
