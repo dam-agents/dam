@@ -9,7 +9,7 @@ summary: The Model Router stamps each forwarded model call with its session and 
 
 # ADR-108: Every spend figure comes from the gateway meter, per session too
 
-**Date:** 2026-10-16 **Status:** Accepted **Owner:** @PetrBulanek
+**Date:** 2026-10-16 **Status:** Accepted **Owner:** @PetrBulanek **Amends:** ADR-098
 
 ## Context
 
@@ -32,6 +32,11 @@ This amends the spend part of ADR-098: the router's record is no longer the sour
 - The daily ledger keys its rows by session and calling agent, so the spend of a driver's sub-agents shows apart and under the session that spawned them.
 - A per-call row, kept 30 days, gives each chat turn its measured cost: the calls of the session that start inside the turn.
 - Telemetry keeps the per-call context rows, logs, spans and the earlier estimates; no screen and no agent reads a spend figure from it.
+
+## Amends
+
+- **ADR-098** — its Decision and its Committed-to make the router's record, priced from the model catalog, the spend source per session.
+  The router still writes one record per call, with the usage and the session, but without a cost; the gateway meter is the source of every spend figure, per session too.
 
 ## Alternatives Considered
 
