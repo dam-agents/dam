@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -103,6 +103,7 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`agent`** — list, get, create, interactive create, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns, and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
+- **`metrics`** — an agent's measured spend by model and by session, and its recent calls ([Metrics](metrics.md), [Spend limits](spend-limits.md#ledger)).
 - **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
 - **`ssh`** — a login shell, SCP/SFTP, port-forwarding, and editor Remote-SSH into an agent ([SSH access](#ssh-access)).
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).

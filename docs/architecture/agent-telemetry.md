@@ -1,6 +1,6 @@
 # Agent Telemetry (trace and log read path)
 
-Last verified: 2026-10-17
+Last verified: 2026-10-19
 
 ## Overview
 

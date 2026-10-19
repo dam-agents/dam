@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -128,8 +128,9 @@ Postgres carries application state the api-server owns end-to-end — anything t
   The snapshot bytes live in the object store; this row is the queryable index and access record, and answering a consumer's request must not require the owning agent to be running.
   Owned by [knowledge-bases](knowledge-bases.md#sharing).
 - **delegation records** — one row per Invocation (`invocations`), kept for its root driver's lifetime ([invocations](invocations.md#the-delegation-record)).
-- **spend** — the daily Metered Spend, not rebuildable, as costs are fixed when priced, and the owner's daily limits; Redis caches its day totals.
-  Owned by [spend-limits](spend-limits.md).
+- **spend** — the daily Metered Spend, keyed by Session and calling agent, not rebuildable, as costs are fixed when priced; one row per call, kept 30 days for the chat's turn costs; the measuring start, set once; and the owner's daily limits.
+  Redis caches the day totals.
+  Owned by [spend-limits](spend-limits.md#ledger).
 
 Several of those rows carry an owner's Keycloak sub, and they carry it **differently on purpose**: the usage mirror hashes it, because pseudonymized identifiers are that subsystem's whole premise, while the public agent profile and the attention record store the real sub, as channel bindings already do.
 The difference is the requirement, not an oversight — a public page names its Agent's owner and a feed names a person's own sessions back to them, and a hash cannot be resolved back to a person.
