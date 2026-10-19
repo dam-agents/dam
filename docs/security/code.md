@@ -1,6 +1,6 @@
 # Code scanning
 
-Last verified: 2026-09-23
+Last verified: 2026-10-19
 
 ## CodeQL
 
@@ -38,4 +38,4 @@ PRs that introduce new findings are flagged in the review.
 
 `mise run check` also runs:
 
-- **jactionlint** — static analysis of GitHub Actions workflows and composite actions: the syntax, expression and shell checks of actionlint, plus the security rules of zizmor under the same rule IDs (script injection, excessive permissions, dangerous triggers, cache poisoning, credentials left in the checkout).
+- **jactionlint** — static analysis of GitHub Actions workflows and composite actions: actionlint's syntax, expression and shell checks, plus zizmor's audits for script injection, excessive permissions, dangerous triggers, cache poisoning and credentials left in the checkout.
