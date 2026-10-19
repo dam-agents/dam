@@ -9,6 +9,16 @@ export interface DiscoverySource {
   base: string;
 }
 
+function credentialHeaders(
+  spec: ModelDiscoverySpec,
+  env: Record<string, string>,
+): Record<string, string> {
+  const token = spec.tokenEnv
+    ?.map((name) => env[name]?.trim())
+    .find((value) => !!value);
+  return token ? { authorization: `Bearer ${token}`, "x-api-key": token } : {};
+}
+
 function discoverySources(
   sources: ModelDiscoverySources | undefined,
 ): readonly ModelDiscoverySpec[] {
@@ -110,11 +120,12 @@ export function createModelDiscovery(deps: {
 
     const shape = spec.shape ?? "openai-models";
     const url = discoveryUrl(spec, base);
+    const credentials = credentialHeaders(spec, env);
     for (let attempt = 1; attempt <= DISCOVERY_ATTEMPTS; attempt++) {
       const last = attempt === DISCOVERY_ATTEMPTS;
       try {
         const res = await doFetch(url, {
-          headers: { accept: "application/json" },
+          headers: { accept: "application/json", ...credentials },
           signal: AbortSignal.timeout(DISCOVERY_TIMEOUT_MS),
         });
         if (!res.ok) {
