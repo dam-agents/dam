@@ -1528,7 +1528,7 @@ func TestTheMachineDiskIsNoSmallerThanAnyMountAsksFor(t *testing.T) {
 	}), "a size on a path the machine never keeps buys nothing, since nothing is written there across a stop")
 }
 
-// TEST_SCENARIO: images/ is the node cache the runners on a node share, never a directory of the runner's claim, so it gets a mount of its own, read-only, from the host directory the install names. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
+// TEST_SCENARIO: images/ is the node cache the install's runners on a node share, never a directory of the runner's claim, so it gets a mount of its own, read-only, from the host directory the install names. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())

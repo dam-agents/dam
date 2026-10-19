@@ -261,7 +261,7 @@ anything. The Mac's host runner runs outside the cluster with a cache of its own
 {{- define "platform.validate.vmRunnersHaveANodeImageCache" -}}
 {{- $v := .Values.virtualization -}}
 {{- if and $v.enabled (not $v.runner.hostAddress) (not ($v.imageCache | default dict).hostPath) -}}
-{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory tree the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to a root on the runner nodes, such as /var/lib/platform-images; the chart appends this install's own subdirectory (imageCache.hostPath/<release namespace>-<release name>), which on OpenShift sits under the directory etc/openshift-node-config creates." -}}
+{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory tree the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to a root on the runner nodes, such as /var/lib/platform-images; the chart appends this install's own subdirectory (imageCache.hostPath/<release namespace>/<release name>), which on OpenShift sits under the directory etc/openshift-node-config creates." -}}
 {{- end -}}
 {{- end -}}
 

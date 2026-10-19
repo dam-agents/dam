@@ -3,8 +3,8 @@
 Last verified: 2026-10-19
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
-That tree is never on the runner's claim: it lives in a **node cache**, a host directory every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
-The install names a root once the `vm` Backend is on — `imageCache.hostPath` — and the chart keeps this install's cache in its own subdirectory of it, `<release namespace>-<release name>`: nodes are shared, and an install given another install's cache directory is a second writer of it, so the directory is named after the pair the cluster already keeps unique rather than left to whoever sets the value.
+That tree is never on the runner's claim: it lives in a **node cache**, a host directory the install's runners scheduled on the node share, so the same few harness images are fetched once per node rather than once per owner.
+The install names a root once the `vm` Backend is on — `imageCache.hostPath` — and the chart keeps this install's cache in its own subdirectory of it, `<release namespace>/<release name>`: nodes are shared, and an install given another install's cache directory is a second writer of it, so the directory is named after the pair the cluster already keeps unique rather than left to whoever sets the value.
 It refuses a root that is not a path on the node, and one whose subdirectory lands inside the release directory, which the stager prunes.
 It is a host directory, not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
 On OpenShift the runners need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
@@ -84,7 +84,7 @@ A grant is remembered per digest and credential, and a failed anonymous read per
 A remembered failed read only moves the anonymous read after the caller's credentials, and never refuses a boot by itself, since a read that timed out looks the same as one refused.
 The check gates a boot, not a read.
 
-**What a runner may read on a node cache is not gated.** Its mount is the whole directory, so any runner on the node — and any guest that escapes into one — reads every cached tree, other owners' private images included.
+**What a runner may read on a node cache is not gated.** Its mount is the whole directory, so any runner of the install on the node — and any guest that escapes into one — reads every cached tree, other owners' private images included.
 The per-machine access check decides only what the service resolves and fetches for a caller.
 The socket cannot tell one runner from another either, since the service checks no peer credentials on it, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.
 

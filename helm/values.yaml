@@ -443,7 +443,7 @@ virtualization:
   # next owner on that node boots the same tree without touching the
   # registry. It is this install's own directory under the one
   # etc/openshift-node-config has the nodes create and label, named
-  # `<release namespace>-<release name>`, so the installs sharing a node never
+  # `<release namespace>/<release name>`, so the installs sharing a node never
   # take each other's.
   # An install with no registry (local dev) stages
   # pre-flattened trees here too, named after the image reference
@@ -504,7 +504,7 @@ virtualization:
   imageCache:
     # The root the node image caches live under: on every node a runner runs
     # on, the chart keeps this install's cache in its own subdirectory of it,
-    # `<release namespace>-<release name>` — the pair the cluster already keeps
+    # `<release namespace>/<release name>` — the pair the cluster already keeps
     # unique. Nodes are shared, and an install given another install's cache
     # directory is a second writer of it: the two take turns unlinking each
     # other's socket and serving each other's trees. So the value is a root and

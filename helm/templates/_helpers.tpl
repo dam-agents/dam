@@ -473,15 +473,17 @@ installs that share nodes would otherwise remove each other's.
 {{- end }}
 {{/*
 The node directory this install caches images in: its own subdirectory of
-`imageCache.hostPath`, named after the pair the cluster already keeps unique —
-release namespace and release name. The service is the only writer of the
+`imageCache.hostPath`, one segment each for the release namespace and the
+release name — the pair the cluster already keeps unique. Two segments, not a
+dash join: joined, namespace `a-b` with release `c` and namespace `a` with
+release `b-c` both name `a-b-c`. The service is the only writer of the
 directory it serves, so two installs on a shared node given one directory take
 turns unlinking each other's socket and serving each other's trees. Deriving
 it from the install's own name means no value can hand two installs one
 directory.
 */}}
 {{- define "platform.vmImageCache.dir" -}}
-{{- with .Values.virtualization.imageCache | default dict }}{{ with .hostPath }}{{ printf "%s/%s-%s" (clean .) $.Release.Namespace $.Release.Name }}{{ end }}{{ end }}
+{{- with .Values.virtualization.imageCache | default dict }}{{ with .hostPath }}{{ printf "%s/%s/%s" (clean .) $.Release.Namespace $.Release.Name }}{{ end }}{{ end }}
 {{- end }}
 {{/*
 What unpacking an image faithfully costs, and nothing else: every capability
