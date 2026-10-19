@@ -52,7 +52,7 @@ The api-server keeps the order per user, so it follows the user to every browser
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
 
 The Sessions of each Agent are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
-A Session row shows a blue dot while it is unread.
+A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
 
 The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's name and its time.
 Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
@@ -68,7 +68,7 @@ It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) tha
 The **new layout** [experimental feature](features.md) replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
 The sidebar becomes two columns: a strip of Agent avatars, and a list of Sessions beside it.
 Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
-With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; waiting approvals show only as badges.
+With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; a Session with an approval waiting on the user shows the approval dot on its row, as in every Session list, and counts in its Agent's avatar badge.
 With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
 Both column headers carry one session filter, by state and by Session type, and share it: a filter set under Home also narrows an Agent's own list, and the control shows a mark while a filter is on.
 The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
