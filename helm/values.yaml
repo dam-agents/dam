@@ -204,7 +204,9 @@ virtualization:
   runner:
     # Published charts pin this by digest, which a rebuild that changes nothing
     # in the image keeps, so an upgrade that leaves the runner unchanged doesn't
-    # roll the pod and stop every machine. A digest wins over the tag.
+    # roll the pod and stop every machine (unless this is the image
+    # `rollout.rebootRequiredRelease` names, which rolls the pods to reboot
+    # them). A digest wins over the tag.
     image:
       repository: quay.io/dam-agents/vm-runner
       tag: ""

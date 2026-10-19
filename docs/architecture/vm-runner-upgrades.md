@@ -103,7 +103,7 @@ Time the runner reports the release not staged on its node does not count either
 A hand-off in trouble is marked stalled on the runner's Deployment, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.
 A newer configured image resumes the release, starting with the runner that stalled, and so does an operator removing the stall annotation.
 A runner that needs a pod for the release ends its hand-off, and the pod roll that follows takes its own place.
-The pod's image is left out of what the roll compares, so a runner pod rolls for a change to its shape, and for the release where that release must reboot its machines, which stamps a revision on the template.
+The pod's image is left out of what the roll compares, so a runner pod rolls for a change to its shape, and for a release that must reboot its machines, which stamps a revision on the template.
 A pod rendered by a controller from before releases were named over the machine API has a loader that reads only a mounted ConfigMap; its shape is not the one rendered now, so it rolls once, through the ordinary roll, and the roll removes the ConfigMap.
 The runner serves what its loader holds and why, with the reason drawn from a fixed vocabulary: not staged yet, built for another pod, or failed.
 The controller reads it for a runner whose pod image is not the configured one, and for every runner while the configured release is marked to reboot its machines, since a hand-off leaves the pod on the image it booted.
