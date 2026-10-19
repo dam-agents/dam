@@ -6,8 +6,8 @@
 // TEST_OVERVIEW: agent spec, the only one that creates an agent through the UI,
 // TEST_OVERVIEW: beside the specs that drive the shared e2e-agent, which create
 // TEST_OVERVIEW: none, and one at a time with the other specs that boot their own
-// TEST_OVERVIEW: agent. Its container Agent is asked for explicitly, since every
-// TEST_OVERVIEW: create on this install would otherwise land on a machine, and the
+// TEST_OVERVIEW: agent. No API makes a container Agent on this install, so it is
+// TEST_OVERVIEW: applied as an Agent object the way an operator makes one, and the
 // TEST_OVERVIEW: move is asked for the way an operator asks: the request
 // TEST_OVERVIEW: annotation, which no page offers. It runs before the
 // TEST_OVERVIEW: agent-backend spec, which deletes the VM runner the migrated
@@ -18,6 +18,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import {
+  deleteAgentIfPresent,
   openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
@@ -28,6 +29,7 @@ import {
 } from "../../lib/api-client.js";
 import { acceptTerms } from "../../lib/auth.js";
 import {
+  applyLegacyContainerAgent,
   createAgentOn,
   expectHomeFile,
   listSessionIds,
@@ -37,12 +39,7 @@ import {
   writeHomeFile,
 } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
-import {
-  applyAgentCr,
-  readAgentCr,
-  requestRuntimeMigration,
-  retainedVolumes,
-} from "../../lib/cluster.js";
+import { requestRuntimeMigration, retainedVolumes } from "../../lib/cluster.js";
 import { baseUrl } from "../../config.js";
 
 const agentName = "e2e-runtime-migration";
@@ -87,37 +84,9 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
-  // UNIT_BOUNDARY_DESCRIPTION: no API creates a container Agent on this install, so the fixture is the way an operator makes one: the api-server assembles the spec for a throwaway agent, and that spec is applied as an Agent object with the container backend. The throwaway is deleted with its machine, so its home leaves nothing behind for the move to trip on.
-  const source = await api.agents.create.mutate({
-    name: `${agentName}-spec`,
-    templateId: harnessName,
-    hibernationTimeoutMin: 0,
-  });
-  const cr = readAgentCr(source.id);
-  await api.agents.delete.mutate({ id: source.id });
-  const metadata = Object.fromEntries(
-    Object.entries(cr.metadata).filter(
-      ([key]) =>
-        ![
-          "resourceVersion",
-          "uid",
-          "creationTimestamp",
-          "deletionTimestamp",
-          "deletionGracePeriodSeconds",
-          "generation",
-          "managedFields",
-          "ownerReferences",
-          "finalizers",
-        ].includes(key),
-    ),
-  );
-  agentId = `${source.id}-legacy`;
-  applyAgentCr({
-    apiVersion: cr.apiVersion,
-    kind: cr.kind,
-    metadata: { ...metadata, name: agentId },
-    spec: { ...cr.spec, name: agentName, backend: { type: "container" } },
-  });
+  await deleteAgentIfPresent(api, agentName);
+  await applyLegacyContainerAgent(api, agentName, agentName, harnessName);
+  agentId = agentName;
 });
 
 test.afterAll(async () => {
