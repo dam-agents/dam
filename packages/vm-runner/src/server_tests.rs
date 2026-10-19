@@ -2885,7 +2885,7 @@ async fn every_look_grants_each_guest_its_room_on_the_claim() {
     assert!(!h.server.storage_unmeasured.load(Ordering::Relaxed));
 }
 
-// TEST_SCENARIO: machines woken together boot together and write together, so the room below 95% is split between every machine that is running or on its way up. Split between the running ones alone, none of them is running yet when the group boots, and each holds a grant for the whole room until the next look, so their writes together pass the level the claim is held to.
+// TEST_SCENARIO: machines woken together boot together and write together, so the room below 95% is split between every machine that is neither stopped nor absent. Split between the running ones alone, none of them is running yet when the group boots, and each holds a grant for the whole room until the next look, so their writes together pass the level the claim is held to.
 #[tokio::test(flavor = "multi_thread")]
 async fn machines_woken_together_share_the_room_between_them() {
     let (h, claim) = with_claim("storage-woken-together");
@@ -2912,7 +2912,7 @@ async fn machines_woken_together_share_the_room_between_them() {
     assert_eq!(h.grants(&ids), vec![20u64 << 30; 2]);
 }
 
-// TEST_SCENARIO: a grant outlives the look that wrote it, so a machine that is asleep is granted nothing rather than a part of the room: woken between two looks, it would otherwise boot on the room its share held while it slept, beside every machine woken with it. A start is a look of its own, so the machines woken together boot on their even part instead of on the floor alone, and the room they hold together never passes what the claim has left below 95%.
+// TEST_SCENARIO: a grant outlives the look that wrote it, so a machine that is stopped is granted nothing rather than a part of the room: started between two looks, it would otherwise boot on the room its share held while it was stopped, beside every machine started with it. A start is a look of its own, so the machines woken together boot on their even part instead of on the floor alone, and the room they hold together never passes what the claim has left below 95%.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_woken_between_looks_does_not_boot_on_the_whole_room() {
     let (h, claim) = with_claim("storage-woken-between");
