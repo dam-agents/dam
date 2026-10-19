@@ -2,7 +2,8 @@
   "storage": {
     "usedBytes": 32212254720,
     "usableBytes": 107374182400,
-    "seedBytes": 2147483648
+    "seedBytes": 2147483648,
+    "trashBytes": 4294967296
   },
   "memory": {
     "limitMiB": 12288,

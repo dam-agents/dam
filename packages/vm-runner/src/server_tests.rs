@@ -49,6 +49,9 @@ struct Fake {
     resident: Mutex<Option<i32>>,
     cpu: Mutex<Option<u64>>,
     state_reads: AtomicUsize,
+    junked: Mutex<u64>,
+    purges: AtomicUsize,
+    on_purge: Mutex<Option<Box<dyn Fn() + Send + Sync>>>,
 }
 
 impl Fake {
@@ -62,6 +65,18 @@ impl Fake {
 
     fn last_update(&self) -> Updated {
         locked(&self.updated).last().cloned().expect("no update")
+    }
+
+    fn junked(&self, bytes: u64) {
+        *locked(&self.junked) = bytes;
+    }
+
+    fn on_purge(&self, run: impl Fn() + Send + Sync + 'static) {
+        *locked(&self.on_purge) = Some(Box::new(run));
+    }
+
+    fn purges(&self) -> usize {
+        self.purges.load(Ordering::SeqCst)
     }
 }
 
@@ -166,6 +181,19 @@ impl Runtime for Fake {
 
     fn console_tail(&self, _id: &str) -> String {
         locked(&self.console).clone()
+    }
+
+    fn trash_bytes(&self) -> u64 {
+        *locked(&self.junked)
+    }
+
+    fn purge_trash(&self, _retention: Duration) -> u64 {
+        self.purges.fetch_add(1, Ordering::SeqCst);
+        let freed = std::mem::take(&mut *locked(&self.junked));
+        if let Some(run) = locked(&self.on_purge).as_ref() {
+            run();
+        }
+        freed
     }
 }
 
@@ -2765,6 +2793,38 @@ async fn a_critical_claim_refuses_big_writes_and_still_starts_existing_machines(
     changed.revision = "r2".into();
     h.server.put("m1", changed).unwrap();
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a delete junks a machine's disk rather than removing it, so the disk still counts against the owner's claim and its use reads on the usage read. The trash is not held against a create the owner made room for: the first admission that finds the claim critical gives the whole trash up and measures again, and a claim that is still critical once it is gone refuses the machine as before. A claim with room gives up nothing before the retention.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_critical_claim_gives_up_the_trash_before_refusing_a_machine() {
+    let (h, claim) = with_claim("storage-trash");
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.fake.junked(8 << 30);
+    assert_eq!(h.server.usage().unwrap().storage.trash_bytes, 8 << 30);
+
+    *locked(&claim) = filled(40);
+    let mut changed = spec(true);
+    changed.revision = "r2".into();
+    h.server.put("m1", changed).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    assert_eq!(h.fake.purges(), 0, "a claim with room gave up the trash");
+
+    *locked(&claim) = filled(92);
+    let room = claim.clone();
+    h.fake.on_purge(move || *locked(&room) = filled(40));
+    let created = h.server.put("m2", spec(true)).unwrap();
+    assert_ne!(created.reason, REASON_STORAGE_FULL, "{created:?}");
+    assert_eq!(h.settle("m2").await.state, STATE_RUNNING);
+    assert_eq!(h.fake.purges(), 1, "the trash was not given up");
+    assert_eq!(h.fake.trash_bytes(), 0);
+
+    *locked(&claim) = filled(92);
+    h.fake.on_purge(|| {});
+    let refused = h.server.put("m3", spec(true)).unwrap();
+    assert_eq!(refused.reason, REASON_STORAGE_FULL, "{refused:?}");
+    assert_eq!(h.fake.purges(), 2);
 }
 
 // TEST_SCENARIO: once the claim is full, no machine starts or restarts either, since even a boot's few writes could fail every guest's; a running machine that asks for nothing new still keeps running, and once room is freed the same start goes through.

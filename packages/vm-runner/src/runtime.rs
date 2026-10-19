@@ -1,6 +1,6 @@
 use std::collections::BTreeMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use anyhow::Context;
@@ -44,6 +44,14 @@ pub trait Runtime: Send + Sync {
     // UNIT_BOUNDARY_DESCRIPTION: whether this runner gives the machines that ask for it the node's virtualization extensions: its install lets it, and the node's KVM allows it. A runtime that cannot nest says no, and a machine that asks boots without them.
     fn nests(&self) -> bool {
         false
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: the blocks the machine directories this runtime has junked take on the owner's claim. A delete moves a machine's directory to the trash rather than removing it, so its disk is still on the claim and still counts against it until the trash is purged.
+    fn trash_bytes(&self) -> u64 {
+        0
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: gives up every machine directory junked more than `retention` ago, and answers the blocks that freed.
+    fn purge_trash(&self, _retention: Duration) -> u64 {
+        0
     }
 }
 
@@ -451,6 +459,91 @@ pub fn clear_for_start(
     Ok(())
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the file a junked machine directory carries, holding the second it was junked, which is what its age is read from: the name is a person's, and a directory's own times do not say when it moved.
+pub const JUNKED_AT_FILE: &str = "junked-at";
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner's trash: a machine's directory a delete gives up rather than removes, named for the machine and the second it was junked, on the disk's own filesystem — a rename is what makes keeping a deleted disk cost nothing. One retention window of it is what turns a delete made by mistake from a lost home into a day's wait. The junk time is written before the move, so a directory the runner cannot date is a delete that fails rather than a disk that never leaves the trash, and a machine junked twice within one second takes a further name each, so one of its disks never goes over the other.
+pub fn junk(dir: &Path, trash: &Path, id: &str, now: u64) -> std::io::Result<PathBuf> {
+    let mut target = trash.join(format!("{id}-{now}"));
+    if !dir.exists() {
+        return Ok(target);
+    }
+    fs::write(dir.join(JUNKED_AT_FILE), now.to_string())?;
+    fs::create_dir_all(trash)?;
+    for n in 2.. {
+        match fs::rename(dir, &target) {
+            Ok(()) => break,
+            Err(e)
+                if e.kind() == std::io::ErrorKind::AlreadyExists
+                    || e.raw_os_error() == Some(libc::ENOTEMPTY) =>
+            {
+                target = trash.join(format!("{id}-{now}-{n}"))
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    Ok(target)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the trash holds, by the blocks its files take rather than their length: every disk in it is sparse, so only what was written is the owner's share of the claim.
+pub fn trash_bytes(trash: &Path) -> u64 {
+    let Ok(entries) = fs::read_dir(trash) else {
+        return 0;
+    };
+    entries
+        .flatten()
+        .filter_map(|e| allocated_bytes(&e.path()))
+        .sum()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: gives up every machine directory junked more than `retention` before `now`, and answers the blocks that freed. An entry the runner cannot date is left alone, since nothing says how long it was meant to be kept.
+pub fn purge_trash(trash: &Path, now: u64, retention: Duration) -> u64 {
+    let Ok(entries) = fs::read_dir(trash) else {
+        return 0;
+    };
+    let mut freed = 0;
+    for entry in entries.flatten() {
+        let junked = fs::read_to_string(entry.path().join(JUNKED_AT_FILE))
+            .ok()
+            .and_then(|at| at.trim().parse::<u64>().ok());
+        if junked.is_none_or(|at| now.saturating_sub(at) < retention.as_secs()) {
+            continue;
+        }
+        let dir = entry.path();
+        let blocks = allocated_bytes(&dir).unwrap_or(0);
+        match fs::remove_dir_all(&dir) {
+            Ok(()) => freed += blocks,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => freed += blocks,
+            Err(e) => {
+                tracing::warn!(dir = %dir.display(), error = %e, "vm runner: cannot purge a junked machine directory")
+            }
+        }
+    }
+    freed
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the blocks a tree's files take on its filesystem, counted as allocated rather than as their length because a machine's disks are sparse and as large as the owner's whole pool. Nothing when a directory cannot be read.
+pub fn allocated_bytes(dir: &Path) -> Option<u64> {
+    use std::os::unix::fs::MetadataExt;
+    let mut total = 0;
+    for entry in fs::read_dir(dir).ok()?.flatten() {
+        let Ok(meta) = entry.metadata() else { continue };
+        total += if meta.is_dir() {
+            allocated_bytes(&entry.path()).unwrap_or(0)
+        } else {
+            meta.blocks() * 512
+        };
+    }
+    Some(total)
+}
+
+pub fn unix_now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: runs one machine operation and logs it with its duration: info for every operation, a warning when it was slow or failed. The error is redacted because an operator's Secret reaches the guest through the env, and smolvm's own errors may echo the record they were given.
 pub fn timed<T>(
     op: &str,
@@ -840,6 +933,48 @@ mod tests {
         assert_eq!(VMM_EXIT_WAIT, Duration::from_secs(10));
         assert_eq!(SLOW_OP, Duration::from_secs(2));
         assert_eq!(GUEST_AGENT_PORT, 8080);
+    }
+
+    // TEST_SCENARIO: a delete gives the machine's directory up to the trash rather than removing it, named for the machine and the second it was junked, so the disk a sweep deleted a machine over is still on the claim and readable by hand. It counts against the claim while it sits there, and only a purge past the retention gives it up — an entry younger than the window, and one the runner did not date, stay. Two junkings within one second keep both disks, and junking a machine whose directory is already gone is a delete already done, not an error.
+    #[test]
+    fn a_junked_machine_directory_is_kept_for_its_retention_and_then_given_up() {
+        let dir = TempDir::new("trash");
+        let trash = dir.path().join("trash");
+        let disk = dir.path().join("m1");
+        fs::create_dir_all(&disk).unwrap();
+        fs::File::create(disk.join("storage.raw"))
+            .unwrap()
+            .set_len(100 << 30)
+            .unwrap();
+        fs::write(disk.join("storage.raw"), vec![1u8; 1 << 20]).unwrap();
+
+        let junked = junk(&disk, &trash, "m1", 1_000).unwrap();
+        assert_eq!(junked, trash.join("m1-1000"));
+        assert!(!disk.exists());
+        assert!(junked.join("storage.raw").exists());
+
+        let second = dir.path().join("m1-again");
+        fs::create_dir_all(&second).unwrap();
+        let also = junk(&second, &trash, "m1", 1_000).unwrap();
+        assert_eq!(also, trash.join("m1-1000-2"));
+        assert!(also.exists() && junked.exists());
+
+        let held = trash_bytes(&trash);
+        assert!((1 << 20..8 << 20).contains(&held), "{held}");
+        fs::create_dir_all(trash.join("not-ours")).unwrap();
+        let retention = Duration::from_secs(24 * 60 * 60);
+        assert_eq!(purge_trash(&trash, 1_000 + 60, retention), 0);
+        assert!(junked.exists());
+        let freed = purge_trash(&trash, 1_000 + 24 * 60 * 60, retention);
+        assert_eq!(freed, held);
+        assert!(!junked.exists() && !also.exists());
+        assert!(
+            trash.join("not-ours").exists(),
+            "an entry the runner did not name was given up"
+        );
+
+        junk(&disk, &trash, "m1", 2_000).unwrap();
+        assert_eq!(trash_bytes(&dir.path().join("nothing-junked")), 0);
     }
 
     fn process(proc: &TempDir, pid: i32, cmdline: &str) {

@@ -5,7 +5,8 @@ use std::time::Duration;
 use anyhow::Context;
 use smolvm::agent::fork::{control_socket_cmd, control_socket_path};
 use smolvm::agent::{
-    state_probe, vm_data_dir, AgentClient, AgentManager, HostMount, PortMapping, VmResources,
+    state_probe, vm_cache_root, vm_data_dir, AgentClient, AgentManager, HostMount, PortMapping,
+    VmResources,
 };
 use smolvm::config::{RecordState, VmRecord};
 use smolvm::data::image_source::{classify, packed_layers_dir_for_ref, resolve, ResolvedImage};
@@ -18,8 +19,9 @@ use crate::api::{MachineSpec, State};
 use crate::console;
 use crate::guest::SHARE_PATH;
 use crate::runtime::{
-    clear_for_start, grown_storage, image_env_beside, kill_orphans, orphan_pids, timed,
-    updated_env, vmms_left, workload, Machine, Runtime, Update, GUEST_AGENT_PORT, VMM_EXIT_WAIT,
+    clear_for_start, grown_storage, image_env_beside, junk, kill_orphans, orphan_pids, timed,
+    unix_now, updated_env, vmms_left, workload, Machine, Runtime, Update, GUEST_AGENT_PORT,
+    VMM_EXIT_WAIT,
 };
 
 // UNIT_BOUNDARY_DESCRIPTION: the runtime backed by smolvm's embedding API. It keeps smolvm's own state — the machine database and the machine directories — where smolvm keeps it by default, under the runner's HOME, which is the runner's claim. Each call is synchronous and may block for as long as a boot takes, so the server runs them off its async threads.
@@ -97,16 +99,23 @@ impl Smolvm {
         Ok(end()?)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes a machine directory no record owns. smolvm forgets a machine before it removes its directory, so a delete cut short between the two — a killed runner, a removal that failed — leaves the disk with no record, and smolvm then neither deletes it nor creates over it: a machine created again under the name would boot on the deleted one's home. Any VMM still holding that directory is killed first.
+    // UNIT_BOUNDARY_DESCRIPTION: gives up a machine directory no record owns, to the trash like any other. smolvm forgets a machine before it removes its directory, so a delete cut short between the two — a killed runner, a removal that failed — leaves the disk with no record, and smolvm then neither deletes it nor creates over it: a machine created again under the name would boot on the deleted one's home. Any VMM still holding that directory is killed first.
     fn remove_unowned(&self, id: &str) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if !dir.exists() || self.record(id)?.is_some() {
             return Ok(());
         }
-        tracing::warn!(machine = id, dir = %dir.display(), "removing a machine directory no record owns");
+        tracing::warn!(machine = id, dir = %dir.display(), "junking a machine directory no record owns");
         kill_orphans(&self.proc_root, &dir);
-        std::fs::remove_dir_all(&dir).with_context(|| format!("removing {}", dir.display()))
+        junk(&dir, &trash_dir(), id, unix_now())
+            .map(drop)
+            .with_context(|| format!("junking {}", dir.display()))
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where this runner keeps the machine directories a delete gives up: beside smolvm's own cache root, and so on the same filesystem as the disks it holds junked, which is what makes keeping a deleted disk a rename rather than a copy of every block of it.
+fn trash_dir() -> PathBuf {
+    vm_cache_root().with_file_name("trash")
 }
 
 impl Runtime for Smolvm {
@@ -325,9 +334,21 @@ impl Runtime for Smolvm {
         Ok(())
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a delete junks the machine's directory instead of removing it, so a machine deleted by mistake is recovered from the trash within one retention window, and a sweep that deleted every machine of an owner on one empty Agent List costs a day of waiting rather than every home it had. The machine is stopped first: a VMM still holding the directory would go on writing a disk the trash has taken, and smolvm's own delete skips the removal of a directory that is no longer where it left it. A delete smolvm refuses puts the directory back, so a machine that is still wanted keeps its home where its record names it.
     fn delete(&self, id: &str) -> anyhow::Result<()> {
         timed("delete", id, &[], || {
-            self.ended(id, || self.runtime.delete_machine(id))?;
+            if self.state(id)? == State::Running {
+                self.stop(id)?;
+            }
+            let junked = junk(&vm_data_dir(id), &trash_dir(), id, unix_now())?;
+            if let Err(e) = self.ended(id, || self.runtime.delete_machine(id)) {
+                if junked.exists() {
+                    if let Err(back) = std::fs::rename(&junked, vm_data_dir(id)) {
+                        tracing::warn!(machine = id, error = %back, "vm runner: cannot put a refused delete's directory back, so its disk stays in the trash");
+                    }
+                }
+                return Err(e);
+            }
             self.remove_unowned(id)
         })
     }
@@ -367,7 +388,15 @@ impl Runtime for Smolvm {
     }
 
     fn disk_used_bytes(&self, id: &str) -> Option<u64> {
-        allocated_bytes(&vm_data_dir(id))
+        crate::runtime::allocated_bytes(&vm_data_dir(id))
+    }
+
+    fn trash_bytes(&self) -> u64 {
+        crate::runtime::trash_bytes(&trash_dir())
+    }
+
+    fn purge_trash(&self, retention: Duration) -> u64 {
+        crate::runtime::purge_trash(&trash_dir(), unix_now(), retention)
     }
 }
 
@@ -442,20 +471,6 @@ fn cpu_usec(proc_root: &Path, pid: i32) -> Option<u64> {
     // SAFETY: sysconf only reads a configuration value.
     let per_second = u64::try_from(unsafe { libc::sysconf(libc::_SC_CLK_TCK) }).ok()?;
     (per_second > 0).then(|| ticks * 1_000_000 / per_second)
-}
-
-fn allocated_bytes(dir: &Path) -> Option<u64> {
-    use std::os::unix::fs::MetadataExt;
-    let mut total = 0;
-    for entry in std::fs::read_dir(dir).ok()?.flatten() {
-        let Ok(meta) = entry.metadata() else { continue };
-        total += if meta.is_dir() {
-            allocated_bytes(&entry.path()).unwrap_or(0)
-        } else {
-            meta.blocks() * 512
-        };
-    }
-    Some(total)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the smolvm record for one machine: the image, cpus, memory and storage disk; networking on the virtio-net backend with egress limited to the spec's CIDRs; the agent port published on a loopback port; the share mounted read-only; and the workload platform-init hands off to.
@@ -1796,9 +1811,9 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a delete is asked of every runner for an agent's name, and all but one never had that machine. Deleting nothing must succeed, and deleting a machine must leave it absent with its directory gone.
+    // TEST_SCENARIO: a delete is asked of every runner for an agent's name, and all but one never had that machine. Deleting nothing must succeed, and deleting a machine must leave it absent with its disk junked rather than gone: the sweep that deleted every machine of an owner on one empty List of Agents costs a day of waiting, not the homes it deleted. The trash counts against the claim while it sits there, and a purge past the retention gives it up.
     #[test]
-    fn a_delete_removes_the_machine_and_deleting_nothing_succeeds() {
+    fn a_delete_junks_the_machine_and_deleting_nothing_succeeds() {
         let home = Home::new("delete");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
@@ -1819,14 +1834,32 @@ mod tests {
                 },
             )
             .unwrap();
+        assert!(storage_disk_path("m1").exists());
         smolvm.delete("m1").unwrap();
         assert_eq!(smolvm.state("m1").unwrap(), State::Absent);
         assert!(!vm_data_dir("m1").exists());
+        let junked: Vec<String> = fs::read_dir(trash_dir())
+            .unwrap()
+            .flatten()
+            .map(|entry| entry.file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(junked.len(), 1, "{junked:?}");
+        assert!(junked[0].starts_with("m1-"), "{junked:?}");
+        assert!(trash_dir()
+            .join(&junked[0])
+            .join(STORAGE_DISK_FILENAME)
+            .exists());
+        assert!(smolvm.trash_bytes() > 0);
+        assert_eq!(smolvm.purge_trash(Duration::from_secs(24 * 60 * 60)), 0);
+        assert!(trash_dir().join(&junked[0]).exists());
+        let freed = smolvm.purge_trash(Duration::ZERO);
+        assert!(freed > 0, "the purge freed nothing");
+        assert!(!trash_dir().join(&junked[0]).exists());
     }
 
-    // TEST_SCENARIO: a delete was cut short after smolvm forgot the machine and before its directory went, leaving the disk with no record. The controller's retried delete must remove that disk, and a machine created again under the name must never boot on a disk such a delete left.
+    // TEST_SCENARIO: a delete was cut short after smolvm forgot the machine and before its directory went, leaving the disk with no record. The controller's retried delete must give that disk up, and a machine created again under the name must never boot on a disk such a delete left.
     #[test]
-    fn a_disk_an_interrupted_delete_left_is_removed_and_never_reused() {
+    fn a_disk_an_interrupted_delete_left_is_given_up_and_never_reused() {
         let home = Home::new("leftover");
         let share = home.path.join("share");
         fs::create_dir_all(&share).unwrap();
@@ -2020,7 +2053,7 @@ mod tests {
         let disk = fs::File::create(dir.path().join("storage.raw")).unwrap();
         disk.set_len(100 << 30).unwrap();
         fs::write(dir.path().join("sub/log"), vec![1u8; 1 << 20]).unwrap();
-        let used = allocated_bytes(dir.path()).unwrap();
+        let used = crate::runtime::allocated_bytes(dir.path()).unwrap();
         assert!((1 << 20..8 << 20).contains(&used), "{used}");
     }
 }

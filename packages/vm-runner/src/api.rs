@@ -107,7 +107,7 @@ pub struct CpuUsage {
     pub pressure_percent: Option<u32>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the part of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the seeds runtime migrations uploaded that nothing removed yet. Image trees are on the node's disk, not the claim. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
+// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the parts of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the seeds runtime migrations uploaded that nothing removed yet, and the disks of deleted machines, which the runner keeps for one retention window before it gives them up. Image trees are on the node's disk, not the claim. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct StorageUsage {
@@ -117,6 +117,8 @@ pub struct StorageUsage {
     pub usable_bytes: u64,
     #[serde(rename = "seedBytes", skip_serializing_if = "is_zero")]
     pub seed_bytes: u64,
+    #[serde(rename = "trashBytes", skip_serializing_if = "is_zero")]
+    pub trash_bytes: u64,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the memory limit the runner admits against and what admission counts as committed on it, in MiB. A limit of zero is a runner told nothing about its memory.
@@ -362,6 +364,7 @@ mod tests {
                     used_bytes: 32212254720,
                     usable_bytes: 107374182400,
                     seed_bytes: 2147483648,
+                    trash_bytes: 4294967296,
                 },
                 memory: MemoryUsage {
                     limit_mib: 12288,

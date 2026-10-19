@@ -64,6 +64,9 @@ pub const HOLD_REFRESH: Duration = Duration::from_secs(60);
 // UNIT_BOUNDARY_DESCRIPTION: how often the runner looks at how full its claim is, and asks its guests to give back scratch while it is short. A machine is refused on a critical claim by a look at the time of the request, not at this cadence.
 pub const STORAGE_CHECK: Duration = Duration::from_secs(30);
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a deleted machine's disk is kept before the runner gives it up. A delete is not final while it lasts, which is what makes a delete the runner should not have been asked for — a sweep that read an empty List of Agents — cost a day of waiting rather than an agent's home. Its disk still counts against the owner's claim meanwhile, and the first admission that finds the claim critical gives the whole trash up rather than refusing a machine the owner has made room for.
+pub const TRASH_RETENTION: Duration = Duration::from_secs(24 * 60 * 60);
+
 // UNIT_BOUNDARY_DESCRIPTION: what a runner is given at start, as the flags the controller sets on the runner's Deployment. `images` is the node's image cache service: the image directory is that service's, read-only here, and every image a machine boots that is not staged there is resolved by it. Without it the runner boots only the trees staged in the image directory and fetches nothing.
 pub struct Config {
     pub state_dir: PathBuf,
@@ -340,7 +343,17 @@ impl Server {
                 let Some(server) = checking.upgrade() else {
                     return;
                 };
-                let _ = tokio::task::spawn_blocking(move || server.check_storage()).await;
+                let _ = tokio::task::spawn_blocking(move || {
+                    server.check_storage();
+                    let freed = server.runtime.purge_trash(TRASH_RETENTION);
+                    if freed > 0 {
+                        tracing::info!(
+                            bytes = freed,
+                            "vm runner: gave up the machine directories junked past their retention"
+                        );
+                    }
+                })
+                .await;
             }
         });
         // UNIT_BOUNDARY_DESCRIPTION: the health prober: one task per runner that starts a probe of each machine worth probing at its cadence, and each probe records what it hears, so a status read never waits on a probe. It holds the server weakly and ends with it, as well as when the runner closes.
@@ -609,7 +622,7 @@ impl Server {
             let converging = self.converging(id);
             let boots = spec.running && (converging || action.is_some_and(|a| a != Action::Stop));
             if boots || action == Some(Action::Create) {
-                if let Some(full) = self.storage_critical() {
+                if let Some(full) = self.storage_for_admission() {
                     if full.full() || self.writes_much(id, action) {
                         return Ok(self.refuse(id, status, REASON_STORAGE_FULL, full.refusal()));
                     }
@@ -725,7 +738,7 @@ impl Server {
         self.bump(entry);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes a machine, its disks and its state, and answers only once they are gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, cancels the machine's token so an action waiting on a fetch returns now, then waits up to DELETE_WAIT for the action in flight to return. The same wait, polled since such a call returns on a thread that cannot signal it, covers a runtime call the worker gave up on at RUNTIME_CALL_LIMIT, which still holds the runtime's lock on the machine, and the runtime's own delete, which gets only what is left of DELETE_WAIT. A call still running then is answered with a 503, and the delete starts no runtime call of its own behind it, so a VMM stuck for good costs one blocked thread rather than one per retry; the mark stays, so the worker ends when its call returns, and the controller's next delete finds it gone.
+    // UNIT_BOUNDARY_DESCRIPTION: removes a machine and its state, and answers only once the runtime has given the machine's disks up — to the runtime's trash, which is its own to purge — and the state is gone. It marks the machine as being deleted, so its worker takes no further action and any spec stored behind the current one is dropped, cancels the machine's token so an action waiting on a fetch returns now, then waits up to DELETE_WAIT for the action in flight to return. The same wait, polled since such a call returns on a thread that cannot signal it, covers a runtime call the worker gave up on at RUNTIME_CALL_LIMIT, which still holds the runtime's lock on the machine, and the runtime's own delete, which gets only what is left of DELETE_WAIT. A call still running then is answered with a 503, and the delete starts no runtime call of its own behind it, so a VMM stuck for good costs one blocked thread rather than one per retry; the mark stays, so the worker ends when its call returns, and the controller's next delete finds it gone.
     pub fn delete(&self, id: &str) -> Result<(), Rejected> {
         self.delete_within(id, DELETE_WAIT)
     }
@@ -820,7 +833,7 @@ impl Server {
         check_id(id)?;
         let spec = read_spec(&self.config.state_dir, id)
             .ok_or_else(|| Rejected::not_found(format!("machine {id} does not exist")))?;
-        if let Some(full) = self.storage_critical() {
+        if let Some(full) = self.storage_for_admission() {
             return Err(Rejected::insufficient_storage(full.refusal()));
         }
         let desired = {
@@ -1489,6 +1502,7 @@ impl Server {
                 used_bytes: storage.used,
                 usable_bytes: storage.usable,
                 seed_bytes,
+                trash_bytes: self.runtime.trash_bytes(),
             },
             memory: MemoryUsage {
                 limit_mib: self.memory_limit_mib(),
@@ -1500,6 +1514,21 @@ impl Server {
     }
 
     fn storage_critical(&self) -> Option<StorageUse> {
+        (self.config.measure_storage)().filter(StorageUse::critical)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the claim as admission sees it: a critical claim first gives up everything in the trash — a junked machine's disk is no longer an agent's — and is measured again, so the room one agent's delete made is taken by the next create rather than a retention window later. Nothing else purges earlier than TRASH_RETENTION.
+    fn storage_for_admission(&self) -> Option<StorageUse> {
+        if !(self.config.measure_storage)().is_some_and(|claim| claim.critical()) {
+            return None;
+        }
+        let freed = self.runtime.purge_trash(Duration::ZERO);
+        if freed > 0 {
+            tracing::info!(
+                bytes = freed,
+                "vm runner: gave up the trash to make room on a critical claim"
+            );
+        }
         (self.config.measure_storage)().filter(StorageUse::critical)
     }
 
