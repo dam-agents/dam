@@ -1,6 +1,6 @@
 # Logging
 
-Last verified: 2026-10-13
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -91,6 +91,8 @@ Either way the controller **relays the effective `OTEL_*` environment** onto eac
 Collector authentication is **transport-level** — the gateway reaches the collector over the ambient mesh (ztunnel mTLS), so no application-layer auth header is configured; the `OTEL_EXPORTER_OTLP_HEADERS` family is deliberately not relayed (Envoy can't consume it, and it may carry a credential).
 When no endpoint is present, the gateway emits nothing and behaves exactly as an uninstrumented platform.
 When one is, the gateway emits three signals: **traces** (the OpenTelemetry tracer on the outer egress listener), **access logs** (structured JSON on stdout, plus the same records exported over OTLP so they land in the telemetry backend beside every other platform service's logs — the api-server/controller fan-out posture), and **metrics** (an allowlisted subset of Envoy's stats over an OTLP/gRPC sink, flushed once a minute — the admin interface stays disabled, so this push sink is the only stats egress).
+The egress access log leaves out a successful agent OTLP export on the gateway's reserved telemetry path, which Claude Code posts once a second per signal; a failed one is logged like any other request (see [observability — agent export](observability.md#agent-export)).
+The filter keys on the route's name, which the agent cannot set, so no request can hide itself from the log.
 One caveat for BYO collectors that only accept OTLP/HTTP: traces and OTLP logs work over either transport, but the stats sink is gRPC-only, so such a deployment gets no gateway stats.
 
 The gateway's own telemetry is **platform telemetry, not agent telemetry**: it exports directly to the collector (a separate path from the agent-telemetry transit chain with its trusted attribution — see [observability — trusted attribution](observability.md#trusted-attribution)), so it carries no `platform.agent.id` and is never attributed to a user.
