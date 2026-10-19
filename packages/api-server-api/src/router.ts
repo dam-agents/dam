@@ -14,6 +14,7 @@ import { egressRulesRouter } from "./modules/egress-rules/router.js";
 import { eventsRouter } from "./modules/events/router.js";
 import { invocationsRouter } from "./modules/invocations/router.js";
 import { kbSharesRouter } from "./modules/kb-shares/router.js";
+import { providerStatusRouter } from "./modules/provider-status/router.js";
 import { satellitesRouter } from "./modules/satellites/router.js";
 import { linksRouter } from "./modules/links/router.js";
 import { featuresRouter } from "./modules/features/router.js";
@@ -64,6 +65,7 @@ export const appRouter = t.router({
   harnessConfig: harnessConfigRouter,
   budgets: budgetsRouter,
   spend: spendRouter,
+  providerStatus: providerStatusRouter,
   events: eventsRouter,
 });
 

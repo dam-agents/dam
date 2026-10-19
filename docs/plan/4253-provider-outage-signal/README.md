@@ -142,7 +142,7 @@ No module imports another module's internals.
 
 | #   | Done | Title                                                             | Scope                                                                                                          | Depends on |
 | --- | ---- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | ☐    | [Status from failed gateway calls](./01-gateway-call-outcomes.md) | Event, `provider-status` module, call window, evaluate job, snapshot, `providerStatus.list`, architecture page | —          |
+| 01  | ☑    | [Status from failed gateway calls](./01-gateway-call-outcomes.md) | Event, `provider-status` module, call window, evaluate job, snapshot, `providerStatus.list`, architecture page | —          |
 | 02  | ☐    | [Public status sources](./02-public-status-sources.md)            | Proxy readiness, Statuspage components, Bob status, status page links                                          | 01         |
 | 03  | ☐    | [The failed turn names the outage](./03-failed-turn-card.md)      | UI status query, provider error kind, card text and actions, refresh after a failed turn                       | 01         |
 | 04  | ☐    | [Status line and Providers badge](./04-status-line-and-badge.md)  | Status line above the message box, "Degraded" badge in Settings › Providers                                    | 03         |

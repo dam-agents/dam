@@ -6,6 +6,7 @@ import type {
   E2eService,
   HarnessCatalog,
   LiveEventsService,
+  ProviderStatusService,
   ReposService,
   TermsService,
 } from "api-server-api";
@@ -89,6 +90,7 @@ export interface ApiServerDeps {
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   spendForOwner: SpendSystem["forOwner"];
+  providerStatus: ProviderStatusService;
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;

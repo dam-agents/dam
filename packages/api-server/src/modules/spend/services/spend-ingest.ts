@@ -1,5 +1,6 @@
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
+import { emit, EventType } from "../../../events.js";
 import { measureCall, type CallRecord } from "../domain/call.js";
 import { proxyCostDifference } from "../domain/cost.js";
 import {
@@ -230,6 +231,15 @@ export function createSpendIngest(deps: {
     },
 
     async record(record) {
+      if (record.final)
+        emit({
+          type: EventType.GatewayCallEnded,
+          payer: record.payer,
+          providers: record.providers,
+          status: record.status,
+          refusedByGate: record.refusedByGate,
+          endedAt: new Date(record.startedAt.getTime() + record.durationMs),
+        });
       const measure = measureCall(record, deps.priceBook);
       if (measure.kind === "skip") return;
       if (measure.kind === "forget") {

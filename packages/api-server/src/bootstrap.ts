@@ -259,6 +259,7 @@ import {
   createSpendLimitsCleanupHook,
   listSpendLimitAgentIds,
 } from "./modules/spend/index.js";
+import { composeProviderStatus } from "./modules/provider-status/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -1121,6 +1122,11 @@ export async function bootstrap() {
     24 * 60 * 60 * 1000,
     () => spend.callRowsRetentionTick(),
   );
+  const providerStatus = composeProviderStatus({ redis: sharedRedis });
+  const providerStatusSaga = providerStatus.startSaga();
+  await periodicJobs.register("provider-status-evaluate", 60_000, () =>
+    providerStatus.service.evaluate(new Date()),
+  );
 
   const spendQuestions = composeSpendLimitQuestions(db);
   const spendHold = async ({
@@ -1837,6 +1843,7 @@ export async function bootstrap() {
     seedSources,
     redisBus,
     spendForOwner: spend.forOwner,
+    providerStatus: providerStatus.service,
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
@@ -1979,6 +1986,7 @@ export async function bootstrap() {
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
+    providerStatusSaga.unsubscribe();
     usage.stop();
     audit.stop();
     gettingStarted.stop();

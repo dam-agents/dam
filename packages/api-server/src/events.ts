@@ -39,6 +39,7 @@ export enum EventType {
   ApprovalRequested = "ApprovalRequested",
   ApprovalResolved = "ApprovalResolved",
   SpendLimitsChanged = "SpendLimitsChanged",
+  GatewayCallEnded = "GatewayCallEnded",
   ScheduleCreated = "ScheduleCreated",
   ScheduleUpdated = "ScheduleUpdated",
   ScheduleDeleted = "ScheduleDeleted",
@@ -234,6 +235,15 @@ export type ApprovalResolved = {
 export type SpendLimitsChanged = {
   type: EventType.SpendLimitsChanged;
   ownerSub: string;
+};
+
+export type GatewayCallEnded = {
+  type: EventType.GatewayCallEnded;
+  payer: string;
+  providers: readonly string[];
+  status: number | null;
+  refusedByGate: boolean;
+  endedAt: Date;
 };
 
 export type ScheduleCreated = {
@@ -503,6 +513,7 @@ export type DomainEvent =
   | ApprovalRequested
   | ApprovalResolved
   | SpendLimitsChanged
+  | GatewayCallEnded
   | ScheduleCreated
   | ScheduleUpdated
   | ScheduleDeleted
