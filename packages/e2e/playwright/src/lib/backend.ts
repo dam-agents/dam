@@ -4,6 +4,7 @@ import type { AgentState } from "api-server-api";
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
+import { deleteAgentIfPresent } from "./agents.js";
 import {
   AGENT_NS,
   type AgentCr,
@@ -71,6 +72,7 @@ export async function applyLegacyContainerAgent(
   name: string,
   templateId: string,
 ): Promise<void> {
+  await deleteAgentIfPresent(api, `${name}-spec`);
   const source = await api.agents.create.mutate({
     name: `${name}-spec`,
     templateId,
