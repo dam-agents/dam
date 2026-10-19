@@ -17,7 +17,9 @@ export function plainWikiTranscript(): TranscriptMeta {
         text: "What's this knowledge base for?",
       },
     ]),
-    msg("pw-m2", "user", [{ kind: "text" as const, text: "Team onboarding notes." }]),
+    msg("pw-m2", "user", [
+      { kind: "text" as const, text: "Team onboarding notes." },
+    ]),
 
     // Step 2: in-chat conversational — first material
     msg("pw-m3", "assistant", [
@@ -27,7 +29,10 @@ export function plainWikiTranscript(): TranscriptMeta {
       },
     ]),
     msg("pw-m4", "user", [
-      { kind: "text" as const, text: "I have a getting-started.md in the repo." },
+      {
+        kind: "text" as const,
+        text: "I have a getting-started.md in the repo.",
+      },
     ]),
 
     // Step 3: in-chat conversational — publish
@@ -39,7 +44,7 @@ export function plainWikiTranscript(): TranscriptMeta {
     ]),
     msg("pw-m6", "user", [{ kind: "text" as const, text: "Publish it." }]),
 
-    // Step 4: agent — import + publish
+    // Wrap-up
     msg("pw-m7", "assistant", [
       {
         kind: "tool" as const,
@@ -49,25 +54,33 @@ export function plainWikiTranscript(): TranscriptMeta {
       },
       {
         kind: "text" as const,
-        text: "Done. I've imported getting-started.md and the wiki is live.",
-      },
-    ]),
-
-    // Step 5: outside-chat — manage KB
-    msg("pw-m8", "assistant", [
-      {
-        kind: "text" as const,
-        text: "You can manage published pages from the **Knowledge Bases** panel. Send me new notes any time and I'll file them.",
+        text: "Done. I've imported getting-started.md and the wiki is live. Send me new notes anytime and I'll file them.",
       },
     ]),
   ];
 
   const steps: TranscriptStep[] = [
-    { id: "pw-s1", label: "Purpose", kind: "in-chat", messageEnd: 3, firstMessageId: "pw-m1" },
-    { id: "pw-s2", label: "First material", kind: "in-chat", messageEnd: 5, firstMessageId: "pw-m3" },
-    { id: "pw-s3", label: "Publish decision", kind: "in-chat", messageEnd: 7, firstMessageId: "pw-m5" },
-    { id: "pw-s4", label: "Import & publish", kind: "agent", messageEnd: 8, firstMessageId: "pw-m7" },
-    { id: "pw-s5", label: "Manage KB", kind: "outside-chat", messageEnd: 9, firstMessageId: "pw-m8", pointer: { target: "Knowledge Bases panel", exists: false } },
+    {
+      id: "pw-s1",
+      label: "What this knowledge base is for",
+      kind: "in-chat",
+      messageEnd: 3,
+      firstMessageId: "pw-m1",
+    },
+    {
+      id: "pw-s2",
+      label: "First files or notes",
+      kind: "in-chat",
+      messageEnd: 5,
+      firstMessageId: "pw-m3",
+    },
+    {
+      id: "pw-s3",
+      label: "Publish for your team?",
+      kind: "in-chat",
+      messageEnd: 7,
+      firstMessageId: "pw-m5",
+    },
   ];
 
   return { messages: m, steps };

@@ -11,8 +11,11 @@ import {
   MachineLearning,
   Microscope,
   Notebook,
+  Search,
   Security,
   Settings,
+  TaskComplete,
+  UserMultiple,
 } from "@carbon/icons-react";
 
 export const INGREDIENT_KINDS = [
@@ -97,60 +100,6 @@ export interface Pack {
 }
 
 export const PACKS: Pack[] = [
-  {
-    id: "docs-maintainer",
-    name: "Docs Maintainer",
-    category: "Development",
-    icon: Box,
-    tagline:
-      "Keeps a docs site in step with the code and publishes it on a schedule.",
-    description:
-      "Watches your repository for code changes that affect documentation. Automatically updates API references, changelogs, and guides, then publishes the docs site on a configurable schedule. Pairs with a GitHub connection for repo access and a release-triggered schedule to keep docs always current.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description:
-          "Reads code changes and rewrites affected docs pages with accurate examples",
-        templateId: "claude-code",
-      },
-      {
-        kind: "skill",
-        label: "Docs generator",
-        description:
-          "Extracts API signatures, types, and usage patterns into structured documentation",
-      },
-      {
-        kind: "skill",
-        label: "Changelog writer",
-        description:
-          "Summarizes merged PRs into release notes grouped by category",
-      },
-      {
-        kind: "schedule",
-        label: "On every release",
-        description:
-          "Triggers a full docs rebuild and publish after each tagged release",
-        demoValue: "RRULE:FREQ=WEEKLY;BYDAY=MO;BYHOUR=9;BYMINUTE=0",
-      },
-    ],
-    required: [
-      {
-        kind: "connection",
-        label: "GitHub",
-        description: "Read source code, PRs, and release tags",
-        templateId: "github",
-        connectionTemplateId: "github",
-      },
-      {
-        kind: "channel",
-        label: "Docs updates channel",
-        description:
-          "Post publish notifications and changelog summaries to Slack",
-        demoValue: "#docs-updates",
-      },
-    ],
-  },
   {
     id: "design-prototyper",
     name: "Design Prototyper",
@@ -297,58 +246,6 @@ export const PACKS: Pack[] = [
         label: "Team channel",
         description: "Route questions from your team to this agent",
         demoValue: "#eng-questions",
-      },
-    ],
-  },
-  {
-    id: "broken-link-monitor",
-    name: "Broken Link Monitor",
-    category: "Monitoring",
-    icon: Debug,
-    tagline: "Scans your sites for broken links and reports them daily",
-    description:
-      "Uses the link-guardian starter repo to crawl your sites on a schedule. Reports broken links, redirects, and SSL issues. Sends alerts through your preferred channel.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description:
-          "Interprets crawl results and writes actionable reports with fix suggestions",
-        templateId: "claude-code",
-      },
-      {
-        kind: "starter-repo",
-        label: "Link Guardian",
-        description:
-          "Crawls configured sites and detects broken links, redirects, and SSL issues",
-        templateId: "link-guardian",
-      },
-      {
-        kind: "skill",
-        label: "Link reporter",
-        description:
-          "Formats raw crawl output into prioritized, actionable reports",
-      },
-      {
-        kind: "schedule",
-        label: "Daily scan",
-        description: "Crawls all configured sites daily at 6 AM",
-        demoValue: "RRULE:FREQ=DAILY;BYHOUR=6;BYMINUTE=0",
-      },
-    ],
-    required: [
-      {
-        kind: "connection",
-        label: "GitHub",
-        description: "Store scan results and configuration",
-        templateId: "github",
-        connectionTemplateId: "github",
-      },
-      {
-        kind: "channel",
-        label: "Alert channel",
-        description: "Receive broken-link alerts in Slack or Telegram",
-        demoValue: "#site-health",
       },
     ],
   },
@@ -525,50 +422,26 @@ export const REAL_PACKS: Pack[] = [
     name: "Code Reviewer",
     category: "Software",
     icon: Security,
-    tagline:
-      "Reviews every open pull request and nudges reviewers who go quiet.",
+    tagline: "Every pull request gets a review, within minutes.",
     description:
-      "Watches your repositories for open pull requests, runs automated code review, and follows up with reviewers who haven't responded. Keeps your review queue moving so nothing goes stale.",
+      "Watches your repositories for open pull requests, runs automated code review, nudges reviewers who go quiet, and keeps your review queue moving so nothing goes stale.",
     included: [
       {
-        kind: "harness",
-        label: "Claude Code",
-        description: "Reads diffs and writes review comments with context",
-        templateId: "claude-code",
-      },
-      {
-        kind: "skill",
-        label: "Onboarding skill",
-        description:
-          "Walks you through initial setup and repository configuration",
-      },
-      {
-        kind: "file",
-        label: "CLAUDE.md",
-        description:
-          "Project instructions file that tells the agent how your repo works",
-      },
-      {
-        kind: "file",
-        label: "Onboarding.md",
-        description:
-          "Step-by-step guide that walks the agent through first-run setup",
+        kind: "connection",
+        label: "Slack",
+        description: "Optional: review notifications and reviewer nudges",
+        templateId: "slack",
+        connectionTemplateId: "slack",
       },
     ],
     required: [
       {
         kind: "connection",
         label: "GitHub",
-        description: "Read PRs, diffs, and reviewer activity",
+        description:
+          "GitHub or GitHub Enterprise — read PRs, diffs, and reviewer activity",
         templateId: "github",
         connectionTemplateId: "github",
-      },
-      {
-        kind: "connection",
-        label: "GitHub Enterprise",
-        description: "Read PRs, diffs, and reviewer activity",
-        templateId: "github-enterprise",
-        connectionTemplateId: "github-enterprise",
       },
     ],
     schedules: [
@@ -595,49 +468,203 @@ export const REAL_PACKS: Pack[] = [
         defaultOn: true,
       },
       {
+        id: "weekly-survey",
+        label: "Codebase survey",
+        description: "Scans the codebase for drift and style violations",
+        cron: "Mon 6:00",
+        defaultOn: false,
+      },
+      {
         id: "monthly-bench",
         label: "Monthly benchmark",
         description: "Review quality metrics across the month",
         defaultOn: false,
       },
+      {
+        id: "health-check",
+        label: "Health check",
+        description: "Verifies the reviewer is reachable and configs are valid",
+        cron: "Every 15 min",
+        defaultOn: true,
+      },
+    ],
+    agentChecklist: [
+      { id: "backup-repo", label: "Backup repository", layer: 2 },
+      { id: "repo-to-review", label: "Repository to review", layer: 2 },
+      { id: "review-name", label: "Name to sign reviews with", layer: 2 },
+      { id: "labels", label: "Labels", layer: 2 },
+      { id: "slack-notifications", label: "Slack notifications", layer: 2 },
+      { id: "review-hours", label: "Review hours", layer: 2 },
+    ],
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "software-developer",
+    name: "Software Developer",
+    category: "Development",
+    icon: Code,
+    tagline:
+      "Picks up issues, writes code, opens PRs, and iterates on review feedback.",
+    description:
+      "An autonomous developer that reads GitHub issues, writes implementation code, opens pull requests, and responds to review feedback. Works through your backlog while you focus on design and direction.",
+    included: [],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description:
+          "GitHub or GitHub Enterprise — read issues, push branches, open PRs",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    agentChecklist: [
+      { id: "backup", label: "Where work is backed up", layer: 2 },
+      { id: "target-repo", label: "Which repository to work on", layer: 2 },
+      {
+        id: "watch-mode",
+        label: "Watch GitHub or only work when asked",
+        layer: 2,
+      },
+      { id: "labels", label: "Labels", layer: 2 },
+      {
+        id: "build-check-test",
+        label: "How to build, check and test",
+        layer: 2,
+      },
+      {
+        id: "push-confirm",
+        label: "Confirm the account can push and open pull requests",
+        layer: 2,
+      },
+      { id: "platform-address", label: "Platform address", layer: 2 },
+      { id: "schedules", label: "Schedules", layer: 2 },
+      { id: "slack-updates", label: "Slack updates", layer: 2 },
+      { id: "never-touch", label: "What never to touch", layer: 2 },
+    ],
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "quality-assurance",
+    name: "Quality Assurance",
+    category: "Software",
+    icon: TaskComplete,
+    tagline: "Writes and runs end-to-end tests for every feature branch.",
+    description:
+      "Monitors feature branches, generates end-to-end test suites, runs them against staging, and reports results on the PR. Catches regressions before they reach main.",
+    included: [
+      {
+        kind: "connection",
+        label: "Slack",
+        description: "Optional: test result notifications",
+        templateId: "slack",
+        connectionTemplateId: "slack",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description:
+          "GitHub or GitHub Enterprise — read branches, post test results",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
     ],
     agentChecklist: [
       {
-        id: "connect-github",
-        label: "Connect GitHub",
-        layer: 1,
-        messageId: "cg-m1",
+        id: "source-repo",
+        label: "Which repository the platform is built from",
+        layer: 2,
       },
       {
-        id: "backup-or-local",
-        label: 'Backup repo, or say "local-only"',
+        id: "read-confirm",
+        label: "Confirm the account can read it",
         layer: 2,
-        messageId: "cg-m4",
       },
       {
-        id: "repo-to-review",
-        label: "Repo to review",
+        id: "model-connection",
+        label: "Model connection for the platform under test",
         layer: 2,
-        messageId: "cg-m6",
+      },
+      { id: "slack-requests", label: "Slack requests", layer: 2 },
+      { id: "never-touch", label: "What never to touch", layer: 2 },
+      { id: "first-install", label: "First install", layer: 2 },
+    ],
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "quality-inspector",
+    name: "Quality Inspector",
+    category: "Software",
+    icon: Microscope,
+    tagline:
+      "Tests every issue, runs nightly regressions, and benchmarks your product.",
+    description:
+      "Watches for new issues, writes and runs test scenarios, and maintains a regression suite. Runs nightly, weekly, and monthly checks so quality problems surface before users find them.",
+    included: [
+      {
+        kind: "connection",
+        label: "Slack",
+        description: "Optional: test result notifications",
+        templateId: "slack",
+        connectionTemplateId: "slack",
+      },
+    ],
+    required: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Read issues, PRs, and test results",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    schedules: [
+      {
+        id: "issue-qa",
+        label: "Issue QA",
+        description: "Tests new issues as they come in",
+        cron: "Hourly",
+        defaultOn: true,
       },
       {
-        id: "review-name",
-        label: "Name to sign reviews with",
-        layer: 2,
-        messageId: "cg-m8",
+        id: "nightly-regression",
+        label: "Nightly regression",
+        description: "Full regression suite overnight",
+        defaultOn: false,
       },
       {
-        id: "re-review-label",
-        label: "Re-review label",
-        layer: 2,
-        messageId: "cg-m10",
+        id: "monthly-bench",
+        label: "Monthly benchmark",
+        description: "Performance and quality benchmarks",
+        defaultOn: false,
       },
       {
-        id: "auto-merge",
-        label: "Auto-merge on or off",
-        layer: 2,
-        messageId: "cg-m12",
+        id: "weekly-security",
+        label: "Weekly security",
+        description: "Security-focused test sweep",
+        defaultOn: false,
       },
+      {
+        id: "weekly-scenarios",
+        label: "Weekly scenarios",
+        description: "End-to-end scenario coverage",
+        defaultOn: false,
+      },
+    ],
+    agentChecklist: [
+      { id: "product-profile", label: "Product profile", layer: 1 },
+      { id: "backend", label: "Backend", layer: 2 },
+      { id: "target-repo", label: "Target repository", layer: 2 },
+      { id: "egress-rules", label: "Egress rules", layer: 1 },
+      { id: "issue-comments", label: "Issue comments", layer: 2 },
+      { id: "profile-settings", label: "Profile settings", layer: 2 },
+      { id: "model-credential", label: "Model credential", layer: 2 },
+      { id: "work-backup", label: "Work backup", layer: 2 },
     ],
     sizeCpuMilli: 2000,
     sizeMemoryMi: 2048,
@@ -653,15 +680,9 @@ export const REAL_PACKS: Pack[] = [
       "A persistent assistant that lives in Slack or Telegram. Runs a morning briefing, handles tasks you delegate, drafts messages, and answers questions — all in one conversation.",
     included: [
       {
-        kind: "harness",
-        label: "Claude Code",
-        description: "Reads your messages and handles tasks in context",
-        templateId: "claude-code",
-      },
-      {
         kind: "connection",
         label: "GitHub",
-        description: "Lets the assistant update itself and back up",
+        description: "Optional: lets the assistant update itself and back up",
         templateId: "github",
         connectionTemplateId: "github",
       },
@@ -709,142 +730,36 @@ export const REAL_PACKS: Pack[] = [
       },
     ],
     agentChecklist: [
-      {
-        id: "connect-channel",
-        label: "Connect Slack or Telegram",
-        layer: 1,
-        messageId: "pa-m1",
-      },
-      { id: "who-i-am", label: "Who I am", layer: 2, messageId: "pa-m4" },
-      {
-        id: "what-i-do",
-        label: "What I take care of",
-        layer: 2,
-        messageId: "pa-m6",
-      },
-      {
-        id: "slack-member-id",
-        label: "Slack member ID",
-        layer: 2,
-        messageId: "pa-m8",
-      },
-      {
-        id: "may-message",
-        label: "May I message first?",
-        layer: 2,
-        messageId: "pa-m10",
-      },
-      {
-        id: "backup-local",
-        label: "Backup or local-only",
-        layer: 2,
-        messageId: "pa-m12",
-      },
+      { id: "who-i-am", label: "Who I am", layer: 2 },
+      { id: "what-i-do", label: "What I take care of", layer: 2 },
+      { id: "how-we-work", label: "How we work together", layer: 2 },
+      { id: "slack-member-id", label: "Your Slack member ID", layer: 2 },
     ],
   },
   {
-    id: "quality-inspector",
-    name: "Quality Inspector",
-    category: "Software",
-    icon: Microscope,
-    tagline:
-      "Tests every issue, runs nightly regressions, and benchmarks your product.",
+    id: "micro-manager",
+    name: "Micro-Manager",
+    category: "Productivity",
+    icon: UserMultiple,
+    tagline: "Never lose track of what you asked someone to do in Slack.",
     description:
-      "Watches for new issues, writes and runs test scenarios, and maintains a regression suite. Runs nightly, weekly, and monthly checks so quality problems surface before users find them.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description: "Writes tests, runs scenarios, and reports results",
-        templateId: "claude-code",
-      },
-    ],
+      "Reads your Slack conversations, tracks delegated tasks, follows up when things go quiet, and gives you a daily status of who owes what. Connected as you, not a bot.",
+    included: [],
     required: [
       {
         kind: "connection",
-        label: "GitHub",
-        description: "Read issues, PRs, and test results",
-        templateId: "github",
-        connectionTemplateId: "github",
-      },
-    ],
-    schedules: [
-      {
-        id: "issue-qa",
-        label: "Issue QA",
-        description: "Tests new issues as they come in",
-        cron: "Hourly",
-        defaultOn: true,
-      },
-      {
-        id: "nightly-regression",
-        label: "Nightly regression",
-        description: "Full regression suite overnight",
-        defaultOn: false,
-      },
-      {
-        id: "monthly-bench",
-        label: "Monthly benchmark",
-        description: "Performance and quality benchmarks",
-        defaultOn: false,
-      },
-      {
-        id: "weekly-security",
-        label: "Weekly security",
-        description: "Security-focused test sweep",
-        defaultOn: false,
-      },
-      {
-        id: "weekly-scenarios",
-        label: "Weekly scenarios",
-        description: "End-to-end scenario coverage",
-        defaultOn: false,
+        label: "Slack",
+        description: "Connected as you (not a bot) — reads your conversations",
+        templateId: "slack",
+        connectionTemplateId: "slack",
       },
     ],
     agentChecklist: [
-      {
-        id: "product-profile",
-        label: "Product profile",
-        layer: 2,
-        messageId: "qi-m4",
-      },
-      { id: "backend", label: "Backend", layer: 2, messageId: "qi-m6" },
-      {
-        id: "target-repo",
-        label: "Target repository",
-        layer: 2,
-        messageId: "qi-m8",
-      },
-      {
-        id: "egress-rules",
-        label: "Egress rules",
-        layer: 2,
-        messageId: "qi-m10",
-      },
-      {
-        id: "issue-comments",
-        label: "Issue comments",
-        layer: 2,
-        messageId: "qi-m12",
-      },
-      {
-        id: "profile-settings",
-        label: "Profile settings",
-        layer: 2,
-        messageId: "qi-m14",
-      },
-      {
-        id: "model-credential",
-        label: "Model credential",
-        layer: 2,
-        messageId: "qi-m16",
-      },
-      {
-        id: "work-backup",
-        label: "Work backup",
-        layer: 2,
-        messageId: "qi-m18",
-      },
+      { id: "confirm-slack", label: "Confirm your Slack account", layer: 2 },
+      { id: "channels", label: "Which channels to read", layer: 2 },
+      { id: "hand-work-to", label: "Who you hand work to", layer: 2 },
+      { id: "bots", label: "Which bots you talk to", layer: 2 },
+      { id: "dry-run", label: "Approve the dry run", layer: 2 },
     ],
     sizeCpuMilli: 2000,
     sizeMemoryMi: 2048,
@@ -858,42 +773,22 @@ export const REAL_PACKS: Pack[] = [
       "Structured pages with a knowledge graph. The agent writes and maintains them.",
     description:
       "An agent-maintained wiki that organizes knowledge into structured pages with a knowledge graph. The agent writes new pages, updates existing ones, and maintains the links between them.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description:
-          "Writes, updates, and links wiki pages from conversations and sources",
-        templateId: "claude-code",
-      },
-    ],
+    included: [],
     required: [],
     agentChecklist: [
-      { id: "name-wiki", label: "Name the wiki", layer: 2, messageId: "lw-m1" },
+      { id: "name-wiki", label: "Name the wiki", layer: 2 },
       {
         id: "what-knowledge",
-        label: "What knowledge it will hold",
+        label: "Say what knowledge it will hold",
         layer: 2,
-        messageId: "lw-m3",
       },
-      {
-        id: "first-docs",
-        label: "Hand over the first documents",
-        layer: 2,
-        messageId: "lw-m5",
-      },
+      { id: "first-docs", label: "Hand over the first documents", layer: 2 },
       {
         id: "git-remote",
-        label: "Git remote or local-only",
+        label: "Decide whether the wiki gets a git remote",
         layer: 2,
-        messageId: "lw-m7",
       },
-      {
-        id: "maintenance",
-        label: "Maintenance cadence",
-        layer: 2,
-        messageId: "lw-m9",
-      },
+      { id: "maintenance", label: "Decide on a maintenance cadence", layer: 2 },
     ],
   },
   {
@@ -905,61 +800,57 @@ export const REAL_PACKS: Pack[] = [
       "Simple markdown wiki. The agent writes pages and keeps them current.",
     description:
       "A lightweight markdown wiki maintained by an agent. Pages are plain files — no knowledge graph, no structured schema. The agent writes and updates them from conversations.",
-    included: [
-      {
-        kind: "harness",
-        label: "Claude Code",
-        description: "Writes and updates plain markdown wiki pages",
-        templateId: "claude-code",
-      },
-    ],
+    included: [],
     required: [],
     agentChecklist: [
       {
         id: "what-for",
-        label: "What this knowledge base is for",
+        label: "Tell me what this knowledge base is for",
         layer: 2,
-        messageId: "pw-m1",
       },
       {
         id: "first-files",
-        label: "First files or notes to remember",
+        label: "Give me the first files or notes to remember",
         layer: 2,
-        messageId: "pw-m3",
       },
       {
         id: "publish",
-        label: "Publish for your team?",
+        label: "Decide whether to publish it for your team",
         layer: 2,
-        messageId: "pw-m5",
       },
     ],
   },
   {
-    id: "nous",
-    name: "Nous",
+    id: "spotlights",
+    name: "Spotlights",
     category: "Research",
-    icon: Idea,
+    icon: Search,
     tagline:
-      "Runs an experiment campaign: forms a hypothesis, patches your code, measures the result, keeps what worked.",
+      "Deep-dives into your codebase and surfaces insights you'd miss in a review.",
     description:
-      "Runs an experiment campaign: forms a hypothesis, patches your code, measures the result, keeps what worked. Findings build up across runs. Stands in for every research kit (OpenEvolve, ShinkaEvolve, GEPA, AdaEvolve, EvoX).",
+      "Runs targeted research campaigns across your repositories — architecture analysis, dependency audits, dead-code detection, and pattern extraction. Publishes findings as structured reports.",
     included: [
-      {
-        kind: "framework",
-        label: "Claude Code",
-        templateId: "claude-code",
-      },
       {
         kind: "connection",
         label: "GitHub",
-        description: "Optional: version control for experiments",
+        description: "Optional: read repository contents directly",
         templateId: "github",
         connectionTemplateId: "github",
       },
     ],
     required: [],
-    onboarding: false,
+    agentChecklist: [
+      { id: "target-repo", label: "Target repository", layer: 2 },
+      { id: "optimization-goal", label: "Optimization goal", layer: 2 },
+      { id: "modules", label: "Modules to include", layer: 2 },
+      {
+        id: "approve-run",
+        label: "Approve the first run (about $15–20 and 20–45 min per module)",
+        layer: 2,
+      },
+    ],
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
   },
   {
     id: "k-search",
@@ -969,13 +860,7 @@ export const REAL_PACKS: Pack[] = [
     tagline: "LLM-driven GPU kernel optimization.",
     description:
       "Searches for high-performance GPU kernels using LLM-guided optimization. Requires Modal for cloud GPU access.",
-    included: [
-      {
-        kind: "framework",
-        label: "K-Search",
-        templateId: "k-search",
-      },
-    ],
+    included: [],
     required: [
       {
         kind: "connection",
@@ -986,5 +871,142 @@ export const REAL_PACKS: Pack[] = [
       },
     ],
     onboarding: false,
+  },
+  {
+    id: "nous",
+    name: "Nous",
+    category: "Research",
+    icon: Idea,
+    tagline:
+      "Runs an experiment campaign: forms a hypothesis, patches your code, measures the result, keeps what worked.",
+    description:
+      "Runs an experiment campaign: forms a hypothesis, patches your code, measures the result, keeps what worked. Findings build up across runs.",
+    included: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Optional: version control for experiments",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    required: [],
+    onboarding: false,
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "openevolve",
+    name: "OpenEvolve",
+    category: "Research",
+    icon: Debug,
+    tagline:
+      "Open-ended evolutionary optimization — evolves code solutions across generations.",
+    description:
+      "Uses LLM-guided mutations to evolve code solutions over multiple generations. Runs fitness evaluations, keeps the best variants, and builds on them. Connects to your repo for version control.",
+    included: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Optional: version control for experiments",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    required: [],
+    onboarding: false,
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "shinkaevolve",
+    name: "ShinkaEvolve",
+    category: "Research",
+    icon: Settings,
+    tagline:
+      "Progressive evolution — refines code through incremental, guided mutations.",
+    description:
+      "Applies progressive, incremental mutations to improve code. Each generation builds carefully on the last, with guided selection that favors stability alongside performance gains.",
+    included: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Optional: version control for experiments",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    required: [],
+    onboarding: false,
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "gepa",
+    name: "GEPA",
+    category: "Research",
+    icon: Document,
+    tagline: "Genetic programming with LLM-guided crossover and mutation.",
+    description:
+      "Runs genetic programming experiments using LLM-guided crossover and mutation operators. Maintains a population of candidate solutions and evolves them toward a fitness target.",
+    included: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Optional: version control for experiments",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    required: [],
+    onboarding: false,
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "adaevolve",
+    name: "AdaEvolve",
+    category: "Research",
+    icon: FlashFilled,
+    tagline:
+      "Adaptive evolution — mutates and benchmarks code to find better solutions.",
+    description:
+      "Uses LLM-guided adaptive evolution to improve code performance. Connects to your repo, mutates targeted functions, benchmarks the results, and keeps the winners.",
+    included: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Optional: version control for experiments",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    required: [],
+    onboarding: false,
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
+  },
+  {
+    id: "evox",
+    name: "EvoX",
+    category: "Research",
+    icon: Box,
+    tagline:
+      "Cross-pollination evolution — transfers improvements across related codebases.",
+    description:
+      "Evolves code by cross-pollinating improvements across related repositories. Identifies patterns that worked in one codebase and applies them to another.",
+    included: [
+      {
+        kind: "connection",
+        label: "GitHub",
+        description: "Optional: version control for experiments",
+        templateId: "github",
+        connectionTemplateId: "github",
+      },
+    ],
+    required: [],
+    onboarding: false,
+    sizeCpuMilli: 2000,
+    sizeMemoryMi: 2048,
   },
 ];

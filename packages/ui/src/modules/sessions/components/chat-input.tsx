@@ -162,8 +162,6 @@ export function ChatInput({
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
   const kitMode = useStore((s) => s.starterKitMode);
-  const selectedKitId = useStore((s) => s.selectedStarterKitId);
-  const realPacks = useStore((s) => s.realPacks);
   const transcriptSteps = useStore((s) => s.currentTranscriptSteps);
   const onboardingStep = useStore((s) => s.onboardingStep);
   const setDraft = useStore((s) => s.setDraft);
@@ -177,7 +175,9 @@ export function ChatInput({
 
   const composerLocked = useMemo(() => {
     if (!kitMode) return false;
-    return transcriptSteps.length > 0 && onboardingStep < transcriptSteps.length;
+    return (
+      transcriptSteps.length > 0 && onboardingStep < transcriptSteps.length
+    );
   }, [kitMode, transcriptSteps, onboardingStep]);
 
   const [dragOver, setDragOver] = useState(false);

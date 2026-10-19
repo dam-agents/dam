@@ -240,7 +240,9 @@ export function ChatView() {
     if (!isMock || !currentTranscriptMeta) return;
     void import("../../../mock/data/transcripts/index.js").then(
       ({ sliceTranscriptForStep }) => {
-        setMessages(sliceTranscriptForStep(currentTranscriptMeta, onboardingStep));
+        setMessages(
+          sliceTranscriptForStep(currentTranscriptMeta, onboardingStep),
+        );
       },
     );
   }, [isMock, onboardingStep, currentTranscriptMeta, setMessages]);

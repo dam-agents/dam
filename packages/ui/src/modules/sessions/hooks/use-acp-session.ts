@@ -215,7 +215,8 @@ export function useAcpSession(
   const mockSendPrompt: typeof sendPrompt = useCallback(
     async (text) => {
       if (!text.trim()) return;
-      const { mockReply } = await import("../../../mock/data/transcripts/index.js");
+      const { mockReply } =
+        await import("../../../mock/data/transcripts/index.js");
       const replyId = crypto.randomUUID();
       setMessages((p) => [
         ...p,

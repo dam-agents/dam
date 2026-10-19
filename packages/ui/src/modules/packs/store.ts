@@ -127,8 +127,7 @@ export const createPacksSlice: StateCreator<
       ),
     })),
   currentTranscriptSteps: [],
-  setCurrentTranscriptSteps: (steps) =>
-    set({ currentTranscriptSteps: steps }),
+  setCurrentTranscriptSteps: (steps) => set({ currentTranscriptSteps: steps }),
   currentTranscriptMeta: null,
   setCurrentTranscriptMeta: (meta) => set({ currentTranscriptMeta: meta }),
   realPacks: true,

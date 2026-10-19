@@ -18,9 +18,10 @@ export function sliceTranscriptForStep(
     parts: m.parts.map((p) => (p.kind === "form" ? { ...p } : p)),
   }));
 
-  const prevEnd = stepIndex > 0
-    ? meta.steps[Math.min(stepIndex - 1, meta.steps.length - 1)]!.messageEnd
-    : 0;
+  const prevEnd =
+    stepIndex > 0
+      ? meta.steps[Math.min(stepIndex - 1, meta.steps.length - 1)]!.messageEnd
+      : 0;
 
   for (const m of sliced) {
     for (const p of m.parts) {

@@ -21,9 +21,7 @@ export function PointerMarkerOverlay() {
 
   const current = steps[step];
   const active =
-    kitMode &&
-    current?.kind === "outside-chat" &&
-    current.pointer != null;
+    kitMode && current?.kind === "outside-chat" && current.pointer != null;
   const target = current?.pointer?.target;
 
   useEffect(() => {
@@ -33,9 +31,7 @@ export function PointerMarkerOverlay() {
     }
 
     function measure() {
-      const el = document.querySelector(
-        `[data-pointer-target="${target}"]`,
-      );
+      const el = document.querySelector(`[data-pointer-target="${target}"]`);
       if (el) {
         const rect = el.getBoundingClientRect();
         setPos({

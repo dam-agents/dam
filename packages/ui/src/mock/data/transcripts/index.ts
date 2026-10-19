@@ -9,18 +9,30 @@ export {
   defaultTranscript,
 } from "./legacy.js";
 export { codeReviewerTranscript } from "./code-reviewer.js";
-export { personalAssistantTranscript } from "./personal-assistant.js";
+export { softwareDeveloperTranscript } from "./software-developer.js";
+export { qualityAssuranceTranscript } from "./quality-assurance.js";
 export { qualityInspectorTranscript } from "./quality-inspector.js";
+export { personalAssistantTranscript } from "./personal-assistant.js";
+export { microManagerTranscript } from "./micro-manager.js";
 export { llmWikiTranscript } from "./llm-wiki.js";
 export { plainWikiTranscript } from "./plain-wiki.js";
-export { nousTranscript } from "./nous.js";
+export { spotlightsTranscript } from "./spotlights.js";
 export { kSearchTranscript } from "./k-search.js";
+export { nousTranscript } from "./nous.js";
+export { openevolveTranscript } from "./openevolve.js";
+export { shinkaevolveTranscript } from "./shinkaevolve.js";
+export { gepaTranscript } from "./gepa.js";
+export { adaevolveTranscript } from "./adaevolve.js";
+export { evoxTranscript } from "./evox.js";
 
 import type { Message } from "../../../types.js";
 
 import { useStore } from "../../../store.js";
 import { MOCK_SESSION_IDS, mockSessions } from "../sessions.js";
+import { adaevolveTranscript } from "./adaevolve.js";
 import { codeReviewerTranscript } from "./code-reviewer.js";
+import { evoxTranscript } from "./evox.js";
+import { gepaTranscript } from "./gepa.js";
 import { kSearchTranscript } from "./k-search.js";
 import {
   artifactTranscript,
@@ -28,21 +40,36 @@ import {
   longChatTranscript,
 } from "./legacy.js";
 import { llmWikiTranscript } from "./llm-wiki.js";
+import { microManagerTranscript } from "./micro-manager.js";
 import { nousTranscript } from "./nous.js";
+import { openevolveTranscript } from "./openevolve.js";
 import { personalAssistantTranscript } from "./personal-assistant.js";
 import { plainWikiTranscript } from "./plain-wiki.js";
+import { qualityAssuranceTranscript } from "./quality-assurance.js";
 import { qualityInspectorTranscript } from "./quality-inspector.js";
+import { shinkaevolveTranscript } from "./shinkaevolve.js";
 import { sliceTranscriptForStep } from "./slice.js";
+import { softwareDeveloperTranscript } from "./software-developer.js";
+import { spotlightsTranscript } from "./spotlights.js";
 import type { TranscriptMeta } from "./types.js";
 
 const KIT_TRANSCRIPTS: Record<string, () => TranscriptMeta> = {
   [MOCK_SESSION_IDS.kitCodeGuardian]: codeReviewerTranscript,
-  [MOCK_SESSION_IDS.kitPersonalAssistant]: personalAssistantTranscript,
+  [MOCK_SESSION_IDS.kitSoftwareDeveloper]: softwareDeveloperTranscript,
+  [MOCK_SESSION_IDS.kitQualityAssurance]: qualityAssuranceTranscript,
   [MOCK_SESSION_IDS.kitQualityInspector]: qualityInspectorTranscript,
+  [MOCK_SESSION_IDS.kitPersonalAssistant]: personalAssistantTranscript,
+  [MOCK_SESSION_IDS.kitMicroManager]: microManagerTranscript,
   [MOCK_SESSION_IDS.kitLlmWiki]: llmWikiTranscript,
   [MOCK_SESSION_IDS.kitPlainWiki]: plainWikiTranscript,
-  [MOCK_SESSION_IDS.kitNous]: nousTranscript,
+  [MOCK_SESSION_IDS.kitSpotlights]: spotlightsTranscript,
   [MOCK_SESSION_IDS.kitKSearch]: kSearchTranscript,
+  [MOCK_SESSION_IDS.kitNous]: nousTranscript,
+  [MOCK_SESSION_IDS.kitOpenEvolve]: openevolveTranscript,
+  [MOCK_SESSION_IDS.kitShinkaEvolve]: shinkaevolveTranscript,
+  [MOCK_SESSION_IDS.kitGEPA]: gepaTranscript,
+  [MOCK_SESSION_IDS.kitAdaEvolve]: adaevolveTranscript,
+  [MOCK_SESSION_IDS.kitEvoX]: evoxTranscript,
 };
 
 export { KIT_TRANSCRIPTS };
@@ -55,10 +82,7 @@ export function mockTranscriptMeta(
   return factory ? factory() : null;
 }
 
-export function mockTranscript(
-  agentId: string,
-  sessionId: string,
-): Message[] {
+export function mockTranscript(agentId: string, sessionId: string): Message[] {
   if (sessionId === MOCK_SESSION_IDS.artifact) {
     return artifactTranscript();
   }

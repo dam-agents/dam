@@ -106,9 +106,7 @@ function StepControls() {
                   i === step && "bg-muted font-medium",
                 )}
               >
-                <span className="shrink-0 text-muted-foreground">
-                  {i + 1}.
-                </span>
+                <span className="shrink-0 text-muted-foreground">{i + 1}.</span>
                 <span className="min-w-0 truncate">{s.label}</span>
                 <span className="ml-auto shrink-0 text-[12px] text-muted-foreground">
                   {s.kind}

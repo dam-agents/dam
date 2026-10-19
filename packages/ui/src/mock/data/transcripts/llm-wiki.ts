@@ -17,9 +17,11 @@ export function llmWikiTranscript(): TranscriptMeta {
         text: "What should the wiki be called?",
       },
     ]),
-    msg("lw-m2", "user", [{ kind: "text" as const, text: "Platform Knowledge Base" }]),
+    msg("lw-m2", "user", [
+      { kind: "text" as const, text: "Platform Knowledge Base" },
+    ]),
 
-    // Step 2: in-chat conversational — purpose
+    // Step 2: in-chat conversational — what knowledge it holds
     msg("lw-m3", "assistant", [
       {
         kind: "text" as const,
@@ -33,7 +35,7 @@ export function llmWikiTranscript(): TranscriptMeta {
       },
     ]),
 
-    // Step 3: in-chat conversational — sources
+    // Step 3: in-chat conversational — first documents
     msg("lw-m5", "assistant", [
       {
         kind: "text" as const,
@@ -47,7 +49,7 @@ export function llmWikiTranscript(): TranscriptMeta {
       },
     ]),
 
-    // Step 4: in-chat conversational — backup preference
+    // Step 4: in-chat conversational — git remote or local
     msg("lw-m7", "assistant", [
       {
         kind: "text" as const,
@@ -56,48 +58,60 @@ export function llmWikiTranscript(): TranscriptMeta {
     ]),
     msg("lw-m8", "user", [{ kind: "text" as const, text: "Git remote." }]),
 
-    // Step 5: outside-chat — connect git remote
+    // Step 5: in-chat conversational — maintenance cadence
     msg("lw-m9", "assistant", [
-      {
-        kind: "text" as const,
-        text: "Since you want Git storage, open **Configure > Connections** and make sure your GitHub account is connected. I'll push the wiki to a repo there.",
-      },
-    ]),
-
-    // Step 6: in-chat conversational — maintenance
-    msg("lw-m10", "assistant", [
       {
         kind: "text" as const,
         text: "Last thing — how often should I check pages for freshness? I can do daily sweeps, weekly, or only when you ask.",
       },
     ]),
-    msg("lw-m11", "user", [{ kind: "text" as const, text: "Weekly is good." }]),
-
-    // Step 7: outside-chat — set maintenance schedule
-    msg("lw-m12", "assistant", [
-      {
-        kind: "text" as const,
-        text: "Open the **Schedules** panel (via the ＋ menu) and add a weekly maintenance schedule. I'll use that to know when to check for stale pages.",
-      },
-    ]),
+    msg("lw-m10", "user", [{ kind: "text" as const, text: "Weekly is good." }]),
 
     // Wrap-up
-    msg("lw-m13", "assistant", [
+    msg("lw-m11", "assistant", [
       {
         kind: "text" as const,
-        text: "I'll start building **Platform Knowledge Base** from the docs/ folder. The knowledge graph will grow as I process the pages. Ask me anything or say \"update\" when the source material changes.",
+        text: 'I\'ll start building **Platform Knowledge Base** from the docs/ folder. The knowledge graph will grow as I process the pages. Ask me anything or say "update" when the source material changes.',
       },
     ]),
   ];
 
   const steps: TranscriptStep[] = [
-    { id: "lw-s1", label: "Wiki name", kind: "in-chat", messageEnd: 3, firstMessageId: "lw-m1" },
-    { id: "lw-s2", label: "Purpose", kind: "in-chat", messageEnd: 5, firstMessageId: "lw-m3" },
-    { id: "lw-s3", label: "Sources", kind: "in-chat", messageEnd: 7, firstMessageId: "lw-m5" },
-    { id: "lw-s4", label: "Storage preference", kind: "in-chat", messageEnd: 9, firstMessageId: "lw-m7" },
-    { id: "lw-s5", label: "Connect GitHub", kind: "outside-chat", messageEnd: 10, firstMessageId: "lw-m9", pointer: { target: "Configure > Connections", exists: true } },
-    { id: "lw-s6", label: "Maintenance cadence", kind: "in-chat", messageEnd: 12, firstMessageId: "lw-m10" },
-    { id: "lw-s7", label: "Set maintenance schedule", kind: "outside-chat", messageEnd: 13, firstMessageId: "lw-m12", pointer: { target: "Plus menu > Schedules", exists: true } },
+    {
+      id: "lw-s1",
+      label: "Name the wiki",
+      kind: "in-chat",
+      messageEnd: 3,
+      firstMessageId: "lw-m1",
+    },
+    {
+      id: "lw-s2",
+      label: "What knowledge it holds",
+      kind: "in-chat",
+      messageEnd: 5,
+      firstMessageId: "lw-m3",
+    },
+    {
+      id: "lw-s3",
+      label: "First documents",
+      kind: "in-chat",
+      messageEnd: 7,
+      firstMessageId: "lw-m5",
+    },
+    {
+      id: "lw-s4",
+      label: "Git remote or local",
+      kind: "in-chat",
+      messageEnd: 9,
+      firstMessageId: "lw-m7",
+    },
+    {
+      id: "lw-s5",
+      label: "Maintenance cadence",
+      kind: "in-chat",
+      messageEnd: 11,
+      firstMessageId: "lw-m9",
+    },
   ];
 
   return { messages: m, steps };
