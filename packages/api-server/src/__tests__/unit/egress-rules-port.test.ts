@@ -3,7 +3,10 @@ import { createEgressRulesService } from "../../modules/egress-rules/services/eg
 import { createEgressRuleWriter } from "../../modules/egress-rules/services/egress-rule-writer.js";
 import { createConnectionRulesSync } from "../../modules/egress-rules/services/connection-rules-sync.js";
 import { createKitRulesSeeder } from "../../modules/egress-rules/services/kit-rules-seeder.js";
-import { createPresetSeeder } from "../../modules/egress-rules/services/preset-seeder.js";
+import {
+  createPresetSeeder,
+  markTrustedRowsTakenOver,
+} from "../../modules/egress-rules/services/preset-seeder.js";
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { NewEgressRule } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
@@ -61,6 +64,7 @@ function fakeRepo(
       }
     },
     markPresetUnderConnections: async () => {},
+    markSeededConnectionRows: async () => 0,
     updateTakeOwnership: async () => null,
     listForAgent: async (agentId) =>
       rows.filter((r) => r.agentId === agentId && r.status === "active"),
@@ -388,6 +392,28 @@ describe("kit-rules-seeder: a kit rule never silently loses to a preset row", ()
         "sub-1",
       ),
     ).rejects.toThrow(/clashes/);
+  });
+});
+
+describe("preset-seeder: rows taken over before the mark existed", () => {
+  // TEST_SCENARIO: rows a Connection took over from the trusted preset before preset_source existed carry no mark, so revoking the Connection would still revoke them; the startup sweep marks them, for the trusted hosts and the trusted preset source.
+  it("asks the repository to mark connection rows of the trusted hosts", async () => {
+    const asked: Array<{ hosts: readonly string[]; source: string }> = [];
+    const { repo } = fakeRepo([], {
+      markSeededConnectionRows: async (hosts, source) => {
+        asked.push({ hosts, source });
+        return 2;
+      },
+    });
+    const hosts = ["api.anthropic.com", "github.com"];
+
+    const marked = await markTrustedRowsTakenOver({
+      repo,
+      trustedHosts: hosts,
+    });
+
+    expect(marked).toBe(2);
+    expect(asked).toEqual([{ hosts, source: "preset:trusted" }]);
   });
 });
 

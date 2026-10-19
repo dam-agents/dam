@@ -264,6 +264,7 @@ import {
   createL7PromotionReconcile,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
+  markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
 import {
   composeConnectionsAtBoot,
@@ -1339,6 +1340,19 @@ export async function bootstrap() {
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+  await markTrustedRowsTakenOverAdapter(db, trustedHosts)
+    .then((marked) => {
+      if (marked > 0)
+        getLogger().info(
+          { marked },
+          "egress-rules: marked preset rows taken over by connections",
+        );
+    })
+    .catch((err) => {
+      getLogger().warn(
+        `egress-rules: marking preset rows taken over by connections failed: ${formatError(err)}`,
+      );
+    });
 
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>

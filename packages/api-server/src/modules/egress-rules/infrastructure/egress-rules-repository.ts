@@ -28,6 +28,10 @@ export interface EgressRulesRepository {
     hosts: readonly string[],
     source: EgressRuleSource,
   ): Promise<void>;
+  markSeededConnectionRows(
+    hosts: readonly string[],
+    source: EgressRuleSource,
+  ): Promise<number>;
   getPresetForAgent(agentId: string): Promise<EgressPreset>;
   getById(id: string): Promise<EgressRuleRow | null>;
   getActiveByTuple(
@@ -236,6 +240,35 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           AND method = '*'
           AND path_pattern = '*'
       `);
+    },
+
+    async markSeededConnectionRows(hosts, source) {
+      if (hosts.length === 0) return 0;
+      const canonical = sql.join(
+        hosts.map((h) => sql`${canonicalEgressHost(h)}`),
+        sql`, `,
+      );
+      const marked = await db.execute<{ id: string }>(sql`
+        UPDATE ${egressRules} AS taken
+        SET preset_source = ${source}
+        WHERE taken.status = 'active'
+          AND taken.source LIKE 'connection:%'
+          AND taken.preset_source IS NULL
+          AND lower(taken.host) IN (${canonical})
+          AND taken.port IS NULL
+          AND taken.method = '*'
+          AND taken.path_pattern = '*'
+          AND EXISTS (
+            SELECT 1 FROM ${egressRules} AS seeded
+            WHERE seeded.agent_id = taken.agent_id
+              AND seeded.status = 'active'
+              AND seeded.source = ${source}
+              AND seeded.decided_at BETWEEN taken.decided_at - interval '5 seconds'
+                                        AND taken.decided_at + interval '5 seconds'
+          )
+        RETURNING taken.id
+      `);
+      return (marked as unknown as Array<unknown>).length;
     },
 
     async getPresetForAgent(agentId) {

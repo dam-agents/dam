@@ -47,3 +47,13 @@ export function createPresetSeeder(deps: {
     },
   };
 }
+
+export function markTrustedRowsTakenOver(deps: {
+  repo: Pick<EgressRulesRepository, "markSeededConnectionRows">;
+  trustedHosts: readonly string[];
+}): Promise<number> {
+  return deps.repo.markSeededConnectionRows(
+    deps.trustedHosts,
+    "preset:trusted",
+  );
+}
