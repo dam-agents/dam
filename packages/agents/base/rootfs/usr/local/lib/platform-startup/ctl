@@ -108,12 +108,16 @@ function start(item) {
   );
 }
 
+// Stops an item's loop and its group; false when it still runs after TERM
+// and KILL.
 function stop(id) {
-  if (!running(id)) return;
+  if (!running(id)) return true;
   spawnSync(SSD, ["--stop", "--pidfile", pidfile(id), "--retry", "TERM/10/KILL/5"], {
     stdio: ["ignore", "inherit", "inherit"],
   });
+  if (running(id)) return false;
   rmSync(pidfile(id), { force: true });
+  return true;
 }
 
 try {
@@ -139,11 +143,11 @@ switch (action) {
     start(one());
     break;
   case "stop":
-    stop(id);
+    if (!stop(id)) fail(`${id} is still running after TERM and KILL`);
     break;
   case "restart":
     if (one().disabled) fail(`${id} is disabled`);
-    stop(id);
+    if (!stop(id)) fail(`${id} is still running after TERM and KILL`);
     start(one());
     break;
   default:

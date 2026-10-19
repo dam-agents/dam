@@ -8,21 +8,20 @@ import {
 } from "node:fs";
 import { dirname, join } from "node:path";
 import { z } from "zod";
+import { startupItemIdSchema } from "agent-runtime-api";
 import type { StartupItemConfig } from "../domain/startup-items.js";
 
 const CTL = "/usr/local/lib/platform-startup/ctl";
 const OPENRC_BOOTED = "/run/openrc/softlevel";
 const CTL_TIMEOUT_MS = 30_000;
 
-const listSchema = z.object({
-  items: z.array(
-    z.object({
-      id: z.string(),
-      command: z.string(),
-      disabled: z.boolean().optional(),
-    }),
-  ),
+const entrySchema = z.object({
+  id: startupItemIdSchema,
+  command: z.string(),
+  disabled: z.boolean().optional(),
 });
+
+type Entry = z.infer<typeof entrySchema>;
 
 export interface StartupItemStore {
   available(): boolean;
@@ -39,36 +38,52 @@ export interface StartupItemStore {
  * `platform-startup` and the user's Disable writes into, and the image's
  * `ctl`, which starts and stops one item. Only a vm machine, which openrc
  * booted, has them: a container agent runs the same image without openrc, and
- * an image built before Startup Items has no `ctl`. A list that does not parse
- * reads as empty, as `ctl` reads it.
+ * an image built before Startup Items has no `ctl`. Each entry is read on its
+ * own, with the same id rule `ctl` applies, and a malformed entry is dropped
+ * alone, so the runtime and the boot see the same items and an id never names
+ * a path outside the log directory. A write keeps the entries it cannot read,
+ * so the agent's own file loses nothing to the user's choice.
  */
 export function createStartupItemStore(agentHome: string): StartupItemStore {
   const listPath = join(agentHome, ".platform", "startup.json");
   const logDir = join(agentHome, ".platform", "startup-logs");
 
-  function read(): z.infer<typeof listSchema> {
+  function readRaw(): unknown[] {
     try {
-      const parsed = listSchema.safeParse(
-        JSON.parse(readFileSync(listPath, "utf8")),
-      );
-      return parsed.success ? parsed.data : { items: [] };
+      const parsed: unknown = JSON.parse(readFileSync(listPath, "utf8"));
+      const items =
+        typeof parsed === "object" && parsed !== null
+          ? (parsed as { items?: unknown }).items
+          : undefined;
+      return Array.isArray(items) ? items : [];
     } catch {
-      return { items: [] };
+      return [];
     }
   }
 
-  function write(list: z.infer<typeof listSchema>): void {
+  function entries(raw: unknown[]): Entry[] {
+    return raw.flatMap((item) => {
+      const entry = entrySchema.safeParse(item);
+      return entry.success ? [entry.data] : [];
+    });
+  }
+
+  function write(raw: unknown[]): void {
     mkdirSync(dirname(listPath), { recursive: true });
     const tmp = `${listPath}.tmp`;
-    writeFileSync(tmp, JSON.stringify(list, null, 2));
+    writeFileSync(tmp, JSON.stringify({ items: raw }, null, 2));
     renameSync(tmp, listPath);
+  }
+
+  function isEntry(item: unknown, id: string): boolean {
+    return entrySchema.safeParse(item).data?.id === id;
   }
 
   return {
     available: () => existsSync(CTL) && existsSync(OPENRC_BOOTED),
 
     list() {
-      return read().items.map((item) => ({
+      return entries(readRaw()).map((item) => ({
         id: item.id,
         command: item.command,
         disabled: item.disabled === true,
@@ -76,22 +91,23 @@ export function createStartupItemStore(agentHome: string): StartupItemStore {
     },
 
     setDisabled(id, disabled) {
-      const list = read();
-      const item = list.items.find((i) => i.id === id);
-      if (!item) return false;
-      item.disabled = disabled || undefined;
-      write(list);
+      const raw = readRaw();
+      const index = raw.findIndex((item) => isEntry(item, id));
+      if (index === -1) return false;
+      const { disabled: _drop, ...rest } = raw[index] as Entry;
+      raw[index] = disabled ? { ...rest, disabled: true } : rest;
+      write(raw);
       return true;
     },
 
     remove(id) {
-      const list = read();
-      if (!list.items.some((i) => i.id === id)) return false;
-      write({ items: list.items.filter((i) => i.id !== id) });
+      const raw = readRaw();
+      if (!raw.some((item) => isEntry(item, id))) return false;
+      write(raw.filter((item) => !isEntry(item, id)));
       return true;
     },
 
-    logPath: (id) => join(logDir, `${id}.log`),
+    logPath: (id) => join(logDir, `${startupItemIdSchema.parse(id)}.log`),
 
     run(action, id) {
       return new Promise((resolve) => {

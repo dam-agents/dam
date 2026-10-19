@@ -120,6 +120,7 @@ describe("Startup Item rows", () => {
         command: "serve",
         disabled: false,
         running: true,
+        listed: true,
         outputPath: "/home/agent/.platform/startup-logs/web.log",
       },
       {
@@ -127,6 +128,7 @@ describe("Startup Item rows", () => {
         command: "make setup",
         disabled: false,
         running: false,
+        listed: true,
         outputPath: "/home/agent/.platform/startup-logs/setup.log",
       },
       {
@@ -134,7 +136,35 @@ describe("Startup Item rows", () => {
         command: "sleep infinity",
         disabled: true,
         running: false,
+        listed: true,
         outputPath: "/home/agent/.platform/startup-logs/off.log",
+      },
+    ]);
+  });
+});
+
+describe("an item no entry names", () => {
+  // TEST_SCENARIO: an item keeps running after its entry left the list — a stop that failed, an entry edited out — and the panel lists it, as not listed, with the command it runs, so nothing that runs is hidden.
+  it("lists a running item that no entry names", () => {
+    const { running, trees } = inventory([
+      proc(300, 1, LOOP, "gone"),
+      proc(301, 300, "sh -c serve", "gone"),
+    ]);
+    const items = startupItemsFrom(
+      [],
+      running,
+      (id) => `/logs/${id}.log`,
+      (row) => trees.find((t) => t.key === row.key)?.startupItem ?? null,
+    );
+
+    expect(items).toEqual([
+      {
+        id: "gone",
+        command: "sh -c serve",
+        disabled: false,
+        running: true,
+        listed: false,
+        outputPath: "/logs/gone.log",
       },
     ]);
   });
@@ -209,10 +239,36 @@ describe("the Startup Items list", () => {
     );
   });
 
-  // TEST_SCENARIO: a list that does not parse starts nothing at boot, so the panel lists nothing rather than failing.
+  // TEST_SCENARIO: a file that does not parse starts nothing at boot, so the panel lists nothing rather than failing.
   it("reads a list that does not parse as empty", () => {
     expect(createStartupItemStore(home("{not json")).list()).toEqual([]);
     expect(createStartupItemStore(home({ items: "x" })).list()).toEqual([]);
+  });
+
+  // TEST_SCENARIO: the boot's ctl drops a malformed entry alone and runs the rest, so the runtime does the same: one bad entry hides no valid item, and an id outside the rule — a path, say — is never read, so the log it names is never tailed. The user's choice is written without losing the entry the runtime could not read.
+  it("drops a malformed entry alone, as the boot does, and keeps it on write", () => {
+    const dir = home({
+      items: [
+        { id: "web", command: "serve" },
+        { id: "../escape", command: "x" },
+        { id: "nocommand" },
+        "junk",
+      ],
+    });
+    const store = createStartupItemStore(dir);
+
+    expect(store.list().map((i) => i.id)).toEqual(["web"]);
+    expect(() => store.logPath("../escape")).toThrow();
+    store.setDisabled("web", true);
+    const written = JSON.parse(
+      readFileSync(join(dir, ".platform", "startup.json"), "utf8"),
+    );
+    expect(written.items).toHaveLength(4);
+    expect(written.items[0]).toEqual({
+      id: "web",
+      command: "serve",
+      disabled: true,
+    });
   });
 });
 
@@ -235,7 +291,10 @@ describe("the user's control of Startup Items", () => {
       logPath: (id) => `/logs/${id}.log`,
       run: async (action, id) => {
         runs.push(`${action} ${id}`);
-        return action === "start" && id === "broken" ? "ctl failed" : null;
+        if (id === "broken" && action === "start") return "ctl failed";
+        if (id === "stuck" && action === "stop")
+          return "stuck is still running";
+        return null;
       },
     };
     const document = createFileDocumentStoreBackend(
@@ -293,23 +352,32 @@ describe("the user's control of Startup Items", () => {
     expect(runs).toEqual([]);
   });
 
-  // TEST_SCENARIO: Remove stops the item and takes it out of the list, and a control that fails says why rather than reporting success.
-  it("removes an item, and reports a control that failed", async () => {
+  // TEST_SCENARIO: Remove stops the item and only then takes it out of the list; an item that will not stop stays listed and the user is told so. A choice the user made is kept even when the control fails, and the message says which part happened.
+  it("removes an item only once it stopped, and says which part of a change happened", async () => {
     const { processes, runs } = service([
       { id: "web", command: "serve", disabled: false },
+      { id: "stuck", command: "sleep infinity", disabled: false },
       { id: "broken", command: "false", disabled: true },
     ]);
 
     expect((await processes.removeStartupItem("web")).ok).toBe(true);
+    const stuck = await processes.removeStartupItem("stuck");
+    expect(stuck.ok ? null : stuck.error).toEqual({
+      kind: "NotAllowed",
+      message:
+        "It could not be stopped, so it stays listed: stuck is still running",
+    });
     expect((await processes.list()).startupItems.map((i) => i.id)).toEqual([
+      "stuck",
       "broken",
     ]);
     const failed = await processes.setStartupItemEnabled("broken", true);
     expect(failed.ok ? null : failed.error).toEqual({
       kind: "NotAllowed",
-      message: "ctl failed",
+      message:
+        "It is on from the next wake, but could not start now: ctl failed",
     });
-    expect(runs).toEqual(["stop web", "start broken"]);
+    expect(runs).toEqual(["stop web", "stop stuck", "start broken"]);
   });
 
   // TEST_SCENARIO: an item without a running row still opens its log, by a key made from its id.

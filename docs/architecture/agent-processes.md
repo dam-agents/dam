@@ -5,7 +5,7 @@ Last verified: 2026-10-20
 ## Overview
 
 Besides the platform's own processes, a running agent holds the work its agent started: commands a turn waits on, jobs its harness supervises in the background, and jobs it detached from the harness.
-agent-runtime is the only component that sees the pod's process table, so it owns everything on this page: the background work a harness reports, and the **process inventory** that lists all three kinds for the user.
+agent-runtime is the only component that sees the pod's process table, so it owns everything on this page: the background work a harness reports, and the **process inventory** that lists every kind for the user.
 Nothing here changes when an agent hibernates — that rule, and the signals behind it, belong to [agent-lifecycle](agent-lifecycle.md#hibernate).
 
 ## Reported background work
@@ -43,7 +43,7 @@ Nothing times a hold out, so an agent with reported work does not scale to zero 
 
 ## Process inventory
 
-The runtime sorts what runs in the pod into three kinds, one row per process tree, with its command, start time, and the CPU and memory of the whole tree, and lists [Startup Items](#startup-items) beside them:
+The runtime sorts what runs in the pod into four kinds, one row per process tree, with its command, start time, and the CPU and memory of the whole tree; the fourth, [Startup Items](#startup-items), has a section of its own:
 
 - **Turn Process** — a descendant of a chat harness that a running turn started.
   It is listed only while a turn runs on that harness, and only if it started after the earliest turn running there began, so helpers the harness keeps (MCP servers and the like) never show.
@@ -59,7 +59,7 @@ A pod runs one chat harness per [Harness Lease](sessions.md#session-inside-the-p
 **Never listed:** PID 1, agent-runtime and its ancestors, and agent-runtime's direct children — the chat harnesses, the pod service, terminals, SSH servers.
 
 A row carries the **output file** behind the process's stdout or stderr when that is a regular file, and the user can read its tail.
-The runtime reads only a file a scan recorded, never a path a caller names.
+The runtime reads only a file a scan recorded, never a path a caller names, with one exception: a Startup Item's log, which it builds from an item id that passed the same id rule as the list, and only for an item the list or a running row names.
 Claude Code writes every tool call's output, foreground or `run_in_background`, to a file of its own, so its Turn Processes and Harness Tasks always have output; a process writing to a pipe or a terminal has none.
 The scan reads each process's environment for two variables, the keep mark and the Startup Item mark, and drops the rest unread, because agents hold credentials there.
 
@@ -128,8 +128,12 @@ An item gets what an openrc service gets of the environment, which the image's o
 
 Every process of an item carries `PLATFORM_STARTUP=<id>`, which the process scan reads beside the keep mark, so the item's tree under the reaper is one **Startup Item** row rather than a Detached Process.
 The panel lists every configured item in a section of its own, running, exited or off, with its log as output and history, and keeps a running item's row out of the background groups, the header count and the finished history.
+A running item that no entry names any more — its entry removed while it could not be stopped, or edited out of the file — is listed there too, as no longer in the list, so nothing that runs is hidden; the user can still stop it.
+The runtime reads the list the way the boot does: each entry on its own, under the same id rule, so a malformed entry is dropped alone and hides no other item.
 **An item never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark.
 The user restarts, stops, turns off or removes an item there, through the image's own control; turning one off is written into the list, so the next boot skips it, and `platform-startup` refuses to turn it on again or remove it, the same rule as a user's choice about a kept process.
+A remove takes the entry out of the list only once the item stopped; one that will not stop stays listed, and the user is told so.
+A choice the user made is kept when the control then fails, and the item's status says so: an item turned off that still runs reads as off from the next wake, still running.
 Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc, and an image without the control has none.
 
 **Stop.** The user can stop any listed process that has one: the runtime signals its whole tree — every descendant, and the process group its root leads — to terminate, and after a short grace kills what is left, matching each process by its start time so a reused pid is never hit.

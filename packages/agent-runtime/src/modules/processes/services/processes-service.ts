@@ -2,6 +2,7 @@ import {
   err,
   ok,
   PROCESS_OUTPUT_MAX_BYTES,
+  startupItemIdSchema,
   type FinishedRow,
   type KeepMarkRequest,
   type ProcessesDomainError,
@@ -353,15 +354,13 @@ export function createProcessesService(
 
   function rowStartupItem(row: ProcessRow): string | null {
     if (row.kind !== "startup-item") return null;
-    return (
-      latest?.trees.find((tree) => tree.key === row.key)?.startupItem ?? null
-    );
+    const id = latest?.trees.find((tree) => tree.key === row.key)?.startupItem;
+    return startupItemIdSchema.safeParse(id).data ?? null;
   }
 
   function listStartupItems(running: ProcessRow[]) {
-    if (!deps.startupItems.available()) return [];
     return startupItemsFrom(
-      deps.startupItems.list(),
+      deps.startupItems.available() ? deps.startupItems.list() : [],
       running,
       deps.startupItems.logPath,
       rowStartupItem,
@@ -369,8 +368,12 @@ export function createProcessesService(
   }
 
   function startupItemLog(key: string): string | null {
-    const id = /^startup:(.+)$/.exec(key)?.[1];
-    return id && knownStartupItem(id) ? deps.startupItems.logPath(id) : null;
+    const id = startupItemIdSchema.safeParse(/^startup:(.+)$/.exec(key)?.[1]);
+    if (!id.success) return null;
+    const listed = latest
+      ? listStartupItems(latest.running).some((item) => item.id === id.data)
+      : knownStartupItem(id.data) !== null;
+    return listed ? deps.startupItems.logPath(id.data) : null;
   }
 
   async function runStartupItem(
@@ -381,6 +384,11 @@ export function createProcessesService(
     await scanFromNow();
     if (failure !== null) return err({ kind: "NotAllowed", message: failure });
     return ok(undefined);
+  }
+
+  async function runningUnlisted(id: string): Promise<boolean> {
+    const current = await scanFromNow();
+    return (current?.running ?? []).some((row) => rowStartupItem(row) === id);
   }
 
   function knownStartupItem(id: string) {
@@ -539,7 +547,8 @@ export function createProcessesService(
     },
 
     async stopStartupItem(id) {
-      if (!knownStartupItem(id)) return err({ kind: "NotFound", key: id });
+      if (!knownStartupItem(id) && !(await runningUnlisted(id)))
+        return err({ kind: "NotFound", key: id });
       deps.log(`the user stopped Startup Item ${id}`);
       return runStartupItem("stop", id);
     },
@@ -550,15 +559,27 @@ export function createProcessesService(
       deps.log(
         `the user ${enabled ? "enabled" : "disabled"} Startup Item ${id}`,
       );
-      return runStartupItem(enabled ? "start" : "stop", id);
+      const result = await runStartupItem(enabled ? "start" : "stop", id);
+      if (result.ok) return result;
+      return err({
+        kind: "NotAllowed",
+        message: `It is ${enabled ? "on" : "off"} from the next wake, but could not ${enabled ? "start" : "stop"} now: ${result.error.kind === "NotAllowed" ? result.error.message : "not found"}`,
+      });
     },
 
     async removeStartupItem(id) {
-      if (!knownStartupItem(id)) return err({ kind: "NotFound", key: id });
+      const listed = knownStartupItem(id) !== null;
+      if (!listed && !(await runningUnlisted(id)))
+        return err({ kind: "NotFound", key: id });
       deps.log(`the user removed Startup Item ${id}`);
       const stopped = await runStartupItem("stop", id);
-      deps.startupItems.remove(id);
-      return stopped;
+      if (!stopped.ok)
+        return err({
+          kind: "NotAllowed",
+          message: `It could not be stopped, so it stays listed: ${stopped.error.kind === "NotAllowed" ? stopped.error.message : "not found"}`,
+        });
+      if (listed) deps.startupItems.remove(id);
+      return ok(undefined);
     },
 
     async mark(request) {

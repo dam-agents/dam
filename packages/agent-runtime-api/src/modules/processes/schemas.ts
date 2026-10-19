@@ -36,7 +36,7 @@ export const processRowSchema = z.object({
   outputPath: z.string().nullable(),
   keepsAwake: z.boolean(),
   keepSource: keepSourceSchema,
-  container: processContainerSchema.nullable(),
+  container: processContainerSchema.nullable().default(null),
 });
 
 export const finishedRowSchema = z.object({
@@ -71,6 +71,7 @@ export const startupItemSchema = z.object({
   command: z.string(),
   disabled: z.boolean(),
   running: z.boolean(),
+  listed: z.boolean().default(true),
   outputPath: z.string(),
 });
 

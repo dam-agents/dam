@@ -80,13 +80,18 @@ export const ALWAYS_ON_KEEP_HINT =
 export const NO_PID_STOP_HINT = "Can't find this task's process";
 
 export function loginItemStatus(
-  item: Pick<StartupItem, "disabled" | "running">,
+  item: Pick<StartupItem, "disabled" | "running" | "listed">,
 ): string {
-  if (item.disabled) return "Off";
+  if (!item.listed) return "Running, no longer in the list";
+  if (item.disabled)
+    return item.running ? "Off from the next wake, still running" : "Off";
   return item.running ? "Running" : "Not running";
 }
 
-export function loginItemBootCaption(item: Pick<StartupItem, "disabled">) {
+export function loginItemBootCaption(
+  item: Pick<StartupItem, "disabled" | "listed">,
+) {
+  if (!item.listed) return "Not in the list, so it won't start again";
   return item.disabled
     ? "Your choice. The agent can't turn it back on."
     : "Set up by the agent";

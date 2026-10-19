@@ -74,8 +74,8 @@ export function LoginItemActionsMenu({
       </DropdownMenuItem>
       <DropdownMenuSeparator />
       <DropdownMenuCheckboxItem
-        checked={!item.disabled}
-        disabled={setEnabled.isPending}
+        checked={item.listed && !item.disabled}
+        disabled={!item.listed || setEnabled.isPending}
         onCheckedChange={(enabled) =>
           setEnabled.mutate({ id: item.id, enabled })
         }
@@ -88,7 +88,7 @@ export function LoginItemActionsMenu({
         />
       </DropdownMenuCheckboxItem>
       <DropdownMenuItem
-        disabled={item.disabled || restart.isPending}
+        disabled={!item.listed || item.disabled || restart.isPending}
         onSelect={() => restart.mutate(item.id)}
         data-testid="login-item-restart"
       >

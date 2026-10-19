@@ -34,6 +34,7 @@ function item(over: Partial<StartupItem>): StartupItem {
     command: "npm run serve",
     disabled: false,
     running: false,
+    listed: true,
     outputPath: "/home/agent/.platform/startup-logs/web.log",
     ...over,
   };
@@ -73,10 +74,17 @@ describe("login items", () => {
     });
   });
 
-  // TEST_SCENARIO: a disabled item is the user's decision, and the agent cannot undo it, so the menu says so; otherwise the agent set it up.
-  test("says who decided whether an item starts", () => {
+  // TEST_SCENARIO: a disabled item is the user's decision, and the agent cannot undo it, so the menu says so; otherwise the agent set it up. The status agrees with the running dot: an item turned off that could not be stopped yet says it still runs, and a running item no entry names says it is no longer listed.
+  test("says who decided whether an item starts, and what runs", () => {
     expect(loginItemStatus(item({ running: true }))).toBe("Running");
     expect(loginItemStatus(item({}))).toBe("Not running");
+    expect(loginItemStatus(item({ disabled: true }))).toBe("Off");
+    expect(loginItemStatus(item({ disabled: true, running: true }))).toBe(
+      "Off from the next wake, still running",
+    );
+    expect(loginItemStatus(item({ running: true, listed: false }))).toBe(
+      "Running, no longer in the list",
+    );
     expect(loginItemBootCaption(item({ disabled: true }))).toBe(
       "Your choice. The agent can't turn it back on.",
     );

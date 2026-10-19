@@ -33,7 +33,7 @@ export function findListedProcess(
       status: ENDED_BY_LABEL[finished.endedBy],
       running: false,
     };
-  const item = list?.startupItems.find(
+  const item = (list?.startupItems ?? []).find(
     (candidate) => loginItemOutputKey(candidate.id) === key,
   );
   if (item)

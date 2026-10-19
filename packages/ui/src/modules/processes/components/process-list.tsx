@@ -25,6 +25,7 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
     [list.running, alwaysOn],
   );
   const onOpenOutput = (key: string) => void toggleOutput(key);
+  const startupItems = list.startupItems ?? [];
 
   return (
     <div className="flex-1 overflow-y-auto">
@@ -34,7 +35,7 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
           pendingRestart={list.pendingRestart}
         />
       )}
-      {groups.length === 0 && list.startupItems.length === 0 ? (
+      {groups.length === 0 && startupItems.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
           Nothing is running
         </p>
@@ -53,7 +54,7 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
       )}
       <LoginItems
         agentId={agentId}
-        items={list.startupItems}
+        items={startupItems}
         openOutputKey={openOutputKey}
         onOpenOutput={onOpenOutput}
       />
