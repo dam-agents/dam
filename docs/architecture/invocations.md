@@ -85,7 +85,7 @@ The reasons:
   There is no retry: the Driver is waiting and can spawn again, while a long-lived agent retries within its attempt budget because a user comes back to it.
 - **Run failed.** A target that can no longer report a result fails at once, with the cause, instead of at its deadline.
   The target's runtime watches the one turn: a run that cannot start or does not start within two minutes, a turn that fails, a harness that exits under it, or a turn that ends with nothing left running and no result.
-  A model call the provider refused outright, followed by a minute with no completed call and no model or tool call running, counts too, since a harness can go quiet after it without ending the turn; the reason carries that call's status and body.
+  A model call the provider refused outright, followed by a minute with no completed call and no model call, tool call, background work or sub-agent of its own running, counts too, since a harness can go quiet after it without ending the turn; the reason carries that call's status and body.
   A turn that ends while its background work or its own sub-agents still run stays watched, because a later turn may still report.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
 - **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).

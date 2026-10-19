@@ -34,8 +34,9 @@ export interface InvocationWatchDeps {
  * as soon as the sub-agent can no longer produce a result: its turn failed,
  * its harness exited under it, its turn ended with nothing left running, or
  * a model call the provider refused outright was followed by no completed
- * call within stallMs while no model or tool call ran — Codex, refused its first call,
- * goes quiet without ending the turn. A turn that ends with background work
+ * call within stallMs while no model or tool call, background work or
+ * sub-agent of its own ran — Codex, refused its first call, goes quiet
+ * without ending the turn. A turn that ends with background work
  * or sub-agents of its own still running may go on in a later turn, so the
  * watch stays on the session. A pod restart needs no watch: the liveness sweep
  * fails a sub-agent whose pod restarted. The api-server fails only a running Invocation, so a run that did
@@ -83,16 +84,28 @@ export function createInvocationWatch(
     sessionId !== null && run?.sessionId === sessionId;
 
   function armStall(sessionId: string): void {
-    stall = setTimeout(() => {
-      stall = null;
-      if (!isWatched(sessionId)) return;
-      if (callsInFlight > 0 || deps.toolRunning(sessionId)) {
-        armStall(sessionId);
-        return;
-      }
-      fail("the sub-agent stopped after a refused model call");
+    const timer = setTimeout(() => {
+      void stallFired(sessionId, timer);
     }, stallMs);
-    stall.unref?.();
+    timer.unref?.();
+    stall = timer;
+  }
+
+  async function stallFired(
+    sessionId: string,
+    timer: ReturnType<typeof setTimeout>,
+  ): Promise<void> {
+    const busy =
+      callsInFlight > 0 ||
+      deps.toolRunning(sessionId) ||
+      (await deps.holdsWork(sessionId));
+    if (stall !== timer || !isWatched(sessionId)) return;
+    stall = null;
+    if (busy) {
+      armStall(sessionId);
+      return;
+    }
+    fail("the sub-agent stopped after a refused model call");
   }
 
   return {
