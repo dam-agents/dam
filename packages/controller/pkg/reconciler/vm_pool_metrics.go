@@ -40,7 +40,7 @@ type runnerCapacityState struct {
 	reason, message string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the leader's half-minute look at every user's VM pool for operators. It sums what the runners' limits and claims promise, what their requests reserve and what the nodes that can run a runner hold; counts each user's runner at the level of its pool as the runner's own usage read says; records each runner pod whose resize the node deferred or refused, and each one sitting on a node the cluster does not report ready. No user is named in a metric: a user whose pool goes critical, or whose runner the node cannot fit or has lost, is named by a Warning Event on their vm Agents, and the second also by a condition on them. It returns the agents whose condition changed, for the caller to reconcile.
+// UNIT_BOUNDARY_DESCRIPTION: the leader's half-minute look at every user's VM pool for operators. It sums what the runners' limits and claims promise, what their requests reserve and what the nodes that can run a runner hold; counts each user's runner at the level of its pool as the runner's own usage read says; records each runner pod whose resize the node deferred or refused, and each one sitting on a node the cluster has lost. No user is named in a metric: a user whose pool goes critical, or whose runner the node cannot fit or has lost, is named by a Warning Event on their vm Agents, and the second also by a condition on them. It returns the agents whose condition changed, for the caller to reconcile.
 func (r *AgentReconciler) PoolPass(ctx context.Context) []string {
 	if !r.config.VM.Enabled || r.config.VM.Runner.HostAddress != "" {
 		return nil
@@ -50,7 +50,9 @@ func (r *AgentReconciler) PoolPass(ctx context.Context) []string {
 		return nil
 	}
 	telemetry.SetVMPool(pool)
-	r.noteNodeLost(ctx, lost, agents)
+	if lost != nil {
+		r.noteNodeLost(ctx, lost, agents)
+	}
 	return r.noteRunnerCapacity(ctx, pending, agents)
 }
 
@@ -68,11 +70,8 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 	}
 	pending := map[string]runnerCapacityState{}
 	lost := map[string]string{}
-	ready := r.nodesReady(ctx)
-	if ready == nil {
-		// UNIT_BOUNDARY_DESCRIPTION: an unreadable node list says nothing about any node, so this pass publishes nothing rather than reporting every runner as off a ready node: the last snapshot stands, the alert keeps its clock, and the next pass that can read the nodes does not announce the same loss again.
-		return telemetry.VMPool{}, nil, nil, nil, false
-	}
+	var lostPods int64
+	nodesKnown := true
 	owners := map[string]bool{}
 	for i := range pods.Items {
 		pod := &pods.Items[i]
@@ -81,9 +80,11 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 			continue
 		}
 		owners[owner] = true
-		if node := pod.Spec.NodeName; node != "" && !ready[node] {
-			pool.NodeLost++
-			lost[owner] = node
+		if onLostNode, known := r.nodeLostFor(ctx, pod); !known {
+			nodesKnown = false
+		} else if onLostNode {
+			lostPods++
+			lost[owner] = pod.Spec.NodeName
 		}
 		for _, c := range pod.Spec.Containers {
 			if c.Name != vmRunnerComponent {
@@ -115,7 +116,14 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 	for owner := range owners {
 		r.poolLevelsOf(ctx, owner, agents[owner], &pool)
 	}
-	return pool, pending, agents, lost, true
+	if nodesKnown {
+		r.nodeLostLast.Store(lostPods)
+		pool.NodeLost = lostPods
+		return pool, pending, agents, lost, true
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a node that cannot be read — a watch not yet synced, or a read that failed — says nothing about any runner, so this pass keeps the last count rather than clearing the alert, and leaves the notices alone rather than announcing the same loss again once the nodes are readable: nil tells the caller it learned nothing about any node.
+	pool.NodeLost = r.nodeLostLast.Load()
+	return pool, pending, agents, nil, true
 }
 
 func resizePending(pod *corev1.Pod) (runnerCapacityState, bool) {
@@ -295,7 +303,7 @@ func (r *AgentReconciler) noteNodeLost(ctx context.Context, lost map[string]stri
 			continue
 		}
 		r.nodeLostNotices.Store(owner, node)
-		msg := "this user's VM runner is on node " + node + ", which the cluster does not report ready; every machine of theirs is down until that node returns or is fenced"
+		msg := "this user's VM runner is on node " + node + ", which the cluster has not reported ready for five minutes; every machine of theirs is down until that node comes back or is fenced"
 		for _, a := range agents[owner] {
 			r.agentEvent(ctx, a, corev1.EventTypeWarning, apiv1.ReasonMachineRunnerNodeLost, msg)
 		}

@@ -827,21 +827,20 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string, keepCl
 	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up, and so does a runner on a node the cluster has lost, which no wait outgrows. A pod that has finished is not that runner: an evicted one is what a lost node leaves behind, and it must not speak over the replacement that is waiting for its claim.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up, and so does a runner on a node the cluster has lost, which no wait outgrows; a node that only blips is not lost, so its owners keep waiting for a runner that comes back with it. The node is not named: the message reaches the owner, who can do nothing with a hostname, while the Warning Event on their agents and the shipped alert carry it for the operator. A pod that has finished is not that runner: an evicted one is what a lost node leaves behind, and it must not speak over the replacement that is waiting for its claim.
 func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (string, string) {
 	const starting = "the owner's VM runner is still starting"
 	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil || len(pods) == 0 {
 		return vmrunner.ReasonNotReady, starting
 	}
-	ready := r.nodesReady(ctx)
 	for i := range pods {
 		pod := &pods[i]
 		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
 			continue
 		}
-		if node := pod.Spec.NodeName; ready != nil && node != "" && !ready[node] {
-			return apiv1.ReasonMachineRunnerNodeLost, "the owner's VM runner is on node " + node + ", which the cluster does not report ready; its machines cannot start until that node returns or is fenced"
+		if lost, _ := r.nodeLostFor(ctx, pod); lost {
+			return apiv1.ReasonMachineRunnerNodeLost, "the owner's VM runner is on a node the cluster has lost; its machines cannot start until that node comes back"
 		}
 	}
 	for i := range pods {
@@ -866,6 +865,9 @@ func awaitingVolume(pod *corev1.Pod, msg string) bool {
 }
 
 const runnerVolumeBindGrace = 3 * time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: runnerNodeLostGrace is the kubelet's default eviction toleration — a node that comes back inside it keeps its pods, and one that does not has begun evicting them — so that is where a not-ready node turns into a lost one, and a blip stays a blip.
+const runnerNodeLostGrace = 5 * time.Minute
 
 // UNIT_BOUNDARY_DESCRIPTION: when the kernel last OOM-killed the owner's runner, from its pods' container statuses; zero when it never did or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
 func (r *AgentReconciler) runnerOOMKilledAt(ctx context.Context, owner string) time.Time {

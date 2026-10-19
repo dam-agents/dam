@@ -17,7 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
@@ -445,40 +444,63 @@ func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, owner st
 	return true
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a roll of an owner's runner that never finishes because its pod is stuck terminating: its node has gone, or stopped reporting ready, which no roll outgrows — unlike a pod still shutting down on a healthy node.
 func (r *AgentReconciler) nodeLost(ctx context.Context, name string) bool {
-	ready := r.nodesReady(ctx)
-	return name != "" && ready != nil && !ready[name]
+	if name == "" {
+		return false
+	}
+	node, known := r.node(ctx, name)
+	if !known {
+		return false
+	}
+	return node == nil || !slices.ContainsFunc(node.Status.Conditions, func(c corev1.NodeCondition) bool {
+		return c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
+	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the nodes the cluster reports ready, by name; nil when they cannot be read, which tells no node's state apart from another's. A node the cluster no longer lists is not ready: it has gone, and a runner pod on it runs nowhere while its claim stays with it. The node watch answers where the reconciler was built with one, since a not-ready agent's reconcile asks on every retry and the answer changes nothing between them.
-func (r *AgentReconciler) nodesReady(ctx context.Context) map[string]bool {
-	var nodes []*corev1.Node
+// UNIT_BOUNDARY_DESCRIPTION: whether a runner pod is on a node the cluster has lost, which no wait outgrows: the node has stopped reporting ready, and either its pod has begun terminating there — the eviction that leaves the claim on a node that cannot finish it — or its Ready has been off for longer than the grace, past which the kubelet gives up on the pod. A node that only blips is not lost, and neither is one that reports ready: it comes back with the pod, and a pod terminating on it is a pod on its way out on a node that can still finish the job. A node the cluster no longer lists is not lost either, since it collects that node's pods within a minute. known is false when the node cannot be read at all, and then nothing is reported lost on a guess.
+func (r *AgentReconciler) nodeLostFor(ctx context.Context, pod *corev1.Pod) (lost, known bool) {
+	if pod.Spec.NodeName == "" {
+		return false, true
+	}
+	node, known := r.node(ctx, pod.Spec.NodeName)
+	if !known || node == nil {
+		return false, known
+	}
+	for _, c := range node.Status.Conditions {
+		if c.Type != corev1.NodeReady {
+			continue
+		}
+		if c.Status == corev1.ConditionTrue {
+			return false, true
+		}
+		return pod.DeletionTimestamp != nil || time.Since(c.LastTransitionTime.Time) > runnerNodeLostGrace, true
+	}
+	return false, true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the node by name, nil when the cluster no longer lists it, and known false when it cannot be read — a watch that has not synced, or a read that failed — which tells no node's state apart from another's.
+func (r *AgentReconciler) node(ctx context.Context, name string) (*corev1.Node, bool) {
 	if r.nodeCache != nil {
-		cached, err := r.nodeCache.List(labels.Everything())
+		if r.nodeCacheSynced != nil && !r.nodeCacheSynced() {
+			return nil, false
+		}
+		node, err := r.nodeCache.Get(name)
 		if err != nil {
-			slog.Warn("vm runner: reading which nodes of the cluster are ready", "error", err)
-			return nil
+			slog.Warn("vm runner: reading a node of the cluster", "node", name, "error", err)
+			return nil, false
 		}
-		nodes = cached
-	} else {
-		list, err := r.client.CoreV1().Nodes().List(ctx, metav1.ListOptions{})
-		if err != nil {
-			slog.Warn("vm runner: reading which nodes of the cluster are ready", "error", err)
-			return nil
-		}
-		for i := range list.Items {
-			nodes = append(nodes, &list.Items[i])
-		}
+		return node, true
 	}
-	ready := map[string]bool{}
-	for _, n := range nodes {
-		if slices.ContainsFunc(n.Status.Conditions, func(c corev1.NodeCondition) bool {
-			return c.Type == corev1.NodeReady && c.Status == corev1.ConditionTrue
-		}) {
-			ready[n.Name] = true
-		}
+	node, err := r.client.CoreV1().Nodes().Get(ctx, name, metav1.GetOptions{})
+	if k8serrors.IsNotFound(err) {
+		return nil, true
 	}
-	return ready
+	if err != nil {
+		slog.Warn("vm runner: reading a node of the cluster", "node", name, "error", err)
+		return nil, false
+	}
+	return node, true
 }
 
 func (r *AgentReconciler) multiAttachRefused(ctx context.Context, pod *corev1.Pod) bool {

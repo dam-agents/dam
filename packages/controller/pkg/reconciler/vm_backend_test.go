@@ -310,7 +310,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 		"the scheduler's own account reaches the agent, not just the generic starting message")
 }
 
-// TEST_SCENARIO: the node an owner's runner pod sits on is gone or not ready. The pod stays terminating there, its claim stays attached to it, and the replacement pod never gets the volume — so every agent of that owner is down until an operator brings the node back or fences it out of service. That is not a runner still starting: the agent says so under a reason of its own, naming the node.
+// TEST_SCENARIO: the node an owner's runner pod sits on is gone or has been not ready past the kubelet's eviction toleration. The pod stays terminating there, its claim stays attached to it, and the replacement pod never gets the volume — so every agent of that owner is down until an operator brings the node back or fences it out of service. That is not a runner still starting: the agent says so under a reason of its own.
 func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
@@ -331,7 +331,8 @@ func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
 	node := &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
 		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
-			Type: corev1.NodeReady, Status: corev1.ConditionUnknown}}},
+			Type: corev1.NodeReady, Status: corev1.ConditionUnknown,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
 	}
 	r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), pod, node)
 	r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
@@ -354,7 +355,47 @@ func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
 		}
 	}
 	assert.Equal(t, apiv1.ReasonMachineRunnerNodeLost, reason, "a runner on a node the cluster has lost is not one still starting")
-	assert.Contains(t, msg, "node-a", "the agent names the node an operator has to bring back or fence")
+	assert.NotContains(t, msg, "node-a", "the owner reads the message, and a node name is the operator's to act on")
+}
+
+// TEST_SCENARIO: a node's Ready goes off for a kubelet stall, a network blip or a runtime restart, and the pod stays on it; the node comes back with the pod inside the kubelet's eviction toleration. That heals, so it is not a loss: the agent keeps reading "still starting", its wakes wait out the budget instead of failing at once, and no Warning Event is written. A node not ready past the grace has begun evicting its pods, and a pod the cluster has begun deleting on a node it cannot reach is the eviction that never finishes, so both read as lost — while a pod terminating on a node that reports ready is a pod on its way out normally.
+func TestANodeThatOnlyBlipsIsNotLost(t *testing.T) {
+	for name, tc := range map[string]struct {
+		status      corev1.ConditionStatus
+		since       time.Duration
+		terminating bool
+		want        string
+	}{
+		"not ready for a minute":         {status: corev1.ConditionFalse, since: time.Minute, want: vmrunner.ReasonNotReady},
+		"unknown for a minute":           {status: corev1.ConditionUnknown, since: time.Minute, want: vmrunner.ReasonNotReady},
+		"not ready past the grace":       {status: corev1.ConditionFalse, since: runnerNodeLostGrace + time.Minute, want: apiv1.ReasonMachineRunnerNodeLost},
+		"ready again":                    {status: corev1.ConditionTrue, since: time.Minute, want: vmrunner.ReasonNotReady},
+		"terminating on a ready node":    {status: corev1.ConditionTrue, since: time.Minute, terminating: true, want: vmrunner.ReasonNotReady},
+		"terminating on a blipping node": {status: corev1.ConditionFalse, since: time.Minute, terminating: true, want: apiv1.ReasonMachineRunnerNodeLost},
+		"terminating on a lost node":     {status: corev1.ConditionFalse, since: time.Hour, terminating: true, want: apiv1.ReasonMachineRunnerNodeLost},
+	} {
+		t.Run(name, func(t *testing.T) {
+			pod := &corev1.Pod{
+				ObjectMeta: metav1.ObjectMeta{Name: "runner-abc", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
+				Spec:       corev1.PodSpec{NodeName: "node-a"},
+				Status:     corev1.PodStatus{Phase: corev1.PodRunning},
+			}
+			if tc.terminating {
+				pod.DeletionTimestamp = &metav1.Time{Time: time.Now()}
+				pod.Finalizers = []string{"test"}
+			}
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+				Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+					Type: corev1.NodeReady, Status: tc.status,
+					LastTransitionTime: metav1.NewTime(time.Now().Add(-tc.since))}}},
+			}
+			r, _ := setupReconciler(t, vmAgentCR(), pod, node)
+
+			reason, _ := r.runnerNotReady(context.Background(), testOwner)
+			assert.Equal(t, tc.want, reason)
+		})
+	}
 }
 
 // TEST_SCENARIO: a lost node leaves a finished pod behind as well as a terminating one. A pod that has finished is not the owner's runner, so it must not speak over the replacement: the claim the replacement cannot attach, or the schedule it cannot get, is what the agent shows. A pod still terminating on that node does speak, because it is what keeps the claim.
@@ -388,7 +429,13 @@ func TestAFinishedRunnerPodDoesNotSpeakForItsOwner(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{Name: dep.Name + "-new", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
 				Status:     corev1.PodStatus{Phase: corev1.PodPending, Conditions: []corev1.PodCondition{unschedulable}},
 			}
-			r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), old, replacement)
+			node := &corev1.Node{
+				ObjectMeta: metav1.ObjectMeta{Name: "node-a"},
+				Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+					Type: corev1.NodeReady, Status: corev1.ConditionFalse,
+					LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
+			}
+			r, _ := setupReconciler(t, agent, leafSecret(), dep, runnerSecret(), runnerTLSSecret(), old, replacement, node)
 			r.config.VM = config.VMConfig{Enabled: true, Runner: config.VMRunnerSpec{
 				Image: "quay.io/dam-agents/vm-runner:1", Storage: "100Gi", ReserveMiB: 512, HeadroomMiB: 256, MachineCPUs: 4,
 				ServiceAccountName: "platform-vm-runner", ImageCacheBudget: "50Gi", ImageCacheHostPath: "/var/lib/platform-images",

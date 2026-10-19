@@ -8,12 +8,18 @@ Every agent of every owner with a runner on that node is down, and it stays down
 ## How it shows up
 
 - The `VMRunnerNodeLost` alert fires for a node the cluster has not reported ready for five minutes.
-- Each affected agent carries the reason `MachineRunnerNodeLost` on its `AgentPodReady` condition, naming the node, instead of the "still starting" it used to show.
+- Each affected agent carries the reason `MachineRunnerNodeLost` on its `AgentPodReady` condition, instead of the "still starting" it used to show; the Warning Event on the agent names the node.
 - One Warning Event per affected user, reason `MachineRunnerNodeLost`, on each of their vm Agents: `kubectl get events -n <agent namespace> --field-selector reason=MachineRunnerNodeLost`.
 - `kubectl get pods -n <agent namespace> -l app.kubernetes.io/component=vm-runner -o wide` shows the runner pod of an affected owner `Terminating` on the lost node, and its replacement `Pending`.
 
 Read the pod's status and its events.
 Do not describe the pod or print its environment — a runner pod carries the owner's credentials as env values.
+
+## A node that only blips is not a loss
+
+A node whose `Ready` goes off for less than the kubelet's eviction toleration (five minutes) is not reported as lost: a kubelet stall, a network blip or a runtime restart comes back inside it, with the pod, and the machines restart on it.
+Only a node not ready past that, or a runner pod already terminating, reads as lost — which is the case where the pod stays and the claim does not move.
+An agent that reads as still starting for a while during a blip is this, not a fault.
 
 ## Why it does not clear itself
 
@@ -52,6 +58,11 @@ The alert clears on its own.
    ```sh
    kubectl taint node <node> node.kubernetes.io/out-of-service-
    ```
+
+## If the Node object is gone
+
+A node deleted from the cluster has nothing to taint, and no runner pod will ever finish terminating there: the cluster collects the pod of a node it no longer lists within about a minute, and the claim then reaches a ready node on its own.
+If the pod is still there after that, the node still exists as far as the cluster is concerned — check `kubectl get node <node>` before anything else, and if it is listed, the sequence above applies.
 
 ## What not to do
 

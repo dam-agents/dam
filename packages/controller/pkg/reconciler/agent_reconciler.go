@@ -65,6 +65,7 @@ type AgentReconciler struct {
 	runnerDeploys         cache.MutationCache
 	runnerPodCache        corelisters.PodLister
 	nodeCache             corelisters.NodeLister
+	nodeCacheSynced       cache.InformerSynced
 	vmRunning             sync.Map
 	vmLive                sync.Map
 	vmDiskGrows           sync.Map
@@ -73,6 +74,7 @@ type AgentReconciler struct {
 	resizeNotices         sync.Map
 	runnerCapacity        sync.Map
 	nodeLostNotices       sync.Map
+	nodeLostLast          atomic.Int64
 	poolLevels            sync.Map
 	notReadyPolls         sync.Map
 	vmStartClocks         sync.Map
@@ -128,9 +130,9 @@ func (r *AgentReconciler) WithRunnerCaches(deployments cache.SharedIndexInformer
 	return r
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a not-ready agent's reconcile asks which nodes are ready, and the requeue behind it runs from three seconds to a minute, so on a lost node the ask scales with the number of agents waiting there. The node watch answers instead, as the runner pods' cache does. A reconciler built without the cache — the tests — reads the nodes live.
-func (r *AgentReconciler) WithNodeCache(lister corelisters.NodeLister) *AgentReconciler {
-	r.nodeCache = lister
+// UNIT_BOUNDARY_DESCRIPTION: a not-ready agent's reconcile asks about a node, and the requeue behind it runs from three seconds to a minute, so on a lost node the ask scales with the number of agents waiting there. The node watch answers instead, as the runner pods' cache does, and its sync decides whether it can answer at all: a watch that has not synced reads as a node that cannot be read, never as a node that is gone. The cache is not waited for at startup, since a cluster without the node read permission must still run everything else. A reconciler built without the cache — the tests — reads nodes live.
+func (r *AgentReconciler) WithNodeCache(lister corelisters.NodeLister, synced cache.InformerSynced) *AgentReconciler {
+	r.nodeCache, r.nodeCacheSynced = lister, synced
 	return r
 }
 

@@ -177,8 +177,8 @@ done
 [ "$(node_lost_expr platform-a)" != "$(node_lost_expr platform-b)" ] \
   || { echo "the node-loss alert reads the same in two installations, so one fires on the other's runners" >&2; exit 1; }
 # The controller watches nodes for readiness, so its read-only node role must
-# let it watch as well as list: a list-only role leaves the watch failing and
-# the cache refreshed only by the factory's resync.
+# let it watch as well as list: with list alone the watch fails, and the cache
+# is then refreshed only when the reflector relists after a failed watch.
 nodes_verbs=$(helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
   --set virtualization.runner.scc=hostmount-anyuid --set agentNamespace=platform-agents \

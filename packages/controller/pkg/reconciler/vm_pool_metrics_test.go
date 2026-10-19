@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -147,9 +148,36 @@ func TestARunnerOnALostNodeIsCountedAndNamesItsUserOnce(t *testing.T) {
 	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
 	r.PoolPass(ctx)
 	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "a node that stays lost is not announced again")
+
+	setNodeReady(t, r, "kvm-2", true)
+	r.PoolPass(ctx)
+	pool, _, _, _, _ = r.vmPool(ctx)
+	assert.Equal(t, int64(0), pool.NodeLost, "a node that comes back holds its runner again")
+	_, kept := r.nodeLostNotices.Load(testOwner)
+	assert.False(t, kept, "a loss that healed is forgotten, not held forever")
+
+	setNodeReady(t, r, "kvm-2", false)
+	r.PoolPass(ctx)
+	assert.Equal(t, 2, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "a node lost again after healing is announced again")
 }
 
-// TEST_SCENARIO: the node list itself fails on a later pass. That says nothing about any node, so the pass publishes nothing: the count the alert is timed on stands, the owner is not announced again, and the loss is not announced a second time once the read returns.
+// UNIT_BOUNDARY_DESCRIPTION: the node keeps the transition time it had, so the assertion is not about this call: a node reported ready again has been ready since now, and one reported not ready again has been not ready past the grace.
+func setNodeReady(t *testing.T, r *AgentReconciler, name string, ready bool) {
+	t.Helper()
+	ctx := context.Background()
+	nodes := r.client.CoreV1().Nodes()
+	node, err := nodes.Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	status, since := corev1.ConditionFalse, time.Now().Add(-time.Hour)
+	if ready {
+		status, since = corev1.ConditionTrue, time.Now()
+	}
+	node.Status.Conditions = []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status, LastTransitionTime: metav1.NewTime(since)}}
+	_, err = nodes.UpdateStatus(ctx, node, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: reading a node fails on a later pass. That says nothing about any node, so the pass keeps the last count rather than reporting zero and clearing the alert, and the owner is not announced again: the lost node is still the same one, and the loss is not announced a second time once the read returns.
 func TestAPassThatCannotReadTheNodesKeepsTheLastOne(t *testing.T) {
 	r, _, _ := poolPassReconciler(t)
 	runnerPodOnANotReadyNode(t, r)
@@ -158,45 +186,56 @@ func TestAPassThatCannotReadTheNodesKeepsTheLastOne(t *testing.T) {
 	require.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
 
 	unreadable := true
-	r.client.(*fake.Clientset).PrependReactor("list", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+	r.client.(*fake.Clientset).PrependReactor("get", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
 		if !unreadable {
 			return false, nil, nil
 		}
-		return true, nil, errors.New("the node list is unavailable")
+		return true, nil, errors.New("the node read is unavailable")
 	})
 
-	_, _, _, _, ok := r.vmPool(ctx)
-	assert.False(t, ok, "a pass that cannot read the nodes publishes nothing")
+	pool, _, _, lost, ok := r.vmPool(ctx)
+	require.True(t, ok)
+	assert.Equal(t, int64(1), pool.NodeLost, "a node that cannot be read is not a node that is ready")
+	assert.Nil(t, lost, "a pass that cannot read a node says nothing about any owner")
 	r.PoolPass(ctx)
-	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "an unreadable node list announced the loss again")
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "an unreadable node announced the loss again")
 	_, kept := r.nodeLostNotices.Load(testOwner)
-	assert.True(t, kept, "the lost node was forgotten while the nodes could not be read")
+	assert.True(t, kept, "the lost node was forgotten while it could not be read")
 
 	unreadable = false
 	r.PoolPass(ctx)
-	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "the same loss was announced again once the nodes were readable")
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "the same loss was announced again once the node was readable")
 }
 
-// TEST_SCENARIO: the controller asks which nodes are ready from the watch it was built with, not from the API server. A not-ready agent's reconcile asks on every retry, and on a lost node those retries run for every agent waiting there, so a live read would scale with the fleet.
-func TestNodeReadinessComesFromTheWatch(t *testing.T) {
-	r, _, _ := poolPassReconciler(t)
+// TEST_SCENARIO: the controller asks about a node from the watch it was built with, not from the API server: a not-ready agent's reconcile asks on every retry, and on a lost node those retries run for every agent waiting there, so a live read would scale with the fleet. A watch that has not synced answers nothing — the node reads as one that cannot be read, never as one that is gone — so a cluster that cannot read nodes keeps reporting every other pool signal instead of counting its runners lost.
+func TestNodeStateComesFromTheWatch(t *testing.T) {
+	lost := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "runner-abc"}, Spec: corev1.PodSpec{NodeName: "kvm-1"}}
 	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
 	require.NoError(t, indexer.Add(&corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "kvm-1"},
 		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
-			Type: corev1.NodeReady, Status: corev1.ConditionTrue}}},
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
 	}))
-	r.WithNodeCache(corelisters.NewNodeLister(indexer))
-	r.client.(*fake.Clientset).PrependReactor("list", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
-		return true, nil, errors.New("a reconcile must not list the nodes from the API server")
+	synced := false
+	r, _, _ := poolPassReconciler(t)
+	r.WithNodeCache(corelisters.NewNodeLister(indexer), func() bool { return synced })
+	r.client.(*fake.Clientset).PrependReactor("get", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("a reconcile must not read the nodes from the API server")
 	})
+	ctx := context.Background()
 
-	ready := r.nodesReady(context.Background())
-	require.NotNil(t, ready)
-	assert.True(t, ready["kvm-1"])
+	onLostNode, known := r.nodeLostFor(ctx, lost)
+	assert.False(t, known, "a watch that has not synced cannot say a node is lost")
+	assert.False(t, onLostNode)
+
+	synced = true
+	onLostNode, known = r.nodeLostFor(ctx, lost)
+	assert.True(t, known)
+	assert.True(t, onLostNode, "the watch says the node has been not ready past the grace")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner's ready runner pod, moved onto a node the cluster reports not ready — one of the two pods a lost node leaves behind.
+// UNIT_BOUNDARY_DESCRIPTION: the owner's ready runner pod, moved onto a node the cluster has not reported ready for an hour — the pod a lost node leaves behind, with the node's Ready transition older than the grace.
 func runnerPodOnANotReadyNode(t *testing.T, r *AgentReconciler) {
 	t.Helper()
 	ctx := context.Background()
@@ -209,7 +248,8 @@ func runnerPodOnANotReadyNode(t *testing.T, r *AgentReconciler) {
 	_, err = r.client.CoreV1().Nodes().Create(ctx, &corev1.Node{
 		ObjectMeta: metav1.ObjectMeta{Name: "kvm-2"},
 		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
-			Type: corev1.NodeReady, Status: corev1.ConditionFalse}}},
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
 }

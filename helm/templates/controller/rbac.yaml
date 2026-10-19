@@ -250,9 +250,8 @@ subjects:
 # nodes hold for the operators' pool metrics, and to watch which of them are
 # ready, since a not-ready agent's reconcile asks that on every retry; without
 # it the controller logs that it cannot tell, rather than refusing the install.
-# Storage capacities
-# live in the storage driver's namespace, so their list is cluster-wide too;
-# without it the pool metrics leave storage capacity out.
+# Storage capacities live in the storage driver's namespace, so their list is
+# cluster-wide too; without it the pool metrics leave storage capacity out.
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

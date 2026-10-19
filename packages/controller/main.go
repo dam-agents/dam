@@ -174,10 +174,22 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		runnerPods := runnerFactory.Core().V1().Pods()
 		runnerPodInformer = runnerPods.Informer()
 		agentReconciler.WithRunnerCaches(runnerInformer, runnerPods.Lister())
-		// UNIT_BOUNDARY_DESCRIPTION: nodes are cluster-scoped, so they take a factory of their own. A not-ready agent's reconcile asks which nodes are ready on every retry, and on a lost node those retries add up across the owner's agents.
-		nodes := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second, stripManagedFields).Core().V1().Nodes()
+		// UNIT_BOUNDARY_DESCRIPTION: nodes are cluster-scoped, so they take a factory of their own. A not-ready agent's reconcile asks about a node on every retry, and on a lost node those retries add up across the owner's agents. The watch keeps only the name and the Ready condition: the rest of a node object carries every image and attached volume of a shared cluster to answer one question.
+		nodes := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second, informers.WithTransform(func(obj interface{}) (interface{}, error) {
+			if node, ok := obj.(*corev1.Node); ok {
+				ready := make([]corev1.NodeCondition, 0, 1)
+				for _, c := range node.Status.Conditions {
+					if c.Type == corev1.NodeReady {
+						ready = append(ready, c)
+					}
+				}
+				node.ManagedFields, node.Labels, node.Annotations = nil, nil, nil
+				node.Status = corev1.NodeStatus{Conditions: ready}
+			}
+			return obj, nil
+		})).Core().V1().Nodes()
 		nodeInformer = nodes.Informer()
-		agentReconciler.WithNodeCache(nodes.Lister())
+		agentReconciler.WithNodeCache(nodes.Lister(), nodeInformer.HasSynced)
 	}
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
@@ -333,9 +345,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	if runnerInformer != nil {
 		synced = append(synced, runnerInformer.HasSynced, runnerPodInformer.HasSynced)
 	}
-	if nodeInformer != nil {
-		synced = append(synced, nodeInformer.HasSynced)
-	}
+	// UNIT_BOUNDARY_DESCRIPTION: a cluster that cannot read nodes still runs every other backend, so the node watch is not waited for here — it reports nothing until it syncs, rather than holding every backend's reconcile behind a permission the node role alone grants.
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
 		return
