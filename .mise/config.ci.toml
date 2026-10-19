@@ -1,0 +1,13 @@
+# mr boxington (mbx), for the one job that builds Rust in CI: `check-test` wraps
+# Cargo in mbx so its compiled outputs restore from and publish to the GitHub
+# Actions cache (`.github/workflows/build.yml`). Selected with `MISE_ENV=ci`,
+# which only that job sets, so a local build keeps plain Cargo.
+# The wrapper rather than the `mr_boxington` tool option: an option lives on the
+# `rust` entry, and an environment file replaces that entry whole, so the option
+# would restate the root config's version and components and drift from them.
+[tools]
+"mr-boxington" = "latest"
+
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
