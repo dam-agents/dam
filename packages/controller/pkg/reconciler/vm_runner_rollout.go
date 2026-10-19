@@ -73,12 +73,6 @@ func runnerRollWidth(spec config.VMRunnerSpec, total int) int {
 	return limit
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the configured release is the one marked `rollout.rebootRequiredRelease`, which only holds while the mark names the image the install runs now: a mark left behind after the next release is configured names another release, so no roll reads it. That is how the mark ends by itself, rather than by an operator remembering to take it off.
-func (r *AgentReconciler) releaseNeedsReboot() bool {
-	marked := r.config.VM.Runner.Rollout.RebootRequiredRelease
-	return marked != "" && marked == r.config.VM.Runner.Image
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: a runner's machines are its processes, so every change to its pod reboots every machine the owner has. Applied as it is rendered, one runner image bump or one controller release that renders the pod differently would reboot every vm machine in the install at the same moment. So a runner is created at once, and left alone while what it would be rendered as is what it was, but a changed pod waits for a free place in the roll: at most the roll's width (`rollout.maxConcurrent`, or `rollout.maxConcurrentPercent` of the install's runners) are mid-roll at once, and a runner stays mid-roll until its new pod is ready and every machine that was ready before the roll is ready again. The rendered spec is hashed onto the Deployment, because the stored spec carries the API server's defaults and never equals the rendered one. A new runner image alone is not a changed pod (runnerRollSpec): the pod's loader takes it in place, and the pod rolls only for a release its loader can never take.
 // UNIT_BOUNDARY_DESCRIPTION: a reconcile reads the Deployment from the cache first. A cache that is behind sends a create for a Deployment that exists or an update from an old resourceVersion, and the API server refuses both, so the roll is then decided again from a live read. The rollout sweep, the one caller that never creates, reads live: it first runs before the caches sync, and a runner it cannot see is skipped until the next sweep.
 func (r *AgentReconciler) rollRunnerDeployment(ctx context.Context, owner string, dep *appsv1.Deployment, create bool) error {
@@ -123,7 +117,10 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 	}
 	existing = r.settleRunnerRoll(ctx, owner, existing)
 	unchanged := existing.Annotations[annRunnerTemplate] == hash
-	forRelease := unchanged && r.runnerNeedsPodForRelease(ctx, owner, existing)
+	forRelease, reboots := unchanged, false
+	if unchanged {
+		forRelease, reboots = r.runnerNeedsPodForRelease(ctx, owner, existing)
+	}
 	if unchanged && !forRelease {
 		return r.repairRunnerDeploymentMeta(ctx, owner, existing, dep)
 	}
@@ -135,7 +132,7 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 	if err != nil || !free {
 		return err
 	}
-	if r.runnerRollWaitsForIdle(ctx, owner, existing, forRelease) {
+	if r.runnerRollWaitsForIdle(ctx, owner, existing, reboots) {
 		return nil
 	}
 	ready := r.readyMachines(ctx, owner)
@@ -244,9 +241,9 @@ func repairRunnerMeta(meta *metav1.ObjectMeta, labels map[string]string, refs []
 	return changed
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a roll reboots every machine of the owner, and an agent in the middle of a turn loses that turn. So a changed runner whose owner has a busy agent — one whose `/api/status` does not say `idle`, the idle checker's own probe — does not take its place in the roll: it holds no place, so other owners roll meanwhile, and the next pass or sweep offers it again. The agents are probed at once, so an owner with many machines waits one probe timeout rather than one per machine. `rollout.idleWait` bounds the wait from the first pass that found it busy, recorded on the Deployment so a controller restart does not start the wait over; past it, the runner rolls with the agent busy, since an owner who is never idle must still get the release. An agent that does not answer counts as idle. A roll that exists for a marked release waits for nothing: that release's fix reaches a machine only by rebooting it, so waiting out a busy agent is what leaves the fix off it. A roll for a changed pod shape keeps the wait, mark or no mark, since nothing of the marked release rides on it.
-func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner string, existing *appsv1.Deployment, forRelease bool) bool {
-	if forRelease && r.releaseNeedsReboot() {
+// UNIT_BOUNDARY_DESCRIPTION: a roll reboots every machine of the owner, and an agent in the middle of a turn loses that turn. So a changed runner whose owner has a busy agent — one whose `/api/status` does not say `idle`, the idle checker's own probe — does not take its place in the roll: it holds no place, so other owners roll meanwhile, and the next pass or sweep offers it again. The agents are probed at once, so an owner with many machines waits one probe timeout rather than one per machine. `rollout.idleWait` bounds the wait from the first pass that found it busy, recorded on the Deployment so a controller restart does not start the wait over; past it, the runner rolls with the agent busy, since an owner who is never idle must still get the release. An agent that does not answer counts as idle. A roll that exists for a release whose machines must reboot onto it waits for nothing: that release's fix reaches a machine only by rebooting it, so waiting out a busy agent is what leaves the fix off it. A roll for a changed pod shape keeps the wait, since nothing of that release rides on it.
+func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner string, existing *appsv1.Deployment, reboots bool) bool {
+	if reboots {
 		return false
 	}
 	ready := r.readyMachines(ctx, owner)

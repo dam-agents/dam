@@ -2,7 +2,7 @@
 
 Last verified: 2026-10-19
 
-How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the operator marks that release, which rolls the pod instead.
+How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
 ## Rolls
 
@@ -16,7 +16,7 @@ The exception is a pod stuck in a state no release can cause: one still creating
 That says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
 Every other state still halts the roll: a pod the scheduler cannot place, since a release that adds a node selector or raises a request makes every runner unplaceable, a container that started, an image that does not pull.
 The node is read through the node read grant the chart adds with virtualization; an install without it cannot tell a lost node, so a pod stuck terminating halts the roll there.
-A runner whose pod is unchanged is not rolled — unless the configured release is the one marked to reboot its machines, whose pods roll with a revised template ([below](#hand-offs)) — but labels or owner references that drifted on it are put back without touching the pod.
+A runner whose pod is unchanged is not rolled — unless its runner holds the configured release as one whose machines must reboot onto it, which rolls the pod with a revised template ([below](#hand-offs)) — but labels or owner references that drifted on it are put back without touching the pod.
 A new owner's runner is created at once, since there is nothing of theirs to protect.
 A changed runner also waits for its owner's agents to be idle, since a roll ends the turn an agent is in.
 Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, all at once, and an agent that does not answer counts as idle.
@@ -34,7 +34,7 @@ So a published chart pins the runner image by digest, and a rebuild that changes
 
 A [runner](vm-runner.md) pod's machines are its processes, so restarting the pod reboots every machine of its owner.
 Most runner changes do not need the pod restarted: what changes is the runner process, not the VMMs it started.
-Every install with runner pods therefore names a node directory for runner releases ([values](../../helm/values.yaml)), and the chart refuses one that clears it; each pod takes a new runner image from there in place, without rebooting a machine, unless the operator marks that release `rollout.rebootRequiredRelease`, which rolls the pod instead (below).
+Every install with runner pods therefore names a node directory for runner releases ([values](../../helm/values.yaml)), and the chart refuses one that clears it; each pod takes a new runner image from there in place, without rebooting a machine, unless that release declares a reboot key its pod does not run, which rolls the pod instead (below).
 On OpenShift the directory the kubelet creates carries the host's own SELinux label, which a confined runner may not read, so the stager labels it, and everything it stages, for containers at the plain level every runner's own categories can read; to set that label it runs as the unconfined container type, as the [image cache](vm-image-cache.md) service does, under the SCC the install names for its runners.
 A cluster admin can instead have the nodes create and label the directory themselves, with the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/).
 
@@ -70,14 +70,15 @@ The new runner reads each machine's record, finds its VMM alive, and publishes i
 The machines and their disks are untouched, and each keeps the runtime it booted; the machines the new runner starts boot its own runtime, so a machine moves to a new runtime at its next boot.
 The runner records the runtime each machine booted, and manages a machine on another runtime assuming the two are compatible, rather than testing every pair of releases: a runtime error on such a machine, or a guest quiet for half a minute instead of ten, reboots it onto the runner's own runtime.
 That reboot is the safety for a new runtime, and it waits on the machine failing: a fix a running guest needs — a new libkrun, guest kernel or platform-init — reaches it only when a hand-off's machine errs or goes quiet.
-So a release an operator names as requiring a reboot is not handed off at all: each owner's runner pod rolls onto it, rebooting that owner's machines, and that roll does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
-The mark names the release it was set for, so it lapses by itself: once the chart configures another release, the mark names one the install does not run, and nothing reads it.
-It is read by exact equality with the configured image, which a published chart renders as `repository@digest`, so a mark spelled as a tag reads as nothing and no roll reboots a machine; the controller reports that at its start, since no runner's answer shows it.
+So a release declares which of what a machine booted it changes, as a reboot key it carries in its release directory (`reboot-id`, written by the image build from [`packages/vm-runner/reboot-id`](../../packages/vm-runner/reboot-id)): a runner refuses a release whose key differs from the one it runs, holding it as `reboot`, and each owner's runner pod rolls onto that release instead, rebooting that owner's machines.
+The key is compared whole and never parsed, and a release that changes nothing a machine booted carries the key before it, so the pods it reaches take it in place.
+A release built before keys declares none, and nothing compares it: it is handed off as any release was.
+That roll does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
 It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
-A runner that took another release by hand-off keeps the image it booted, so its pod's image is no proof the marked release reaches it: the runner's own answer decides, and one running another release rolls back onto the marked one, which is the reboot its machines need.
+The runner's own answer is what the controller rolls on: a release it holds as `reboot` ends the hand-off, and the pod roll that follows takes its own place in the width.
 Such a roll writes the pod template the pod already has, and a Deployment update that changes nothing restarts nothing, so every roll whose template would be identical stamps a revision on it: the restart is what reboots the machines, and the stamp is left out of the pod hash, since it says when the roll happened rather than what the pod is.
-A runner that already holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the mark does not overrule what the runner reported.
-Leaving a runtime otherwise is configuring the release before it again, which the same hand-off takes.
+A runner that holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the refusal to reboot does not overrule what the runner reported.
+Leaving a runtime otherwise is configuring the release before it again, which the hand-off takes unless that release declares another key than the pod runs, which rolls the pod.
 platform-init flushes the agent's home to the disk when the workload stops, so a stop whose quiesce a guest does not confirm, which the runner ends with a power-off, costs no more than a power cut and not the agent's last writes.
 The loader keeps a runtime in the pod while any VMM still boots from it: it finds each VMM by its command line and reads the agent root the runner recorded beside the VMM's boot config at its start.
 A VMM makes itself non-dumpable, so its memory map is shut to the loader, and smolvm deletes the boot config once read; a VMM with no record, one an older release started, keeps every runtime.
@@ -106,7 +107,7 @@ A newer configured image resumes the release, starting with the runner that stal
 A runner that needs a pod for the release ends its hand-off, and the pod roll that follows takes its own place.
 The pod's image is left out of what the roll compares, so a runner pod rolls for a change to its shape, and for a release that must reboot its machines, which stamps a revision on the template.
 A pod rendered by a controller from before releases were named over the machine API has a loader that reads only a mounted ConfigMap; its shape is not the one rendered now, so it rolls once, through the ordinary roll, and the roll removes the ConfigMap.
-The runner serves what its loader holds and why, with the reason drawn from a fixed vocabulary: not staged yet, built for another pod, or failed.
-The controller reads it for a runner whose pod image is not the configured one, and for every runner while the configured release is marked to reboot its machines, since a hand-off leaves the pod on the image it booted.
-A release built for another pod rolls the pod, onto the configured image; so does a runner that has not answered for ten minutes since it was named a new release, a loader that can bring up neither that release nor the one before, until it answers that it runs the release or holds it as failed; a release not yet staged is waited for; a failed one is never rolled onto, since a pod on it would fail the same way and take the machines with it.
+The runner serves what its loader holds and why, with the reason drawn from a fixed vocabulary: not staged yet, built for another pod, rebooting its machines, or failed.
+The controller reads it for a runner whose pod image is not the configured one, which is every runner a release has yet to reach, and rolls the pod of one that holds the release as `reboot`.
+A release built for another pod rolls the pod, onto the configured image, and so does one that reboots its machines; so does a runner that has not answered for ten minutes since it was named a new release, a loader that can bring up neither that release nor the one before, until it answers that it runs the release or holds it as failed; a release not yet staged is waited for; a failed one is never rolled onto, since a pod on it would fail the same way and take the machines with it.
 What the loader is given, what the controller names, and what the runner reports, are held in the contract documents beside the runner ([`packages/vm-runner/contract/`](../../packages/vm-runner/contract/)).

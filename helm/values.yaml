@@ -204,9 +204,9 @@ virtualization:
   runner:
     # Published charts pin this by digest, which a rebuild that changes nothing
     # in the image keeps, so an upgrade that leaves the runner unchanged doesn't
-    # roll the pod and stop every machine (unless this is the image
-    # `rollout.rebootRequiredRelease` names, which rolls the pods to reboot
-    # them). A digest wins over the tag.
+    # roll the pod and stop every machine (unless this release declares a
+    # reboot key the pod it reaches does not run, which rolls the pods to
+    # reboot them). A digest wins over the tag.
     image:
       repository: quay.io/dam-agents/vm-runner
       tag: ""
@@ -358,26 +358,18 @@ virtualization:
     # A hand-off leaves a running machine on the runtime it booted, so a
     # release whose fix only a machine that booted it has — a new libkrun,
     # guest kernel or platform-init — reaches running machines only by
-    # rebooting them. Name that release in `rebootRequiredRelease`: its pods
-    # roll instead of handing off, and those rolls do not wait for a busy
-    # agent, so the fix reaches every machine within the roll rather than
-    # after `idleWait`. The value is the release it was set for, so it stops
-    # applying once the chart configures another one: a value left behind
-    # marks nothing. A roll for a changed pod shape keeps its idle wait
-    # either way. A runner that already holds the release as failed keeps
-    # its pod: a pod on the release would fail the same way and take its
-    # machines with it.
+    # rebooting them. Such a release declares a reboot key the pod before it
+    # does not run (`packages/vm-runner/reboot-id`): a runner refuses it, its
+    # pod rolls instead, and that roll does not wait for a busy agent, so the
+    # fix reaches every machine within the roll rather than after `idleWait`.
+    # A roll for a changed pod shape keeps its idle wait. A runner that
+    # already holds the release as failed keeps its pod: a pod on the release
+    # would fail the same way and take its machines with it.
     rollout:
       maxConcurrent: 1
       # Set instead of `maxConcurrent` to express the width as a percentage
       # of the install's runners; `maxConcurrent` is then ignored.
       maxConcurrentPercent: 0
-      # The runner image reference of the one release whose machines must
-      # reboot, spelled exactly as this chart renders `image` — with the
-      # digest a published chart pins, not a tag; empty marks none. A mark
-      # that names no image the install runs is read by no roll, so the
-      # controller reports it when it starts.
-      rebootRequiredRelease: ""
       settleTimeout: 10m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
@@ -387,14 +379,14 @@ virtualization:
     # it without a restart: the controller names the release over the
     # runner's machine API, the pod's loader drains the old runner, starts
     # the new one from this directory, and the new runner adopts every
-    # machine still running, so no machine reboots, unless the release is
-    # the one `rollout.rebootRequiredRelease` names, which rolls the pods to
-    # reboot the machines. A release built against another VM runtime (a new
-    # smolvm, libkrun or crane) brings its runtime along: machines already
-    # running keep the runtime they booted, and machines started after the
-    # hand-off boot the new one. A release the pod's loader cannot load (a
+    # machine still running, so no machine reboots, unless the release
+    # declares a reboot key the pod it reaches does not run, which rolls the
+    # pods to reboot the machines. A release built against another VM runtime
+    # (a new smolvm, libkrun or crane) brings its runtime along: machines
+    # already running keep the runtime they booted, and machines started after
+    # the hand-off boot the new one. A release the pod's loader cannot load (a
     # newer base image's libc) rolls the pods through `rollout` too, as does
-    # the one `rollout.rebootRequiredRelease` names.
+    # a release declaring another reboot key.
     # The stager is the only writer; runners mount it read-only. Each
     # install stages into its own subdirectory, named after
     # `agentNamespace`, because every stager keeps only the newest few

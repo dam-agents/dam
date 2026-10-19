@@ -144,8 +144,6 @@ type VMRunnerRollout struct {
 	MaxConcurrentPercent int      `json:"maxConcurrentPercent,omitempty"`
 	SettleTimeout        Duration `json:"settleTimeout,omitempty"`
 	IdleWait             Duration `json:"idleWait,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: the release whose fix only a machine that booted it has — a new libkrun, guest kernel or platform-init — named by its image reference. A hand-off leaves a running machine on the runtime it booted, so while this equals the configured runner image, each owner's runner pod rolls onto that release instead, which reboots the owner's machines, and that roll does not wait for a busy agent, since waiting a day is what leaves a guest-reachable fix off running machines. Naming the release is what ends the mark: the next release configured with the chart is not this one, so a value left behind applies to nothing. Empty means no release is marked.
-	RebootRequiredRelease string `json:"rebootRequiredRelease,omitempty"`
 }
 
 type AgentProbes struct {

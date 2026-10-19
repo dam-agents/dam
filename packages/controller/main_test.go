@@ -1,11 +1,8 @@
 package main
 
 import (
-	"bytes"
 	"context"
 	"fmt"
-	"log/slog"
-	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -18,7 +15,6 @@ import (
 	"k8s.io/client-go/util/workqueue"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
-	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/reconciler"
 )
 
@@ -247,33 +243,4 @@ func TestANameTheCacheDoesNotHoldIsDropped(t *testing.T) {
 		total += s.Len()
 	}
 	assert.Equal(t, 1, total)
-}
-
-// TEST_OVERVIEW: a mark that names no image the install runs rolls nothing, and the runners answer as they always do, so the only report of it is the one the controller makes when it starts.
-// TEST_SCENARIO: a mark spelled in tag form against a chart that pins the image by digest, a mark naming the configured image, and no mark at all.
-func TestAnInertRebootMarkIsReported(t *testing.T) {
-	cases := []struct {
-		name, marked, image string
-		warns               bool
-	}{
-		{name: "a tag form against a pinned digest", marked: "quay.io/dam-agents/vm-runner:v1", image: "quay.io/dam-agents/vm-runner@sha256:abc", warns: true},
-		{name: "the configured image", marked: "quay.io/dam-agents/vm-runner@sha256:abc", image: "quay.io/dam-agents/vm-runner@sha256:abc"},
-		{name: "no mark", image: "quay.io/dam-agents/vm-runner@sha256:abc"},
-	}
-	for _, c := range cases {
-		t.Run(c.name, func(t *testing.T) {
-			var logged bytes.Buffer
-			previous := slog.Default()
-			slog.SetDefault(slog.New(slog.NewTextHandler(&logged, nil)))
-			t.Cleanup(func() { slog.SetDefault(previous) })
-
-			cfg := &config.Config{}
-			cfg.VM.Runner.Rollout.RebootRequiredRelease = c.marked
-			cfg.VM.Runner.Image = c.image
-
-			warnInertRebootMark(cfg)
-
-			assert.Equal(t, c.warns, strings.Contains(logged.String(), "names no runner image"), logged.String())
-		})
-	}
 }
