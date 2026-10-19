@@ -9,7 +9,7 @@ interface PermissionRequestFrame {
   method?: unknown;
   params?: {
     toolCall?: { toolCallId?: unknown; title?: unknown; rawInput?: unknown };
-    options?: { optionId?: unknown; kind?: unknown }[];
+    options?: unknown;
   };
 }
 
@@ -79,9 +79,10 @@ export function createToolApprovalReporter(opts: {
       if (!frame) return;
       const toolCall = frame.params?.toolCall ?? {};
       reported.add(key(id, sessionId));
-      const options = (frame.params?.options ?? []).filter(
+      const rawOptions: unknown = frame.params?.options;
+      const options = (Array.isArray(rawOptions) ? rawOptions : []).filter(
         (o): o is { optionId: string; kind?: unknown } =>
-          typeof o.optionId === "string",
+          typeof (o as { optionId?: unknown } | null)?.optionId === "string",
       );
       enqueue(`approval ${String(id)}`, () =>
         opts.client.approvals.v1.waiting.mutate({

@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -192,7 +192,9 @@ The record lives in the agent's home volume and shares its lifetime — [persist
 
 The same record is the disconnect story: a `dam run` that loses its socket mid-turn reconnects with backoff, re-loads the Session, and finishes from the record — matching its own turn by the prompt identity and stop reason the logged end-of-turn signal carries — printing only the text it has not already streamed; the total wait is always bounded — `--timeout`, one hour by default (the `agent create --wait` convention) — and on expiry the command exits non-zero with the session id still printed, leaving the run resumable.
 Permission requests are never answered — a headless auto-deny would also deny the egress approvals the platform injects as synthetic permission requests — the CLI prints a stall line naming the approval and the `dam approval` command that clears it — once per approval on each connection, however often a retrying request raises its prompt again — and the request is already mirrored into the approvals queue where the UI or `dam approval` resolves it out-of-band.
-That patience has a bound the caller should know: an attached `dam run` keeps the request open until its own timeout, but a detached run (`--async`, or after `run` exits) leaves the request with no engaged channel, and the runtime expires it after its ten-minute orphan window — the tool call fails with an error and the turn runs on to a recorded outcome, so an unattended run stalls for minutes, not forever, at the cost of that one tool call.
+That patience has a bound the caller should know: an attached `dam run` keeps the request open until its own timeout, but a detached run (`--async`, or after `run` exits) leaves the request with no engaged channel.
+The runtime then reports it to the api-server at once, so it waits on Home, in the approvals bell and in `dam approval` with the time the agent asked, and a verdict given there answers it while the run stays detached ([sessions](sessions.md)).
+Only a request nobody answers within the runtime's ten-minute wait is dropped — the tool call fails with an error, its approval expires, and the turn runs on to a recorded outcome — so an unattended run stalls for minutes, not forever, and loses that one tool call only when nobody answers in time.
 
 ## SSH access
 

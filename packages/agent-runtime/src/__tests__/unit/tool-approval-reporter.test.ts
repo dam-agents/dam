@@ -96,6 +96,29 @@ describe("tool approval reporter", () => {
     expect(sent[1]?.[1]).toEqual({ sessionId: "s-1", rpcId: 7 });
   });
 
+  // TEST_SCENARIO: the harness controls the frame, so options that are not an array, or hold null or a non-object, must neither throw inside the runtime's event handler nor reach the report.
+  it("reports a request whose options are malformed without them", async () => {
+    const { client, sent } = fakeClient();
+    const reporter = createToolApprovalReporter({ client, log: () => {} });
+    const withOptions = (options: unknown) =>
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 9,
+        method: "session/request_permission",
+        params: { sessionId: "s-1", toolCall: { title: "Run" }, options },
+      });
+
+    expect(() => {
+      reporter.waiting(9, "s-1", withOptions("allow"));
+      reporter.waiting(10, "s-1", withOptions([null, 3, { optionId: "ok" }]));
+    }).not.toThrow();
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+
+    expect(
+      sent.map(([, input]) => (input as { options: unknown }).options),
+    ).toEqual([[], [{ optionId: "ok", kind: undefined }]]);
+  });
+
   // TEST_SCENARIO: an agent request that is not a permission prompt has nothing to approve, so neither it nor its end is reported.
   it("reports nothing for an agent request that is not a permission prompt", async () => {
     const { client, sent } = fakeClient();

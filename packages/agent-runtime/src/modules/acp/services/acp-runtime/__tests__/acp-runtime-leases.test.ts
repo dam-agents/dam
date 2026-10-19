@@ -360,6 +360,41 @@ describe("acp-runtime: one harness process per harness", () => {
     ]);
   });
 
+  /** TEST_SCENARIO: The pod restarted, and its first harness process asks
+   * again under the same request id. A verdict kept from before the restart
+   * names the earlier boot's request, so it must answer nothing. */
+  it("drops an answer under an id from before a restart", () => {
+    const heard: unknown[] = [];
+    const observer: AgentRequestObserver = {
+      waiting: (id) => heard.push(id),
+      answered: () => {},
+      abandoned: () => {},
+    };
+    const before = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const first = before.connect();
+    startSession(before, first, "claude-code", "s-a", 1, {});
+    first.disconnect();
+    before.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+
+    const after = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const reopened = after.connect();
+    startSession(after, reopened, "claude-code", "s-a", 1, {});
+    reopened.disconnect();
+    after.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+    expect(heard).toHaveLength(2);
+    expect(heard[1]).not.toEqual(heard[0]);
+
+    const platform = after.connect();
+    platform.send({ jsonrpc: "2.0", id: heard[0], result: { outcome: "x" } });
+    expect(after.harness("claude-code").answersTo(7)).toEqual([]);
+  });
+
   /** TEST_SCENARIO: A permission prompt is still open when the page reloads,
    * so the runtime puts the same question before the new connection, under
    * the id the first connection saw. */

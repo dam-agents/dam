@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import {
   isNonNullObject,
   isRequest,
@@ -107,7 +109,7 @@ interface Attachment {
 const DEFAULT_IDLE_CHECK_MS = 30_000;
 const DEFAULT_LEASE_IDLE_MS = 10 * 60_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
-const ROUTED_ID = /^platform-lease-in-(\d+)-(.+)$/s;
+const ROUTED_ID = /^platform-lease-in-([0-9a-f]+)-(\d+)-(.+)$/s;
 
 const keyOf = (pair: LeasePair): string =>
   JSON.stringify([
@@ -137,7 +139,8 @@ export function canonicalModel(model: string): string {
  * are answered here from the manifest and the session metadata. Each lease
  * is an unchanged ACP runtime behind a virtual channel per real client, with
  * agent-request ids kept apart across leases: a client sees each request
- * under an id that names the harness process that asked it. An answer under
+ * under an id that names this boot and the harness process that asked it, so
+ * an id kept from before a restart reaches no process. An answer under
  * that id reaches that process from any connection, because the platform
  * answers a request from its own record, on a connection of its own; a
  * request no client can answer is reported to the platform under that id.
@@ -148,6 +151,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const movedSessions = new Set<string>();
   const pendingRestartListeners: (() => void)[] = [];
   const leaseIdleMs = deps.leaseIdleMs ?? DEFAULT_LEASE_IDLE_MS;
+  const boot = randomBytes(6).toString("hex");
   let nextProcess = 1;
   let nextSwallowed = 1;
 
@@ -243,7 +247,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   }
 
   function routedId(lease: Lease, id: unknown): string {
-    return `${SWALLOWED_ID_PREFIX}in-${String(lease.process)}-${JSON.stringify(id)}`;
+    return `${SWALLOWED_ID_PREFIX}in-${boot}-${String(lease.process)}-${JSON.stringify(id)}`;
   }
 
   function askedBy(
@@ -251,12 +255,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   ): { lease: Lease; id: unknown } | "unknown" | null {
     const match = ROUTED_ID.exec(clientId);
     if (!match) return null;
+    if (match[1] !== boot) return "unknown";
     const lease = [...leases.values()].find(
-      (l) => String(l.process) === match[1],
+      (l) => String(l.process) === match[2],
     );
     if (!lease) return "unknown";
     try {
-      return { lease, id: JSON.parse(match[2]!) };
+      return { lease, id: JSON.parse(match[3]!) };
     } catch {
       return "unknown";
     }
