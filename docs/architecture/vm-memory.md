@@ -55,6 +55,11 @@ The harness starts only once the guest answers, about a second after the boot, a
 The runner reports a machine warming up in its status, and the controller counts it the same way.
 Counting a boot at half the pool would let only two machines boot at once; at the floor, as many machines warm up together as the pool holds floors, and a runner roll or many wakes at once start the rest in waves as the first ones warm up, each refused start retried within 30 seconds ([budgets](budgets.md)).
 Admission, the committed-memory metric and the runner's memory request all count the same way; only the request rounds, as below.
+A machine the runner refused counts toward nothing until a retry gets it running, whether it was refused for room, which parks the Agent, or for storage, which leaves the Agent awake with no machine: it holds nothing meanwhile.
+So neither the request, the CPU limit nor the pass that judges pressure counts it.
+Only the start being sized still counts itself, since the room it lacks is what its count is for.
+The figures a refusal quotes are the memory its owner's machines hold, the same that Home shows.
+The controller records the refusal where the runner answers the start, under the owner's lock, so the count is current before the Agent's status carries it.
 
 **Admission is against use, so an owner may run more machines than their sizes add up to.** A machine starts while every machine's count, the start's own count and the runner's reserve fit under the runner's limit; otherwise the runner refuses it with the shortfall named, and the Agent is parked as [budgets](budgets.md) describes.
 That limit is the one the kernel holds the runner to, read off its cgroup's `memory.max` at every admission and pressure sample, so a limit resized in place counts at once; a runner with no cgroup v2 limit to read uses the limit it was started with.
@@ -65,8 +70,7 @@ A cluster without in-place resize keeps the install's request.
 A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's vm Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
 
 **Room is freed from the owner's own idle agents.** A start the runner refused, and an owner whose counted memory passes 90% of the runner's limit, hibernate that owner's vm agents under the rules a blocked start reclaims by in [budgets](budgets.md): unattended, hibernation enabled, idle past the floor, saying it is idle when asked (one that does not answer may be mid-turn with its guest saturated, so it is spared), longest-idle first, and only when the agents chosen cover the whole shortfall; under pressure the target is 80%.
-A machine the runner refused for room counts toward nothing until a retry gets it running, since it holds nothing meanwhile; only its own retry still counts its floor, because that floor is the room it is waiting for.
-Counted beside the machines the runner did admit, a refused machine pushes the owner past the 90% threshold, and the pass hibernates those to make room for the one the runner refused.
+A machine the runner refused frees nothing, so the reclaim passes it over for one that holds memory.
 An agent whose cold boot is still in progress is not hibernated for a refused start or past the 90% threshold, since its last activity is the wake that began a boot which can outlast the idle floor; the runner's pressure signal may still take it, as the OOM kill would stop it too.
 A refused start is retried once their machines have stopped.
 No other owner's agent is touched, and an agent hibernated this way says it was put to sleep automatically to free memory ([budgets](budgets.md)).

@@ -191,6 +191,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
+	if err == nil && running {
+		r.noteRefusal(name, st)
+	}
 	if err == nil && st.DiskGiB > 0 {
 		r.vmDiskGrows.Store(name, true)
 	}

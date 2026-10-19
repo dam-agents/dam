@@ -380,7 +380,7 @@ func TestAReclaimAfterAnotherDoesNotCountItsVictimsAgain(t *testing.T) {
 	assert.Equal(t, 2, reclaimed(), "the runner's working set still holds the machines the start's reclaim is stopping, and the signal hibernated more for them")
 }
 
-// TEST_SCENARIO: a runner roll, an OOM kill or a drain brings every machine of an owner back at once: the runner admits as many as the pool holds warm-up floors and refuses the rest until room frees on its 30-second retry. A refused machine holds nothing, and its pair is scaled to zero while it retries, so the half-minute pass must not count it at its floor beside the warm-ups — counted, it took the owner over the threshold, and the pass hibernated the machines the runner had just admitted to make room for the one it had just refused. That lost the first wave of every roll, against what budgets and vm-memory promise.
+// TEST_SCENARIO: a runner roll, an OOM kill or a drain brings every machine of an owner back at once: the runner admits as many as the pool holds warm-up floors and refuses the rest until room frees on its 30-second retry. A refused machine holds nothing, and its pair is scaled to zero while it retries, so the half-minute pass must not count it at its floor — least of all as the agent it counts from, which the refused one is here, listed first — or the owner passes the threshold and the pass hibernates the machines the runner just admitted. That lost the first wave of every roll, against what budgets and vm-memory promise.
 func TestARefusedMachineIsNotCountedBesideTheWarmUpsItWasRefusedFor(t *testing.T) {
 	ctx := context.Background()
 	refused := vmAgentCR()
@@ -392,14 +392,6 @@ func TestARefusedMachineIsNotCountedBesideTheWarmUpsItWasRefusedFor(t *testing.T
 	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("3Gi")}}
 	r.config.VM.Runner.BootMiB = 1024
-	var agents []*apiv1.Agent
-	cached := func(name string) *apiv1.Agent {
-		u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, name, metav1.GetOptions{})
-		require.NoError(t, err)
-		a, err := FromCacheObject[apiv1.Agent](u)
-		require.NoError(t, err)
-		return a
-	}
 	for _, name := range []string{"warm-a", "warm-b"} {
 		peerVMAgent(t, r, name, "2Gi", "20Gi", true)
 		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, name, "application/merge-patch+json",
@@ -408,42 +400,97 @@ func TestARefusedMachineIsNotCountedBesideTheWarmUpsItWasRefusedFor(t *testing.T
 		require.NoError(t, err)
 		node.set(name, vmrunner.MachineStatus{State: vmrunner.StateRunning, UsedMiB: 200, Warming: true})
 		r.vmRunning.Store(name, true)
-		agents = append(agents, cached(name))
 	}
 	r.vmRunning.Store(refused.Name, true)
-	agents = append(agents, cached(refused.Name))
-	reclaimed := func(name string) bool {
-		return cached(name).Annotations[annReclaimedAt] != ""
-	}
+	agents := []*apiv1.Agent{cachedAgent(t, r, refused.Name), cachedAgent(t, r, "warm-a"), cachedAgent(t, r, "warm-b")}
 
 	r.ownerMemoryPass(ctx, testOwner, agents, nil)
 
-	assert.False(t, reclaimed("warm-a"), "the pass hibernated a machine the runner had just admitted")
-	assert.False(t, reclaimed("warm-b"), "the pass hibernated a machine the runner had just admitted")
+	assert.False(t, reclaimedAgent(t, r, "warm-a"), "the pass hibernated a machine the runner had just admitted")
+	assert.False(t, reclaimedAgent(t, r, "warm-b"), "the pass hibernated a machine the runner had just admitted")
 }
 
-// TEST_SCENARIO: a refused machine is parked only until its retry fits, and its park is remembered on the Agent's Ready condition. The count follows the live machine rather than that condition alone: a retry the runner did admit is counted at its use like any other, or a park still standing from the refusal would leave a running guest out of the request the node lends to.
-func TestARefusedMachineCountsAgainOnceItsRetryRuns(t *testing.T) {
+// TEST_SCENARIO: the refusal reaches the Agent's status only once the reconcile that saw it has published, so the pass can list an Agent that still reads as starting after the runner has already refused it. The controller records the refusal where the runner answers the start, under the owner's lock, so the pass counts from that state and not from its listing: the refusal stands on the stored Agent while the pass's own copy predates it.
+func TestARefusalRecordedAtTheRunnerIsNotUndoneByAStaleAgent(t *testing.T) {
 	ctx := context.Background()
-	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
-	peerVMAgent(t, r, "parked", "2Gi", "20Gi", true)
-	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "parked", "application/merge-patch+json",
-		[]byte(`{"status":{"conditions":[{"type":"`+apiv1.ConditionReady+`","status":"False","reason":"`+apiv1.ReasonOverBudget+`"}]}}`),
-		metav1.PatchOptions{})
-	require.NoError(t, err)
+	refused := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, refused)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("3Gi")}}
+	r.config.VM.Runner.BootMiB = 1024
+	for _, name := range []string{"warm-a", "warm-b"} {
+		peerVMAgent(t, r, name, "2Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, name, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+		node.set(name, vmrunner.MachineStatus{State: vmrunner.StateRunning, UsedMiB: 200, Warming: true})
+		r.vmRunning.Store(name, true)
+	}
+	r.vmRunning.Store(refused.Name, true)
+	r.noteRefusal(refused.Name, vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	stale := *cachedAgent(t, r, refused.Name)
+	stale.Status.Conditions = nil
+	agents := []*apiv1.Agent{&stale, cachedAgent(t, r, "warm-a"), cachedAgent(t, r, "warm-b")}
 
-	d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
-	require.NoError(t, err)
-	assert.Equal(t, 3072, d.memoryMiB, "the refused machine holds nothing")
+	r.ownerMemoryPass(ctx, testOwner, agents, nil)
 
-	r.noteMachineUse("parked", measured(700))
-	d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
-	require.NoError(t, err)
-	assert.Equal(t, 3072+700+256, d.memoryMiB, "a retry that got the machine running counts at its use as any other")
+	assert.False(t, reclaimedAgent(t, r, "warm-a"), "the pass hibernated a machine the runner had just admitted")
+	assert.False(t, reclaimedAgent(t, r, "warm-b"), "the pass hibernated a machine the runner had just admitted")
 }
 
-// TEST_SCENARIO: a refused start keeps its park until a retry fits, so from the second retry on the Agent already reads OverBudget when its own reclaim runs. That park says the machine holds nothing, not that the start needs nothing: the room it needs is still freed from the owner's idle agents, or a refused start would never get in however long it retried.
+// TEST_SCENARIO: a machine the runner refused holds nothing, whether it was refused for room (the Agent parked OverBudget) or for storage (the Agent awake with no machine), and whether the refusal was recorded where the runner answered the start or has only reached the Agent's status. So the owner's memory counts it at nothing until a retry gets it running, and then at its use like any other: the refusal of an attempt before stands, and only the live machine says the guest came back.
+func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		conditions string
+		recorded   bool
+	}{
+		{name: "parked for room", conditions: `[{"type":"` + apiv1.ConditionReady + `","status":"False","reason":"` + apiv1.ReasonOverBudget + `"}]`},
+		{name: "refused for storage", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonStorageFull + `"}]`},
+		{name: "refusal recorded before its status", recorded: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			agent := vmAgentCR()
+			r, _, _ := setupVMReconciler(t, agent)
+			peerVMAgent(t, r, "peer", "2Gi", "20Gi", true)
+			if tc.conditions != "" {
+				_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "peer", "application/merge-patch+json",
+					[]byte(`{"status":{"conditions":`+tc.conditions+`}}`), metav1.PatchOptions{})
+				require.NoError(t, err)
+			}
+			if tc.recorded {
+				r.noteRefusal("peer", vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonStorageFull})
+			}
+
+			d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+			require.NoError(t, err)
+			assert.Equal(t, 3072, d.memoryMiB, "the refused machine holds nothing")
+
+			r.noteMachineUse("peer", measured(700))
+			d, err = r.ownerRunnerDemand(ctx, testOwner, agent, true)
+			require.NoError(t, err)
+			assert.Equal(t, 3072+700+256, d.memoryMiB, "a retry that got the machine running counts at its use as any other")
+		})
+	}
+}
+
+func cachedAgent(t *testing.T, r *AgentReconciler, name string) *apiv1.Agent {
+	t.Helper()
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(t, err)
+	a, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	return a
+}
+
+func reclaimedAgent(t *testing.T, r *AgentReconciler, name string) bool {
+	t.Helper()
+	return cachedAgent(t, r, name).Annotations[annReclaimedAt] != ""
+}
+
+// TEST_SCENARIO: a refused start keeps its park until a retry fits, so from the second retry on the Agent already reads OverBudget when its own reclaim runs. That park says the machine holds nothing, not that the start needs nothing: the room it needs is still freed from the owner's idle agents, or a refused start would never get in however long it retried. A sibling the runner refused is no room to take — hibernating it frees nothing — so the reclaim passes it over for a machine that holds memory, even though it is the idlest and the closest to the shortfall.
 func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 	ctx := context.Background()
 	refused := vmAgentCR()
@@ -451,32 +498,51 @@ func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("3Gi")}}
 	r.config.VM.Runner.BootMiB = 1024
-	for _, name := range []string{"idle-a", "idle-b"} {
+	idle := func(name string, idleFor time.Duration, conditions string, usedMiB int) {
 		peerVMAgent(t, r, name, "2Gi", "20Gi", true)
-		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, name, "application/merge-patch+json",
-			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
-			metav1.PatchOptions{})
+		patch := `{"metadata":{"annotations":{"` + annLastActivity + `":"` + time.Now().UTC().Add(-idleFor).Format(time.RFC3339) + `"}}`
+		if conditions != "" {
+			patch += `,"status":{"conditions":` + conditions + `}`
+		}
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, name, "application/merge-patch+json", []byte(patch+"}"), metav1.PatchOptions{})
 		require.NoError(t, err)
-		r.noteMachineUse(name, measured(700))
+		if usedMiB > 0 {
+			r.noteMachineUse(name, measured(usedMiB))
+		}
 	}
+	storageRefused := `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonStorageFull + `"}]`
+	idle("refused-peer", 20*time.Minute, storageRefused, 0)
+	idle("idle-a", 10*time.Minute, "", 700)
+	idle("idle-b", 10*time.Minute, "", 700)
 	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, refused.Name, "application/merge-patch+json",
 		[]byte(`{"status":{"conditions":[{"type":"`+apiv1.ConditionReady+`","status":"False","reason":"`+apiv1.ReasonOverBudget+`"}]}}`),
 		metav1.PatchOptions{})
 	require.NoError(t, err)
-	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, refused.Name, metav1.GetOptions{})
-	require.NoError(t, err)
-	retried, err := FromCacheObject[apiv1.Agent](u)
-	require.NoError(t, err)
 
-	require.NoError(t, r.reclaimForRefusedStart(ctx, retried, testOwner))
+	require.NoError(t, r.reclaimForRefusedStart(ctx, cachedAgent(t, r, refused.Name), testOwner))
 
-	reclaimed := 0
-	for _, name := range []string{"idle-a", "idle-b"} {
-		got, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, name, metav1.GetOptions{})
-		require.NoError(t, err)
-		if got.GetAnnotations()[annReclaimedAt] != "" {
-			reclaimed++
-		}
-	}
-	assert.Equal(t, 1, reclaimed, "the start needs 376 MiB, one agent counted at 956 MiB")
+	assert.False(t, reclaimedAgent(t, r, "refused-peer"), "a machine that holds nothing was hibernated for room it could not give")
+	assert.True(t, reclaimedAgent(t, r, "idle-a"), "the start needs 376 MiB, and the idlest agent that holds memory gives 956 MiB")
+}
+
+// TEST_SCENARIO: the pass reads the owner's Agents, then reclaims, and the runner can refuse the very start it counts from in between. So the demand it reclaims on leaves a machine the runner refused out, the anchor included, while the demand that sizes a start keeps counting that start: the room a refused start lacks is freed from its own count, and the pod's request covers it for the retry that will run it.
+func TestThePassDemandLeavesOutARefusedMachineEvenAsItsAnchor(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	peerVMAgent(t, r, "peer-up", "2Gi", "20Gi", true)
+	r.noteMachineUse("peer-up", measured(600))
+
+	full, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3072+600+256, full.memoryMiB, "a start the runner has not refused counts itself")
+
+	r.noteRefusal(agent.Name, vmrunner.MachineStatus{State: vmrunner.StateAbsent, Reason: vmrunner.ReasonOutOfCapacity})
+	held, err := r.heldRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 600+256, held.memoryMiB, "the pass's demand leaves the refused anchor out")
+
+	kept, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
+	require.NoError(t, err)
+	assert.Equal(t, 3072+600+256, kept.memoryMiB, "the demand that sizes a start keeps counting it for its retry")
 }

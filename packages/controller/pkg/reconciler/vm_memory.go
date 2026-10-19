@@ -132,7 +132,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		if left <= 0 {
 			break
 		}
-		if c.vmMiB == 0 || c.booting && !partial {
+		if c.vmMiB == 0 || c.refused || c.booting && !partial {
 			continue
 		}
 		idle, answered := r.podStatus(ctx, c.name)
@@ -208,10 +208,12 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 // UNIT_BOUNDARY_DESCRIPTION: waited for: the kernel's view is what kills the
 // UNIT_BOUNDARY_DESCRIPTION: runner, so the need is the larger of the counted
 // UNIT_BOUNDARY_DESCRIPTION: and the measured overshoot of the target.
-// UNIT_BOUNDARY_DESCRIPTION: The agent the pass counts from is one the
-// UNIT_BOUNDARY_DESCRIPTION: runner has not refused: a parked machine holds
-// UNIT_BOUNDARY_DESCRIPTION: nothing, and its floor must not hibernate the
-// UNIT_BOUNDARY_DESCRIPTION: machines the runner did admit.
+// UNIT_BOUNDARY_DESCRIPTION: The agent the pass counts and reconciles from is
+// UNIT_BOUNDARY_DESCRIPTION: one the runner has not refused: the pass asks for
+// UNIT_BOUNDARY_DESCRIPTION: that agent's reconcile to size the pod, and a
+// UNIT_BOUNDARY_DESCRIPTION: reconcile counts its own pending start, so a
+// UNIT_BOUNDARY_DESCRIPTION: refused anchor would ask for a resize to a machine
+// UNIT_BOUNDARY_DESCRIPTION: the runner will not start.
 func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, agents []*apiv1.Agent, pressure *vmrunner.RunnerPressure) (string, bool) {
 	if !r.beginMemoryPass(owner) {
 		return "", false
@@ -233,19 +235,19 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 			continue
 		}
 		r.noteMachineUse(a.Name, status)
-		if first == nil && !r.parkedWithoutMachine(a) {
+		if first == nil && !r.refusedWithoutMachine(a) {
 			first = a
 		}
 	}
 	if first == nil {
 		return "", false
 	}
-	demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
+	demand, err := r.heldRunnerDemand(ctx, owner, first, true)
 	if err != nil {
 		return "", false
 	}
 	_, err = r.reclaimRunnerMemory(ctx, owner, "", func() (int, error) {
-		demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
+		demand, err := r.heldRunnerDemand(ctx, owner, first, true)
 		if err != nil {
 			return 0, err
 		}

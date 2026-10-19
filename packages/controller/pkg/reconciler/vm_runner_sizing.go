@@ -39,8 +39,18 @@ func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, sp
 	return max(int(mem.Value()>>20), 1)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it. A peer the runner refused for room is left out too: it holds nothing until a retry gets it running, and counted beside the machines the runner did admit it made the memory pass hibernate those. The agent being sized counts whatever its own park says, since freeing its room is what its count is for.
+// UNIT_BOUNDARY_DESCRIPTION: the demand that sizes a start: the machine being started counts whatever a refusal from an attempt before says, since the room it needs is what its count is for.
 func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
+	return r.runnerDemand(ctx, owner, self, selfRunning, true)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the demand the memory pass judges pressure from: what the owner's runner holds or is about to hold, without the machines it refused for room or storage, the start the pass counts from included, since a machine that holds nothing must not hibernate the ones the runner did admit.
+func (r *AgentReconciler) heldRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
+	return r.runnerDemand(ctx, owner, self, selfRunning, false)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it. A machine the runner refused for room or for storage holds nothing until a retry gets it running, so it is left out with `ownStart` unset, and counted under it only as the start its count is for.
+func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning, ownStart bool) (runnerDemand, error) {
 	items, err := r.ownerAgents(ctx, owner)
 	if err != nil {
 		return runnerDemand{}, err
@@ -66,7 +76,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 				return runnerDemand{}, err
 			}
 		}
-		if running && (a.Name == self.Name || !r.parkedWithoutMachine(a)) {
+		if running && (ownStart && a.Name == self.Name || !r.refusedWithoutMachine(a)) {
 			d.memoryMiB += r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
 			d.vCPUs += max(r.config.VM.Runner.MachineCPUs, r.liveMachine(a.Name).CPUs, 1)
 		}
@@ -103,10 +113,29 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	return r.agentDesiredUp(ctx, name, true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget — and its pair is scaled to zero until the 30-second retry fits. It holds no memory meanwhile, so it counts toward none. The park is remembered on the Agent's Ready condition, and the live machine says whether that retry got it running anyway.
-func (r *AgentReconciler) parkedWithoutMachine(a *apiv1.Agent) bool {
+// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget — and one it refused for storage leaves the Agent awake with no machine. Either holds nothing until a retry gets it running, so it counts toward nothing. The refusal is recorded where the runner answered the start, under the owner's lock, so it is current before the Agent's status carries it; the status covers a refusal this controller did not see. A machine that runs anyway counts as any other, whatever a refusal from an attempt before says.
+func (r *AgentReconciler) refusedWithoutMachine(a *apiv1.Agent) bool {
+	if r.liveMachine(a.Name).State == vmrunner.StateRunning {
+		return false
+	}
+	if _, refused := r.vmRefusals.Load(a.Name); refused {
+		return true
+	}
 	ready := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionReady)
-	return ready != nil && ready.Reason == apiv1.ReasonOverBudget && r.liveMachine(a.Name).State != vmrunner.StateRunning
+	if ready != nil && ready.Reason == apiv1.ReasonOverBudget {
+		return true
+	}
+	podReady := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionAgentPodReady)
+	return podReady != nil && podReady.Reason == vmrunner.ReasonStorageFull
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: remembers the runner's answer to a start. A refusal for room or storage leaves the machine holding nothing until a retry gets it running; any other answer means the machine is the runner's to hold. It is written where the runner answers, under the owner's lock, because the Agent's status carries a refusal only once the reconcile that saw it has published it.
+func (r *AgentReconciler) noteRefusal(name string, st vmrunner.MachineStatus) {
+	if st.Reason != vmrunner.ReasonOutOfCapacity && st.Reason != vmrunner.ReasonStorageFull {
+		r.vmRefusals.Delete(name)
+		return
+	}
+	r.vmRefusals.Store(name, st.Reason)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
