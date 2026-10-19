@@ -96,5 +96,7 @@ The api-server names the declared ports on every request, so a port the Environm
 They act on the calling Agent's Environments alone, found by name.
 
 **The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
+In the app, a vm agent's page has an **Environments** section, behind the feature: the list of people who may open its Environments, and a card per Environment with each endpoint's link, whether it runs or sleeps, its expiry, how many of the list may open it, and the owner's controls to extend it, delete it and grant or remove a connection on it.
+The owner creates none there; the agent does.
 
 The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's list of people, each new session with the person's email, and each refusal.

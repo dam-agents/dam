@@ -3,6 +3,7 @@ import {
   Briefcase,
   CalendarEvent,
   type CarbonPictogramType,
+  CloudComputing,
   ConnectApplications,
   FinanceAndSupplyChain,
   FoundationModel,
@@ -88,6 +89,13 @@ export const SECTIONS: SectionEntry[] = [
     pictogram: CalendarEvent,
     title: "Schedules",
     description: "Schedules let your agent run tasks periodically.",
+  },
+  {
+    section: "environments",
+    pictogram: CloudComputing,
+    title: "Environments",
+    description:
+      "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them, and grant connections.",
   },
   {
     section: "usage",

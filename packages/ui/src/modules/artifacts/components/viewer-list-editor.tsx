@@ -14,6 +14,7 @@ interface Props {
   disabled: boolean;
   draft: string;
   onDraftChange: (draft: string) => void;
+  caption?: string;
 }
 
 interface ViewerRowProps {
@@ -47,6 +48,7 @@ export function ViewerListEditor({
   disabled,
   draft,
   onDraftChange,
+  caption,
 }: Props) {
   const errorId = useId();
   const [error, setError] = useState<string | null>(null);
@@ -113,7 +115,7 @@ export function ViewerListEditor({
         </p>
       )}
       <p className="text-xs text-muted-foreground tabular-nums">
-        {sharedWithCaption(viewers.length, full)}
+        {caption ?? sharedWithCaption(viewers.length, full)}
       </p>
       {viewers.length > 0 && (
         <ul
