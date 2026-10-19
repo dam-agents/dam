@@ -172,7 +172,9 @@ export function createImageUpdate(deps: {
         return templateImages.get(templateId);
       };
       let migrated = 0;
+      const listed = new Set<string>();
       for (const agent of await deps.listAgents()) {
+        listed.add(agent.id);
         try {
           if (agent.specStart !== "ready" || !agent.imageUpdateFrom)
             readySeen.delete(agent.id);
@@ -192,6 +194,9 @@ export function createImageUpdate(deps: {
           );
         }
       }
+      for (const id of heldOn.keys()) if (!listed.has(id)) heldOn.delete(id);
+      for (const id of readySeen.keys())
+        if (!listed.has(id)) readySeen.delete(id);
       if (migrated > 0)
         deps.log(
           `[image-update] moved ${migrated} agent(s) to their template's image`,

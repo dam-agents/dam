@@ -515,6 +515,65 @@ describe("image update tick", () => {
     expect(held[1]).toContain("repo:later");
   });
 
+  // TEST_SCENARIO: the marker only keeps a line from repeating while the move
+  // TEST_SCENARIO: lasts. A move that ended and started again on the same image,
+  // TEST_SCENARIO: held again on the same fault, is news the second time too.
+  it("announces a hold on the same image again after the move ended", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    live = agent({
+      hibernated: false,
+      spec: { name: "a", image: DEFAULT_IMAGE },
+      specStart: "ready",
+    });
+    listed[0] = live;
+    await m.tick();
+    live = held();
+    listed[0] = live;
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(2);
+  });
+
+  // TEST_SCENARIO: an Agent deleted while its move is held leaves the service
+  // TEST_SCENARIO: for good, so a marker kept for it is never read again and
+  // TEST_SCENARIO: the map only grows. A later Agent on that id says its hold.
+  it("forgets a hold of an agent the tick no longer lists", async () => {
+    const held = () =>
+      agent({
+        hibernated: false,
+        spec: { name: "a", image: DEFAULT_IMAGE },
+        imageUpdateFrom: OLD_DEFAULT_IMAGE,
+        specStart: "failed",
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      });
+    const listed = [held()];
+    let live = listed[0]!;
+    const m = update(listed, { live: () => live });
+    await m.tick();
+    listed.length = 0;
+    await m.tick();
+    live = held();
+    listed.push(live);
+    await m.tick();
+    const holds = m.log.mock.calls
+      .map((call) => String(call[0]))
+      .filter((line) => line.includes("holds its move"));
+    expect(holds).toHaveLength(2);
+  });
+
   it("waits while a moved agent has not started on its new image", async () => {
     const m = update([
       agent({
