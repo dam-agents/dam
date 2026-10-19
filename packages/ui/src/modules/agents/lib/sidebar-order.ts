@@ -7,7 +7,7 @@ export interface OrderDrop {
 
 function createdAt(value: string | null | undefined): number {
   const at = value ? Date.parse(value) : Number.NaN;
-  return Number.isNaN(at) ? Number.POSITIVE_INFINITY : at;
+  return Number.isNaN(at) ? Number.NEGATIVE_INFINITY : at;
 }
 
 export function manualOrder<T>(
@@ -22,11 +22,11 @@ export function manualOrder<T>(
   ranked.sort((a, b) => rank.get(idOf(a))! - rank.get(idOf(b))!);
   rest.sort((a, b) => {
     const [atA, atB] = [createdAt(createdAtOf(a)), createdAt(createdAtOf(b))];
-    if (atA !== atB) return atA < atB ? -1 : 1;
+    if (atA !== atB) return atA > atB ? -1 : 1;
     const [idA, idB] = [idOf(a), idOf(b)];
     return idA < idB ? -1 : idA > idB ? 1 : 0;
   });
-  return [...ranked, ...rest];
+  return [...rest, ...ranked];
 }
 
 function capped(order: string[], shown: ReadonlySet<string>): string[] {
@@ -49,7 +49,7 @@ export function orderAfterMove(
 ): string[] | null {
   if (drop.id === id) return null;
   const stored = new Set(order);
-  const all = [...order, ...shown.filter((item) => !stored.has(item))];
+  const all = [...shown.filter((item) => !stored.has(item)), ...order];
   if (!all.includes(id) || !all.includes(drop.id)) return null;
   const rest = all.filter((item) => item !== id);
   const at = rest.indexOf(drop.id) + (drop.after ? 1 : 0);

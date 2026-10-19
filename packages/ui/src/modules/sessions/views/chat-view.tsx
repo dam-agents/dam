@@ -107,7 +107,6 @@ import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
-import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
@@ -129,6 +128,7 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
 import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import { ModelIndicator } from "../components/model-indicator.js";
+import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
 import {
@@ -863,14 +863,10 @@ export function ChatView() {
                       Send a message to begin or open a new session in:
                     </p>
                     {agentView && (
-                      <div className="mt-5 w-full max-w-[640px] text-left">
-                        <AgentUsageActions
-                          agent={agentView}
-                          showChat={false}
-                          showConfigure
-                          onNewTerminal={handleNewTerminal}
-                        />
-                      </div>
+                      <NewSessionLauncher
+                        agent={agentView}
+                        onNewTerminal={handleNewTerminal}
+                      />
                     )}
                     {startNotice && <div className="mt-6">{startNotice}</div>}
                   </div>

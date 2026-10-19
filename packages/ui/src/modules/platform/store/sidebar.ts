@@ -11,6 +11,7 @@ import {
 } from "../../home/lib/activity-filter.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
+const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 const SIDEBAR_V2_PINNED_STORAGE_KEY = "platform-sidebar-v2-pinned";
 
 export interface SidebarSlice {
@@ -18,6 +19,10 @@ export interface SidebarSlice {
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
+  sidebarShowHibernating: boolean;
+  setSidebarShowHibernating: (show: boolean) => void;
+  sidebarOpenAgentIds: ReadonlySet<string>;
+  setSidebarAgentOpen: (agentId: string, open: boolean) => void;
   mobileNavOpen: boolean;
   setMobileNavOpen: (open: boolean) => void;
   sidebarPinned: boolean;
@@ -46,6 +51,23 @@ export const createSidebarSlice: StateCreator<
   sidebarActivityFilters: defaultActivityFilters(),
   setSidebarActivityFilters: (filters) =>
     set({ sidebarActivityFilters: filters }),
+  sidebarShowHibernating: readPersistedFlag(
+    SIDEBAR_HIBERNATING_STORAGE_KEY,
+    false,
+  ),
+  setSidebarShowHibernating: (show) => {
+    writePersistedFlag(SIDEBAR_HIBERNATING_STORAGE_KEY, show);
+    set({ sidebarShowHibernating: show });
+  },
+  sidebarOpenAgentIds: new Set(),
+  setSidebarAgentOpen: (agentId, open) =>
+    set((s) => {
+      if (s.sidebarOpenAgentIds.has(agentId) === open) return {};
+      const next = new Set(s.sidebarOpenAgentIds);
+      if (open) next.add(agentId);
+      else next.delete(agentId);
+      return { sidebarOpenAgentIds: next };
+    }),
   mobileNavOpen: false,
   setMobileNavOpen: (open) => set({ mobileNavOpen: open }),
   sidebarPinned: readPersistedFlag(SIDEBAR_V2_PINNED_STORAGE_KEY, true),

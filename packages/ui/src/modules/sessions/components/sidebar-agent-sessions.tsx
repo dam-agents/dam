@@ -19,8 +19,6 @@ import {
   useInstallCapabilities,
 } from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
-import { isFiltered } from "../../home/lib/activity-filter.js";
-import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import {
   prefetchSessionHistory,
@@ -48,6 +46,7 @@ interface SessionActions {
 interface Props {
   agentId: string;
   open: boolean;
+  shown: boolean;
   preview: readonly AgentActivitySession[];
   previewComplete: boolean;
   conversationOf: (session: AttentionItem) => string | undefined;
@@ -58,6 +57,7 @@ interface Props {
 export function SidebarAgentSessions({
   agentId,
   open,
+  shown,
   preview,
   previewComplete,
   conversationOf,
@@ -89,7 +89,7 @@ export function SidebarAgentSessions({
 
   return (
     <>
-      {open || expanded ? (
+      {!shown ? null : open || expanded ? (
         <AgentSessionList
           agentId={agentId}
           sessionActions={sessionActions}
@@ -195,7 +195,6 @@ function AgentSessionList({
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
-  const filters = useStore((s) => s.sidebarActivityFilters);
   const openSession = useOpenSession();
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
   const telemetryBackend =
@@ -210,14 +209,10 @@ function AgentSessionList({
   } = list;
 
   const rows = newestFirst(
-    list.sessions
-      .map((session) => ({ session, state: list.rowState(session) }))
-      .filter(({ session, state }) =>
-        matchesActivityFilters(
-          { session, working: state.working, unread: state.unread },
-          filters,
-        ),
-      ),
+    list.sessions.map((session) => ({
+      session,
+      state: list.rowState(session),
+    })),
     (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
   );
@@ -254,9 +249,7 @@ function AgentSessionList({
       {list.loading && <SessionListSkeleton />}
       {!list.loading && rows.length === 0 && !hasNextPage && (
         <p className="py-1.5 pl-9 text-xs text-muted-foreground">
-          {isFiltered(filters)
-            ? "No sessions match the filter."
-            : "No sessions yet."}
+          No sessions yet.
         </p>
       )}
       {visible.map(({ session: s, state }) => (

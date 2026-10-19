@@ -1,14 +1,14 @@
 import {
   Book,
-  Box,
   type CarbonIconType,
+  Folders,
+  Gift,
   Home,
   Settings,
 } from "@carbon/icons-react";
 
 import { DOCS_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
-import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
 
 export interface SidebarDestination {
   label: string;
@@ -36,7 +36,7 @@ export function useSidebarDestinations() {
   };
   const artifacts: SidebarDestination = {
     label: "Artifacts",
-    icon: ArtifactIcon,
+    icon: Folders,
     active: artifactsOpen,
     navigate: () => {
       setSidePanelTab("artifacts");
@@ -46,7 +46,7 @@ export function useSidebarDestinations() {
   };
   const starterKits: SidebarDestination = {
     label: "Starter kits",
-    icon: Box,
+    icon: Gift,
     active: view === "starter-kit" || kitBrowserOpen,
     navigate: () => setKitBrowserOpen(true),
   };
