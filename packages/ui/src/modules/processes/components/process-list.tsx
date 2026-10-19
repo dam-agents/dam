@@ -6,6 +6,7 @@ import { useStore } from "../../../store.js";
 import { useToggleProcessOutput } from "../hooks/use-toggle-process-output.js";
 import { groupProcesses } from "../lib/process-groups.js";
 import { FinishedList } from "./finished-list.js";
+import { LoginItems } from "./login-items.js";
 import { PendingRestartBanner } from "./pending-restart-banner.js";
 import { ProcessGroup } from "./process-group.js";
 
@@ -33,7 +34,7 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
           pendingRestart={list.pendingRestart}
         />
       )}
-      {groups.length === 0 ? (
+      {groups.length === 0 && list.startupItems.length === 0 ? (
         <p className="px-4 py-5 text-xs text-muted-foreground">
           Nothing is running
         </p>
@@ -50,6 +51,12 @@ export function ProcessList({ agentId, list, alwaysOn }: Props) {
           />
         ))
       )}
+      <LoginItems
+        agentId={agentId}
+        items={list.startupItems}
+        openOutputKey={openOutputKey}
+        onOpenOutput={onOpenOutput}
+      />
       <FinishedList
         rows={list.finished}
         now={now}
