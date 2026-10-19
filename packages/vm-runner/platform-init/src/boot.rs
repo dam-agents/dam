@@ -1485,7 +1485,7 @@ fn trim_disk() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (pool_guard::PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. A shrink frees the blocks past the new size before the length drops, and a growth extends the file, so neither empties it (size_guard): btrfs kept the blocks of an extent a length alone partly truncated allocated while the file's own stat reported the smaller size, and a guard shortened that way gave a steadily writing guest nothing back, which filled that guest's disk with room the guard said it had freed. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). btrfs's free space is an estimate that can pass the disk's own size, so the guard counts on no more than the disk holds beyond the guest's use, and when a preallocation is refused it finds what the disk takes and holds to that until the guest frees room, warning once (PoolGuard::grow). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (pool_guard::PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. A growth extends the file, and a shrink gives up the room in the one way a filesystem returns all of it: it takes the new size in a file of its own, whole, and then drops the old one, or, when the disk cannot hold both, empties this file whole and takes the new size in it (size_guard). A filesystem frees the blocks of a file it loses, and of a file cut to nothing, but btrfs kept the blocks of a preallocated extent a length alone partly truncated allocated while the file's own stat reported the smaller size, and a guard shortened that way gave a steadily writing guest nothing back, which filled that guest's disk with room the guard said it had freed. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). btrfs's free space is an estimate that can pass the disk's own size, so the guard counts on no more than the disk holds beyond the guest's use, and when a preallocation is refused it finds what the disk takes and holds to that until the guest frees room, warning once (PoolGuard::grow). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
 const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
 const POOL_GUARD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
 
@@ -1509,38 +1509,38 @@ fn pool_guard(root: &Path) -> Option<File> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: sizes the guard file to `size` bytes of preallocated blocks, or leaves it at the size it had when the disk refuses them, and reports the refusal. It reads that size from the file's own length rather than from the caller's count, because it is called more than once per look, each time with the size the disk last took, and a comparison with a stale count either skips a shrink or asks for less than the file already holds. Growth extends the file, and the allocation adds only the blocks it gains. A shrink frees the blocks past `size` before the length drops: btrfs keeps a partly truncated preallocated extent's blocks allocated while the file's stat reports only its size, so a length alone gives the guest nothing back, and the guard then holds room it has told the guest it freed. Neither a growth nor a shrink empties the file, so a guard the disk refuses keeps what it held, and the guest is never left without one.
-fn size_guard(guard: &File, size: u64) -> io::Result<()> {
-    let fd = guard.as_raw_fd();
-    let length =
-        libc::off_t::try_from(size).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+// UNIT_BOUNDARY_DESCRIPTION: sizes the guard file to `size` bytes of preallocated blocks, or leaves it at the size it had when the disk refuses them, and reports the refusal. It reads that size from the file's own length rather than from the caller's count, because it is called more than once per look, each time with the size the disk last took, and a comparison with a stale count either skips a shrink or asks for less than the file already holds. Growth extends the file, and the allocation adds only the blocks it gains. A shrink never frees part of an extent: a filesystem frees a file it loses, and a file cut to nothing, but a preallocated extent it is only partly asked to release can stay allocated, and a guard parked on that room reports it free while the guest cannot write it. So a shrink first takes the new size in a file of its own, whole, and drops the old one only once that file holds the room, and when the disk cannot hold both it empties this file whole and takes the new size in it. The first path leaves the guest guarded throughout; the second leaves it unguarded for the two calls in which the file is empty, and puts the old size back if the new one is refused.
+fn size_guard(guard: &mut File, root: &Path, size: u64) -> io::Result<()> {
     let held = guard.metadata()?.len();
     if size == held {
         return Ok(());
     }
     if size > held {
-        // SAFETY: `guard` holds an open descriptor for the call, and the call takes no pointer.
-        return match unsafe { libc::fallocate(fd, 0, 0, length) } {
-            0 => Ok(()),
-            _ => Err(io::Error::last_os_error()),
-        };
+        return preallocate(guard, size);
     }
-    let tail = libc::off_t::try_from(held - size)
-        .map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
-    // SAFETY: as above; the range lies in the file's own bytes, past its kept length.
-    if unsafe {
-        libc::fallocate(
-            fd,
-            libc::FALLOC_FL_PUNCH_HOLE | libc::FALLOC_FL_KEEP_SIZE,
-            length,
-            tail,
-        )
-    } != 0
-    {
-        return Err(io::Error::last_os_error());
+    if let Some(fresh) = pool_guard(root) {
+        if preallocate(&fresh, size).is_ok() {
+            let _ = guard.set_len(0);
+            *guard = fresh;
+            return Ok(());
+        }
     }
-    // SAFETY: as above; `length` is inside the size the punches left the file.
-    match unsafe { libc::ftruncate(fd, length) } {
+    guard.set_len(0)?;
+    match preallocate(guard, size) {
+        Ok(()) => Ok(()),
+        Err(e) => {
+            let _ = preallocate(guard, held);
+            Err(e)
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: takes `size` bytes of blocks for `file`, all of them or none, and reports a refusal. Every call is a whole allocation from the file's start, so the file's blocks are a set of whole extents and no release below it has to free part of one.
+fn preallocate(file: &File, size: u64) -> io::Result<()> {
+    let length =
+        libc::off_t::try_from(size).map_err(|_| io::Error::from(io::ErrorKind::InvalidInput))?;
+    // SAFETY: `file` holds an open descriptor for the call, and fallocate takes no pointer.
+    match unsafe { libc::fallocate(file.as_raw_fd(), 0, 0, length) } {
         0 => Ok(()),
         _ => Err(io::Error::last_os_error()),
     }
@@ -1552,8 +1552,8 @@ fn guard_pool() {
     let mut moved: Option<std::time::Instant> = None;
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
-        let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
-        let Some(guard) = slot.as_ref() else {
+        let mut slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(guard) = slot.as_mut() else {
             return;
         };
         let held = guard.metadata().map_or_else(
@@ -1602,7 +1602,7 @@ fn guard_pool() {
         };
         moved = Some(std::time::Instant::now());
         let mut error = None;
-        let mut size_to = |size: u64| match size_guard(guard, size) {
+        let mut size_to = |size: u64| match size_guard(guard, home, size) {
             Ok(()) => true,
             Err(e) => {
                 error = Some(e);
@@ -2822,12 +2822,12 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly freed while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The guard frees the tail as blocks, so preallocating 128 MiB takes 128 MiB and sizing back to 32 MiB gives 96 MiB back.
+    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly freed while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The guard gives a shrink's room up whole, so preallocating 128 MiB takes 128 MiB, sizing back to 32 MiB gives 96 MiB back, and a run of sizes there and back loses nothing to the moves: the filesystem's free space ends where it started.
     #[test]
     fn a_smaller_guard_gives_its_room_back() {
         let disk = TempDir::new("guard-resize");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
-        let guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
+        let mut guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
         let free = || {
             flush_filesystem(disk.path()).unwrap();
             let stat = statvfs(disk.path()).expect("the disk's free space");
@@ -2836,26 +2836,35 @@ mod tests {
             size * avail
         };
         let base = free();
-        size_guard(&guard, 128 << 20).unwrap();
+        size_guard(&mut guard, disk.path(), 128 << 20).unwrap();
         let held = free();
         assert!(
             base.saturating_sub(held) >= 120 << 20,
             "128 MiB of blocks took {} MiB",
             base.saturating_sub(held) >> 20
         );
-        size_guard(&guard, 32 << 20).unwrap();
+        size_guard(&mut guard, disk.path(), 32 << 20).unwrap();
         let after = free();
         assert!(
             after.saturating_sub(held) >= 88 << 20,
             "a guard shrunk by 96 MiB gave back {} MiB",
             after.saturating_sub(held) >> 20
         );
-        let blocks = guard.metadata().unwrap().blocks() * 512;
-        assert!(
-            blocks <= (32 << 20) + (1 << 20),
-            "the file holds {} MiB of blocks for a 32 MiB guard",
-            blocks >> 20
-        );
+        for round in 1..=4 {
+            size_guard(&mut guard, disk.path(), 128 << 20).unwrap();
+            size_guard(&mut guard, disk.path(), 32 << 20).unwrap();
+            let blocks = guard.metadata().unwrap().blocks() * 512;
+            assert!(
+                blocks <= (32 << 20) + (1 << 20),
+                "round {round} left the file holding {} MiB of blocks for a 32 MiB guard",
+                blocks >> 20
+            );
+            assert!(
+                free().saturating_sub(after) <= 8 << 20,
+                "round {round} took {} MiB off the disk's free space",
+                free().saturating_sub(after) >> 20
+            );
+        }
     }
 
     // TEST_SCENARIO: a disk of many small files runs out of inodes with most of its space free, and a write then fails as on a full disk, so the free share is the smaller of blocks and inodes; a filesystem that counts no inodes is judged by its blocks.
