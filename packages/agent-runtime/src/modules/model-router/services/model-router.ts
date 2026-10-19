@@ -318,7 +318,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const record = (status: number, usage: ModelUsage | null): void => {
       if (recorded) return;
       recorded = true;
-      deps.onCallEnded?.(session, status < 400 && usage !== null);
+      deps.onCallEnded?.(session, status < 400);
       if (!billed) return;
       const uncounted: UncountedReason | null =
         usage === null

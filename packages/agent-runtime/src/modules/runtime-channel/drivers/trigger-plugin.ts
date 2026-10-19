@@ -56,6 +56,29 @@ const CATALOG_WAIT_MS = 10_000;
 
 const START_ATTEMPTS = 3;
 const START_RETRY_MS = 5_000;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how long a sub-agent's run may take to start
+ * before it fails. The start runs detached from the event, so a harness that
+ * stays silent at startup would otherwise leave the run unwatched until its
+ * deadline. A start past the bound is not retried: it may still be under way.
+ */
+const START_TIMEOUT_MS = 120_000;
+
+class StartTimeoutError extends Error {
+  constructor() {
+    super(`the harness did not answer within ${START_TIMEOUT_MS / 1000} s`);
+    this.name = "StartTimeoutError";
+  }
+}
+
+function withinStartBound<T>(start: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new StartTimeoutError()), START_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  return Promise.race([start, timeout]).finally(() => clearTimeout(timer));
+}
 
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
@@ -227,12 +250,16 @@ export function createTriggerPlugin(deps: {
     for (let attempt = 1; ; attempt++) {
       try {
         deps.invocationWatch?.watch(
-          await startSession(payload, payload.task),
+          await withinStartBound(startSession(payload, payload.task)),
           eventId,
         );
         return;
       } catch (err) {
-        if (err instanceof SessionModelError || attempt >= START_ATTEMPTS) {
+        if (
+          err instanceof SessionModelError ||
+          err instanceof StartTimeoutError ||
+          attempt >= START_ATTEMPTS
+        ) {
           failInvocation(payload, eventId, err);
           return;
         }
@@ -262,7 +289,9 @@ export function createTriggerPlugin(deps: {
     ctx: EventContext,
   ): Promise<void> => {
     if (payload.scheduleId.startsWith(INVOCATION_SCHEDULE_PREFIX)) {
-      await runInvocation(payload, ctx.eventId);
+      void runInvocation(payload, ctx.eventId).catch((err) =>
+        deps.log(`[trigger] invocation run failed: ${(err as Error).message}`),
+      );
       return;
     }
     if (!payload.precheck) {

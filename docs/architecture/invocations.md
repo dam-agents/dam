@@ -84,7 +84,7 @@ The reasons:
   It covers a harness config the target cannot apply as well — an image with no harness-config driver, a setting its catalog does not offer, or a write the target reports as failed — found once the target reports what it can do; a result such a target reports first is refused, because it came from the default and a comparison across models must never record it as the one asked for.
   There is no retry: the Driver is waiting and can spawn again, while a long-lived agent retries within its attempt budget because a user comes back to it.
 - **Run failed.** A target that can no longer report a result fails at once, with the cause, instead of at its deadline.
-  The target's runtime watches the one turn: a run that cannot start, a turn that fails, a harness that exits under it, or a turn that ends with nothing left running and no result.
+  The target's runtime watches the one turn: a run that cannot start or does not start within two minutes, a turn that fails, a harness that exits under it, or a turn that ends with nothing left running and no result.
   A model call the provider refused outright, followed by a minute with no completed call and no model or tool call running, counts too, since a harness can go quiet after it without ending the turn; the reason carries that call's status and body.
   A turn that ends while its background work or its own sub-agents still run stays watched, because a later turn may still report.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
