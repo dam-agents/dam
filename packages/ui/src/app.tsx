@@ -5,6 +5,8 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { GlobalBanner } from "./components/global-banner.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
+import { InstantStartProvider } from "./modules/instant-start/context.js";
+import { InstantStartGate } from "./modules/instant-start/components/instant-start-gate.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
 import { HandoffSheet } from "./mock/handoff-sheet.js";
@@ -71,10 +73,10 @@ export default function App() {
       </>
     );
   return (
-    <>
+    <InstantStartProvider>
       <MainApp />
       {isMock && <MockStateBar />}
-    </>
+    </InstantStartProvider>
   );
 }
 
@@ -113,7 +115,7 @@ function MainApp() {
 
   if (view === "chat")
     return (
-      <>
+      <InstantStartGate>
         <div className="flex flex-col h-full bg-background overflow-hidden">
           {!isMock && <GlobalBanner />}
           <div className="flex flex-1 min-h-0 overflow-hidden">
@@ -129,7 +131,7 @@ function MainApp() {
         />
         <DialogOverlay />
         <ConnectionBanner />
-      </>
+      </InstantStartGate>
     );
 
   return (

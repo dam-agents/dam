@@ -118,6 +118,13 @@ import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { Terminal } from "../components/terminal.js";
+import { BudgetExhaustedNotice } from "../../instant-start/components/budget-exhausted-notice.js";
+import { FreeBudgetBanner } from "../../instant-start/components/free-budget-banner.js";
+import {
+  KitSuggestionsEmpty,
+  KitSuggestionsCompact,
+} from "../../instant-start/components/kit-suggestions-empty.js";
+import { useInstantStart } from "../../instant-start/context.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
@@ -137,6 +144,7 @@ const ConfigureAgentModal = lazy(() =>
 );
 
 export function ChatView() {
+  const instantStart = useInstantStart();
   const selectedAgent = useStore((s) => s.selectedAgent);
   const { data: agentsData } = useAgents();
   const agents = agentsData?.list ?? [];
@@ -798,18 +806,49 @@ export function ChatView() {
                     </ChatColumn>
                   </div>
                 )}
-                <ChatInputArea
-                  textareaRef={textareaRef}
-                  busy={busy}
-                  loadingSession={loadingSession}
-                  onSend={sendPrompt}
-                  onStop={stopAgent}
-                  rotatingPlaceholder={rotatingPlaceholder}
-                  onConfigureSection={
-                    selectedAgent ? setConfigureSection : undefined
-                  }
-                  onScrollToMessage={handleScrollToMessage}
-                />
+                {instantStart && (
+                  <div className="px-4 md:px-8 mb-3">
+                    <ChatColumn>
+                      <FreeBudgetBanner />
+                      {instantStart.budgetExhausted && (
+                        <div className="mt-3">
+                          <BudgetExhaustedNotice
+                            onAddProvider={() =>
+                              instantStart.setProviderAdded(true)
+                            }
+                          />
+                        </div>
+                      )}
+                      {instantStart.approach === 3 &&
+                        messages.length === 0 && (
+                          <KitSuggestionsEmpty />
+                        )}
+                    </ChatColumn>
+                  </div>
+                )}
+                {instantStart?.budgetExhausted &&
+                !instantStart.providerAdded ? (
+                  <div className="px-4 md:px-8">
+                    <ChatColumn>
+                      <div className="flex h-12 items-center justify-center rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground">
+                        Chat disabled — connect a provider to continue
+                      </div>
+                    </ChatColumn>
+                  </div>
+                ) : (
+                  <ChatInputArea
+                    textareaRef={textareaRef}
+                    busy={busy}
+                    loadingSession={loadingSession}
+                    onSend={sendPrompt}
+                    onStop={stopAgent}
+                    rotatingPlaceholder={rotatingPlaceholder}
+                    onConfigureSection={
+                      selectedAgent ? setConfigureSection : undefined
+                    }
+                    onScrollToMessage={handleScrollToMessage}
+                  />
+                )}
                 {!hasPendingPermission && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>

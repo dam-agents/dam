@@ -58,7 +58,9 @@ async function main() {
     const defaultSession = urlSession ?? MOCK_SESSION_IDS.kitCodeGuardian;
     const packId = KIT_SESSION_TO_PACK[defaultSession] ?? null;
 
-    history.replaceState(null, "", `/chat/${agents[0]!.id}`);
+    const startParam = new URLSearchParams(window.location.search).get("start");
+    const chatPath = `/chat/${agents[0]!.id}${startParam ? `?start=${startParam}` : ""}`;
+    history.replaceState(null, "", chatPath);
     useStore.setState({
       view: "chat",
       selectedAgent: agents[0]!.id,
