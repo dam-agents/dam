@@ -80,13 +80,21 @@ function runnerImage(): string {
   return podField(runnerPod(agentId), ".spec.containers[0].image");
 }
 
-function controllerLog(): string {
+function controllerLog(since?: string): string {
   const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
-  return kubectl("-n", RELEASE_NS, "logs", "-l", selector, "--tail=-1");
+  return kubectl(
+    "-n",
+    RELEASE_NS,
+    "logs",
+    "-l",
+    selector,
+    "--tail=-1",
+    ...(since ? [`--since-time=${since}`] : []),
+  );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a hop of the roll must leave behind: a pod of the new release, a boot that is not the one before, HOME as it was, and an agent ready on it. The reconciler's own line says the release rolled the pod, so a reboot for another reason cannot pass for the release reaching the machine.
-async function rolledOnto(image: string): Promise<void> {
+// UNIT_BOUNDARY_DESCRIPTION: what a hop of the roll must leave behind: a pod of the new release, a boot that is not the one before, HOME as it was, and an agent ready on it. The reconciler's own line, logged since the hop began, says the release rolled the pod, so a reboot for another reason cannot pass for the release reaching the machine, and one hop's line cannot answer for the next.
+async function rolledOnto(image: string, since: string): Promise<void> {
   await expect
     .poll(
       () => {
@@ -113,7 +121,7 @@ async function rolledOnto(image: string): Promise<void> {
     timeoutMs: 120_000,
   });
   expect(
-    controllerLog(),
+    controllerLog(since),
     `the pod did not roll because ${image} declares a reboot`,
   ).toContain(heldForReboot);
   machine = { boot: guestBoot(), pod: runnerPod(agentId) };
@@ -174,19 +182,21 @@ test("rolls the live guest onto a release that declares a reboot", async () => {
   test.setTimeout(900_000);
   const repository = secondImage.slice(0, secondImage.lastIndexOf(":"));
   const tag = secondImage.slice(secondImage.lastIndexOf(":") + 1);
+  const since = new Date().toISOString();
   upgrade(
     `virtualization.runner.image.repository=${repository}`,
     `virtualization.runner.image.tag=${tag}`,
     "virtualization.runner.image.digest=",
   );
   installMoved = true;
-  await rolledOnto(secondImage);
+  await rolledOnto(secondImage, since);
 });
 
 // TEST_SCENARIO: the install's own release carries the key before the second one's, so the hop back is a release that declares a reboot of its own, and the machine reboots again. The chart is upgraded on the values the install holds, with nothing named, which is how an operator leaves a release.
 test("rolls it back onto the release the install holds", async () => {
   test.setTimeout(900_000);
+  const since = new Date().toISOString();
   upgrade();
   installMoved = false;
-  await rolledOnto(installImage);
+  await rolledOnto(installImage, since);
 });
