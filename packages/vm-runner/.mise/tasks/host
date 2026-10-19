@@ -5,10 +5,47 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 [ "$(uname -s)" = Darwin ] || { echo "the host runner is for macOS; elsewhere the runner is a pod" >&2; exit 1; }
-cargo build --release --locked -p vm-runner
+
+# libkrun is the smolvm release's, at the link as at the load: smolvm's build
+# script links it on macOS, and with nothing pointing it at the release it
+# takes whatever pkg-config or a Homebrew lib offers, recording that copy's
+# install name — a runner that then dies at start (dyld: Library not loaded)
+# once the copy moves. LIBKRUN_DIR is the first source that build script
+# consults on the system, ahead of the pkg-config probe and its Homebrew paths,
+# so the release's lib/ is the only libkrun it can find. That libkrun.dylib
+# names itself @rpath/libkrun.dylib, which the rpath below resolves in the one
+# directory this binary names: the release cluster:host-runner stages beside
+# the binary it installs.
+tag="$(sed -n 's/^tag=//p' smolvm.pin)"
+sha="$(sed -n 's/^sha256-darwin-arm64=//p' smolvm.pin)"
+[ -n "$tag" ] && [ -n "$sha" ] || { echo "smolvm.pin names no darwin-arm64 release" >&2; exit 1; }
+release="smolvm-${tag#v}-darwin-arm64"
+cache="${XDG_CACHE_HOME:-$HOME/.cache}/platform-vm-runner"
+# Both are keyed by the digest, not the tag: a release re-pushed under the same
+# tag is a pin the digest check must catch, and an extraction under the tag
+# alone would keep linking the library of the release it replaced.
+tarball="$cache/$sha.tar.gz"
+lib="$cache/$sha/lib"
+if ! echo "$sha  $tarball" | shasum -a 256 -c --quiet - 2>/dev/null; then
+  mkdir -p "$cache"
+  curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors \
+    "https://github.com/smol-machines/smolvm/releases/download/$tag/$release.tar.gz" -o "$tarball.part"
+  echo "$sha  $tarball.part" | shasum -a 256 -c --quiet -
+  mv "$tarball.part" "$tarball"
+fi
+if [ ! -f "$lib/libkrun.dylib" ]; then
+  rm -rf "$cache/$sha"
+  mkdir -p "$cache/$sha"
+  tar -xzf "$tarball" -C "$cache/$sha" --strip-components=1 "$release/lib"
+fi
+
+LIBKRUN_DIR="$lib" \
+  RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-rpath,@executable_path/smolvm-$tag/lib" \
+  cargo build --release --locked -p vm-runner
 install -d dist/host
 install -m 755 target/release/vm-runner dist/host/vm-runner
 # Every VMM is this binary started again with _boot-vm, and Hypervisor.framework
 # refuses a process without the entitlement, so it is signed the way smolvm's
 # own release signs its binary.
 codesign --force --sign - --entitlements .smolvm/smolvm.entitlements dist/host/vm-runner
+./.mise/tasks/check/host-libkrun

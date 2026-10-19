@@ -18,11 +18,7 @@ import {
   createRefreshingApiClient,
 } from "../../lib/api-client.js";
 import { acceptTerms } from "../../lib/auth.js";
-import {
-  onLaneBackend,
-  refreshingToken,
-  waitAgentState,
-} from "../../lib/backend.js";
+import { refreshingToken, waitAgentState } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 test.describe.configure({ mode: "serial" });
@@ -77,9 +73,10 @@ async function shownSessions(page: Page): Promise<string[]> {
 }
 
 async function createSleeping(name: string): Promise<string> {
-  const { id } = await api.agents.create.mutate(
-    onLaneBackend({ name, templateId: harnessName }),
-  );
+  const { id } = await api.agents.create.mutate({
+    name,
+    templateId: harnessName,
+  });
   agentIds.set(name, id);
   await api.agents.sleep.mutate({ id });
   return id;
@@ -143,9 +140,10 @@ test.beforeAll(async () => {
       await createSleeping(name);
       continue;
     }
-    const { id } = await api.agents.create.mutate(
-      onLaneBackend({ name, templateId: harnessName }),
-    );
+    const { id } = await api.agents.create.mutate({
+      name,
+      templateId: harnessName,
+    });
     agentIds.set(name, id);
   }
   for (const [name, id] of agentIds)

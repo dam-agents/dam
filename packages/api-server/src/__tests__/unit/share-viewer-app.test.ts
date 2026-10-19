@@ -12,7 +12,10 @@ import type {
 import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
 import type { RenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
 import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
-import type { ShareSession } from "../../modules/artifact-library/domain/share-session.js";
+import {
+  shareSessionCookie,
+  type ShareSession,
+} from "../../modules/artifact-library/domain/share-session.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 
 function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
@@ -95,6 +98,7 @@ function appWith(
   return createShareViewerApp({
     viewer,
     auth,
+    sessionCookie: shareSessionCookie("https://share.example.com"),
     renderTokens: tokens,
     brandName: "Platform",
     uiBaseUrl: "http://app.localhost",
@@ -454,7 +458,7 @@ describe("restricted artifacts on the share host", () => {
     });
   }
   const withCookie = (id: string) => ({
-    headers: { cookie: `share_session=${id}` },
+    headers: { cookie: `__Host-share_session=${id}` },
   });
 
   /**
@@ -471,6 +475,23 @@ describe("restricted artifacts on the share host", () => {
     );
     expect(page.headers.get("Cache-Control")).toBe("private, no-store");
     expect((await app.request("/a/slug-a/raw?v=1")).status).toBe(401);
+  });
+
+  /**
+   * TEST_SCENARIO: Any host under the same parent domain, artifact code on the
+   * content host included, can plant a cookie named share_session. Only the
+   * __Host- cookie, which the browser accepts from the share host alone, may
+   * sign the visitor in; a planted one is ignored, whoever's session it names.
+   */
+  it("ignores a share session cookie another host could have set", async () => {
+    const app = appWith(restrictedViewer(["alice@example.com"]));
+    const planted = { headers: { cookie: "share_session=sid-alice" } };
+    const page = await app.request("/a/slug-a", planted);
+    expect(page.status).toBe(302);
+    expect(page.headers.get("Location")).toBe(
+      `/auth/login?next=${encodeURIComponent("/a/slug-a")}`,
+    );
+    expect((await app.request("/a/slug-a/raw", planted)).status).toBe(401);
   });
 
   /**

@@ -560,7 +560,6 @@ export function createAgentsService(deps: {
   agentDefaultStorageSize?: string;
   agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
-  vmForced?: boolean;
   defaultHarness?: string;
   telemetry?: boolean;
   runtimeMigrationRetentionMs?: number | null;
@@ -1065,7 +1064,7 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
-      const vm = input.vm === true || deps.vmForced === true;
+      const vm = input.vm ?? deps.virtualizationEnabled === true;
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
       let templateProviders: readonly string[] | undefined;

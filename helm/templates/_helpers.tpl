@@ -597,6 +597,12 @@ seLinuxOptions:
 # traceparent/tracestate before any external upstream, so nothing leaks outward.
 - name: CLAUDE_CODE_PROPAGATE_TRACEPARENT
   value: "1"
+# The image's model-gateway.sh then points the OTLP endpoint at the agent's
+# gateway, which forwards to the collector, so the export skips Claude Code's
+# one proxied socket. The controller serves that path whenever this chart sets
+# its collector host, which is when this rail renders.
+- name: PLATFORM_TELEMETRY_VIA_GATEWAY
+  value: "1"
 - name: OTEL_METRICS_EXPORTER
   value: "otlp"
 - name: OTEL_LOGS_EXPORTER

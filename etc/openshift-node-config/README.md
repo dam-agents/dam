@@ -204,9 +204,9 @@ Give the nodes that directory first, with the chart changes above.
    Each install stages into its own subdirectory, named after its agent namespace, because every stager keeps only the newest few releases in its directory.
    A chart from before the subdirectories staged releases at the top of the directory; nothing reads those any more, and they can be removed by hand.
 2. The upgrade to a chart that names releases over the machine API changes every runner pod's shape, whether or not the install had a release directory before, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
-   The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
-   Expect the whole roll to take about owners / `maxConcurrent` × (runner restart + machine boot), plus the idle waits.
-3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots.
+   The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, or `maxConcurrentPercent` of them where that is set, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
+   Expect the whole roll to take about owners / width × (runner restart + machine boot), plus the idle waits.
+3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots — except for a release that declares a reboot key the pod does not run (`packages/vm-runner/reboot-id`), whose fix reaches a machine only by rebooting it, so the runner holds it and the controller rolls the runner pods onto it instead of handing off, under the same width and without waiting for idle agents; a pod built from a release that declares no key takes it in place, since there is nothing to compare; a runner that holds that release as failed keeps its pod, since a pod on it would fail the same way.
    The first live hand-off is the first proof of the hand-off on OpenShift; it happens at the next chart upgrade that changes the runner image.
 
 Watch the first hand-off:

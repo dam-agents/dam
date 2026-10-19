@@ -1,6 +1,6 @@
 # Home feed
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
@@ -61,6 +61,7 @@ The sidebar becomes two columns: a strip of Agent avatars, and a list of Session
 Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
 With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; waiting approvals show only as badges.
 With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
+Both column headers carry one session filter, by state and by Session type, and share it: a filter set under Home also narrows an Agent's own list, and the control shows a mark while a filter is on.
 The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
 Pins are kept in the browser, so they do not follow the user to another device.

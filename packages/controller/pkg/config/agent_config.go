@@ -138,9 +138,12 @@ type GatewayEgressPeer struct {
 }
 
 type VMRunnerRollout struct {
-	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
-	SettleTimeout Duration `json:"settleTimeout,omitempty"`
-	IdleWait      Duration `json:"idleWait,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how many runners may be mid-roll or mid-hand-off at once: a count, or, when MaxConcurrentPercent is set, that share of the runners the install has. A count alone cannot express a width that keeps up: one runner at a time takes an install of a thousand owners days to roll.
+	MaxConcurrent int `json:"maxConcurrent,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the roll's width as a share of the runners the install has, 1 to 100, rounded up to at least one runner. Zero leaves the width to MaxConcurrent.
+	MaxConcurrentPercent int      `json:"maxConcurrentPercent,omitempty"`
+	SettleTimeout        Duration `json:"settleTimeout,omitempty"`
+	IdleWait             Duration `json:"idleWait,omitempty"`
 }
 
 type AgentProbes struct {

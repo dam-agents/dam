@@ -177,6 +177,37 @@ func TestRenderOwnerGateway_OnlyTheGuardStampsTheAgent(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: an owner gateway serves several agents in one Envoy, told apart only by the listener port. Each agent's OTLP route lives on its own listener, so its export carries its own attribution stamp and never a sibling's, and the route names stay apart so the access-log filter of one agent never matches another's route.
+func TestRenderOwnerGateway_EachAgentsOTLPRouteStampsItself(t *testing.T) {
+	got, err := renderOwnerGateway(ownerTestAgents(), telemetryTestCfg())
+	require.NoError(t, err)
+	seen := map[string]bool{}
+	for _, l := range resourcesOf(t, got.LDS) {
+		name := l["name"].(string)
+		agent, ok := strings.CutPrefix(name, "agent_egress_")
+		if !ok {
+			continue
+		}
+		hcm := l["filter_chains"].([]any)[len(l["filter_chains"].([]any))-1].(map[string]any)["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		rc := hcm["route_config"].(map[string]any)
+		var otlp map[string]any
+		for _, r := range rc["virtual_hosts"].([]any)[0].(map[string]any)["routes"].([]any) {
+			if r.(map[string]any)["match"].(map[string]any)["prefix"] == "/__platform_otlp/" {
+				otlp = r.(map[string]any)
+			}
+		}
+		require.NotNil(t, otlp, name)
+		assert.Equal(t, "gateway_otlp_"+agent, otlp["name"])
+		assert.Equal(t, "otel_collector", otlp["route"].(map[string]any)["cluster"], "the collector cluster is the owner's shared one")
+		assert.Equal(t, []any{map[string]any{
+			"header":        map[string]any{"key": "x-platform-agent-id", "value": agent},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		}}, rc["request_headers_to_add"])
+		seen[agent] = true
+	}
+	assert.Equal(t, map[string]bool{"agent-a": true, "agent-b": true}, seen)
+}
+
 // TEST_SCENARIO: the readiness probe compares the body of an agent's health path with the revision rendered for it, so the listener must answer that path with exactly that revision, and a change to one agent's chains must change only that agent's revision.
 func TestRenderOwnerGateway_HealthPathServesTheRevision(t *testing.T) {
 	agents := ownerTestAgents()
