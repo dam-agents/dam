@@ -65,12 +65,17 @@ export async function createAgentOn(
   return created.id;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an install that can virtualize refuses every container create, so a spec that needs a container Agent gets one the way an operator does: the api-server assembles the spec for a throwaway Agent, and that spec is applied as an Agent object with the container backend under the name the spec asked for. The throwaway is deleted at once, so its machine and home leave nothing behind.
+// UNIT_BOUNDARY_DESCRIPTION: an install that can virtualize refuses every container create, so a spec that needs a container Agent gets one the way an operator does: the api-server assembles the spec for a throwaway Agent, and that spec is applied as an Agent object with the container backend under the name the spec asked for. The throwaway is deleted at once, so its machine and home leave nothing behind. Its spec was assembled for the vm backend, which drops the template's storageSize, runtimeClassName and nodeSelector, so a case that needs those passes them in `legacy`; the api-server's template view publishes none of them. What the create does beside the spec — connections, credentials, env — is not staged either.
 export async function applyLegacyContainerAgent(
   api: ApiClient,
   id: string,
   name: string,
   templateId: string,
+  legacy: {
+    storageSize?: string;
+    runtimeClassName?: string;
+    nodeSelector?: Record<string, string>;
+  } = {},
 ): Promise<void> {
   await deleteAgentIfPresent(api, `${name}-spec`);
   const source = await api.agents.create.mutate({
@@ -104,7 +109,16 @@ export async function applyLegacyContainerAgent(
     apiVersion: cr.apiVersion,
     kind: cr.kind,
     metadata: { ...metadata, name: id },
-    spec: { ...cr.spec, name, backend: { type: "container" } },
+    spec: {
+      ...cr.spec,
+      name,
+      backend: { type: "container" },
+      ...(legacy.storageSize ? { storageSize: legacy.storageSize } : {}),
+      ...(legacy.runtimeClassName
+        ? { runtimeClassName: legacy.runtimeClassName }
+        : {}),
+      ...(legacy.nodeSelector ? { nodeSelector: legacy.nodeSelector } : {}),
+    },
   });
 }
 
