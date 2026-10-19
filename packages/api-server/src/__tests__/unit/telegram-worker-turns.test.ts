@@ -72,6 +72,7 @@ describe("telegram worker turns", () => {
     expect(prompt).toContain("send_channel_message");
     expect(prompt).toContain('chatId="telegram:7"');
     expect(prompt).toContain("@jane, id=7");
+    expect(prompt).toContain("<permission-check>");
     expect(prompt).toContain("Message: and one more thing");
   });
 

@@ -17,6 +17,7 @@ export interface AgentFooter {
   uiBaseUrl: string;
   agentId: string;
   label: string;
+  emoji?: string;
   sessionId?: string;
   ambientRound?: boolean;
 }
@@ -33,13 +34,8 @@ function escapeLinkLabel(name: string): string {
     .trim();
 }
 
-export function agentFooterLabel(
-  brand: { name: string },
-  agentName?: string,
-): string {
-  const poweredBy = `Powered by ${brand.name}`;
-  const name = agentName?.trim();
-  return name ? `${name} - ${poweredBy}` : poweredBy;
+export function agentFooterLabel(agentName?: string): string {
+  return `Sent by ${agentName?.trim() || "an agent"}`;
 }
 
 export function agentFooterMrkdwn(footer: AgentFooter): string {
@@ -49,7 +45,8 @@ export function agentFooterMrkdwn(footer: AgentFooter): string {
     ...(footer.ambientRound ? [AMBIENT_ROUND_PARAM] : []),
   ];
   const query = params.length > 0 ? `?${params.join("&")}` : "";
-  return `<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${query}|${label || footer.agentId}>`;
+  const emoji = footer.emoji ? `${footer.emoji} ` : "";
+  return `${emoji}<${footer.uiBaseUrl}${PUBLIC_AGENT_PATH}${footer.agentId}${query}|${label || footer.agentId}>`;
 }
 
 export function agentContextBlock(footer: AgentFooter): SlackBlock {
@@ -203,8 +200,9 @@ export function historyLegend(
   const base =
     'In the conversation history below, a line prefixed "you (this agent):" is ' +
     'your own earlier post in this channel; "<name> (another agent):" is a ' +
-    "different agent that posted here; everyone else is a human Slack user, " +
-    "prefixed with their Slack id";
+    'different agent that posted here; "<name> (an app):" is another app ' +
+    "or an incoming webhook; everyone else is a human Slack user, prefixed " +
+    "with their Slack id";
   const bot = opts.botLabel
     ? ` A line prefixed "${opts.botLabel}:" came from the bot but carries no ` +
       "footer, so it is not yours unless you recognise it as your own."
@@ -272,7 +270,9 @@ export function labelHistoryMessage(
       : `${author.name || author.agentId} (another agent)`
     : bot.userId && message.user === bot.userId
       ? bot.label
-      : (message.user ?? "unknown");
+      : message.botId
+        ? `${message.botName || message.botId} (an app)`
+        : (message.user ?? "unknown");
   const when = message.ts ? ` [${formatSlackTs(message.ts)}]` : "";
   const edited = message.edited ? " (edited)" : "";
   const marker = opts.showThreadMarkers ? threadMarker(message) : "";

@@ -202,9 +202,10 @@ pub struct RunnerImageCache {
     pub error: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another. `runtime` keeps its wire name from when it also meant another VM runtime.
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other three never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc — runs only in a new pod; one that declares another reboot key than this pod's release reboots the pod, which is what reboots its machines; and one that exited right after it took over is not tried again until the controller names another. `runtime` keeps its wire name from when it also meant another VM runtime.
 pub const HELD_UNSTAGED: &str = "unstaged";
 pub const HELD_RUNTIME: &str = "runtime";
+pub const HELD_REBOOT: &str = "reboot";
 pub const HELD_FAILED: &str = "failed";
 
 // UNIT_BOUNDARY_DESCRIPTION: vm-seed's exit code for a copy that a fresh attempt cannot change — a home past a walk limit, or larger than the machine's disk — so the controller fails the migration at once instead of spending its attempts on it.
@@ -475,7 +476,7 @@ mod tests {
         assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);
         assert_eq!(
             vocabulary["releaseHolds"],
-            serde_json::json!([HELD_UNSTAGED, HELD_RUNTIME, HELD_FAILED])
+            serde_json::json!([HELD_UNSTAGED, HELD_RUNTIME, HELD_REBOOT, HELD_FAILED])
         );
     }
 }

@@ -190,10 +190,11 @@ type RunnerImageCache struct {
 	Error  string `json:"error,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other two never pass in that pod, so only a new pod takes the release. Runtime means the release's runner does not load in this pod; the name is older than that meaning.
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other three never pass in that pod, so only a new pod takes the release. Runtime means the release's runner does not load in this pod; the name is older than that meaning. Reboot means the release declares that the machines booted before it must reboot onto it, which only its own pod does.
 const (
 	HeldUnstaged = "unstaged"
 	HeldRuntime  = "runtime"
+	HeldReboot   = "reboot"
 	HeldFailed   = "failed"
 )
 

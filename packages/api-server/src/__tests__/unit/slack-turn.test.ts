@@ -333,7 +333,7 @@ describe("slack reply / react tools", () => {
       elements: [
         {
           type: "mrkdwn",
-          text: "<http://ui/a/agent-1?s=sess-42|Powered by DAM>",
+          text: ":robot_face: <http://ui/a/agent-1?s=sess-42|Sent by an agent>",
         },
       ],
     });
@@ -350,7 +350,10 @@ describe("slack reply / react tools", () => {
     expect(posts.mock.calls[0]![0].blocks).toContainEqual({
       type: "context",
       elements: [
-        { type: "mrkdwn", text: "<http://ui/a/agent-1|Powered by DAM>" },
+        {
+          type: "mrkdwn",
+          text: ":robot_face: <http://ui/a/agent-1|Sent by an agent>",
+        },
       ],
     });
   });
@@ -1015,7 +1018,7 @@ describe("slack reply / react tools — turns that outlive their relay", () => {
   });
 });
 
-describe("slack turn — network-access framing and attendance", () => {
+describe("slack turn — contract framing and attendance", () => {
   function recordingAttendance() {
     const calls: string[] = [];
     let open = 0;
@@ -1038,7 +1041,7 @@ describe("slack turn — network-access framing and attendance", () => {
     };
   }
 
-  it("tells the agent an unallowed host can't be approved from the conversation", async () => {
+  it("tells the agent what a refusal is, and that the conversation cannot approve it", async () => {
     let prompt = "";
     const h = harness({
       sendPrompt: async (p) => {
@@ -1053,6 +1056,9 @@ describe("slack turn — network-access framing and attendance", () => {
     expect(prompt).toContain("cannot be approved from this conversation");
     expect(prompt).toContain("only your owner can allow a host, in DAM");
     expect(prompt).toContain("don't retry the same host in a loop");
+    expect(prompt).toContain("<permission-check>");
+    expect(prompt).toContain("every tool but the platform's own");
+    expect(prompt).toContain("your owner can change the agent's mode");
   });
 
   it("scopes the reply contract to the message it arrives with", async () => {

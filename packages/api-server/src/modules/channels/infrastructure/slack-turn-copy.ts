@@ -1,4 +1,5 @@
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
+import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { formatSlackTs } from "./agent-footer.js";
 
@@ -213,6 +214,7 @@ export function slackTurnContract(ctx: {
       "you're asked to.",
     "</how-to-respond>",
     channelNetworkAccessGuidance(ctx.identity.brand.name),
+    channelPermissionCheckGuidance,
   ].join("\n");
 }
 

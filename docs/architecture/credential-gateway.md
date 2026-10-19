@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -18,6 +18,7 @@ On the wire:
 
 1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`; the per-Agent gateway Service routes to the paired gateway pod.
    TLS egress arrives as HTTP CONNECT, plain HTTP in absolute form, forwarded without interception.
+   With a telemetry backend, plain HTTP to the gateway's own address on a reserved OTLP path goes to the collector instead, with no egress check, since it reaches nothing else (see [observability](observability.md#agent-export)).
 2. Envoy's outer listener (reach gated by NetworkPolicy) stamps the trusted attribution header on every request it forwards, or strips it where no telemetry backend is configured; either way the agent cannot supply its own (see [observability](observability.md)).
    CONNECT it terminates, routing the inner stream into an internal listener that reads SNI.
 3. Per-host filter chains terminate TLS with the leaf cert, run the credential injector(s) to add the configured header(s) (or rewrite `?<param>=<value>` into the URL — see below), then forward to a per-chain cluster pinned to the host (explicit upstream SNI, SAN-bound TLS validation).
@@ -166,4 +167,5 @@ The controller renders the owner gateway after the runner call, so a machine's s
 **Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.
 The old pod sleeps out most of its grace before Envoy is signalled, serving the streams it holds while the new one takes new connections.
-Only a template change (an image, the install's trust settings) rolls it, paced across owners by the same concurrency limit as runner rolls; listener, credential and leaf changes never do.
+Only a template change (an image, the install's trust settings) rolls it, paced across owners by the same roll width as runner rolls (`rollout.maxConcurrent` runners, or `rollout.maxConcurrentPercent` of them); listener, credential and leaf changes never do.
+A gateway already mid-roll holds one of the width's places, so a later template change replaces its stuck target in the place it holds rather than taking another: a fleet that shrinks under a stalled roll — owners removed, the share falling below the gateways stuck on it — still takes a corrective change, where counting its peers alone would leave every one of them blocked.

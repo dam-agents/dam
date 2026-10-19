@@ -247,6 +247,11 @@ from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 # libkrun rebuilt from the same sources need not be byte-identical, and an id
 # that moved on every build would roll every pod.
 { echo "$from" "$crane_version" "$crane_sha"; cat smolvm.pin smolvm.patch libkrun.patch libkrunfw.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
+# What the release changes in what a machine booted, which a hand-off cannot
+# take in place: a release declaring another key than the pod's is refused, and
+# the pod rolls, which reboots its machines. Bumped by the change that needs the
+# reboot, as an agent image declares its root generation.
+install -m 644 reboot-id "$rel/reboot-id"
 project="$work/project"
 mkdir -p "$project" "$work"/{data,cache,state,config}
 cp image.toml "$project/mise.toml"

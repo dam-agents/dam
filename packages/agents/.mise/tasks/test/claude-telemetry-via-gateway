@@ -1,0 +1,46 @@
+#!/usr/bin/env node
+//MISE description="Test that Claude Code exports its telemetry to the agent's gateway directly, not through its proxy agent"
+//MISE sources=["claude-code/rootfs/usr/local/lib/model-gateway.sh", "claude-code/rootfs/usr/local/bin/harness-chat", "claude-code/rootfs/usr/local/bin/harness-terminal", ".mise/tasks/test/claude-telemetry-via-gateway"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+
+const shim = fileURLToPath(new URL("../../../claude-code/rootfs/usr/local/lib/model-gateway.sh", import.meta.url));
+const COLLECTOR = "https://platform-clickstack-collector.platform.svc.cluster.local:4318";
+const PROXY = "http://10.96.42.42:10000";
+
+const after = (env) => {
+  const out = execFileSync(
+    "sh",
+    ["-c", `. "$1"; printf '%s\\n' "\${OTEL_EXPORTER_OTLP_ENDPOINT-}" "\${NO_PROXY-}" "\${no_proxy-}"`, "sh", shim],
+    { env: { PATH: process.env.PATH, ...env }, encoding: "utf8" },
+  );
+  const [endpoint, noProxy, noProxyLower] = out.split("\n");
+  return { endpoint, noProxy, noProxyLower };
+};
+
+// TEST_SCENARIO: both harness entry points source the shim before Claude Code starts, so the endpoint it sets is the one the harness, and the settings sync after it, see.
+for (const entry of ["harness-chat", "harness-terminal"]) {
+  const text = readFileSync(new URL(`../../../claude-code/rootfs/usr/local/bin/${entry}`, import.meta.url), "utf8");
+  assert.match(text, /^\. \/usr\/local\/lib\/model-gateway\.sh$/m, entry);
+}
+
+// TEST_SCENARIO: with the rail's flag on, the OTLP endpoint is the gateway's own address with the path the gateway forwards to the collector, and that address is added to NO_PROXY by its exact host: Claude Code matches NO_PROXY by exact host only, so the CIDR ranges a vm agent already lists would still send the export through the proxy.
+const vm = "localhost,127.0.0.1,::1,10.0.0.0/8,172.16.0.0/12";
+assert.deepEqual(
+  after({ PLATFORM_TELEMETRY_VIA_GATEWAY: "1", HTTPS_PROXY: PROXY, OTEL_EXPORTER_OTLP_ENDPOINT: COLLECTOR, NO_PROXY: vm, no_proxy: vm }),
+  { endpoint: `${PROXY}/__platform_otlp`, noProxy: `${vm},10.96.42.42`, noProxyLower: `${vm},10.96.42.42` },
+);
+
+// TEST_SCENARIO: a vm agent on a host runner reaches its gateway at the host's address on a forwarded port, and a proxy URL may end in a slash; the endpoint follows the proxy URL either way, and an address already listed is not listed twice.
+assert.deepEqual(
+  after({ PLATFORM_TELEMETRY_VIA_GATEWAY: "1", HTTPS_PROXY: "http://100.96.0.1:31234/", NO_PROXY: "100.96.0.1", no_proxy: "" }),
+  { endpoint: "http://100.96.0.1:31234/__platform_otlp", noProxy: "100.96.0.1", noProxyLower: "100.96.0.1" },
+);
+
+// TEST_SCENARIO: without the flag, as on a chart whose controller serves no OTLP path, or with no proxy to name the gateway, the rail's own endpoint stays.
+assert.equal(after({ HTTPS_PROXY: PROXY, OTEL_EXPORTER_OTLP_ENDPOINT: COLLECTOR }).endpoint, COLLECTOR);
+assert.equal(after({ PLATFORM_TELEMETRY_VIA_GATEWAY: "1", OTEL_EXPORTER_OTLP_ENDPOINT: COLLECTOR }).endpoint, COLLECTOR);
+console.log("Claude Code exports its telemetry to the agent's gateway directly");

@@ -25,7 +25,7 @@ import type { SlackMessage } from "../../modules/channels/infrastructure/slack-g
 const footer: AgentFooter = {
   uiBaseUrl: "http://ui",
   agentId: "agent-8acde0e1a059835a",
-  label: "Powered by DAM",
+  label: "Sent by Buginator",
 };
 
 const NO_BOT = { userId: null, label: "the DAM bot (unattributed)" };
@@ -40,44 +40,57 @@ describe("agent footer", () => {
   /**
    * TEST_SCENARIO: One install-wide Slack bot posts for every agent, with the
    * same avatar and the same name, so the footer is the only thing in a post
-   * that says which agent wrote it. It names the agent and the brand together.
+   * that says which agent wrote it. It names the agent and no brand: a team
+   * that ships its own product as an agent is not credited to the platform.
    */
-  it("names the agent and the brand", () => {
-    expect(agentFooterLabel({ name: "DAM" }, "Buginator")).toBe(
-      "Buginator - Powered by DAM",
-    );
+  it("names the agent and no brand", () => {
+    expect(agentFooterLabel("CUGA agent")).toBe("Sent by CUGA agent");
   });
 
   /**
    * TEST_SCENARIO: The agent's display name can be missing — a deleted agent, or
-   * a K8s read that failed. The label then carries the brand alone rather than
+   * a K8s read that failed. The label then says an agent sent it rather than
    * the raw agent id, which means nothing to a reader.
    */
-  it("falls back to the brand alone when the agent has no name", () => {
-    expect(agentFooterLabel({ name: "DAM" })).toBe("Powered by DAM");
-    expect(agentFooterLabel({ name: "DAM" }, "  ")).toBe("Powered by DAM");
+  it("falls back to a generic sender when the agent has no name", () => {
+    expect(agentFooterLabel()).toBe("Sent by an agent");
+    expect(agentFooterLabel("  ")).toBe("Sent by an agent");
+  });
+
+  /**
+   * TEST_SCENARIO: The footer opens with the agent's avatar emoji, outside the
+   * link, so the id in the URL still parses back out of it.
+   */
+  it("opens with the agent's avatar emoji, outside the link", () => {
+    const withEmoji = { ...footer, emoji: ":dam-agent-8:" };
+    expect(agentFooterMrkdwn(withEmoji)).toBe(
+      ":dam-agent-8: <http://ui/a/agent-8acde0e1a059835a|Sent by Buginator>",
+    );
+    expect(
+      parseAgentFooter({ blocks: [agentContextBlock(withEmoji)] }),
+    ).toEqual({ agentId: "agent-8acde0e1a059835a" });
   });
 
   it("links the label at the agent's public page", () => {
     expect(agentFooterMrkdwn(footer)).toBe(
-      "<http://ui/a/agent-8acde0e1a059835a|Powered by DAM>",
+      "<http://ui/a/agent-8acde0e1a059835a|Sent by Buginator>",
     );
   });
 
   it("carries the session as a query param when the post belongs to a turn", () => {
     expect(agentFooterMrkdwn({ ...footer, sessionId: "sess-42" })).toBe(
-      "<http://ui/a/agent-8acde0e1a059835a?s=sess-42|Powered by DAM>",
+      "<http://ui/a/agent-8acde0e1a059835a?s=sess-42|Sent by Buginator>",
     );
   });
 
   it("url-encodes a session id that would break the link", () => {
     expect(agentFooterMrkdwn({ ...footer, sessionId: "a/b c" })).toBe(
-      "<http://ui/a/agent-8acde0e1a059835a?s=a%2Fb%20c|Powered by DAM>",
+      "<http://ui/a/agent-8acde0e1a059835a?s=a%2Fb%20c|Sent by Buginator>",
     );
   });
 
   /**
-   * TEST_SCENARIO: The label is brand copy from Helm values, so an operator can
+   * TEST_SCENARIO: The label carries the agent's display name, so its owner can
    * put a pipe or an angle bracket in it. Slack's <url|label> syntax would then
    * split at the wrong place and the whole footer would stop parsing.
    */
@@ -226,6 +239,29 @@ describe("labelHistoryMessage", () => {
     ).toBe("U123: hey");
   });
 
+  /**
+   * TEST_SCENARIO: An app or webhook post has no Slack user, only a bot id and
+   * the app's name. The line names the app, the way a live post from it is
+   * named, instead of "unknown".
+   */
+  it("names an app's post from its bot name", () => {
+    const app: SlackMessage = {
+      text: "Pull request opened",
+      botId: "B-GH",
+      botName: "GitHub",
+    };
+    expect(
+      labelHistoryMessage(app, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe("GitHub (an app): Pull request opened");
+  });
+
+  it("falls back to the bot id for an app with no name", () => {
+    const app: SlackMessage = { text: "ping", botId: "B-HOOK" };
+    expect(
+      labelHistoryMessage(app, null, footer.agentId, NO_BOT, MARKERS),
+    ).toBe("B-HOOK (an app): ping");
+  });
+
   it("includes a human-readable timestamp when the message carries one", () => {
     const withTs: SlackMessage = { ts: "0.1", text: "hey", user: "U123" };
     expect(
@@ -355,7 +391,7 @@ describe("renderAssistantBlocks", () => {
         elements: [
           {
             type: "mrkdwn",
-            text: "<http://ui/a/agent-8acde0e1a059835a|Powered by DAM>",
+            text: "<http://ui/a/agent-8acde0e1a059835a|Sent by Buginator>",
           },
         ],
       },
