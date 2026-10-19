@@ -106,9 +106,10 @@ exists to close.
 {{- define "platform.validate.controllerGatewayEgress" -}}
 {{- $egress := .Values.controller.gatewayEgress | default dict -}}
 {{- range ($egress.extraCidrs | default list) -}}
-{{- include "platform.validate.cidr" (dict "name" "controller.gatewayEgress.extraCidrs" "value" .) -}}
-{{- if hasSuffix "/0" (toString .) -}}
-{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q opens every private range to agent gateways, which is what their egress policy closes. Name the enterprise service's own range instead." (toString .)) -}}
+{{- $entry := toString . -}}
+{{- include "platform.validate.cidr" (dict "name" "controller.gatewayEgress.extraCidrs" "value" $entry) -}}
+{{- if eq (int (last (splitList "/" $entry))) 0 -}}
+{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q opens every private range to agent gateways, which is what their egress policy closes. Name the enterprise service's own range instead." $entry) -}}
 {{- end -}}
 {{- end -}}
 {{- $dns := $egress.clusterDns | default dict -}}
@@ -118,8 +119,13 @@ exists to close.
 {{- include "platform.validate.port" (dict "name" "controller.gatewayEgress.clusterDns" "value" .) -}}
 {{- end -}}
 {{- end -}}
+{{- range ($egress.peers | default list) -}}
+{{- include "platform.validate.selector" (dict "name" "controller.gatewayEgress.peers" "namespace" .namespace "labels" (.podLabels | default dict)) -}}
+{{- range (.ports | default list) -}}
+{{- include "platform.validate.port" (dict "name" (printf "controller.gatewayEgress.peers (namespace %q)" (toString .namespace)) "value" .) -}}
 {{- end -}}
-
+{{- end -}}
+{{- end -}}
 
 {{/*
 istio.enforce=false leaves every AuthorizationPolicy rendered and none
@@ -375,6 +381,9 @@ apply lands. The namespace is matched through `kubernetes.io/metadata.name`, so
 its name is checked as the label value it is rendered as.
 */}}
 {{- define "platform.validate.selector" -}}
+{{- if not (kindIs "map" .labels) -}}
+{{- fail (printf "%s podLabels must be a map of label keys to values, got the %s %v: a selector rendered from anything else matches no pod the policy admits, or is rejected whole." .name (kindOf .labels) .labels) -}}
+{{- end -}}
 {{- $namespace := toString .namespace -}}
 {{- if not (and (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $namespace) (le (len $namespace) 63)) -}}
 {{- fail (printf "%s namespace %q is not a namespace name — lower-case alphanumerics and dashes, at most 63, beginning and ending with an alphanumeric. Kubernetes rejects the whole NetworkPolicy it is rendered into, which leaves the pod it names ungated until the next apply lands." .name $namespace) -}}
@@ -419,9 +428,10 @@ reopen every range the policy exists to close.
 {{- if .Values.virtualization.enabled -}}
 {{- $cache := .Values.virtualization.imageCache | default dict -}}
 {{- range ($cache.egressCidrs | default list) -}}
-{{- include "platform.validate.cidr" (dict "name" "virtualization.imageCache.egressCidrs" "value" .) -}}
-{{- if hasSuffix "/0" (toString .) -}}
-{{- fail (printf "virtualization.imageCache.egressCidrs entry %q opens every range to the node image cache service, which is what its egress policy closes — it already reaches the public internet. Name the mirror's own range instead." (toString .)) -}}
+{{- $entry := toString . -}}
+{{- include "platform.validate.cidr" (dict "name" "virtualization.imageCache.egressCidrs" "value" $entry) -}}
+{{- if eq (int (last (splitList "/" $entry))) 0 -}}
+{{- fail (printf "virtualization.imageCache.egressCidrs entry %q opens every range to the node image cache service, which is what its egress policy closes — it already reaches the public internet. Name the mirror's own range instead." $entry) -}}
 {{- end -}}
 {{- end -}}
 {{- range ($cache.peers | default list) -}}

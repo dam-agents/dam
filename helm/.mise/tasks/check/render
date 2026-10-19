@@ -86,6 +86,10 @@ for refused in 'virtualization.imageCache.hostPath=' \
   'controller.gatewayEgress.clusterDns.namespace=Kube-System' \
   'controller.gatewayEgress.clusterDns.podLabels.k8s-app=-bad-' \
   'controller.gatewayEgress.clusterDns.ports[0]=0' \
+  'controller.gatewayEgress.peers[0].namespace=Registry' \
+  'virtualization.imageCache.egressCidrs[0]=0.0.0.0/00' \
+  'controller.gatewayEgress.extraCidrs[0]=::/00' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels=app=registry,virtualization.imageCache.peers[0].ports[0]=443' \
   'controller.gatewayEgress.extraCidrs[0]=2001:::1/64' \
   'virtualization.runner.seccomp=permissive'; do
   if helm template platform . "${COMMON[@]}" "${VM[@]}" --set "$refused" >/dev/null 2>&1; then

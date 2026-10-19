@@ -16,6 +16,13 @@ IMAGE_DIR="$(helm template platform "$MISE_CONFIG_ROOT/helm" \
   --show-only templates/controller/deployment.yaml \
   | yq -r 'select(.kind == "Deployment") | .spec.template.spec.containers[].env[]
       | select(.name == "AGENT_VM") | .value | fromjson | .runner.imageCacheHostPath')"
+# The trees land under this directory as root; an empty one would put them in
+# the node's own root, where the next prune or eviction of the cache would take
+# them for its own.
+[ -n "$IMAGE_DIR" ] || {
+  echo "image:stage-vm: the chart named no node image cache directory — set virtualization.imageCache.hostPath in helm/values-local.yaml" >&2
+  exit 1
+}
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
