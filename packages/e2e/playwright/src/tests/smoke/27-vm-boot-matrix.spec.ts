@@ -113,7 +113,7 @@ function emptyLayoutMark(): string {
   return emptied;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that finds this machine's VMM, waits for one of the given lines on the machine's console, freezes the VMM, copies the console written by then, and SIGKILLs the frozen VMM: it writes one line for the test, the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console keeps the boot before until the next start empties it, and a VMM writes its first lines before the kernel's, so the watcher removes that record before it says it watches, and only then: the wake that follows cannot write the line before the removal, and a line read after it belongs to the boot this start makes. The VMM is found before the line is waited for, and frozen before its console is copied and killed, so the copy is the console at the moment of the death and no step of the boot can run between the copy and the kill. A VMM is the process whose command line names the boot config of the machine's directory, which the runtime passes to it and to nothing else, and that started after this watcher, whose own start the kernel records beside it: a VMM of the boot before, still winding down when the watcher looks, started before it, so the two cannot be taken for one another. The lines reach a fixed-string grep in a shell script, so none of them may hold a single quote. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
+// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that waits for one of the given lines on this machine's console, finds the VMM that writes it, freezes that VMM, copies the console it had written by then, and SIGKILLs the frozen VMM: it writes one line for the test, the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console keeps the boot before until the next start empties it, and a VMM writes its first lines before the kernel's, so the watcher removes that record before it says it watches, and only then: the wake that follows cannot write the line before the removal, and a line read after it belongs to the boot this start makes. The VMM is the process whose command line names the boot config of the machine's directory, which the runtime passes to it and to nothing else, and no other: the helpers a start spawns name the disk, and a VMM of the boot before names the same config, so the watcher takes the one among them that runs now and, where a line was waited for, started after the watcher, whose own start the kernel records beside it. Freezing before the copy is what makes the copy evidence: the boot cannot reach the hand-off between the copy and the kill, and a VMM that went before it could be frozen is reported rather than killed. The lines reach a fixed-string grep in a shell script, so none of them may hold a single quote. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
 function watchForKill(id: string, tag: string, lines: readonly string[]): void {
   const out = `/tmp/boot-matrix-kill-${tag}`;
   const script = `/tmp/boot-matrix-watch-${tag}.sh`;
@@ -134,20 +134,17 @@ function watchForKill(id: string, tag: string, lines: readonly string[]): void {
       "deadline=$(( $(now) + 60000 ))",
       ...(lines.length === 0 ? [] : ['rm -f "$log"']),
       `: > ${ready}`,
-      'mine=$(sed "s/.*) //" /proc/$$/stat | cut -d" " -f20)',
-      "pid=",
-      'while [ -z "$pid" ]; do',
+      `mine=$(sed "s/.*) //" /proc/$$/stat | cut -d" " -f20)`,
+      "find_pid() {",
       '  for c in $(grep -la -- "$vm/boot-config.json" /proc/[0-9]*/cmdline 2>/dev/null); do',
       "    p=${c#/proc/}; p=${p%/cmdline}",
       '    t=$(sed "s/.*) //" /proc/$p/stat 2>/dev/null | cut -d" " -f20)',
-      '    [ -n "$mine" ] && [ -n "$t" ] && [ "$t" -le "$mine" ] && continue',
-      "    pid=$p",
-      "    break",
+      `    [ ${lines.length === 0 ? "0" : "1"} = 1 ] && [ -n "$mine" ] && [ -n "$t" ] && [ "$t" -le "$mine" ] && continue`,
+      '    echo "$p"',
+      "    return 0",
       "  done",
-      '  [ -n "$pid" ] && break',
-      '  [ "$(now)" -lt "$deadline" ] || { echo "no VMM of this machine started" >> $out; exit 0; }',
-      "  sleep 0.02",
-      "done",
+      "  return 1",
+      "}",
       ...(lines.length === 0
         ? []
         : [
@@ -157,7 +154,18 @@ function watchForKill(id: string, tag: string, lines: readonly string[]): void {
             "done",
           ]),
       "seen=$(now)",
+      "pid=",
+      'while [ -z "$pid" ]; do',
+      "  pid=$(find_pid)",
+      '  [ -n "$pid" ] && break',
+      '  [ "$(now)" -lt "$deadline" ] || { echo "no VMM of this machine runs" >> $out; exit 0; }',
+      "  sleep 0.01",
+      "done",
       'kill -STOP "$pid" 2>/dev/null',
+      'if ! kill -0 "$pid" 2>/dev/null; then',
+      '  echo "the VMM went before it could be frozen: $pid" >> $out',
+      "  exit 0",
+      "fi",
       `cp "$log" /tmp/boot-matrix-console-${tag} 2>/dev/null`,
       'if kill -9 "$pid" 2>/dev/null; then',
       lines.length === 0
