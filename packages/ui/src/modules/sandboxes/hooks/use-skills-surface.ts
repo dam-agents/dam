@@ -151,6 +151,7 @@ export function useSkillsSurface(
       retry: false,
       staleTime: SCAN_STALE_MS,
       gcTime: SCAN_GC_MS,
+      refetchOnWindowFocus: false,
     })),
     combine: (results) => {
       const skillsBySource: Record<string, Skill[]> = {};

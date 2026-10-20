@@ -208,7 +208,7 @@ pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> anyhow::Result<Vec<i32>> 
     #[cfg(target_os = "macos")]
     let Ok(entries) = entries
     else {
-        return Ok(darwin::pids_with_arg(&needle));
+        return darwin::pids_with_arg(&needle);
     };
     #[cfg(not(target_os = "macos"))]
     let entries = entries.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
@@ -237,15 +237,25 @@ pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> anyhow::Result<Vec<i32>> 
     Ok(pids)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits up to `limit` for the VMMs holding the machine's directory to exit, and returns the ones still there: those its command line names, and those in `seen`, found before a stop. A VMM's command line goes blank the moment it starts exiting, while its threads still hold its disks and published ports until the last of them exits — so a VMM the runner killed itself, or whose stop it went past, is only found through `seen`. smolvm's own stop waits for every thread since 1.18. A start issued before then is refused in a way that looks like a machine that can never start, or cannot bind the machine's port. A machine that is really stopped answers at once.
+// UNIT_BOUNDARY_DESCRIPTION: waits up to `limit` for the VMMs holding the machine's directory to exit, and returns the ones still there: those its command line names, and those in `seen`, found before a stop. A VMM's command line goes blank the moment it starts exiting, while its threads still hold its disks and published ports until the last of them exits — so a VMM the runner killed itself, or whose stop it went past, is only found through `seen`. smolvm's own stop waits for every thread since 1.18. A start issued before then is refused in a way that looks like a machine that can never start, or cannot bind the machine's port. A machine that is really stopped answers at once, and only a scan that looked says so: a scan that failed is waited out like one that found a VMM, since it has not shown the machine is free.
 pub fn vmms_left(proc_root: &Path, vm_dir: &Path, mut seen: Vec<i32>, limit: Duration) -> Vec<i32> {
     let deadline = Instant::now() + limit;
+    let mut looked = false;
     loop {
-        seen.extend(orphan_pids(proc_root, vm_dir).unwrap_or_default());
+        match orphan_pids(proc_root, vm_dir) {
+            Ok(found) => {
+                looked = true;
+                seen.extend(found);
+            }
+            Err(e) => tracing::warn!(
+                machine = %vm_dir.display(),
+                "could not scan the host for a VMM holding the machine: {e:#}"
+            ),
+        }
         seen.sort_unstable();
         seen.dedup();
         seen.retain(|&pid| !exited(proc_root, pid));
-        if seen.is_empty() || Instant::now() >= deadline {
+        if (looked && seen.is_empty()) || Instant::now() >= deadline {
             return seen;
         }
         std::thread::sleep(Duration::from_millis(50));
@@ -275,32 +285,82 @@ fn exited(proc_root: &Path, pid: i32) -> bool {
 pub(crate) mod darwin {
     use std::ffi::c_void;
     use std::mem;
+    use std::time::Duration;
 
-    pub fn pids_with_arg(needle: &str) -> Vec<i32> {
+    // UNIT_BOUNDARY_DESCRIPTION: how long a process that answered no arguments is waited out, and how often it is read again. A process installing a new image answers nothing, or a partial answer, for the moment the kernel takes to swap its arguments, and answers its own again right after; every VMM is in that moment at its start. A process that answers nothing four times, a millisecond apart, is taken to have no command line, which is the safe way to be wrong: `kill_orphans` signals every pid a scan names. Only a process that answered nothing pays the pause.
+    const ARG_READS: usize = 4;
+    const ARG_READ_PAUSE: Duration = Duration::from_millis(1);
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pids whose arguments hold `needle`. A table the kernel did not answer is an error, never an empty list: an empty list says no process holds the machine, and `kill_orphans` and `vmms_left` read that as nobody to kill and nothing left.
+    pub fn pids_with_arg(needle: &str) -> anyhow::Result<Vec<i32>> {
+        scan(needle, table)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the scan itself, over a process table its caller names, so the answer to a table the kernel would not list is a test of this crate and not of the kernel.
+    pub(super) fn scan(
+        needle: &str,
+        table: impl FnOnce() -> anyhow::Result<Vec<i32>>,
+    ) -> anyhow::Result<Vec<i32>> {
+        let mut found: Vec<i32> = table()?
+            .into_iter()
+            .filter(|&pid| {
+                args(|| read_args(pid))
+                    .iter()
+                    .any(|arg| arg.contains(needle))
+            })
+            .collect();
+        found.sort_unstable();
+        Ok(found)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pids in the kernel's process table, with the room a scan needs for the processes born between asking its size and reading it. A listing that failed, or one that holds no pid at all, is an error: a process table always holds pid 1, and an empty one would say nothing runs on the host.
+    fn table() -> anyhow::Result<Vec<i32>> {
+        let check = |listed: i32| match usize::try_from(listed) {
+            Ok(count) if count > 0 => Ok(count),
+            _ => Err(anyhow::anyhow!(
+                "listing the host's processes: {}",
+                std::io::Error::last_os_error()
+            )),
+        };
         // SAFETY: a null buffer asks only for the number of pids.
         let count = unsafe { libc::proc_listallpids(std::ptr::null_mut(), 0) };
-        let Ok(count) = usize::try_from(count) else {
-            return Vec::new();
-        };
-        let mut pids = vec![0i32; count + 64];
+        let mut pids = vec![0i32; check(count)? + 64];
         let bytes = i32::try_from(pids.len() * mem::size_of::<i32>()).unwrap_or(i32::MAX);
         // SAFETY: the buffer holds `bytes` bytes of pids.
         let listed = unsafe { libc::proc_listallpids(pids.as_mut_ptr().cast::<c_void>(), bytes) };
-        pids.truncate(usize::try_from(listed).unwrap_or(0));
-        let mut found: Vec<i32> = pids
-            .into_iter()
-            .filter(|&pid| pid > 0 && args(pid).iter().any(|arg| arg.contains(needle)))
-            .collect();
-        found.sort_unstable();
-        found
+        pids.truncate(check(listed)?);
+        pids.retain(|&pid| pid > 0);
+        Ok(pids)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a process's arguments, without its environment. KERN_PROCARGS2 answers argc, the executable path, padding, then the arguments and the environment, all NUL-separated.
-    fn args(pid: i32) -> Vec<String> {
+    // UNIT_BOUNDARY_DESCRIPTION: a process's arguments, without its environment. A process the kernel will not answer for — gone, a zombie, root's or a kernel task's — has none, and neither has one that answered nothing every time it was read: a VMM names its machine's directory on the command line of a process this user runs, and an argument that cannot be read cannot be matched against, so the scan names no process it could not check.
+    pub(super) fn args(mut read: impl FnMut() -> Answer) -> Vec<String> {
+        (0..ARG_READS)
+            .find_map(|attempt| {
+                if attempt > 0 {
+                    std::thread::sleep(ARG_READ_PAUSE);
+                }
+                match read() {
+                    Answer::Args(args) => Some(args),
+                    Answer::Gone => Some(Vec::new()),
+                    Answer::MidExec => None,
+                }
+            })
+            .unwrap_or_default()
+    }
+
+    pub(super) enum Answer {
+        Args(Vec<String>),
+        Gone,
+        MidExec,
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one read of a process's arguments through KERN_PROCARGS2, which answers the size the buffer must hold when given none, and a temporary failure — EIO, EAGAIN, EINTR, ENOMEM — for a process the kernel is in the middle of an exec on.
+    fn read_args(pid: i32) -> Answer {
         let mut mib = [libc::CTL_KERN, libc::KERN_PROCARGS2, pid];
         let mut size: libc::size_t = 0;
         // SAFETY: a null buffer asks only for the size; `mib` names three levels.
-        if unsafe {
+        let sized = unsafe {
             libc::sysctl(
                 mib.as_mut_ptr(),
                 3,
@@ -309,13 +369,13 @@ pub(crate) mod darwin {
                 std::ptr::null_mut(),
                 0,
             )
-        } != 0
-        {
-            return Vec::new();
+        };
+        if sized != 0 {
+            return answer_of(std::io::Error::last_os_error());
         }
         let mut buf = vec![0u8; size];
         // SAFETY: the buffer holds `size` bytes, and the kernel writes at most that many.
-        if unsafe {
+        let read = unsafe {
             libc::sysctl(
                 mib.as_mut_ptr(),
                 3,
@@ -324,21 +384,34 @@ pub(crate) mod darwin {
                 std::ptr::null_mut(),
                 0,
             )
-        } != 0
-        {
-            return Vec::new();
+        };
+        if read != 0 {
+            return answer_of(std::io::Error::last_os_error());
         }
         buf.truncate(size);
-        let Some((argc, rest)) = buf.split_first_chunk::<4>() else {
-            return Vec::new();
-        };
+        args_in(&buf).map_or(Answer::MidExec, Answer::Args)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether the kernel failed to answer, or answered that it cannot: a process exiting or changing its image fails with EIO, EAGAIN, EINTR or ENOMEM and answers again a moment later, while EINVAL and ESRCH are answers — the process is gone, a zombie, or another user's.
+    fn answer_of(error: std::io::Error) -> Answer {
+        match error.raw_os_error() {
+            Some(libc::EIO | libc::EAGAIN | libc::EINTR | libc::ENOMEM) => Answer::MidExec,
+            _ => Answer::Gone,
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the arguments in one answer from KERN_PROCARGS2: argc, the executable's path, the padding that aligns them, then argc arguments and the environment, all NUL-separated. Around argc the kernel counts the arguments, so a string from the environment is never read as one and an argument that is empty is still an argument. An answer holding fewer arguments than argc is not one — a process mid-exec answers its old count over an empty buffer — so it is no answer at all rather than a partial list that names nothing.
+    pub(super) fn args_in(answer: &[u8]) -> Option<Vec<String>> {
+        let (argc, rest) = answer.split_first_chunk::<4>()?;
         let argc = usize::try_from(i32::from_ne_bytes(*argc)).unwrap_or(0);
-        rest.split(|&b| b == 0)
+        let args: Vec<String> = rest
+            .split(|&b| b == 0)
             .skip(1)
-            .filter(|field| !field.is_empty())
+            .skip_while(|field| field.is_empty())
             .take(argc)
             .map(|field| String::from_utf8_lossy(field).into_owned())
-            .collect()
+            .collect();
+        (args.len() == argc).then_some(args)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a process's resident memory in bytes and its user plus system CPU time in microseconds, which Linux reads from /proc. The kernel counts CPU in Mach time units, nanoseconds on Intel and timebase ticks on Apple silicon, so it is scaled by the timebase.
@@ -400,7 +473,14 @@ pub(crate) mod darwin {
 }
 
 pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
-    for pid in orphan_pids(proc_root, vm_dir).unwrap_or_default() {
+    let pids = orphan_pids(proc_root, vm_dir).unwrap_or_else(|e| {
+        tracing::warn!(
+            machine = %vm_dir.display(),
+            "could not scan the host for a VMM holding the machine: {e:#}"
+        );
+        Vec::new()
+    });
+    for pid in pids {
         // SAFETY: kill(2) takes no pointers; a pid that has already exited returns ESRCH, which is ignored.
         unsafe {
             libc::kill(pid, libc::SIGKILL);
@@ -545,7 +625,7 @@ mod tests {
             .unwrap();
         let pid = i32::try_from(vmm.id()).unwrap();
         let proc_root = Path::new("/proc");
-        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so a scan can miss a process that has just started; a Mac's own process-table read can also answer with nothing for a moment under load. So a scan that finds no process is repeated until the deadline, while one that names a process must name the stand-in alone at once: `kill_orphans` signals every pid a scan names.
+        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so a scan can miss a process that has just started. So a scan that finds no process is repeated until the deadline, while one that names a process must name the stand-in alone at once: `kill_orphans` signals every pid a scan names.
         let deadline = Instant::now() + Duration::from_secs(5);
         let mut found = Vec::new();
         while Instant::now() < deadline {
@@ -914,6 +994,115 @@ mod tests {
         assert_eq!(VMM_EXIT_WAIT, Duration::from_secs(10));
         assert_eq!(SLOW_OP, Duration::from_secs(2));
         assert_eq!(GUEST_AGENT_PORT, 8080);
+    }
+
+    // TEST_SCENARIO: a live process answers the kernel's read of its arguments with nothing, or with a partial answer, for the moment the kernel takes to install a new image, which is longer the longer its arguments are, and a VMM answers it that way at every start. A scan in that moment found no VMM, which `kill_orphans` read as nothing to kill and `vmms_left` as a machine nothing holds. The stand-in re-execs itself with an argument near the host's limit, so it is in that moment over and over, and every scan of it must name it.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_vmm_the_kernel_is_mid_exec_on_is_named_by_every_scan() {
+        const SCAN_ATTEMPTS: usize = 200;
+        let dir = TempDir::new("vmm-midexec");
+        let vm_dir = dir.path().join("m1");
+        let needle = format!("{}/", vm_dir.display());
+        let script = dir.path().join("reexec");
+        crate::testdir::exec_script(&script, "#!/bin/sh\nexec \"$0\" \"$1\" \"$2\"\n");
+        let padding = "a".repeat(900_000);
+        let mut vmm = std::process::Command::new(&script)
+            .arg(&padding)
+            .arg(&needle)
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        let mut misses = Vec::new();
+        for scan in 0..SCAN_ATTEMPTS {
+            if !darwin::pids_with_arg(&needle).unwrap().contains(&pid) {
+                misses.push(scan);
+            }
+        }
+        vmm.kill().unwrap();
+        vmm.wait().unwrap();
+        assert!(
+            misses.is_empty(),
+            "the scan missed the live VMM on scans {misses:?}"
+        );
+    }
+
+    // TEST_SCENARIO: the kernel answers nothing for a process that is installing a new image, which is every VMM at its start, and that answer is not a command line: the read is repeated until the process answers, and a process that never answers is not named, since `kill_orphans` signals every pid a scan names.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_process_that_answered_nothing_is_read_again() {
+        let mut answers = [
+            darwin::Answer::MidExec,
+            darwin::Answer::MidExec,
+            darwin::Answer::Args(vec!["_boot-vm".to_string(), "/m/1/".to_string()]),
+        ]
+        .into_iter();
+        assert_eq!(
+            darwin::args(|| answers.next().expect("read again")),
+            ["_boot-vm", "/m/1/"],
+            "the command line a process installs is read, not the nothing it answered first"
+        );
+        assert_eq!(
+            darwin::args(|| darwin::Answer::MidExec),
+            Vec::<String>::new(),
+            "a process that never answered is named by nothing"
+        );
+    }
+
+    // TEST_SCENARIO: a process table the kernel did not answer is an error and never an empty list. An empty list is how a scan says no process holds the machine, and a runner that reads a failed look that way kills nothing and boots a second VMM on a disk a live one is writing.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_table_the_kernel_did_not_answer_is_an_error() {
+        let unlisted = darwin::scan("anything", || {
+            anyhow::bail!("the kernel listed no processes")
+        });
+        assert!(
+            unlisted.is_err(),
+            "a table that was not read is not an empty one"
+        );
+    }
+
+    // TEST_SCENARIO: the kernel answers nothing for the processes it keeps to itself — pid 1, root's daemons, every kernel task — and a scan that read those as failures would fail on every machine. They are named by nothing, and they do not fail the scan.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_process_the_kernel_will_not_describe_is_named_by_nothing() {
+        let unreadable = darwin::scan("a needle no command line holds", || Ok(vec![1, i32::MAX]));
+        assert_eq!(unreadable.unwrap(), Vec::<i32>::new());
+    }
+
+    // TEST_SCENARIO: an answer from the kernel holds argc, the executable's path, the padding that aligns the arguments, then argc arguments and the environment. An answer holding fewer arguments than argc is a process mid-exec and not a command line, and the environment is never read as an argument: `kill_orphans` signals every pid a scan names, so a needle in another process's environment must not name it.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_arguments_end_where_the_kernel_says_they_do() {
+        let answer = |argc: i32, rest: &[u8]| {
+            let mut answer = argc.to_ne_bytes().to_vec();
+            answer.extend(rest);
+            answer
+        };
+        assert_eq!(
+            darwin::args_in(&answer(3, b"/bin/sh\0\0\0sh\0-c")),
+            None,
+            "two arguments of three is no command line"
+        );
+        assert_eq!(
+            darwin::args_in(&answer(3, b"/bin/sh\0\0\0sh\0-c\0/m/1/\0PATH=/m/1/\0")),
+            Some(vec![
+                "sh".to_string(),
+                "-c".to_string(),
+                "/m/1/".to_string()
+            ]),
+            "the environment is not an argument"
+        );
+        assert_eq!(
+            darwin::args_in(&answer(4, b"/bin/sh\0\0\0sh\0\0-c\0/m/1/\0PATH=/m/1/\0")),
+            Some(vec![
+                "sh".to_string(),
+                String::new(),
+                "-c".to_string(),
+                "/m/1/".to_string()
+            ]),
+            "an empty argument is an argument, and it does not shift the environment into the arguments"
+        );
     }
 
     fn process(proc: &TempDir, pid: i32, cmdline: &str) {

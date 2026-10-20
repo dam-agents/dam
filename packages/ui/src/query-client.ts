@@ -8,7 +8,6 @@ import {
 
 import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
 import { getErrorMessage } from "./lib/errors.js";
-import { refreshOnReturn } from "./lib/refresh-on-return.js";
 import { emitToast } from "./lib/toast.js";
 import { showStorageFull } from "./modules/budgets/lib/storage-full.js";
 import {
@@ -58,9 +57,6 @@ export const queryClient = new QueryClient({
     queries: {
       retry: 3,
       staleTime: 30_000,
-      refetchOnWindowFocus: (query) => refreshOnReturn(query.queryKey, "focus"),
-      refetchOnReconnect: (query) =>
-        refreshOnReturn(query.queryKey, "reconnect"),
     },
     mutations: {
       onSuccess: (_data, _vars, _ctx, mutation): Promise<unknown> =>
@@ -93,6 +89,6 @@ onlineManager.setEventListener((setOnline) =>
   subscribeApiHealth(() => {
     const connected = getApiHealthSnapshot() === "connected";
     setOnline(connected);
-    if (connected) queryClient.invalidateQueries({ refetchType: "none" });
+    if (connected) queryClient.invalidateQueries();
   }),
 );

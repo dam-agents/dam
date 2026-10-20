@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -54,4 +54,6 @@ Stopping it stops its machines, as a pod's termination does; the controller's sw
 Nothing restarts it after the Mac reboots: `cluster:host-runner` (re)starts it.
 There is one host runner per Mac, serving the cluster that started it last.
 A Mac has no `/proc`, so the runner finds a VMM that outlived its stop through the kernel's process list and each process's arguments, and powers it off as it would in a pod.
+A process installing a new image answers no arguments for the moment the kernel takes to swap them, which is every VMM at its start, so the runner reads it again instead of taking it for gone.
+A scan that could not look is an error and never an empty answer: only a look that happened says a machine is free.
 Runner pods an install ran before it switched to the host runner are left as they are, neither restarted nor removed: nothing schedules them, and their claims hold those owners' old machine disks, so an operator deletes them once nothing on those disks is wanted.

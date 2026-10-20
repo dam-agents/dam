@@ -3,7 +3,7 @@ import { termsDocumentSchema } from "api-server-api";
 
 import { trpc } from "../../../trpc.js";
 
-export const termsKeys = {
+const termsKeys = {
   all: () => ["terms"] as const,
   document: () => [...termsKeys.all(), "document"] as const,
 };

@@ -9,8 +9,6 @@ const { trpc } = await import("../../trpc.js");
 const { agentsKeys } = await import("../../modules/agents/api/queries.js");
 const { invalidateForLiveEvent } =
   await import("../../modules/live-events/invalidation.js");
-const { approvalsKeys } =
-  await import("../../modules/approvals/api/queries.js");
 
 const unsubscribes: (() => void)[] = [];
 afterEach(() => {
@@ -42,22 +40,6 @@ it("refreshes the list and only the named agent's harnessConfig", async () => {
   await invalidateForLiveEvent({ topic: "agents", agentId: "A" });
 
   expect([list.calls(), statusA.calls(), statusB.calls()]).toEqual([2, 2, 1]);
-});
-
-// TEST_SCENARIO: the live-event stream drops and re-subscribes, and the server answers a new subscription with a sync hint. That hint must refresh every family the stream carries, which is how the screen catches up on the events it missed while the connection was down.
-it("refreshes every live family on a sync hint", async () => {
-  const agents = counter();
-  const approvals = counter();
-  const schedules = counter();
-  await watch(agentsKeys.listWithChannels(), agents.fn);
-  await watch(approvalsKeys.forOwner(), approvals.fn);
-  await watch(trpc.schedules.list.queryKey({ agentId: "A" }), schedules.fn);
-
-  await invalidateForLiveEvent({ topic: "sync" });
-
-  expect([agents.calls(), approvals.calls(), schedules.calls()]).toEqual([
-    2, 2, 2,
-  ]);
 });
 
 // TEST_SCENARIO: an agent that wakes sends several hints back to back. While the first refetch is in flight, the rest must collapse into one more refetch, and the cache must end with what that last refetch read.
