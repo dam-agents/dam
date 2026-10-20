@@ -15,7 +15,9 @@ const DETAIL_MAX = 2_000;
 export function sessionMessagePrompt(
   from: SessionMessageEventPayload["from"],
   text: string,
+  notice?: boolean,
 ): string {
+  if (notice) return `[Notice from the platform]\n\n${text}`;
   const who = [
     from.title ? `"${from.title}"` : null,
     from.type ? `a ${from.type} session` : null,
@@ -31,8 +33,8 @@ export function sessionMessagePrompt(
  * agent's Sessions sent text into another through the send_session_message
  * tool. The message joins the target Session's turn in flight where the
  * harness can take it mid-turn, else waits for the turn to end, as a message
- * typed in the chat does. The outcome goes back so the sender learns whether
- * it arrived.
+ * typed in the chat does. The outcome goes back over the event report; the
+ * platform tells the sending Session when it is a failure.
  */
 export function createSessionMessagePlugin(deps: {
   driver: TriggerSessionDriver;
@@ -58,11 +60,11 @@ export function createSessionMessagePlugin(deps: {
         );
       }
       return async (payload, { eventId }) => {
-        const { sessionId, text, from } =
+        const { sessionId, text, from, notice } =
           sessionMessageEventPayload.parse(payload);
         try {
           await deps.driver.start({
-            task: sessionMessagePrompt(from, text),
+            task: sessionMessagePrompt(from, text, notice),
             resumeSessionId: sessionId,
             unattended: true,
             steer: true,

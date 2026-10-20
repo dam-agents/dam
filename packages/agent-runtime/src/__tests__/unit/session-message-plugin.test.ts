@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a message one Session sends into another arrives in the target Session as a steerable, unattended prompt that names its sender, and the sender learns whether it was delivered.
+// TEST_OVERVIEW: a message one Session sends into another arrives in the target Session as a steerable, unattended prompt that names its sender, and its delivery outcome goes back over the event report.
 import type { EventContext, EventReportInput } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 import type { TriggerSessionDriver } from "../../modules/acp/index.js";
@@ -74,6 +74,9 @@ describe("session-message plugin", () => {
     expect(prompt.endsWith("\n\nStop: the spec changed.")).toBe(true);
     expect(sessionMessagePrompt({}, "hi")).toBe(
       "[Message from another session of this agent. Your reply here does not reach it.]\n\nhi",
+    );
+    expect(sessionMessagePrompt({}, "not delivered", true)).toBe(
+      "[Notice from the platform]\n\nnot delivered",
     );
   });
 

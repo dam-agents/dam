@@ -328,7 +328,9 @@ export const subAgentOutcomeEvent = z.object({
  * UNIT_BOUNDARY_DESCRIPTION: a message one of the agent's Sessions sends into
  * another of its Sessions through the send_session_message tool. `from` names
  * the sending Session as the platform resolved it, never as the sender wrote
- * it, so the receiving turn can tell who is talking.
+ * it, so the receiving turn can tell who is talking. A `notice` is the
+ * platform telling a sender that its message was not delivered; nothing is
+ * sent back when a notice itself fails, so notices never loop.
  */
 export const sessionMessageEventPayload = z.object({
   sessionId: z.string().min(1),
@@ -338,6 +340,7 @@ export const sessionMessageEventPayload = z.object({
     title: z.string().optional(),
     type: z.string().optional(),
   }),
+  notice: z.literal(true).optional(),
 });
 export type SessionMessageEventPayload = z.infer<
   typeof sessionMessageEventPayload

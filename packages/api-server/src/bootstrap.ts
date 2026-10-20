@@ -2013,7 +2013,7 @@ export async function bootstrap() {
     }),
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
-    readAgentCapabilities,
+    sessionMessages: runtimeDelivery.sessionMessages,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({
         agents: harnessAgentsServiceFor(owner),

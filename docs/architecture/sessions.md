@@ -100,7 +100,11 @@ The message travels as a **session-message** [event](runtime-delivery.md#event),
 So the sender is the one the platform resolved, never one the caller wrote; the prompt opens with a line naming the sending session's title, type and id.
 The prompt is unattended, as a scheduled fire is, and steerable, as a typed message is: in a running turn it joins at the next steer point, and an idle session starts a turn with it.
 The answer stays in the receiving session.
-The runtime reports whether the message was delivered over the event report; a message not delivered within an hour expires.
+The tool only queues the message.
+The runtime reports the outcome over the event report, and a message not delivered within an hour expires.
+A failed or expired message comes back to its sender as a **notice** from the platform, with the reason and a short quote; a delivered one sends nothing back.
+A notice that fails is only logged, so notices never answer each other.
+A sender the platform could not identify gets no notice, and the tool says so.
 An agent whose runtime does not advertise the event kind is refused at the tool, rather than its message waiting until it expires.
 
 This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived".

@@ -1,12 +1,11 @@
-// TEST_OVERVIEW: an agent lists its own Sessions and sends a message into one of them. The message is queued as a session-message event that names the sending Session as the platform resolved it, and it is refused where it could not be delivered.
+// TEST_OVERVIEW: an agent lists its own Sessions and sends a message into one of them. The message is queued with the sending Session as the platform resolved it, the tool says it is only queued, and it is refused where it could not be delivered.
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
-import type { PodSession } from "agent-runtime-api";
+import type { PodSession, SessionMessageEventPayload } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 import {
   registerSessionMessageTools,
-  type SessionMessageEvent,
   type SessionMessagePorts,
 } from "../../apps/harness-api-server/session-message-tools.js";
 
@@ -47,18 +46,16 @@ const SESSIONS = [
 ];
 
 async function harness(over: Partial<SessionMessagePorts> = {}) {
-  const delivered: SessionMessageEvent[] = [];
+  const delivered: SessionMessageEventPayload[] = [];
   const server = new McpServer({ name: "test", version: "1.0.0" });
   registerSessionMessageTools(server, {
-    agentId: "agent-1",
     listSessions: async ({ sessionId }) =>
       sessionId ? SESSIONS.filter((s) => s.sessionId === sessionId) : SESSIONS,
     callerSessionId: async () => "s-slack",
     acceptsSessionMessages: async () => true,
-    deliver: async (event) => {
-      delivered.push(event);
+    send: async (payload) => {
+      delivered.push(payload);
     },
-    now: () => 1_000,
     ...over,
   });
   const [clientT, serverT] = InMemoryTransport.createLinkedPair();
@@ -114,50 +111,44 @@ describe("list_sessions", () => {
 });
 
 describe("send_session_message", () => {
-  // TEST_SCENARIO: a message to a running Session is queued as one session-message event whose sender is the calling Session, with a unique id and a one-hour life.
-  it("queues a session-message event naming its sender", async () => {
+  // TEST_SCENARIO: a message to a running Session is queued once with the calling Session as its sender, and the answer says queued, not delivered.
+  it("queues the message naming its sender", async () => {
     const { call, delivered } = await harness();
     const { body } = await call("send_session_message", {
       sessionId: "s-dev",
       text: "Stop: the spec changed.",
     });
     expect(body).toMatchObject({
-      sent: true,
+      queued: true,
       sessionId: "s-dev",
       running: true,
     });
-    expect(delivered).toHaveLength(1);
-    const [event] = delivered;
-    expect(event!.kind).toBe("session-message");
-    expect(event!.id).toMatch(/^session-message:agent-1:[0-9a-f-]{36}:1000$/);
-    expect(event!.expiresAt).toEqual(new Date(1_000 + 60 * 60 * 1000));
-    expect(event!.payload).toEqual({
-      sessionId: "s-dev",
-      text: "Stop: the spec changed.",
-      from: {
-        sessionId: "s-slack",
-        title: "Thread in #dev",
-        type: "channel_slack",
+    expect(body.sent).toBeUndefined();
+    expect(body.failures).toBeUndefined();
+    expect(delivered).toEqual([
+      {
+        sessionId: "s-dev",
+        text: "Stop: the spec changed.",
+        from: {
+          sessionId: "s-slack",
+          title: "Thread in #dev",
+          type: "channel_slack",
+        },
       },
-    });
+    ]);
   });
 
-  // TEST_SCENARIO: two messages to the same Session in the same millisecond get distinct ids, so the runtime's per-key dedup runs both.
-  it("gives every message its own event key", async () => {
-    const { call, delivered } = await harness();
-    await call("send_session_message", { sessionId: "s-dev", text: "one" });
-    await call("send_session_message", { sessionId: "s-dev", text: "two" });
-    const key = (id: string) => id.slice(0, id.lastIndexOf(":"));
-    expect(key(delivered[0]!.id)).not.toBe(key(delivered[1]!.id));
-  });
-
-  // TEST_SCENARIO: a caller the platform cannot identify still sends, with no sender claimed.
+  // TEST_SCENARIO: a caller the platform cannot identify still sends, with no sender claimed, and is told a failure cannot reach it.
   it("sends without a sender when the caller is unknown", async () => {
     const { call, delivered } = await harness({
       callerSessionId: async () => null,
     });
-    await call("send_session_message", { sessionId: "s-dev", text: "hi" });
-    expect(delivered[0]!.payload.from).toEqual({});
+    const { body } = await call("send_session_message", {
+      sessionId: "s-dev",
+      text: "hi",
+    });
+    expect(delivered[0]!.from).toEqual({});
+    expect(body.failures).toContain("cannot be reported back");
   });
 
   // TEST_SCENARIO: what cannot be delivered is refused with the reason and queues nothing: an unknown Session, a terminal, the caller itself, a runtime too old for the event.

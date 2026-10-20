@@ -1,7 +1,6 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { CoreV1Api } from "@kubernetes/client-node";
-import { capabilities } from "agent-runtime-api";
 import type {
   AgentsService,
   ArtifactTouchService,
@@ -63,7 +62,10 @@ import {
 } from "../../core/request-body-bounds.js";
 import { agentsInstallSettings, type Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type {
+  RuntimeMutator,
+  SessionMessages,
+} from "../../modules/runtime-delivery/index.js";
 import type {
   CaseStudyInspectionService,
   CaseStudySubmissionsService,
@@ -98,7 +100,7 @@ export interface HarnessApiServerAppDeps {
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
-  readAgentCapabilities: (agentId: string) => Promise<unknown>;
+  sessionMessages: SessionMessages;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
   kitUpdateReporter: KitUpdateReporter;
@@ -298,16 +300,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
-    sessionMessagesFor: (agentId) => ({
-      accepts: async () =>
-        capabilities
-          .safeParse(await deps.readAgentCapabilities(agentId))
-          .data?.events.includes("session-message") ?? false,
-      deliver: async (event) => {
-        await runtimeMutator.bump(agentId, [event]);
-        await runtimeMutator.enqueueAfterCommit(agentId);
-      },
-    }),
+    sessionMessages: deps.sessionMessages,
   });
   mountAgentKbRoutes(app, {
     k8s: k8sClient,

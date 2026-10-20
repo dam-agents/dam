@@ -44,10 +44,8 @@ import {
 } from "./sub-agent-tools.js";
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { registerSpendLimitsTool } from "./spend-limits-tool.js";
-import {
-  registerSessionMessageTools,
-  type SessionMessageEvent,
-} from "./session-message-tools.js";
+import { registerSessionMessageTools } from "./session-message-tools.js";
+import type { SessionMessages } from "../../modules/runtime-delivery/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -176,10 +174,7 @@ export interface McpSessionDeps {
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
-  sessionMessages?: {
-    accepts: () => Promise<boolean>;
-    deliver: (event: SessionMessageEvent) => Promise<void>;
-  };
+  sessionMessages?: SessionMessages;
   chatForms?: ChatFormPreferences | null;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
@@ -1331,7 +1326,6 @@ export function createMcpSession(
   const sessionMessages = deps.sessionMessages;
   if (sessionMessages)
     registerSessionMessageTools(server, {
-      agentId,
       listSessions: async (query) =>
         (
           await runtimeClient.sessions.list.query(query, {
@@ -1351,8 +1345,10 @@ export function createMcpSession(
           return null;
         }
       },
-      acceptsSessionMessages: sessionMessages.accepts,
-      deliver: sessionMessages.deliver,
+      acceptsSessionMessages: () => sessionMessages.accepts(agentId),
+      send: async (payload) => {
+        await sessionMessages.send(agentId, payload);
+      },
     });
 
   server.tool(
@@ -1496,7 +1492,7 @@ export interface MountMcpDeps {
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
   satelliteWaitDeadlineMs?: number;
-  sessionMessagesFor?: (agentId: string) => McpSessionDeps["sessionMessages"];
+  sessionMessages?: SessionMessages;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -1546,7 +1542,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const session = createMcpSession(agentId, {
       owner: verified.owner,
       ...(sessionRef ? { sessionRef } : {}),
-      sessionMessages: deps.sessionMessagesFor?.(agentId),
+      ...(deps.sessionMessages && { sessionMessages: deps.sessionMessages }),
       chatForms,
       channelManager: deps.channelManager,
       k8s: deps.k8s,

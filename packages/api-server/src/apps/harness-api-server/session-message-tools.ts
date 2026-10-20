@@ -1,4 +1,3 @@
-import { randomUUID } from "node:crypto";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { PodSession, SessionMessageEventPayload } from "agent-runtime-api";
 import { z } from "zod";
@@ -8,30 +7,14 @@ const LIST_DEFAULT = 20;
 const LIST_MAX = 50;
 const MESSAGE_MAX = 20_000;
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: a message is worth delivering only while the
- * work it steers is still going on. One that waited longer than this is dropped
- * rather than arriving out of context.
- */
-const MESSAGE_TTL_MS = 60 * 60 * 1000;
-
-export interface SessionMessageEvent {
-  id: string;
-  kind: "session-message";
-  payload: SessionMessageEventPayload;
-  expiresAt: Date;
-}
-
 export interface SessionMessagePorts {
-  agentId: string;
   listSessions(query: {
     sessionId?: string;
     limit?: number;
   }): Promise<PodSession[]>;
   callerSessionId(): Promise<string | null>;
   acceptsSessionMessages(): Promise<boolean>;
-  deliver(event: SessionMessageEvent): Promise<void>;
-  now?: () => number;
+  send(payload: SessionMessageEventPayload): Promise<void>;
 }
 
 function summary(session: PodSession, caller: string | null) {
@@ -85,7 +68,7 @@ export function registerSessionMessageTools(
 
   server.tool(
     "send_session_message",
-    "Send a message into another of this agent's own sessions, e.g. to tell a session that is working on something that the plan changed. When that session is running a turn, the message joins it at the next point the harness can take it (after the current tool call), as a message typed in the chat does; when it is idle, it starts a new turn there. The receiving session sees which session sent it. Its answer stays in that session and does not come back here. Find the session with list_sessions first. Delivery takes a few seconds; a message not delivered within an hour is dropped.",
+    "Send a message into another of this agent's own sessions, e.g. to tell a session that is working on something that the plan changed. When that session is running a turn, the message joins it at the next point the harness can take it (after the current tool call), as a message typed in the chat does; when it is idle, it starts a new turn there. The receiving session sees which session sent it. Its answer stays in that session and does not come back here. Find the session with list_sessions first. The call only queues the message; delivery takes a few seconds. A message that cannot be delivered, or is not delivered within an hour, comes back to this session as a notice from the platform saying why. A delivered message sends nothing back.",
     {
       sessionId: z
         .string()
@@ -125,29 +108,26 @@ export function registerSessionMessageTools(
           return errorResult(
             "this agent's runtime is too old to take messages between sessions; apply its image update first.",
           );
-        const at = (ports.now ?? Date.now)();
-        const event: SessionMessageEvent = {
-          id: `session-message:${ports.agentId}:${randomUUID()}:${at}`,
-          kind: "session-message",
-          payload: {
-            sessionId,
-            text,
-            from: {
-              ...(caller && { sessionId: caller }),
-              ...(sender?.title && { title: sender.title }),
-              ...(sender && { type: sender.type }),
-            },
+        await ports.send({
+          sessionId,
+          text,
+          from: {
+            ...(caller && { sessionId: caller }),
+            ...(sender?.title && { title: sender.title }),
+            ...(sender && { type: sender.type }),
           },
-          expiresAt: new Date(at + MESSAGE_TTL_MS),
-        };
-        await ports.deliver(event);
+        });
         return json({
-          sent: true,
+          queued: true,
           sessionId,
           running: target.running,
           delivery: target.running
             ? "joins the running turn at its next steer point, or starts the next turn if that one ends first"
             : "starts a new turn in that session",
+          ...(!caller && {
+            failures:
+              "this session could not be identified, so a failed delivery cannot be reported back here",
+          }),
         });
       }),
   );
