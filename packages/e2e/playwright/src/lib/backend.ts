@@ -11,6 +11,7 @@ import {
   applyAgentCr,
   kubectl,
   kubectlWithin,
+  LOOKUP_TIMEOUT_MS,
   readAgentCr,
 } from "./cluster.js";
 import { type Backend, laneBackend } from "./lane.js";
@@ -282,7 +283,8 @@ export async function listSessionIds(
 }
 
 function agentOwner(agentId: string): string {
-  return kubectl(
+  return kubectlWithin(
+    LOOKUP_TIMEOUT_MS,
     "-n",
     AGENT_NS,
     "get",
@@ -348,7 +350,8 @@ export function runnerGrows(
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from.
 export function runnerPod(agentId: string): string {
-  return kubectl(
+  return kubectlWithin(
+    LOOKUP_TIMEOUT_MS,
     "-n",
     AGENT_NS,
     "get",
@@ -381,9 +384,12 @@ export function onRunnerHost(
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the signals that killed this machine's VMMs, one per death the agent's own runner reported, in the order it reported them, as the number the kernel gives a signal: 9 is SIGKILL. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns is the reaper's, which says the signal beside the machine. A kill lands on either side of that moment depending on how fast the machine boots, so both reports are read.
-export function runnerKilledVmms(agentId: string): number[] {
-  const logs = kubectl(
+// UNIT_BOUNDARY_DESCRIPTION: the deaths of this machine's VMMs that the agent's own runner reported, in the order it reported them, each with the number the kernel gives a signal — 9 is SIGKILL — and the pid the report names when it names one. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns is the reaper's, which says the signal and the pid beside the machine. A kill lands on either side of that moment depending on how fast the machine boots, so both reports are read.
+export function runnerKilledVmms(
+  agentId: string,
+): { signal: number; pid: number | null }[] {
+  const logs = kubectlWithin(
+    LOOKUP_TIMEOUT_MS,
     "-n",
     AGENT_NS,
     "logs",
@@ -402,11 +408,18 @@ export function runnerKilledVmms(agentId: string): number[] {
         fields.op === "starting" &&
         typeof fields.error === "string"
       )
-        return fields.error.includes("killed by SIGKILL") ? [9] : [];
+        return fields.error.includes("killed by SIGKILL")
+          ? [{ signal: 9, pid: null }]
+          : [];
       return typeof fields.signal === "number" &&
         typeof fields.message === "string" &&
         fields.message.startsWith("vm runner: a machine's VMM was killed")
-        ? [fields.signal]
+        ? [
+            {
+              signal: fields.signal,
+              pid: typeof fields.pid === "number" ? fields.pid : null,
+            },
+          ]
         : [];
     } catch {
       return [];

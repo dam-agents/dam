@@ -18,6 +18,9 @@ export function kubectl(...args: string[]): string {
   return kubectlWithin(undefined, ...args);
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how long a call that only reads which pod or which object a machine lives on may take. Every such call is synchronous, so one that hangs holds the whole suite, and a teardown that runs after a case failed runs with the cluster already unhealthy.
+export const LOOKUP_TIMEOUT_MS = 30_000;
+
 // UNIT_BOUNDARY_DESCRIPTION: the same call with a deadline, for a remote command that may run for minutes: without one the call blocks this process until the pod answers. A deadline kills the local kubectl, not the command it started in the pod.
 export function kubectlWithin(
   timeoutMs: number | undefined,

@@ -65,6 +65,7 @@ const token = refreshingToken();
 let agentId = "";
 const marker = `home-survives-${randomUUID()}`;
 const synced = `home-synced-${randomUUID()}`;
+let claimFilled = false;
 
 // UNIT_BOUNDARY_DESCRIPTION: the fields of one `df -Pk` row: 1024-block size, used and available, then the capacity as a percentage.
 function capacityOf(dfRow: string): number {
@@ -99,6 +100,7 @@ function emptyLayoutMark(): string {
       `wc -c < ${diskAt}/system/layout`,
       `umount ${diskAt} || true`,
     ].join("\n"),
+    { timeoutMs: 60_000 },
   );
   expect(
     after(emptied, "mark"),
@@ -111,23 +113,11 @@ function emptyLayoutMark(): string {
   return emptied;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that waits for one of the given lines on this machine's console, then SIGKILLs the VMM holding the machine's disk, and writes one line for the test: the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console keeps the boot before until the next start empties it, and a VMM writes its first lines before the kernel's, so the watcher removes that record before it is ready: a line it then reads belongs to the boot this start makes. Just before the kill it copies that boot's console, so the case can say afterwards how far the boot had got. The call answers only once the watcher is watching, so the wake that follows cannot write that line before it does. The lines reach a fixed-string grep in a shell script, so none of them may hold a single quote. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
+// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that finds this machine's VMM, waits for one of the given lines on the machine's console, freezes the VMM, copies the console written by then, and SIGKILLs the frozen VMM: it writes one line for the test, the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console keeps the boot before until the next start empties it, and a VMM writes its first lines before the kernel's, so the watcher removes that record before it says it watches, and only then: the wake that follows cannot write the line before the removal, and a line read after it belongs to the boot this start makes. The VMM is found before the line is waited for, and frozen before its console is copied and killed, so the copy is the console at the moment of the death and no step of the boot can run between the copy and the kill. The lines reach a fixed-string grep in a shell script, so none of them may hold a single quote. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
 function watchForKill(id: string, tag: string, lines: readonly string[]): void {
   const out = `/tmp/boot-matrix-kill-${tag}`;
   const script = `/tmp/boot-matrix-watch-${tag}.sh`;
   const ready = `/tmp/boot-matrix-watch-${tag}.ready`;
-  const waiting =
-    lines.length === 0
-      ? []
-      : [
-          "log=$vm/agent-startup-error.log",
-          'rm -f "$log"',
-          `while ! grep -qF ${lines.map((line) => `-e '${line}'`).join(" ")} -- "$log" 2>/dev/null; do`,
-          '  [ "$(now)" -lt "$deadline" ] || { echo "no boot line of platform-init in a minute" >> $out; exit 0; }',
-          "  sleep 0.02",
-          "done",
-          `cp "$log" /tmp/boot-matrix-console-${tag}`,
-        ];
   onRunnerHost(
     id,
     [
@@ -140,24 +130,42 @@ function watchForKill(id: string, tag: string, lines: readonly string[]): void {
       `dir=$(grep -lx '${id}' /var/lib/platform/disks/.cache/smolvm/vms/*/name 2>/dev/null | head -1)`,
       `[ -n "$dir" ] || { echo "no vm directory names this machine" >> $out; exit 0; }`,
       'vm=$(dirname "$dir")',
+      "log=$vm/agent-startup-error.log",
       "deadline=$(( $(now) + 60000 ))",
+      ...(lines.length === 0 ? [] : ['rm -f "$log"']),
       `: > ${ready}`,
-      ...waiting,
+      "pid=",
+      'while [ -z "$pid" ]; do',
+      '  p=$(grep -la -- "$vm/" /proc/[0-9]*/cmdline 2>/dev/null | head -1)',
+      '  [ -n "$p" ] && { pid=${p#/proc/}; pid=${pid%/cmdline}; }',
+      '  [ -n "$pid" ] && break',
+      '  [ "$(now)" -lt "$deadline" ] || { echo "no VMM of this machine appeared" >> $out; exit 0; }',
+      "  sleep 0.02",
+      "done",
+      ...(lines.length === 0
+        ? []
+        : [
+            `while ! grep -qF ${lines.map((line) => `-e '${line}'`).join(" ")} -- "$log" 2>/dev/null; do`,
+            '  [ "$(now)" -lt "$deadline" ] || { echo "no boot line of platform-init in a minute" >> $out; exit 0; }',
+            "  sleep 0.01",
+            "done",
+          ]),
       "seen=$(now)",
-      'p=$(grep -la -- "$vm/" /proc/[0-9]*/cmdline 2>/dev/null | head -1)',
-      '[ -n "$p" ] || { echo "no VMM holds this machine\'s disk" >> $out; exit 0; }',
-      "pid=${p#/proc/}; pid=${pid%/cmdline}",
+      'kill -STOP "$pid" 2>/dev/null',
+      `cp "$log" /tmp/boot-matrix-console-${tag} 2>/dev/null`,
       'if kill -9 "$pid" 2>/dev/null; then',
       lines.length === 0
         ? '  echo "killed $pid at once in $(basename "$vm")" >> $out'
         : `  echo "killed $pid $(( $(now) - seen ))ms after '${lines[0]}' in $(basename "$vm")" >> $out`,
       "else",
+      '  kill -CONT "$pid" 2>/dev/null',
       '  echo "could not kill $pid: it had gone" >> $out',
       "fi",
       "WATCH",
       `nohup sh ${script} >/dev/null 2>&1 & echo $! > /tmp/boot-matrix-watch-${tag}.pid`,
       `i=0; while [ ! -e ${ready} ] && [ $i -lt 200 ]; do sleep 0.05; i=$((i + 1)); done`,
     ].join("\n"),
+    { timeoutMs: 60_000 },
   );
 }
 
@@ -176,6 +184,7 @@ function killReport(id: string, tag: string): string {
       `grep -qa 'boot-matrix-watch-${tag}' "/proc/$pid/cmdline" 2>/dev/null && kill "$pid" 2>/dev/null`,
       'cat "$out" 2>/dev/null || true',
     ].join("\n"),
+    { timeoutMs: 120_000 },
   ).trim();
 }
 
@@ -187,7 +196,22 @@ function cutBootConsole(id: string, tag: string): string {
   return onRunnerHost(
     id,
     `cat /tmp/boot-matrix-console-${tag} 2>/dev/null || true`,
+    { timeoutMs: 30_000 },
   );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the deaths the runner reported for this kill, waited for so the case reads them before it treats the recovery as the whole story, and answered empty when the runner reports none within a deadline. A report names the signal, which is the SIGKILL the watcher sent, and the reaper's report names the pid as well, which is the exact process this kill took.
+async function killReports(
+  id: string,
+  before: number,
+  timeoutMs = 20_000,
+): Promise<{ signal: number; pid: number | null }[]> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const reports = runnerKilledVmms(id).slice(before);
+    if (reports.length > 0 || Date.now() > deadline) return reports;
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+  }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: counts what this machine's console says of the boot it runs now. The console is the VMM's own log on the host, emptied at every start, so a line found there belongs to that boot and to no earlier one.
@@ -198,6 +222,7 @@ function consoleLines(id: string, needle: string): number {
       `dir=$(grep -lx '${id}' /var/lib/platform/disks/.cache/smolvm/vms/*/name 2>/dev/null | head -1)`,
       `grep -cF -- '${needle}' "$(dirname "$dir")/agent-startup-error.log" 2>/dev/null || true`,
     ].join("\n"),
+    { timeoutMs: 60_000 },
   ).trim();
   return Number(count || "0");
 }
@@ -226,30 +251,43 @@ test.beforeAll(async () => {
 test.afterAll(async () => {
   if (!agentId) return;
   try {
-    onRunnerHost(agentId, `rm -f /tmp/boot-matrix-* ${claimFillPath}`);
-  } catch (error) {
-    console.log(
-      `[e2e] could not clear this spec's files off the runner: ${(error as Error).message}`,
-    );
+    if (claimFilled) {
+      try {
+        onRunnerHost(agentId, `rm -f ${claimFillPath}`, { timeoutMs: 60_000 });
+      } catch {
+        onRunnerHost(agentId, `rm -f ${claimFillPath}`, { timeoutMs: 60_000 });
+      }
+    }
+  } finally {
+    await api.agents.delete.mutate({ id: agentId });
+    try {
+      onRunnerHost(agentId, "rm -f /tmp/boot-matrix-*", { timeoutMs: 60_000 });
+    } catch (error) {
+      console.log(
+        `[e2e] could not clear this spec's files off the runner: ${(error as Error).message}`,
+      );
+    }
   }
-  await api.agents.delete.mutate({ id: agentId });
 });
 
-// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must land inside the boot: the console the watcher copied just before it holds the step's line and no hand-off to the image's entrypoint. The runner must also say a VMM of this machine died by the signal the watcher sent — once over the case and not per kill, because the side of the start call a death falls on depends on the machine's speed, and the runner reports a death before that line in the start's failure and after it in the reaper's own line, which two runs of this case never saw. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
+// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must land inside the boot: the console the watcher copied while the VMM was frozen holds the step's line and no hand-off to the image's entrypoint. Every kill's report from the runner is read and must name the SIGKILL the watcher sent, and the pid it took, when it names one; one report over the case is required besides, and a kill the runner reports nowhere is recorded in the run and named, because a start call reports a death only while it still runs and the reaper loses that race to the runner's own restart. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
 test("comes back from its VMM killed at points across a boot", async () => {
   test.setTimeout(1_200_000);
   const reportedBefore = runnerKilledVmms(agentId).length;
   for (const kill of KILLS) {
     if (kill.clearsMark) emptyLayoutMark();
     await hibernate();
+    const before = runnerKilledVmms(agentId).length;
     watchForKill(agentId, kill.tag, kill.lines);
     await api.agents.wake.mutate({ id: agentId });
     const report = killReport(agentId, kill.tag);
     console.log(`[e2e] the kill at '${kill.lines[0]}': ${report}`);
+    const killed = /^killed (\d+) /.exec(report);
     expect(
-      report,
+      killed?.[0],
       `no VMM of ${agentId} was killed at the boot step '${kill.lines[0]}': ${report}`,
-    ).toMatch(/^killed \d+ /);
+    ).toBeTruthy();
+    const killedPid = Number(killed?.[1]);
     const cut = cutBootConsole(agentId, kill.tag);
     expect(
       kill.lines.some((line) => cut.includes(line)),
@@ -259,6 +297,20 @@ test("comes back from its VMM killed at points across a boot", async () => {
       cut,
       `the boot the watcher killed had already handed off to the image's entrypoint: ${cut}`,
     ).not.toContain(HANDED_OFF);
+    const reports = await killReports(agentId, before);
+    expect(
+      reports.filter((entry) => entry.signal !== SIGKILL),
+      `the runner reported a signal other than the SIGKILL the watcher sent at '${kill.lines[0]}': ${JSON.stringify(reports)}`,
+    ).toEqual([]);
+    expect(
+      reports.filter((entry) => entry.pid !== null && entry.pid !== killedPid),
+      `the runner reported a death of another process than the one killed at '${kill.lines[0]}': killed ${killedPid}, reported ${JSON.stringify(reports)}`,
+    ).toEqual([]);
+    if (reports.length === 0)
+      test.info().annotations.push({
+        type: "unreported-kill",
+        description: `no death of this machine's VMM was reported at '${kill.lines[0]}': the start call reports a death only while it still runs, and the reaper loses the race to the runner's own restart, so this requirement stays open for that step`,
+      });
     await waitAgentState(api, agentId, "running", {
       timeoutMs: 600_000,
       failOnError: false,
@@ -267,7 +319,9 @@ test("comes back from its VMM killed at points across a boot", async () => {
       timeoutMs: 120_000,
     });
   }
-  const signals = runnerKilledVmms(agentId).slice(reportedBefore);
+  const signals = runnerKilledVmms(agentId)
+    .slice(reportedBefore)
+    .map((entry) => entry.signal);
   expect(
     signals,
     "the runner never reported a VMM of this machine dead by a signal",
@@ -285,6 +339,7 @@ test("comes back with the writes a running guest synced", async () => {
       "echo wrote",
       `cat ${home}/${syncedPath}`,
     ].join("\n"),
+    { timeoutMs: 120_000 },
   );
   expect(after(wrote, "wrote"), `the write did not read back: ${wrote}`).toBe(
     synced,
@@ -317,6 +372,7 @@ test("comes back with the writes a running guest synced", async () => {
       "echo wrote",
       `cat ${home}/${syncedPath}`,
     ].join("\n"),
+    { timeoutMs: 120_000 },
   );
   expect(
     after(again, "wrote"),
@@ -414,6 +470,7 @@ test("boots on a disk whose layout mark came back empty", async () => {
       "echo count",
       "grep -c 'marked the disk as layout 2' /var/log/platform/agent-runtime.log || true",
     ].join("\n"),
+    { timeoutMs: 120_000 },
   );
   expect(
     Number(after(marked, "count")),
@@ -421,7 +478,7 @@ test("boots on a disk whose layout mark came back empty", async () => {
   ).toBeGreaterThan(0);
 });
 
-// TEST_SCENARIO: an owner's claim with no room left refuses a machine's start rather than letting its guest write into a disk the claim has no block for, and the owner is told which storage is full. The filler is this spec's own file on the claim, so it comes back off with one command once the refusal is seen, and the agent boots with HOME intact; the file is removed again after the whole spec, so a case that timed out before its own removal cannot leave every later start of this owner refused. The claim must have a filesystem of its own to be filled at all: the lane's local-path provisioner hands out a directory of the node's disk, which this case refuses from the host side before writing anything, and E2E_CLAIM_FILL_GIB is how a run against an install whose claim is its own volume (a Ceph RBD, a loop device) opts in, with the most it may write onto the claim; unset, the case is skipped rather than run at the node's expense.
+// TEST_SCENARIO: an owner's claim with no room left refuses a machine's start rather than letting its guest write into a disk the claim has no block for, and the owner is told which storage is full. The filler is this spec's own file on the claim, so it comes back off with one command once the refusal is seen, and the agent boots with HOME intact; the file is removed again after the whole spec, retried there and never caught, so a case that timed out before its own removal cannot leave every later start of this owner refused, and a fill that cannot be removed fails the run rather than passing quietly. The claim must have a filesystem of its own to be filled at all: the lane's local-path provisioner hands out a directory of the node's disk, which this case refuses from the host side before writing anything, and E2E_CLAIM_FILL_GIB is how a run against an install whose claim is its own volume (a Ceph RBD, a loop device) opts in, with the most it may write onto the claim; unset, the case is skipped rather than run at the node's expense.
 test("refuses a start while the owner's claim is full", async () => {
   test.setTimeout(600_000);
   const capGiB = Number(process.env.E2E_CLAIM_FILL_GIB ?? "");
@@ -459,6 +516,7 @@ test("refuses a start while the owner's claim is full", async () => {
     verdict.startsWith("cannot "),
     `the claim's filesystem is too big to fill under the cap: ${verdict}`,
   );
+  claimFilled = true;
   const row = after(filled, "filled");
   console.log(`[e2e] the owner's claim when the fill stopped: ${row}`);
   expect(
@@ -476,7 +534,8 @@ test("refuses a start while the owner's claim is full", async () => {
     (await api.agents.get.query({ id: agentId })).podTerminationCode,
     "the runner refused the start for the full claim",
   ).toBe("MachineStorageFull");
-  onRunnerHost(agentId, `rm -f ${claimFillPath}`);
+  onRunnerHost(agentId, `rm -f ${claimFillPath}`, { timeoutMs: 60_000 });
+  claimFilled = false;
   await api.agents.wake.mutate({ id: agentId });
   await waitAgentState(api, agentId, "running", {
     timeoutMs: 600_000,
