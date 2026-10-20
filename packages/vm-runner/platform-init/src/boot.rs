@@ -2982,7 +2982,7 @@ mod tests {
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
         let mut guard = pool_guard(&dir).expect("an unnamed file on the disk");
-        let not_a_directory = File::open(disk.path().join(guest::SYSTEM_DIR).join(".")).unwrap();
+        let not_a_directory = File::create(disk.path().join("not-a-directory")).unwrap();
         size_guard(&mut guard, &dir, 128 << 20).unwrap();
         let watched = guard.try_clone().unwrap();
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
