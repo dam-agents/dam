@@ -37,6 +37,9 @@ struct Fake {
     images: Mutex<HashMap<String, String>>,
     updated: Mutex<Vec<Updated>>,
     start_delay: Mutex<Duration>,
+    // UNIT_BOUNDARY_DESCRIPTION: the next start reports that it is inside the gate and then waits for the test to let it go, so a test can act while a boot is provably in flight rather than within a delay a loaded machine can outlast.
+    start_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    start_release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     stop_delay: Mutex<Duration>,
     delete_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
@@ -66,6 +69,15 @@ impl Fake {
     // UNIT_BOUNDARY_DESCRIPTION: the process the runtime reports as a machine's VMM, which a test spawns so the runner reaps a real child it can kill.
     fn set_vmm(&self, id: &str, pid: i32) {
         locked(&self.vmm_pids).insert(id.to_string(), pid);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: holds the next start inside the gate until the returned sender is used, and answers a receiver that says when the start is in it, so the test orders its own steps against a boot that is still running instead of racing a delay.
+    fn hold_start(&self) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (held, held_at) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        *locked(&self.start_held) = Some(held);
+        *locked(&self.start_release) = Some(released);
+        (held_at, release)
     }
 
     fn last_update(&self) -> Updated {
@@ -144,6 +156,12 @@ impl Runtime for Fake {
         locked(&self.booted_mib).push(boot_mib);
         locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
+        if let Some(held) = locked(&self.start_held).take() {
+            let _ = held.send(());
+            if let Some(release) = locked(&self.start_release).take() {
+                let _ = release.recv();
+            }
+        }
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
         }
@@ -3760,32 +3778,49 @@ async fn a_sigkill_the_cgroup_did_not_count_is_not_a_memory_kill() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
     let h = Harness::new("kill-during-boot");
-    *locked(&h.fake.start_delay) = Duration::from_millis(400);
+    // UNIT_BOUNDARY_DESCRIPTION: the boot holds until this test lets it go, so a kill is provably read while the start call still runs, rather than within a delay a loaded machine can outlast.
+    let (held, release) = h.fake.hold_start();
     h.server.put("m1", spec(true)).unwrap();
     h.wait_for_call("start m1").await;
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot holds until this test lets it go");
 
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
-    smolvm::process::register_vm_child(pid);
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
     unsafe { libc::kill(pid, libc::SIGKILL) };
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the child is waited on without its status being taken: the reaper's own read is then the one that collects it, rather than a read the test raced it for.
+    let mut ended: libc::siginfo_t = unsafe { std::mem::zeroed() };
+    // SAFETY: waitid(2) writes only into `ended`, and WNOWAIT leaves the status for the next reader.
+    let waited = unsafe {
+        libc::waitid(
+            libc::P_PID,
+            u32::try_from(pid).unwrap(),
+            &raw mut ended,
+            libc::WEXITED | libc::WNOWAIT,
+        )
+    };
+    assert_eq!(waited, 0, "the VMM did not end");
     // TEST_SCENARIO: the production tick, three times over: the reaper collects, the runtime's sweep of the same child reads nothing left, and the machine is still starting.
     for _ in 0..3 {
         h.server.reap_killed();
-        smolvm::process::reap_vm_children();
-        // TEST_SCENARIO: the sweep's own read, which erases the status on every host: smolvm's is Linux-only, so the test makes the same read itself.
+        // TEST_SCENARIO: the sweep's own read, which erases the status on every host: it must find nothing, because the reaper collected the status before it.
         let mut status = 0;
         // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
-        let _ = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
-        std::thread::sleep(Duration::from_millis(10));
+        let swept = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
+        assert_eq!(
+            swept, -1,
+            "the sweep found a status the reaper had not collected"
+        );
+        assert_ne!(
+            h.server.status("m1").reason,
+            REASON_OOM_KILLED,
+            "a kill was reported while the start it may belong to still ran"
+        );
     }
-    assert_ne!(
-        h.server.status("m1").reason,
-        REASON_OOM_KILLED,
-        "a kill was reported while the start it may belong to still ran"
-    );
 
+    release.send(()).expect("the boot returns");
     h.settle("m1").await;
     h.server.reap_killed();
     assert_eq!(
