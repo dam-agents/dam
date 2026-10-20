@@ -251,14 +251,14 @@ function AgentSessionList({
       className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || (list.loading && !asleep)}
+      aria-busy={list.provisional || (list.loading && !asleep && !list.failed)}
     >
       {asleep ? (
         <ListNote testId="sidebar-agent-asleep">
           Its sessions show when it wakes.
         </ListNote>
       ) : (
-        list.loading && <SessionListSkeleton />
+        list.loading && !list.failed && <SessionListSkeleton />
       )}
       {list.failed && (
         <button

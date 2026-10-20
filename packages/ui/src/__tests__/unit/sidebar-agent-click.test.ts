@@ -140,6 +140,19 @@ describe("a click on an Agent with no Sessions in the attention record", () => {
     fake.failed = false;
   });
 
+  // TEST_SCENARIO: the user clicks Retry on a failed read of the Agent's own list; while the retry runs, the row shows the busy Retry alone, not a skeleton beside it.
+  it("shows no skeleton beside Retry while a failed read retries", () => {
+    fake.runState = "running";
+    fake.loading = true;
+    fake.failed = true;
+    const out = openedAgent(false);
+    expect(out).toContain('data-testid="sidebar-agent-sessions-failed"');
+    expect(out).not.toContain("animate-pulse");
+    expect(out).toContain('aria-busy="false"');
+    fake.loading = false;
+    fake.failed = false;
+  });
+
   // TEST_SCENARIO: the Agent is hibernated, so its own list cannot load until it wakes, whether or not the lookup of its last known Sessions answered; the row says so and is not busy, instead of a skeleton that never ends.
   it("says a hibernated Agent's Sessions show when it wakes", () => {
     fake.runState = "hibernated";
