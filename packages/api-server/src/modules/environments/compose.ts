@@ -12,11 +12,23 @@ import {
   type EnvironmentsServiceImpl,
 } from "./services/environments-service.js";
 
+// UNIT_BOUNDARY_DESCRIPTION: an Agent the cluster holds, as the orphan sweep reads it: its id, owner and the owning Agent it names, if any.
+export interface ListedAgent {
+  id: string;
+  owner: string;
+  environmentOf?: string;
+  createdAt: Date;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long an Environment Agent may exist without its row before the sweep deletes it: longer than a create takes between its two writes, so a create still running is never cut short.
+const ORPHAN_GRACE_MS = 10 * 60_000;
+
 export interface ComposeEnvironmentsDeps {
   db: Db;
   agentsFor: (owner: string) => AgentsService;
   runtimeMutator: RuntimeMutator;
   config: EnvironmentsConfig;
+  listAgents: () => Promise<ListedAgent[]>;
 }
 
 export interface EnvironmentsComposition {
@@ -53,7 +65,8 @@ export function startItemCommand(command: string): string {
  * The service is built per owner; the cleanup source, run when any Agent is
  * deleted, deletes the Environments it owned and the row of an Environment
  * itself, so neither outlives its Agent; the sweep deletes every Environment
- * whose expiry passed, as its owner. An Environment's `start` command is
+ * whose expiry passed, as its owner, and every Environment Agent left without
+ * a row by a create that died between its two writes. An Environment's `start` command is
  * delivered as a one-shot workspace command that writes it as a Startup Item,
  * an openrc user service, which then runs at every boot.
  */
@@ -104,6 +117,22 @@ export function composeEnvironmentsOver(
     },
 
     async sweepExpired() {
+      const rows = new Set(await repo.listAgentIds());
+      const now = Date.now();
+      for (const agent of await deps.listAgents()) {
+        if (!agent.environmentOf || rows.has(agent.id)) continue;
+        if (now - agent.createdAt.getTime() < ORPHAN_GRACE_MS) continue;
+        try {
+          await deps.agentsFor(agent.owner).delete(agent.id);
+          process.stderr.write(
+            `[environments] deleted ${agent.id}, an Environment Agent with no record\n`,
+          );
+        } catch (err) {
+          process.stderr.write(
+            `[environments] could not delete orphan ${agent.id}: ${err instanceof Error ? err.message : err}\n`,
+          );
+        }
+      }
       const expired = await repo.listExpired(new Date());
       let swept = 0;
       for (const record of expired) {

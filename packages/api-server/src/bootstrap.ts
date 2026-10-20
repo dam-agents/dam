@@ -1602,6 +1602,19 @@ export async function bootstrap() {
   const environments = composeEnvironments({
     db,
     agentsFor: (owner) => harnessAgentsServiceFor(owner),
+    listAgents: async () =>
+      (await agentsRepo.list()).flatMap((a) =>
+        a.owner
+          ? [
+              {
+                id: a.id,
+                owner: a.owner,
+                environmentOf: a.spec.environmentOf,
+                createdAt: new Date(a.createdAt ?? 0),
+              },
+            ]
+          : [],
+      ),
     runtimeMutator: runtimeDelivery.runtimeMutator,
     config: {
       urlTemplate: config.environmentsUrl,

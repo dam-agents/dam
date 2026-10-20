@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The environments composition root's own logic, against a fake repository, agents service and runtime mutator. Deleting an Agent deletes the Environments it owned and an Environment's own row, and no other owner's; the expiry sweep deletes only what expired, as each one's owner, and one failed delete does not stop the rest; a `start` command reaches the Environment as an openrc user service, quoted so the shell runs it as one command.
+// TEST_OVERVIEW: The environments composition root's own logic, against a fake repository, agents service and runtime mutator. Deleting an Agent deletes the Environments it owned and an Environment's own row, and no other owner's; the expiry sweep deletes only what expired, as each one's owner, and one failed delete does not stop the rest; an Environment Agent left without its row is deleted too; a `start` command reaches the Environment as an openrc user service, quoted so the shell runs it as one command.
 import { describe, expect, it } from "vitest";
 import type { Agent, AgentsService } from "api-server-api";
 import type { EnvironmentRecord } from "../../modules/environments/domain/environment.js";
@@ -7,6 +7,7 @@ import {
   composeEnvironmentsOver,
   shellQuote,
   startItemCommand,
+  type ListedAgent,
 } from "../../modules/environments/compose.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
 
@@ -33,7 +34,11 @@ function record(
   };
 }
 
-function world(rows: EnvironmentRecord[], failDelete: string[] = []) {
+function world(
+  rows: EnvironmentRecord[],
+  failDelete: string[] = [],
+  cluster: ListedAgent[] = [],
+) {
   const deletedAgents: [string, string][] = [];
   const events: { agentId: string; command: string }[] = [];
   const repo: EnvironmentsRepository = {
@@ -53,6 +58,7 @@ function world(rows: EnvironmentRecord[], failDelete: string[] = []) {
       const i = rows.findIndex((r) => r.agentId === id);
       if (i >= 0) rows.splice(i, 1);
     },
+    forOwningAgent: async (_id, fn) => fn(),
   };
   const agentsFor = (owner: string) =>
     ({
@@ -91,6 +97,7 @@ function world(rows: EnvironmentRecord[], failDelete: string[] = []) {
       maxPerAgent: 5,
       expiryMaxDays: 30,
     },
+    listAgents: async () => cluster,
   });
   return { rows, deletedAgents, events, composition };
 }
@@ -158,6 +165,42 @@ describe("the expiry sweep", () => {
       "agent-kept",
       "agent-stuck",
     ]);
+  });
+});
+
+describe("the orphan sweep", () => {
+  // TEST_SCENARIO: a create that died between writing the Agent and its row leaves an Environment Agent nothing else lists or deletes; the sweep deletes it, as its owner, once it is older than a create takes, and leaves a young one, one with a row and an ordinary agent alone.
+  it("deletes an old Environment Agent with no row, and nothing else", async () => {
+    const old = new Date(Date.now() - 60 * 60_000);
+    const { deletedAgents, composition } = world(
+      [record("agent-env-kept", "agent-owning", "alice")],
+      [],
+      [
+        {
+          id: "agent-env-orphan",
+          owner: "alice",
+          environmentOf: "agent-owning",
+          createdAt: old,
+        },
+        {
+          id: "agent-env-young",
+          owner: "alice",
+          environmentOf: "agent-owning",
+          createdAt: new Date(),
+        },
+        {
+          id: "agent-env-kept",
+          owner: "alice",
+          environmentOf: "agent-owning",
+          createdAt: old,
+        },
+        { id: "agent-owning", owner: "alice", createdAt: old },
+      ],
+    );
+
+    await composition.sweepExpired();
+
+    expect(deletedAgents).toEqual([["alice", "agent-env-orphan"]]);
   });
 });
 

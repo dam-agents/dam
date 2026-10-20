@@ -157,6 +157,58 @@ export function createEnvironmentsService(
   }
 
   function forOwningAgent(owningAgentId: string): OwningAgentEnvironments {
+    async function createUnder(
+      input: CreateEnvironmentInput,
+    ): Promise<EnvironmentView> {
+      const owning = await owningAgent(owningAgentId);
+      if (await deps.repo.findByName(owningAgentId, input.name))
+        refuse(`an Environment named ${input.name} already exists`, "CONFLICT");
+      const held = await deps.repo.listByOwningAgent(owningAgentId);
+      if (held.length >= deps.config.maxPerAgent)
+        refuse(
+          `this agent already holds ${held.length} Environments, the most it may; delete one first`,
+          "PRECONDITION_FAILED",
+        );
+      const expiresAt = expiry(input.expiresAt);
+      const agent = await deps.agents.create({
+        name: environmentAgentName(owning.name, input.name),
+        description: `Environment ${input.name} of ${owning.name}`,
+        vm: true,
+        environmentOf: owningAgentId,
+        noDefaultProvider: true,
+        egressPreset: "none",
+        requireConnectionAddress: true,
+        ...(input.storage ? { storage: input.storage } : {}),
+      });
+      const record: EnvironmentRecord = {
+        agentId: agent.id,
+        owningAgentId,
+        owner: deps.owner,
+        name: input.name,
+        host: environmentHost(input.name, randomBytes(3).toString("hex")),
+        endpoints: input.endpoints,
+        access: input.access ?? null,
+        expiresAt,
+        createdAt: now(),
+      };
+      try {
+        await deps.repo.insert(record);
+        if (input.start) await deps.startCommand(agent.id, input.start);
+      } catch (err) {
+        await deps.agents.delete(agent.id).catch(() => undefined);
+        await deps.repo.delete(agent.id).catch(() => undefined);
+        throw err;
+      }
+      securityLog("info", "environment.create", {
+        category: "resource",
+        actor: owningAgentId,
+        actorKind: "agent",
+        agentId: agent.id,
+        result: "success",
+      });
+      return view(record, agent);
+    }
+
     async function byName(name: string): Promise<EnvironmentRecord> {
       const record = await deps.repo.findByName(owningAgentId, name);
       if (!record || record.owner !== deps.owner)
@@ -165,57 +217,10 @@ export function createEnvironmentsService(
     }
 
     return {
-      async create(input) {
-        const owning = await owningAgent(owningAgentId);
-        if (await deps.repo.findByName(owningAgentId, input.name))
-          refuse(
-            `an Environment named ${input.name} already exists`,
-            "CONFLICT",
-          );
-        const held = await deps.repo.listByOwningAgent(owningAgentId);
-        if (held.length >= deps.config.maxPerAgent)
-          refuse(
-            `this agent already holds ${held.length} Environments, the most it may; delete one first`,
-            "PRECONDITION_FAILED",
-          );
-        const expiresAt = expiry(input.expiresAt);
-        const agent = await deps.agents.create({
-          name: environmentAgentName(owning.name, input.name),
-          description: `Environment ${input.name} of ${owning.name}`,
-          vm: true,
-          environmentOf: owningAgentId,
-          noDefaultProvider: true,
-          egressPreset: "none",
-          requireConnectionAddress: true,
-          ...(input.storage ? { storage: input.storage } : {}),
-        });
-        const record: EnvironmentRecord = {
-          agentId: agent.id,
-          owningAgentId,
-          owner: deps.owner,
-          name: input.name,
-          host: environmentHost(input.name, randomBytes(3).toString("hex")),
-          endpoints: input.endpoints,
-          access: input.access ?? null,
-          expiresAt,
-          createdAt: now(),
-        };
-        try {
-          await deps.repo.insert(record);
-          if (input.start) await deps.startCommand(agent.id, input.start);
-        } catch (err) {
-          await deps.agents.delete(agent.id).catch(() => undefined);
-          await deps.repo.delete(agent.id).catch(() => undefined);
-          throw err;
-        }
-        securityLog("info", "environment.create", {
-          category: "resource",
-          actor: owningAgentId,
-          actorKind: "agent",
-          agentId: agent.id,
-          result: "success",
-        });
-        return view(record, agent);
+      create(input) {
+        return deps.repo.forOwningAgent(owningAgentId, () =>
+          createUnder(input),
+        );
       },
 
       async list() {
