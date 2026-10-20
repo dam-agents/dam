@@ -523,6 +523,7 @@ fn spec(running: bool) -> MachineSpec {
         expect_seed: None,
         nested_virtualization: false,
         admit_mib: 0,
+        observed_state: String::new(),
     }
 }
 
@@ -1296,6 +1297,49 @@ async fn a_machine_is_refused_above_the_memory_the_node_granted() {
     machine.admit_mib = 4096;
     assert_eq!(h.server.put("m1", machine).unwrap().state, STATE_CREATING);
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: the controller reads a machine as running and waives the admission cap on it, and the guest dies before that ensure reaches the runner. The runner is what knows, and it refuses the waiver rather than boot a cold start uncapped: the controller then reads the machine stopped and holds the start as it holds any other.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_waiver_read_before_the_machine_stopped_boots_nothing() {
+    let h = Harness::with("waiver-stale", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    h.server.put("m1", spec(false)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+    let starts = h.fake.calls().iter().filter(|c| *c == "start m1").count();
+
+    // TEST_SCENARIO: the controller read the machine stopping, when it still held its memory, and waives the cap for the start that follows.
+    let mut waived = spec(true);
+    waived.observed_state = STATE_STOPPING.into();
+    let refused = h.server.put("m1", waived).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+    assert!(refused.message.contains("not running now"), "{refused:?}");
+    assert_eq!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count(),
+        starts,
+        "nothing is booted: {:?}",
+        h.fake.calls()
+    );
+}
+
+// TEST_SCENARIO: the waiver the controller sends on a machine that still runs is the one the runner confirms, and it changes nothing: the machine keeps running, is not restarted, and is not refused the ensure that keeps it alive.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_waiver_on_a_machine_that_still_runs_leaves_it_running() {
+    let h = Harness::with("waiver-live", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    let starts = h.fake.calls().iter().filter(|c| *c == "start m1").count();
+
+    let mut waived = spec(true);
+    waived.observed_state = STATE_RUNNING.into();
+    assert_eq!(h.server.put("m1", waived).unwrap().state, STATE_RUNNING);
+    assert_eq!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count(),
+        starts,
+        "nothing is restarted: {:?}",
+        h.fake.calls()
+    );
 }
 
 // TEST_SCENARIO: a machine that is already running comes back under a ceiling sized from what it holds while idle, which is below the size it boots at: a revision roll, an image or env change, a CA rotation and a guest gone quiet all restart a running machine, and refusing those for good would park the agent and scale its gateway away. A machine that is not running is still capped, so the ceiling keeps gating every footprint the runner does not already hold.

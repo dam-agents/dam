@@ -2030,6 +2030,16 @@ impl Server {
         let limit = capacity.limit_mib;
         // UNIT_BOUNDARY_DESCRIPTION: a restart of a machine already running replaces its own footprint, and boots at the warm-up floor, which is above the idle use the controller's request was sized from: capping it at that request refuses a roll, an image or env change, a CA rotation and a guest gone quiet for good, since the machine's use cannot shrink further to make the request grow. The exemption lasts as long as the restart does, because the worker stops the old VMM and boots its replacement in one action: an ensure that lands between the two reads the runtime as stopped, and refusing that already-admitted restart would have the controller stop the machine behind it.
         let restarting = self.known_running(id) || self.restart_in_flight(id);
+        // UNIT_BOUNDARY_DESCRIPTION: a zero cap with an observed state is the controller saying it waives the cap because this machine already holds memory, and that reading is only true at the moment it was made: the same ensure reaches the runner after an exit it never saw, and the runner is the one that knows. Deciding the waiver here, on the state this ensure finds, is what keeps a cold start from booting uncapped on the strength of a read two requests old.
+        if !restarting && spec.admit_mib <= 0 && !spec.observed_state.is_empty() {
+            return Err((
+                REASON_AWAITING_ALLOCATION,
+                anyhow::anyhow!(
+                    "the controller waived this machine's admission cap on the state it last read ({}), and this machine is not running now: it is admitted again once the controller reads what the runner reports",
+                    spec.observed_state
+                ),
+            ));
+        }
         let capped = !restarting && spec.admit_mib > 0 && (limit == 0 || spec.admit_mib < limit);
         let committing = self.committing();
         let running = |other: &str| self.known_running(other);

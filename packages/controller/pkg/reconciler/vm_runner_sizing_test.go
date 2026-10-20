@@ -18,6 +18,7 @@ import (
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	fakediscovery "k8s.io/client-go/discovery/fake"
 	dynfake "k8s.io/client-go/dynamic/fake"
@@ -44,10 +45,30 @@ func runnerPod(t *testing.T, r *AgentReconciler, request, limit string) {
 			AllocatedResources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(request)},
 		}}
 	}
+	createRunnerPod(t, r, res, status, "pod-1")
+}
+
+// TEST_SCENARIO: the pod is deleted and another created in its place, as a roll, an eviction or a node drain leaves one: the replacement carries a new identity and reports nothing until its own node does.
+func replacedRunnerPod(t *testing.T, r *AgentReconciler, request, limit string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, r.client.CoreV1().Pods("test-agents").Delete(ctx, r.runnerName(testOwner)+"-abc", metav1.DeleteOptions{}))
+	res := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(request)},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(limit)},
+	}
+	createRunnerPod(t, r, res, corev1.PodStatus{Phase: corev1.PodRunning}, "pod-2")
+}
+
+func createRunnerPod(t *testing.T, r *AgentReconciler, res corev1.ResourceRequirements, status corev1.PodStatus, uid string) {
+	t.Helper()
 	pod := &corev1.Pod{
-		ObjectMeta: metav1.ObjectMeta{Name: r.runnerName(testOwner) + "-abc", Namespace: "test-agents", Labels: vmRunnerSelector(testOwner)},
-		Spec:       corev1.PodSpec{NodeName: "kvm-1", Containers: []corev1.Container{{Name: vmRunnerComponent, Resources: res}}},
-		Status:     status,
+		ObjectMeta: metav1.ObjectMeta{
+			Name: r.runnerName(testOwner) + "-abc", Namespace: "test-agents",
+			Labels: vmRunnerSelector(testOwner), UID: types.UID(uid),
+		},
+		Spec:   corev1.PodSpec{NodeName: "kvm-1", Containers: []corev1.Container{{Name: vmRunnerComponent, Resources: res}}},
+		Status: status,
 	}
 	_, err := r.client.CoreV1().Pods("test-agents").Create(context.Background(), pod, metav1.CreateOptions{})
 	require.NoError(t, err)
@@ -120,6 +141,54 @@ func TestAResizeTheNodeCannotCarryEndsTheHoldWithoutACeiling(t *testing.T) {
 	assert.Zero(t, node.spec("my-agent").AdmitMiB, "a node that cannot report a grant was admitted against a ceiling, where an install without in-place resize admits against the limit")
 }
 
+// TEST_SCENARIO: a node's answer that it cannot resize belongs to the pod it was asked about, and it lapses as soon as that pod reports what it holds: a kubelet that gains the gate, or a pod rescheduled onto a node that has it, is a node that grants, and every start after it is admitted against the grant. A mark that outlived its answer would exempt this owner from the ceiling for good, on a figure the node is now reporting.
+func TestAnUnsupportedNodeMarkLapsesWhenThePodReportsAGrant(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+	refuseResizes(r, nodeCannotResizePod(r.runnerName(testOwner)+"-abc"))
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, node.spec("my-agent").Running, "the mark never let the start through")
+
+	runnerPodReportsItsGrant(t, r, "9Gi")
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Equal(t, 9216, node.spec("my-agent").AdmitMiB, "the mark outlived the answer it described and the start was admitted without a ceiling")
+	before := resizeCallsFor(r, testOwner)
+	r.resizeRunnerPod(ctx, testOwner, runnerDemand{memoryMiB: 8192, vCPUs: 8})
+	assert.Positive(t, resizeCallsFor(r, testOwner)-before, "the reconciler still treated this owner's pod as one its node cannot resize")
+}
+
+// TEST_SCENARIO: a replaced runner pod is a new question to whatever node it lands on, and the controller has not asked it yet: the answer about the pod that died says nothing about the pod that replaced it, whose node may grant what it holds. The mark therefore dies with its pod, and the replacement's silence holds the start as any other pod's does.
+func TestAnUnsupportedNodeMarkDiesWithThePodItDescribed(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+	refuseResizes(r, nodeCannotResizePod(r.runnerName(testOwner)+"-abc"))
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.True(t, node.spec("my-agent").Running, "the mark never let the start through")
+
+	replacedRunnerPod(t, r, "1Gi", "16Gi")
+
+	_, err := r.runnerAdmitMiB(ctx, testOwner)
+	assert.ErrorIs(t, err, errGrantUnknown, "the answer about the pod that was replaced exempted its replacement from the ceiling")
+}
+
 // TEST_SCENARIO: a hold resolves in the other direction too, and it resolves against the figure the node reports rather than the pool: the retry after the node starts reporting admits the start at what the node granted it.
 func TestALaterGrantAdmitsTheHeldStart(t *testing.T) {
 	ctx := context.Background()
@@ -165,26 +234,41 @@ func TestAnUnsupportedNodeElsewhereLeavesAnotherOwnersCeiling(t *testing.T) {
 	assert.Positive(t, resizeCallsFor(r, "other-owner")-before, "one node's refusal stopped the reconciler asking for another owner's resize")
 }
 
-// TEST_SCENARIO: only the cause Kubernetes uses for a node that cannot resize counts as that node's answer. Any other invalid is a validation or admission failure of the ask itself, and reading it as node support drops the ceiling of a runner whose node grants nothing it has reported.
+// TEST_SCENARIO: only the cause Kubernetes uses for a node that cannot resize counts as that node's answer. Every other invalid is a validation or admission failure of the ask itself, and reading it as node support drops the ceiling of a runner whose node grants nothing it has reported: a forbidden cause is not the node's answer on its own, since an admission webhook's quota and the API's own refusals to shrink or drop a limit are forbidden causes on the very field the resize changes.
 func TestAResizeRejectedForAnotherReasonKeepsTheHold(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
-	clusterResizesPods(r, true)
-	runnerPod(t, r, "1Gi", "16Gi")
-	runnerPodForgetsItsGrant(t, r)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
-	refuseResizes(r, k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
-		field.Invalid(field.NewPath("spec", "containers").Index(0).Child("resources", "limits"), "1", "must be less than or equal to cpu limit"),
-	}))
+	refusals := map[string]error{
+		"a validation failure of the ask": k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
+			field.Invalid(field.NewPath("spec", "containers").Index(0).Child("resources", "limits"), "1", "must be less than or equal to cpu limit"),
+		}),
+		"a webhook's quota on the resize field": k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
+			field.Forbidden(field.NewPath("spec", "containers").Index(0).Child("resources", "requests").Key(string(corev1.ResourceMemory)),
+				"the requested increase exceeds its allowed quota"),
+		}),
+		"the API refusing to shrink the limit in place": k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
+			field.Forbidden(field.NewPath("spec", "containers").Index(0).Child("resources", "limits").Key(string(corev1.ResourceMemory)),
+				"memory limit cannot be decreased without setting the resize policy to RestartContainer"),
+		}),
+	}
+	for name, refusal := range refusals {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			agent := vmAgentCR()
+			r, node, _ := setupVMReconciler(t, agent)
+			r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+			clusterResizesPods(r, true)
+			runnerPod(t, r, "1Gi", "16Gi")
+			runnerPodForgetsItsGrant(t, r)
+			node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+			refuseResizes(r, refusal)
 
-	require.NoError(t, r.Reconcile(ctx, agent))
-	require.NoError(t, r.Reconcile(ctx, agent))
+			require.NoError(t, r.Reconcile(ctx, agent))
+			require.NoError(t, r.Reconcile(ctx, agent))
 
-	assert.False(t, node.spec("my-agent").Running, "a validation failure of the ask was read as the node's answer and admitted the start without a ceiling")
-	_, err := r.runnerAdmitMiB(ctx, testOwner)
-	assert.ErrorIs(t, err, errGrantUnknown, "the grant was no longer read as unknown after an unrelated invalid response")
+			assert.False(t, node.spec("my-agent").Running, "a refusal that says nothing about the node was read as its answer and admitted the start without a ceiling")
+			_, err := r.runnerAdmitMiB(ctx, testOwner)
+			assert.ErrorIs(t, err, errGrantUnknown, "the grant was no longer read as unknown after an unrelated refusal")
+		})
+	}
 }
 
 // TEST_SCENARIO: the api-server's wake gives up at 120 s and its clock starts before the controller's first reconcile of the hold. A bound that does not leave room for that lag publishes the diagnosis after the wake has already timed out, so the person waiting reads a timeout instead of the problem that names itself a moment later.
@@ -327,11 +411,10 @@ func runnerPodCarriesTheDemand(t *testing.T, r *AgentReconciler, demand runnerDe
 	require.NoError(t, err)
 }
 
-// TEST_SCENARIO: the resize API reports a node that cannot carry one the way Kubernetes does: an invalid wrapping a forbidden cause on the field the resize would change.
+// TEST_SCENARIO: the resize API reports a node that cannot carry one the way Kubernetes does: an invalid wrapping a forbidden cause on the spec that names the node's support for resize.
 func nodeCannotResizePod(name string) error {
 	return k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, name, field.ErrorList{
-		field.Forbidden(field.NewPath("spec", "containers").Index(0).Child("resources"),
-			"pod resize is not supported by the node"),
+		field.Forbidden(field.NewPath("spec"), "Pod running on node without support for resize"),
 	})
 }
 
@@ -524,7 +607,7 @@ func TestAnInstallWithoutARequestKeepsItAtTheLimit(t *testing.T) {
 	assert.Equal(t, "16Gi", runnerPodRequest(t, r))
 }
 
-// TEST_SCENARIO: on dam-dev one runaway VMM took 75 of a node's 80 cores, because the runner pod had no CPU limit. Every machine is a VMM process in its owner's runner pod, so the pod's CPU limit caps the owner's machines together. It must cover the vCPUs of every machine that should run, or guests are throttled under normal load, plus one machine's worth for the runner and the VMMs' I/O threads; a limit the install sets caps it. It changes in place as machines start and stop, and the Deployment carries the owner's whole CPU pool — the most a resize can give the pod — so a new or replaced pod is never throttled below its machines' vCPUs on a cluster that never applies a resize. An install that sets no CPU limit anywhere has no pool of its own, so the bound it renders comes from the memory pool it does set — and only an install with no memory limit, or no warm-up floor to divide it by, carries none.
+// TEST_SCENARIO: on dam-dev one runaway VMM took 75 of a node's 80 cores, because the runner pod had no CPU limit. Every machine is a VMM process in its owner's runner pod, so the pod's CPU limit caps the owner's machines together. It must cover the vCPUs of every machine that should run, or guests are throttled under normal load, plus one machine's worth for the runner and the VMMs' I/O threads; a limit the install sets caps it. It changes in place as machines start and stop, and the Deployment carries the owner's whole CPU pool — the most a resize can give the pod — so a new or replaced pod starts bounded by the pool, which is the most a resize can give it, on a cluster that never applies a resize. An install that sets no CPU limit anywhere has no pool of its own, so the bound it renders comes from the memory pool it does set — and only an install with no memory limit, or no warm-up floor to divide it by, carries none.
 func TestTheRunnerCPULimitFollowsTheMachinesThatShouldRun(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -550,7 +633,7 @@ func TestTheRunnerCPULimitFollowsTheMachinesThatShouldRun(t *testing.T) {
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, "20", dep.Spec.Template.Spec.Containers[0].Resources.Limits.Cpu().String(),
-		"the Deployment carries the whole CPU pool: a new or replaced pod is never throttled below its machines, whether or not a resize ever lands")
+		"the Deployment carries the whole CPU pool: a new or replaced pod starts bounded by it, whether or not a resize ever lands")
 
 	agent.Annotations[annStopRequested] = time.Now().UTC().Format(time.RFC3339)
 	require.NoError(t, r.Reconcile(ctx, agent))

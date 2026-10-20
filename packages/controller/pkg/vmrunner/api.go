@@ -67,6 +67,14 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: owner's runner for memory the node never lent
 	// UNIT_BOUNDARY_DESCRIPTION: them. Zero admits against the runner's limit.
 	AdmitMiB int `json:"admitMiB,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the state read from this machine when the
+	// UNIT_BOUNDARY_DESCRIPTION: controller waived the cap because the machine
+	// UNIT_BOUNDARY_DESCRIPTION: already holds memory. Sent only with a zero
+	// UNIT_BOUNDARY_DESCRIPTION: cap: the runner refuses a waiver whose machine
+	// UNIT_BOUNDARY_DESCRIPTION: turns out to be a cold start by the time this
+	// UNIT_BOUNDARY_DESCRIPTION: ensure reaches it, and the controller decides
+	// UNIT_BOUNDARY_DESCRIPTION: again on what the runner reports.
+	ObservedState string `json:"observedState,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a seed as the runner answers its upload: the

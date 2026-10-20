@@ -1216,6 +1216,41 @@ func TestAnUnreadableGrantDoesNotStopARunningMachine(t *testing.T) {
 		"a machine that runs was reported as waiting for the node")
 }
 
+// TEST_SCENARIO: the waiver the controller makes for a machine that holds memory is only true at the moment it is read, and the runner is what knows whether it still is: the state travels with the zero cap, so the runner refuses the ensure rather than boot a cold start on a read two requests old. A cap waived for any other reason names no state, since there is nothing left to confirm.
+func TestAStartWaivedOnAMachineThatHoldsMemorySaysWhichStateItRead(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, MemoryMiB: 3072})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	waived := node.spec("my-agent")
+	assert.Zero(t, waived.AdmitMiB, "a machine that holds memory was admitted against a ceiling")
+	assert.Equal(t, vmrunner.StateRunning, waived.ObservedState, "the waiver reached the runner without the state it was decided on")
+}
+
+// TEST_SCENARIO: a cluster that cannot resize the runner pod never reads a grant at all, so the zero cap it sends is not a waiver of anything and carries no state to confirm.
+func TestACapWaivedForTheClusterNamesNoState(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, false)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Zero(t, node.spec("my-agent").ObservedState, "a cluster without in-place resize named a state for a waiver it never made")
+	assert.True(t, node.spec("my-agent").Running)
+}
+
 // TEST_SCENARIO: a restart boots its replacement, so while the node's grant is unreadable the machine reads restarting and holds the memory its boot takes again. Halting it stops the restart the ceiling left exempt.
 func TestAnUnreadableGrantDoesNotStopARestartInFlight(t *testing.T) {
 	ctx := context.Background()
