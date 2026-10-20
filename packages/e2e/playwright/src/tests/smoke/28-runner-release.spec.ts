@@ -96,10 +96,11 @@ function controllerLog(since?: string): string {
 
 // UNIT_BOUNDARY_DESCRIPTION: what a hop of the roll must leave behind: a pod of the new release, a boot that is not the one before, HOME as it was, and an agent ready on it. The reconciler's own line, logged since the hop began, says the release rolled the pod, so a reboot for another reason cannot pass for the release reaching the machine, and one hop's line cannot answer for the next.
 async function rolledOnto(image: string, since: string): Promise<void> {
+  let boot = "";
   await expect
     .poll(
       () => {
-        const boot = guestBoot();
+        boot = guestBoot();
         return boot !== "" && boot !== machine.boot;
       },
       {
@@ -114,11 +115,20 @@ async function rolledOnto(image: string, since: string): Promise<void> {
     failOnError: false,
   });
   await expect
-    .poll(() => runnerImage(), {
-      timeout: 120_000,
-      intervals: [2_000],
-      message: `the runner pod does not run ${image}`,
-    })
+    .poll(
+      () => {
+        try {
+          return runnerImage();
+        } catch {
+          return "";
+        }
+      },
+      {
+        timeout: 120_000,
+        intervals: [2_000],
+        message: `the runner pod does not run ${image}`,
+      },
+    )
     .toBe(image);
   expect(
     runnerPod(agentId),
@@ -131,7 +141,7 @@ async function rolledOnto(image: string, since: string): Promise<void> {
     controllerLog(since),
     `the pod did not roll because ${image} declares a reboot`,
   ).toContain(heldForReboot);
-  machine = { boot: guestBoot(), pod: runnerPod(agentId) };
+  machine = { boot, pod: runnerPod(agentId) };
 }
 
 test.beforeAll(async () => {
