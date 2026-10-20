@@ -1934,8 +1934,12 @@ fn take_pool_guard(mut progress: impl FnMut()) -> Option<Guard> {
                 progress();
                 std::thread::sleep(PROGRESS_SILENCE);
             }
+            // UNIT_BOUNDARY_DESCRIPTION: a panic elsewhere poisoned the slot, so its guard is recovered rather than waited for; the set is taken and the state cleared under it exactly as on the clean path, since a stop that detached the guard must not leave a live state behind whichever way it got the lock.
             Err(std::sync::TryLockError::Poisoned(poisoned)) => {
-                break poisoned.into_inner().take();
+                let mut slot = poisoned.into_inner();
+                let taken = slot.take();
+                publish(false, 0, 0);
+                break taken;
             }
         }
     };
@@ -3232,7 +3236,7 @@ mod tests {
         drop(probe);
     }
 
-    // TEST_SCENARIO: a look that read the guard's blocks before a clean stop takes the set publishes nothing after it, so the stopped state a stop wrote is still the state a reader sees. Without the slot's own lock over the check and the store, the look stores its live grant over the stop's clear, and an eviction thread reads a stopped guest as granted until the disk is frozen. Each of the three places a look publishes is driven here, because each reads its blocks at a different point in the look: the pre-look snapshot, the look itself, and the post-size sync.
+    // TEST_SCENARIO: a look that read the guard's blocks before a clean stop takes the set publishes nothing after it, so the stopped state a stop wrote is still the state a reader sees. Without the slot's own lock over the check and the store, the look stores its live grant over the stop's clear, and an eviction thread reads a stopped guest as granted until the disk is frozen. This drives the stop and then one publication through the helper, which is what proves the helper refuses once the slot is empty; it does not run the loop, so it does not show that the loop calls the helper at each of its three publication sites.
     #[test]
     fn a_look_a_clean_stop_overtook_publishes_nothing() {
         let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
@@ -3264,7 +3268,7 @@ mod tests {
         drop(taken);
     }
 
-    // TEST_SCENARIO: every test that runs a stop holds PUBLISHED, so the stop's clear cannot erase the state another test published to steer its own reading of the host's filesystem. The check is the lock itself: a thread that holds PUBLISHED cannot take it again, so a test that lost the lock fails here before its stop runs, and a suite of parallel tests cannot see one test's stop land in another's measurement.
+    // TEST_SCENARIO: a stop test that forgot PUBLISHED is caught when it runs beside other stop tests, because the lock is then taken and this try fails; it proves the lock is held by someone, not that the calling test is the holder, so it cannot catch a single test run alone whose lock was deleted while no other test holds it.
     fn holds_publication_lock() {
         assert!(
             PUBLISHED.try_lock().is_err(),
@@ -3277,6 +3281,44 @@ mod tests {
         let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let _state = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
         holds_publication_lock();
+    }
+
+    // TEST_SCENARIO: a stop that recovers a poisoned guard slot detaches the set and clears the published state just as one that took a clean lock does. The branch exists because a panic elsewhere leaves the mutex poisoned and the stop still has to release the guard, so a clear written only on the clean path would leave a live grant published after the set was detached, and an eviction thread would read a stopped guest as granted until the disk was frozen. The poison is made by a worker that panics while it owns the slot, which is the only fault injected: the guard, the take and the publication are production code. The slot is left clean and empty for the tests after this one, because recovering a poisoned lock does not clear its poison.
+    #[test]
+    fn a_stop_that_recovers_a_poisoned_slot_clears_the_state() {
+        let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let _state = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
+        let disk = TempDir::new("guard-poisoned");
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let dir = guard_dir(disk.path()).expect("the disk's own directory");
+        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap());
+        publish(true, 512 << 20, 64 << 20);
+        let poison = std::thread::spawn(|| {
+            let _held = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+            panic!("poison the guard slot");
+        });
+        assert!(poison.join().is_err(), "the worker did not panic");
+        let taken = take_pool_guard(|| {}).expect("the guard the stop takes");
+        assert_eq!(
+            guest_state(),
+            GuestState {
+                granted: false,
+                room: 0,
+                held: 0
+            },
+            "a stop that recovered a poisoned slot left a live state published"
+        );
+        assert!(
+            POOL_GUARD
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none(),
+            "the recovered slot still holds a guard"
+        );
+        drop(taken);
+        POOL_GUARD.clear_poison();
+        publish(false, 0, 0);
     }
 
     // TEST_SCENARIO: the guard's files have no names, so no older platform-init, image or agent can find them, and the filesystem frees them once the guest stops; a disk where they cannot be made boots without a guard.
