@@ -100,7 +100,6 @@ export function IconRail({
     active: view === "home",
     badge: 0,
     navigate: () => {
-      if (isMock) return;
       setView("home");
     },
   };
@@ -110,7 +109,6 @@ export function IconRail({
     active: view === "presets",
     badge: 0,
     navigate: () => {
-      if (isMock) return;
       setView("presets");
     },
   };
@@ -121,7 +119,6 @@ export function IconRail({
     active: view === "artifacts",
     badge: 0,
     navigate: () => {
-      if (isMock) return;
       setView("artifacts");
     },
   };
@@ -131,7 +128,6 @@ export function IconRail({
     active: view === "settings",
     badge: 0,
     navigate: () => {
-      if (isMock) return;
       navigateToSettings();
     },
   };
@@ -399,7 +395,6 @@ export function IconRail({
                     <button
                       type="button"
                       onClick={() => {
-                        if (isMock) return;
                         setView("agent-new");
                       }}
                       aria-label="Create agent"
