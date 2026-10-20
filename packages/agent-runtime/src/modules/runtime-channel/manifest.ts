@@ -140,6 +140,7 @@ export const modelRouterBinding = z.object({
   claudeTiers: z.boolean().optional(),
   credentialEnv: z.array(z.string().min(1)).optional(),
   defaultModelEnv: z.array(z.string().min(1)).optional(),
+  sessionFromRunningTurn: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
 });
 export type ModelRouterBinding = z.infer<typeof modelRouterBinding>;

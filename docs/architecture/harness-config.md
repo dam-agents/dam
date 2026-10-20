@@ -148,7 +148,7 @@ Two ids of one provider that match that way, like two of its deployments, are re
 The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` ending in `_session_<uuid>`, and Pi's `x-platform-session`, which its extension sets to the platform's session id.
 In a terminal, Codex and Bob run under their own id, which the router maps back to the platform's session id through the pins that their session-start hooks write (`terminalSessionPins`); Claude Code's terminal runs under the platform's id, and Pi's extension sends it.
 A Codex terminal also sends the platform's id in `x-platform-session` (`env_http_headers`), which names the session of a thread that has no pin, such as the TUI's title thread.
-Copilot stamps nothing on its calls, so a call from its chat process names no session and is routed by its qualified name alone.
+Copilot stamps nothing on its calls, so a call from its chat process is routed by its qualified name alone, and its manifest's `sessionFromRunningTurn` books it to the one Copilot session running a turn; while several run at once, the call names no session.
 A Copilot terminal runs under the platform's id (`--session-id`) and sends it in `x-platform-session` through `COPILOT_PROVIDER_HEADERS`.
 The router stamps each forwarded call with `x-platform-session` (when it found a session) and `x-platform-harness`, and it never passes the stamp that a harness sent; the gateway's [meter](spend-limits.md#meter) records the stamp and removes it before the provider.
 

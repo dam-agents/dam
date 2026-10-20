@@ -5,13 +5,15 @@ manifestVersion: 1
 # Copilot's BYOK provider speaks one wire API per process; Chat Completions
 # reaches the most providers. Its ACP takes the model as a session config
 # option it does not advertise. Its calls carry no session marker, so the
-# router routes them by the qualified name alone.
+# router routes them by the qualified name alone and books an unmarked call
+# to the one Copilot session running a turn, if only one is.
 modelRouter:
   dialects: [openai-chat]
   sessionModel: { configOption: model }
   credentialEnv: [COPILOT_PROVIDER_API_KEY]
   # BYOK refuses to start without a model.
   defaultModelEnv: [COPILOT_MODEL]
+  sessionFromRunningTurn: true
 
 # Declared so the runtime answers initialize before any harness process runs.
 # Re-captured from the image pin by test:harness-initialize-capabilities. The

@@ -36,7 +36,8 @@ Copilot does not list that option in `session/new`, but it accepts it.
 Copilot refuses to start without a model, so the runtime puts the first model of the default provider into `COPILOT_MODEL` (`defaultModelEnv` in the [manifest](rootfs/app/runtime-manifest.yaml)).
 With no provider granted, the scripts name a model that does not exist, and the router refuses the first call with its reason.
 
-Copilot's calls carry no session id, so the router routes a chat call by its qualified model name alone, and its spend counts as no Session.
+Copilot's calls carry no session id, so the router routes a chat call by its qualified model name alone.
+While exactly one Copilot session runs a turn, the router books the call, and its spend, to that session (`sessionFromRunningTurn`); while several run at once, the call counts as no Session.
 
 ## Approvals and modes
 
