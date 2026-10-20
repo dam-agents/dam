@@ -1,0 +1,62 @@
+#!/usr/bin/env bash
+#MISE description="A failed e2e provision writes its status, and the wait reports it"
+# Both halves are a workflow's shell, which nothing else runs, so this runs the
+# deployed scripts against a stubbed provision: one that fails, one that hangs,
+# one that succeeds. No cluster, no Lima.
+set -euo pipefail
+step() { yq -r ".jobs.e2e.steps[] | select(.name == \"$1\") | .run" .github/workflows/e2e.yml; }
+launch="$(step 'Provision k3s in the background')"
+wait="$(step 'Wait for the background k3s provision')"
+[ -n "$launch" ] && [ -n "$wait" ] ||
+  { echo "e2e.yml no longer holds both the provision launch and its wait" >&2; exit 1; }
+
+tmp="$(mktemp -d)"
+[ -s "$tmp/stub.pid" ] || : > "$tmp/stub.pid"
+trap '[ ! -s "$tmp/stub.pid" ] || kill "$(cat "$tmp/stub.pid")" 2>/dev/null; rm -rf "$tmp"' EXIT
+# Two seconds instead of three minutes, no root, and the status, log and repo
+# of the stub under tmp rather than /tmp and this checkout.
+launch="$(printf '%s\n' "$launch" | sed -e '/^sudo sysctl/d' -e "s|/tmp/k3s-provision|$tmp/k3s-provision|g")"
+wait="$(printf '%s\n' "$wait" | sed -e "s|/tmp/k3s-provision|$tmp/k3s-provision|g" -e 's|timeout 180|timeout 2|')"
+printf '%s\n' "$wait" | grep -q 'timeout 2' ||
+  { echo "the wait's budget no longer reads 'timeout 180'; teach this check the new one" >&2; exit 1; }
+export GITHUB_ENV="$tmp/env"
+
+# The provision the launch starts: an executable task under a stub repo root,
+# exactly as the workflow calls it.
+mkdir -p "$tmp/repo/.mise/tasks/cluster" "$tmp/repo/etc/lima"
+: > "$tmp/repo/etc/lima/k3s-test.yaml"
+stub() { printf '#!/usr/bin/env bash\n%s\n' "$1" > "$tmp/repo/.mise/tasks/cluster/provision-host"; chmod +x "$tmp/repo/.mise/tasks/cluster/provision-host"; }
+provision() { : > "$tmp/env"; rm -f "$tmp"/k3s-provision.*; ( cd "$tmp/repo" && bash -e -c "$launch" ); }
+settle() { for _ in $(seq 100); do [ -s "$tmp/k3s-provision.status" ] && return 0; sleep 0.1; done; return 1; }
+
+# A failed provision: its own status reaches the file the wait reads, and the
+# wait leaves the re-provisioning to the suite instead of failing the job.
+stub 'echo "error: k3s install failed after 4 attempts" >&2; exit 3'
+provision
+settle || { echo "a provision that failed wrote no status file" >&2; exit 1; }
+[ "$(cat "$tmp/k3s-provision.status")" = 3 ] || { echo "the status file must carry the provision's exit code" >&2; exit 1; }
+out="$(bash -e -c "$wait" 2>&1)" || { echo "a failed provision is not the wait's failure" >&2; exit 1; }
+printf '%s\n' "$out" | grep -q '::warning::.*exited 3' ||
+  { echo "the wait must warn which status it read" >&2; printf '%s\n' "$out" >&2; exit 1; }
+! grep -q E2E_HOST_PROVISIONED "$GITHUB_ENV" ||
+  { echo "a failed provision must leave E2E_HOST_PROVISIONED unset" >&2; exit 1; }
+
+# A hung provision: no status file, so the wait is what fails, and the
+# provision's own log is what says why.
+stub 'echo $$ > "'"$tmp"'/stub.pid"; echo "fetching the k3s release tarball"; sleep 30'
+provision
+[ ! -s "$tmp/k3s-provision.status" ] || { echo "a hung provision wrote a status file" >&2; exit 1; }
+rc=0 out="$(bash -e -c "$wait" 2>&1)" || rc=$?
+[ "$rc" != 0 ] || { echo "a provision that writes no status must fail the wait" >&2; exit 1; }
+printf '%s\n' "$out" | grep -qF "fetching the k3s release tarball" ||
+  { echo "the wait must print the provision's log when it gives up" >&2; printf '%s\n' "$out" >&2; exit 1; }
+printf '%s\n' "$out" | grep -q '::error::' ||
+  { echo "the wait must fail with an annotation" >&2; exit 1; }
+
+# A provision that worked: the suite keeps the cluster this run made.
+stub 'exit 0'
+provision
+settle || { echo "a provision that succeeded wrote no status file" >&2; exit 1; }
+bash -e -c "$wait" > /dev/null || { echo "a successful provision must pass the wait" >&2; exit 1; }
+grep -qx 'E2E_HOST_PROVISIONED=1' "$GITHUB_ENV" ||
+  { echo "a successful provision must set E2E_HOST_PROVISIONED" >&2; exit 1; }

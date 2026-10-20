@@ -283,22 +283,39 @@ jobs:
         with:
           path: &playwright-path ~/.cache/ms-playwright
           key: &playwright-key playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      # Under the job's timeout, so a hung image build fails the step and the
-      # log steps below still run; the job's own timeout cancels them too.
-      - run: &e2e-run |
-          timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done' ||
-            { echo "::error::the background k3s provision is still running after 3 minutes"; exit 1; }
+      # A step of its own, and named: an unnamed `run:` step is reported under
+      # its first line, so a suite failure inside one shared block reads in the
+      # checks list as whatever that line says. This wait spent a flake hunt on
+      # that: "until [ -s /tmp/k3s-provision.status ]" was blamed for every red
+      # e2e job, while the provision takes 14 to 33 s against this budget and
+      # the wait itself never fired.
+      # The provision writes its status when it exits, never when it hangs, so
+      # a missing file is this step's failure and it prints the provision's own
+      # log. A nonzero status is not: e2e:run nukes what it left and provisions
+      # again, which is why it sets E2E_HOST_PROVISIONED only on zero.
+      - &e2e-provision-wait
+        name: Wait for the background k3s provision
+        run: |
+          if ! timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done'; then
+            tail -n 100 /tmp/k3s-provision.log
+            echo "::error::the background k3s provision wrote no status within 3 minutes; its log is above"
+            exit 1
+          fi
           status="$(cat /tmp/k3s-provision.status)"
           if [ "$status" != 0 ]; then
             echo "::warning::the background k3s provision exited $status; mise run e2e nukes and provisions again"
-            unset E2E_HOST_PROVISIONED
+          else
+            echo "E2E_HOST_PROVISIONED=1" >> "$GITHUB_ENV"
           fi
+      # Under the job's timeout, so a hung image build fails the step and the
+      # log steps below still run; the job's own timeout cancels them too.
+      - name: Run the e2e suite
+        run: &e2e-run |
           mise run e2e
         timeout-minutes: 35
         env: &e2e-run-env
           SKIP_IMAGE_BUILD: "1"
           CI_IMAGES_STATUS: /tmp/ci-images.status
-          E2E_HOST_PROVISIONED: "1"
       - &e2e-playwright-save
         if: ${{ inputs.save-caches && steps.playwright-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -454,12 +471,14 @@ jobs:
       - *e2e-ci-images-agents
       - *e2e-playwright-version
       - *e2e-playwright-cache
+      - *e2e-provision-wait
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, each agent's boots, each a machine
       # start under nested virtualization or, for the migration spec's legacy
       # Agent, a container start, and the backend and runtime
       # migration specs, which run after the rest of the suite.
-      - run: *e2e-run
+      - name: Run the e2e suite
+        run: *e2e-run
         timeout-minutes: 70
         env: *e2e-run-env
       - *e2e-playwright-save
