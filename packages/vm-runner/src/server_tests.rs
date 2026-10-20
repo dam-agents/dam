@@ -128,6 +128,10 @@ impl Runtime for Fake {
         (!locked(&self.recycled).contains(&pid)).then_some(pid)
     }
 
+    fn forget_vmm_exit(&self, pid: i32) {
+        locked(&self.exit_signals).remove(&pid);
+    }
+
     fn vmm_exit_signal(&self, pid: i32) -> Option<i32> {
         locked(&self.exit_signals).get(&pid).copied()
     }
@@ -4217,6 +4221,206 @@ async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
     let _ = vmm.wait();
 }
 
+// TEST_SCENARIO: a count whose victim this runner never saw, and then nothing: the count does not move and the ticks go on. The credit has to age out on those idle ticks and be written away, or a runner that idles for hours hands it to whoever replaces it as a kill it has just seen.
+#[tokio::test(flavor = "multi_thread")]
+async fn idle_ticks_give_up_on_a_credit_before_a_handoff() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-idle-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let during = cgroup.clone();
+    let h = Harness::with("idle-expiry", move |config| {
+        config.cgroup_dir = Some(during)
+    });
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        1,
+        "one kill, one credit"
+    );
+    locked(&h.server.oom).credits = vec![Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1)];
+    // TEST_SCENARIO: the ticks that follow sample the same count and see no death at all.
+    h.server.reap_killed();
+    h.server.reap_killed();
+    assert!(
+        locked(&h.server.oom).credits.is_empty(),
+        "an idle tick kept a credit past its window"
+    );
+
+    let next = h
+        .hand_off(|config| config.cgroup_dir = Some(cgroup.clone()))
+        .await;
+    next.server.match_oom_kills();
+    assert_eq!(
+        locked(&next.server.oom).credits.len(),
+        0,
+        "an idle runner's expired credit came back as a fresh kill after the hand-off"
+    );
+}
+
+// TEST_SCENARIO: a count whose victim this runner never saw ages out while another machine boots, and an operator then kills a settled machine with the count unchanged. The old unmatched kill must not become spendable on that SIGKILL merely because some action is running.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_machines_boot_does_not_make_an_old_kill_spendable() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-unrelated-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("unrelated-boot", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    locked(&h.server.oom).credits = vec![Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1)];
+
+    // TEST_SCENARIO: another machine starts, and its own VMM is alive, so the old kill is what this boot cannot name.
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m2", spec(true)).unwrap();
+    h.wait_for_call("start m2").await;
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot holds until this test lets it go");
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = vmm.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    h.server.reap_killed();
+    let status = h.server.status("m1");
+    assert_ne!(
+        status.reason, REASON_OOM_KILLED,
+        "a kill counted long before this one, for something this runner never saw, was blamed on it: {status:?}"
+    );
+    release.send(()).ok();
+}
+
+// TEST_SCENARIO: eight unmatched kills age out while a machine boots, and the kernel then takes a ninth. Protecting a boot's own recovery must not let the old, expired entries hold the cap: the ninth kill is the fresh one, and its victim must still be namable.
+#[tokio::test(flavor = "multi_thread")]
+async fn expired_credits_do_not_hold_the_cap_against_a_fresh_kill() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-cap-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("cap-with-a-boot", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    counted(&cgroup, 8);
+    h.server.reap_killed();
+    locked(&h.server.oom).credits =
+        vec![Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1); OOM_CREDIT_CAP];
+
+    // TEST_SCENARIO: a boot holds while the kernel counts a ninth kill.
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m2", spec(true)).unwrap();
+    h.wait_for_call("start m2").await;
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot holds until this test lets it go");
+    counted(&cgroup, 9);
+    h.server.reap_killed();
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        1,
+        "the ninth kill was dropped because eight expired ones held the cap"
+    );
+    release.send(()).ok();
+    h.settle("m2").await;
+}
+
+// TEST_SCENARIO: a machine is killed by an operator while no count explains it, and the kernel then hands the same pid to the machine's replacement. The replacement's own death, counted by the kernel, has to be named: nothing may be left behind that silences a process merely because it holds the pid of one already reported.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_replacement_at_a_reported_pid_is_still_reported() {
+    let cgroup =
+        std::env::temp_dir().join(format!("vmr-cgroup-replacement-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("replacement-pid", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut first = stand_in_vmm();
+    let pid = i32::try_from(first.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = first.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    h.server.reap_killed();
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "a kill the cgroup did not count is not memory"
+    );
+    assert_eq!(
+        h.fake.vmm_exit_signal(pid),
+        None,
+        "the death it named is consumed, so nothing is left to silence the next one"
+    );
+
+    // TEST_SCENARIO: the replacement the kernel puts at that same pid dies of a counted kill.
+    let mut replacement = stand_in_vmm();
+    let replacement_pid = i32::try_from(replacement.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(replacement_pid, libc::SIGKILL) };
+    let ended = replacement.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "the replacement's death was silenced by the pid its predecessor held"
+    );
+}
+
+// TEST_SCENARIO: a record the loader wrote for a machine's previous VMM is still on disk when the machine's replacement holds that pid. The replacement dies and the loader has not yet published its own record: the old one names a death that is not this one's, so it must not be read as the replacement's.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_replacement_does_not_read_the_record_of_the_incarnation_before_it() {
+    let h = Harness::new("record-before-the-replacement");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
+    std::fs::create_dir_all(&exits).unwrap();
+    std::fs::write(exits.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+
+    // TEST_SCENARIO: one tick while the replacement runs, and then its death before any record of its own is published.
+    h.server.reap_killed();
+    assert_eq!(
+        h.server.status("m1").reason,
+        "",
+        "a live machine was read as the death of the one before it"
+    );
+    assert!(
+        !exits.join(pid.to_string()).exists(),
+        "the record of the incarnation before this one was kept, and is what the next death is read as"
+    );
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = vmm.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    h.server.reap_killed();
+    // UNIT_BOUNDARY_DESCRIPTION: this harness reads no cgroup, so a SIGKILL is the kernel's by definition here: what the reason tells apart is a death read from the stale record — a filter kill — from the replacement's own.
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "the replacement's death was named with the record of the incarnation before it"
+    );
+}
+
 // TEST_SCENARIO: a machine restarted at a pid the kernel handed out again, with a record the loader wrote for the incarnation before it still on disk: the record names a death that belongs to the process that held the pid, so a live process there is not it, and the machine must not be reported as killed by a filter or by the kernel while it runs.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_live_pid_does_not_read_the_record_of_the_incarnation_before_it() {
@@ -4350,7 +4554,7 @@ async fn a_handoff_does_not_revive_a_credit_that_aged_out() {
     let aged = Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1);
     locked(&h.server.oom).credits = vec![aged];
     assert!(
-        !h.server.take_oom_credit(),
+        !h.server.take_oom_credit("m"),
         "a credit past its window spends on nothing"
     );
 
@@ -4388,9 +4592,12 @@ async fn a_slow_boot_keeps_the_kill_it_was_restarted_for() {
         1,
         "the kill is counted while its boot runs"
     );
-    // TEST_SCENARIO: the recovery takes longer than the window.
+    // TEST_SCENARIO: the recovery takes longer than the window: the action began before the kill was counted, and the clock then passes the window with the action still running.
     let aged = Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1);
     locked(&h.server.oom).credits = vec![aged];
+    if let Some(entry) = locked(&h.server.machines).entries.get_mut("m1") {
+        entry.action_since = Some(aged - Duration::from_secs(1));
+    }
 
     release.send(()).expect("the boot returns");
     let status = h.settle("m1").await;

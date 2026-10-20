@@ -58,6 +58,9 @@ pub trait Runtime: Send + Sync {
     fn vmm_exit_signal(&self, _pid: i32) -> Option<i32> {
         None
     }
+
+    // UNIT_BOUNDARY_DESCRIPTION: drops the signal this runtime kept for a process, once a reporter has named its death: the note exists for a reader that did not reap the child, and a death already named is not a death a later tick should read again.
+    fn forget_vmm_exit(&self, _pid: i32) {}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged tree, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
