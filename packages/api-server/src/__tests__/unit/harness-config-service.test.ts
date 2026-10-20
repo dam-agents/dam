@@ -179,6 +179,20 @@ describe("harness-config service: pairs on a runtime that routes by model name",
     ).rejects.toThrow(/holds no cb provider/);
   });
 
+  /** TEST_SCENARIO: A routed agent's default always names a model, so the
+   * platform never has to pick one: saving one without a model is refused. */
+  it("refuses a default with no model", async () => {
+    const { service, calls } = makeService({ capabilities: ROUTED, granted });
+    await expect(
+      service.rememberSessionPair("a1", {
+        harness: "codex",
+        provider: "oai",
+        model: null,
+      }),
+    ).rejects.toThrow(/pick a model/);
+    expect(calls.pairs).toEqual([]);
+  });
+
   /** TEST_SCENARIO: The harness last reported its model list; a model not on
    * it is refused, one on it is saved, in Claude Code's spelling too. */
   it("refuses a model the harness's last list does not carry", async () => {
