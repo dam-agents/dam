@@ -1,4 +1,5 @@
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
+import { keepAlive } from "./heartbeat.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -10,7 +11,6 @@ import type { SessionPresence } from "./session-presence.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
 
 const PENDING_BUFFER_MAX_BYTES = 256 * 1024;
-const PING_INTERVAL_MS = 30_000;
 
 export interface BrowserStreamRelay {
   handleUpgrade(
@@ -72,25 +72,11 @@ export function createBrowserStreamRelay(
       client.on("error", () => client.terminate());
       let release = () => {};
 
-      let alive = true;
-      client.on("pong", () => {
-        alive = true;
-      });
-      const heartbeat = setInterval(() => {
-        if (!alive) {
-          client.terminate();
-          return;
-        }
-        alive = false;
-        try {
-          client.ping();
-        } catch {}
-      }, PING_INTERVAL_MS);
+      keepAlive(client);
 
       let upstream: WebSocket | undefined;
       let clientGone = false;
       client.on("close", () => {
-        clearInterval(heartbeat);
         clientGone = true;
         release();
         closeWs(upstream);

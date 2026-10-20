@@ -9,6 +9,7 @@ import {
   capInlineImages,
   buildPlatformTurnEndedNotification,
   jsonRpcErrorDetails,
+  platformContinuedFromSchema,
   platformRemoveQueuedParamsSchema,
   platformSteerQueuedParamsSchema,
   platformRewriteFromParamsSchema,
@@ -25,6 +26,7 @@ import {
   steerResponseSchema,
   steeringSupported,
   type PromptBlock,
+  type PlatformContinuedFrom,
   type PlatformTurnEndedParams,
   type PlatformRewriteFromParams,
   type PlatformUpdateQueuedParams,
@@ -43,6 +45,10 @@ import {
   createToolActivityReader,
   type ToolActivity,
 } from "../../../changes/index.js";
+import {
+  carriesContinuedFrom,
+  frameContinuedFrom,
+} from "../../domain/continued-from.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isNonNullObject,
@@ -78,6 +84,7 @@ import {
 } from "../../infrastructure/session-metadata-store.js";
 import type { RunResultStore } from "../../infrastructure/run-result-store.js";
 import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
+import type { ContinuedFromStore } from "../../infrastructure/continued-from-store.js";
 import type { ActiveTurnStore } from "../../infrastructure/active-turn-store.js";
 import type {
   BackgroundWorkRegistry,
@@ -96,6 +103,7 @@ import { createHarnessActivity } from "./harness-activity.js";
 import type { HarnessStatePort } from "../../domain/harness-state.js";
 import {
   createPromptScheduler,
+  type ModeRole,
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
@@ -186,6 +194,7 @@ export interface AcpRuntimeDeps {
   presumeIdleMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
+  continuedFrom: ContinuedFromStore;
   activeTurns: ActiveTurnStore;
   runResults?: RunResultStore;
   sessionMcpServers?: (ref: string) => unknown[];
@@ -197,6 +206,7 @@ export interface AcpRuntimeDeps {
   agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
+  modelSettingConfig?: string;
   modeSettingId?: string;
 }
 
@@ -223,6 +233,7 @@ interface OutboundMapping {
   promptSessionId: string | null;
   attachSessionId: string | null;
   platformMeta: PlatformSessionMeta | null;
+  continuedFrom?: PlatformContinuedFrom;
   rehydrate?: boolean;
   settingSessionId?: string;
   critical?: boolean;
@@ -342,6 +353,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => sendToHarness(frame),
+    modeRoleOf: (entry) => entry.modeRole ?? null,
     onTurnStarted: ({
       sessionId,
       unattended,
@@ -403,8 +415,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const unstoredPrompt = processExiting
         ? undefined
         : deps.activeTurns.promptOf(sessionId);
-      if (unstoredPrompt)
+      if (unstoredPrompt) {
         deps.undeliveredPrompts.remember(sessionId, [unstoredPrompt]);
+        deps.continuedFrom.markUnsent(sessionId);
+      }
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
       recordRun(sessionId, turn.promptId, null);
     },
@@ -414,6 +428,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
+      if (dropped.some((entry) => carriesContinuedFrom(entry.frame)))
+        deps.continuedFrom.markUnsent(sessionId);
       deps.undeliveredPrompts.remember(
         sessionId,
         dropped.map((entry) =>
@@ -500,6 +516,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     runStartsOf(sessionId) {
       return deps.sessionMetadata?.runStartsOf(sessionId) ?? [];
+    },
+    continuedFromOf(sessionId) {
+      return deps.continuedFrom.readFor(sessionId);
     },
     engage(channel, sessionId) {
       engage(channel, sessionId);
@@ -769,7 +788,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const applied = appliedSettings.get(sessionId);
         for (const [k] of applied ?? [])
           if (k.startsWith(mapping.method)) applied?.delete(k);
-        syncSettings(sessionId);
+        syncSettings(sessionId, true);
         promptScheduler.onSettingResponse(sessionId, outboundId);
       }, CRITICAL_RETRY_MS);
       timer.unref?.();
@@ -792,16 +811,69 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
-  function syncSettings(sessionId: string): void {
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: whether a mode the harness reports is the answer
+   * to work the runtime still owes rather than the session taking a mode. Only
+   * sent work can have caused a report, and only work the runtime reconciles
+   * makes the report its own — a derived mode, or a model whose answer carries a
+   * reconciled mode. A mode someone chose and has not sent yet is newer than the
+   * report, so it is not saved over either. A frame that has not reached the
+   * harness cannot have caused anything: two settings that name the same mode
+   * are not the same event.
+   */
+  function modeReportIsRuntimeWork(sessionId: string): boolean {
+    return promptScheduler.modeWork(sessionId).some((work) => {
+      if (work.sent) return work.role === "reconcile";
+      return work.role === "owner";
+    });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a mode the session took while the runtime still
+   * had a mode queued behind its turn makes that frame obsolete: it was sent
+   * before the session held this mode, and sending it would undo the mode once
+   * the turn ends. Only a mode the runtime reconciles is dropped, never one the
+   * owner chose; the queued model change stays, since the owner asked for it and
+   * the mode survives it. A dropped frame's answer mapping goes with it, so an
+   * unsent frame cannot hold the process open.
+   */
+  function dropQueuedModeWork(sessionId: string): void {
+    const dropped = promptScheduler.dropQueuedSettings(
+      sessionId,
+      (entry) =>
+        entry.modeRole === "reconcile" &&
+        (entry.frame as { method?: unknown }).method === "session/set_mode",
+    );
+    for (const entry of dropped) {
+      appliedSettings
+        .get(sessionId)
+        ?.delete(settingKeyOf(entry.frame as SessionSettingFrame));
+      outboundIdToClient.delete(entry.outboundId);
+    }
+  }
+
+  function syncSettings(sessionId: string, first = false): void {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
     appliedSettings.set(sessionId, applied);
+    const block: PromptSubmission[] = [];
+    const chosenMode =
+      deps.sessionMetadata?.get(sessionId)?.meta.settings?.[
+        deps.modeSettingId ?? ""
+      ];
     for (const frame of deps.sessionSettingFrames?.(sessionId) ?? []) {
       const { method, params } = frame;
       const key = settingKeyOf(frame);
       const value = JSON.stringify(params);
       if (applied.get(key) === value) continue;
       applied.set(key, value);
+      const role = modeRoleOfFrame(
+        { method, params },
+        deps.modelSettingConfig,
+        deps.modeSettingId,
+        chosenMode,
+        false,
+      );
       const outboundId = nextOutboundId++;
       outboundIdToClient.set(outboundId, {
         channel: settingsChannel,
@@ -813,7 +885,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         settingSessionId: sessionId,
         ...(frame.critical && { critical: true }),
       });
-      promptScheduler.submitSetting({
+      block.push({
         sessionId,
         channel: settingsChannel,
         outboundId,
@@ -821,8 +893,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         frame: { jsonrpc: "2.0", id: outboundId, method, params },
         promptId: null,
         unattended: true,
+        modeRole: role ?? undefined,
       });
     }
+    promptScheduler.submitSettings(block, first);
   }
 
   const teardownCloseByReason: Record<
@@ -1031,6 +1105,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     source: unknown,
     sessionId: string,
     outboundId: number,
+    carryContinuedFrom = false,
   ): object {
     const forward = stripPlatformMeta(source);
     const framed =
@@ -1038,7 +1113,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.sessionMetadata?.get(sessionId)?.meta.threadTs !== undefined
         ? frameDirectTurn(forward)
         : forward;
-    return rewriteCwd({ ...framed, id: outboundId }, deps.workingDir);
+    const seed = carryContinuedFrom
+      ? deps.continuedFrom.readFor(sessionId)
+      : deps.continuedFrom.takeUnsent(sessionId);
+    const seeded = seed ? frameContinuedFrom(framed, seed) : framed;
+    return rewriteCwd({ ...seeded, id: outboundId }, deps.workingDir);
   }
 
   function updateQueuedPrompt(
@@ -1051,7 +1130,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const edited = { ...source, params: { ...params, prompt } };
       return {
         source: edited,
-        frame: promptFrameFor(edited, sessionId, entry.outboundId),
+        frame: promptFrameFor(
+          edited,
+          sessionId,
+          entry.outboundId,
+          carriesContinuedFrom(entry.frame),
+        ),
         typed: prompt,
         blocks: queueableBlocks(prompt),
       };
@@ -1189,6 +1273,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function retireSession(sessionId: string): void {
     deps.sessionMetadata?.tombstone(sessionId);
     deps.undeliveredPrompts.forgetSession(sessionId);
+    deps.continuedFrom.forgetSession(sessionId);
     deps.activeTurns.remove(sessionId);
     deps.runResults?.forgetSession(sessionId);
     heldRuns.delete(sessionId);
@@ -1356,6 +1441,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
               ...(params.title !== undefined && { customTitle: params.title }),
             };
+            deps.continuedFrom.copy(oldId, newId, !fresh);
             if (params.mode === "rewind") {
               deps.sessionMetadata?.adopt(newId, oldId, meta);
               retireSession(oldId);
@@ -1412,12 +1498,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       platformMeta: null,
     });
     deps.sessionMetadata?.recordActivity(sessionId);
+    const frame = promptFrameFor(source, sessionId, outboundId);
     const fate = promptScheduler.submit({
       sessionId,
       channel,
       outboundId,
       originalId: null,
-      frame: promptFrameFor(source, sessionId, outboundId),
+      frame,
       promptId,
       source,
       typed: prompt,
@@ -1427,6 +1514,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     });
     if (fate === "refused") {
       outboundIdToClient.delete(outboundId);
+      if (carriesContinuedFrom(frame)) deps.continuedFrom.markUnsent(sessionId);
       return;
     }
     if (
@@ -1652,6 +1740,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (
             mapping.method === "session/new" &&
             sidFromResult &&
+            mapping.continuedFrom !== undefined
+          )
+            deps.continuedFrom.save(sidFromResult, mapping.continuedFrom);
+          if (
+            mapping.method === "session/new" &&
+            sidFromResult &&
             deps.sessionMetadata
           ) {
             deps.sessionMetadata.set(sidFromResult, mapping.platformMeta ?? {});
@@ -1823,11 +1917,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             );
           const entry = deps.sessionMetadata?.get(sessionId);
           const id = deps.modeSettingId;
-          if (id && entry && entry.meta.settings?.[id] !== reportedMode)
+          if (
+            id &&
+            entry &&
+            !modeReportIsRuntimeWork(sessionId) &&
+            entry.meta.settings?.[id] !== reportedMode
+          ) {
             deps.sessionMetadata?.set(sessionId, {
               ...entry.meta,
               settings: { ...entry.meta.settings, [id]: reportedMode },
             });
+            dropQueuedModeWork(sessionId);
+          }
         }
         harnessActivity.noteUpdate(sessionId, toolCallStateOf(frame));
         const text = extractAgentTextChunk(frame);
@@ -2101,6 +2202,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
       if (promptSessionId !== null) deps.onPrompt?.();
 
+      const continuedFrom =
+        method === "session/new" ? extractContinuedFrom(frame) : undefined;
+      if (continuedFrom === null) {
+        sendToChannel(
+          channel,
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: frame.id,
+            error: {
+              code: -32602,
+              message:
+                "the sub-agent's prompt or result is too large to continue from",
+            },
+          }),
+        );
+        return;
+      }
       const platformMeta =
         method === "session/new"
           ? { ...(extractPlatformMeta(frame) ?? {}), ref: randomUUID() }
@@ -2132,6 +2250,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         promptSessionId,
         attachSessionId: null,
         platformMeta,
+        ...(continuedFrom !== undefined && { continuedFrom }),
         ...(settingSessionId !== null && { settingSessionId }),
       });
 
@@ -2168,6 +2287,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);
+          if (carriesContinuedFrom(rewritten))
+            deps.continuedFrom.markUnsent(promptSessionId);
           return;
         }
         if (
@@ -2195,6 +2316,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           unattended:
             nonViewerChannels.has(channel) &&
             isMachineSession(settingSessionId),
+          modeRole:
+            modeRoleOfFrame(
+              rewritten,
+              deps.modelSettingConfig,
+              deps.modeSettingId,
+              deps.sessionMetadata?.get(settingSessionId)?.meta.settings?.[
+                deps.modeSettingId ?? ""
+              ],
+              true,
+            ) ?? undefined,
         });
         if (
           fate === "queued" &&
@@ -2333,6 +2464,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   };
 }
 
+function extractContinuedFrom(
+  frame: unknown,
+): PlatformContinuedFrom | null | undefined {
+  const raw = platformField(frame, "continuedFrom");
+  if (raw === undefined) return undefined;
+  const parsed = platformContinuedFromSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
+}
+
 function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {
   if (!isNonNullObject(frame)) return null;
   const params = frame.params;
@@ -2444,6 +2584,10 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     ...(session.harness !== undefined && { harness: session.harness }),
     ...(session.provider !== undefined && { provider: session.provider }),
     ...(session.model !== undefined && { model: session.model }),
+    ...(session.customTitle !== undefined && {
+      customTitle: session.customTitle,
+    }),
+    ...(session.autoTitle !== undefined && { autoTitle: session.autoTitle }),
   };
 }
 
@@ -2624,6 +2768,41 @@ function isNoResponseFiller(frame: unknown): boolean {
 }
 
 const MODE_SETTING_KEY = "session/set_mode:";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a setting does to the session's mode. A mode
+ * someone chose makes that mode the session's, and the harness's report of it
+ * confirms the choice: a client's own request, or the mode the owner saved,
+ * which the runtime sends for it. The mode the runtime derived, and the model,
+ * which the harness reconciles a mode against, make the harness report a mode
+ * the setting caused, not one the session took. Every other setting leaves the
+ * mode alone.
+ */
+function modeRoleOfFrame(
+  frame: unknown,
+  modelSettingConfig: string | undefined,
+  modeSettingId: string | undefined,
+  chosenMode: string | undefined,
+  fromClient: boolean,
+): ModeRole | null {
+  const setting = frame as
+    | { method?: unknown; params?: { configId?: unknown; modeId?: unknown } }
+    | null
+    | undefined;
+  if (setting?.method === "session/set_mode")
+    return fromClient || setting.params?.modeId === chosenMode
+      ? "owner"
+      : "reconcile";
+  if (setting?.method !== "session/set_config_option") return null;
+  const configId = setting.params?.configId;
+  if (modelSettingConfig !== undefined && configId === modelSettingConfig)
+    return "reconcile";
+  return modeSettingId !== undefined && configId === modeSettingId
+    ? fromClient
+      ? "owner"
+      : "reconcile"
+    : null;
+}
 
 function settingKeyOf({ method, params }: SessionSettingFrame): string {
   return `${method}:${String(params.configId ?? "")}`;

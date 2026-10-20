@@ -49,7 +49,6 @@ import {
   RUNTIME_MIGRATING_CONDITION,
   RUNTIME_MIGRATION_KEY,
   RUNTIME_MIGRATION_MESSAGE_KEY,
-  RUNTIME_MIGRATION_SNAPSHOT_KEY,
   RUNTIME_MIGRATION_SOURCE_KEY,
   RUNTIME_MIGRATION_TARGET_KEY,
   DISABLED_KEY,
@@ -71,9 +70,7 @@ import {
 import {
   runtimeMigrationHold,
   runtimeMigrationOf,
-  runtimeMigrationRefusal,
   type RuntimeMigrationHold,
-  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
@@ -143,7 +140,6 @@ export interface InfraAgent {
   runtimeMigration?: RuntimeMigration;
   runtimeMigrationHold?: RuntimeMigrationHold;
   runtimeMigrationTarget?: string;
-  runtimeMigrationSnapshot?: string;
   storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -366,11 +362,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
       ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
       : {}),
-    ...(annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY]
-      ? {
-          runtimeMigrationSnapshot: annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY],
-        }
-      : {}),
     storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
@@ -431,7 +422,6 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
-  runtimeMigrationContext: RuntimeMigrationContext,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
@@ -443,8 +433,6 @@ export function assembleAgent(
     ...(infra.runtimeMigration
       ? { runtimeMigration: infra.runtimeMigration }
       : {}),
-    runtimeMigratable:
-      runtimeMigrationRefusal(infra, runtimeMigrationContext) === null,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(

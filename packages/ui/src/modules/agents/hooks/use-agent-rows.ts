@@ -7,9 +7,7 @@ import { slotUnitOf } from "../../budgets/lib/slots.js";
 import { useAgents } from "../api/queries.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
 import { agentUsage, sandboxSubtitle } from "../utils/sandbox-subtitle.js";
-import { useMigrateRuntime } from "./use-migrate-runtime.js";
 import { useSyncRestartingAgents } from "./use-restart-agent.js";
-import { useRuntimeMigrationControls } from "./use-runtime-migration-controls.js";
 import { useSlowStartIds } from "./use-slow-start.js";
 import { useUpdateSandbox } from "./use-update-sandbox.js";
 
@@ -21,8 +19,6 @@ export function useAgentRows() {
   const slowStartIds = useSlowStartIds();
 
   const update = useUpdateSandbox();
-  const migrate = useMigrateRuntime();
-  const migrationControls = useRuntimeMigrationControls();
 
   const restartingIds = useMemo(
     () => new Set(restartingAgents.keys()),
@@ -39,11 +35,6 @@ export function useAgentRows() {
     updatePending: update.updatingId === agent.id,
     updateBusy: update.updatingId !== null,
     onUpdate: () => void update.updateOne(agent),
-    migratePending: migrate.isMigrating(agent.id),
-    onMigrate: () => void migrate.migrateOne(agent),
-    migrationControlsBusy: migrationControls.isBusy(agent.id),
-    onAbortMigration: () => void migrationControls.abortOne(agent),
-    onRetryMigration: () => void migrationControls.retryOne(agent),
   });
 
   return {

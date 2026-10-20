@@ -363,14 +363,13 @@ jobs:
     # The vm lane: the same smoke suite on an install with virtualization
     # enabled, where the agents the suite creates are vm Agents bar the one
     # container Agent the migration spec applies itself. The KVM
-    # device plugin comes from cluster:install, the staged mock image from
-    # values-local.yaml once e2e:install sees E2E_VIRTUALIZATION, and the
-    # vm-runner image is built or fetched with the rest by e2e:ci-images. The
-    # lane installs a node image cache root of its own, so a staging that did
-    # not follow the install's values would strand the trees it stages. Every
-    # create the suite makes lands on a machine there, the UI's and the API's
-    # alike, unless it asks for a container. It
-    # also adds the runtime migration spec, which needs
+    # device plugin comes from cluster:install, the node image cache root of
+    # its own (values-local.yaml once e2e:install sees E2E_VIRTUALIZATION, so a
+    # staging that did not follow the install's values would strand the trees
+    # it stages) and the vm-runner image is built or fetched with the rest by
+    # e2e:ci-images. Every create the suite makes lands on a machine there, the
+    # UI's and the API's alike, and a spec that needs a container Agent applies
+    # one as an object instead. It also adds the runtime migration spec, which needs
     # both Backends on one install, and runs it and the backend spec after the
     # rest of the suite:
     # the backend spec deletes the user's VM runner, which runs every one of

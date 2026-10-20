@@ -49,6 +49,7 @@ A few observations the diagram glosses over:
   Slack only: Telegram drops one at its gateway.
   A picture becomes prompt content only in a format the harness decodes, the sniffed type outranking the messenger's label.
   Everything else is written into the agent's workspace and linked by absolute path, as a web-UI upload is, whatever its format.
+  Both land under `~/.uploads/`, which the Claude Code image's managed settings allow reads from, so reading a handed file raises no permission prompt.
   Anything withheld — a refusing messenger, a failed write, a size ceiling — is named to the agent, and on an addressed turn to the sender too.
 - **A relayed turn answers its own permission prompts, and it answers them no.** A harness that stops to ask before a sensitive tool call is asking somebody who is not there: the relay holds no verdict of its own, and the conversation's other members are not the binding owner.
   So the relay refuses and the turn carries on with that one call denied, rather than waiting on an answer that cannot come — the same rule the credentialed-egress gate applies to an unattended turn ([security-and-credentials](security-and-credentials.md)).
@@ -69,7 +70,7 @@ A few observations the diagram glosses over:
 - **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note once and keeps waiting while the cause stays transient, bounded by elapsed time, so a healthy-but-slow start never loses the turn.
   A hard failure (pod crash, bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
   The one message passed through verbatim is a refusal to start: the controller's text names what is full and what to stop, which no copy written here could reproduce; a cause the platform is itself repairing still invites a retry.
-  An Agent a [runtime migration](vm-runtime-migration.md) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that it waits on its owner.
+  An Agent a [runtime migration](vm-runtime-migration.md) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that an operator has to finish or undo the move.
   Telegram replies with the same copy on wake failures (no early notice, no extended wait), on addressed turns only: an ambient turn fails silently, as on Slack.
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works.
   The relay hands the message to the pod and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
@@ -82,6 +83,11 @@ A few observations the diagram glosses over:
   Thought and tool notifications feed it; assistant text is ignored.
   The status degrades to nothing where the workspace can't show it.
   Ambient turns present no status — nobody summoned the agent.
+- **The status carries Slack's Stop button, and it stops the turn.** Slack shows the button to apps subscribed to `agent_session_stopped`, and sends that event for the thread when someone presses it.
+  The worker cancels the turn running in that thread with ACP `session/cancel`, the same notification the web UI sends, on the connection that carries the prompt.
+  Only a person whose message the turn carries — the one who started it, or one whose message joined it — or someone whose linked platform user owns the Agent may stop it; anyone else is told so in an ephemeral notice and the turn runs on.
+  A stopped turn clears its status, finishes every stream Slack names in the event, and is recorded with the reason `stopped`; it is not handed to the delivery nudge, so the agent is not asked again to answer what the person withdrew.
+  A Stop that arrives after the turn ended only clears the status.
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.

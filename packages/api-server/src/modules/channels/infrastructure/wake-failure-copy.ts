@@ -20,7 +20,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
     case "migration-failed":
       return (
         "This agent's move to the new runtime failed, and it stays asleep " +
-        "until its owner retries or aborts the move. Contact its owner."
+        "until an operator finishes or undoes the move."
       );
     case "agent-pod-failed":
       switch (c.terminationReason) {

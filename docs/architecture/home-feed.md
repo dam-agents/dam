@@ -52,7 +52,7 @@ Once the list is expanded, each More asks the Agent for one more page of its lis
 The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
 An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
 Hibernated Agents fold under **See all (N hibernating)**, unless the user has one open or its chat or configuration page is shown; closing the shown Agent's Sessions keeps its row in place.
-An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and a ⋮ menu: Configure agent, and Add to Slack channel or Telegram chat where the installation has them.
+An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
@@ -80,6 +80,7 @@ The rows are a list of disclosure buttons, not an ARIA tree: Tab moves between t
 Each Session row has an activity dot: orange for a waiting approval, a spinning blue ring while working, a green ring for background work, green for unread, a pen for a draft and gray when idle; unlike the current layout's blue unread dot, unread is green here, and a line naming its harness, model and source; a Session from the record alone has no model.
 A Session row keeps its harness icon before the title and its schedule, terminal and messenger icons; a pinned row leads with its Agent's avatar under the activity dot, since the Pinned section mixes Agents.
 The tree's Agents header carries one session filter, by state and by Session type: it narrows the Pinned section and every Agent's list, and the control shows a mark while a filter is on.
+The filter narrows the pages already loaded, so while it is on an Agent's list loads a further page only when the user clicks **Load more**; when the filter is removed, every Agent's list keeps its first page only.
 The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list; pinning from the keyboard keeps focus on the moved row, or on its Agent's row when that Agent is closed.
 Pins are kept in the browser, so they do not follow the user to another device.
@@ -89,7 +90,7 @@ An asleep Agent whose Sessions the record does not hold shows a note that its Se
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
 An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
-With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.
+An Agent's runtime migration badge reads on its row in the Agents list and in the overlay of an Agent that is not running; the chat header carries it only below the width where the row shows.
 
 ## The producer
 

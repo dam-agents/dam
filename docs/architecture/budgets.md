@@ -141,7 +141,7 @@ The verdict stays **synchronous**.
 Reserved counts *desired* replicas, so scaling a victim's pair to zero frees budget the instant the write lands and the same reconcile admits — there is no reclaim-in-progress state, and the fail-fast above needs no third outcome to distinguish.
 Pods draining afterwards are the scheduler's business, which Budgets have never modelled.
 
-A migration's boot never reclaims: the user asked to move one agent, not to stop others, so it waits for room instead.
+A migration's boot never reclaims: an operator asked to move one agent, not to stop others, so it waits for room instead.
 Four rules bound it:
 
 - **Unattended only.** A session pin (`active-session`), an Invocation pin, or a sweepable Invocation target (whose driver is blocked on its result) is never a candidate, and neither is an Agent mid-way through a runtime migration, nor a **never-hibernate** agent — effective timeout `0` declares "always run", not a default to be overridden — nor a vm agent, which holds no budget room to free.

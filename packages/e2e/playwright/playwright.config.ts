@@ -117,13 +117,6 @@ const suite: NamedProject[] = [
     : []),
 ];
 
-const agentBackend: NamedProject = {
-  name: "agent-backend",
-  testMatch: /19-.*\.spec\.ts$/,
-  dependencies: suite.map(({ name }) => name),
-  use: { ...devices["Desktop Chrome"], storageState },
-};
-
 const prSkip =
   process.env.E2E_SCOPE === "pr"
     ? new RegExp(
@@ -136,6 +129,26 @@ const prEmpty = new Set(
     ? ["platform-provider", "new-layout", "agent-backend"]
     : ["platform-provider"],
 );
+
+const agentBackend: NamedProject = {
+  name: "agent-backend",
+  testMatch: /19-.*\.spec\.ts$/,
+  dependencies: suite.map(({ name }) => name),
+  use: { ...devices["Desktop Chrome"], storageState },
+};
+
+const runnerRelease: NamedProject = {
+  name: "runner-release",
+  testMatch: /28-.*\.spec\.ts$/,
+  dependencies: [...suite, agentBackend]
+    .map(({ name }) => name)
+    .filter((name) => !prSkip || !prEmpty.has(name)),
+  use: { ...devices["Desktop Chrome"], storageState },
+};
+
+const projects = (
+  laneBackend === "vm" ? [...suite, agentBackend, runnerRelease] : suite
+).filter(({ name }) => !prSkip || !prEmpty.has(name));
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the smoke suite's Playwright projects: which specs a run
@@ -168,7 +181,7 @@ export default defineConfig({
       ],
     },
   },
-  projects: (laneBackend === "vm" ? [...suite, agentBackend] : suite)
-    .filter(({ name }) => !prSkip || !prEmpty.has(name))
-    .map((project) => (prSkip ? { ...project, testIgnore: prSkip } : project)),
+  projects: projects.map((project) =>
+    prSkip ? { ...project, testIgnore: prSkip } : project,
+  ),
 });

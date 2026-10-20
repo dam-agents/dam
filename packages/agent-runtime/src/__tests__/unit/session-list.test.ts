@@ -49,6 +49,50 @@ describe("composeSessionList", () => {
     expect(out[0]?.title).toBe("Daily brief");
   });
 
+  /** TEST_SCENARIO: The web UI's rename dialog prefills only a title that was
+   * set explicitly and offers the automatic one as its placeholder, so each
+   * listed Session says which title it shows and what the automatic one is. */
+  it("tells an explicit title from the automatic one", () => {
+    const out = composeSessionList(
+      [
+        { sessionId: "renamed", title: "harness title", updatedAt: null },
+        { sessionId: "auto", title: "harness title", updatedAt: null },
+        { sessionId: "harness-only", title: "terminal chat", updatedAt: null },
+      ],
+      {
+        renamed: entry({
+          mode: "chat",
+          title: "first prompt",
+          customTitle: "Daily brief",
+        }),
+        auto: entry({ mode: "chat", title: "first prompt" }),
+        fresh: entry({ mode: "chat", title: "first prompt" }),
+      },
+      { isTombstoned: notTombstoned, isRunning: notRunning },
+    );
+    const byId = Object.fromEntries(out.map((s) => [s.sessionId, s]));
+    expect(byId.renamed).toMatchObject({
+      title: "Daily brief",
+      customTitle: "Daily brief",
+      autoTitle: "harness title",
+    });
+    expect(byId.auto).toMatchObject({
+      title: "harness title",
+      customTitle: null,
+      autoTitle: "harness title",
+    });
+    expect(byId.fresh).toMatchObject({
+      title: "first prompt",
+      customTitle: null,
+      autoTitle: "first prompt",
+    });
+    expect(byId["harness-only"]).toMatchObject({
+      title: "terminal chat",
+      customTitle: null,
+      autoTitle: "terminal chat",
+    });
+  });
+
   it("lists a store-only session with a null title", () => {
     const out = composeSessionList(
       [],

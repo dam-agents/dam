@@ -87,19 +87,9 @@ export type {
   SessionBackgroundWork,
   TemplateUpdate,
   UpgradeAgentError,
-  MigrateRuntimeError,
-  UnmovablePath,
-  MigrateRuntimeResult,
-  PlanRuntimeMigrationResult,
-  AbortRuntimeMigrationError,
-  AbortRuntimeMigrationResult,
-  RetryRuntimeMigrationError,
-  RetryRuntimeMigrationResult,
   WakeAgentError,
   WakeAgentResult,
   RuntimeMigration,
-  RuntimeMigrationPlan,
-  RuntimeMigrationRefusal,
   RuntimeMigrationPhase,
   ConnectSlackResult,
   BindSlackChannelResult,
@@ -131,11 +121,7 @@ export {
   isStartRefusal,
   TerminationCode,
 } from "./modules/agents/types.js";
-export {
-  runtimeMigrationRefusalReasons,
-  toAgentView,
-  toRuntimeMigrationPlanView,
-} from "./modules/agents/view.js";
+export { toAgentView } from "./modules/agents/view.js";
 export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
   BudgetReserved,
@@ -659,7 +645,7 @@ export type {
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export {
   acpNativeRowId,
-  permissionOptionsOf,
+  permissionOptionKindsOf,
   recordedOptionsOf,
   recordedToolOf,
 } from "./modules/approvals/format.js";
@@ -730,6 +716,9 @@ export {
   platformUndeliveredPromptSchema,
   platformUndeliveredMetaSchema,
   platformSupersededMetaSchema,
+  platformContinuedFromSchema,
+  CONTINUED_FROM_LABEL_MAX,
+  CONTINUED_FROM_TEXT_MAX,
   capInlineImages,
   queuedPromptSchema,
   platformQueueMetaSchema,
@@ -758,6 +747,7 @@ export type {
   PlatformRunResult,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
+  PlatformContinuedFrom,
   PromptBlock,
   QueuedPrompt,
   PlatformQueueChangedParams,
