@@ -225,14 +225,11 @@ fn raise_oom_score_adj(path: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes lower their own scores instead: -1000 where the kernel allows it, else 0, which no process whose memory is smaller can outrank. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself.
+// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes ask for the lowest score there is. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself. A kernel refuses any score below the one the container started with unless the process holds CAP_SYS_RESOURCE in the kernel's own user namespace, which this pod adds for the case the node runs it without a user namespace of its own: a pod that has one holds the capability in that namespace, the write is refused anyway, and the line on the console says which score the runner keeps.
 fn lower_own_oom_score_adj() {
     const PATH: &str = "/proc/self/oom_score_adj";
-    if std::fs::write(PATH, "-1000").is_ok() {
-        return;
-    }
-    if let Err(e) = std::fs::write(PATH, "0") {
-        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it against its machines");
+    if let Err(e) = std::fs::write(PATH, "-1000") {
+        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it above the machines it hosts");
     }
 }
 
@@ -392,7 +389,7 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             .await;
         }
     });
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick: it says which signal killed the machine, which the sweep below discards.
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick, since it says which signal killed the machine; a death this read misses is one the sweep below reaps, and smolvm keeps that signal for the tick that follows.
     let reaping = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
@@ -574,21 +571,25 @@ mod tests {
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
-    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner lowers its own score, which is the write the kernel permits without a capability: -1000 where it is allowed, else 0, and in either case below the VMM's.
+    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner asks for the lowest score there is, and a kernel that refuses it without CAP_SYS_RESOURCE in its own user namespace leaves the runner with the score it was handed rather than a worse one.
     #[test]
     #[cfg(target_os = "linux")]
     fn the_runner_asks_for_the_lowest_score_the_kernel_allows_it() {
+        let before: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
         lower_own_oom_score_adj();
-        let score: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
+        let after: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
             .unwrap()
             .trim()
             .parse()
             .unwrap();
         assert!(
-            score == -1000 || score == 0,
-            "the runner's own score is {score}, which a VMM at 1000 only ties"
+            after == -1000 || after == before,
+            "the runner's own score is {after}, which is neither the lowest there is nor the one it was handed ({before})"
         );
-        assert!(score < OOM_SCORE_ADJ.parse::<i32>().unwrap());
     }
 
     // TEST_SCENARIO: the OOM killer picks the process with the highest score in the cgroup, and the runner and the loader hold every machine of the owner between them. A VMM asks for the kernel's maximum, and a VMM that cannot write its score — a host runner with no /proc — still boots.

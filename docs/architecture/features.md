@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -19,11 +19,14 @@ Stored rows are kept, so returning a feature to `experimental` restores each use
 A per-user flag says what a user wants to see; it cannot say what the install can do.
 The module therefore also answers one install-wide question — whether this deployment supports microVMs — read from the chart's own `virtualization.enabled` rather than from any stored row ([vm-runner](vm-runner.md)).
 That answer is what the runtime of a new agent follows, and it is not a feature: the new sandbox runtime graduated, so no switch decides it and no settings row hides it.
-**An install that can run microVMs creates every new agent it is not told otherwise about as one**: the api-server applies this in the one create every path ends in, rather than trusting each caller, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
+**An install that can run microVMs creates every new agent as one**, whichever path makes it: the api-server applies this in the one create every path ends in, rather than trusting each caller, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
 A kit that declares `backend: vm` ([starter-kits](starter-kits.md#kit-backend)) is the one declaration that can refuse instead: on an install without virtualization the kit is hidden and the create refuses it, since there is no machine to put the agent on.
 No kit can declare that it needs a container, so the install's answer never meets a kit it would have to refuse.
 **A container agent cannot be created there at all**: a create that asks for one is refused with a message naming the runtime the install does make, rather than quietly made a machine instead, so nothing new lands on the legacy path.
-**An install without virtualization keeps creating containers**, which is how a local or development install runs, and is the only place a container Agent is created at all.
+**An install without virtualization keeps creating containers**, and is the only place a container Agent is created at all.
+That is an install whose host cannot virtualize — an Intel Mac, or a Linux host whose k3s VM gets no hypervisor from the install — and an install that turned virtualization off in its values or with `--set`.
+A local install is one of these only where it cannot virtualize or was asked not to.
+`cluster:install` turns virtualization on by default on an Apple silicon Mac, on one runner on the Mac's own hypervisor ([vm-host-runner](vm-host-runner.md)), and in a sandbox that can open `/dev/kvm`, unless the values or a flag decide otherwise; under CI it stays off unless asked for.
 
 ### Install preflight
 

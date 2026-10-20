@@ -2499,7 +2499,7 @@ func TestTheRunnerContainerIsConfinedToWhatItAdds(t *testing.T) {
 	sc := runnerSecurityContext()
 	require.NotNil(t, sc.Capabilities)
 	assert.Equal(t, []corev1.Capability{"ALL"}, sc.Capabilities.Drop)
-	assert.Equal(t, []corev1.Capability{"DAC_OVERRIDE"}, sc.Capabilities.Add)
+	assert.Equal(t, []corev1.Capability{"DAC_OVERRIDE", "SYS_RESOURCE"}, sc.Capabilities.Add)
 	require.NotNil(t, sc.AllowPrivilegeEscalation)
 	assert.False(t, *sc.AllowPrivilegeEscalation)
 	require.NotNil(t, sc.SeccompProfile)
@@ -2569,7 +2569,7 @@ func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
 	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
 }
 
-// TEST_SCENARIO: the node's image cache service unpacks every image, so no runner holds the CHOWN, FOWNER and FSETID an unpack takes. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root.
+// TEST_SCENARIO: the node's image cache service unpacks every image, so no runner holds the CHOWN, FOWNER and FSETID an unpack takes. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root, and SYS_RESOURCE so the two processes of the pod can lower their own OOM score where the node lets them: without it a runner holding a few pages of a booting guest's memory ties with a VMM at the maximum, and the kernel's tie-break is the whole protection.
 func TestNoRunnerCanChownTheImagesItReads(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -2583,7 +2583,7 @@ func TestNoRunnerCanChownTheImagesItReads(t *testing.T) {
 		return caps.Add
 	}
 
-	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE"}, capsFor(func(*config.VMRunnerSpec) {}))
+	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE", "SYS_RESOURCE"}, capsFor(func(*config.VMRunnerSpec) {}))
 }
 
 // TEST_SCENARIO: service links would put one set of env vars per sibling agent Service into the runner, and the runner reads none of them.

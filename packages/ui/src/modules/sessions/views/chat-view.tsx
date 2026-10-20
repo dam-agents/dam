@@ -741,6 +741,7 @@ export function ChatView() {
   const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
   const hiddenTabs = hiddenSidePanelTabs({
     agent: true,
+    artifacts: true,
     canOpenBrowser,
     processesEnabled,
     gettingStarted,

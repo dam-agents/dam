@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  ChannelType,
   parseQualifiedModel,
   type DefaultModelNotice,
   type SessionPair,
@@ -19,7 +20,11 @@ export type DefaultModelNote = z.infer<typeof defaultModelNoteSchema>;
  * provider to pick from; one whose model names a provider alias the Agent no
  * longer holds cannot run, as runs take the provider from the model's name;
  * a conversion note says the Agent runs another model than its old setting
- * named. Null when the default runs as saved.
+ * named. Null when the default runs as saved, and null for a state that stops
+ * runs on an Agent that runs nothing unattended, having no enabled Schedule and
+ * no bound Slack or Telegram Channel: nothing fails there yet. A conversion
+ * note is told whoever the Agent's runs are, since it names the model every
+ * one of them pays for.
  */
 export function defaultModelNoticeOf(input: {
   agentId: string;
@@ -27,9 +32,16 @@ export function defaultModelNoticeOf(input: {
   pair: SessionPair | null;
   note: DefaultModelNote | null;
   grantedAliases: ReadonlySet<string>;
+  schedules: readonly { enabled: boolean }[];
+  channels: readonly { type: string }[];
 }): DefaultModelNotice | null {
   const { agentId, pair, note } = input;
   if (!input.routed || !pair) return null;
+  const runsUnattended =
+    input.schedules.some((s) => s.enabled) ||
+    input.channels.some(
+      (c) => c.type === ChannelType.Slack || c.type === ChannelType.Telegram,
+    );
   const notice = (state: DefaultModelNotice["state"]): DefaultModelNotice => ({
     id: `${agentId}:${state}`,
     agentId,
@@ -38,11 +50,15 @@ export function defaultModelNoticeOf(input: {
     model: pair.model,
     changedFrom: state === "changed" ? (note?.changedFrom ?? null) : null,
   });
+  const stopsRuns = (state: DefaultModelNotice["state"]) =>
+    runsUnattended ? notice(state) : null;
   if (pair.model === null)
-    return notice(input.grantedAliases.size === 0 ? "no-provider" : "not-set");
+    return stopsRuns(
+      input.grantedAliases.size === 0 ? "no-provider" : "not-set",
+    );
   const alias = parseQualifiedModel(pair.model, { claudePrefix: true })?.alias;
   if (!alias || !input.grantedAliases.has(alias))
-    return notice("provider-gone");
+    return stopsRuns("provider-gone");
   if (note) return notice("changed");
   return null;
 }

@@ -8,6 +8,8 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -35,6 +37,9 @@ type IdleChecker struct {
 	dynamic                 dynamic.Interface
 	config                  *config.Config
 	halt                    MachineHalt
+	ownerLock               func(owner string) *sync.Mutex
+	ownerLocks              map[string]*sync.Mutex
+	ownerLocksMu            sync.Mutex
 	busyProbe               func(ctx context.Context, agentName string) bool
 	shortestObservedTimeout atomic.Int64
 }
@@ -42,6 +47,27 @@ type IdleChecker struct {
 func (c *IdleChecker) WithMachineHalt(halt MachineHalt) *IdleChecker {
 	c.halt = halt
 	return c
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: hibernation and a runner roll start are serialized on the owner's lock, which the rollout takes too, so a roll cannot begin between the sweep's read of what a roll waits on and its scale-down. Without it the sweep decides from a snapshot, a roll starts while the pod is being probed, and the machine it needs comes back down.
+func (c *IdleChecker) WithOwnerLock(lock func(owner string) *sync.Mutex) *IdleChecker {
+	c.ownerLock = lock
+	return c
+}
+
+func (c *IdleChecker) lockOf(owner string) *sync.Mutex {
+	if c.ownerLock != nil {
+		return c.ownerLock(owner)
+	}
+	c.ownerLocksMu.Lock()
+	defer c.ownerLocksMu.Unlock()
+	if c.ownerLocks == nil {
+		c.ownerLocks = map[string]*sync.Mutex{}
+	}
+	if c.ownerLocks[owner] == nil {
+		c.ownerLocks[owner] = &sync.Mutex{}
+	}
+	return c.ownerLocks[owner]
 }
 
 func NewIdleChecker(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *IdleChecker {
@@ -134,16 +160,62 @@ func (c *IdleChecker) check(ctx context.Context) {
 			continue
 		}
 
-		slog.Info("hibernating idle agent", "agent", name)
-		if err := c.hibernate(ctx, agent.GetLabels()[envoyOwnerLabel], name); err != nil {
-			slog.Error("idle checker: hibernating", "agent", name, "error", err)
-			continue
-		}
-		hibernated++
+		hibernated += c.hibernateIdle(ctx, agent, name)
 	}
 	c.shortestObservedTimeout.Store(int64(shortest))
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: hibernates one idle Agent, unless a runner roll started since the sweep read which machines are pinned. The owner's lock is the one a roll start takes, so holding it here makes the pin read and the halt one decision: a roll that begins while the pod is being probed is seen by the read inside the lock, and the machine it waits on is left up. The probe stays outside the lock, so the lock is never held for its three seconds.
+func (c *IdleChecker) hibernateIdle(ctx context.Context, agent *unstructured.Unstructured, name string) int {
+	owner := agent.GetLabels()[envoyOwnerLabel]
+	lock := c.lockOf(owner)
+	lock.Lock()
+	defer lock.Unlock()
+	pinned, err := c.machinesAwaitingRoll(ctx, owner)
+	if err != nil {
+		slog.ErrorContext(ctx, "idle checker: reading the machines a runner roll awaits", "agent", name, "error", err)
+		return 0
+	}
+	if pinned[name] {
+		slog.Info("idle checker: skipping a machine a runner roll waits on", "agent", name)
+		return 0
+	}
+	slog.Info("hibernating idle agent", "agent", name)
+	if err := c.hibernate(ctx, owner, name); err != nil {
+		slog.Error("idle checker: hibernating", "agent", name, "error", err)
+		return 0
+	}
+	return 1
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready, so hibernating one of them leaves the roll waiting out its settle timeout and gives up on machines that were only idle. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout. An install without virtualization runs no runner, and its controller holds no grant on Deployments, so the read is skipped there rather than refused on every sweep. A read that fails on an install that does run them hibernates nothing this pass: the pin is what keeps a roll's machines up, and one sweep of waiting costs less than a roll that has to give up.
+func (c *IdleChecker) machinesAwaitingRoll(ctx context.Context, owner string) (map[string]bool, error) {
+	awaiting := map[string]bool{}
+	if !c.config.VM.Enabled {
+		return awaiting, nil
+	}
+	selector := "app.kubernetes.io/component=" + vmRunnerComponent
+	if owner != "" {
+		selector += "," + envoyOwnerLabel + "=" + owner
+	}
+	deps, err := c.client.AppsV1().Deployments(c.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: selector})
+	if err != nil {
+		return nil, fmt.Errorf("listing runners for the machines a roll awaits: %w", err)
+	}
+	for i := range deps.Items {
+		dep := &deps.Items[i]
+		if dep.Annotations[annRunnerRolledAt] == "" || dep.Annotations[annRunnerStalled] != "" {
+			continue
+		}
+		for _, id := range strings.Split(dep.Annotations[annRunnerAwaiting], ",") {
+			if id != "" {
+				awaiting[id] = true
+			}
+		}
+	}
+	return awaiting, nil
 }
 
 func hibernationPublished(agent *unstructured.Unstructured) bool {

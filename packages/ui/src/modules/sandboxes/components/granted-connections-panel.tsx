@@ -3,13 +3,12 @@ import type { ConnectionTemplateView, ConnectionView } from "api-server-api";
 
 import { AddRow, ListSection } from "@/components/ui/list-section";
 
-import { AwsProfilesCallout } from "../../connections/components/aws-profiles-callout.js";
 import { ConnectionGroup } from "../../connections/components/connection-group.js";
 import { ConnectionMaintenanceDialog } from "../../connections/components/connection-update-credential-dialog.js";
 import {
-  GitHubAccountsCallout,
+  DefaultAccountsCallout,
   type GrantDetails,
-} from "../../connections/components/github-accounts-callout.js";
+} from "../../connections/components/default-accounts-callout.js";
 import { GrantRivalryCallout } from "../../connections/components/grant-rivalry-callout.js";
 import { useConnectionMaintenance } from "../../connections/hooks/use-connection-maintenance.js";
 import type { CatalogProviderGroup } from "../../connections/lib/catalog-providers.js";
@@ -47,22 +46,13 @@ export function GrantedConnectionsPanel({
     <>
       <GrantRivalryCallout granted={granted} className="mb-3" />
       {grants && onPreferConnection && (
-        <>
-          <GitHubAccountsCallout
-            granted={granted}
-            grants={grants}
-            onPrefer={onPreferConnection}
-            pending={preferPending}
-            className="mb-3"
-          />
-          <AwsProfilesCallout
-            granted={granted}
-            grants={grants}
-            onPrefer={onPreferConnection}
-            pending={preferPending}
-            className="mb-3"
-          />
-        </>
+        <DefaultAccountsCallout
+          granted={granted}
+          grants={grants}
+          onPrefer={onPreferConnection}
+          pending={preferPending}
+          className="mb-3"
+        />
       )}
       {leading && <div className="mb-4">{leading}</div>}
       <ListSection
