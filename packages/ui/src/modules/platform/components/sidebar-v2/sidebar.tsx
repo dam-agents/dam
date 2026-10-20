@@ -12,6 +12,7 @@ import {
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
+import { STRIP_W, stripWidth } from "../../lib/agent-strip.js";
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
 
@@ -33,6 +34,7 @@ export function SidebarV2() {
     key: "platform-sidebar-v2-w",
     fallback: 325,
   });
+  const stripExtra = stripWidth(useStore((s) => s.sidebarStripWide)) - STRIP_W;
   const peek = useStore((s) => s.sidebarPeek);
   const setPeek = useStore((s) => s.setSidebarPeek);
   const shown = pinned || peek;
@@ -70,7 +72,7 @@ export function SidebarV2() {
             "shadow-[4px_0_16px_-4px_rgb(0_0_0/0.18)] dark:shadow-[6px_0_20px_-4px_rgb(0_0_0/0.6)]",
           !shown && "-translate-x-full",
         )}
-        style={{ width }}
+        style={{ width: width + stripExtra }}
         inert={!shown}
         onKeyDown={(e) => {
           if (e.key === "Escape" && !pinned) setPeek(false);

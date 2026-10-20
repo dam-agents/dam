@@ -1,49 +1,14 @@
-import {
-  Add,
-  AddComment,
-  Bot,
-  Chat,
-  Gift,
-  Home,
-  Settings,
-  Tools,
-  TrashCan,
-} from "@carbon/icons-react";
+import { AddComment, Tools } from "@carbon/icons-react";
 import { useEffect, useMemo, useState } from "react";
 
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuItem,
-  ContextMenuSeparator,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { RAIL_BADGE, railIndicator, railTile } from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
-import { useDeleteAgent } from "../../../agents/api/mutations.js";
 import { useAgentsList } from "../../../agents/api/queries.js";
-import {
-  AgentAvatar,
-  avatarMood,
-} from "../../../agents/components/avatar/agent-avatar.js";
-import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
 import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
-import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
-import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
-import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
-import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-actions.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import {
@@ -63,12 +28,14 @@ import {
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
 import { AgentSessionList } from "./agent-session-list.js";
+import { AvatarStrip } from "./avatar-strip.js";
+import { StripWidthHandle } from "./strip-width-handle.js";
 
 const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The sidebar's two columns. The left column is a
- * strip of agent avatars, each badged with how many of its sessions are
+ * strip of agents, each badged with how many of its sessions are
  * unread or wait for an approval. The right column lists conversations: under
  * All, the sessions that need the user and then every session by latest
  * activity; under one agent, that agent's own session list. Both columns
@@ -105,6 +72,16 @@ export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
     return counts;
   }, [activity.items, approvals]);
 
+  const workingIds = useMemo(
+    () =>
+      new Set(
+        activity.items
+          .filter((item) => item.working)
+          .map((item) => item.session.agentId),
+      ),
+    [activity.items],
+  );
+
   return (
     <div className="flex min-h-0 min-w-0 flex-1">
       <AvatarStrip
@@ -112,9 +89,11 @@ export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
         selected={shownAgentId}
         current={openAgentId}
         needsYou={needsYou}
+        workingIds={workingIds}
         onSelect={select}
         onNavigate={onNavigate}
       />
+      <StripWidthHandle />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
         {shownAgentId ? (
           <AgentColumn
@@ -130,226 +109,6 @@ export function SidebarColumns({ onNavigate }: { onNavigate?: () => void }) {
         )}
       </div>
     </div>
-  );
-}
-
-function AvatarStrip({
-  agents,
-  selected,
-  current,
-  needsYou,
-  onSelect,
-  onNavigate,
-}: {
-  agents: readonly AgentView[];
-  selected: string | null;
-  current: string | null;
-  needsYou: ReadonlyMap<string, number>;
-  onSelect: (agentId: string | null) => void;
-  onNavigate?: () => void;
-}) {
-  const defaultAgent = useCreateDefaultAgent();
-  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
-  const orderActions = useSidebarOrderActions();
-  const shownIds = agents.map((agent) => agent.id);
-  const settingsOpen = useStore((s) => s.view === "settings");
-  const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const total = [...needsYou.values()].reduce((a, b) => a + b, 0);
-  return (
-    <div className="flex w-[60px] shrink-0 flex-col border-r border-border">
-      <nav
-        className="flex min-h-0 flex-1 flex-col items-center gap-2 overflow-x-hidden overflow-y-auto pt-3 pb-4 [scrollbar-width:none]"
-        aria-label="Agents"
-        data-testid="sidebar-avatar-strip"
-      >
-        <StripButton
-          label="Home"
-          active={!settingsOpen && selected === null}
-          badge={total}
-          onClick={() => onSelect(null)}
-        >
-          <Home size={18} />
-        </StripButton>
-        <span aria-hidden className="h-px w-6 shrink-0 bg-border" />
-        {agents.map((agent) => (
-          <DraggableAgent
-            key={agent.id}
-            agent={agent}
-            shown={shownIds}
-            orderActions={orderActions}
-            active={!settingsOpen && selected === agent.id}
-            current={current === agent.id}
-            badge={needsYou.get(agent.id) ?? 0}
-            onSelect={() => onSelect(agent.id)}
-            onNavigate={onNavigate}
-          />
-        ))}
-        <DropdownMenu>
-          <Tooltip content="Create agent" side="right">
-            <DropdownMenuTrigger asChild>
-              <button
-                type="button"
-                aria-label="Create agent"
-                data-testid="sidebar-create-agent"
-                className="flex size-10 shrink-0 items-center justify-center rounded-xl border border-dashed border-border text-muted-foreground transition-colors hover:border-border-ui hover:text-foreground data-[state=open]:border-border-ui data-[state=open]:text-foreground"
-              >
-                <Add size={20} />
-              </button>
-            </DropdownMenuTrigger>
-          </Tooltip>
-          <DropdownMenuContent side="right" align="end" sideOffset={8}>
-            <DropdownMenuItem
-              disabled={!defaultAgent.ready}
-              onSelect={() => void defaultAgent.create()}
-            >
-              <Bot size={14} /> New agent
-            </DropdownMenuItem>
-            <DropdownMenuItem onSelect={() => setKitBrowserOpen(true)}>
-              <Gift size={14} /> Use a starter kit
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </nav>
-      <div className="relative z-raised flex shrink-0 flex-col items-center justify-center gap-1 bg-chrome py-2">
-        <Tooltip content="Settings" side="right">
-          <button
-            type="button"
-            aria-label="Settings"
-            aria-current={settingsOpen ? "page" : undefined}
-            onClick={() => {
-              navigateToSettings();
-              onNavigate?.();
-            }}
-            className={railTile(settingsOpen)}
-          >
-            <span aria-hidden className={railIndicator("left", settingsOpen)} />
-            <Settings size={18} />
-          </button>
-        </Tooltip>
-      </div>
-    </div>
-  );
-}
-
-function DraggableAgent({
-  agent,
-  shown,
-  orderActions,
-  active,
-  current,
-  badge,
-  onSelect,
-  onNavigate,
-}: {
-  agent: AgentView;
-  shown: readonly string[];
-  orderActions: ReturnType<typeof useSidebarOrderActions>;
-  active: boolean;
-  current: boolean;
-  badge: number;
-  onSelect: () => void;
-  onNavigate?: () => void;
-}) {
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const setView = useStore((s) => s.setView);
-  const confirmDelete = useConfirmDeleteAgent();
-  const deleteAgent = useDeleteAgent();
-  const drag = useOrderDrag({
-    scope: "agents",
-    id: agent.id,
-    ready: orderActions.ready,
-    onMove: (id, drop) => orderActions.moveAgent(shown, id, drop),
-    onStep: (id, step) => orderActions.stepAgent(shown, id, step),
-  });
-  return (
-    <ContextMenu>
-      <ContextMenuTrigger asChild>
-        <div
-          {...drag.dragProps}
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          data-testid="sidebar-strip-agent"
-          className="relative"
-        >
-          <StripButton
-            label={agent.name}
-            active={active}
-            current={current}
-            badge={badge}
-            onClick={onSelect}
-          >
-            <AgentAvatar
-              name={agent.name}
-              avatar={agent.avatar}
-              size={28}
-              mood={avatarMood(agent.state, agent)}
-            />
-          </StripButton>
-          <OrderDropIndicator at={drag.indicator} />
-        </div>
-      </ContextMenuTrigger>
-      <ContextMenuContent>
-        <ContextMenuItem onSelect={onSelect}>
-          <Chat size={14} /> Chat
-        </ContextMenuItem>
-        <ContextMenuItem
-          onSelect={() => {
-            navigateToSandboxHome(agent.id);
-            onNavigate?.();
-          }}
-        >
-          <Tools size={14} /> Configure
-        </ContextMenuItem>
-        <ContextMenuSeparator />
-        <ContextMenuItem
-          tone="danger"
-          onSelect={() =>
-            void confirmDelete(agent).then((ok) => {
-              if (!ok) return;
-              deleteAgent.mutate({ id: agent.id });
-              if (current) setView("home");
-            })
-          }
-        >
-          <TrashCan size={14} /> Remove
-        </ContextMenuItem>
-      </ContextMenuContent>
-    </ContextMenu>
-  );
-}
-
-function StripButton({
-  label,
-  active,
-  current = false,
-  badge,
-  onClick,
-  children,
-}: {
-  label: string;
-  active: boolean;
-  current?: boolean;
-  badge: number;
-  onClick: () => void;
-  children: React.ReactNode;
-}) {
-  return (
-    <Tooltip content={label} side="right">
-      <button
-        type="button"
-        aria-current={active ? "page" : undefined}
-        aria-label={badge > 0 ? `${label}, ${badge} need you` : label}
-        onClick={onClick}
-        className={railTile(active)}
-      >
-        <span aria-hidden className={railIndicator("left", active, current)} />
-        {children}
-        {badge > 0 && (
-          <span className={cn(RAIL_BADGE, "bg-warning")}>
-            {badge > 9 ? "9+" : badge}
-          </span>
-        )}
-      </button>
-    </Tooltip>
   );
 }
 

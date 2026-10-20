@@ -13,6 +13,7 @@ import {
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 const SIDEBAR_V2_PINNED_STORAGE_KEY = "platform-sidebar-v2-pinned";
+const SIDEBAR_V2_STRIP_WIDE_STORAGE_KEY = "platform-sidebar-v2-strip-wide";
 
 export interface SidebarSlice {
   sidebarExpanded: boolean;
@@ -31,6 +32,8 @@ export interface SidebarSlice {
   setSidebarPeek: (peek: boolean) => void;
   sidebarAgentId: string | null;
   setSidebarAgentId: (agentId: string | null) => void;
+  sidebarStripWide: boolean;
+  setSidebarStripWide: (wide: boolean) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -77,4 +80,9 @@ export const createSidebarSlice: StateCreator<
   setSidebarPeek: (peek) => set({ sidebarPeek: peek }),
   sidebarAgentId: null,
   setSidebarAgentId: (agentId) => set({ sidebarAgentId: agentId }),
+  sidebarStripWide: readPersistedFlag(SIDEBAR_V2_STRIP_WIDE_STORAGE_KEY, false),
+  setSidebarStripWide: (wide) => {
+    writePersistedFlag(SIDEBAR_V2_STRIP_WIDE_STORAGE_KEY, wide);
+    set({ sidebarStripWide: wide });
+  },
 });
