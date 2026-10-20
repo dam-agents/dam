@@ -206,20 +206,9 @@ export function SessionRow({
               </Badge>
             )}
           </button>
-          {pinned && (
-            <PinFilled
-              size={12}
-              aria-label="Pinned"
-              className="ml-auto shrink-0 text-muted-foreground"
-            />
-          )}
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
-              pinned ? "ml-1" : "ml-auto",
-            )}
-          >
+          <div className="ml-auto flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]">
             <SessionIndicators
+              pinned={pinned}
               scheduled={scheduled}
               terminal={terminal}
               messenger={messenger}
@@ -329,6 +318,7 @@ export function SessionRow({
 }
 
 function SessionIndicators({
+  pinned,
   scheduled,
   terminal,
   messenger,
@@ -338,6 +328,7 @@ function SessionIndicators({
   backgroundWork,
   unread,
 }: {
+  pinned: boolean;
   scheduled: boolean;
   terminal: boolean;
   messenger: ChannelType | null;
@@ -349,6 +340,7 @@ function SessionIndicators({
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
+    !pinned &&
     !scheduled &&
     !terminal &&
     !messenger &&
@@ -363,6 +355,13 @@ function SessionIndicators({
     <span
       className={cn("flex shrink-0 items-center gap-2.5 pl-2", HOVER_YIELD)}
     >
+      {pinned && (
+        <PinFilled
+          size={12}
+          aria-label="Pinned"
+          className="shrink-0 text-muted-foreground"
+        />
+      )}
       {terminal && (
         <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}
