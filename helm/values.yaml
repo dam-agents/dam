@@ -1763,7 +1763,12 @@ controller:
         enabled: true
         # SIG Release distroless-iptables — same image kube-proxy uses.
         # Ships sh + iptables-wrapper; pinned by tag.
-        image: registry.k8s.io/build-image/distroless-iptables:v0.11.0
+        # v0.11.1 (2026-10-16) is under the 7-day floor: it carries the Debian
+        # point releases that fix CVE-2026-103111 and CVE-2026-84782 in
+        # v0.11.0, and its go-runner is built with Go 1.27.2, which fixes the
+        # Go stdlib rows the scan reported for the 1.27.1 build. The exception
+        # can go 2026-10-23.
+        image: registry.k8s.io/build-image/distroless-iptables:v0.11.1
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
@@ -2008,8 +2013,8 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.39.3 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.3
+  # envoyproxy/envoy:distroless-v1.39.4 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
   # its gateway passes through untouched. Needed when something on the
