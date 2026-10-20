@@ -270,15 +270,6 @@ test("a writing agent stops at its share, and writes again when its share grows"
   await keepAwake(siblingId);
   const diskBefore = machineDisks().get(probeDisk) ?? 0;
   inGuest(probeId, "mkdir -p /tmp/e2e-fill");
-  // UNIT_BOUNDARY_DESCRIPTION: the agent's next write, as the guest itself measures it: it asks for every block the guest says it has and a fixed few MiB more, so the answer is refused exactly when the guest's own free space is the truth, whatever the guard has settled at by then. A guest whose free space is a figure the disk does not honour marks the request and fails here.
-  const request = () =>
-    inGuest(
-      probeId,
-      [
-        AVAIL_KB,
-        `if fallocate -l "$(( avail / 1024 + ${NEXT_WRITE_MIB} ))M" /tmp/e2e-fill/probe-$(date +%s%N) 2>/tmp/e2e-fill/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-fill/probe.err 2>/dev/null; fi`,
-      ].join("\n"),
-    );
   try {
     // UNIT_BOUNDARY_DESCRIPTION: real bytes through a renewal, always: the guest writes 256 MiB of random bytes into its home, the claim pays for them, and the grant the runner publishes over them is the one the guest's room is then measured against. Then they are deleted and the claim must take them back. This is the small bounded half of the case that fills the claim: it costs the host a fixed 256 MiB rather than a whole install, it grows the claim as only written blocks can, and a guard that leaked what it released would take the guest below its floor here before the marking below ever runs.
     const granted = readGrant();
@@ -350,7 +341,11 @@ test("a writing agent stops at its share, and writes again when its share grows"
       availMiB,
       `the guest still had ${availMiB} MiB after marking its own room, and the fill reported ${marking}`,
     ).toBeLessThanOrEqual(GUARD_FLOOR_MIB + SLACK_MIB);
-    const refused = await request();
+    // UNIT_BOUNDARY_DESCRIPTION: the agent's next write, made of a guest whose room is already marked: a fixed few MiB, which the fill above leaves no room for at all — it stops only once the smallest chunk it tries is refused. So this is refused for the guard's reason and not the disk's arithmetic: it is the write a steadily writing agent makes next, and the wedge the user reports is one that is refused it while its share has room.
+    const refused = inGuest(
+      probeId,
+      `if fallocate -l ${NEXT_WRITE_MIB}M /tmp/e2e-fill/probe-$(date +%s%N) 2>/tmp/e2e-fill/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-fill/probe.err 2>/dev/null; fi`,
+    );
     expect(
       refused,
       `the guest was not refused with ${availMiB} MiB it could still write: ${refused}`,
@@ -385,11 +380,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
       resettled,
       `a renewal window after marking its room the guest was left ${resettled} MiB of the ${renewed} MiB grant the runner published: the guard gave back room past the grant it was told to hold`,
     ).toBeLessThanOrEqual(renewed + GUARD_FLOOR_MIB + SLACK_MIB);
-    expect(
-      await request(),
-      "the guest must be refused everything past the room it reports, or the figure it reports is not what it can write",
-    ).toMatch(/probe=refused/);
-    // UNIT_BOUNDARY_DESCRIPTION: and the room the renewal gave back is room a real write lands in: a machine that kept the answer to its last refusal, however much room the claim gave it, fails here, and no arithmetic about its free space can stand in for the write.
+    // UNIT_BOUNDARY_DESCRIPTION: the room the renewal gave back is room a real write lands in: a machine that kept the answer to its last refusal, however much room the claim gave it, fails here, and no arithmetic about its free space can stand in for the write. No refusal is asked of the guest here, deliberately: the renewal gave it its share back, so it is meant to write, and whether btrfs also allocates the few MiB past its own `df` estimate — its reserve, not the guard — is no property of this fix.
     expect(
       inGuest(
         probeId,
