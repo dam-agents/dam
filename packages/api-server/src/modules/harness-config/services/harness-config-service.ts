@@ -47,7 +47,11 @@ export function createHarnessConfigService(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
-  retireReset?: (agentId: string, tx: DbTx) => Promise<void>;
+  retireReset?: (
+    agentId: string,
+    tx: DbTx,
+    harness?: string,
+  ) => Promise<unknown>;
 }): HarnessConfigService {
   async function requireOwned(agentId: string): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
@@ -100,9 +104,10 @@ export function createHarnessConfigService(deps: {
         /* UNIT_BOUNDARY_DESCRIPTION: an explicit mode choice outranks a pending
          * one-off correction, and retires it here so a runtime report of the old
          * mode arriving afterwards cannot bring the correction back. A change
-         * that carries no mode leaves the correction alone. */
+         * that carries no mode leaves the correction alone, and the harness the
+         * choice names decides whether it is about this correction at all. */
         if (change.mode !== undefined || change.unset?.includes("mode"))
-          await deps.retireReset?.(agentId, tx);
+          await deps.retireReset?.(agentId, tx, change.harness);
         await deps.eventQueue.queue(agentId, change, tx);
         await deps.snapshotRepo.merge(
           agentId,

@@ -88,7 +88,8 @@ export function composeHarnessConfigModule(deps: {
       snapshotRepo: createHarnessConfigSnapshotRepo(db),
       pairRepo: createSessionPairRepo(db),
       eventQueue: createHarnessConfigEventQueue({ db, outboxRepo }),
-      retireReset: (agentId, tx) => resetRepo.retire(agentId, tx),
+      retireReset: (agentId, tx, harness) =>
+        resetRepo.retire(agentId, tx, harness),
     }),
   };
 }

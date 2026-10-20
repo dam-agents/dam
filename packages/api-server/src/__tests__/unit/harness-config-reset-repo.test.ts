@@ -104,6 +104,27 @@ describe("harness-config reset repo", () => {
     expect(captured[0]?.params).toEqual([RESET.reset, "a1"]);
   });
 
+  // TEST_SCENARIO: an owner's mode choice retires the pending correction only when it is about the harness this reset repairs: a mode picked for another harness leaves it pending, and the retirement is conditional and written in the caller's transaction so it commits with that choice.
+  it("retires a pending correction only for this reset's harness", async () => {
+    const { db, captured } = capturingDb([[{ agent_id: "a1" }]]);
+    const repo = createHarnessConfigResetRepo({ db, ...RESET });
+    const tx = {
+      execute: (query: Parameters<Db["execute"]>[0]) => db.execute(query),
+    } as unknown as Db;
+
+    expect(await repo.retire("a1", tx, "codex")).toBe(false);
+    expect(captured).toHaveLength(0);
+
+    expect(await repo.retire("a1", tx)).toBe(true);
+    expect(await repo.retire("a1", tx, RESET.harness)).toBe(false);
+    expect(captured[0]?.sql).toMatch(
+      /UPDATE harness_config_resets SET settled_at = now\(\)/,
+    );
+    expect(captured[0]?.sql).toContain("settled_at IS NULL");
+    expect(captured[0]?.sql).toContain("RETURNING agent_id");
+    expect(captured[0]?.params).toEqual([RESET.reset, "a1"]);
+  });
+
   // TEST_SCENARIO: the pass's own row is what makes the reset once, so it is also what says the cohort is frozen.
   it("reports a frozen cohort", async () => {
     const { db, captured } = capturingDb([[{ "?column?": 1 }], []]);

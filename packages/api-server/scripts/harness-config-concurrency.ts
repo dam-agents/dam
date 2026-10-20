@@ -110,11 +110,18 @@ async function agent(mode: string | null, opts: { named?: boolean } = {}) {
     capturedAt: at,
     confirmed: false,
   });
+  /* UNIT_BOUNDARY_DESCRIPTION: a stored snapshot must parse, so the named shape
+   * keeps the root's required fields too; the harness's own entry overrides the
+   * root mode. */
   const snapshot =
     mode === null
       ? {}
       : opts.named === true
-        ? { harnesses: { [HARNESS]: own(mode) } }
+        ? {
+            ...own(mode),
+            mode: null,
+            harnesses: { [HARNESS]: own(mode) },
+          }
         : own(mode);
   await insertRow("agents", { id, harness_config_snapshot: snapshot });
   await insertRow("connection_grants", { agent_id: id, connection_id: ETE });
@@ -188,11 +195,14 @@ const serviceRetiring = (name: string) => {
     isOwnedAgent: async () => true,
     getCapabilities: async () => ({
       harnessConfig: true,
-      harnesses: [{ name: HARNESS, harnessConfig: true, sessionModel: false }],
+      harnesses: [
+        { name: HARNESS, harnessConfig: true, sessionModel: false },
+        { name: "codex", harnessConfig: true, sessionModel: false },
+      ],
     }),
     specHarness: async () => undefined,
     isSettled: async () => true,
-    retireReset: (agentId, tx) => repo.retire(agentId, tx),
+    retireReset: (agentId, tx, harness) => repo.retire(agentId, tx, harness),
   });
 };
 
@@ -502,6 +512,51 @@ async function main() {
       "no Auto follows the owner's Plan",
       seen.map((event) => event.mode).join(",") === "plan",
       JSON.stringify({ seen }),
+    );
+  }
+
+  process.stdout.write("a mode choice for another harness\n");
+  {
+    const agentId = await agent("bypassPermissions", { named: true });
+    const name = "other-harness";
+    const repo = resetRepo(name);
+    const config = serviceRetiring(name);
+    await repo.roster();
+    /* TEST_SCENARIO: the owner picks a mode for a harness this correction does
+     * not repair, and unsets it again; neither says anything about the Claude
+     * Code mode the correction repairs, so the member must stay pending. */
+    await config.apply(agentId, { harness: "codex", mode: "read-only" });
+    await config.apply(agentId, { harness: "codex", unset: ["mode"] });
+    const stillPending = (await db.execute(sql`
+      SELECT settled_at IS NULL AS pending FROM harness_config_resets
+      WHERE reset = ${`${RESET_NAME}-${RUN}-${name}`} AND agent_id = ${agentId}
+    `)) as unknown as { pending: boolean }[];
+    check(
+      "another harness's mode choice leaves the correction pending",
+      stillPending[0]?.pending === true,
+      JSON.stringify({ stillPending }),
+    );
+    const outcome = await reset(name, { repo }).run();
+    const after = (await db.execute(sql`
+      SELECT settled_at IS NOT NULL AS settled FROM harness_config_resets
+      WHERE reset = ${`${RESET_NAME}-${RUN}-${name}`} AND agent_id = ${agentId}
+    `)) as unknown as { settled: boolean }[];
+    check(
+      "the correction still runs and sets Claude Code to auto",
+      after[0]?.settled === true &&
+        (await declaration(agentId)) === "auto" &&
+        (await events(agentId)).some((event) => event.mode === "auto"),
+      JSON.stringify({
+        outcome,
+        after,
+        declaration: await declaration(agentId),
+      }),
+    );
+    const modes = (await events(agentId)).map((event) => event.mode);
+    check(
+      "the Codex choices and the Claude Code correction both stand, in order",
+      modes.join(",") === "read-only,,auto",
+      JSON.stringify({ modes }),
     );
   }
 

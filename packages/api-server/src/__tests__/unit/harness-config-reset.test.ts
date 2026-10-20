@@ -54,11 +54,12 @@ function harness(opts: {
         return opts.froze ?? true;
       },
       frozen: async () => !(opts.froze ?? true),
-      retire: async (agentId, tx) => {
+      retire: async (agentId, tx, harness) => {
         calls.retired.push({
           agentId,
           inLock: holdingLock && tx !== undefined,
         });
+        return harness === undefined || harness === HARNESS;
       },
       pending: async (input) => {
         calls.queries.push(input);

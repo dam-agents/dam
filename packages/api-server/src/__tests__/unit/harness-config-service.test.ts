@@ -31,7 +31,11 @@ function makeService(opts?: {
     merges: [] as MergeCall[],
     pairs: [] as SessionPair[],
     locked: 0,
-    retired: [] as { agentId: string; inLock: boolean }[],
+    retired: [] as {
+      agentId: string;
+      inLock: boolean;
+      harness?: string;
+    }[],
   };
   let holdingLock = false;
   const service = createHarnessConfigService({
@@ -88,10 +92,11 @@ function makeService(opts?: {
       ],
       telemetryEnv: () => [],
     },
-    retireReset: async (agentId, tx) => {
+    retireReset: async (agentId, tx, harness) => {
       calls.retired.push({
         agentId,
         inLock: holdingLock && tx !== undefined,
+        ...(harness !== undefined && { harness }),
       });
     },
     isOwnedAgent: async () => opts?.owned ?? true,
@@ -264,19 +269,37 @@ describe("harness-config service", () => {
     expect(calls.enqueues).toEqual(["a1"]);
   });
 
-  // TEST_SCENARIO: an owner who chooses a mode outranks a pending one-off correction, so the choice retires it in the same locked transaction; a runtime report of the old mode arriving afterwards cannot bring the correction back. A change that carries no mode leaves the correction alone for its pass to finish.
-  it("retires a pending reset only when the change carries a mode", async () => {
+  // TEST_SCENARIO: an owner who chooses a mode outranks a pending one-off correction, so the choice retires it in the same locked transaction; a runtime report of the old mode arriving afterwards cannot bring the correction back. A change that carries no mode leaves the correction alone for its pass to finish, and the choice names the harness it is about, so the retirement can be scoped to the harness the correction repairs.
+  it("retires a pending reset only for a mode choice on the harness it repairs", async () => {
     const chosen = makeService({ capabilities: CARRIES_CODEX });
     await chosen.service.apply("a1", { harness: "claude-code", mode: "plan" });
     const unset = makeService();
     await unset.service.apply("a1", { unset: ["mode"] });
     const modelOnly = makeService();
     await modelOnly.service.apply("a1", { model: "opus" });
+    const otherHarness = makeService({ capabilities: CARRIES_CODEX });
+    await otherHarness.service.apply("a1", {
+      harness: "codex",
+      mode: "read-only",
+    });
+    const otherHarnessUnset = makeService({ capabilities: CARRIES_CODEX });
+    await otherHarnessUnset.service.apply("a1", {
+      harness: "codex",
+      unset: ["mode"],
+    });
 
-    expect(chosen.calls.retired).toEqual([{ agentId: "a1", inLock: true }]);
+    expect(chosen.calls.retired).toEqual([
+      { agentId: "a1", inLock: true, harness: "claude-code" },
+    ]);
     expect(chosen.calls.queues[0]?.inLock).toBe(true);
     expect(unset.calls.retired).toEqual([{ agentId: "a1", inLock: true }]);
     expect(modelOnly.calls.retired).toEqual([]);
+    expect(otherHarness.calls.retired).toEqual([
+      { agentId: "a1", inLock: true, harness: "codex" },
+    ]);
+    expect(otherHarnessUnset.calls.retired).toEqual([
+      { agentId: "a1", inLock: true, harness: "codex" },
+    ]);
   });
 
   it("rejects apply for an agent the caller doesn't own (no event fired)", async () => {

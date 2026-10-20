@@ -7,7 +7,7 @@ export interface HarnessConfigResetRepo {
   roster(tx?: Db | DbTx): Promise<boolean>;
   pending(input: { after: string; limit: number }): Promise<string[]>;
   claim(agentId: string, tx: Db | DbTx): Promise<boolean>;
-  retire(agentId: string, tx: Db | DbTx): Promise<void>;
+  retire(agentId: string, tx: Db | DbTx, harness?: string): Promise<boolean>;
   frozen(tx?: Db | DbTx): Promise<boolean>;
 }
 
@@ -18,9 +18,9 @@ export interface HarnessConfigResetRepo {
  * fixed before any Agent is processed: an Agent created, granted the preset or
  * set to the old mode after that moment is never eligible, and an Agent whose
  * correction failed stays pending and is retried on a later start. An owner who
- * chooses a mode retires the pending correction: their choice outranks a repair
- * of the old image, and a runtime report that arrives afterwards carrying the
- * old mode cannot bring it back.
+ * chooses a mode for the harness this reset repairs retires the pending
+ * correction: their choice outranks a repair of the old image, and a runtime
+ * report that arrives afterwards carrying the old mode cannot bring it back.
  */
 export function createHarnessConfigResetRepo(deps: {
   db: Db;
@@ -80,12 +80,19 @@ export function createHarnessConfigResetRepo(deps: {
       return rows.length > 0;
     },
 
-    async retire(agentId, tx) {
-      await tx.execute(sql`
+    async retire(agentId, tx, harness) {
+      /* UNIT_BOUNDARY_DESCRIPTION: only a choice about this reset's own harness
+       * retires it — a mode picked for another harness, or for the default when
+       * this Agent reports a per-harness one, says nothing about the mode this
+       * reset repairs. */
+      if (harness !== undefined && harness !== deps.harness) return false;
+      const rows = (await tx.execute(sql`
         UPDATE harness_config_resets SET settled_at = now()
         WHERE reset = ${deps.reset} AND agent_id = ${agentId}
           AND settled_at IS NULL
-      `);
+        RETURNING agent_id
+      `)) as unknown as unknown[];
+      return rows.length > 0;
     },
 
     async frozen(tx = deps.db) {
