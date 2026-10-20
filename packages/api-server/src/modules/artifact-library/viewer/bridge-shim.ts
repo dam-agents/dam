@@ -51,3 +51,33 @@ window.platform = (() => {
 `;
 
 export const ARTIFACT_BRIDGE_SHIM = `<script>${ARTIFACT_BRIDGE_SHIM_BODY}</script>`;
+
+export const SHARED_BRIDGE_REFUSAL =
+  "This is a shared copy: only its owner can use buttons that ask the agent.";
+
+export const ARTIFACT_SHARED_BRIDGE_SHIM_BODY = `
+window.platform = (() => {
+  const message = ${JSON.stringify(SHARED_BRIDGE_REFUSAL)};
+  let notice = null;
+  const refuse = () => {
+    if (!notice && document.body) {
+      notice = document.createElement("div");
+      notice.setAttribute("role", "status");
+      notice.textContent = message;
+      notice.style.cssText = "position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:2147483647;max-width:calc(100% - 32px);padding:8px 14px;border-radius:6px;background:#161616;color:#fafaf9;font:13px/1.4 system-ui,sans-serif;box-shadow:0 2px 8px rgba(0,0,0,.3)";
+      document.body.append(notice);
+    }
+    return Object.assign(new Error("Artifact API request failed: not-allowed. " + message), { reason: "not-allowed" });
+  };
+  return Object.freeze({
+    sendPrompt() {
+      throw refuse();
+    },
+    request() {
+      return Promise.reject(refuse());
+    },
+  });
+})();
+`;
+
+export const ARTIFACT_SHARED_BRIDGE_SHIM = `<script>${ARTIFACT_SHARED_BRIDGE_SHIM_BODY}</script>`;

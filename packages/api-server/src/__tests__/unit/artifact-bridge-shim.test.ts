@@ -8,7 +8,11 @@ import {
   ARTIFACT_RESPONSE_TYPE,
 } from "api-server-api";
 
-import { ARTIFACT_BRIDGE_SHIM_BODY } from "../../modules/artifact-library/viewer/bridge-shim.js";
+import {
+  ARTIFACT_BRIDGE_SHIM_BODY,
+  ARTIFACT_SHARED_BRIDGE_SHIM_BODY,
+  SHARED_BRIDGE_REFUSAL,
+} from "../../modules/artifact-library/viewer/bridge-shim.js";
 import { renderHtmlInner } from "../../modules/artifact-library/viewer/renderer.js";
 
 interface PageApi {
@@ -189,6 +193,80 @@ describe("artifact API requests", () => {
   });
 });
 
+function sharedPage() {
+  const postMessage = vi.fn();
+  const shown: { textContent: string }[] = [];
+  const window = {
+    parent: { postMessage },
+    platform: undefined as unknown as PageApi,
+    addEventListener: vi.fn(),
+  };
+  const document = {
+    body: { append: (node: { textContent: string }) => shown.push(node) },
+    createElement: () => ({
+      setAttribute: vi.fn(),
+      style: {},
+      textContent: "",
+    }),
+  };
+  runInNewContext(ARTIFACT_SHARED_BRIDGE_SHIM_BODY, {
+    window,
+    document,
+    setTimeout,
+    clearTimeout,
+  });
+  return { platform: window.platform, postMessage, shown };
+}
+
+describe("artifact bridge on a shared page", () => {
+  /**
+   * TEST_SCENARIO: A viewer the owner invited opens a shared interactive page
+   * and clicks its buttons. Nothing reaches the host, so the viewer can never
+   * make the owner's agent act. The calls fail at once, with no 3-minute
+   * wait, and the page shows one notice that says why.
+   */
+  it("refuses a prompt at once and tells the viewer why", () => {
+    const { platform, postMessage, shown } = sharedPage();
+    expect(() => platform.sendPrompt("Refresh this dashboard.")).toThrow(
+      SHARED_BRIDGE_REFUSAL,
+    );
+    expect(postMessage).not.toHaveBeenCalled();
+    expect(shown.map((node) => node.textContent)).toEqual([
+      SHARED_BRIDGE_REFUSAL,
+    ]);
+  });
+
+  it("rejects a request at once with not-allowed", async () => {
+    vi.useFakeTimers();
+    try {
+      const { platform, postMessage } = sharedPage();
+      await expect(
+        platform.request({ method: "GET", path: "/state" }),
+      ).rejects.toMatchObject({ reason: "not-allowed" });
+      expect(vi.getTimerCount()).toBe(0);
+      expect(postMessage).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("shows its notice only once", async () => {
+    const { platform, shown } = sharedPage();
+    expect(() => platform.sendPrompt("one")).toThrow();
+    await expect(
+      platform.request({ method: "GET", path: "/" }),
+    ).rejects.toThrow();
+    expect(shown).toHaveLength(1);
+  });
+
+  it("keeps the same API shape as the owner's page", () => {
+    expect(Object.keys(sharedPage().platform)).toEqual([
+      "sendPrompt",
+      "request",
+    ]);
+  });
+});
+
 describe("artifact preview rendering", () => {
   it("leaves ordinary HTML rendering unchanged", () => {
     const source = "<html><head></head><body>Report</body></html>";
@@ -202,15 +280,22 @@ describe("artifact preview rendering", () => {
   it("installs the API before authored scripts even with an existing base", () => {
     const source =
       '<head><base target="_self"><script>platform.sendPrompt("hello")</script></head>';
-    const rendered = renderHtmlInner(source, true);
+    const rendered = renderHtmlInner(source, "owner");
     expect(rendered.indexOf("window.platform =")).toBeLessThan(
       rendered.indexOf('platform.sendPrompt("hello")'),
     );
     expect(rendered.match(/<base /g)).toHaveLength(1);
   });
 
+  it("gives a shared page the refusing API, never the owner's", () => {
+    const rendered = renderHtmlInner("<button>Refresh</button>", "shared");
+    expect(rendered).toContain(SHARED_BRIDGE_REFUSAL);
+    expect(rendered).not.toContain(ARTIFACT_REQUEST_TYPE);
+    expect(rendered).not.toContain(ARTIFACT_PROMPT_TYPE);
+  });
+
   it("supports HTML fragments", () => {
-    expect(renderHtmlInner("<button>Refresh</button>", true)).toContain(
+    expect(renderHtmlInner("<button>Refresh</button>", "owner")).toContain(
       "window.platform = (() => {",
     );
   });

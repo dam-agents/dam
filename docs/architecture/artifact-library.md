@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -35,7 +35,7 @@ The design is a port of a proven external tool (the "slop" artifact vault) onto 
 
 ## Interactive pages
 
-An HTML artifact can be declared **interactive** at creation and stays private.
+An HTML artifact can be declared **interactive** at creation; it can be private or restricted, never public.
 With the interactive-artifacts feature enabled, a button in its latest version can send a prompt into an existing open chat with its publishing Agent.
 The app checks the sending frame and the preview's agent before submitting through the normal chat path.
 If the Agent is unavailable, the conversation is missing or loading, the Session is a terminal, or the user has switched conversations, the app refuses the prompt and shows a notification explaining how to try again.
@@ -47,7 +47,7 @@ The state lives with the Agent, so both the page and the Agent read and change i
 Unlike a prompt, this is request and response.
 One request travels four hops: the page posts it to the host app; the app checks the frame and the same gate as for prompts, then calls the api-server with the owner's own session; the api-server checks the artifact and wakes its Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake)); agent-runtime relays it over loopback to the Agent's server, and the answer comes back the same way.
 The call names an artifact, never an Agent: the api-server reads the publishing Agent from the artifact, so a page can only reach the Agent that published it, and uploaded artifacts (no publishing Agent) get no access.
-It serves only artifacts that are owned by the caller, HTML, interactive and private, whatever the feature flag says.
+It serves only artifacts that are owned by the caller, HTML, interactive and not public, whatever the feature flag says.
 Any HTTP status the server returns is a normal answer; a typed failure reason reports only what the platform could not deliver, such as nothing listening on the port, a timeout, a body over the size cap or too many requests in flight from one frame.
 The bridge also rejects any request the host has not answered within three minutes, longer than a wake plus the relay timeout, so every call settles even when the host drops it.
 Bodies are text only and capped both ways, and only the content type crosses in either direction.
@@ -63,8 +63,12 @@ The frame is sandboxed without modals, so browser dialogs are blocked.
 Callbacks are available only in the docked preview inside the publishing Agent's chat, including fullscreen, and work in a newly started conversation without reloading the page.
 The same preview on a page outside that chat and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 There is no permanent Session binding: the currently open conversation is the destination.
-Interactive pages cannot be shared, including with named viewers; that restriction is enforced with the sharing write.
-Retention remains available, and a separate static copy can be shared.
+An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
+The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
+A viewer sees the page through the share host, where the renderer injects a refusing bridge in place of the owner's: `sendPrompt` throws and `request` rejects with `not-allowed` at once, nothing is posted to the host, and the page shows a notice that only its owner can use its buttons.
+The share page has no host that relays either call, so the refusing bridge is for a clear failure, not the boundary.
+A viewer sees the stored HTML as it is; state that the page reads from its Agent's server is not there for them.
+The owner keeps the callbacks in the docked preview while the page is restricted.
 
 ## Sharing model
 
