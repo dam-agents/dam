@@ -4429,6 +4429,7 @@ mod tests {
     // TEST_SCENARIO: a mapping outlives the descriptor that made it, so a tool can hold a file's pages with no open file at all, and emptying it under the mapping would fault the tool on its next touch. The lease alone does not catch this: on overlayfs, which is what /tmp is on the guest, a lease is granted while a mapping stands; on tmpfs and btrfs it is refused. So the maps of every process are read while the lease is held, and the file is kept either way. The descriptor that made the mapping is closed here first, and only the mapping is left. The control file beside it, unmapped, is emptied by the same call on the same filesystem, so the mapping is what saved the first.
     #[test]
     fn a_temporary_file_a_process_has_mapped_is_kept() {
+        let proc = TempDir::new("evict-tmp-mapped-proc");
         let tmp = TempDir::new("evict-tmp-mapped");
         let s = fs::canonicalize(tmp.path()).unwrap();
         fs::write(s.join("mapped"), vec![7u8; 4096]).unwrap();
@@ -4458,24 +4459,21 @@ mod tests {
         assert_ne!(pages, libc::MAP_FAILED);
         // TEST_SCENARIO: the descriptor goes before the removal reaches the file, which is the case an open-file scan could not see.
         drop(file);
+        // TEST_SCENARIO: the table is the test's own, holding one process that has the mapped file's range: the pass reads the machine's real table, which another user can make unreadable, and a scan it could not read keeps everything.
+        let table = proc_mapping(proc.path(), &[&s.join("mapped")]);
         assert_eq!(
-            evict(find("mapped"), &HashSet::new(), &HashSet::new(), Path::new("/proc"), now).unwrap(),
+            evict(find("mapped"), &HashSet::new(), &HashSet::new(), &table, now).unwrap(),
             0,
             "a file a process has mapped is kept: the maps of every process are read under the lease, so the mapping is seen"
         );
         assert_eq!(fs::metadata(s.join("mapped")).unwrap().len(), 4096);
-        assert!(
-            evict(
-                find("plain"),
-                &HashSet::new(),
-                &HashSet::new(),
-                Path::new("/proc"),
-                now
-            )
-            .unwrap()
-                > 0
-        );
+        assert!(evict(find("plain"), &HashSet::new(), &HashSet::new(), &table, now).unwrap() > 0);
         assert_eq!(fs::metadata(s.join("plain")).unwrap().len(), 0);
+
+        // TEST_SCENARIO: the real table sees a real mapping, which the mechanism rests on; asserted only when the scan could read the whole table, since another user's processes are not this test's to read.
+        if let Some(mapped) = in_mapped(Path::new("/proc"), identity(&s.join("mapped"))) {
+            assert!(mapped, "a live mapping is visible in the real table");
+        }
 
         // SAFETY: pages is the mapping made above, over one page.
         unsafe { libc::munmap(pages, 4096) };
@@ -4484,7 +4482,7 @@ mod tests {
                 find("mapped"),
                 &HashSet::new(),
                 &HashSet::new(),
-                Path::new("/proc"),
+                &proc_mapping(proc.path(), &[]),
                 now
             )
             .unwrap()
@@ -4508,12 +4506,13 @@ mod tests {
             .find(|entry| entry.shown == s.join("one"))
             .expect("an old plain file is offered");
         fs::hard_link(s.join("one"), s.join("two")).unwrap();
+        let proc = TempDir::new("evict-tmp-linked-proc");
         assert_eq!(
             evict(
                 entry,
                 &HashSet::new(),
                 &HashSet::new(),
-                Path::new("/proc"),
+                &proc_mapping(proc.path(), &[]),
                 now
             )
             .unwrap(),
@@ -4527,6 +4526,8 @@ mod tests {
     // TEST_SCENARIO: the entry a pass listed can have something mounted on its name by the time the removal reaches it, and what the descriptor then reaches is another filesystem's file, not the one the pass judged. Nothing on another mount is scratch, so the mount id is read through the descriptor and a file that has moved to one is kept.
     #[test]
     fn a_temporary_file_on_another_mount_than_the_pass_saw_is_kept() {
+        let proc = TempDir::new("evict-tmp-mounted-proc");
+        let table = proc_mapping(proc.path(), &[]);
         let tmp = TempDir::new("evict-tmp-mounted");
         let s = fs::canonicalize(tmp.path()).unwrap();
         fs::write(s.join("blob"), vec![1u8; 8192]).unwrap();
@@ -4550,14 +4551,7 @@ mod tests {
             serving: listed.serving,
         };
         assert_eq!(
-            evict(
-                &entry,
-                &HashSet::new(),
-                &HashSet::new(),
-                Path::new("/proc"),
-                now
-            )
-            .unwrap(),
+            evict(&entry, &HashSet::new(), &HashSet::new(), &table, now).unwrap(),
             0,
             "a file the pass did not see on this mount is kept"
         );
@@ -4567,6 +4561,8 @@ mod tests {
     // TEST_SCENARIO: a file an earlier pass emptied keeps its name and nothing else, and a pass that listed it again would report it as deleted on every look for the rest of the machine's life. So a file with no blocks is no entry of a temporary folder: the pass that emptied it is the last to hear of it, and the name stands for its tool to reuse or remove.
     #[test]
     fn an_emptied_temporary_file_is_no_entry_again() {
+        let proc = TempDir::new("evict-tmp-emptied-proc");
+        let table = proc_mapping(proc.path(), &[]);
         let tmp = TempDir::new("evict-tmp-emptied");
         let s = fs::canonicalize(tmp.path()).unwrap();
         fs::write(s.join("blob"), vec![1u8; 8192]).unwrap();
@@ -4578,17 +4574,7 @@ mod tests {
             .iter()
             .find(|entry| entry.shown == s.join("blob"))
             .expect("an old plain file is offered");
-        assert!(
-            evict(
-                entry,
-                &HashSet::new(),
-                &HashSet::new(),
-                Path::new("/proc"),
-                now
-            )
-            .unwrap()
-                > 0
-        );
+        assert!(evict(entry, &HashSet::new(), &HashSet::new(), &table, now).unwrap() > 0);
         assert_eq!(fs::metadata(s.join("blob")).unwrap().len(), 0);
         assert!(s.join("blob").exists(), "the emptied name stands");
 
@@ -4794,6 +4780,27 @@ mod tests {
     fn identity(path: &Path) -> (u32, u32, u64) {
         let info = statx(libc::AT_FDCWD, path).unwrap();
         (info.stx_dev_major, info.stx_dev_minor, info.stx_ino)
+    }
+
+    // TEST_SCENARIO: a `/proc` of the test's own whose one process has these files mapped, written as that table spells a mapping: the address range, the permissions, the offset, the device and the inode. The pass reads the real table, where another user's process makes it unreadable and a scan that could not read keeps every file, so a test about mappings supplies a table of its own.
+    fn proc_mapping(dir: &Path, mapped: &[&Path]) -> PathBuf {
+        let task = dir.join("1");
+        fs::create_dir_all(&task).unwrap();
+        let mut maps = String::new();
+        for (n, path) in mapped.iter().enumerate() {
+            let info = statx_following(path).unwrap();
+            let at = 0x7f00_0000_0000u64 + n as u64 * 0x1000;
+            maps.push_str(&format!(
+                "{at:012x}-{:012x} r--s 00000000 {:02x}:{:02x} {} {}\n",
+                at + 0x1000,
+                info.stx_dev_major,
+                info.stx_dev_minor,
+                info.stx_ino,
+                path.display()
+            ));
+        }
+        fs::write(task.join("maps"), maps).unwrap();
+        dir.to_path_buf()
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a `/proc` of the test's own, in which one process of one thread holds what `held` names open, read by the same scan the pass runs: the tests hold what a guest's root sees and a runner's user does not, so a scan of the real `/proc` would stop on the first process of another user rather than say anything about eviction.
