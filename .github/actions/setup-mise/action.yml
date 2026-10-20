@@ -76,9 +76,11 @@ runs:
     # Only the full install is cached, on x64 alone: a subset installs in
     # seconds without one (mirror-images: 3 s), and on arm64 only
     # build-images installs everything, on main.
-    # cache_save is off for a pull request and a merge group, the only events
-    # an outsider can start, so a release restores only what a push of main or
-    # of a tag wrote.
+    # cache_save is off for a pull request and a merge group, so those saves
+    # never reach this cache. The writers left are the default-branch schedules
+    # and dispatches, pushes of main, and the ref's own pushes and dispatches;
+    # GitHub scopes a non-default ref's entry to that ref, so a release reads
+    # main's entry and its own tag's, and nothing else.
     # jactionlint ignore=cache-poisoning
     - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
       with:
