@@ -75,7 +75,6 @@ export interface ProcessesServiceDeps {
   outputs: OutputReader;
   signals: ProcessSignals;
   keep: KeepState;
-  backgroundWorkHolds: boolean;
   runtimePid: number;
   harnessWork: HarnessWork;
   log: (msg: string) => void;
@@ -252,11 +251,7 @@ export function createProcessesService(
       scannedAt: snapshot.scannedAt,
       baseline: baselineFor(snapshot.scannedAt),
       previous: tracked,
-      resolveKeep: createKeepResolver({
-        marks,
-        overrides,
-        holds: deps.backgroundWorkHolds,
-      }),
+      resolveKeep: createKeepResolver({ marks, overrides }),
     });
     recordSample(snapshot);
     for (const task of inventory.exitedTasks)

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
+
 import { useStore } from "../../../../store.js";
 import { useAgentRunState } from "../../../agents/api/queries.js";
 import { isFiltered } from "../../../home/lib/activity-filter.js";
@@ -43,7 +45,7 @@ function useAgentTreeRows(agentId: string) {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in the new layout's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end, and the Sessions ordered by last activity, newest first. A hibernated Agent whose record holds no Session says its Sessions show when it wakes.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in the new layout's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the session filter is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. A hibernated Agent whose record holds no Session says its Sessions show when it wakes.
  */
 export function AgentSessionList({
   agentId,
@@ -65,9 +67,18 @@ export function AgentSessionList({
     fetchNextPage,
   } = list;
   const [retryingNext, setRetryingNext] = useState(false);
+  const filtered = isFiltered(filters);
   const readableNext = hasNextPage && list.answerable;
   const canFetch = readableNext && !isFetchingNextPage && !fetchNextPageFailed;
-  const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
+  const emptyText = !filtered
+    ? "No sessions yet."
+    : hasNextPage
+      ? "No loaded sessions match the filter."
+      : "No sessions match the filter.";
+  const endRef = useLoadOnReach(
+    canFetch && !filtered,
+    () => void fetchNextPage(),
+  );
 
   return (
     <div
@@ -94,13 +105,14 @@ export function AgentSessionList({
           onRetry={() => void list.retry()}
         />
       )}
-      {!list.loading && !list.failed && rows.length === 0 && !hasNextPage && (
-        <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
-          {isFiltered(filters)
-            ? "No sessions match the filter."
-            : "No sessions yet."}
-        </p>
-      )}
+      {!list.loading &&
+        !list.failed &&
+        rows.length === 0 &&
+        (!hasNextPage || filtered) && (
+          <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
+            {emptyText}
+          </p>
+        )}
       {rest.map(({ session, state }) => (
         <TreeSessionRow
           key={session.sessionId}
@@ -112,8 +124,29 @@ export function AgentSessionList({
           onNavigate={onNavigate}
         />
       ))}
-      {readableNext && <div ref={endRef} aria-hidden className="h-px" />}
+      {readableNext && !filtered && (
+        <div
+          ref={endRef}
+          aria-hidden
+          data-testid="sidebar-agent-sessions-end"
+          className="h-px"
+        />
+      )}
       {isFetchingNextPage && !retryingNext && <SessionListSkeleton />}
+      {readableNext && filtered && !fetchNextPageFailed && !retryingNext && (
+        <button
+          type="button"
+          data-testid="sidebar-agent-sessions-load-more"
+          aria-disabled={isFetchingNextPage || undefined}
+          aria-busy={isFetchingNextPage || undefined}
+          onClick={() => {
+            if (!isFetchingNextPage) void fetchNextPage();
+          }}
+          className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
+        >
+          {isFetchingNextPage ? "Loading…" : "Load more"}
+        </button>
+      )}
       {readableNext && (fetchNextPageFailed || retryingNext) && (
         <RetryRow
           label="Couldn't load the rest."

@@ -388,6 +388,7 @@ export type {
   EnvMapping,
   BobModelPins,
   BedrockPins,
+  KeyCheckTemplateId,
 } from "./modules/connections/providers.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
@@ -400,6 +401,8 @@ export {
   harnessFits,
   PROVIDERS,
   BALANCE_PROVIDER_TYPES,
+  KEY_CHECK_TEMPLATE_IDS,
+  hasKeyCheck,
   PROVIDER_PRESET_TYPES,
   ibmLitellmEnvMappings,
   curveBenderEnvMappings,
@@ -526,13 +529,18 @@ export type {
   ConnectionView,
   ConnectionTemplateView,
   ProviderBalance,
+  ProviderKeyCheck,
+  ProviderKeyRecheck,
   TemplateInput as ConnectionTemplateInput,
   ConnectionCategory,
   AgentConnections,
   AuthConfig as ConnectionAuthConfig,
   AuthKind as ConnectionAuthKind,
 } from "./modules/connections/types.js";
-export { authConfig as connectionAuthConfigSchema } from "./modules/connections/types.js";
+export {
+  authConfig as connectionAuthConfigSchema,
+  providerKeyCheck as providerKeyCheckSchema,
+} from "./modules/connections/types.js";
 export {
   CONNECTION_ENV_NAME_HINT,
   CONNECTION_ENV_NAME_RE,
@@ -645,7 +653,7 @@ export type {
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export {
   acpNativeRowId,
-  permissionOptionsOf,
+  permissionOptionKindsOf,
   recordedOptionsOf,
   recordedToolOf,
 } from "./modules/approvals/format.js";
@@ -695,6 +703,10 @@ export {
 export {
   platformTurnEndedParamsSchema,
   buildPlatformTurnEndedNotification,
+  platformRunEndedParamsSchema,
+  buildPlatformRunEndedNotification,
+  RUN_ENDED_CAPABILITY,
+  runEndedSupported,
   jsonRpcErrorDetails,
   platformPromptAcceptedParamsSchema,
   buildPlatformPromptAcceptedNotification,
@@ -712,6 +724,9 @@ export {
   platformUndeliveredPromptSchema,
   platformUndeliveredMetaSchema,
   platformSupersededMetaSchema,
+  platformContinuedFromSchema,
+  CONTINUED_FROM_LABEL_MAX,
+  CONTINUED_FROM_TEXT_MAX,
   capInlineImages,
   queuedPromptSchema,
   platformQueueMetaSchema,
@@ -733,12 +748,14 @@ export {
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedParams,
+  PlatformRunEndedParams,
   PlatformPromptAcceptedParams,
   PlatformPromptStartedParams,
   PlatformRunStartedParams,
   PlatformRunResult,
   PlatformReplayTurnMeta,
   PlatformUndeliveredPrompt,
+  PlatformContinuedFrom,
   PromptBlock,
   QueuedPrompt,
   PlatformQueueChangedParams,

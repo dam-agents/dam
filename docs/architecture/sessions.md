@@ -50,6 +50,7 @@ A harness cannot cut a session short in place, so one that can **fork** copies t
 User messages with nothing between them are one **batch**, which the agent took as one message: the chat shows them under one header and rewrites them as one, editing their texts joined by a blank line and sending the result as one message.
 The runtime finds that entry in the harness's own history, through the session-history provider, by the message's id or, for a message sent live, by its text; a message that history does not hold is refused rather than cut somewhere else, and only for the first message does an empty Session stand in.
 The copy's history is loaded before anything else and the edited message is its first new prompt.
+A rewritten follow-up chat keeps its copy, and the cut compares user messages with the `<continued-from>` block removed; a copy cut at the start carries the block again in its first prompt.
 A rewind gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
 Files the agent changed stay changed.
 The runtime answers before the copy's first frame, so the client that asked follows the new id without reloading.
@@ -65,6 +66,16 @@ A message still in the queue is removed from it; otherwise the chat stops the tu
 Either way, the message's text goes back to the input; when the runtime refuses because the agent already answered, the turn only stops.
 When the message started the Session, the chat deletes the Session instead and puts the text in a new chat.
 The copy keeps the original's times: the harness stamps the last entry it copies with the time of the fork, and the runtime gives that entry its original time back.
+
+### Follow-up chats
+
+A **follow-up chat** is a regular chat Session that starts from a finished sub-agent's work: its prompt and its result, the **copy**.
+A client asks for one on `session/new` with the copy in `_meta.platform.continuedFrom`; the runtime refuses a copy over its size bound rather than cut it.
+The runtime keeps the copy in its own byte-capped document under `.platform/`, apart from the log and the session metadata, because a session-history provider rebuilds the log from the harness's own store.
+The harness gets the copy once: the runtime puts it in a `<continued-from>` block before the first prompt it frames for the Session.
+Editing a queued prompt that carries the block keeps it; a prompt refused, dropped from the queue or recorded undelivered loses it, and the next prompt carries it again.
+The echo and the title use the typed text only, and a client hides the block wherever the first prompt shows.
+Every `session/load` returns the copy in `_meta.platform.continuedFrom`, so a client draws it above the conversation however the log was filled.
 
 ## Prompt delivery
 
@@ -134,6 +145,15 @@ A harness that leaves a cold re-attach unanswered — whichever verb it advertis
 One further condition holds that reap back: **background work the session reports**.
 While a session reports work still running, the runtime keeps it open, and busy while that work is kept, so neither the reap nor the [idle checker](agent-lifecycle.md#hibernate) ends the work underneath it.
 The contract, and the process inventory that shows the user everything running in the agent, live on [agent-processes](agent-processes.md).
+
+**An Autonomous Turn holds the reap back too.**
+A harness can work on after it answered a prompt: Claude Code answers a prompt that started background agents, and when the last of them reports it runs a turn of its own to handle the reports and do the steps that follow.
+Closing the session then would cut that turn off, and Claude Code reads the close as the user interrupting.
+So the runtime asks the harness for its session state: on every session/new, session/load and session/resume it sends to Claude Code, it adds a `session_state_changed` filter to `_meta.claudeCode.emitRawSDKMessages`, and the adapter reports each change of state as a `_claude/sdkMessage` notification, which the runtime keeps out of the transcript.
+The image's manifest names that dialect (`harnessState`); a harness without one reports nothing and is idle once its prompt is answered.
+From a busy report to the idle one, in every session, the session is not reaped, the runtime is busy, and the Active-Turn marker stays, so a pod that dies in the Autonomous Turn resumes it on the next boot with the `<turn-interrupted>` notice.
+A busy report with no prompt turn running writes the marker itself.
+Claude Code can lose its idle report, so a busy session that stays silent for ten minutes — no session/update, no open tool call, no pending agent request, no reported background work — is treated as idle, with a warning in the log.
 
 Terminal-mode sessions follow a different model from the chat path above.
 agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.

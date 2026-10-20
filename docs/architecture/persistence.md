@@ -208,7 +208,7 @@ Together these hold:
   A record outlives session teardown and pod restarts; it goes when the user resends or deletes it, with its Session, or — the document is byte-capped — when another session's write needs the room, evicting whole sessions oldest-first ([agent-lifecycle](agent-lifecycle.md) owns the delivery contract).
   A third document, **active-turns**, marks each session while a turn runs and clears it on every turn end agent-runtime observes; a marker still present at the next boot names a turn whose end it never saw — the process went down mid-turn, SIGKILLed (an OOM group-kill) or shut down by SIGTERM (a Sleep, an eviction; that shutdown marks the marker *stopped*) — which agent-lifecycle's recovery consumes to resume that session automatically — only markers inherited from the previous process, since a turn the new process began before recovery runs is live work and resuming it would answer it twice — its own document again so a corrupt write cannot take run accounting or user text with it.
   The marker of a session the harness has not stored yet also keeps the turn's prompt, the only copy that survives the process.
-  The directory also holds the **run-results document**: for each `cli_run` Session and each Session a one-time run reports from, the newest finished turn's outcome — prompt identity, stop reason, accumulated assistant text (size-capped per turn, marked when cut) — written at turn end so a detached headless caller can read the result after the in-memory session log is reaped.
+  The directory also holds the **run-results document**: for each `cli_run` Session and each Session a one-time run reports from, the newest finished run's outcome — prompt identity, stop reason, accumulated assistant text (size-capped per run, marked when cut) — written when the run ends so a detached headless caller can read the result after the in-memory session log is reaped.
   One record per Session, newest turn wins; it goes with its Session or, under a byte cap of its own with the same evict-oldest rule, when another write needs the room ([cli](cli.md#headless-runs) owns the concept).
 - **`.import-staging-*/`** — transient extraction directories used by the bundled file-import path before entries are merged into `<homeDir>/work`.
   Orphaned staging dirs from crashed imports are reclaimed by an agent-runtime boot sweeper; see [platform-topology](platform-topology.md).
@@ -249,20 +249,21 @@ The old upper is renamed aside with the record of its image and deleted in the b
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root, empty on every boot whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays in the root: an image ships its caches there, and an empty folder over them rebuilt them each boot.
-The caches share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
+The caches share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries, never through a link or a mount.
 A disk pass runs until a fifth of the disk is free; a claim's stops at the bytes the runner asked for.
 It deletes only from `HOME`'s `.cache` and `.npm`, caches by the XDG specification and by npm, and never from `/tmp` or `/var/tmp`, whatever a directory's mark or age: a tool can drop that mark, write work there and rename it while a pass runs, so nothing makes one safe to delete.
 An entry goes whole or not at all: a tool keeping part of its cache takes it for complete and fails.
-Deletion is bound to the tree it judged, not the name it listed: the entry is opened once and its mount and use are read through that descriptor, and a directory's name is not touched again.
-Use is the newest modification or change time in the entry: a write moves those, a read moves none the guest keeps, and a reader is seen by its descriptors alone.
-An entry used in the last ten minutes stays, and so does one a process holds, locks (as `systemd-tmpfiles` leaves it) or works in.
+Deletion is bound to the tree it judged, not the name it listed.
+Use is the newest modification or change time in the entry: a write moves those, a read moves none the guest keeps.
+An entry used in the last ten minutes stays.
 A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that rule on: each request is served once, by one pass that keeps what was used in the last hour, stops at the bytes the runner asked of that machine, and reads the request again before each entry.
 A guest at its grant's floor keeps that hour with no byte bound, served once an hour rather than at every look.
 Each eviction, and a disk still short with nothing left to evict, is a console line.
 An agent that exits with its home nearly out of space or inodes is a full home.
 A boot that finds the disk with no space or inode left deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
 A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, which brings more of both.
-btrfs discards what it frees on its own (`discard=async`, the kernel's default on a disk that supports discard), so whatever the agent frees, by deleting or by rewriting a file, goes back to the runner's volume and stops counting against the owner's storage.
+platform-init mounts the guest's storage disk with synchronous discards, so a block the agent frees reaches the runner's volume as its filesystem frees it and stops counting against the owner's storage; it also trims the whole disk every minute and before its guard preallocates, which retries the ranges still free.
+Both use the same discard, so a device that refuses one returns nothing.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
@@ -294,17 +295,18 @@ A refused growth is reported and reconciliation continues: the runner still serv
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
-It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
+It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full has not every guest delete its scratch again every minute.
 A guest a grant holds is judged by the room its guard leaves it, not by the disk's share.
-A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init sizes a preallocated file on the disk so the guest can write only what is left of its grant.
-A claim the runner cannot measure grants nothing at all, so no guest is held to it, and it says so in its log each time it loses the measure and each time it gets it back.
+A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init preallocates unnamed files on the disk so the guest can write only what is left of its grant.
+A claim the runner cannot measure grants nothing, so no guest is held to it, and it says so each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
-The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
+The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
-The file's blocks are only marked in the guest's filesystem and never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops, and an older platform-init never finds it.
-A clean stop empties it first, so the next boot does not start with its blocks taken.
-btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, and grows only as far as the disk takes.
-The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and freed blocks take claim room until btrfs discards them.
+Their blocks are only marked in the guest's filesystem, never written, so they take nothing from the claim, and they have no names, so the filesystem frees them when the guest stops.
+btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads what it holds from its files' blocks, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
+A shrink drops whole files, never part of one, and a clean stop releases them all.
+Eviction counts the guard's blocks back as free while no grant holds the guest, so a guest held to the claim does not read its own disk as short.
+The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until their discard reaches it.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
@@ -317,7 +319,7 @@ Past 90%, and again past 95% when writes start failing, the owner also gets a Sl
 
 **A write the claim has no room for waits instead of failing.** virtio-blk can report a failed write to the guest only as an I/O error, and on that error the guest drops the data in its page cache that a write had accepted, and btrfs aborts its transaction and turns the filesystem read-only.
 So the runner's libkrun holds a guest write that the claim refuses with no space, and tries it again every second until it fits, as QEMU does by default.
-The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through another guest's discards, a deleted agent or a larger storage.
+The guest's I/O waits meanwhile, and continues with nothing lost once the claim has room: through another guest's trims, a deleted agent or a larger storage.
 A stop of the machine ends the wait: the write fails as before, or a kill ends the machine as a power cut would, which btrfs's copy-on-write recovers from without errors.
 A flush is never tried again: after a failed fsync the host can have dropped the data, and a second fsync would report it written.
 

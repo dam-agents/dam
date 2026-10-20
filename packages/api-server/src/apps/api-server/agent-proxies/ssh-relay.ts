@@ -1,4 +1,5 @@
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
+import { keepAlive } from "./heartbeat.js";
 import { WebSocketServer, WebSocket } from "ws";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
@@ -10,7 +11,6 @@ import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
-const PING_INTERVAL_MS = 30_000;
 
 export interface SshRelay {
   handleUpgrade(
@@ -49,20 +49,7 @@ export function createSshRelay(
       client.on("error", () => client.terminate());
       const release = presence.acquire(agentId);
 
-      let alive = true;
-      client.on("pong", () => {
-        alive = true;
-      });
-      const heartbeat = setInterval(() => {
-        if (!alive) {
-          client.terminate();
-          return;
-        }
-        alive = false;
-        try {
-          client.ping();
-        } catch {}
-      }, PING_INTERVAL_MS);
+      keepAlive(client);
 
       let upstream: WebSocket | undefined;
       let clientGone = false;
@@ -72,7 +59,6 @@ export function createSshRelay(
         } catch {}
       };
       client.on("close", () => {
-        clearInterval(heartbeat);
         clientGone = true;
         release();
         closeWs(upstream);

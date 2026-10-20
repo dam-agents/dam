@@ -1,5 +1,6 @@
 // TEST_OVERVIEW: one pending tool approval can meet two verdicts at once, from Home and from the chat. The tool runs on exactly one answer: a verdict that loses the row decision must not reach the harness, and the row must record the answer the runtime accepted, not the one that lost. The harness stand-in here accepts the first answer to arrive and drops every later one, as the runtime does.
 import { describe, expect, it } from "vitest";
+import { recordedOptionsOf, TOOL_CALL_ID_MAX } from "api-server-api";
 import type { AcpPermissionOption, ApprovalVerdict } from "api-server-api";
 
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
@@ -207,5 +208,23 @@ describe("tool approval race", () => {
       expect(harness.frames).toEqual([{ optionId: undefined }]);
       expect(harness.accepted()).toEqual({});
     }
+  });
+
+  // TEST_SCENARIO: a harness can offer two ids that differ only after the recording bound, and a catalog that shortened them would hold a reject whose id is the allow's. Home must compare full ids: with the reject unrecordable, the denial cancels instead of answering with that allow.
+  it("never answers a denial with an allow whose id an unrecordable reject shares", async () => {
+    const { harness, service, asked } = setup();
+    const shared = "x".repeat(TOOL_CALL_ID_MAX);
+    await asked(
+      recordedOptionsOf([
+        { optionId: shared, kind: "allow_once" },
+        { optionId: `${shared}-reject`, kind: "reject_once" },
+      ]),
+    );
+
+    const outcome = await service.dismiss(ROW);
+
+    expect(outcome.outcome).toBe("applied");
+    expect(harness.frames).toEqual([{ optionId: undefined }]);
+    expect(harness.accepted()).toEqual({});
   });
 });

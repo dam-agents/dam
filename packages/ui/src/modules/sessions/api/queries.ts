@@ -56,6 +56,22 @@ function updateListedSessions(
   );
 }
 
+export function keepFirstSessionPages(): void {
+  queryClient.setQueriesData<SessionPages>(
+    {
+      queryKey: acpSessionsKeys.all,
+      predicate: ({ queryKey }) => queryKey[2] === "pages",
+    },
+    (prev) =>
+      prev && prev.pages.length > 1
+        ? {
+            pages: prev.pages.slice(0, 1),
+            pageParams: prev.pageParams.slice(0, 1),
+          }
+        : prev,
+  );
+}
+
 export function seedEmptySessionList(
   agentId: string,
   categories: readonly SessionCategory[],

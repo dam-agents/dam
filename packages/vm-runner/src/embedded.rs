@@ -109,13 +109,15 @@ impl Smolvm {
             return Ok(());
         };
         let dir = vm_data_dir(id);
-        let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
+        let vmms = orphan_pids(&self.proc_root, &dir)
+            .map(|found| found.pids())
+            .unwrap_or_default();
         if vmms.is_empty() {
             return Err(refused.into());
         }
         tracing::warn!(machine = id, error = %refused, "the guest did not stop cleanly; powering it off");
         kill_orphans(&self.proc_root, &dir);
-        vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
+        let _ = vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
         Ok(end()?)
     }
 
@@ -188,10 +190,12 @@ impl Runtime for Smolvm {
                 && state_probe::resolve_state(id, &record) != RecordState::Running
             {
                 let dir = vm_data_dir(id);
-                let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
+                let vmms = orphan_pids(&self.proc_root, &dir)
+                    .map(|found| found.pids())
+                    .unwrap_or_default();
                 let _ = self.runtime.stop_machine(id);
                 kill_orphans(&self.proc_root, &dir);
-                vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
+                let _ = vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
                 record = self.existing(id)?;
             }
             if !matches!(
@@ -255,7 +259,9 @@ impl Runtime for Smolvm {
     fn start(&self, id: &str, boot_mib: i32, _memory_mib: i32) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
-            let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
+            let vmms = orphan_pids(&self.proc_root, &dir)
+                .map(|found| found.pids())
+                .unwrap_or_default();
             let _ = self.runtime.stop_machine(id);
             clear_for_start(id, &self.proc_root, &dir, vmms, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
@@ -385,8 +391,9 @@ impl Runtime for Smolvm {
     }
 
     fn holds_vmm(&self, id: &str) -> bool {
-        // UNIT_BOUNDARY_DESCRIPTION: a scan that could not look has not shown that no VMM holds the machine, so it answers as one that found a VMM: a machine whose record no longer decodes is then counted and keeps its storage share.
-        orphan_pids(&self.proc_root, &vm_data_dir(id)).map_or(true, |pids| !pids.is_empty())
+        // UNIT_BOUNDARY_DESCRIPTION: a scan that could not look, or one that left a process the kernel would not describe, has not shown that no VMM holds the machine, so it answers as one that found a VMM: a machine whose record no longer decodes is then counted and keeps its storage share.
+        orphan_pids(&self.proc_root, &vm_data_dir(id))
+            .map_or(true, |found| !found.named.is_empty() || found.unknown > 0)
     }
 
     fn cpu_usec(&self, id: &str) -> Option<u64> {
