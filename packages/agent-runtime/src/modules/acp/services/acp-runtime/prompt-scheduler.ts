@@ -54,9 +54,9 @@ export interface PromptSubmission {
  */
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
-  submitSetting(submission: PromptSubmission): PromptFate;
+  submitSetting(submission: PromptSubmission, first?: boolean): PromptFate;
   onSettingResponse(sessionId: string, outboundId: number): void;
-  forgetSettings(sessionId: string): void;
+  modeWorkOutstanding(sessionId: string): boolean;
   onPromptResponse(
     sessionId: string,
     outboundId: number,
@@ -95,6 +95,7 @@ export interface PromptScheduler {
 
 export interface PromptSchedulerDeps {
   sendToAgent: (frame: unknown) => boolean;
+  affectsMode?: (frame: unknown) => boolean;
   canStart: (entry: PromptSubmission) => boolean;
   sessionLoaded?: (sessionId: string) => boolean;
   onQueueDropped: (
@@ -197,7 +198,7 @@ export function createPromptScheduler(
   const steerTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
-  const settingsInFlight = new Map<string, Set<number>>();
+  const settingsInFlight = new Map<string, Map<number, PromptSubmission>>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
   const steerWaitMs = deps.steerWaitMs ?? DEFAULT_STEER_WAIT_MS;
@@ -254,8 +255,10 @@ export function createPromptScheduler(
 
   function sendSetting(entry: PromptSubmission): boolean {
     if (!deps.sendToAgent(entry.frame)) return false;
-    const inFlight = settingsInFlight.get(entry.sessionId) ?? new Set();
-    inFlight.add(entry.outboundId);
+    const inFlight =
+      settingsInFlight.get(entry.sessionId) ??
+      new Map<number, PromptSubmission>();
+    inFlight.set(entry.outboundId, entry);
     settingsInFlight.set(entry.sessionId, inFlight);
     return true;
   }
@@ -536,7 +539,7 @@ export function createPromptScheduler(
       return "queued";
     },
 
-    submitSetting(submission) {
+    submitSetting(submission, first = false) {
       const sessionId = submission.sessionId;
       if (
         !pendingSettings.has(sessionId) &&
@@ -546,15 +549,22 @@ export function createPromptScheduler(
         sendSetting(submission)
       )
         return "started";
-      pendingSettings.set(sessionId, [
-        ...(pendingSettings.get(sessionId) ?? []),
-        submission,
-      ]);
+      const queued = pendingSettings.get(sessionId) ?? [];
+      pendingSettings.set(
+        sessionId,
+        first ? [submission, ...queued] : [...queued, submission],
+      );
       return "queued";
     },
 
-    forgetSettings(sessionId) {
-      pendingSettings.delete(sessionId);
+    modeWorkOutstanding(sessionId) {
+      const affectsMode = deps.affectsMode;
+      if (affectsMode === undefined) return false;
+      for (const entry of settingsInFlight.get(sessionId)?.values() ?? [])
+        if (affectsMode(entry.frame)) return true;
+      return (pendingSettings.get(sessionId) ?? []).some((entry) =>
+        affectsMode(entry.frame),
+      );
     },
 
     onSettingResponse(sessionId, outboundId) {

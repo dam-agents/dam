@@ -72,9 +72,10 @@ Claude Code opts in, and its catalog defaults to `auto`, so a chat session start
 The terminal launcher keeps its own fallback, which asks for no model, so a Haiku terminal session still passes `auto`.
 A session that names no model runs on the model the file names, so that model's constraints are the ones applied.
 The derived mode is the runtime's, not the session's: it never replaces a mode the owner or the session picked, and a change of the session's model derives it again, since the new model may allow another mode than the old one.
-While the runtime derives a session's mode, the mode the harness reports is the runtime's own doing — an echo of what it sent, the fallback a model change forced, or the answer to a request about a model the session left — so it is not saved as a mode the session picked, and the next model change derives again.
-A session the runtime derives no mode for keeps saving the mode the harness reports, as plan mode handing over to implementation does.
-A setting the harness refuses is dropped with the queue behind it and submitted again first, so the settings that depend on it never apply against the state it failed to reach.
+While a setting that can move the mode is still owed an answer — a mode of its own, or the model a mode is read against — a mode the harness reports is that work's doing: an echo of what the runtime sent, or the fallback a model change forced, so it is not saved as a mode the session picked.
+Once those settings are answered, a reported mode is the harness's own, as entering plan mode with a tool is, and is saved; a session the runtime derives a mode for then stops deriving, since the session holds a mode now.
+A mode report that the runtime did not ask for and that arrives after its work settled is indistinguishable from a mode the harness changed on its own, and is saved as one.
+A setting the harness refuses is asked for again ahead of the settings that wait on it, and a client's own setting request keeps its place in that queue and is answered as usual.
 A change made mid-turn waits for the turn to end, and the next prompt waits for the harness to answer the change.
 A process-scoped one (`env`) is a value the harness reads only at start, such as Claude Code's prompt-cache TTL or Bob's approvals flag; it joins the Harness Lease key, so the session moves to a process started with it and the other sessions' process is left alone.
 Such a move is refused while the session's turn runs.

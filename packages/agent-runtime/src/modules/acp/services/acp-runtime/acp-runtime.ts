@@ -192,7 +192,7 @@ export interface AcpRuntimeDeps {
   agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
-  derivedModeOf?: (sessionId: string) => string | null;
+  modelSettingConfig?: string;
   modeSettingId?: string;
 }
 
@@ -283,6 +283,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
+    affectsMode: (frame) => settingAffectsMode(frame, deps.modelSettingConfig),
     onTurnStarted: ({
       sessionId,
       unattended,
@@ -678,9 +679,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (tried < 1) {
       criticalRetries.set(key, tried + 1);
       const timer = setTimeout(() => {
-        appliedSettings.delete(sessionId);
-        promptScheduler.forgetSettings(sessionId);
-        syncSettings(sessionId);
+        const applied = appliedSettings.get(sessionId);
+        for (const [k] of applied ?? [])
+          if (k.startsWith(mapping.method)) applied?.delete(k);
+        syncSettings(sessionId, true);
         promptScheduler.onSettingResponse(sessionId, outboundId);
       }, CRITICAL_RETRY_MS);
       timer.unref?.();
@@ -703,20 +705,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
-  /**
-   * UNIT_BOUNDARY_DESCRIPTION: while the runtime derives a session's mode, the
-   * mode the harness reports is the runtime's own doing — an echo of the mode
-   * it sent, the fallback a model change forced on the mode it had, or the
-   * answer to a request about a model the session already left — so it is not
-   * saved as a mode the session picked, and the mode is derived again on the
-   * next model change. Reports for a session the runtime derives no mode for
-   * are the harness's own, and are saved as before.
-   */
-  function derivesMode(sessionId: string): boolean {
-    return (deps.derivedModeOf?.(sessionId) ?? null) !== null;
-  }
-
-  function syncSettings(sessionId: string): void {
+  function syncSettings(sessionId: string, first = false): void {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
     appliedSettings.set(sessionId, applied);
@@ -737,15 +726,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         settingSessionId: sessionId,
         ...(frame.critical && { critical: true }),
       });
-      promptScheduler.submitSetting({
-        sessionId,
-        channel: settingsChannel,
-        outboundId,
-        originalId: outboundId,
-        frame: { jsonrpc: "2.0", id: outboundId, method, params },
-        promptId: null,
-        unattended: true,
-      });
+      promptScheduler.submitSetting(
+        {
+          sessionId,
+          channel: settingsChannel,
+          outboundId,
+          originalId: outboundId,
+          frame: { jsonrpc: "2.0", id: outboundId, method, params },
+          promptId: null,
+          unattended: true,
+        },
+        first,
+      );
     }
   }
 
@@ -1739,7 +1731,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (
             id &&
             entry &&
-            !derivesMode(sessionId) &&
+            !promptScheduler.modeWorkOutstanding(sessionId) &&
             entry.meta.settings?.[id] !== reportedMode
           )
             deps.sessionMetadata?.set(sessionId, {
@@ -2535,6 +2527,26 @@ function isNoResponseFiller(frame: unknown): boolean {
 }
 
 const MODE_SETTING_KEY = "session/set_mode:";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a setting can move the session's mode when it
+ * sends one, or when it moves the model the harness reads a mode against and
+ * reconciles the mode it had. Every other setting leaves the mode alone, so a
+ * mode the harness reports beside one is the harness's own.
+ */
+function settingAffectsMode(
+  frame: unknown,
+  modelSettingConfig: string | undefined,
+): boolean {
+  const setting = frame as
+    { method?: unknown; params?: { configId?: unknown } } | null | undefined;
+  if (setting?.method === "session/set_mode") return true;
+  return (
+    setting?.method === "session/set_config_option" &&
+    modelSettingConfig !== undefined &&
+    setting.params?.configId === modelSettingConfig
+  );
+}
 
 function settingKeyOf({ method, params }: SessionSettingFrame): string {
   return `${method}:${String(params.configId ?? "")}`;
