@@ -1036,7 +1036,8 @@ describe("acp-runtime: one harness process per harness", () => {
 
   /** TEST_SCENARIO: After the agent restarts, a client that loads a saved
    * session gets its saved model and mode on the new harness process before
-   * it can prompt, so both survive the restart. */
+   * it can prompt, so both survive the restart. The mode follows the model's
+   * own answer, since the harness reads a mode against the model it holds. */
   it("re-applies the saved model and settings when a client loads the session", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     world.metadata.store.set("saved", {
@@ -1050,6 +1051,8 @@ describe("acp-runtime: one harness process per harness", () => {
     const harness = world.harness("claude-code");
     harness.replyToSession("session/load", "saved", {});
     expect(modelFrames(harness, "saved")).toEqual(["ibm/aws/claude-opus-4-8"]);
+    expect(harness.received("session/set_mode")).toEqual([]);
+    harness.replyToSession("session/set_config_option", "saved", {});
     expect(harness.received("session/set_mode")).toEqual([
       expect.objectContaining({
         params: { sessionId: "saved", modeId: "plan" },
