@@ -73,6 +73,7 @@ type AgentReconciler struct {
 	vmLive                sync.Map
 	vmAnswers             sync.Map
 	grantHolds            sync.Map
+	holdHeld              sync.Map
 	grantProbes           sync.Map
 	noNodeResize          sync.Map
 	vmDiskGrows           sync.Map
@@ -518,9 +519,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
 		if machine.Reason == vmrunner.ReasonAwaitingAllocation {
-			// UNIT_BOUNDARY_DESCRIPTION: a restart the runner is running keeps its exemption from the ceiling, but a runner from before that still answers the wait for a restart in flight. Parking that answer would stop the machine behind the restart the runner is already performing, so the fast retry is what acts on it, and the next reconcile reads the machine it booted.
-			restartInFlight := machine.State == vmrunner.StateRestarting
-			if !restartInFlight {
+			// UNIT_BOUNDARY_DESCRIPTION: an answer about a machine that is still coming up is never parked: parking stops the machine, and a boot or a restart the runner already admitted runs to completion whatever this second answer says. A runner current with this controller lets such a machine through instead of answering, and one from before it answers exactly here, so this is where the exemption is kept for the rollout rather than in the runner alone.
+			bootInFlight := holdsMemory(machine.State)
+			if !bootInFlight {
 				running, parked, awaiting, awaitingReason = false, true, vmAwaitingAllocationMessage, apiv1.ReasonAwaitingAllocation
 				r.recordParkedRetry(name)
 			}
@@ -528,7 +529,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 				r.requeue(name, vmReadinessPoll)
 			}
 			// UNIT_BOUNDARY_DESCRIPTION: a resize the node has deferred or refused does not land on its own, so the room it did grant is freed the way a refused start frees it, and the start is retried at the parked tick too.
-			if !restartInFlight && r.runnerResizePending(ctx, owner) {
+			if !bootInFlight && r.runnerResizePending(ctx, owner) {
 				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
 					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 				}
