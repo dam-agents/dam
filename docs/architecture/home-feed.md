@@ -47,11 +47,14 @@ Rename and Delete on a provisional row wake the Agent and run once it answers, s
 The sidebar's Agents section lists the Sessions of an Agent only while the user has it open: a click on the Agent opens or closes its list in place, and the Agent whose chat or configuration page is shown is open.
 An open Agent that is not the shown one lists the record's rows, three at most; the shown Agent lists its own list, and so does any Agent once the user asks for more.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
+An open Agent with no row in a whole, loaded record shows "No sessions yet."; while the record is cut off, loading or unreadable, it lists its own list instead.
+That list says a hibernated Agent's Sessions show when it wakes, instead of loading until then.
+When that list's own first read fails, it offers a retry instead of "No sessions yet."
 Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 
 The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
 An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
-Hibernated Agents fold under **See all (N hibernating)**, unless the user has one open or its chat or configuration page is shown; closing the shown Agent's Sessions keeps its row in place.
+Hibernated Agents fold under **See all (N hibernating)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
 An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.

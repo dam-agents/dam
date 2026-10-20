@@ -52,7 +52,8 @@ export function useActivitySessions() {
   return {
     items,
     openSessionKey,
-    complete: (attention.data?.items.length ?? 0) < ATTENTION_FEED_LIMIT,
+    complete:
+      attention.isSuccess && attention.data.items.length < ATTENTION_FEED_LIMIT,
     loading: attention.isPending,
     unreadable: attention.isError,
   };
