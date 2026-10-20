@@ -47,7 +47,7 @@ interface SettleAbsentInput {
   sessionId: string;
   rpcId: number | string;
   ownerSub: string;
-  verdict?: ApprovalVerdict;
+  outcome?: { outcome?: unknown; optionId?: unknown; kind?: unknown };
 }
 
 interface CreateApprovalsRelayServiceDeps {
@@ -177,6 +177,10 @@ export function createApprovalsRelayService(
       const row = await deps.repo.getPending(rowId);
       if (!row) return "absent";
       if (row.payload.kind !== "acp_native") return "settled";
+      if (row.status === "resolved") {
+        await deps.repo.markDelivered(row.id);
+        return "settled";
+      }
       if (!(await deps.repo.expirePending(row.id))) return "settled";
       emit({
         type: EventType.ApprovalResolved,
@@ -190,6 +194,10 @@ export function createApprovalsRelayService(
 
     async settleAbsentAcpNative(input) {
       const rowId = acpNativeRowId(input.agentId, input.sessionId, input.rpcId);
+      const verdict =
+        input.outcome === undefined
+          ? undefined
+          : verdictOfOutcome([], input.outcome);
       const written = await deps.repo.insertSettled(
         {
           id: rowId,
@@ -205,18 +213,37 @@ export function createApprovalsRelayService(
           },
           expiresAt: new Date(Date.now() + ACP_NATIVE_TTL_MS),
         },
-        input.verdict === undefined
+        verdict === undefined
           ? { status: "expired" }
-          : { status: "resolved", verdict: input.verdict },
+          : { status: "resolved", verdict },
       );
-      if (written) return;
+      if (written) {
+        emit({
+          type: EventType.ApprovalResolved,
+          approvalId: rowId,
+          agentId: input.agentId,
+          ownerSub: input.ownerSub,
+          resolution: verdict ?? "expired",
+        });
+        return;
+      }
       const held = await deps.repo.getPending(rowId);
       if (held?.status !== "pending") return;
-      if (input.verdict === undefined) await deps.repo.expirePending(rowId);
-      else
-        await deps.repo.resolvePending(rowId, input.verdict, "in-session", {
+      if (verdict === undefined) {
+        if (!(await deps.repo.expirePending(rowId))) return;
+      } else if (
+        !(await deps.repo.resolvePending(rowId, verdict, "in-session", {
           markDelivered: true,
-        });
+        }))
+      )
+        return;
+      emit({
+        type: EventType.ApprovalResolved,
+        approvalId: rowId,
+        agentId: input.agentId,
+        ownerSub: input.ownerSub,
+        resolution: verdict ?? "expired",
+      });
     },
 
     subscribeFrameInjects(agentId, listener) {

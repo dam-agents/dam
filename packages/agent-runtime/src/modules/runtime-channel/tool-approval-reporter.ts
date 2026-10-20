@@ -1,4 +1,8 @@
-import { recordedOptionsOf, recordedToolOf } from "api-server-api";
+import {
+  recordedOptionsOf,
+  recordedToolOf,
+  TOOL_CALL_ID_MAX,
+} from "api-server-api";
 import type {
   AcpPermissionOption,
   AcpPermissionOptionKind,
@@ -11,6 +15,7 @@ const END_ATTEMPTS = 3;
 const ATTEMPT_TIMEOUT_MS = 5_000;
 const RETRY_DELAY_MS = 2_000;
 const RETRY_DELAY_MAX_MS = 30_000;
+const OUTCOME_MAX = 64;
 
 interface PermissionRequestFrame {
   method?: unknown;
@@ -40,15 +45,14 @@ function outcomeOf(
   const outcome = (result as { outcome?: unknown } | null)?.outcome as
     { outcome?: unknown; optionId?: unknown } | undefined;
   if (typeof outcome?.outcome !== "string") return null;
-  const kind =
+  const optionId =
     typeof outcome.optionId === "string"
-      ? options.find((o) => o.optionId === outcome.optionId)?.kind
+      ? outcome.optionId.slice(0, TOOL_CALL_ID_MAX)
       : undefined;
+  const kind = options.find((o) => o.optionId === optionId)?.kind;
   return {
-    outcome: outcome.outcome,
-    ...(typeof outcome.optionId === "string" && {
-      optionId: outcome.optionId,
-    }),
+    outcome: outcome.outcome.slice(0, OUTCOME_MAX),
+    ...(optionId !== undefined && { optionId }),
     ...(kind !== undefined && { kind }),
   };
 }

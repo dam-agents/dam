@@ -397,4 +397,22 @@ describe("tool approval reporter", () => {
       },
     });
   });
+
+  // TEST_SCENARIO: the harness writes the frame, so the outcome and the option id it reports can exceed what the recording route accepts. The end report must be shaped to that route's bounds instead of being rejected, or the row stays pending after its request.
+  it("shapes an oversized answer to the route's bounds", async () => {
+    const { client, sent } = fakeClient();
+    const reporter = createToolApprovalReporter({ client, log: () => {} });
+
+    reporter.held(15, "s-1", request);
+    reporter.answered(15, "s-1", {
+      outcome: { outcome: "o".repeat(100), optionId: "x".repeat(600) },
+    });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+
+    const report = sent[0]![1] as {
+      outcome: { outcome: string; optionId: string };
+    };
+    expect(report.outcome.outcome).toHaveLength(64);
+    expect(report.outcome.optionId).toHaveLength(512);
+  });
 });

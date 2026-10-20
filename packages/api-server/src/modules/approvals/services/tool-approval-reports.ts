@@ -1,7 +1,6 @@
 import type { ToolApprovalReports } from "api-server-api";
 import { acpNativeRowId } from "api-server-api";
 import type { ApprovalsRelayService } from "./approvals-relay-service.js";
-import { verdictOfOutcome } from "../infrastructure/wrapper-response-frames.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agent-runtime reports a tool approval that
@@ -50,9 +49,7 @@ export function createToolApprovalReports(deps: {
         sessionId: input.sessionId,
         rpcId: input.rpcId,
         ownerSub: deps.ownerSub,
-        ...(input.outcome !== undefined && {
-          verdict: verdictOfOutcome([], input.outcome),
-        }),
+        ...(input.outcome !== undefined && { outcome: input.outcome }),
       });
     },
   };

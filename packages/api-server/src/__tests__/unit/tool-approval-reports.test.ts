@@ -104,6 +104,12 @@ function makeRepo() {
       row.status = "expired";
       return true;
     },
+    markDelivered: async (id) => {
+      const row = rows.find(
+        (r) => r.id === id && r.status === "resolved" && !r.deliveredAt,
+      );
+      if (row) row.deliveredAt = new Date();
+    },
   } as Partial<ApprovalsRepository> as ApprovalsRepository;
   return { rows, repo };
 }
@@ -366,6 +372,28 @@ describe("tool approval reports", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]?.status).toBe("expired");
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: EventType.ApprovalResolved,
+        approvalId: ROW,
+        resolution: "expired",
+      }),
+    );
+  });
+
+  // TEST_SCENARIO: the row was resolved on Home and its answer has not been delivered yet, but the runtime reports the request's end, so that answer now reaches nothing. The record must stop retrying it at every sweep.
+  it("stops delivering a resolved row once the runtime reports its end", async () => {
+    const { rows, repo, reports, waiting } = setup();
+    await waiting();
+    await repo.resolvePending(ROW, "allow_once", "owner-1");
+
+    await reports.ended(AGENT, { sessionId: SESSION, rpcId: RPC });
+
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "allow_once",
+      deliveredAt: expect.any(Date),
+    });
   });
 
   // TEST_SCENARIO: the same ordering for an answer: the runtime accepted it before any row existed. Dropping it would leave the request as a pending approval whose answer reaches nothing.
