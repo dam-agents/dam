@@ -93,6 +93,7 @@ import {
 import { createAutonomousTurns } from "./autonomous-turns.js";
 import {
   createPromptScheduler,
+  type ModeRole,
   type PromptSubmission,
   type SteerOutcome,
 } from "./prompt-scheduler.js";
@@ -283,7 +284,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   const promptScheduler = createPromptScheduler({
     sendToAgent: (frame) => lease.send(frame),
-    affectsMode: (frame) => settingAffectsMode(frame, deps.modelSettingConfig),
+    modeRoleOf: (entry) => entry.modeRole ?? null,
     onTurnStarted: ({
       sessionId,
       unattended,
@@ -706,26 +707,47 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   /**
+   * UNIT_BOUNDARY_DESCRIPTION: whether a mode the harness reports is the answer
+   * to mode work the runtime holds rather than the session taking a mode. A
+   * setting the runtime reconciles that is still in flight, or a mode it derives
+   * and has not sent yet, makes this report the runtime's own. A mode someone
+   * chose that is still queued is newer than the report, so the report is not
+   * saved over it either. A mode someone chose that has been sent, and work
+   * still queued behind a turn that the report cannot answer, leave the report
+   * the session's: the harness reported it on its own.
+   */
+  function modeReportIsRuntimeWork(
+    sessionId: string,
+    reportedMode: string,
+  ): boolean {
+    return promptScheduler.modeWork(sessionId).some((work) => {
+      if (work.sent) return work.role === "reconcile";
+      return work.role === "owner" || work.mode === reportedMode;
+    });
+  }
+
+  /**
    * UNIT_BOUNDARY_DESCRIPTION: a mode the session took while the runtime still
-   * had a derived mode queued behind its turn makes that frame obsolete: it was
-   * derived before the session held a mode, and sending it would undo the mode
-   * once the turn ends. The queued model change stays, since the owner asked
-   * for it and the mode survives it. Only queued runtime frames are dropped,
-   * never what the harness already has; they are the runtime's own, so they are
-   * forgotten rather than answered.
+   * had a mode queued behind its turn makes that frame obsolete: it was sent
+   * before the session held this mode, and sending it would undo the mode once
+   * the turn ends. Only a mode the runtime reconciles is dropped, never one the
+   * owner chose; the queued model change stays, since the owner asked for it and
+   * the mode survives it. A dropped frame's answer mapping goes with it, so an
+   * unsent frame cannot hold the process open.
    */
   function dropQueuedModeWork(sessionId: string): void {
     const dropped = promptScheduler.dropQueuedSettings(
       sessionId,
       (entry) =>
-        entry.origin === "runtime" &&
+        entry.modeRole === "reconcile" &&
         (entry.frame as { method?: unknown }).method === "session/set_mode",
-      "the session moved to another mode before this setting was sent",
     );
-    for (const entry of dropped)
+    for (const entry of dropped) {
       appliedSettings
         .get(sessionId)
         ?.delete(settingKeyOf(entry.frame as SessionSettingFrame));
+      outboundIdToClient.delete(entry.outboundId);
+    }
   }
 
   function syncSettings(sessionId: string, first = false): void {
@@ -733,12 +755,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
     appliedSettings.set(sessionId, applied);
     const block: PromptSubmission[] = [];
+    const chosenMode =
+      deps.sessionMetadata?.get(sessionId)?.meta.settings?.[
+        deps.modeSettingId ?? ""
+      ];
     for (const frame of deps.sessionSettingFrames?.(sessionId) ?? []) {
       const { method, params } = frame;
       const key = settingKeyOf(frame);
       const value = JSON.stringify(params);
       if (applied.get(key) === value) continue;
       applied.set(key, value);
+      const role = modeRoleOfFrame(
+        { method, params },
+        deps.modelSettingConfig,
+        deps.modeSettingId,
+        chosenMode,
+        false,
+      );
       const outboundId = nextOutboundId++;
       outboundIdToClient.set(outboundId, {
         channel: settingsChannel,
@@ -758,7 +791,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         frame: { jsonrpc: "2.0", id: outboundId, method, params },
         promptId: null,
         unattended: true,
-        origin: "runtime",
+        modeRole: role ?? undefined,
       });
     }
     promptScheduler.submitSettings(block, first);
@@ -1754,7 +1787,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (
             id &&
             entry &&
-            !promptScheduler.modeWorkOutstanding(sessionId) &&
+            !modeReportIsRuntimeWork(sessionId, reportedMode) &&
             entry.meta.settings?.[id] !== reportedMode
           ) {
             deps.sessionMetadata?.set(sessionId, {
@@ -2126,7 +2159,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           unattended:
             nonViewerChannels.has(channel) &&
             isMachineSession(settingSessionId),
-          origin: "client",
+          modeRole:
+            modeRoleOfFrame(
+              rewritten,
+              deps.modelSettingConfig,
+              deps.modeSettingId,
+              deps.sessionMetadata?.get(settingSessionId)?.meta.settings?.[
+                deps.modeSettingId ?? ""
+              ],
+              true,
+            ) ?? undefined,
         });
         if (
           fate === "queued" &&
@@ -2555,23 +2597,38 @@ function isNoResponseFiller(frame: unknown): boolean {
 const MODE_SETTING_KEY = "session/set_mode:";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a setting can move the session's mode when it
- * sends one, or when it moves the model the harness reads a mode against and
- * reconciles the mode it had. Every other setting leaves the mode alone, so a
- * mode the harness reports beside one is the harness's own.
+ * UNIT_BOUNDARY_DESCRIPTION: what a setting does to the session's mode. A mode
+ * someone chose makes that mode the session's, and the harness's report of it
+ * confirms the choice: a client's own request, or the mode the owner saved,
+ * which the runtime sends for it. The mode the runtime derived, and the model,
+ * which the harness reconciles a mode against, make the harness report a mode
+ * the setting caused, not one the session took. Every other setting leaves the
+ * mode alone.
  */
-function settingAffectsMode(
+function modeRoleOfFrame(
   frame: unknown,
   modelSettingConfig: string | undefined,
-): boolean {
+  modeSettingId: string | undefined,
+  chosenMode: string | undefined,
+  fromClient: boolean,
+): ModeRole | null {
   const setting = frame as
-    { method?: unknown; params?: { configId?: unknown } } | null | undefined;
-  if (setting?.method === "session/set_mode") return true;
-  return (
-    setting?.method === "session/set_config_option" &&
-    modelSettingConfig !== undefined &&
-    setting.params?.configId === modelSettingConfig
-  );
+    | { method?: unknown; params?: { configId?: unknown; modeId?: unknown } }
+    | null
+    | undefined;
+  if (setting?.method === "session/set_mode")
+    return fromClient || setting.params?.modeId === chosenMode
+      ? "owner"
+      : "reconcile";
+  if (setting?.method !== "session/set_config_option") return null;
+  const configId = setting.params?.configId;
+  if (modelSettingConfig !== undefined && configId === modelSettingConfig)
+    return "reconcile";
+  return modeSettingId !== undefined && configId === modeSettingId
+    ? fromClient
+      ? "owner"
+      : "reconcile"
+    : null;
 }
 
 function settingKeyOf({ method, params }: SessionSettingFrame): string {

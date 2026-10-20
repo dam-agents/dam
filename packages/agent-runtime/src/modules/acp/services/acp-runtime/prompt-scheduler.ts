@@ -41,7 +41,22 @@ export interface PromptSubmission {
   steerRefused?: boolean;
   steerNow?: boolean;
   queuedAt?: string;
-  origin?: "runtime" | "client";
+  modeRole?: ModeRole;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a setting does to the session's mode. A
+ * `reconcile` setting makes the harness report a mode the runtime caused — a
+ * mode it derived, or the fallback a model change forced — so such a report is
+ * not the session's. An `owner` setting is a mode the owner chose, which a
+ * report of it confirms rather than replaces.
+ */
+export type ModeRole = "reconcile" | "owner";
+
+export interface ModeWork {
+  role: ModeRole;
+  sent: boolean;
+  mode: string | undefined;
 }
 
 /**
@@ -52,10 +67,9 @@ export interface PromptSubmission {
  * waits for both. A setting the harness refused is asked for again as one block,
  * ahead of the queue and in the order the runtime lists it, so what depends on
  * it never applies against the state it failed to reach.
- * A submission says whether the runtime or a client asked for it, and only the
- * ones the runtime sent tell a mode the harness reports apart from a mode the
- * session took: work still queued behind a turn has not reached the harness, and
- * a client's own request is the session's choice rather than the runtime's.
+ * A submission says what its answer does to the mode (its ModeRole), and the
+ * scheduler reports the mode work it holds, sent or still queued, so the runtime
+ * can tell which mode reports it caused and which the session took.
  */
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
@@ -64,10 +78,9 @@ export interface PromptScheduler {
   dropQueuedSettings(
     sessionId: string,
     predicate: (entry: PromptSubmission) => boolean,
-    reason: string,
   ): PromptSubmission[];
   onSettingResponse(sessionId: string, outboundId: number): void;
-  modeWorkOutstanding(sessionId: string): boolean;
+  modeWork(sessionId: string): ModeWork[];
   onPromptResponse(
     sessionId: string,
     outboundId: number,
@@ -106,7 +119,7 @@ export interface PromptScheduler {
 
 export interface PromptSchedulerDeps {
   sendToAgent: (frame: unknown) => boolean;
-  affectsMode?: (frame: unknown) => boolean;
+  modeRoleOf?: (entry: PromptSubmission) => ModeRole | null;
   canStart: (entry: PromptSubmission) => boolean;
   sessionLoaded?: (sessionId: string) => boolean;
   onQueueDropped: (
@@ -262,6 +275,13 @@ export function createPromptScheduler(
     if (!sendSetting(head)) return;
     settings.shift();
     if (settings.length === 0) pendingSettings.delete(sessionId);
+  }
+
+  function modeValueOf(frame: unknown): string | undefined {
+    const params = (frame as { params?: { modeId?: unknown; value?: unknown } })
+      .params;
+    const value = params?.modeId ?? params?.value;
+    return typeof value === "string" ? value : undefined;
   }
 
   function sendSetting(entry: PromptSubmission): boolean {
@@ -578,20 +598,28 @@ export function createPromptScheduler(
       maybeStartNext(sessionId);
     },
 
-    modeWorkOutstanding(sessionId) {
-      const affectsMode = deps.affectsMode;
-      if (affectsMode === undefined) return false;
-      for (const entry of settingsInFlight.get(sessionId)?.values() ?? [])
-        if (entry.origin !== "client" && affectsMode(entry.frame)) return true;
-      return false;
+    modeWork(sessionId) {
+      const roleOf = deps.modeRoleOf;
+      if (roleOf === undefined) return [];
+      const work: ModeWork[] = [];
+      for (const entry of settingsInFlight.get(sessionId)?.values() ?? []) {
+        const role = roleOf(entry);
+        if (role !== null)
+          work.push({ role, sent: true, mode: modeValueOf(entry.frame) });
+      }
+      for (const entry of pendingSettings.get(sessionId) ?? []) {
+        const role = roleOf(entry);
+        if (role !== null)
+          work.push({ role, sent: false, mode: modeValueOf(entry.frame) });
+      }
+      return work;
     },
 
-    dropQueuedSettings(sessionId, predicate, reason) {
+    dropQueuedSettings(sessionId, predicate) {
       const queued = pendingSettings.get(sessionId);
       if (queued === undefined) return [];
       const dropped = queued.filter(predicate);
       if (dropped.length === 0) return [];
-      for (const entry of dropped) refuse(entry, reason);
       const kept = queued.filter((entry) => !predicate(entry));
       if (kept.length === 0) pendingSettings.delete(sessionId);
       else pendingSettings.set(sessionId, kept);

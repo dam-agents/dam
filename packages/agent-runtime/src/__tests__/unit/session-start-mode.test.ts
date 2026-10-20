@@ -522,9 +522,14 @@ describe("session start mode on the wire", () => {
       ...metadata.store.get("s")!.meta,
       settings: { mode: "plan" },
     });
-    switchModel(metadata, world, harness);
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      model: "ibm/claude-haiku-4-5",
+    });
+    world.runtime.syncSessionSettings("s");
     harness.emit(reportMode("acceptEdits"));
     expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "plan" });
+    answerModelFrame(harness);
   });
 
   /** TEST_SCENARIO: The model is refused while a mode waits behind it: the
@@ -663,6 +668,98 @@ describe("session start mode on the wire", () => {
     client.send(wire.prompt(3, "s", "next"));
     harness.replyTo("session/set_mode", {});
     expect(modesSent(harness)).toEqual(["plan", "auto"]);
+  });
+
+  /** TEST_SCENARIO: A client's own mode request and a platform choice overlap:
+   * the platform's newer Plan waits behind the client's call, and the mode the
+   * client's call reports is the older one, so it is neither saved over Plan nor
+   * allowed to drop the queued Plan frame. */
+  it("keeps a newer owner choice over an older client's report", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    const harness = world.harness();
+    answerModelFrame(harness);
+    harness.replyTo("session/set_mode", {});
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/set_mode",
+      params: { sessionId: "s", modeId: "default" },
+    });
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      settings: { mode: "plan" },
+    });
+    world.runtime.syncSessionSettings("s");
+
+    harness.emit(reportMode("default"));
+    harness.replyTo("session/set_mode", {});
+    expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "plan" });
+
+    client.send(wire.prompt(3, "s", "next"));
+    expect(modesSent(harness)).toEqual(["auto", "default", "plan"]);
+  });
+
+  /** TEST_SCENARIO: A client switches the model itself, and the harness reports
+   * the mode that switch forced: the fallback is the move's doing, not the
+   * session's mode, so nothing is saved and the next model change derives
+   * again. */
+  it("keeps a client's model fallback out of the session", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    const harness = world.harness();
+    answerModelFrame(harness);
+    harness.replyTo("session/set_mode", {});
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/set_config_option",
+      params: {
+        sessionId: "s",
+        configId: "model",
+        value: "ibm/claude-haiku-4-5",
+      },
+    });
+    harness.emit(reportMode("acceptEdits"));
+    harness.replyTo("session/set_config_option", {});
+    expect(metadata.store.get("s")?.meta.settings).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: A derived mode is dropped because the session took another;
+   * once the session ends, the process it ran in is free to be retired, so the
+   * dropped frame leaves no answer owed to it. */
+  it("releases the process after dropping a derived mode", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    const harness = world.harness();
+    answerModelFrame(harness);
+    harness.replyTo("session/set_mode", {});
+
+    client.send(wire.prompt(2, "s", "plan the change"));
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      model: "ibm/claude-haiku-4-5",
+    });
+    world.runtime.syncSessionSettings("s");
+    harness.emit(reportMode("plan"));
+    expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "plan" });
+
+    harness.replyTo("session/prompt", { stopReason: "end_turn" });
+    answerModelFrame(harness);
+    client.send(wire.prompt(3, "s", "done"));
+    harness.replyTo("session/set_mode", {});
+    harness.replyTo("session/prompt", { stopReason: "end_turn" });
+    world.runtime.releaseSession("s");
+    client.disconnect();
+    expect(world.runtime.holdsSessions()).toBe(false);
   });
 
   /** TEST_SCENARIO: A mode the session picked belongs to the session, so a
