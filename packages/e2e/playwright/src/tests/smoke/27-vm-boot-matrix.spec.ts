@@ -275,8 +275,6 @@ test.afterAll(async () => {
         onRunnerHost(agentId, `rm -f ${claimFillPath}`, { timeoutMs: 60_000 });
       }
     }
-  } finally {
-    await api.agents.delete.mutate({ id: agentId });
     try {
       onRunnerHost(agentId, "rm -f /tmp/boot-matrix-*", { timeoutMs: 60_000 });
     } catch (error) {
@@ -284,6 +282,8 @@ test.afterAll(async () => {
         `[e2e] could not clear this spec's files off the runner: ${(error as Error).message}`,
       );
     }
+  } finally {
+    await api.agents.delete.mutate({ id: agentId });
   }
 });
 
