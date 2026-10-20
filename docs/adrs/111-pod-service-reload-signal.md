@@ -16,6 +16,7 @@ summary: agent-runtime no longer writes the merged env for a pod service to re-r
 ## Context
 
 ADR-066 gives a pod service two ways to take an env change: re-read a snapshot file of the merged env that the runtime writes, or die by the reload signal's default action and be respawned with the fresh env.
+It states them as the runtime that "persists the merged env to a well-known snapshot file" and sends SIGHUP, and as "a service that handles the signal re-reads the snapshot and re-points itself without closing its listener".
 No shipped image carries a pod service.
 The repository's only reader of the snapshot was a Claude Code image script that rewrote a permission mode, and that script reads nothing from it now.
 What remains is a write on the path that refreshes the pod service's env: it runs first, and its failure stops the refresh, the model catalog refresh and the recovery scheduling that follow it.
