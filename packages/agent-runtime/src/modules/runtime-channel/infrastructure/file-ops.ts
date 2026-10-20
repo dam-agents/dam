@@ -297,9 +297,9 @@ function stripTrailingSep(p: string): string {
 function atomicWrite(target: string, content: string): void {
   const dir = dirname(target);
   mkdirSync(dir, { recursive: true });
-  const tmp = target + ".tmp";
-  writeFileSync(tmp, content, { mode: 0o666 });
+  const tmp = `${target}.${process.pid}.tmp`;
   try {
+    writeFileSync(tmp, content, { mode: 0o666 });
     renameSync(tmp, target);
   } catch (err) {
     try {
