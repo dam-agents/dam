@@ -184,9 +184,9 @@ describe("imageMove", () => {
     ).toBe("if-pod-idle");
   });
 
-  // TEST_SCENARIO: a vm agent's idle timeout is the install's, so its own
-  // TEST_SCENARIO: override does not make it always-on.
-  it("waits for a vm agent with a never-hibernate override to hibernate", () => {
+  // TEST_SCENARIO: a vm agent honours its own never-hibernate override, as a
+  // TEST_SCENARIO: container agent does, so it is moved only after the quiet wait.
+  it("moves a quiet vm agent with a never-hibernate override once its pod says idle", () => {
     expect(
       move(
         alwaysOn({
@@ -194,6 +194,23 @@ describe("imageMove", () => {
             name: "a",
             image: OLD_DEFAULT_IMAGE,
             hibernationTimeout: "0s",
+            backend: { type: "vm" },
+          },
+        }),
+      ),
+    ).toBe("if-pod-idle");
+  });
+
+  it("waits for a vm agent without an override to hibernate on its own", () => {
+    expect(
+      move(
+        agent({
+          hibernated: false,
+          ready: true,
+          quietSince: TWO_HOURS_AGO,
+          spec: {
+            name: "a",
+            image: OLD_DEFAULT_IMAGE,
             backend: { type: "vm" },
           },
         }),

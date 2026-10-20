@@ -196,6 +196,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {
 		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
+		idleChecker.WithOwnerLock(agentReconciler.OwnerLock)
 		agentReconciler.CheckVMInstall(ctx)
 		go every(ctx, 5*time.Minute, func() { agentReconciler.CheckVMInstall(ctx) })
 	}
