@@ -9,6 +9,7 @@ import {
   type ActivityFilters,
   defaultActivityFilters,
 } from "../../modules/home/lib/activity-filter.js";
+import type { SidebarSlice } from "../../modules/platform/store/sidebar.js";
 
 const h = vi.hoisted(() => ({
   client: null as QueryClient | null,
@@ -164,28 +165,20 @@ describe("removing the filter", () => {
   });
 
   function slice() {
-    let state: Record<string, unknown> = {};
-    const set = (
-      next: object | ((s: Record<string, unknown>) => object),
-    ): void => {
-      state = {
-        ...state,
-        ...(typeof next === "function" ? next(state) : next),
-      };
+    let state = {} as SidebarSlice;
+    const set = (next: Partial<SidebarSlice>) => {
+      state = { ...state, ...next };
     };
     state = createSidebarSlice(set as never, () => state as never, {} as never);
     return {
-      setFilters: (filters: ActivityFilters) =>
-        (state.setSidebarActivityFilters as (f: ActivityFilters) => void)(
-          filters,
-        ),
+      setFilters: (f: ActivityFilters) => state.setSidebarActivityFilters(f),
     };
   }
 
   it("TEST_SCENARIO: every Agent's Session list keeps its first page only, once the filter is removed", () => {
     const client = h.client as QueryClient;
-    const keyA = acpSessionsKeys.pagesOf("a-1", ["regular"]);
-    const keyB = acpSessionsKeys.pagesOf("a-2", ["regular"]);
+    const keyA = acpSessionsKeys.pagesOf("a-1", ["chats"]);
+    const keyB = acpSessionsKeys.pagesOf("a-2", ["chats"]);
     const history = acpSessionsKeys.history("a-1", "s1");
     client.setQueryData(keyA, loaded(40));
     client.setQueryData(keyB, loaded(1));
@@ -206,7 +199,7 @@ describe("removing the filter", () => {
 
   it("TEST_SCENARIO: changing one filter for another keeps what is loaded", () => {
     const client = h.client as QueryClient;
-    const key = acpSessionsKeys.pagesOf("a-3", ["regular"]);
+    const key = acpSessionsKeys.pagesOf("a-3", ["chats"]);
     client.setQueryData(key, loaded(3));
     const { setFilters } = slice();
     setFilters(slackOnly);
