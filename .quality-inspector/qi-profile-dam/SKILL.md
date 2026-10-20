@@ -22,8 +22,20 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
 
 ## What the nested install cannot do
 
-- No outbound network from inside the nested cluster: real model providers, GitHub, Slack and Telegram do not work.
+- No outbound network from inside the nested cluster beyond the sandbox accounts below: real model providers (unless lent), Telegram, and any GitHub or Slack other than the sandbox's do not work.
   An AC that needs any of them is `testable: no — external dependency`, unless it only checks that the UI offers or records something.
+- **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
+  - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`.
+    An agent reaches it through a **GitHub** connection made with a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN`.
+    The token may only read the repository and write its issues.
+    Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat — never by reading GitHub.
+  - **Slack** — one channel of a throwaway workspace; DAM's Slack app is installed there and connected at install, so the workspace needs no install flow.
+    An agent joins it under the agent's **Channels** → *Connect a Slack channel* with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
+    The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text)`, `botReplies(ts)`.
+    A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
+  - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
+    Without it, such ACs are `blocked`, naming `lend_model`.
+  - A sandbox whose credentials are not set leaves its ACs `testable: no — external dependency`.
 - Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`): it replies "Hello from the mock agent."
   to every prompt and never calls a model.
   An AC about what an agent says or decides is judged only on what the UI shows around that reply; with `mock_image` set empty, an AC that needs an agent to reply or run is `blocked`, not failed.

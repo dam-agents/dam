@@ -1,0 +1,41 @@
+#!/usr/bin/env bash
+# bin/sandbox check — the sandbox accounts answer (quality-inspector docs/profile-contract.md → sandbox).
+# One request per account and value; `ok` / `FAIL` lines; never a value. Exit 1 on any FAIL.
+set -u
+[ "${1:-}" = check ] || { echo "usage: bin/sandbox check" >&2; exit 2; }
+set -a; . "$QI_ENV_DIR/credentials.env"; set +a
+cfg="${QI_PROFILE_CONFIG:-}"; [ -n "$cfg" ] || cfg='{}'
+repo="$(jq -r '.sandbox_github_repo // ""' <<<"$cfg")"
+fails=0
+ok() { echo "ok $*"; }
+bad() { echo "FAIL $*"; fails=1; }
+
+# GitHub: who the token is, and that it sees the sandbox repository, which is no fork.
+if [ -z "${E2E_SANDBOX_GITHUB_TOKEN:-}" ] || [ -z "$repo" ]; then
+  bad "github E2E_SANDBOX_GITHUB_TOKEN or profile.sandbox_github_repo is not set"
+else
+  gh_get() { curl -s --max-time 20 -H "Authorization: Bearer $E2E_SANDBOX_GITHUB_TOKEN" -H 'Accept: application/vnd.github+json' "https://api.github.com/$1"; }
+  login="$(gh_get user | jq -r '.login // empty' 2>/dev/null)"
+  r="$(gh_get "repos/$repo")"
+  if [ -z "$login" ]; then bad "github the token is refused (expired, or no egress for GET api.github.com/user)"
+  elif [ "$(jq -r '.full_name // empty' <<<"$r" | tr 'A-Z' 'a-z')" != "$(tr 'A-Z' 'a-z' <<<"$repo")" ]; then bad "github the token cannot see $repo"
+  elif [ "$(jq -r .fork <<<"$r")" = true ]; then bad "github $repo is a fork — use a repository of its own"
+  elif [ "$(jq -r '.has_issues' <<<"$r")" != true ]; then bad "github $repo has issues turned off"
+  else ok "github token of $login sees $repo"; fi
+fi
+
+# Slack: the bot, the app-level token and the person, and the channel both are in.
+sl() { curl -s --max-time 20 -X POST -H "Authorization: Bearer $1" "https://slack.com/api/$2" ${3:+--data-urlencode "$3"}; }
+for who in BOT HUMAN; do
+  v="E2E_SANDBOX_SLACK_${who}_TOKEN"; w="$(tr 'A-Z' 'a-z' <<<"$who")"
+  r="$(sl "${!v:-none}" auth.test)"
+  [ "$(jq -r .ok <<<"$r" 2>/dev/null)" = true ] && ok "slack $w token is $(jq -r .user <<<"$r") in $(jq -r .team <<<"$r")" \
+    || bad "slack $w token refused: $(jq -r '.error // "no answer (egress for slack.com?)"' <<<"$r" 2>/dev/null)"
+  r="$(sl "${!v:-none}" conversations.info "channel=${E2E_SANDBOX_SLACK_CHANNEL_ID:-none}")"
+  [ "$(jq -r .channel.is_member <<<"$r" 2>/dev/null)" = true ] && ok "slack $w is in the channel" \
+    || bad "slack $w is not in E2E_SANDBOX_SLACK_CHANNEL_ID's channel: $(jq -r '.error // "not a member — invite it"' <<<"$r" 2>/dev/null)"
+done
+r="$(sl "${E2E_SANDBOX_SLACK_APP_TOKEN:-none}" apps.connections.open)"
+[ "$(jq -r .ok <<<"$r" 2>/dev/null)" = true ] && ok "slack Socket Mode answers the app-level token" \
+  || bad "slack app-level token refused: $(jq -r '.error // "no answer"' <<<"$r" 2>/dev/null)"
+exit "$fails"
