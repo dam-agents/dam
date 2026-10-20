@@ -33,3 +33,30 @@ export function AddRow({
     </button>
   );
 }
+
+export function RetryRow({
+  label,
+  testId,
+  retrying,
+  onRetry,
+}: {
+  label: string;
+  testId: string;
+  retrying: boolean;
+  onRetry: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      data-testid={testId}
+      aria-disabled={retrying || undefined}
+      aria-busy={retrying || undefined}
+      onClick={() => {
+        if (!retrying) onRetry();
+      }}
+      className={`flex h-[30px] w-full items-center rounded-lg px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
+    >
+      {retrying ? "Retrying…" : `${label} Retry`}
+    </button>
+  );
+}

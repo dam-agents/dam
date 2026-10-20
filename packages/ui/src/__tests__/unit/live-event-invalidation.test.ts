@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and an attention hint also refreshes the named agent's own session pages and single-Session lookups (a sync, every cached agent's), and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
+// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and with the new layout on, an attention hint also refreshes the named agent's own session pages and single-Session lookups (a sync, every cached agent's), and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
 import { type QueryKey, QueryObserver } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -11,6 +11,11 @@ const { invalidateForLiveEvent } =
   await import("../../modules/live-events/invalidation.js");
 
 const unsubscribes: (() => void)[] = [];
+const newLayout = (on: boolean) =>
+  queryClient.setQueryData(trpc.features.flags.queryKey(), (flags) => ({
+    ...flags!,
+    "new-layout": on,
+  }));
 afterEach(() => {
   unsubscribes.splice(0).forEach((off) => off());
   queryClient.clear();
@@ -71,6 +76,7 @@ it("collapses a burst of hints into one trailing refetch", async () => {
 
 // TEST_SCENARIO: an attention hint about agent A, sent for a rename or delete of a Session outside the owner's bounded feed, must refetch A's own session pages and A's single-Session lookups (the sidebar's older pins), and leave agent B's alone; otherwise an open list or an old pin keeps a stale title or a deleted row.
 it("refreshes the named agent's session pages and pin lookups on an attention hint", async () => {
+  newLayout(true);
   const { acpSessionsKeys } =
     await import("../../modules/sessions/api/keys.js");
   const pagesA = counter();
@@ -87,6 +93,7 @@ it("refreshes the named agent's session pages and pin lookups on an attention hi
 
 // TEST_SCENARIO: when the owner stream overflows, or a tab subscribes again, the server sends one sync instead of the named hints it dropped. Sync must then refetch every agent's session pages and single-Session lookups that are in the cache, and still leave session histories alone; otherwise a rename or delete lost in the overflow never reaches an open list or an old pin.
 it("refreshes cached session pages and pin lookups on sync, not histories", async () => {
+  newLayout(true);
   const { acpSessionsKeys } =
     await import("../../modules/sessions/api/keys.js");
   const pagesA = counter();
@@ -103,6 +110,7 @@ it("refreshes cached session pages and pin lookups on sync, not histories", asyn
 
 // TEST_SCENARIO: the sidebar's Pinned section watches an old pin's lookup only to read its activity time for ordering, beside the pin row's own lookup. With both watching (the ordering one set last, as its effect runs after the row's), a sync or a named hint must still run the row's real lookup and replace the cached Session; an ordering watcher that installs its own empty query function would make every refresh fail with "Missing queryFn".
 it("still runs an old pin's lookup while the ordering watcher reads it", async () => {
+  newLayout(true);
   const { acpSessionsKeys } =
     await import("../../modules/sessions/api/keys.js");
   const { pinActivityQuery } =
@@ -140,6 +148,7 @@ it("still runs an old pin's lookup while the ordering watcher reads it", async (
 
 // TEST_SCENARIO: a sync after a stream overflow repairs every cached agent's lists and pin lookups; with many agents it must not send all those reads at once, so at most a bounded number of query families refetch together.
 it("bounds how many families a sync refetches at once", async () => {
+  newLayout(true);
   const { acpSessionsKeys } =
     await import("../../modules/sessions/api/keys.js");
   let inFlight = 0;
@@ -162,4 +171,18 @@ it("bounds how many families a sync refetches at once", async () => {
 
   expect(peak).toBeGreaterThan(1);
   expect(peak).toBeLessThanOrEqual(8);
+});
+
+// TEST_SCENARIO: with the new layout off, no sidebar tree reads other agents' session pages, so an attention hint must not refetch them; the current layout's open chat keeps its own session watch.
+it("leaves session pages alone on an attention hint while the new layout is off", async () => {
+  const { acpSessionsKeys } =
+    await import("../../modules/sessions/api/keys.js");
+  newLayout(false);
+  const pagesA = counter();
+  await watch(acpSessionsKeys.pagesOf("A", ["chats"]), pagesA.fn);
+
+  await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
+  await invalidateForLiveEvent({ topic: "sync" });
+
+  expect(pagesA.calls()).toBe(1);
 });

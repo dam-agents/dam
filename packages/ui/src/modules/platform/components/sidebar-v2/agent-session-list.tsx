@@ -15,6 +15,7 @@ import {
 } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import { splitPinned } from "../../lib/sidebar-tree.js";
+import { RetryRow } from "./add-row.js";
 import { TreeSessionRow } from "./tree-session-row.js";
 
 function useAgentTreeRows(agentId: string) {
@@ -87,17 +88,12 @@ export function AgentSessionList({
         list.loading && !list.failed && <SessionListSkeleton />
       )}
       {list.failed && (
-        <button
-          type="button"
-          data-testid="sidebar-agent-sessions-failed"
-          onClick={() => void list.retry()}
-          className={cn(
-            "flex h-[30px] items-center rounded-lg pl-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-            FOCUS_RING,
-          )}
-        >
-          Couldn't load sessions. Retry
-        </button>
+        <RetryRow
+          label="Couldn't load sessions."
+          testId="sidebar-agent-sessions-failed"
+          retrying={list.retrying}
+          onRetry={() => void list.retry()}
+        />
       )}
       {!list.loading && !list.failed && rows.length === 0 && !hasNextPage && (
         <p className="py-1.5 pl-2 text-xs text-muted-foreground">

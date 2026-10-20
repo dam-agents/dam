@@ -1,8 +1,5 @@
 import { useMemo } from "react";
 
-import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { cn } from "@/lib/utils";
-
 import { useStore } from "../../../../store.js";
 import type { AgentView, SessionView } from "../../../../types.js";
 import {
@@ -25,6 +22,7 @@ import {
 import { useSessionConversations } from "../../../sessions/lib/use-session-conversations.js";
 import { useSessionSpend } from "../../../spend/api/queries.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
+import { RetryRow } from "./add-row.js";
 import { TreeSessionRow } from "./tree-session-row.js";
 
 export function FeedPinnedRow({
@@ -81,19 +79,14 @@ export function OffFeedPinnedRow({
       s.sessionId === sessionId,
   );
   if (!session)
-    return isError && !isFetching ? (
+    return isError ? (
       <div data-pin-key={`${agent.id}:${sessionId}`}>
-        <button
-          type="button"
-          data-testid="sidebar-pin-failed"
-          onClick={() => void refetch()}
-          className={cn(
-            "flex h-[30px] w-full items-center rounded-lg px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-            FOCUS_RING,
-          )}
-        >
-          Couldn't load a pinned session of {agent.name}. Retry
-        </button>
+        <RetryRow
+          label={`Couldn't load a pinned session of ${agent.name}.`}
+          testId="sidebar-pin-failed"
+          retrying={isFetching}
+          onRetry={() => void refetch()}
+        />
       </div>
     ) : null;
   const working = !!session.running;

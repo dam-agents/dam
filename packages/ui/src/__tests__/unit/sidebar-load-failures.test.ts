@@ -8,8 +8,9 @@ vi.stubGlobal("window", new EventTarget());
 const list = vi.hoisted(() => ({
   failed: true,
   loading: false,
+  retrying: false,
 }));
-const pin = vi.hoisted(() => ({ isError: true }));
+const pin = vi.hoisted(() => ({ isError: true, isFetching: false }));
 
 vi.mock("../../store.js", async () => {
   const { defaultActivityFilters } =
@@ -36,6 +37,7 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     provisional: false,
     recordRead: true,
     failed: list.failed,
+    retrying: list.retrying,
     retry: vi.fn(),
     hasNextPage: false,
     isFetchingNextPage: false,
@@ -52,7 +54,7 @@ vi.mock("../../modules/sessions/api/queries.js", () => ({
   useAgentSession: () => ({
     data: undefined,
     isError: pin.isError,
-    isFetching: false,
+    isFetching: pin.isFetching,
     refetch: vi.fn(),
   }),
 }));
@@ -81,6 +83,8 @@ const { OffFeedPinnedRow } =
 beforeEach(() => {
   list.failed = true;
   list.loading = false;
+  list.retrying = false;
+  pin.isFetching = false;
   pin.isError = true;
 });
 
@@ -131,4 +135,25 @@ it("keeps a retry row for a pin whose first lookup failed", () => {
       createElement(OffFeedPinnedRow, { agent, sessionId: "old" }),
     ),
   ).toBe("");
+});
+
+// TEST_SCENARIO: pressing Retry starts a refetch; the retry control must stay in place, marked busy, while it runs, so keyboard focus is not lost to a control that vanishes and comes back if the retry fails again.
+it("keeps each retry control mounted and busy while it retries", () => {
+  list.retrying = true;
+  const listHtml = renderToStaticMarkup(
+    createElement(AgentSessionList, { agentId: "a" }),
+  );
+  expect(listHtml).toContain('data-testid="sidebar-agent-sessions-failed"');
+  expect(listHtml).toContain('aria-busy="true"');
+  expect(listHtml).toContain("Retrying…");
+
+  pin.isFetching = true;
+  const pinHtml = renderToStaticMarkup(
+    createElement(OffFeedPinnedRow, {
+      agent: { id: "a", name: "dam" } as never,
+      sessionId: "old",
+    }),
+  );
+  expect(pinHtml).toContain('data-testid="sidebar-pin-failed"');
+  expect(pinHtml).toContain('aria-disabled="true"');
 });

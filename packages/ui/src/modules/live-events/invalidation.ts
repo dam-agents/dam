@@ -15,6 +15,14 @@ const harnessConfigOf = (agentId?: string): QueryKey =>
     ? [...trpc.harnessConfig.pathKey(), { input: { agentId } }]
     : trpc.harnessConfig.pathKey();
 
+function newLayoutOn(): boolean {
+  return (
+    queryClient.getQueryData<Record<string, boolean>>(
+      trpc.features.flags.queryKey(),
+    )?.["new-layout"] === true
+  );
+}
+
 function cachedSessionAgents(): string[] {
   const ids = queryClient
     .getQueryCache()
@@ -38,7 +46,12 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
     artifacts: () => [trpc.artifactLibrary.pathKey()],
     attention: (agentId) => [
       trpc.attention.pathKey(),
-      ...(agentId ? [agentId] : cachedSessionAgents()).flatMap((id) => [
+      ...(!newLayoutOn()
+        ? []
+        : agentId
+          ? [agentId]
+          : cachedSessionAgents()
+      ).flatMap((id) => [
         acpSessionsKeys.pages(id),
         acpSessionsKeys.sessions(id),
       ]),
