@@ -3,7 +3,9 @@ import { expect, test } from "@playwright/test";
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
+  chmodSync,
   existsSync,
+  mkdirSync,
   mkdtempSync,
   readFileSync,
   rmSync,
@@ -301,33 +303,43 @@ const DEFAULT_FILL = [
   `: > ${claimFiller}.done`,
 ].join("\n");
 
-// UNIT_BOUNDARY_DESCRIPTION: starts the filler, in a session of its own, and returns only once the filler has recorded the pid, group and start time it has in the kernel's record of it, because the teardown kills by that group and a call that timed out after the fork would otherwise leave a writer no group names. All three are written by the filler on its first line, before it writes elsewhere, so a file that is there names a process the kernel agrees is still the filler. `setsid` is what gives the filler a group of its own; without it the filler would share the runner's group and signalling that group would kill the runner, so a launch with no `setsid` fails rather than falling back to a group that is not the filler's. The wait for the record is bounded, and a filler that never wrote one is a failed launch.
+// UNIT_BOUNDARY_DESCRIPTION: starts the filler, in a session of its own, and returns only once the filler has recorded the pid, group and start time it has in the kernel's record of it, because the teardown kills by that group and a call that timed out after the fork would otherwise leave a writer no group names. The record is a prerequisite of the allocation and not bookkeeping: the filler writes it first, reads it back, and exits before its body runs if what it wrote is not what it reads, so a fill that cannot be named is never written. It is written beside its final name and renamed into it, so a reader never sees half a record, and a record left by an earlier filler must be cleared before the fork, or the launch stops instead of letting a new writer hide under a stale name. The filler then stays alive as the group's leader until the teardown ends it, because a group whose leader is gone cannot be proved to be this filler's: the kernel may hand a freed group id to another session, and membership alone would then name a stranger. `setsid` is what gives the filler a group of its own; without it the filler would share the runner's group and signalling that group would kill the runner, so a launch with no `setsid` fails rather than falling back to a group that is not the filler's. The wait for the record is bounded, and a filler that refused to record fails the launch rather than leaving the teardown to find a writer it cannot name.
 function launchFiller(sizeKiB: string, body = DEFAULT_FILL): string {
   return [
     `cat > ${claimFiller} <<'FILL'`,
     "#!/bin/sh",
-    `sz=$1`,
+    "sz=$1",
     `set -- $(sed 's/.*) //' /proc/$$/stat)`,
-    `echo "$$ \${3} \${20}" > ${claimFiller}.pid`,
+    `id="$$ \${3} \${20}"`,
+    `{ echo "$id" > ${claimFiller}.pid.tmp && [ "$(cat ${claimFiller}.pid.tmp 2>/dev/null)" = "$id" ] && mv -f ${claimFiller}.pid.tmp ${claimFiller}.pid; } || { echo 'the filler could not record its identity, so it allocates nothing' >&2; exit 1; }`,
     `set -- "$sz"`,
     body,
+    "exec sleep 86400",
     "FILL",
-    `rm -f ${claimFiller}.done ${claimFiller}.pid`,
+    `rm -rf ${claimFiller}.done ${claimFiller}.pid ${claimFiller}.pid.tmp`,
+    `[ ! -e ${claimFiller}.pid ] || { echo 'the identity record of an earlier filler could not be cleared, so this launch allocates nothing' >&2; exit 1; }`,
     "command -v setsid >/dev/null || { echo 'no setsid: the filler cannot be given a group of its own' >&2; exit 1; }",
     `setsid sh ${claimFiller} ${sizeKiB} </dev/null >/dev/null 2>&1 &`,
     "i=0",
     `while [ $i -lt 200 ] && [ ! -s ${claimFiller}.pid ]; do sleep 0.05; i=$((i + 1)); done`,
-    `[ -s ${claimFiller}.pid ] || { echo 'the filler recorded no group' >&2; exit 1; }`,
+    `[ -s ${claimFiller}.pid ] || { echo 'the filler recorded no identity, so no fill is known to be running' >&2; exit 1; }`,
   ].join("\n");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner-side teardown of the claim fill: it ends the filler's whole process group, waits until that group has no member left, and only then removes the file, failing rather than reporting success when any of that did not happen. The group is read from what the filler recorded of itself, and its members are read from the kernel's own records, so nothing is matched by command line and the teardown cannot find itself. Signalling the group on every pass is what catches a child forked between the signal and the scan: the group exists until its last member is gone, so a late `fallocate` is either in this pass's scan or in the next signal. A group id is reused once its last member is gone, so a group is signalled only while it is still proved to be the filler's: while the leader lives, the recorded pid must still be in the recorded group and still be the process that started at the recorded time; once the leader is gone, a group that still has members can only be the leftovers of this one, since the kernel will not hand a group id to a new leader while members still hold it. A group that is no longer the filler's is left alone and the teardown fails rather than signalling a stranger; a group with no members left is done, and only the files are left to remove. Zombies are not members to wait for, since they cannot write and their reaping is their parent's. Running out of the wait is a failure, so a writer that never ends fails the run instead of passing quietly, and the caller's retry has a real failure to retry. The removal is read back, because `rm` alone is not evidence: a claim remounted read-only leaves the fill behind, and a shell that does not test `rm` would report success over it.
+// UNIT_BOUNDARY_DESCRIPTION: the runner-side teardown of the claim fill: it ends the filler's whole process group, waits until that group has no member left, and only then removes the file, failing rather than reporting success when any of that did not happen. The group is read from what the filler recorded of itself, and its members are read from the kernel's own records, so nothing is matched by command line and the teardown cannot find itself. Signalling the group on every pass is what catches a child forked between the signal and the scan: the group exists until its last member is gone, so a late `fallocate` is either in this pass's scan or in the next signal. A group is signalled only while it is proved to be the filler's, and only the leader proves that: the recorded pid must still be in the recorded group and still be the process that started at the recorded time. A group whose leader is gone is refused, whatever its members look like, because the kernel may have handed that group id to another session, and its members would then be a stranger's; the one exception is a group already proved before a signal, which can only hold this filler's leftovers, since the group id cannot be reused while members hold it and nothing else can join this session. The record is kept until the fill's removal has been read back, so a removal that failed is retried by a later call rather than left nameless; a call that finds no record passes only when the fill and the script are gone too, so repeating a finished teardown is safe and an unrecorded writer is not accepted. Zombies are not members to wait for, since they cannot write and their reaping is their parent's. Running out of the wait is a failure, so a writer that never ends fails the run instead of passing quietly, and the caller's retry has a real failure to retry. The removal is read back, because `rm` alone is not evidence: a claim remounted read-only leaves the fill behind, and a shell that does not test `rm` would report success over it.
 function stopFillerAndClear(): string {
   return [
     'fail() { echo "boot-matrix teardown: $*" >&2; exit 1; }',
+    `if [ ! -e ${claimFiller}.pid ]; then`,
+    `  [ ! -e ${claimFillPath} ] && [ ! -e ${claimFiller} ] && exit 0`,
+    `  fail "no filler identity is on the runner, so the writer of ${claimFillPath} cannot be named and it is left as it is"`,
+    "fi",
     FILLER_GROUP,
-    '[ -n "$p" ] || fail "no filler group was recorded, so no writer can be named"',
-    '[ "$p" -gt 1 ] 2>/dev/null || fail "the recorded group $p is not a process group this filler could own"',
+    '[ -n "$lp" ] && [ -n "$p" ] && [ -n "$lt" ] || fail "the recorded identity is incomplete: $(cat ' +
+      claimFiller +
+      '.pid 2>/dev/null)"',
+    'case "$lp$p$lt" in *[!0-9]*) fail "the recorded identity is not three numbers: $lp $p $lt" ;; esac',
+    '[ "$p" -gt 1 ] || fail "the recorded group $p is not a process group this filler could own"',
     "members() {",
     "  n=0",
     "  for c in /proc/[0-9]*; do",
@@ -336,26 +348,28 @@ function stopFillerAndClear(): string {
     "  done",
     '  echo "$n"',
     "}",
-    "owned() {",
-    '  if [ -d "/proc/$lp" ]; then',
-    '    set -- $(sed "s/.*) //" "/proc/$lp/stat" 2>/dev/null)',
-    '    [ "$3" = "$p" ] && [ "${20}" = "$lt" ]',
-    "    return",
-    "  fi",
-    '  [ "$(members)" -gt 0 ]',
+    "leader() {",
+    '  [ -d "/proc/$lp" ] || return 1',
+    '  set -- $(sed "s/.*) //" "/proc/$lp/stat" 2>/dev/null)',
+    '  [ "$3" = "$p" ] && [ "${20}" = "$lt" ]',
     "}",
+    "proved=0",
     "i=0",
     "while [ $i -lt 400 ]; do",
     '  [ "$(members)" -eq 0 ] && break',
-    '  owned || fail "the group $p the launch recorded is no longer this filler\'s, so it is left alone"',
+    "  if leader; then proved=1",
+    '  else [ "$proved" -eq 1 ] || fail "the group $p the launch recorded has no leader that is still this filler, so it is not proved to be this filler\'s and is left alone"',
+    "  fi",
     '  kill -9 -"$p" 2>/dev/null',
     "  sleep 0.05",
     "  i=$((i + 1))",
     "done",
     '[ "$(members)" -eq 0 ] || fail "the filler group $p still has $(members) process(es) after the wait"',
-    `rm -f ${claimFillPath} ${claimFiller} ${claimFiller}.pid ${claimFiller}.done 2>/dev/null`,
-    `[ ! -e ${claimFillPath} ] || fail "${claimFillPath} is still on the claim after its removal"`,
+    `rm -f ${claimFillPath} 2>/dev/null`,
+    `[ ! -e ${claimFillPath} ] || fail "${claimFillPath} is still on the claim after its removal; the identity record is kept so that a later call can name the writer again"`,
+    `rm -f ${claimFiller} ${claimFiller}.pid ${claimFiller}.done ${claimFiller}.pid.tmp 2>/dev/null`,
     `[ ! -e ${claimFiller} ] || fail "${claimFiller} is still on the runner after its removal"`,
+    `[ ! -e ${claimFiller}.pid ] || fail "${claimFiller}.pid is still on the runner after its removal"`,
     `df -Pk ${claimDir} | tail -1`,
   ].join("\n");
 }
@@ -603,9 +617,12 @@ test("launches the claim filler and takes it down as the runner would", () => {
       .status !== 0,
     "this host has no setsid or no /proc, which the runner's teardown is built on",
   );
+  const groups: string[] = [];
   const dir = mkdtempSync(join(tmpdir(), "boot-matrix-teardown-"));
   const filler = join(dir, "fill");
-  const claim = join(dir, "claim");
+  const claimDirLocal = join(dir, "claim-dir");
+  const claim = join(claimDirLocal, "claim");
+  mkdirSync(claimDirLocal);
   writeFileSync(claim, "");
   const locally = (script: string) =>
     script.split(claimFiller).join(filler).split(claimFillPath).join(claim);
@@ -626,6 +643,7 @@ test("launches the claim filler and takes it down as the runner would", () => {
     const started = run(launch([`sleep 60 &`, `sleep 61`].join("\n")));
     expect(started.status, `the launch failed: ${started.stderr}`).toBe(0);
     const group = readFileSync(`${filler}.pid`, "utf8").trim().split(" ")[1];
+    groups.push(group);
     const taken = run(locally(stopFillerAndClear()));
     expect(
       taken.signal,
@@ -641,19 +659,95 @@ test("launches the claim filler and takes it down as the runner would", () => {
     );
     expect(members(group), "a member of the filler's group survived").toBe("0");
 
-    rmSync(`${filler}.pid`, { force: true });
-    const missing = run(locally(stopFillerAndClear()));
-    expect(missing.status, "a teardown with no recorded group passed").not.toBe(
+    expect(
+      run(locally(stopFillerAndClear())).status,
+      "repeating a finished teardown was not safe",
+    ).toBe(0);
+
+    writeFileSync(claim, "content");
+    writeFileSync(`${filler}.pid`, "1 999999 1");
+    const kept = run(locally(stopFillerAndClear()));
+    expect(kept.status, "a fill that was already gone failed").toBe(0);
+    rmSync(claim, { force: true });
+
+    const relaunched = run(launch([`sleep 60 &`, `sleep 61`].join("\n")));
+    expect(relaunched.status, `the launch failed: ${relaunched.stderr}`).toBe(
       0,
     );
-    expect(missing.stderr).toContain("no filler group was recorded");
-    writeFileSync(`${filler}.pid`, "1 999999 1");
-    const gone = run(locally(stopFillerAndClear()));
+    groups.push(readFileSync(`${filler}.pid`, "utf8").trim().split(" ")[1]);
+    writeFileSync(claim, "content");
+    chmodSync(claimDirLocal, 0o500);
+    const blocked = run(locally(stopFillerAndClear()));
+    chmodSync(claimDirLocal, 0o700);
     expect(
-      gone.status,
-      `a fill that was already gone failed: ${gone.stderr}`,
+      blocked.status,
+      "a fill that could not be removed reported success",
+    ).not.toBe(0);
+    expect(blocked.stderr).toContain("is still on the claim");
+    expect(
+      existsSync(`${filler}.pid`),
+      "the identity record was removed before the fill, so a retry cannot name the writer",
+    ).toBe(true);
+    expect(
+      run(locally(stopFillerAndClear())).status,
+      "a retry after the claim became writable could not finish the removal",
     ).toBe(0);
+    expect(existsSync(claim), "the retried teardown left the fill").toBe(false);
+
+    const recordDir = join(dir, "record-dir");
+    mkdirSync(recordDir);
+    chmodSync(recordDir, 0o500);
+    const refused = run(
+      locally(launch([`sleep 30`].join("\n")))
+        .split(`${filler}.pid`)
+        .join(join(recordDir, "identity")),
+    );
+    chmodSync(recordDir, 0o700);
+    expect(
+      refused.status,
+      "the launch passed although the filler could not record its identity",
+    ).not.toBe(0);
+    expect(refused.stderr).toContain("recorded no identity");
+    expect(existsSync(claim), "the filler allocated without an identity").toBe(
+      false,
+    );
+
+    rmSync(`${filler}.pid`, { force: true });
+    writeFileSync(claim, "content");
+    const orphaned = run(launch([`sleep 120 &`, `sleep 121`].join("\n")));
+    expect(orphaned.status, `the launch failed: ${orphaned.stderr}`).toBe(0);
+    const [orphanLeader, orphanGroup] = readFileSync(`${filler}.pid`, "utf8")
+      .trim()
+      .split(" ");
+    groups.push(orphanGroup);
+    spawnSync("sh", ["-c", `kill -9 ${orphanLeader}`]);
+    const leaderGone = () => !existsSync(`/proc/${orphanLeader}`);
+    for (let i = 0; i < 200 && !leaderGone(); i++) {
+      spawnSync("sh", ["-c", "sleep 0.05"]);
+    }
+    expect(leaderGone(), "the leader of the filler did not go").toBe(true);
+    expect(
+      members(orphanGroup),
+      "the group had no member left, so this case proves nothing",
+    ).not.toBe("0");
+    const stranger = run(locally(stopFillerAndClear()));
+    expect(
+      stranger.status,
+      "a group whose leader is gone was signalled on membership alone",
+    ).not.toBe(0);
+    expect(stranger.stderr).toContain("not proved to be this filler");
+    expect(
+      members(orphanGroup),
+      "the teardown killed a group it could not prove was the filler's",
+    ).not.toBe("0");
+    expect(
+      existsSync(claim),
+      "the fill was removed by a teardown it refused to run",
+    ).toBe(true);
   } finally {
+    for (const group of groups) {
+      spawnSync("sh", ["-c", `kill -9 -${group} 2>/dev/null`]);
+    }
     rmSync(dir, { recursive: true, force: true });
   }
 });
