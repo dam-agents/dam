@@ -37,6 +37,7 @@ interface AcpNativePayload {
   args?: unknown;
   rpcId?: number | string;
   options?: AcpPermissionOption[];
+  optionsWhole?: true;
 }
 
 export interface SpendLimitPayload {
