@@ -105,6 +105,21 @@ jobs:
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
+      # Cargo's downloads keep their own entry: mr boxington's objects payload
+      # carries compiled output alone, and its target payload carries these but
+      # restores no objects.
+      - id: cargo-cache
+        if: steps.rust-needed.outputs.needed == 'true'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: &cargo-paths |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: &cargo-key cargo-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch') }}
+          restore-keys: |
+            cargo-${{ runner.os }}-check-test-
+            cargo-${{ runner.os }}-
       # build-images and e2e.yml's lanes restore the Go and pnpm caches too,
       # read-only.
       - id: go-cache
@@ -136,17 +151,21 @@ jobs:
           path: &pnpm-verified ~/.cache/pnpm/lockfile-verified.jsonl
           key: &pnpm-verified-key pnpm-lockfile-verified-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
-      # mr boxington, whose compiled vm-runner crates this job's GitHub Actions
-      # cache entry holds: a push to main saves what it built, and every other
-      # run only restores, as the step it replaces did. It must come after
-      # setup-mise, which installs the mbx the action reuses and the rustc its
-      # cache key follows; the wrapper in `.mise/config.toml` is what puts the
-      # build's `cargo` through it. Releases keep their own cache: a release
-      # must not read one it did not build (see rust-release, and e2e's lane).
+      # mr boxington keeps the vm-runner crates this job compiled as objects in
+      # its store, and the objects payload moves the ones the build used or
+      # produced: a push to main saves them, and every other run only restores,
+      # as the step it replaces did. Per-crate objects are what let a pull
+      # request restore the crates a change did not touch, which the archive the
+      # target payload carries cannot do. It must come after setup-mise, which
+      # installs the mbx the action reuses and the rustc its cache key follows;
+      # the wrapper in `.mise/config.toml` is what puts the build's `cargo`
+      # through it. Releases keep their own cache: a release must not read one
+      # it did not build (see rust-release, and e2e's lane).
       - id: mbx
         if: steps.rust-needed.outputs.needed == 'true'
         uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
         with:
+          github-cache-mode: objects
           working-directory: packages/vm-runner
       # Every artifact's atime goes back to the epoch, so the ones this run
       # reads stand out afterwards; see the prune below.
@@ -186,6 +205,11 @@ jobs:
         with:
           path: *go-paths
           key: *go-key
+      - if: ${{ inputs.main-push && steps.cargo-cache.outputs.cache-hit != 'true' && steps.rust-needed.outputs.needed == 'true' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: *cargo-paths
+          key: *cargo-key
       - if: ${{ inputs.main-push && steps.pnpm-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
