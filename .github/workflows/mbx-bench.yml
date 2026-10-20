@@ -1,0 +1,115 @@
+# Trial only: measures the Rust cache of PR #5463. Deleted before that PR reports.
+name: mbx bench
+
+on:
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: old restores today's rust-Linux-check-test entry; target and objects run the action
+        type: choice
+        options: [old, target, objects]
+        default: target
+      generation:
+        description: Cache series; a fresh value makes the next run cold
+        type: string
+        default: bench-a
+      save:
+        description: Let the action save an entry for this branch (never main)
+        type: boolean
+        default: true
+      edit:
+        description: Change made to the tree before the build
+        type: choice
+        options: [none, source, lock]
+        default: none
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Today's cache, restored the way a pull request restores it: one entry
+      # holding Cargo's downloads and the whole target.
+      - if: inputs.mode == 'old'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+            packages/vm-runner/target
+          key: rust-bench-${{ github.sha }}-${{ inputs.generation }}
+          restore-keys: ${{ inputs.generation == 'cold' && 'rust-bench-absent-' || 'rust-Linux-check-test-' }}
+      # The objects payload carries no Cargo downloads, so that mode caches them
+      # here, as the pull request would have to.
+      - if: inputs.mode == 'objects'
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-bench-${{ inputs.generation }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock') }}
+          restore-keys: cargo-bench-
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      - if: inputs.mode != 'old'
+        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        with:
+          github-cache-mode: ${{ inputs.mode }}
+          cache-generation: ${{ inputs.generation }}
+          save-on-workflow-dispatch: ${{ inputs.save }}
+          working-directory: packages/vm-runner
+      - name: Edit the tree
+        if: inputs.edit != 'none'
+        working-directory: packages/vm-runner
+        env:
+          MBX_DISABLE: "1"
+          EDIT: ${{ inputs.edit }}
+        run: |
+          set -euo pipefail
+          if [ "$EDIT" = source ]; then
+            printf '\n// bench %s\n' "$(date +%s)" >> src/main.rs
+            git diff --stat
+          else
+            cargo update -p memchr --precise 2.7.4
+            git diff Cargo.lock
+          fi
+      # The two tasks the mise check job compiles when it builds Rust, side by
+      # side, as that job runs them.
+      - if: inputs.mode == 'old'
+        run: echo "MBX_DISABLE=1" >> "$GITHUB_ENV"
+      - name: Rust tasks
+        run: |
+          set -o pipefail
+          start=$(date +%s)
+          mise run --continue-on-error //packages/vm-runner:check:lint ::: //packages/vm-runner:test 2>&1 | tee /tmp/ci-mbx-trial-bench.log
+          echo "total=$(( $(date +%s) - start ))s"
+      - name: Report
+        if: always()
+        env:
+          MODE: ${{ inputs.mode }}
+          GENERATION: ${{ inputs.generation }}
+          EDIT: ${{ inputs.edit }}
+        run: |
+          set -uo pipefail
+          echo "### mode=$MODE generation=$GENERATION edit=$EDIT"
+          grep -aE "Finished in|mbx\[cache\]:|^total=" /tmp/ci-mbx-trial-bench.log | tail -20
+          echo "compilations: $(grep -acE '(Compiling|Checking) ' /tmp/ci-mbx-trial-bench.log)"
+          du -sh packages/vm-runner/target ~/.cache/mbx 2>/dev/null || true
+      # Saves the Cargo downloads for the objects mode, so the next run of that
+      # mode downloads nothing.
+      - if: inputs.mode == 'objects' && inputs.save
+        continue-on-error: true
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: cargo-bench-${{ inputs.generation }}-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.lock') }}
