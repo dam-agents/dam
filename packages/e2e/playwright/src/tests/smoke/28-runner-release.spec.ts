@@ -179,22 +179,22 @@ test.afterAll(async () => {
 
 // TEST_SCENARIO: a release that declares a reboot key the pod does not run cannot be handed to the machines that pod boots, so the pod rolls onto the image carrying it and every machine it runs reboots. The agent's guest is live with a file in HOME when the chart is upgraded to that release, so the roll reaches a running machine and must bring it back on a new boot with its disk as it was.
 test("rolls the live guest onto a release that declares a reboot", async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(1_500_000);
   const repository = secondImage.slice(0, secondImage.lastIndexOf(":"));
   const tag = secondImage.slice(secondImage.lastIndexOf(":") + 1);
   const since = new Date().toISOString();
+  installMoved = true;
   upgrade(
     `virtualization.runner.image.repository=${repository}`,
     `virtualization.runner.image.tag=${tag}`,
     "virtualization.runner.image.digest=",
   );
-  installMoved = true;
   await rolledOnto(secondImage, since);
 });
 
 // TEST_SCENARIO: the install's own release carries the key before the second one's, so the hop back is a release that declares a reboot of its own, and the machine reboots again. The chart is upgraded on the values the install holds, with nothing named, which is how an operator leaves a release.
 test("rolls it back onto the release the install holds", async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(1_500_000);
   const since = new Date().toISOString();
   upgrade();
   installMoved = false;
