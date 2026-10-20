@@ -8,7 +8,6 @@ import {
 } from "../../lib/agents.js";
 import { createApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { onLaneBackend } from "../../lib/backend.js";
 import { getConnectionId } from "../../lib/connections.js";
 import {
   agentName,
@@ -111,13 +110,11 @@ test("one-click create from the Generalist kit, then the mock agent with the con
   });
 
   await test.step("create the suite's mock agent with the connection", async () => {
-    await api.agents.create.mutate(
-      onLaneBackend({
-        name: agentName,
-        templateId: harnessName,
-        connectionIds: [await getConnectionId(api, connectionName)],
-      }),
-    );
+    await api.agents.create.mutate({
+      name: agentName,
+      templateId: harnessName,
+      connectionIds: [await getConnectionId(api, connectionName)],
+    });
     const agentId = await waitForAgentRunning(api, agentName);
     await expectAgentEnv(
       api,

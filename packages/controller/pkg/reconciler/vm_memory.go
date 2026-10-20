@@ -98,7 +98,7 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: hibernated for room that would still not suffice.
 // UNIT_BOUNDARY_DESCRIPTION: A `partial` reclaim, on the runner's own pressure
 // UNIT_BOUNDARY_DESCRIPTION: signal, hibernates what it can instead: near an
-// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes every machine of the owner,
+// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes a machine of the owner,
 // UNIT_BOUNDARY_DESCRIPTION: freeing some memory beats freeing none. When no
 // UNIT_BOUNDARY_DESCRIPTION: agent says it is idle, it hibernates the agents
 // UNIT_BOUNDARY_DESCRIPTION: that did not answer as a last resort, as the kill
@@ -141,7 +141,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		if left <= 0 {
 			break
 		}
-		if c.vmMiB == 0 || c.refused || c.booting && !partial {
+		if c.vmMiB == 0 || c.holdsNothing || c.booting && !partial {
 			continue
 		}
 		idle, answered := r.podStatus(ctx, c.name)
@@ -330,14 +330,30 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 	return nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what the owner reads while a start waits for the node: it is not their memory that is gone, so the message says what the platform is doing about it rather than quote a pool that has room. Where the node has deferred or refused the resize the controller frees that room from their idle agents itself, and the sentence stays true: the machine starts once the node grants what it holds.
+const vmAwaitingAllocationMessage = "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does."
+
 // UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for memory frees the
 // UNIT_BOUNDARY_DESCRIPTION: room it lacks from the owner's idle agents, and
 // UNIT_BOUNDARY_DESCRIPTION: the parked retry starts it once their machines
-// UNIT_BOUNDARY_DESCRIPTION: have stopped.
-func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *apiv1.Agent, owner string) error {
+// UNIT_BOUNDARY_DESCRIPTION: have stopped. `boundMiB` is the room the start is
+// UNIT_BOUNDARY_DESCRIPTION: measured against: the owner's pool for a start the
+// UNIT_BOUNDARY_DESCRIPTION: pool refused, and what the node holds for the
+// UNIT_BOUNDARY_DESCRIPTION: runner for one the node has not granted, where the
+// UNIT_BOUNDARY_DESCRIPTION: pool has room and its figure would free nothing.
+func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *apiv1.Agent, owner string, boundMiB func() (int, error)) error {
 	_, err := r.reclaimRunnerMemory(ctx, owner, agent.Name, func() (int, error) {
-		demand, err := r.ownerRunnerDemand(ctx, owner, agent, true)
-		return r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, 100), err
+		bound, err := boundMiB()
+		if err != nil || bound <= 0 {
+			return 0, err
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: the room to free is the one the runner holds or is about to hold, which leaves the other starts waiting for the node out of it: a waiting start holds nothing yet, and counting it here would ask for room no idle agent can give, so neither waiter is ever admitted. The request the resize carries keeps counting them; only this reclaim total does not. The start being admitted is the one it is for, so it is counted on its own.
+		held, err := r.heldRunnerDemand(ctx, owner, agent, false)
+		if err != nil {
+			return 0, err
+		}
+		own := r.accountedMemoryMiB(ctx, owner, agent.Name, &agent.Spec)
+		return held.memoryMiB + own + r.config.VM.Runner.ReserveMiB - bound, nil
 	}, false)
 	return err
 }

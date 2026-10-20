@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-17
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -110,6 +110,8 @@ The app origin shares nothing with either by-link origin — no cookie, no token
 The share host signs the visitor in through a dedicated public Keycloak client (authorization code with PKCE, asking for OpenID identity and email, see [identity](security-and-credentials.md#identity)).
 Its redirect is pinned to the share host's callback and its tokens carry no api audience, so a token minted for it is useless against the api-server.
 The code is redeemed server-side and no token ever reaches the browser: the browser holds an opaque session id in an `HttpOnly` cookie scoped to the share origin, pointing at a Redis-held session that carries the subject, the email and whether the provider verified it, and a fixed lifetime.
+On an https share host the cookie is named with the `__Host-` prefix, so the browser accepts it only from the share host itself: another host under the same parent domain, the content host included, cannot plant a session the share host would read or that sign-out would leave behind.
+On plain http, as on the local cluster, browsers refuse that prefix, so the cookie keeps its bare name there.
 Signing out ends both that session and the identity provider's, so "switch account" on the no-access page really switches.
 Every restricted response is marked private and uncacheable so no shared cache replays it to the next visitor.
 
@@ -166,20 +168,21 @@ flowchart LR
 
 ## UI surfaces
 
-- The library lives in one place: the **Artifacts tab** of the side panel on the right, present on every page, with an Agent's chat or without one.
-  The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and shows as the current destination while that tab is open; outside a chat it shares the panel with Get started and Approvals.
+- The library lives in the **Artifacts tab** of the side panel on the right, on every page outside an Agent's chat.
+  The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and shows as the current destination while that tab is open; there it shares the panel with Get started and Approvals.
+  In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files, and the Artifacts destination opens that section and shows as current while it is open.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.
-- Opening an artifact docks a **preview** in the same tab that reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
+- Opening an artifact docks a **preview** in the same tab, or, in a chat with `new-layout` off, in the panel docked beside the conversation; it reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
   An owner can **change a text artifact's content** from the preview, which publishes a version like any other revision, so the artifact keeps its identity, its link and every earlier version.
   Only the current version is editable; a past one is read-only.
   Editing is bounded further by what the platform accepts in one inline write, which is less than it hands back to read — a document past that bound stays readable but offers no Edit, so no surface advertises an action the save would refuse.
   The version history is readable rather than merely steppable — each version says when it was written and who wrote it.
   Retention is reached from the artifact's own menu rather than the sharing dialog, and stays available whatever the artifact's visibility — it governs deletion, not the link.
   An artifact's visibility badge is also the control that opens the sharing dialog, so the state and the means to change it sit in one place; the rows lead with a visibility icon that opens it, the creator byline opens that Agent's chat, and every other action on a row stays behind a hover reveal.
-  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
-  It returns to the list from a back control and maximizes through the side panel's edge tab, as an open file does.
+  The docked preview's top bar carries the same controls — a visibility icon that opens the sharing dialog, the title, which opens rename, and icon-only Edit, Share, Download, Open in new tab once a share link exists, and Discuss with agent, then the side panel's close X, which the docked preview in a chat with `new-layout` off does not show — so opening an artifact is a place to start sharing or continuing it rather than a dead end.
+  It returns to the list from a back control and maximizes through the panel's edge tab, as an open file does.
   Deleting the artifact a preview is showing closes that preview.
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.

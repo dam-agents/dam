@@ -1,6 +1,6 @@
 # Agent Skills
 
-Last verified: 2026-10-14
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -112,7 +112,8 @@ Six responsibilities:
   Imperative, unlike uninstall: install/uninstall flow declaratively off an `agent_skills` row that a standalone skill by definition **lacks**, so the driver would have nothing to reconcile.
   A name that resolves to no directory is a no-op, not an error.
 
-When gh credentials arrive over the runtime channel — a `GH_TOKEN` env, or gh's own multi-account hosts file when the agent holds several GitHub accounts ([connections](connections.md#addressing-a-connection)) — the agent-runtime reacts by running `gh auth setup-git` once the whole snapshot that carries them is applied, and again only when they change, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt.
+When gh credentials arrive over the runtime channel — a `GH_TOKEN` env, or gh's own multi-account hosts file when the agent holds several GitHub accounts ([connections](connections.md#addressing-a-connection)) — the agent-runtime reacts by running `gh auth setup-git` once the contributions that carry them are applied, and again only when they change, so a private-repo `git clone` invoked from inside the pod also routes through `gh` (and therefore through the gateway pod's credential injector) instead of stalling on a username prompt.
+The setup settles before the events of the same delivery run, so a workspace seed or install command that arrives with an agent's first grants already finds git pointed at gh.
 It deliberately does not run at boot, where credentials aren't available yet.
 
 ## Credential injection on the wire

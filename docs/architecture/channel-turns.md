@@ -55,6 +55,7 @@ A few observations the diagram glosses over:
   That holds where the harness offers a way to say no; where it offers only ways to say yes the sole honest answer left is to cancel, which ends the whole turn rather than the one call in it.
   The relay never picks an approval to keep a turn alive; the one approval it ever picks is the allow-once below.
   What an Agent may do on a channel turn is therefore exactly what its session's permission mode lets it do *without* asking, which makes that mode the dial over channel behavior.
+  The turn contract hands the Agent that explanation, because the platform does not tell the sender: a call the permission check refused is the mode's doing, never a platform setting, and only the owner can change the mode.
   Codex has no such dial: its image runs it never asking, so it raises no prompt to refuse ([harness-config](harness-config.md)).
   The platform's own tool surface is kept outside that dial: asked about one of the two MCP servers the platform injects, the relay answers allow-once, so disposing of a turn, reporting an invocation result and reading a knowledge base survive a mode that asks — wherever the prompt offers allowing once at all, since that is the only approval the relay will pick.
   Reach on those tools is the platform's to enforce (per-Agent endpoint, mesh identity, the binding), never the harness's, so approving them widens nothing.
@@ -84,7 +85,8 @@ A few observations the diagram glosses over:
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
-  A fresh session opens on the harness, provider and model a person last picked on the Agent, falling back as a [schedule fire](schedules.md#session-choices) does; when no granted provider fits, the turn fails rather than running elsewhere.
+  A fresh session opens on the Agent's saved default harness, provider and model ([harness configuration](harness-config.md)); with no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the Providers page, and when no granted provider fits, it fails rather than running elsewhere.
+  A resumed session from before the Model Router, which carries no model, gets the saved default pinned on it first.
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
   A resuming turn therefore also carries what arrived after its own last turn, labelled as above and marked unseen: its own posts stay out, and nothing new means no block.
   Catch-up looks strictly backward from the turn's own messages — anything sent after them is already queued for a turn of its own and is never presented as missed.
@@ -126,6 +128,10 @@ A few observations the diagram glosses over:
   Because a workspace's one bot posts for every Agent, a bot message's Slack user id cannot tell Agents apart — so the worker takes the Agent id from each message's [Agent Footer](#the-agent-footer): the reading Agent's own posts are marked as its own, another Agent's are named, and humans keep their Slack id.
   Names are resolved from those ids rather than read off the footer, so a renamed Agent's older posts carry its **current** name.
   A footer-less bot post is named as the bot itself — unattributable, so never the reader's own.
+  Another app's or an incoming webhook's post is named by the app's name, as a live post from it is.
+- **An app's post is read from where the app put it (Slack).** Apps and webhooks often leave a post's `text` empty or a short fallback, and put the content in legacy `attachments[]` or in `blocks`.
+  The gateway joins that content to `text`, drops what only repeats it, and caps what it adds, the same for history lines, `read_thread` and the live turn.
+  `rich_text` and `markdown` blocks count only when `text` is empty, because they are the copy of `text` that a person's post and an Agent's post carry; Slack's link previews and the Agent Footer never count.
 - **Ambient routing: one session per thread, plus one per channel.** On an ambient binding, a thread reply relays into that thread's own session — the same key a mention there would resume.
   Top-level messages share a single rolling **ambient session** per channel, so the agent follows the channel rather than starting cold per message.
   **All** ambient traffic is serialized per session and coalesced under the same rule as addressed traffic (above).
@@ -133,7 +139,7 @@ A few observations the diagram glosses over:
   When the agent chimes in, the reply threads under the message it answers; the follow-up conversation runs as an ordinary thread session, with history injection carrying context across.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
-  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
+  A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
   A delivery nudge announces itself on the same bus rather than amending the turn's own event, so a relay that had to be repaired shows as two: the turn as it first ended, then the nudge and whether it drew an answer.
   That second one names itself in its reason whichever way it went, so a repaired turn is never mistaken for a plain one.
   The usage subsystem consumes this for activity tracking ([usage-tracking](usage-tracking.md)).
@@ -263,7 +269,8 @@ Its owner picks that conversation up in the UI, where only they may open it ([pl
 
 The footer has two separable parts and **only one is a contract**.
 The **URL is the wire format**: parsing the Agent id back out is how the api-server recovers the author when a post later surfaces in another Agent's injected history (see [Inbound](#inbound--channel-message-to-acp-session)), parsing the session back out is how a deleted post's notice finds the session that made it, and a mark on a reply made in an ambient round keeps that round's readers from being handed it twice.
-The **link label is presentation**: nothing parses it, so product rewords it freely — today the posting Agent's name and the brand, which is what tells two Agents in one conversation apart.
+The **link label is presentation**: nothing parses it, so product rewords it freely — today "Sent by" and the posting Agent's name, after the same emoji the Agent's avatar uses, which is what tells two Agents in one conversation apart.
+It carries no brand: a team that ships its own product as an Agent is not credited to the platform under every post.
 
 Keeping those apart is an **invariant**, not tidiness.
 Attribution used to read the Agent's name out of the label, so rewording it into a brand line silently unnamed every Agent in injected history — a copy change breaking a runtime feature, with nothing failing anywhere.

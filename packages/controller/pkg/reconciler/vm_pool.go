@@ -21,7 +21,7 @@ type vmPool struct {
 	storage *resource.Quantity
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget this process has never read has no pool, and that is not the same as an empty one. The install's default is smaller than some owners' pools and larger than others: sized from it, a claim grows to it and can never shrink again, a memory limit falls under the machines already running on it, and their next machine is sized past the pool they meant. Every caller that would set a size from the pool refuses and retries instead; one that only counts what the machines hold falls back to the install's limit for the while the pool is unknown.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget this process has never read has no pool, and that is not the same as an empty one. The install's default is smaller than some owners' pools and larger than others: sized from it, a claim grows to it and can never shrink again, a memory limit falls under the machines already running on it, and their next machine is sized past the pool they meant. Every caller that would set a size from the pool refuses and retries instead; one that only counts what the machines hold keeps counting from what it does know — an Agent's own memory where its share of the pool is unknown, and no limit at all — so a count is never built from a pool this process has not read.
 var errVMPoolUnread = errors.New("the owner's UserBudget is unread, so their VM pool is unknown")
 
 func (r *AgentReconciler) vmPoolOf(ctx context.Context, owner string) (vmPool, error) {
@@ -89,7 +89,22 @@ func (r *AgentReconciler) runnerCPUCeiling(ctx context.Context, owner string) (*
 			return &q, nil
 		}
 	}
-	return nil, nil
+	// UNIT_BOUNDARY_DESCRIPTION: an install that sets only the memory it gives the runner still needs a CPU bound at creation, or a runaway VMM takes the node until a resize lands, and for ever on a cluster that cannot resize. Every machine the pool can hold at boot costs the warm-up floor of memory, so the machines that fit plus one more for the runner is the figure. It is a cap on the pod, not on how many machines are ever admitted: once machines warm up, admission counts their measured use and headroom rather than their floors, so more of them may fit and share this cap, and a guest can be throttled below its vCPUs when they all use them at once.
+	limitMiB, err := r.runnerLimitMiB(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if limitMiB <= 0 {
+		return nil, nil
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: with no warm-up floor to divide the pool by, two machines' worth is the figure: each takes at most half of it, so an owner can still run a pair and no single VMM can take the node's every core. One machine would cap a pair below what the pool they were given allows, and any further one is a guess. It is a creation cap only: lightly resident machines beyond the pair may fit and share it, and then be throttled below their vCPUs while they use them together.
+	boot := r.config.VM.Runner.BootMiB
+	machines := 2
+	if boot > 0 {
+		machines = limitMiB/boot + 1
+	}
+	cpus := resource.NewQuantity(int64(machines*max(r.config.VM.Runner.MachineCPUs, 1)), resource.DecimalSI)
+	return cpus, nil
 }
 
 func (r *AgentReconciler) runnerStorageCeiling(ctx context.Context, owner string) (resource.Quantity, error) {

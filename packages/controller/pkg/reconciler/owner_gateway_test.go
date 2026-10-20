@@ -3,9 +3,11 @@ package reconciler
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"path"
 	"strconv"
 	"testing"
 	"time"
@@ -16,6 +18,9 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
+	"sigs.k8s.io/yaml"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -48,7 +53,7 @@ func TestOwnerGateway_FlagOffRendersNothing(t *testing.T) {
 	assert.Empty(t, deps.Items)
 }
 
-// TEST_SCENARIO: with the flag on, an owner gets exactly one owner gateway with its ConfigMap, credential Secret, ServiceAccount and policies, and the agent's gateway Service records its slot, while the agent still routes to its own gateway pod. The agent's harness policy admits the owner gateway's principal, only with the guard's header.
+// TEST_SCENARIO: with the flag on, an owner gets exactly one owner gateway with one Secret holding its files and its credentials, ServiceAccount and policies, and the agent's gateway Service records its slot, while the agent still routes to its own gateway pod. The agent's harness policy admits the owner gateway's principal, only with the guard's header.
 func TestOwnerGateway_FlagOnRendersOneOwnerGateway(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -70,16 +75,12 @@ func TestOwnerGateway_FlagOnRendersOneOwnerGateway(t *testing.T) {
 	require.NotNil(t, probe, "the surge holds only if the new pod turns ready once Envoy has loaded the agents' files")
 	assert.Equal(t, r.config.EnvoyPort, probe.HTTPGet.Port.IntValue())
 
-	cm, err := r.client.CoreV1().ConfigMaps(ns).Get(ctx, name, metav1.GetOptions{})
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Contains(t, cm.Data[ownerGatewayLDSKey], "agent_egress_my-agent")
-	assert.Contains(t, cm.Data[machineDNSCorefileKey], ".:20001 {")
-	assert.Contains(t, cm.Data[ownerGatewayBootstrap], "owner_gateway_health")
+	assert.Contains(t, string(files.Data[ownerGatewayLDSKey]), "agent_egress_my-agent")
+	assert.Contains(t, string(files.Data[machineDNSCorefileKey]), ".:20001 {")
+	assert.Contains(t, string(files.Data[ownerGatewayBootstrap]), "owner_gateway_health")
 	for _, obj := range []func() error{
-		func() error {
-			_, err := r.client.CoreV1().Secrets(ns).Get(ctx, name+"-credentials", metav1.GetOptions{})
-			return err
-		},
 		func() error {
 			_, err := r.client.CoreV1().ServiceAccounts(ns).Get(ctx, name, metav1.GetOptions{})
 			return err
@@ -123,9 +124,7 @@ func TestOwnerGateway_SweptWithTheOwnersLastVMAgent(t *testing.T) {
 
 	_, err = r.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
 	assert.Error(t, err)
-	_, err = r.client.CoreV1().ConfigMaps(ns).Get(ctx, name, metav1.GetOptions{})
-	assert.Error(t, err)
-	_, err = r.client.CoreV1().Secrets(ns).Get(ctx, name+"-credentials", metav1.GetOptions{})
+	_, err = r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
 	assert.Error(t, err)
 	_, err = r.client.CoreV1().ServiceAccounts(ns).Get(ctx, name, metav1.GetOptions{})
 	assert.Error(t, err)
@@ -229,6 +228,249 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	return r, node, agent
 }
 
+// TEST_SCENARIO: the owner gateway mounts one Secret for all of the owner's agents, and the kubelet refreshes that mount only when it syncs the pod, as it does an agent's own gateway's. So its pod carries the Secret's content hash, and a new hash syncs it at once and asks one of its agents to come back for the second sync, which a kubelet whose copy of the Secret was still old needs. A pod that is going away is left alone.
+func TestOwnerGateway_ACredentialChangeSyncsItsPodTwice(t *testing.T) {
+	r, _, _ := servedVMReconciler(t)
+	ctx, ns := context.Background(), "test-agents"
+	requeued := &requeueLog{}
+	r.WithRequeue(t.Context(), requeued.add)
+	ownerPod := func() *corev1.Pod {
+		pod, err := r.client.CoreV1().Pods(ns).Get(ctx, "owner-gw-1", metav1.GetOptions{})
+		require.NoError(t, err)
+		return pod
+	}
+
+	creds, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, creds.Annotations[annOwnerCredentialsHash], ownerPod().Annotations[annGatewayCredentialsRev], "the owner gateway pod carries the hash of the Secret it mounts")
+
+	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now)
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev])
+	assert.Equal(t, []time.Duration{gatewayCredentialsResyncWait}, requeued.all(), "one of its agents comes back for the second sync")
+
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now.Add(gatewayCredentialsResyncWait))
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsResync])
+
+	pod := ownerPod()
+	deleting := metav1.NewTime(now)
+	pod.DeletionTimestamp = &deleting
+	_, err = r.client.CoreV1().Pods(ns).Update(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "next", []string{"my-agent"}, now.Add(time.Minute))
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev], "a pod going away is not synced")
+}
+
+// TEST_SCENARIO: the failure of the vm lane was two volumes. Envoy read the file naming a new signing credential while the Secret that holds it had not been projected yet, built the provider, and the provider never read its file again; the listener was accepted, so the health path answered the current revision and nothing the controller reads said the agent was unsigned. The owner gateway's files and the connections' credentials are therefore one Secret mounted as one volume, which the kubelet flips once: a listener that names a credential and the credential itself become visible together, and no provider is built in the gap.
+func TestOwnerGateway_ItsFilesAndItsCredentialsAreOneVolume(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Gateway.PerOwner = true
+	ctx, ns := context.Background(), "test-agents"
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	name := ownerGatewayName("platform", testOwner)
+
+	dep, err := r.client.AppsV1().Deployments(ns).Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	var sources []corev1.VolumeSource
+	for _, volume := range dep.Spec.Template.Spec.Volumes {
+		if volume.ConfigMap != nil {
+			t.Fatalf("volume %s is a ConfigMap, so its keys reach the pod on a projection of their own", volume.Name)
+		}
+		if volume.Secret != nil {
+			sources = append(sources, volume.VolumeSource)
+		}
+	}
+	files, err := r.client.CoreV1().Secrets(ns).Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, string(files.Data[ownerGatewayLDSKey]), "tls_inspect_internal_my-agent", "the listener file lives in the Secret")
+
+	// TEST_SCENARIO: every file the render names is a key of that one Secret, so the pod that reads a listener has its credential beside it.
+	rendered, err := renderOwnerGateway([]ownerGatewayAgent{{Name: "my-agent", ProxyPort: 20000, Chains: chainsFromSecrets([]corev1.Secret{signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")}, nil)}}, r.config, "")
+	require.NoError(t, err)
+	credential := credentialFileOf(t, rendered.LDS)
+	require.NotEmpty(t, credential)
+	assert.Equal(t, envoyBootstrapMount, path.Dir(credential), "the credential is a file of the one directory the pod mounts")
+	names := make([]string, 0, len(sources))
+	for _, source := range sources {
+		names = append(names, source.Secret.SecretName)
+	}
+	assert.Contains(t, names, name, "and of a volume the pod mounts")
+}
+
+// TEST_SCENARIO: an offer re-offers what the pod refused without replacing what it took: the files carry a new version, and every listener and cluster in them is byte-identical, so Envoy deduplicates them and no stream is drained for a repair.
+func TestOwnerGateway_AnOfferMovesOnlyTheVersion(t *testing.T) {
+	cfg := telemetryTestCfg()
+	agents := []ownerGatewayAgent{
+		{Name: "agent-signed", ProxyPort: 20000, Chains: chainsFromSecrets([]corev1.Secret{signingSecret("platform-conn-cos", "conn-cos", "s3.example.cloud")}, nil)},
+		{Name: "agent-injected", ProxyPort: 20002, Chains: ownerTestAgents()[0].Chains},
+	}
+	plain, err := renderOwnerGateway(agents, cfg, "")
+	require.NoError(t, err)
+	offered, err := renderOwnerGateway(agents, cfg, ownerGatewayTemplateRev+"-repair-1")
+	require.NoError(t, err)
+
+	assert.Equal(t, "o1-owner-gateway-repair-1", ownerGatewayLDSVersion(t, offered.LDS), "the files move, so the pod reads them again")
+	assert.Equal(t, plain.Revisions, offered.Revisions, "the revision a health path answers is what was rendered, not how often it was sent")
+	assert.Equal(t, resourcesOf(t, plain.LDS), resourcesOf(t, offered.LDS), "every listener is the one Envoy already has")
+	assert.Equal(t, resourcesOf(t, plain.CDS), resourcesOf(t, offered.CDS))
+	assert.Equal(t, plain.Bootstrap, offered.Bootstrap)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the path a listener names for the credential its chain signs with, from the rendered listener file.
+func credentialFileOf(t *testing.T, lds string) string {
+	t.Helper()
+	for _, listener := range resourcesOf(t, lds) {
+		var file string
+		var walk func(v any)
+		walk = func(v any) {
+			switch v := v.(type) {
+			case map[string]any:
+				if source, ok := v["credentials_data_source"].(map[string]any); ok && file == "" {
+					file, _ = source["filename"].(string)
+				}
+				for _, nested := range v {
+					walk(nested)
+				}
+			case []any:
+				for _, nested := range v {
+					walk(nested)
+				}
+			}
+		}
+		walk(listener)
+		if file != "" {
+			return file
+		}
+	}
+	return ""
+}
+
+func ownerGatewayLDSVersion(t *testing.T, lds string) string {
+	t.Helper()
+	var parsed struct {
+		Version string `json:"version_info"`
+	}
+	require.NoError(t, yaml.Unmarshal([]byte(lds), &parsed))
+	return parsed.Version
+}
+
+// TEST_SCENARIO: what an owner writes is decided by what its pod has shown it, not by a clock: a pod that answered the revision rendered for an agent has read the files, so it is offered them once more, and one that answers an older revision is offered them on a wait that doubles, up to a bounded number of tries. One write carries every agent that is owed an offer, whatever their number, and no two writes land closer than the pace.
+func TestOwnerGatewayRepairPlan_APodIsOfferedTheFilesItHasAndHasNotRead(t *testing.T) {
+	start := time.Date(2026, 10, 20, 3, 0, 0, 0, time.UTC)
+	r := &AgentReconciler{}
+	names := []string{"agent-a", "agent-b"}
+	r.ownerGatewayRevisions.Store("agent-a", "rev-1")
+	r.ownerGatewayRevisions.Store("agent-b", "rev-1")
+	planAt := func(after time.Duration) *ownerGatewayRepairPlan {
+		return r.ownerGatewayRepairPlan(testOwner, names, start.Add(after))
+	}
+
+	// TEST_SCENARIO: a pod that answered the rendering is offered the files once, and a second reconcile with the same rendering writes nothing.
+	first := planAt(0)
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", first.xdsVersion(), "the files move, so the pod reads them again")
+	assert.Zero(t, first.due["agent-a"])
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", planAt(time.Second).xdsVersion(), "the offer is not repeated")
+
+	// TEST_SCENARIO: a pod that answers an older revision is offered the files again on a doubling wait, the last offer lands past the delay a kubelet can take, and the tries are bounded.
+	r.ownerStaleListeners.Store("agent-a", struct{}{})
+	plan := planAt(2 * time.Second)
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", plan.xdsVersion())
+	assert.Equal(t, ownerGatewayOfferWait, plan.due["agent-a"], "the next offer is a wait away")
+	at := 2*time.Second + ownerGatewayOfferWait
+	plan = planAt(at)
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-3", plan.xdsVersion())
+	assert.Equal(t, 2*ownerGatewayOfferWait, plan.due["agent-a"], "and then two waits after that")
+	for plan.due["agent-a"] > 0 {
+		at += plan.due["agent-a"]
+		plan = planAt(at)
+	}
+	assert.Equal(t, ownerGatewayTemplateRev+fmt.Sprintf("-repair-%d", 1+ownerGatewayOfferTries), plan.xdsVersion(), "the tries are bounded")
+	assert.GreaterOrEqual(t, at-2*time.Second, 90*time.Second, "the last offer is past a kubelet's sync period plus its cache delay")
+	assert.Zero(t, plan.due["agent-a"], "and a listener that will not load is not rewritten for as long as the agent lives")
+	r.ownerStaleListeners.Delete("agent-a")
+
+	// TEST_SCENARIO: one write carries every agent owed one, whatever their number, and no two writes land closer than the pace.
+	r = &AgentReconciler{}
+	var many []string
+	for i := range 20 {
+		name := fmt.Sprintf("agent-%02d", i)
+		many = append(many, name)
+		r.ownerGatewayRevisions.Store(name, "rev-1")
+	}
+	now := start
+	plan = r.ownerGatewayRepairPlan(testOwner, many, now)
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", plan.xdsVersion())
+	assert.Empty(t, plan.due, "twenty agents are one write, not twenty")
+	plan = r.ownerGatewayRepairPlan(testOwner, many, now.Add(ownerGatewayWritePace))
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", plan.xdsVersion(), "a settled owner writes nothing")
+
+	// TEST_SCENARIO: a new rendering of an agent is a fresh offer, so a credential file it names is never repaired on the leftovers of an older one.
+	r = &AgentReconciler{}
+	r.ownerGatewayRevisions.Store("agent-a", "rev-1")
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", r.ownerGatewayRepairPlan(testOwner, []string{"agent-a"}, start).xdsVersion())
+	r.ownerGatewayRevisions.Store("agent-a", "rev-2")
+	now = start.Add(ownerGatewayWritePace)
+	plan = r.ownerGatewayRepairPlan(testOwner, []string{"agent-a"}, now)
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", plan.xdsVersion(), "a new rendering is offered the files")
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", r.ownerGatewayRepairPlan(testOwner, []string{"agent-a"}, now).xdsVersion(), "and once only")
+}
+
+// TEST_SCENARIO: an install that upgrades from the layout with a ConfigMap of the owner gateway's name and a credentials Secret beside it keeps both objects. Nothing refreshes the Secret, so it holds signing keys later rotations retire; the render that writes the files Secret removes them.
+func TestOwnerGateway_TheFilesOfTheLayoutBeforeOneVolumeAreRemoved(t *testing.T) {
+	ctx := context.Background()
+	r, _, agent := servedVMReconciler(t)
+	name, ns := ownerGatewayName("platform", testOwner), "test-agents"
+	_, err := r.client.CoreV1().ConfigMaps(ns).Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name + "-credentials", Namespace: ns}}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	_, err = r.client.CoreV1().ConfigMaps(ns).Get(ctx, name, metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the ConfigMap of the previous layout is gone")
+	_, err = r.client.CoreV1().Secrets(ns).Get(ctx, name+"-credentials", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "and the Secret that held signing keys nothing refreshed")
+}
+
+// TEST_SCENARIO: the same through the reconcile loop: a rendering the pod read is offered once more, one Secret update carries it, and every later reconcile with the same rendering and the same answer writes nothing.
+func TestOwnerGateway_ARenderingIsOfferedOnceThroughTheReconcile(t *testing.T) {
+	ctx := context.Background()
+	r, _, agent := servedVMReconciler(t)
+	now := time.Now()
+	r.clock = func() time.Time { return now }
+	updates := func() int {
+		n := 0
+		for _, a := range r.client.(*fake.Clientset).Actions() {
+			updated, ok := a.(k8stesting.UpdateAction)
+			if !ok || a.GetResource().Resource != "secrets" {
+				continue
+			}
+			if secret, ok := updated.GetObject().(*corev1.Secret); ok && secret.Name == ownerGatewayName("platform", testOwner) {
+				n++
+			}
+		}
+		return n
+	}
+	files := func() string {
+		got, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return ownerGatewayLDSVersion(t, string(got.Data[ownerGatewayLDSKey]))
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	settled := updates()
+	assert.Contains(t, files(), "-repair-", "the rendering the pod read was offered again")
+	for range 3 {
+		now = now.Add(time.Minute)
+		require.NoError(t, r.Reconcile(ctx, agent))
+	}
+	assert.Equal(t, settled, updates(), "a settled rendering writes nothing more")
+}
+
 // TEST_SCENARIO: an agent its owner gateway serves hibernates and wakes without its own gateway pod: the idle checker stops the machine and records the agent down on its Service, the agent still reads hibernated only once the machine stopped, and a wake records it up and starts the machine while its own gateway stays at zero. Its listener stays configured the whole time, so a wake needs no configuration change.
 func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	ctx := context.Background()
@@ -255,9 +497,9 @@ func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	assert.False(t, node.spec("my-agent").Running, "a lapsed idle timeout with the agent recorded down keeps the machine stopped")
 	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason)
-	cm, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	files, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Contains(t, cm.Data[ownerGatewayLDSKey], "agent_egress_my-agent", "a hibernated agent keeps its listener")
+	assert.Contains(t, string(files.Data[ownerGatewayLDSKey]), "agent_egress_my-agent", "a hibernated agent keeps its listener")
 
 	agent.Annotations[annLastActivity] = time.Now().UTC().Format(time.RFC3339)
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -299,6 +541,29 @@ func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
 	require.NoError(t, err)
 	r.rollOwnerGateways(ctx)
 	assert.Equal(t, "envoy:next", image(second))
+}
+
+// TEST_SCENARIO: an owner gateway rolls under the runner roll's width, so a share stated there widths the gateways too: with half of four owners as the width, two roll and two wait, where `maxConcurrent: 1` would move them one at a time.
+func TestOwnerGateway_TemplateChangesRollTheWidthOfTheShare(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupReconciler(t, agentCR())
+	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d"}
+	for _, owner := range owners {
+		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
+	}
+	r.config.EnvoyImage = "envoy:next"
+	r.rollOwnerGateways(ctx)
+
+	rolled := 0
+	for _, owner := range owners {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		if dep.Spec.Template.Spec.Containers[0].Image == "envoy:next" {
+			rolled++
+		}
+	}
+	assert.Equal(t, 2, rolled, "half of four owners roll at once under the share, and the rest wait")
 }
 
 // TEST_SCENARIO: when the owner gateway pod crash-loops, every agent it serves has no gateway, so each one's gateway readiness carries the pod's own reason, the account the UI shows as a failed gateway, rather than a stale listener.
@@ -430,4 +695,49 @@ func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 		Data:       map[string][]byte{"ca.crt": []byte("MITM-CA")},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err, "a gateway pod starts only once its leaf is issued")
+}
+
+// TEST_SCENARIO: a share of a fleet that shrinks can be smaller than the number of gateways still mid-roll, so every broken gateway would wait on the others for a corrective template change that never comes. A gateway already mid-roll takes the change in the place it holds.
+func TestOwnerGateway_AMidRollGatewayTakesACorrectiveChangeWhenTheFleetShrinks(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupReconciler(t, agentCR())
+	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d", "owner-e"}
+	for _, owner := range owners {
+		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
+	}
+	r.config.EnvoyImage = "envoy:next"
+	r.rollOwnerGateways(ctx)
+
+	var broken, idle []string
+	for _, owner := range owners {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		if dep.Spec.Template.Spec.Containers[0].Image == "envoy:next" {
+			broken = append(broken, owner)
+		} else {
+			idle = append(idle, owner)
+		}
+	}
+	require.Len(t, broken, 3, "half of five rounds up to three, and their pods never became ready")
+	for _, owner := range idle {
+		require.NoError(t, r.client.AppsV1().Deployments(r.config.Namespace).Delete(ctx, ownerGatewayName("platform", owner), metav1.DeleteOptions{}))
+	}
+	old := time.Now().Add(-time.Hour)
+	for _, owner := range broken {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		metav1.SetMetaDataAnnotation(&dep.ObjectMeta, annRunnerRolledAt, old.UTC().Format(time.RFC3339))
+		_, err = r.client.AppsV1().Deployments(r.config.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+
+	r.config.EnvoyImage = "envoy:next-again"
+	r.rollOwnerGateways(ctx)
+
+	for _, owner := range broken {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, "envoy:next-again", dep.Spec.Template.Spec.Containers[0].Image, "a gateway mid-roll takes the change in the place it holds, where a share of a shrunken fleet would hold all three back")
+	}
 }

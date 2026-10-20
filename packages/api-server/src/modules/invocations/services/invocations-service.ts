@@ -80,6 +80,22 @@ export class ModelNameError extends Error {
   }
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a sub-agent whose harness reaches its models
+ * through the Model Router needs a model, and its runtime refuses a turn
+ * without one; nothing named one (no platform sub-agent setting, no model in
+ * the spawn, not the calling session's own harness), so the spawn is refused
+ * at once instead of starting a sub-agent that cannot run.
+ */
+export class NoSpawnModelError extends Error {
+  constructor() {
+    super(
+      "nothing names the sub-agent's model: pass a provider-qualified model (list_harnesses lists each harness's models), or spawn on this session's own harness to run on its model",
+    );
+    this.name = "NoSpawnModelError";
+  }
+}
+
 export class ProviderMismatchError extends Error {
   constructor(message: string) {
     super(message);
@@ -269,6 +285,13 @@ export function createInvocationsService(deps: {
             attachable: input.attachableProviders ?? [],
           }),
         );
+
+      const routedProvider =
+        provider.kind === "inherited" &&
+        input.driverProviders.find((p) => p.id === provider.id)?.type !==
+          "bedrock";
+      if (!parsedModel && !input.target.image && routedProvider)
+        throw new NoSpawnModelError();
 
       const created = createInputFromSetup(input.setup);
       if (deps.targetAdmission) {

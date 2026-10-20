@@ -67,7 +67,7 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's size and the trusted egress preset — or, for a kit that declares either, the kit's — both editable afterwards, plus a Backend the template has no say in: a container, or a microVM, which has no size and shares its owner's [memory pool](vm-memory.md) instead.
-The caller picks the Backend, except on an install that pins the new sandbox runtime on, where every create is a microVM ([features](features.md)).
+The Backend follows the install rather than the caller: an install that can run microVMs creates every new agent it is not told otherwise about as one, an explicit ask for a container still wins, and an install that cannot run one creates a container ([features](features.md)).
 A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants every provider Connection of the caller's that the harness runs on, the oldest one per provider alias.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 A create that names a provider gets that one alone.
@@ -107,7 +107,7 @@ See [connections](connections.md) and [runtime delivery](runtime-delivery.md).
 ### Template upgrade
 
 Templates are captured at create time; an install upgrade reconfigures no existing Agent beyond its image.
-The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work, and back when the Agent cannot start or keep running on it.
+The api-server reports an update when an Agent's image differs from its Template's current image, and [moves](agent-images.md#image-updates) the Agent there by itself, never during work, and back when the Agent cannot start or keep running on it — except for a start the node refused, which holds the move and leaves the upgrade waiting.
 Retired per-harness templates resolve to the default Template even when an install retains their old definitions.
 The upgrade preserves the Agent's chosen harness; when an older Agent has no explicit choice, its retired template identifies the harness to carry forward.
 
@@ -144,10 +144,11 @@ Three paths trigger a wake:
 
 Wake is bounded — the primitive polls pod readiness with backoff and gives up after two minutes, and a per-replica watch releases each wait the moment the condition flips and backs a read cache.
 A read bypasses that cache when its result decides a write — spec read-modify-write, the sleep flow's compare-and-clear — and while the watch is unsynced, when the cache cannot tell an absent Agent from an unseen one.
-It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, or the guest did not boot, or one on a node the cluster has lost, which no wait brings back.
+It does not wait out the two minutes for a start that cannot succeed: an over-budget refusal ([budgets](budgets.md#failure-semantics-upstream)), or a vm machine's start the runner refused because the owner's VM storage is full, the image is unavailable, the runner cannot reach its node's image cache, or the guest did not boot, or one on a node the cluster has lost, which no wait brings back.
 Such a wake fails with that cause once it saw the refusal appear during its own poll, or once the refusal outlasted a ten-second grace, because its first polls can read the previous attempt's refusal.
 A vm start refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
 An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up; a node the cluster has lost is the opposite case, and no wait brings it back.
+So does a start waiting for the node to grant its runner the memory it needs ([vm-memory](vm-memory.md)): the Agent carries `AwaitingAllocation`, not `OverBudget`, and the next retry, seconds later, admits it or re-denies the wake.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
@@ -175,7 +176,7 @@ That lives on [sessions](sessions.md).
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
 On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
 A wake scales the gateway up before the agent side, because the gateway pod is the slower of the two to start.
-A `vm` Agent whose last start the runner refused for lack of room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
+A `vm` Agent whose last start the runner refused for lack of room, one waiting for the node to grant its runner that room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
@@ -224,7 +225,7 @@ The controller resolves the effective value (override else default) and feeds it
 The UI offers it as *Sleep after being idle for* a short list of windows or *Never* (`0`), shows a custom value that is not in the list as its own option, and shows the *effective* value; an Agent created without a pick keeps its Template's seed.
 An Agent that never sleeps carries an *Always on* tag.
 **A vm Agent has no per-agent timeout.** It boots in seconds, so it always takes the chart-wide vm idle timeout, ignores any override, and the UI does not offer the setting.
-A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported.
+A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported — a machine the kernel, its seccomp filter or its runner's own OOM kill took down is booting again, and that reason says why the machine went down rather than that it is up to nothing.
 The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
 A boot the runner reports as copying a disk, a conversion or a migration seed's restore, is held for as long as the runner says so, since the runner bounds it at six hours and a hibernation would start the copy again from nothing; reclaim counts it as booting for the same reason.
 A running Agent with no session running but [kept background work](agent-processes.md#keeping-work) holding it awake shows *Background work* rather than *Idle*.

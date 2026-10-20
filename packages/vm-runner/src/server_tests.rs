@@ -5,7 +5,8 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
+    REASON_AWAITING_ALLOCATION, REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK,
+    REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED,
     REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
     STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
@@ -36,6 +37,9 @@ struct Fake {
     images: Mutex<HashMap<String, String>>,
     updated: Mutex<Vec<Updated>>,
     start_delay: Mutex<Duration>,
+    // UNIT_BOUNDARY_DESCRIPTION: the next start reports that it is inside the gate and then waits for the test to let it go, so a test can act while a boot is provably in flight rather than within a delay a loaded machine can outlast.
+    start_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    start_release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     stop_delay: Mutex<Duration>,
     delete_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
@@ -46,8 +50,10 @@ struct Fake {
     panic_on_state: AtomicBool,
     nests: AtomicBool,
     state_fails_until_start: Mutex<HashSet<String>>,
+    vmms: Mutex<HashSet<String>>,
     resident: Mutex<Option<i32>>,
     cpu: Mutex<Option<u64>>,
+    vmm_pids: Mutex<HashMap<String, i32>>,
     state_reads: AtomicUsize,
 }
 
@@ -60,6 +66,20 @@ impl Fake {
         locked(&self.calls).push(call);
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: the process the runtime reports as a machine's VMM, which a test spawns so the runner reaps a real child it can kill.
+    fn set_vmm(&self, id: &str, pid: i32) {
+        locked(&self.vmm_pids).insert(id.to_string(), pid);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: holds the next start inside the gate until the returned sender is used, and answers a receiver that says when the start is in it, so the test orders its own steps against a boot that is still running instead of racing a delay.
+    fn hold_start(&self) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (held, held_at) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        *locked(&self.start_held) = Some(held);
+        *locked(&self.start_release) = Some(released);
+        (held_at, release)
+    }
+
     fn last_update(&self) -> Updated {
         locked(&self.updated).last().cloned().expect("no update")
     }
@@ -70,8 +90,22 @@ impl Runtime for Fake {
         *locked(&self.resident)
     }
 
+    fn holds_vmm(&self, id: &str) -> bool {
+        locked(&self.vmms).contains(id)
+    }
+
     fn cpu_usec(&self, _id: &str) -> Option<u64> {
         *locked(&self.cpu)
+    }
+
+    fn vmm_pid(&self, id: &str) -> Option<i32> {
+        let pid = locked(&self.vmm_pids).get(id).copied()?;
+        // SAFETY: kill(2) with signal 0 takes no pointers and touches no process.
+        (unsafe { libc::kill(pid, 0) } == 0).then_some(pid)
+    }
+
+    fn vmm_record_pid(&self, id: &str) -> Option<i32> {
+        locked(&self.vmm_pids).get(id).copied()
     }
 
     fn nests(&self) -> bool {
@@ -122,6 +156,12 @@ impl Runtime for Fake {
         locked(&self.booted_mib).push(boot_mib);
         locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
+        if let Some(held) = locked(&self.start_held).take() {
+            let _ = held.send(());
+            if let Some(release) = locked(&self.start_release).take() {
+                let _ = release.recv();
+            }
+        }
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
         }
@@ -482,6 +522,7 @@ fn spec(running: bool) -> MachineSpec {
         migration: None,
         expect_seed: None,
         nested_virtualization: false,
+        admit_mib: 0,
     }
 }
 
@@ -1231,6 +1272,105 @@ async fn a_machine_is_refused_when_the_runner_has_no_room() {
     assert!(!h.fake.calls().iter().any(|c| c.ends_with("m2")));
 }
 
+// TEST_SCENARIO: the controller caps admission at the memory the pod was allocated, which is below the pod's own limit while an in-place resize waits for room, so a machine that fits the limit is refused until the node has granted the owner that much. The refusal names the node's allocation rather than the owner's pool, under its own reason, so the controller neither hibernates idle agents for room the node is about to grant nor tells the person their memory is full. The same machine starts once a later spec carries a ceiling that covers it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_is_refused_above_the_memory_the_node_granted() {
+    let h = Harness::with("allocation", |c| c.memory_mib = 8192);
+    let mut machine = spec(true);
+    machine.memory_mib = 4096;
+    machine.admit_mib = 3072;
+    let refused = h.server.put("m1", machine.clone()).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+    assert!(
+        refused
+            .message
+            .contains("3072 MiB the node has allocated this runner so far, less the 0 MiB the runner keeps for itself"),
+        "{refused:?}"
+    );
+    assert!(
+        h.fake.calls().is_empty(),
+        "nothing is created: {:?}",
+        h.fake.calls()
+    );
+
+    machine.admit_mib = 4096;
+    assert_eq!(h.server.put("m1", machine).unwrap().state, STATE_CREATING);
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine that is already running comes back under a ceiling sized from what it holds while idle, which is below the size it boots at: a revision roll, an image or env change, a CA rotation and a guest gone quiet all restart a running machine, and refusing those for good would park the agent and scale its gateway away. A machine that is not running is still capped, so the ceiling keeps gating every footprint the runner does not already hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_machine_restarts_under_a_ceiling_below_what_it_boots_at() {
+    let h = Harness::with("restart-ceiling", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    let restarted = h.server.put("m1", changed).unwrap();
+    assert_eq!(restarted.state, STATE_RESTARTING, "{restarted:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let mut second = spec(true);
+    second.admit_mib = 1536;
+    let refused = h.server.put("m2", second).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+}
+
+// TEST_SCENARIO: a restart the runner admitted holds its exemption for the whole action, because the worker stops the old VMM and boots its replacement in one: the controller's next ensure can land while the machine is down, and re-checking that already-admitted restart against the grant answered MachineAwaitingAllocation, which the controller acts on by stopping the machine the restart had just booted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_keeps_its_exemption_while_its_replacement_boots() {
+    let h = Harness::with("restart-in-flight", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    *locked(&h.fake.start_delay) = Duration::from_millis(400);
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    assert_eq!(
+        h.server.put("m1", changed.clone()).unwrap().state,
+        STATE_RESTARTING
+    );
+    h.wait_for_call("stop m1").await;
+    // TEST_SCENARIO: the restart's own boot is the second start the runtime is asked for, and it is still running here.
+    while h.fake.calls().iter().filter(|c| *c == "start m1").count() < 2 {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    let again = h.server.put("m1", changed).unwrap();
+    assert_ne!(
+        again.reason, REASON_AWAITING_ALLOCATION,
+        "an admitted restart was re-checked against the grant: {again:?}"
+    );
+    assert_eq!(again.state, STATE_RESTARTING, "{again:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine that does not fit the runner's own limit is refused as the owner's memory being full whether the ceiling is above the limit or below it: the ceiling never hides the real shortfall, which is the one the controller relieves by hibernating idle agents, and a machine the node cannot help never reads as waiting for the node.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_over_the_runner_limit_is_refused_as_out_of_capacity_under_a_ceiling() {
+    for admit_mib in [8192, 3072] {
+        let h = Harness::with("both-bounds", |c| c.memory_mib = 4096);
+        let mut machine = spec(true);
+        machine.memory_mib = 8192;
+        machine.admit_mib = admit_mib;
+        let refused = h.server.put("m1", machine).unwrap();
+        assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+        assert!(
+            refused
+                .message
+                .contains("the VM runner has 4096 MiB for machines"),
+            "admit_mib={admit_mib}: {refused:?}"
+        );
+    }
+}
+
 // TEST_SCENARIO: a boot that fails is reported under the reason the controller shows the person, and a later attempt that succeeds clears it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_failed_boot_is_reported_until_one_succeeds() {
@@ -1479,11 +1619,45 @@ async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let status = h.settle("m1").await;
     assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
     assert!(
-        status.message.contains("mise run image:stage-vm"),
-        "{status:?}"
+        status.message.contains("mise run image:stage-vm <image>"),
+        "the message names no staging command: {status:?}"
+    );
+    assert!(
+        !status
+            .message
+            .contains(&format!("VM_IMAGE_DIR={}", images.display())),
+        "the message offers the directory this runner reads as one to stage into, and inside a pod that is a mount no staging can write: {status:?}"
     );
     assert!(h.fake.calls().is_empty());
     assert_eq!(h.crane_calls(), 0);
+}
+
+// TEST_SCENARIO: a runner pod reads the install's cache directory through a mount, so the path it reads is no directory on the node. The hint names where the node directory is known and never offers the mount: a person who stages into the mount leaves the archive in place that refuses the image, and the next boot refuses it again.
+#[test]
+fn the_restage_hint_of_a_runner_pod_points_at_the_node_directory() {
+    assert_eq!(
+        restage_hint(Path::new("/var/lib/platform/images"), false),
+        "`mise run image:stage-vm <image>`, with `VM_IMAGE_DIR` set to the node directory this runner's pod mounts its image cache from"
+    );
+}
+
+// TEST_SCENARIO: a runner outside a cluster owns its image directory, so the hint has to select the host staging mode as well as the directory: a shell a person opens exports no `VM_HOST_RUNNER` and no `PLATFORM_VM_RUNNER_HOME`, and a staging without them stages on the node instead. The home comes from the directory this runner reads, customized or default, and it arrives as one shell word.
+#[test]
+fn the_restage_hint_of_a_host_runner_stages_on_the_mac_in_its_home() {
+    assert_eq!(
+        restage_hint(
+            Path::new("/Users/example/VM images/it's/platform-vm-runner/images"),
+            true
+        ),
+        r"`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME='/Users/example/VM images/it'\''s/platform-vm-runner' mise run image:stage-vm <image>`"
+    );
+    assert_eq!(
+        restage_hint(
+            Path::new("/Users/example/.local/state/platform-vm-runner/images"),
+            true
+        ),
+        "`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME='/Users/example/.local/state/platform-vm-runner' mise run image:stage-vm <image>`"
+    );
 }
 
 // TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), and the machine boots the tree in place. An archive left under the same name by an earlier install does not refuse the tree.
@@ -2240,7 +2414,7 @@ async fn a_stopped_machine_holds_nothing_and_fetches_its_tree_again_on_start() {
     assert_eq!(h.crane_log("export"), 2, "the start fetched the tree again");
 }
 
-// TEST_SCENARIO: with the node's service down, a new image cannot be resolved, checked or fetched, so a machine of it is refused as an image problem that says why, and nothing is booted straight from the registry. A machine of an image another of this runner's machines already boots still starts, from the tree that machine holds, which is only read.
+// TEST_SCENARIO: with the node's service down, a new image cannot be resolved, checked or fetched, so a machine of it is refused under the cache's own reason, which says which mount was looked at and that the fault is the node's rather than the image's, and nothing is booted straight from the registry. A machine of an image another of this runner's machines already boots still starts, from the tree that machine holds, which is only read.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() {
     let h = Harness::with("node-cache-down", on_node_cache);
@@ -2264,8 +2438,16 @@ async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() 
     other.image = "quay.io/x/other:1".into();
     h.server.put("m3", other).unwrap();
     let refused = h.settle("m3").await;
-    assert_eq!(refused.reason, REASON_IMAGE_UNAVAILABLE, "{refused:?}");
+    assert_eq!(refused.reason, REASON_CACHE_UNREACHABLE, "{refused:?}");
     assert!(refused.message.contains("cannot be reached"), "{refused:?}");
+    assert!(
+        refused.message.contains(".cache.sock"),
+        "the refusal does not name the socket inside the mount the runner looked at: {refused:?}"
+    );
+    assert!(
+        refused.message.contains("read-only"),
+        "the refusal does not say the mount is the runner's own read-only one: {refused:?}"
+    );
     assert!(!locked(&h.fake.created).contains_key("m3"));
 }
 
@@ -3037,6 +3219,85 @@ async fn a_look_that_scanned_first_does_not_write_over_a_later_one() {
     }
 }
 
+// TEST_SCENARIO: the storage every guest may add is the claim's room split among the machines holding it, and a runner that starts on records it cannot read must not hand one machine's share to the others. A machine a VMM process still holds is recorded as unknown and counted, as admission counts it, so a restart changes no guest's grant while the record is unreadable.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_state_cannot_be_read_at_startup_still_counts_toward_the_storage_grant() {
+    let (h, claim) = with_claim("startup-unread");
+    let measured = claim.clone();
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    let grant = |h: &Harness, id: &str| {
+        std::fs::read_to_string(
+            h.dir
+                .join("machines")
+                .join(id)
+                .join(SHARE_DIR)
+                .join(share::STORAGE_ROOM_FILE),
+        )
+        .unwrap()
+        .split_whitespace()
+        .nth(1)
+        .unwrap()
+        .parse::<u64>()
+        .unwrap()
+    };
+    *locked(&claim) = filled(55);
+    h.server.check_storage();
+    assert_eq!(
+        grant(&h, "m1"),
+        20 << 30,
+        "two machines share the room below 95% of the claim"
+    );
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    locked(&h.fake.vmms).insert("m1".to_string());
+    let next = h
+        .hand_off(move |c| {
+            let measured = measured.clone();
+            c.measure_storage = Arc::new(move || *locked(&measured));
+        })
+        .await;
+    *locked(&claim) = filled(55);
+    next.server.check_storage();
+    assert_eq!(
+        grant(&next, "m2"),
+        20 << 30,
+        "a machine whose record cannot be read at startup was left out of the share, so the others were granted its room"
+    );
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a machine the runner is stopping frees all of its scratch by going down, so it takes no part of the request a short claim sends the others: while its stop is in flight the shortage is split among the machines that stay, and each is asked for its full part, not for a share the machine on its way out cannot give.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_on_its_way_down_takes_no_part_of_the_shed_request() {
+    let (h, claim) = with_claim("shed-stopping");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    *locked(&h.fake.stop_delay) = Duration::from_secs(2);
+    assert_eq!(
+        h.server.put("m1", spec(false)).unwrap().state,
+        STATE_STOPPING
+    );
+    *locked(&claim) = filled(80);
+    h.server.check_storage();
+    let request = std::fs::read_to_string(
+        h.dir
+            .join("machines/m2")
+            .join(SHARE_DIR)
+            .join(share::STORAGE_SHORT_FILE),
+    )
+    .unwrap();
+    assert_eq!(
+        request.split_whitespace().nth(1).unwrap(),
+        (10u64 << 30).to_string(),
+        "the machine on its way down took half of the shortage the machine that stays has to free"
+    );
+}
+
 // TEST_SCENARIO: a guest serves each request to give back scratch once, and only a running guest frees anything, so the shortage is split among the running machines alone. The runner keeps the same request while the claim stays short at about the same use, and sends a new one, with a new id and its part of the new shortage, only once the claim has filled SHED_STEP_PERCENT further; a claim that has room again clears it, and the next shortage is a new request.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_short_claim_asks_again_only_when_it_fills_further() {
@@ -3338,7 +3599,524 @@ async fn a_hand_off_admits_no_start_into_memory_adopted_machines_hold() {
     next.server.close().await;
 }
 
-// TEST_SCENARIO: a launch record that cannot be read says nothing about whether its machine runs, and a runner that read it as "not running" counted a live VMM as nothing: admission then handed its room to the next machine. It counts as running instead, at what it was measured holding or at its size, until the record reads again.
+// UNIT_BOUNDARY_DESCRIPTION: a child of this process that stands in for a VMM the runtime reported a pid for: the runner reaps its children itself, so a test can kill one with the signal the kernel or a seccomp filter would send.
+fn stand_in_vmm() -> std::process::Child {
+    std::process::Command::new("sleep")
+        .arg("60")
+        .spawn()
+        .expect("a process to stand in for a VMM")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waits, within `ACTION_DEADLINE`, for the child to end without taking its status, so the reaper's own read is the one that collects it. The wait blocks until the child ends, so it runs off this thread and the deadline bounds it here.
+fn wait_ended_without_reaping(pid: i32) {
+    let (ended, was_ended) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: waitid(2) writes only into `info`, and WNOWAIT leaves the status for the next reader.
+        let waited = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                u32::try_from(pid).unwrap(),
+                &raw mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        let _ = ended.send(waited);
+    });
+    assert_eq!(
+        was_ended
+            .recv_timeout(ACTION_DEADLINE)
+            .expect("the VMM was never ended"),
+        0,
+        "the VMM was never ended"
+    );
+}
+
+// TEST_SCENARIO: a machine's VMM killed by a signal is the one thing that tells a seccomp kill from a guest that flapped: nothing else on the host records it, since the runtime's own sweep discards the status and it drops the record's pid the moment it notices the death. The status says which kill it was, with a counter for the dashboards, and the machine reads stopped at once so the controller restarts it rather than trusting a machine that is up.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_whose_vmm_the_kernel_killed_says_which_kill_it_was() {
+    let h = Harness::new("killed");
+    let kill_and_read = |id: &str, signal: libc::c_int| -> MachineStatus {
+        let mut vmm = stand_in_vmm();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        h.fake.set_vmm(id, pid);
+        // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+        unsafe { libc::kill(pid, signal) };
+        let deadline = Instant::now() + ACTION_DEADLINE;
+        let status = loop {
+            h.server.reap_killed();
+            let status = h.server.status(id);
+            if !status.reason.is_empty() {
+                break status;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "{id}: the kill was never reported: {status:?}"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        let _ = vmm.wait();
+        status
+    };
+
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Stopped);
+    let status = kill_and_read("m1", libc::SIGSYS);
+    assert_eq!(status.reason, REASON_SECCOMP_KILLED, "{status:?}");
+    assert!(
+        status.message.contains("seccomp"),
+        "the message names the filter: {status:?}"
+    );
+    assert_eq!(status.state, STATE_STOPPED, "{status:?}");
+    assert!(
+        h.server
+            .metrics_text()
+            .contains("platform_vm_runner_machine_kills_total{reason=\"MachineSeccompKilled\"} 1"),
+        "the kill was not counted:\n{}",
+        h.server.metrics_text()
+    );
+
+    // TEST_SCENARIO: the signal the kernel's OOM killer sends reads as the memory kill.
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    locked(&h.fake.states).insert("m2".into(), State::Stopped);
+    let status = kill_and_read("m2", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+    assert!(
+        status.message.contains("free memory"),
+        "the message names the memory: {status:?}"
+    );
+    assert!(
+        h.server
+            .metrics_text()
+            .contains("platform_vm_runner_machine_kills_total{reason=\"MachineOOMKilled\"} 1"),
+        "the kill was not counted:\n{}",
+        h.server.metrics_text()
+    );
+}
+
+// TEST_SCENARIO: the runner kills VMMs itself — a stop, a delete, a start clearing a VMM left on the disk — so a kill it is acting through must never read as a machine the kernel took: an agent stopped by its owner would otherwise be told it ran out of memory.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_vmm_the_runner_is_stopping_is_not_a_kill_to_report() {
+    let h = Harness::new("stopping-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    *locked(&h.fake.stop_delay) = Duration::from_millis(500);
+    h.server.put("m1", spec(false)).unwrap();
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..5 {
+        h.server.reap_killed();
+        tokio::time::sleep(Duration::from_millis(5)).await;
+    }
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "the runner's own stop was reported as a kill"
+    );
+    assert_no_kill_counted(&h);
+    let _ = vmm.wait();
+    h.settle("m1").await;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: fails when the runner counted a kill it did not make: both reasons read zero, since a family that first appears at its first event is missed by `increase()`.
+fn assert_no_kill_counted(h: &Harness) {
+    let text = h.server.metrics_text();
+    for reason in [REASON_OOM_KILLED, REASON_SECCOMP_KILLED] {
+        let line = format!("platform_vm_runner_machine_kills_total{{reason=\"{reason}\"}} 0");
+        assert!(
+            text.lines().any(|l| l == line),
+            "a kill was counted:\n{text}"
+        );
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: stands a process in for a machine's VMM, kills it with `signal`, and reaps until the runner says what took the machine down, giving that status back. The stand-in is waited on, so a test leaves no process behind.
+fn kill_vmm(h: &Harness, id: &str, signal: libc::c_int) -> MachineStatus {
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm(id, pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, signal) };
+    let deadline = Instant::now() + ACTION_DEADLINE;
+    let status = loop {
+        h.server.reap_killed();
+        let status = h.server.status(id);
+        if !status.reason.is_empty() {
+            break status;
+        }
+        if Instant::now() >= deadline {
+            let mut st = 0;
+            // SAFETY: WNOHANG never blocks and the status word is a valid local.
+            let reaped = unsafe { libc::waitpid(pid, &mut st, libc::WNOHANG) };
+            // SAFETY: kill(2) takes no pointers.
+            let alive = unsafe { libc::kill(pid, 0) };
+            panic!(
+                "{id}: the kill was never reported: {status:?} waitpid={reaped} alive={alive} errno={:?}",
+                std::io::Error::last_os_error()
+            );
+        }
+        std::thread::sleep(Duration::from_millis(5));
+    };
+    let _ = vmm.wait();
+    status
+}
+
+// TEST_SCENARIO: a probe takes the machine's `looked` before it asks the guest, and a kill lands while it is out. The probe's answer arrives afterwards, and must not put the dead machine back to running over the kill it reported: what the reap recorded moves `looked` with it, so the older answer is dropped.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_probe_that_looked_before_the_kill_cannot_undo_it() {
+    let h = Harness::new("stale-probe");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let looked = h.machine("m1", |e| e.looked);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    h.server.record(
+        "m1",
+        Seen {
+            state: State::Running,
+            ready: true,
+            error: None,
+        },
+        Some(looked),
+    );
+    let status = h.server.status("m1");
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+    assert_eq!(status.state, STATE_STOPPED, "{status:?}");
+}
+
+// TEST_SCENARIO: a restart stops the machine's VMM while its owner still asks it to run, so the spec alone is no guard and the action in flight is. The signal the restart's own stop sends is never reported as the kernel's memory kill, and never counted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restarts_stop_is_not_a_kill_to_report() {
+    let h = Harness::new("restart-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    *locked(&h.fake.stop_delay) = Duration::from_millis(300);
+    let mut next = spec(true);
+    next.revision = "r2".into();
+    h.server.put("m1", next).unwrap();
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..10 {
+        h.server.reap_killed();
+        assert_ne!(
+            h.server.status("m1").reason,
+            REASON_OOM_KILLED,
+            "the restart's own stop was reported as a kill"
+        );
+        tokio::time::sleep(Duration::from_millis(10)).await;
+    }
+    assert_no_kill_counted(&h);
+    let _ = vmm.wait();
+    h.settle("m1").await;
+}
+
+// TEST_SCENARIO: a stop whose wait the runner gave up on keeps holding the machine until the runtime call returns, so the machine can be killed after its action ended and before the call did. That kill is the runner's, not the kernel's: the machine reports no reason while the call still holds it, and the kill is reported once the call returns.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_kill_a_runtime_call_still_holds_is_not_reported_before_it_returns() {
+    let h = Harness::new("held-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    let held = h.machine("m1", |e| e.calls.clone());
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    let killed = unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert_eq!(killed, 0, "the VMM was not signalled");
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the death is waited for before the ticks: the ticks then prove what holds the kill, not whether it had landed.
+    wait_ended_without_reaping(pid);
+    for _ in 0..5 {
+        h.server.reap_killed();
+        assert_ne!(
+            h.server.status("m1").reason,
+            REASON_OOM_KILLED,
+            "a call still running on the machine was reported as a kill"
+        );
+    }
+    drop(held);
+    h.server.reap_killed();
+    assert_eq!(h.server.status("m1").reason, REASON_OOM_KILLED);
+    let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: the kill is said until the guest answers again, because the boot that follows it is what tells the controller to restart the agent; once the guest answers, the machine is up and the kill no longer explains it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kill_goes_when_the_guest_answers_again() {
+    let h = Harness::new("kill-cleared-by-guest");
+    h.server.put("m1", spec(true)).unwrap();
+    let running = h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    let _up = guest(running.port.try_into().unwrap());
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.state, STATE_RUNNING, "{status:?}");
+    assert!(
+        status.reason.is_empty(),
+        "the kill outlived the guest's answer: {status:?}"
+    );
+}
+
+// TEST_SCENARIO: an owner that asks the machine down ends the report at once: a hibernated machine says it is hibernated, not that the kernel killed it for memory it no longer asks for.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_kill_goes_when_the_owner_asks_the_machine_down() {
+    let h = Harness::new("kill-cleared-by-owner");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    h.server.put("m1", spec(false)).unwrap();
+    assert!(
+        h.server.status("m1").reason.is_empty(),
+        "{:?}",
+        h.server.status("m1")
+    );
+}
+
+// TEST_SCENARIO: a SIGKILL is the kernel's OOM killer's only when the runner's cgroup counted an OOM kill since the last reap, so an operator's `kill -9` on a VMM restarts the machine with no memory reason; a SIGKILL the cgroup did count is the kernel's, and says so.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sigkill_the_cgroup_did_not_count_is_not_a_memory_kill() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    let counted = |kills: u64| {
+        fs::write(
+            cgroup.join("memory.events"),
+            format!("low 0\nhigh 0\nmax 4\noom {kills}\noom_kill {kills}\noom_group_kill 0\n"),
+        )
+        .unwrap();
+    };
+    counted(0);
+    let h = Harness::with("cgroup-kill", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    // TEST_SCENARIO: the baseline the next reap compares against.
+    h.server.reap_killed();
+
+    // TEST_SCENARIO: a `kill -9` the cgroup counted nothing for is reaped and reported as nothing.
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    for _ in 0..10 {
+        h.server.reap_killed();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "a kill the cgroup did not count was reported as memory"
+    );
+    assert_no_kill_counted(&h);
+    let _ = vmm.wait();
+    // TEST_SCENARIO: the operator stops the machine, so the pid the kernel frees is never read as the next machine's VMM.
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+
+    counted(1);
+    h.server.put("m2", spec(true)).unwrap();
+    h.settle("m2").await;
+    locked(&h.fake.states).insert("m2".into(), State::Running);
+    let status = kill_vmm(&h, "m2", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+}
+
+// TEST_SCENARIO: a VMM that dies while its machine's start call is still running is the case the runtime's own sweep hides: the reaper cannot report a kill the start might itself be causing, and the sweep in the same tick reads the status and drops it, so the machine would restart under a boot failure and the kill would go unrecorded. The status is collected once, before either decides, and kept until the start returns: the kill is then named as the boot after it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
+    let h = Harness::new("kill-during-boot");
+    // UNIT_BOUNDARY_DESCRIPTION: the boot holds until this test lets it go, so a kill is provably read while the start call still runs, rather than within a delay a loaded machine can outlast.
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot holds until this test lets it go");
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the death is waited for before the ticks: a read the test made later would otherwise decide whether the kill was ever collected.
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    let killed = unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert_eq!(killed, 0, "the VMM was not signalled");
+    wait_ended_without_reaping(pid);
+    // TEST_SCENARIO: the production tick, three times over: the reaper collects, the runtime's sweep of the same child reads nothing left, and the machine is still starting.
+    for _ in 0..3 {
+        h.server.reap_killed();
+        // TEST_SCENARIO: the sweep's own read, which erases the status on every host: it must find nothing, because the reaper collected the status before it.
+        let mut status = 0;
+        // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
+        let swept = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
+        assert_eq!(
+            swept, -1,
+            "the sweep found a status the reaper had not collected"
+        );
+        assert_ne!(
+            h.server.status("m1").reason,
+            REASON_OOM_KILLED,
+            "a kill was reported while the start it may belong to still ran"
+        );
+    }
+
+    release.send(()).expect("the boot returns");
+    h.settle("m1").await;
+    h.server.reap_killed();
+    assert_eq!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "the kill the sweep would have erased was not named once the start returned"
+    );
+    let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: the cgroup counts an OOM kill, and an operator `kill -9`s another machine in the same second. One count is one victim: the machine the kernel took names memory, the operator's does not, and the kill counter shows the one. A count the reaper never matched to a victim — a kill of something outside its machines — does not label the next SIGKILL it does see.
+#[tokio::test(flavor = "multi_thread")]
+async fn one_counted_oom_names_one_machine_not_every_sigkill_beside_it() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-two-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    let counted = |kills: u64| {
+        fs::write(
+            cgroup.join("memory.events"),
+            format!("low 0\nhigh 0\nmax 4\noom {kills}\noom_kill {kills}\noom_group_kill 0\n"),
+        )
+        .unwrap();
+    };
+    counted(0);
+    let h = Harness::with("cgroup-one-of-two", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    for id in ["m1", "m2"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.settle(id).await;
+        locked(&h.fake.states).insert(id.into(), State::Running);
+    }
+    h.server.reap_killed();
+
+    let mut first = stand_in_vmm();
+    let mut second = stand_in_vmm();
+    let (one, two) = (
+        i32::try_from(first.id()).unwrap(),
+        i32::try_from(second.id()).unwrap(),
+    );
+    h.fake.set_vmm("m1", one);
+    h.fake.set_vmm("m2", two);
+    counted(1);
+    // SAFETY: kill(2) takes no pointers, and both pids are this test's own children.
+    unsafe {
+        libc::kill(one, libc::SIGKILL);
+        libc::kill(two, libc::SIGKILL);
+    }
+    let deadline = Instant::now() + ACTION_DEADLINE;
+    while h.server.status("m1").reason.is_empty() && h.server.status("m2").reason.is_empty() {
+        assert!(Instant::now() < deadline, "neither kill was reported");
+        h.server.reap_killed();
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    let (one_reason, two_reason) = (
+        h.server.status("m1").reason.clone(),
+        h.server.status("m2").reason.clone(),
+    );
+    let named = [one_reason.clone(), two_reason.clone()]
+        .iter()
+        .filter(|reason| **reason == REASON_OOM_KILLED)
+        .count();
+    assert_eq!(
+        named, 1,
+        "one count is one victim: m1={one_reason:?} m2={two_reason:?}"
+    );
+    assert!(
+        h.server.metrics_text().lines().any(|line| line
+            == format!(
+                "platform_vm_runner_machine_kills_total{{reason=\"{REASON_OOM_KILLED}\"}} 1"
+            )),
+        "the counter shows one kill:\n{}",
+        h.server.metrics_text()
+    );
+    let _ = first.wait();
+    let _ = second.wait();
+}
+
+// TEST_SCENARIO: after a hand-off the machine's VMM is a child of the loader, which reads its status and records the signal for the runner that adopted the machine; this process reads nothing of it. The record is the only thing that names the kill, and it is read once.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_death_the_loader_recorded_is_named_after_a_handoff() {
+    let h = Harness::new("handoff-record");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+
+    // TEST_SCENARIO: the VMM the machine was booted with, reaped by the loader as the old runner's child, so this process can read no status of it.
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGSYS) };
+    let _ = vmm.wait();
+    let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&records).unwrap();
+    fs::write(records.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+
+    h.server.reap_killed();
+    let status = h.server.status("m1");
+    assert_eq!(status.reason, REASON_SECCOMP_KILLED, "{status:?}");
+    assert!(
+        !records.join(pid.to_string()).exists(),
+        "the record was read twice"
+    );
+}
+
+// TEST_SCENARIO: a machine the kernel killed that wakes onto a boot copying a migration's seed reports the copy, not the kill: the copy is what is running now, the controller holds it past its idle cap and exempts it from its not-ready bound, and a kill from before it explains neither. The kill is still what the status said before that boot, and it says so again if the copy ends before the guest answers.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_copying_a_disk_reads_over_the_kill_before_it() {
+    let h = Harness::new("copying-after-kill");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let status = kill_vmm(&h, "m1", libc::SIGKILL);
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+
+    // TEST_SCENARIO: the machine is stopped in the runtime while the kill's reason still stands, and its next start copies a migration's seed.
+    locked(&h.fake.states).insert("m1".into(), State::Stopped);
+    h.server.probe("m1");
+    let seed = upload(&h, "m1", b"a home");
+    h.server.put("m1", expecting(true, &seed)).unwrap();
+    let copying = h.settle("m1").await;
+    assert!(!copying.ready);
+    assert_eq!(copying.reason, REASON_COPYING_DISK, "{copying:?}");
+    assert!(
+        !copying.message.contains("free memory"),
+        "the copy's message carries the kill's: {copying:?}"
+    );
+
+    let _guest = guest(h.base);
+    let up = h.until("m1", "ready", |s| s.ready).await;
+    assert_eq!(up.reason, "", "{up:?}");
+}
+
+// TEST_SCENARIO: a launch record that cannot be read says nothing about whether its machine runs, and a runner that read it as "not running" counted a live VMM as nothing: admission then handed its room to the next machine. It counts as running while a VMM process holds its directory, at what it was measured holding or at its size, until the record reads again.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
     let tune = |c: &mut Config| c.memory_mib = 3000;
@@ -3348,6 +4126,7 @@ async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
     assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
 
     locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    locked(&h.fake.vmms).insert("m1".to_string());
     let next = h.hand_off(tune).await;
     assert_eq!(
         next.server.usage().unwrap().memory.committed_mib,
@@ -3359,15 +4138,78 @@ async fn a_machine_whose_launch_record_cannot_be_read_still_holds_its_room() {
     next.server.close().await;
 }
 
-// TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: admission counts the figure the last probe read, as the runner's adoption of a handed-off machine does, and not the whole handout. A machine that is not running reports none, so no figure outlives the VMM that held it.
+// TEST_SCENARIO: a record that no longer decodes is not evidence that a machine runs — a stopped or hibernated machine's record fails the same way, and a runner that counted every unreadable one as running held the whole handout for a machine holding nothing, refusing every start for its owner. Only a VMM process on its directory says a machine nothing has looked at is up; without one it holds no room.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_whose_launch_record_cannot_be_read_holds_no_room() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("stopped-record-unreadable", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    let next = h.hand_off(tune).await;
+    assert_eq!(
+        next.server.usage().unwrap().memory.committed_mib,
+        0,
+        "a stopped machine whose launch record cannot be read held room it does not use"
+    );
+    let started = next.server.put("m2", spec(true)).unwrap();
+    assert_eq!(
+        started.state, STATE_CREATING,
+        "the owner's next machine was refused for a machine that holds nothing: {started:?}"
+    );
+    next.server.close().await;
+}
+
+// TEST_SCENARIO: a stop takes the measurement with it. A machine measured while it ran, then stopped, whose launch record cannot be read and whose wake cannot be planned, is unknown with a figure from a VMM that is gone: counted, it holds room for a machine that holds nothing and refuses its owner's next start. The same runner throughout, since a hand-off rebuilds the entries and would hide what the stop left behind.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stopped_machine_keeps_no_measurement() {
+    let tune = |c: &mut Config| c.memory_mib = 3000;
+    let h = Harness::with("stopped-measured", tune);
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    *locked(&h.fake.resident) = Some(2048);
+    h.server.probe("m1");
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 2048);
+
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(h.server.status("m1").state, STATE_STOPPED);
+
+    locked(&h.fake.state_fails_until_start).insert("m1".to_string());
+    *locked(&h.fake.fail_start_once) = Some("the wake could not boot the machine".into());
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let status = h.server.status("m1");
+    assert_eq!(status.state, STATE_UNKNOWN, "{status:?}");
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        0,
+        "a stopped machine's measurement outlived the VMM that held it"
+    );
+    let started = h.server.put("m2", spec(true)).unwrap();
+    assert_eq!(
+        started.state, STATE_CREATING,
+        "the owner's next machine was refused for a machine that holds nothing: {started:?}"
+    );
+    h.server.close().await;
+}
+
+// TEST_SCENARIO: a probe that cannot read a machine's resident memory is a failed measurement, not a machine holding nothing: the status keeps the figure the last probe read, as the runner's adoption of a handed-off machine does, and admission counts the machine at least at the warm-up floor instead of at that figure, which is from before the failure. A machine that is not running reports none, so no figure outlives the VMM that held it.
 #[tokio::test]
 async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
     let h = Harness::new("resident-unread");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
+    h.machine("m1", |m| {
+        m.warming_since = Some(Instant::now() - 2 * crate::capacity::WARMUP)
+    });
     *locked(&h.fake.resident) = Some(500);
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 500);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 500);
 
     *locked(&h.fake.resident) = None;
     h.server.probe("m1");
@@ -3375,6 +4217,11 @@ async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
         h.server.status("m1").used_mib,
         500,
         "a failed measurement counted the machine as holding nothing"
+    );
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a figure from before a failed read was counted below the machine's warm-up floor"
     );
 
     h.server.put("m1", spec(false)).unwrap();
@@ -3386,15 +4233,19 @@ async fn a_probe_that_cannot_read_the_resident_memory_keeps_the_last_figure() {
     );
 }
 
-// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine.
+// TEST_SCENARIO: a probe that cannot read the machine's state has not learned that it stopped, so the machine keeps what the last probe measured, as it does when only the memory read fails: the runtime answered neither question, and counting it as holding nothing is how admission hands its room to the next machine. The figure it keeps is one no probe could refresh, so admission counts it at the warm-up floor until a look reads the machine again.
 #[tokio::test]
 async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
     let h = Harness::new("state-unread");
     h.server.put("m1", spec(true)).unwrap();
     h.settle("m1").await;
+    h.machine("m1", |m| {
+        m.warming_since = Some(Instant::now() - 2 * crate::capacity::WARMUP)
+    });
     *locked(&h.fake.resident) = Some(700);
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 700);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 700);
 
     locked(&h.fake.state_fails_until_start).insert("m1".to_string());
     h.server.probe("m1");
@@ -3404,10 +4255,16 @@ async fn a_probe_that_cannot_read_the_state_keeps_the_last_figure() {
         status.used_mib, 700,
         "an unread state counted the machine as holding nothing"
     );
+    assert_eq!(
+        h.server.usage().unwrap().memory.committed_mib,
+        2048,
+        "a figure an unread state could not refresh was counted below the machine's warm-up floor"
+    );
 
     locked(&h.fake.state_fails_until_start).remove("m1");
     h.server.probe("m1");
     assert_eq!(h.server.status("m1").used_mib, 700);
+    assert_eq!(h.server.usage().unwrap().memory.committed_mib, 700);
 }
 
 // TEST_SCENARIO: a spec that cannot be read says nothing about what the machine holds or how long its boot has been up, and the status that zeroed both over an unreadable spec made the controller count a measured machine at its floor. Neither is read off the spec, so both are still reported; only what the spec carries is missing.

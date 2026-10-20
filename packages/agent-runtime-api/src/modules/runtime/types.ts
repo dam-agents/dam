@@ -284,9 +284,21 @@ export const harnessConfigEvent = z.object({
   payload: harnessConfigEventPayload,
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the agent's saved default an outcome turn runs
+ * on when it opens a new Session, so no model nobody chose runs it.
+ */
+const outcomePair = {
+  harness: z.string().min(1).optional(),
+  provider: z.string().min(1).optional(),
+  model: z.string().min(1).optional(),
+  settings: sessionSettingsSchema.optional(),
+};
+
 export const satelliteOutcomeEventPayload = z.object({
   task: z.string().min(1),
   refs: z.array(z.string().min(1)).min(1),
+  ...outcomePair,
 });
 export type SatelliteOutcomeEventPayload = z.infer<
   typeof satelliteOutcomeEventPayload
@@ -303,6 +315,7 @@ export const satelliteOutcomeEvent = z.object({
 export const subAgentOutcomeEventPayload = z.object({
   task: z.string().min(1),
   ids: z.array(z.string().min(1)).min(1),
+  ...outcomePair,
 });
 export type SubAgentOutcomeEventPayload = z.infer<
   typeof subAgentOutcomeEventPayload

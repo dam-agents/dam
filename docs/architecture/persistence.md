@@ -320,7 +320,7 @@ A flush is never tried again: after a failed fsync the host can have dropped the
 
 ### The machine image cache
 
-A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on a node directory every runner on the node shares, never on the runner's claim; [vm-image-cache](vm-image-cache.md) owns it.
+A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on a node directory the install's runners share, never on the runner's claim; [vm-image-cache](vm-image-cache.md) owns it.
 
 ### Warm PVC pool
 

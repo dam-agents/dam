@@ -1,3 +1,5 @@
+import { randomBytes } from "node:crypto";
+
 import {
   isNonNullObject,
   isRequest,
@@ -12,9 +14,11 @@ import type {
   AcpRuntime,
   AcpRuntimeStatus,
 } from "./acp-runtime/acp-runtime.js";
+import type { AgentRequestObserver } from "./acp-runtime/pending-agent-requests.js";
 import {
   CONFIGURE_SESSION_METHOD,
   isPlatformSubagentSetting,
+  NO_MODEL_REASON,
   PIN_MODEL_METHOD,
   sessionSettingsSchema,
   type SessionSettings,
@@ -48,6 +52,7 @@ export interface LeaseRouterDeps {
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
+  modelRequired: (harness: string) => boolean;
   settingScope?: (harness: string, id: string) => "process" | "session" | null;
   settingsError?: (
     harness: string,
@@ -59,6 +64,7 @@ export interface LeaseRouterDeps {
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
+  agentRequests: AgentRequestObserver;
   createRuntime: (
     pair: LeasePair,
     scoped: {
@@ -66,6 +72,7 @@ export interface LeaseRouterDeps {
       backgroundWork: BackgroundWorkRegistry;
       onHarnessExited: () => void;
       harnessSpawned: () => void;
+      agentRequests: AgentRequestObserver;
     },
   ) => AcpRuntime;
   idleCheckMs?: number;
@@ -79,6 +86,7 @@ export interface LeaseRouter extends AcpRuntime {
   recycleHarness(harness: string): void;
   leases(): LeasePair[];
   sessionChoice(sessionId: string): SessionChoice;
+  modelMissing(sessionId: string): boolean;
 }
 
 interface Lease {
@@ -100,12 +108,13 @@ interface VirtualChannel extends ClientChannel {
 interface Attachment {
   viewer: boolean;
   initialize: unknown;
-  inbound: Map<string, { lease: Lease; id: unknown }>;
 }
 
 const DEFAULT_IDLE_CHECK_MS = 30_000;
 const DEFAULT_LEASE_IDLE_MS = 10 * 60_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
+const ROUTED_ID = /^platform-lease-in-([0-9a-f]+)-(\d+)-(.+)$/s;
+const REWRITE_FROM_METHOD = "platform/rewriteFrom";
 
 const keyOf = (pair: LeasePair): string =>
   JSON.stringify([
@@ -134,7 +143,12 @@ export function canonicalModel(model: string): string {
  * away once idle, so frames naming no session (`initialize`, `session/list`)
  * are answered here from the manifest and the session metadata. Each lease
  * is an unchanged ACP runtime behind a virtual channel per real client, with
- * agent-request ids kept apart across leases.
+ * agent-request ids kept apart across leases: a client sees each request
+ * under an id that names this boot and the harness process that asked it, so
+ * an id kept from before a restart reaches no process. An answer under
+ * that id reaches that process from any connection, because the platform
+ * answers a request from its own record, on a connection of its own; a
+ * request no client can answer is reported to the platform under that id.
  */
 export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const leases = new Map<string, Lease>();
@@ -142,6 +156,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   const movedSessions = new Set<string>();
   const pendingRestartListeners: (() => void)[] = [];
   const leaseIdleMs = deps.leaseIdleMs ?? DEFAULT_LEASE_IDLE_MS;
+  const boot = randomBytes(6).toString("hex");
   let nextProcess = 1;
   let nextSwallowed = 1;
 
@@ -189,6 +204,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       harnessSpawned: () => {
         lease.process = nextProcess++;
       },
+      agentRequests: unwatchedRequestsOf(() => self!, deps.agentRequests),
     });
     const lease: Lease = {
       key,
@@ -205,6 +221,63 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     return lease;
   }
 
+  function unwatchedRequestsOf(
+    lease: () => Lease,
+    report: AgentRequestObserver,
+  ): AgentRequestObserver {
+    const routed = new Map<unknown, string>();
+    const clientIdOf = (id: unknown): string => {
+      const known = routed.get(id);
+      if (known !== undefined) return known;
+      const made = routedId(lease(), id);
+      routed.set(id, made);
+      return made;
+    };
+    const settled = (id: unknown): string | undefined => {
+      const clientId = routed.get(id);
+      routed.delete(id);
+      return clientId;
+    };
+    return {
+      held(id, sessionId, line) {
+        report.held(clientIdOf(id), sessionId, line);
+      },
+      waiting(id, sessionId, line) {
+        report.waiting(clientIdOf(id), sessionId, line);
+      },
+      answered(id, sessionId, result) {
+        const clientId = settled(id);
+        if (clientId !== undefined)
+          report.answered(clientId, sessionId, result);
+      },
+      abandoned(id, sessionId) {
+        const clientId = settled(id);
+        if (clientId !== undefined) report.abandoned(clientId, sessionId);
+      },
+    };
+  }
+
+  function routedId(lease: Lease, id: unknown): string {
+    return `${SWALLOWED_ID_PREFIX}in-${boot}-${String(lease.process)}-${JSON.stringify(id)}`;
+  }
+
+  function askedBy(
+    clientId: string,
+  ): { lease: Lease; id: unknown } | "unknown" | null {
+    const match = ROUTED_ID.exec(clientId);
+    if (!match) return null;
+    if (match[1] !== boot) return "unknown";
+    const lease = [...leases.values()].find(
+      (l) => String(l.process) === match[2],
+    );
+    if (!lease) return "unknown";
+    try {
+      return { lease, id: JSON.parse(match[3]!) };
+    } catch {
+      return "unknown";
+    }
+  }
+
   function notifyPendingRestart(): void {
     for (const cb of pendingRestartListeners) cb();
   }
@@ -216,9 +289,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     for (const v of lease.channels.values()) v.quiet = true;
     for (const v of lease.channels.values()) v.fireClose();
     lease.channels.clear();
-    for (const attachment of attachments.values())
-      for (const [id, inbound] of attachment.inbound)
-        if (inbound.lease === lease) attachment.inbound.delete(id);
   }
 
   /**
@@ -286,11 +356,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     return alias && !deps.providerAliases().includes(alias) ? alias : null;
   }
 
-  function virtualChannel(
-    real: ClientChannel,
-    lease: Lease,
-    attachment: Attachment,
-  ): VirtualChannel {
+  function virtualChannel(real: ClientChannel, lease: Lease): VirtualChannel {
     const messageHandlers: ((data: string) => void)[] = [];
     const closeHandlers: (() => void)[] = [];
     let open = true;
@@ -312,9 +378,9 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         if (line.includes('"method"') && line.includes('"id"')) {
           const frame = parseFrame(line);
           if (frame && isRequest(frame)) {
-            const routed = `${SWALLOWED_ID_PREFIX}in-${String(lease.process)}-${JSON.stringify(frame.id)}`;
-            attachment.inbound.set(routed, { lease, id: frame.id });
-            real.send(JSON.stringify({ ...frame, id: routed }));
+            real.send(
+              JSON.stringify({ ...frame, id: routedId(lease, frame.id) }),
+            );
             return;
           }
         }
@@ -353,7 +419,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     const existing = lease.channels.get(real);
     if (existing) return existing;
     const attachment = attachments.get(real)!;
-    const v = virtualChannel(real, lease, attachment);
+    const v = virtualChannel(real, lease);
     lease.channels.set(real, v);
     lease.runtime.attach(v, { viewer: attachment.viewer });
     if (attachment.initialize !== undefined) {
@@ -387,6 +453,24 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     };
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a turn on a harness that reaches its models
+   * through the Model Router runs on the session's model; with none, the
+   * router or the harness would pick one the user never chose, so the turn
+   * is refused and the user picks.
+   */
+  function noModel(): object {
+    return {
+      code: -32001,
+      message:
+        "This session has no model. Pick one for it, or set the agent's default model on its Providers page.",
+      data: { platform: { reason: NO_MODEL_REASON } },
+    };
+  }
+
+  const missesModel = (choice: SessionChoice): boolean =>
+    choice.model === null && deps.modelRequired(choice.harness);
+
   function isSessionRunning(sessionId: string): boolean {
     return (
       leaseOfSession(sessionId)?.runtime.isSessionRunning(sessionId) ?? false
@@ -403,12 +487,11 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return;
     }
     if (isResponse(frame) && typeof frame.id === "string") {
-      const inbound = attachment.inbound.get(frame.id);
-      if (inbound) {
-        attachment.inbound.delete(frame.id);
-        if (leases.get(inbound.lease.key) !== inbound.lease) return;
-        channelOn(real, inbound.lease).deliver(
-          JSON.stringify({ ...frame, id: inbound.id }),
+      const asked = askedBy(frame.id);
+      if (asked === "unknown") return;
+      if (asked) {
+        channelOn(real, asked.lease).deliver(
+          JSON.stringify({ ...frame, id: asked.id }),
         );
         return;
       }
@@ -472,6 +555,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         refuse(real, frame.id, providerRemoved(revoked, revoked));
         return;
       }
+      if (missesModel(choice)) {
+        refuse(real, frame.id, noModel());
+        return;
+      }
       const v = channelOn(real, leaseFor(leasePairOf(choice)));
       v.used = true;
       v.deliver(JSON.stringify(withPlatformChoice(frame, choice)));
@@ -530,6 +617,15 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
           ? providerRemoved(revoked, revoked)
           : providerRemoved(choice.revoked!, null),
       );
+      return;
+    }
+    if (
+      (method === "session/prompt" || method === REWRITE_FROM_METHOD) &&
+      missesModel(choice)
+    ) {
+      if (isRequest(frame)) refuse(real, frame.id, noModel());
+      else
+        deps.log(`dropped a prompt for ${sessionId}: the session has no model`);
       return;
     }
     const lease = leaseFor(leasePairOf(choice));
@@ -682,7 +778,6 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       attachments.set(real, {
         viewer: opts?.viewer !== false,
         initialize: undefined,
-        inbound: new Map(),
       });
       real.onMessage((data) => route(real, data));
       real.onClose(() => {
@@ -716,6 +811,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       leaseOfSession(sessionId)?.runtime.toolCallsOpen(sessionId) ?? false,
 
     sessionChoice: (sessionId) => sessionChoice(sessionId, false),
+    modelMissing: (sessionId) => missesModel(sessionChoice(sessionId, false)),
 
     sessionFrames(sessionId) {
       return (

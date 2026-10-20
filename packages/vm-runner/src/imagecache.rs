@@ -55,7 +55,7 @@ fn preload_retry(failures: u32) -> Duration {
         .min(PRELOAD_RETRY_MAX)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner on the node may hold or resolve any digest over the one socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict.
+// UNIT_BOUNDARY_DESCRIPTION: how far past its budget a node cache may grow before it refuses to fetch: its budget and half again. Holds keep a tree from eviction, and every runner of the install on the node may hold or resolve any digest over that install's socket, so without a ceiling one compromised runner could fill the node's disk with trees nobody may evict.
 pub fn node_fetch_ceiling(budget: i64) -> Option<u64> {
     let budget = u64::try_from(budget).ok().filter(|b| *b > 0)?;
     Some(budget.saturating_add(budget / 2))
@@ -133,6 +133,10 @@ impl Lookup {
 pub trait Images: Send + Sync {
     fn resolve(&self, reference: &str, auths: &[String]) -> Lookup;
     fn hold(&self, digests: &BTreeSet<String>) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: whether the service behind this runner can be reached now. The controller asks it before holding a changed runner pod back for a busy agent: a runner that cannot reach the service boots only trees one of its own machines already holds. A writer, and a runner with no service to ask, need nothing of anyone and answers reachable.
+    fn reach(&self) -> crate::api::RunnerImageCache {
+        crate::api::RunnerImageCache::default()
+    }
     // UNIT_BOUNDARY_DESCRIPTION: called as the runner closes, once nothing fetches any more. Only a writer has trees to flush.
     fn flush(&self) {}
 }

@@ -97,6 +97,7 @@ export function useDeleteConnection() {
       invalidates: [
         trpc.connections.list.queryKey(),
         trpc.connections.getAgentConnections.queryKey(),
+        trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't delete connection",
     },

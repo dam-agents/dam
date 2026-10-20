@@ -39,6 +39,7 @@ import {
   type ReportableTurn,
   type SessionSettingFrame,
 } from "./services/acp-runtime/acp-runtime.js";
+import type { AgentRequestObserver } from "./services/acp-runtime/pending-agent-requests.js";
 import { createOnceReporter } from "./services/once-reporter.js";
 import {
   createBackgroundWorkRegistry,
@@ -93,6 +94,7 @@ export interface ComposeAcpOptions {
     end: { stopReason: string | null; error: string | null },
   ) => void;
   onResultAccepted?: (sessionId: string) => void;
+  agentRequests: AgentRequestObserver;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
   providerAliases: () => string[];
@@ -100,6 +102,7 @@ export interface ComposeAcpOptions {
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
   routerEnv?: (harness: string) => Record<string, string>;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
+  modelRequired: (harness: string) => boolean;
   nativeEnv?: (connectionId: string) => Record<string, string>;
   leaseIdleMs?: number;
   beforeSpawn?: () => Promise<void>;
@@ -320,9 +323,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
     ...(opts.nativeConnectionOf && {
       nativeConnectionOf: opts.nativeConnectionOf,
     }),
+    modelRequired: opts.modelRequired,
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
       sessionListAnswer(sessionMetadata, isRunning, terminalSessionPins?.()),
+    agentRequests: opts.agentRequests,
     ...(opts.leaseIdleMs !== undefined && { leaseIdleMs: opts.leaseIdleMs }),
     settingScope: (harness, id) => {
       const binding = opts.harnesses[harness]?.sessionSettings?.[id];
@@ -439,6 +444,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
+        agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
@@ -455,7 +461,12 @@ export function composeAcp(opts: ComposeAcpOptions): {
       });
     },
   });
-  const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
+  const triggerDriver = createTriggerSessionDriver({
+    acpRuntime: runtime,
+    modelRequired: (harness) =>
+      opts.modelRequired(harness ?? opts.defaultHarness),
+    modelMissing: (sessionId) => runtime.modelMissing(sessionId),
+  });
   reportTurn = createOnceReporter({
     driver: triggerDriver,
     findSessionByRef: (ref) => sessionMetadata.findByRef(ref),

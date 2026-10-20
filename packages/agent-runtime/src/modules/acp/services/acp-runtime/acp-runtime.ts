@@ -87,7 +87,10 @@ import {
   createHarnessLease,
   type HarnessTeardownReason,
 } from "./harness-lease.js";
-import { createPendingAgentRequests } from "./pending-agent-requests.js";
+import {
+  createPendingAgentRequests,
+  type AgentRequestObserver,
+} from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
 import {
   createPromptScheduler,
@@ -188,6 +191,7 @@ export interface AcpRuntimeDeps {
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   onTurnOutcome?: (
     sessionId: string,
@@ -431,6 +435,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onExpired() {
       lease.maybeRecycle();
     },
+    observer: deps.agentRequests,
   });
 
   let nextOutboundId = 1;

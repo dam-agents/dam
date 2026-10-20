@@ -1,5 +1,6 @@
 export { composeRuntimeChannel, pluginStateRoot } from "./compose.js";
 export { createArtifactTouchReporter } from "./artifact-touch-reporter.js";
+export { createToolApprovalReporter } from "./tool-approval-reporter.js";
 export { createHarnessClient, type HarnessClient } from "./harness-client.js";
 export {
   createInvocationWatch,

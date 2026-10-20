@@ -11,10 +11,12 @@ import {
 } from "../../approvals/lib/group-approvals.js";
 import { SidebarSection } from "../../sessions/components/sidebar-section.js";
 import { useFeed } from "../api/queries.js";
+import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
+import { FeedDefaultModelCard } from "./feed-default-model-card.js";
 
 const MINUTE_MS = 60_000;
 
@@ -23,6 +25,7 @@ export function ApprovalsPanel({ className }: { className?: string }) {
   const { isDismissed, dismiss } = useDismissals();
   const sticky = useStickyResolved();
   const { denyAll, denying } = useDenyApprovals();
+  const defaultModels = useDefaultModelNotices();
   const now = useNow(MINUTE_MS);
 
   const approvals = sticky
@@ -60,10 +63,29 @@ export function ApprovalsPanel({ className }: { className?: string }) {
       }
     >
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-4">
+        {defaultModels.waiting.length > 0 && (
+          <div className="mb-1 flex flex-col gap-1">
+            {defaultModels.waiting.map((notice) => {
+              const agent = agentOf(notice.agentId);
+              return (
+                <FeedDefaultModelCard
+                  key={notice.id}
+                  notice={notice}
+                  agentName={agent?.name ?? notice.agentId}
+                  avatarName={agent?.name}
+                  avatar={agent?.avatar}
+                  onDismiss={() => defaultModels.dismiss(notice)}
+                />
+              );
+            })}
+          </div>
+        )}
         {loadingFeed && approvals.length === 0 ? (
           <FeedCardSkeleton rows={3} />
         ) : approvals.length === 0 ? (
-          <EmptyState bordered={false}>No approvals waiting.</EmptyState>
+          defaultModels.waiting.length === 0 && (
+            <EmptyState bordered={false}>No approvals waiting.</EmptyState>
+          )
         ) : (
           <div className="flex flex-col gap-1">
             {groups.map((group) => {

@@ -1,18 +1,25 @@
 # Home feed
 
-Last verified: 2026-10-18
+Last verified: 2026-10-20
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
-Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
+Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, a panel like the Artifacts panel beside it, that takes its room from the page.
+In an Agent's chat with the new layout off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices) are a fourth, read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
+A tool approval — the harness asking to run a tool — is written by two paths into one row.
+The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.
+Both use the same row id, so a client that engages later joins the row and it keeps the time the agent asked.
+The runtime reports the end of every permission request it held, watched or not: an answer settles the row on the verdict the harness actually got — the runtime accepts one answer, so it, not the path that wrote the row, decides what the record says — and a request it dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.
+The end can arrive before the row: the relay forwards a prompt before it records it, so a session that resets in between leaves an end with nothing to settle.
+Such an end settles the request's row all the same, which keeps a late write from turning a request that is over into a decision Home still offers.
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 
@@ -37,17 +44,25 @@ It shows its owner the rows filed for that Agent as a **provisional** list, and 
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
-The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page) or asks for more.
+The sidebar's Agents section lists the Sessions of an Agent only while the user has it open: a click on the Agent opens or closes its list in place, and the Agent whose chat or configuration page is shown is open.
+An open Agent that is not the shown one lists the record's rows, three at most; the shown Agent lists its own list, and so does any Agent once the user asks for more.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
 Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 
-The sidebar lists Agents in one **manual order**, which the user sets by drag and drop or with Alt+Up and Alt+Down.
-An Agent the order does not name yet, a new Agent, goes to the bottom of the list, oldest first, and activity never moves an Agent.
+The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
+An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
+Hibernated Agents fold under **See all (N hibernating)**, unless the user has one open or its chat or configuration page is shown; closing the shown Agent's Sessions keeps its row in place.
+An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and a ⋮ menu: Configure agent, and Add to Slack channel or Telegram chat where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
 
 The Sessions of each Agent are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
+A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
+
+The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's name and its time.
+Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
+The divider between the two sections drags, and the browser keeps its place.
 The record's rows and the Agent's own list are both newest first, and each More appends an older page, so the rows already shown keep their places.
 
 That boundary is what makes the record safe to rebuild or discard.
@@ -59,12 +74,14 @@ It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) tha
 The **new layout** [experimental feature](features.md) replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
 The sidebar becomes two columns: a strip of Agent avatars, and a list of Sessions beside it.
 Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
-With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; waiting approvals show only as badges.
+With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; a Session with an approval waiting on the user shows the approval dot on its row, as in every Session list, and counts in its Agent's avatar badge.
 With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
+Both column headers carry one session filter, by state and by Session type, and share it: a filter set under Home also narrows an Agent's own list, and the control shows a mark while a filter is on.
 The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
 Pins are kept in the browser, so they do not follow the user to another device.
 The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.
 
@@ -87,6 +104,17 @@ Two consequences are worth stating plainly, because both are costs.
 A busy Agent now reports whether or not a human is looking — the watch is no longer scoped to who has a tab open.
 And the comparison state is in memory, held by whichever replica holds the lease: a row the retention trim removes is not known to be gone, so it is re-created on the next hold rather than staying deleted.
 That is harmless — the row is a fresh capture of live state — but it means retention trims history, not the present.
+
+## Default-model notices
+
+The bell also lists the Agents on the Model Router whose saved default needs their owner ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+An Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
+They are computed on every read from the Agent's saved default, its granted providers and the conversion's note, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
+A pending default, one still being converted, says nothing.
+The same notice puts a line under the chat's model control, a count in the banner on Home, and "Won't run" on the Agent's schedules that name no model.
+Only the bell's card can be dismissed, per Agent and state; the others show every notice that stops runs, and a changed default is shown in the bell alone.
+A dismissal is dropped once its notice no longer holds, so the same state coming back later is shown again, and an Agent's dismissals go with it.
+Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default, and changing an Agent's providers refreshes the list in the tab that changed them.
 
 ## Seen, unread, and dismissed
 

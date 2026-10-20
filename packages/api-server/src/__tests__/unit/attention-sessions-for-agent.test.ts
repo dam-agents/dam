@@ -49,6 +49,8 @@ function service(ownerSub: string, owned: readonly string[]) {
       ownerSub,
       ownsApproval: async () => false,
       ownsAgent: async (agentId) => owned.includes(agentId),
+      defaultModelNotices: async () => [],
+      log: () => {},
     }),
   };
 }

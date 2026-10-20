@@ -34,7 +34,12 @@ spec:
       priorityClassName: system-node-critical
       containers:
         - name: generic-device-plugin
-          image: ghcr.io/squat/generic-device-plugin@sha256:dc192e164c69b03f156765793a1be62ca437709ae477b27ca7d8f3dcf5021576
+          # Upstream's newest build (commit a11f990, 2026-10-19): it carries the
+          # fixed google.golang.org/grpc and golang.org/x/text. It is under the
+          # 7-day floor, so the exception can go 2026-10-26. Go stdlib 1.26.8
+          # and golang.org/x/net 0.59.0 are still short of their fixes; they
+          # wait for an upstream build on Go 1.26.9 or later.
+          image: ghcr.io/squat/generic-device-plugin@sha256:5c48f7a16cfb37c4e07731bfa384b9dba6e12d2b0fb4350d8a321d49f12ac494
           imagePullPolicy: IfNotPresent
           args:
             - --domain=squat.ai

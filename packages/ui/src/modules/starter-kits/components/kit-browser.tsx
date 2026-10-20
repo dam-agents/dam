@@ -8,7 +8,6 @@ import { Input } from "@/components/ui/input";
 import { Tabs } from "@/components/ui/tabs";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
-import { useKitDefaultVm } from "../hooks/use-kit-default-vm.js";
 import {
   categoriesPresent,
   CATEGORY_LABEL,
@@ -29,10 +28,9 @@ function KitBadges({
   templates: readonly ConnectionTemplateView[];
   templateById: ReadonlyMap<string, ConnectionTemplateView>;
 }) {
-  const defaultVm = useKitDefaultVm();
   return (
     <div className="flex flex-wrap items-center gap-2">
-      {kitBadges(kit, templates, templateById, defaultVm).map((badge) => (
+      {kitBadges(kit, templates, templateById).map((badge) => (
         <Badge key={badge.key} variant="muted" size="sm">
           <span className="flex items-center gap-1.5">
             {badge.iconSlug && (

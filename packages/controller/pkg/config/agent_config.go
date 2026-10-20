@@ -115,6 +115,8 @@ type VMRunnerSpec struct {
 	ReleaseHostPath string `json:"releaseHostPath,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: how smolvm checks every VMM's syscalls against its allowlist: `audit` logs a call outside it, `enforce` kills the VMM, `off` installs no filter. Empty means `enforce`.
 	Seccomp string `json:"seccomp,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the PriorityClass every runner pod runs under, rendered by the chart above the pods of agents and above the platform's own control plane, which the chart leaves at no class. A node under memory pressure evicts, and a full node preempts, the lowest priority first, and a runner going down takes every machine of its owner with it — a whole owner's agents for one pod — where an agent pod going down costs one agent. Empty leaves runner pods at the cluster default.
+	PriorityClassName string `json:"priorityClassName,omitempty"`
 }
 
 type VMRunnerClusterDNS struct {
@@ -138,9 +140,12 @@ type GatewayEgressPeer struct {
 }
 
 type VMRunnerRollout struct {
-	MaxConcurrent int      `json:"maxConcurrent,omitempty"`
-	SettleTimeout Duration `json:"settleTimeout,omitempty"`
-	IdleWait      Duration `json:"idleWait,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how many runners may be mid-roll or mid-hand-off at once: a count, or, when MaxConcurrentPercent is set, that share of the runners the install has. A count alone cannot express a width that keeps up: one runner at a time takes an install of a thousand owners days to roll.
+	MaxConcurrent int `json:"maxConcurrent,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: the roll's width as a share of the runners the install has, 1 to 100, rounded up to at least one runner. Zero leaves the width to MaxConcurrent.
+	MaxConcurrentPercent int      `json:"maxConcurrentPercent,omitempty"`
+	SettleTimeout        Duration `json:"settleTimeout,omitempty"`
+	IdleWait             Duration `json:"idleWait,omitempty"`
 }
 
 type AgentProbes struct {

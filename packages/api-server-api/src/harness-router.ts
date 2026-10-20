@@ -1,10 +1,12 @@
 import { harnessT } from "./harness-trpc.js";
+import { approvalsHarnessRouter } from "./modules/approvals/harness-router.js";
 import { artifactLibraryHarnessRouter } from "./modules/artifact-library/harness-router.js";
 import { kbPublishHarnessRouter } from "./modules/kb-publish/harness-router.js";
 import { harnessRuntimeRouter } from "./modules/runtime/harness-router.js";
 import { harnessSessionDirectoryRouter } from "./modules/session-directory/harness-router.js";
 
 export const harnessRouter = harnessT.router({
+  approvals: approvalsHarnessRouter,
   artifactLibrary: artifactLibraryHarnessRouter,
   kbPublish: kbPublishHarnessRouter,
   runtime: harnessRuntimeRouter,

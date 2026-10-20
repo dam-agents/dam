@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji is the agent's emoji avatar, else the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen avatar, or the character picked from its owner and name when none is chosen. An emoji avatar links the public Twemoji PNG and is never uploaded; an uploaded image is read from the store and uploaded like a character. Each character is uploaded to ImgBB once per install, as a PNG named by a hash: its URL is stored under the SHA-256 of the PNG, so a restart or another replica reuses it. All characters are uploaded at startup, a failed upload is retried after a minute, and a post that goes out without the icon is logged.
+// TEST_OVERVIEW: With the chat:write.customize scope, an agent's Slack posts carry the agent's name as username and its avatar as icon_url, so a channel with several agents shows who said what. Without the scope, or when the granted set is unknown, posts go out under the app's own identity and open with an emoji and the agent's name in bold instead. The emoji, which also opens the Agent Footer in both cases, is the agent's emoji avatar, else the custom emoji the connection names for the agent's character, and the robot face when the connection names none. The icon is the agent's chosen avatar, or the character picked from its owner and name when none is chosen. An emoji avatar links the public Twemoji PNG and is never uploaded; an uploaded image is read from the store and uploaded like a character. Each character is uploaded to ImgBB once per install, as a PNG named by a hash: its URL is stored under the SHA-256 of the PNG, so a restart or another replica reuses it. All characters are uploaded at startup, a failed upload is retried after a minute, and a post that goes out without the icon is logged.
 import { createHash } from "node:crypto";
 import { describe, it, expect, vi } from "vitest";
 import {
@@ -186,6 +186,25 @@ describe("slack agent persona", () => {
 
     const reply = await harness(["chat:write"], null, "compass", names).reply();
     expect(reply).toMatchObject({ text: ":team-agent-1: *Scout*\n\nhi" });
+  });
+
+  // TEST_SCENARIO: The footer opens with the same emoji as the agent's avatar and says who sent the post, whether the post signs itself or carries the agent's own name and icon.
+  it("foots the post with the agent's avatar emoji and its name", async () => {
+    const names = Array.from({ length: 8 }, (_, i) => `team-agent-${i + 1}`);
+    for (const scopes of [["chat:write"], ["chat:write.customize"]]) {
+      const h = harness(scopes, async () => ICON, "spark", names);
+      const posted = vi.spyOn(h.gw, "postMessage");
+      await h.post();
+      expect(posted.mock.calls[0]![0].blocks![1]).toEqual({
+        type: "context",
+        elements: [
+          {
+            type: "mrkdwn",
+            text: ":team-agent-5: <http://ui/a/agent-1|Sent by Scout>",
+          },
+        ],
+      });
+    }
   });
 
   // TEST_SCENARIO: The connection names no custom emoji, or the granted set is unknown and the connection names none, so the post opens with the robot face.

@@ -16,12 +16,14 @@ export type RunCommandFn = (
   command: string,
   cwd: string,
   log: (msg: string) => void,
+  env?: NodeJS.ProcessEnv,
 ) => Promise<void>;
 
 export function createWorkspaceCommandPlugin(deps: {
   workDir: string;
   log: (msg: string) => void;
   run?: RunCommandFn;
+  spawnEnv?: () => NodeJS.ProcessEnv;
 }): Plugin {
   const run = deps.run ?? runCommand;
   return {
@@ -40,7 +42,7 @@ export function createWorkspaceCommandPlugin(deps: {
           return;
         }
         deps.log(`[workspace-command] running in ${deps.workDir}: ${command}`);
-        await run(command, deps.workDir, deps.log);
+        await run(command, deps.workDir, deps.log, deps.spawnEnv?.());
         try {
           await writeFile(sentinel, `${new Date().toISOString()}\n`, {
             flag: "wx",
@@ -61,6 +63,7 @@ export async function runCommand(
   command: string,
   cwd: string,
   log: (msg: string) => void,
+  env?: NodeJS.ProcessEnv,
 ): Promise<void> {
   const argv = ["bash", "-lc", command];
   const tail: string[] = [];
@@ -68,6 +71,7 @@ export async function runCommand(
     command: argv,
     cwd,
     timeoutMs: COMMAND_TIMEOUT_MS,
+    ...(env && { env }),
     onLine: (line) => {
       log(`[workspace-command] ${line}`);
       tail.push(line);

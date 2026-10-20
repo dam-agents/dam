@@ -144,6 +144,7 @@ export const egressRules = pgTable(
       .notNull(),
     status: text("status").notNull().default("active"),
     source: text("source").notNull().default("manual"),
+    presetSource: text("preset_source"),
   },
   (table) => [
     uniqueIndex("egress_rules_lookup_idx")
@@ -375,6 +376,7 @@ export const agents = pgTable(
     runtimeAgentVersion: text("runtime_agent_version"),
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
     sessionPair: jsonb("session_pair"),
+    defaultModelNote: jsonb("default_model_note"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),
     starterKit: text("starter_kit"),

@@ -576,6 +576,7 @@ const vmImageCacheSocket = vmRunnerImagesPath + "/.cache.sock"
 var vmRunnerEphemeralRequest = resource.MustParse("1Gi")
 
 // UNIT_BOUNDARY_DESCRIPTION: renders the owner's runner Deployment and hands it to the roll. Only an agent's reconcile may create one (create); the rollout sweep only offers an existing runner its turn, so a runner the orphan sweep has just removed is never brought back by it.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget cannot be read keeps the runner pod it has. Its limits and its memory came from the pool, and what the install's default would render is another pod: the roll would cut the limit under the machines already running on it and reboot every one of them. Only building a runner waits for the read, so a cold controller creates no runner and the owner's next start is refused until the budget reads again.
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string, refs []metav1.OwnerReference, create bool) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
@@ -598,12 +599,40 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	}
 	pool, err := r.vmPoolOf(ctx, owner)
 	if err != nil {
+		_, getErr := r.runnerDeployment(ctx, name, create)
+		switch {
+		case getErr == nil:
+			slog.Warn("vm runner: the owner's UserBudget is unread, the runner keeps the pod it has", "owner", owner, "error", err)
+			return nil
+		case !k8serrors.IsNotFound(getErr):
+			return getErr
+		case !create:
+			return nil
+		}
 		return err
 	}
 	if pool.memory != nil {
 		resources.Limits[corev1.ResourceMemory] = *pool.memory
 		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool.memory) > 0 {
 			resources.Requests[corev1.ResourceMemory] = *pool.memory
+		}
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the pod is created with the whole CPU pool as its limit, which is the most the resize path can ever give it, so a runner is bounded from its first second and no guest is ever throttled below its vCPUs, on a cluster that resizes pods in place or one that never applies a resize at all: a limit of one machine's worth, which only a resize could raise, caps every machine of one owner at one machine's vCPUs wherever that resize does not land. Where the install sets no CPU pool of its own the limit comes from the memory pool instead (runnerCPUCeiling), since a runner with no limit is one runaway VMM away from the node's every core. An explicit zero CPU request goes with it, because the API defaults a missing request to the limit, which would reserve every one of those vCPUs on the node and could change the pod's QoS class, which a resize may not do.
+	if _, ok := resources.Requests[corev1.ResourceCPU]; !ok {
+		if resources.Requests == nil {
+			resources.Requests = corev1.ResourceList{}
+		}
+		resources.Requests[corev1.ResourceCPU] = resource.Quantity{Format: resource.DecimalSI}
+	}
+	cpuCeiling, err := r.runnerCPUCeiling(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if cpuCeiling != nil {
+		resources.Limits[corev1.ResourceCPU] = *cpuCeiling
+		// UNIT_BOUNDARY_DESCRIPTION: a request above its limit is a pod the API refuses, so an owner's CPU pool below the install's CPU request would strand their first runner, or the next real roll of it. The request follows the pool down, as the memory request does.
+		if request, ok := resources.Requests[corev1.ResourceCPU]; ok && request.Cmp(*cpuCeiling) > 0 {
+			resources.Requests[corev1.ResourceCPU] = *cpuCeiling
 		}
 	}
 	if _, ok := resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
@@ -686,6 +715,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 				Spec: corev1.PodSpec{
 					DNSPolicy:                     corev1.DNSDefault,
 					HostUsers:                     new(false),
+					PriorityClassName:             spec.PriorityClassName,
 					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
 					AutomountServiceAccountToken:  new(false),

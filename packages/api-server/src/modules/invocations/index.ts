@@ -21,6 +21,7 @@ export {
   AttenuationError,
   InvalidSchemaError,
   ModelNameError,
+  NoSpawnModelError,
   ProviderMismatchError,
   SpendLimitReachedError,
   UnresolvableDriverError,

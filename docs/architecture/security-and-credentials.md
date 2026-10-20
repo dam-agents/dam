@@ -1,6 +1,6 @@
 # Security and credentials
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -56,7 +56,8 @@ The credential boundary is the pod: K8s Secrets are mounted into the gateway pod
 Enforcement is layered:
 
 - **Per-pair NetworkPolicies** gate the agent → paired gateway hop at both ends.
-- **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md).
+- **vm Backend.** Its gates live with the per-owner [VM runner](vm-runner.md), which dials its owner's gateways and nothing else.
+  The node [image cache](vm-image-cache.md) service that fetches every image has a policy of its own: the public internet minus every range the cluster owns, the cluster DNS pods, and the pods or ranges an install names for an in-cluster registry or a mirror outside the cluster.
 - **Agent ingress NetworkPolicy** admits ingress to the agent port only from the api-server (ACP/tRPC relay) and the controller (idle-checker busy-probe).
   agent-runtime serves unauthenticated on the assumption that this kernel gate is the auth boundary; kubelet probes are node-originated and unaffected.
 - **Gateway Envoy ext_authz** gates everything the gateway forwards on behalf of the agent — external upstreams via the HITL rule model, while platform-internal upstreams pass without a per-request human decision: the harness path (control-plane traffic to the api-server) and the artifact object store, where each request already carries a platform-minted authorization — a short-lived link scoped to a single object and operation, issued by the api-server after ownership checks and validated by the store itself ([artifact-library](artifact-library.md)).
@@ -245,6 +246,12 @@ Requests that arrive together, as a browser's parallel connections to one host d
 At most three rules speak for a host — itself, its `*.parent` wildcard, and the bare `*` — most specific first; a wildcard covers the one label its SNI chain and SAN do.
 Host names compare in any letter case, as DNS does: the agent writes the Host header and SNI, and a deny for `api.github.com` must also stop `API.GitHub.com`, which the gateway would resolve and forward all the same.
 `failure_mode_allow: false` — a blocked Check fails closed: agent gets 403, no approval prompt.
+A request a deny rule refuses on a TLS-terminated chain gets a 403 whose body names the rule and says the egress gateway refused it, not the upstream, so a harness shows the cause instead of a bare 403; the SNI-only catch-all can only close the connection.
+
+**Model provider hosts.** A model provider Connection granted to the Agent passes the gate on its own hosts, ports and paths even where a rule denies them, logged with basis *provider*.
+A provider Connection that sets Claude Code's env also passes `api.anthropic.com`, which Claude Code calls for its settings, policy limits and bootstrap whatever host serves its model calls.
+A model call refused at the gate ends the session, and a deny written while another provider was attached — for the host a harness also calls for its own settings — would otherwise break the provider attached later.
+A rule that allows the request decides first, so the override is read only when no rule allows it.
 
 **Spend limits.** On a metered model call, the gate also checks the payer's spend limits, after identity and before the rules ([spend-limits](spend-limits.md#limits)).
 At a limit it refuses at once, with a response shaped for the call's API path instead of the bare 403, and files a spend-limit question instead of an egress approval; it never holds such a call.
@@ -277,6 +284,7 @@ Both signals are read across api-server replicas (the replica relaying a turn is
 An attached browser or CLI session means someone can decide, so a channel turn running alongside one holds as usual; and an agent whose rules allow everything never reaches this path, because nothing it requests is unmatched.
 
 **Egress Aliasing.** An Invocation target has no egress identity of its own: before any decision, the gate resolves the calling agent to its driver — recursively for chained Invocations, up to the root non-target agent — and runs rule match, hold, and approval against the driver.
+The provider-host check alone reads the calling agent's own grants, because the target's gateway injects the target's own provider credentials: a target's model calls pass over the driver's deny rules for the hosts of the provider the target holds.
 The link is live: rules are matched per request, so tightening or loosening the driver applies to its running targets immediately.
 Approval prompts raised by target traffic surface as the driver's, stamped with the originating target, and approving permanently updates the driver's rules.
 The aliasing is application-layer only — the target's gateway still mounts and injects credentials for the target's own (attenuated) connection grants, so the target gains the driver's network *reach*, never its credential set.

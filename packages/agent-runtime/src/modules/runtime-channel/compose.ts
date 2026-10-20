@@ -11,7 +11,7 @@ import type {
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { noticeStream } from "../../core/notice-stream.js";
-import type { LeaseEnvReader } from "../../core/runtime-env.js";
+import { mergedSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   contributionDrivers,
   eventDrivers,
@@ -90,6 +90,7 @@ export interface ComposeRuntimeChannelOpts {
   envStale?: () => string | undefined;
   catalog?: ModelCatalog;
   modelRouter?: boolean;
+  onContributionsApplied?: ApplyStateDeps["onContributionsApplied"];
   onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
 }
 
@@ -171,9 +172,12 @@ export async function composeRuntimeChannel(
       invocationWatch: opts.invocationWatch,
     }),
   );
-  registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
+  const spawnEnv = () => mergedSpawnEnv(opts.envReader);
   registry.register(
-    createWorkspaceCommandPlugin({ workDir: opts.workDir, log }),
+    createWorkspaceSeedPlugin({ workDir: opts.workDir, spawnEnv, log }),
+  );
+  registry.register(
+    createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
   );
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
@@ -280,6 +284,9 @@ export async function composeRuntimeChannel(
         harnessConfigCurrentByHarness: await harnessConfigByHarness(),
       }),
     }),
+    ...(opts.onContributionsApplied
+      ? { onContributionsApplied: opts.onContributionsApplied }
+      : {}),
     ...(opts.onSnapshotProcessed
       ? { onSnapshotProcessed: opts.onSnapshotProcessed }
       : {}),

@@ -1,1 +1,1 @@
-export { Cube as ArtifactIcon } from "@carbon/icons-react";
+export { Folders as ArtifactIcon } from "@carbon/icons-react";

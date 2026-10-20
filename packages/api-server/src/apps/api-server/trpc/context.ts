@@ -6,7 +6,12 @@ import {
 } from "../../../modules/agents/index.js";
 import { ANN_STARTER_KIT_ONBOARDED } from "../../../modules/agents/infrastructure/labels.js";
 import { createKitUpdateMarks } from "../../../modules/agents/infrastructure/kit-update-marks.js";
-import { composeHarnessConfigModule } from "../../../modules/harness-config/index.js";
+import { TRPCError } from "@trpc/server";
+import {
+  composeDefaultModelNotices,
+  composeHarnessConfigModule,
+  isNoDefaultModelError,
+} from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
 import { findExternalUsersByIdentity } from "../../../modules/channels/infrastructure/identity-links-repository.js";
@@ -264,12 +269,19 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       markAgentOnboarded: (agentId, at) =>
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
-      sessionPair: (agentId) => firePair(agentId, {}),
+      sessionPair: (agentId) =>
+        firePair(agentId, {}).catch((err: unknown) => {
+          if (isNoDefaultModelError(err))
+            throw new TRPCError({
+              code: "PRECONDITION_FAILED",
+              message: `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`,
+            });
+          throw err;
+        }),
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
-      prefersVm: async () => (await features.flags())["vm-sandboxes"],
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(
           agentId,
@@ -307,6 +319,10 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         (await createApprovalsRepository(db).getPending(approvalId))
           ?.ownerSub === user.sub,
       ownsAgent: (agentId) => agentsRepo.isOwnedBy(agentId, user.sub),
+      defaultModelNotices: async () =>
+        composeDefaultModelNotices(db)(
+          (await agentsRepo.list(user.sub)).map((agent) => agent.id),
+        ),
     });
     const files = composeFilesModule(
       agentsRepo,
@@ -425,7 +441,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
-      vmForced: agentsInstallSettings(config).vmForced,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
     };
