@@ -1,0 +1,8 @@
+#!/usr/bin/env bash
+#MISE description="Security analysis for GitHub Actions workflows, beside check:actions"
+# jactionlint's default profile leaves parts of some zizmor audits out: a matrix
+# value, a step output or github.actor in a script is its pedantic option, and
+# its parity document lists audits where it reports fewer findings than zizmor.
+# This runs the tool it replaced as well, at the confidence the old check used,
+# so a regression in either one still fails the build.
+exec zizmor --min-confidence medium .github/workflows/ .github/actions/

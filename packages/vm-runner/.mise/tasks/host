@@ -39,9 +39,12 @@ if [ ! -f "$lib/libkrun.dylib" ]; then
   tar -xzf "$tarball" -C "$cache/$sha" --strip-components=1 "$release/lib"
 fi
 
-LIBKRUN_DIR="$lib" \
-  RUSTFLAGS="${RUSTFLAGS:+$RUSTFLAGS }-C link-arg=-Wl,-rpath,@executable_path/smolvm-$tag/lib" \
-  cargo build --release --locked -p vm-runner
+# The rpath is a link argument of this one link, and not of RUSTFLAGS: that
+# variable reaches every rustc, and a link argument cargo did not model makes
+# each build-script and proc-macro link bypass a shared build cache. `cargo
+# rustc` hands its trailing arguments to this target's final link alone.
+LIBKRUN_DIR="$lib" cargo rustc --release --locked -p vm-runner --bin vm-runner -- \
+  -C link-arg=-Wl,-rpath,@executable_path/smolvm-$tag/lib
 install -d dist/host
 install -m 755 target/release/vm-runner dist/host/vm-runner
 # Every VMM is this binary started again with _boot-vm, and Hypervisor.framework

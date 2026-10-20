@@ -68,6 +68,10 @@ trivy = "latest"
 usage = "latest"
 uv = "latest"
 yq = "latest"
+# 1.31.1 (2026-10-15) is under the 7-day floor; 1.30.1 is the newest release
+# past it. check:zizmor runs it beside jactionlint: the default profile leaves
+# parts of some zizmor audits out, the dynamic-matrix injection among them.
+zizmor = "1.30.1"
 
 [settings]
 npm.package_manager = "aube"
