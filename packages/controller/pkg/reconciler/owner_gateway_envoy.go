@@ -43,18 +43,26 @@ type ownerGatewayConfig struct {
 // UNIT_BOUNDARY_DESCRIPTION: the Envoy configuration of an owner gateway, which serves every vm Agent of one owner. The bootstrap holds only what the agents share: the internal-listener extension, the stats sink and the clusters to the harness, the object store, the dynamic forward proxies and the collector. Each agent's listeners and clusters are files Envoy watches, every name suffixed with the agent, so one agent's change replaces only its own listener and drains only its own connections. Identity is the listener's port, which only the agent's own Service maps to. The mesh no longer tells an owner's agents apart at the harness, so each agent's harness route ends in a guard listener that admits only that agent's own path and stamps the agent on the request; every other route strips that header, and the agent's harness policy requires it. The listener answers its health path with a revision of what was rendered for it, so a readiness probe tells a stale listener from a current one. Size: about 11 KB shared plus 4 KB per credentialed host before spend metering; one Secret holds at most 1 MiB, and an owner past that needs an xDS server in the controller instead of files.
 // UNIT_BOUNDARY_DESCRIPTION: `repair` is the render's decision: the xDS version the files carry, empty for the template's, and, for an agent whose credential files moved under a listener it had already loaded, the generation its internal listener carries. Envoy reads a projected file again when its volume moves, and deduplicates the listeners whose content it already accepted, so a file offered again under a new version re-offers everything the pod refused without replacing anything it took; a moved generation is the one thing that does replace a listener, and only the internal one, whose chains are where a credentials provider is built.
 func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, repair *ownerGatewayRepairPlan) (ownerGatewayConfig, error) {
+	return renderOwnerGatewayAt(agents, cfg, repair, ownerGatewayCredentialRoot)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the same render, with the root every credential file of its chains is named under. The previous layout kept its credentials in a volume of their own beside the files, so a pod of that layout kept serving needs the configuration it mounts: a file that names the new root would name a path that pod does not have, and its provider would fail on a credential that worked before the upgrade.
+func renderOwnerGatewayAt(agents []ownerGatewayAgent, cfg *config.Config, repair *ownerGatewayRepairPlan, credentialRoot string) (ownerGatewayConfig, error) {
 	var listeners, clusters []any
 	revisions := map[string]string{}
 	var shared bootstrapParams
 	for i, a := range agents {
-		p := ownerAgentParams(a, cfg, repair.generation(a.Name))
+		p := ownerAgentParams(a, cfg, repair.generation(a.Name), credentialRoot)
 		if i == 0 {
 			shared = p
 		}
-		agentListeners, agentClusters := ownerAgentResources(p)
-		p.HealthBody = ownerAgentRevision(agentListeners, agentClusters)
+		// UNIT_BOUNDARY_DESCRIPTION: the revision is of what the agent reads, not of the generation that made Envoy read it again: a generation is a fact about one listener's metadata, and folding it in would rewrite the health body of that listener's outer route as well.
+		steady := p
+		steady.RepairGeneration = 0
+		plainListeners, plainClusters := ownerAgentResources(steady)
+		p.HealthBody = ownerAgentRevision(plainListeners, plainClusters)
 		revisions[a.Name] = p.HealthBody
-		agentListeners, agentClusters = ownerAgentResources(p)
+		agentListeners, agentClusters := ownerAgentResources(p)
 		listeners = append(listeners, agentListeners...)
 		clusters = append(clusters, agentClusters...)
 	}
@@ -100,14 +108,14 @@ func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, repair *
 	return out, err
 }
 
-func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation int) bootstrapParams {
+func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation int, credentialRoot string) bootstrapParams {
 	suffix := "_" + a.Name
 	chains := make([]envoyHostChain, len(a.Chains))
 	for i, c := range a.Chains {
 		c.ChainID += suffix
 		c.UpstreamCluster += suffix
 		if rest, ok := strings.CutPrefix(c.UpstreamCAFile, envoyCredentialsRoot+"/cred-"); ok {
-			c.UpstreamCAFile = ownerGatewayCredentialRoot + "/" + strings.Replace(rest, "/", ".", 1)
+			c.UpstreamCAFile = credentialRoot + "/" + strings.Replace(rest, "/", ".", 1)
 		}
 		chains[i] = c
 	}
@@ -117,7 +125,7 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation int) b
 	p.HarnessGuardAgent = a.Name
 	p.HealthBody = "pending"
 	p.FlatCredentials = true
-	p.CredentialsRoot = ownerGatewayCredentialRoot
+	p.CredentialsRoot = credentialRoot
 	p.LeafSDSPath = envoyBootstrapMount + "/" + ownerGatewayLeafSDSKey
 	p.LuaDir = envoyBootstrapMount
 	p.RepairGeneration = generation

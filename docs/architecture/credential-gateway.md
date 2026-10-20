@@ -176,10 +176,17 @@ The kubelet flips a projected volume once, all keys together, so a file that nam
 The leaf TLS files stay a Secret of their own: cert-manager writes them, a rotation changes their content rather than their names, and the leaf-SDS file that names them never moves.
 One case the one volume does not close: a key the pod has never had.
 The kubelet moves the volume's data into place before it publishes the new key at the path a listener names, so a listener that arrives in that same flip can still name a file whose pathname appears a moment later, and the provider built then never reads it.
-The controller counts every credential file the render it applies newly carries and, once an agent answers a render that carried one, replaces that agent's internal listener — the one whose chains hold the providers — with a moved generation in its metadata, which is the only thing that builds those providers again; by the time the agent has answered, the pathname exists.
+A credential file is an arrival when the render it belongs to carries a key the last *published* render did not.
+The render that writes an arrival carries no generation: its pathname reaches the pod in that same flip, so a provider built then is the case being repaired.
+The arrival is recorded only when that write succeeded, and from then on every agent whose own chains name that key — and which answers — is given a moved generation in its internal listener's metadata on a later render, by which time the pathname is on disk.
+That generation is the only thing that builds those providers again.
+An agent whose chains name none of the arriving keys is owed nothing and stays byte-identical, and the generation is left out of the listener's health revision, so an agent's outer listener does not change either.
 A rotation of a file the pod already has is not an arrival, and neither is a revoked one: a key that leaves takes its chain with it.
 A render the owner refuses is never observed, so a refused owner gains no arrivals at all.
+A controller that restarts reads the published key set from the Secret it wrote last — not from the note beside it, so a Secret written before that note existed still gives the baseline — and retries a read that failed rather than accepting an empty baseline, which would make every published key look new.
 An install that upgrades keeps the previous layout's ConfigMap and credentials Secret while a Deployment or a pod still mounts them, written with each render, and removes them once none does.
+Those objects name the credential root that layout mounts (`/etc/envoy/credentials`), not the one-volume root, so a pod of that layout kept serving through a blocked roll reads files under paths it has.
+A delete that failed is not reported as done: the objects are removed by a later render instead.
 
 **A listener the pod refused.** The files still land in the pod after the controller writes them — usually in a second, but the kubelet's documented fallback for a changed Secret is its sync period plus its cache delay, up to about a minute and a half — and Envoy applies the resources of one read one at a time.
 So it can accept an agent's outer listener, whose clusters it already has, and refuse its internal one, whose upstream cluster is still in the CDS file it has not read; the outer listener answers the current revision meanwhile, so nothing the controller reads says the chains are missing.
@@ -197,5 +204,6 @@ What an operator has is the agent's unsigned requests and the failed read in the
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.
 The old pod sleeps out most of its grace before Envoy is signalled, serving the streams it holds while the new one takes new connections.
 A template change that moves it onto the one files Secret is rendered, not applied on its own: the Secret is written first and an owner whose files are past the limit is refused, so its agents keep the pod that serves them while they move back.
+The sweep that offers every existing owner its turn waits for the agent cache to sync: a cache that has not listed yet is not an owner with no agents, and rendering on that answer would write an empty set of listeners for a gateway whose Services still select it.
 Only a template change (an image, the install's trust settings) rolls it, paced across owners by the same roll width as runner rolls (`rollout.maxConcurrent` runners, or `rollout.maxConcurrentPercent` of them); listener, credential and leaf changes never do.
 A gateway already mid-roll holds one of the width's places, so a later template change replaces its stuck target in the place it holds rather than taking another: a fleet that shrinks under a stalled roll — owners removed, the share falling below the gateways stuck on it — still takes a corrective change, where counting its peers alone would leave every one of them blocked.

@@ -61,6 +61,7 @@ type AgentReconciler struct {
 	lifetime              context.Context
 	podResize             atomic.Int32
 	agentCache            cache.GenericLister
+	agentCacheSynced      cache.InformerSynced
 	podCache              corelisters.PodLister
 	statefulSets          cache.MutationCache
 	runnerDeploys         cache.MutationCache
@@ -122,6 +123,17 @@ func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg 
 func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentReconciler {
 	r.agentCache = lister
 	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a cache that has not listed yet reads as an owner with no agents, and that is a different statement from an owner whose agents are gone: rendering on it drains a serving owner's listeners, and tearing down on it deletes a gateway that still serves. So work the controller starts before the caches are synced asks here first and waits.
+func (r *AgentReconciler) WithAgentCacheSynced(synced cache.InformerSynced) *AgentReconciler {
+	r.agentCacheSynced = synced
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent cache can answer at all. A reconciler built without one — the tests — reads agents live, so it can always answer.
+func (r *AgentReconciler) agentCacheReady() bool {
+	return r.agentCache == nil || r.agentCacheSynced == nil || r.agentCacheSynced()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a reconcile reads an agent's pods up to three times, and every change to those pods already requeues the agent through the pod informer, so the informer's cache answers instead of the API server. A reconciler built without the cache — the tests — reads them live.

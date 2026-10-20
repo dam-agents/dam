@@ -93,10 +93,13 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 	return d, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: demand is read on every reconcile of every vm agent, and a starting machine is reconciled every half second, so the owner's agents come from the informer cache the controller already keeps rather than from a live List. A reconciler built without that cache — the tests — lists them live.
+// UNIT_BOUNDARY_DESCRIPTION: demand is read on every reconcile of every vm agent, and a starting machine is reconciled every half second, so the owner's agents come from the informer cache the controller already keeps rather than from a live List. A reconciler built without that cache — the tests — lists them live. A cache that has not synced is not an empty owner: it is no answer at all, and it says so, so a caller that would render or tear down on an empty list waits instead.
 func (r *AgentReconciler) ownerAgents(ctx context.Context, owner string) ([]runtime.Object, error) {
 	selector := labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner})
 	if r.agentCache != nil {
+		if !r.agentCacheReady() {
+			return nil, errAgentCacheUnsynced
+		}
 		items, err := r.agentCache.ByNamespace(r.config.Namespace).List(selector)
 		if err != nil {
 			return nil, fmt.Errorf("listing the owner's agents: %w", err)
@@ -314,6 +317,9 @@ func (r *AgentReconciler) runnerPods(ctx context.Context, owner string, fromCach
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner pod that is running and reports neither what the node allocated its container nor the requests its status holds has no figure to admit against, and zero is not that figure: zero admits against the whole pool, which is the reading this ceiling exists to prevent. The resize the start needs is still asked for in the same reconcile, so the next retry reads what the node enacted.
 var errGrantUnknown = errors.New("the node has not reported what it holds for the owner's runner pod")
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent cache that has not listed yet is not an owner with no agents. A caller that would render or tear down on that answer waits instead.
+var errAgentCacheUnsynced = errors.New("the agent cache has not synced, so the owner's agents are unknown")
 
 // UNIT_BOUNDARY_DESCRIPTION: the memory the node has actually granted the owner's runner pod, which is what its machines may be admitted against. The figure is the one the node reports: what it allocated the container, else the container status' own requests on a kubelet that reports the resize result, and a deferred or refused resize leaves both at what the pod holds. The request in the pod's spec is never it: that is the controller's ask from the moment it makes one, which the node may not have enacted. Zero is a pod not yet placed and a cluster that cannot resize the pod — each admits against the limit as every start did before this ceiling — where a running pod whose node reports nothing is unknown, and a start held on it rather than let the runner admit against the whole pool this exists to bound. A failed read is none of those, so it stops the decision.
 func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int, error) {
