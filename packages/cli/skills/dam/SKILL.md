@@ -142,9 +142,9 @@ dam agent create my-agent --wait --json
 dam run my-agent -p "Summarise the open pull requests"
 ```
 
-The answer streams to stdout, and the session id is printed on stderr at the end.
+The answer streams to stdout, and stderr ends with the reason the turn stopped.
 For a long prompt, use `--prompt-file <path>` (`-` reads stdin).
-To continue the same conversation, pass `--session <id>`.
+To continue the same conversation, pass `--session <id>`; `dam session list my-agent --json` gives the ids.
 
 For long work, start it and come back later:
 
@@ -155,7 +155,7 @@ dam run cancel my-agent <session-id>
 ```
 
 `--async` prints only the session id on stdout.
-`dam session list my-agent` lists the agent's sessions.
+A run that outlasts `--timeout` keeps going on the agent, and the CLI prints its session id so you can check it with `dam run get`.
 
 ### Files
 
@@ -218,7 +218,7 @@ dam approval list --json
 
 `dam approval approve <id>` and `dam approval deny <id>` answer a pending request.
 For a network request they write a permanent rule for its host, method and path unless you pass `--once`, which answers only this one request.
-A request to go past a spend limit is an approval too: approving it adds one more day's limit.
+A request to go past a spend limit is an approval too: approving it allows one more limit amount of spend today.
 Show the user what the request is and act only on their answer (hard rule 4).
 
 ### Channels
@@ -273,7 +273,7 @@ It exposes the user's machine, so start one only when the user asks for it.
 | 9    | No schedule with that id                                                |
 | 10   | `dam terms status`: the current Terms of Use are not accepted           |
 | 11   | `dam run`: the turn ended some other way than finishing, e.g. cancelled |
-| 12   | `dam run`: the run did not finish within `--timeout`                    |
+| 12   | `dam run`: not finished within `--timeout`; it keeps running            |
 | 130  | Interrupted                                                             |
 
 ## When the CLI can't do it
