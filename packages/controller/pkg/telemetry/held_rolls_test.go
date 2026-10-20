@@ -50,11 +50,21 @@ func TestTheHeldRollGaugeObservesOnlyWhatIsHeldNow(t *testing.T) {
 	require.Len(t, points, 1)
 	assert.InDelta(t, 10, points[0].Value, 5)
 
-	held.m["owner-b"] = heldRoll{since: now, seen: now.Add(-heldRollStale - time.Second)}
+	held.ended("owner-b")
+
+	// TEST_SCENARIO: a live hold is refreshed only as often as the controller's own backstops
+	// TEST_SCENARIO: reach it — the five-minute drift pass and the ten-minute rollout sweep, both
+	// TEST_SCENARIO: of them late under queue congestion — and it is still a hold.
+	held.m["owner-a"] = heldRoll{since: now.Add(-20 * time.Minute), seen: now.Add(-15 * time.Minute)}
 	held.held("owner-c", now.Add(-3*time.Second))
 	points = observed()
 	require.Len(t, points, 1)
-	assert.InDelta(t, 3, points[0].Value, 5, "a hold no pass refreshed has been dropped")
+	assert.InDelta(t, 1200, points[0].Value, 5, "a hold waiting out one sweep and a late drift pass was dropped")
+
+	held.m["owner-a"] = heldRoll{since: now, seen: now.Add(-heldRollStale - time.Second)}
+	points = observed()
+	require.Len(t, points, 1)
+	assert.InDelta(t, 3, points[0].Value, 5, "a hold no pass refreshed for longer than the backstops has been dropped")
 
 	held.ended("owner-c")
 	points = observed()

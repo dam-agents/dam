@@ -99,8 +99,8 @@ func RunnerHandoffStalled(ctx context.Context) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the roll held longest right now has waited, as an observation of the rolls held right now rather than a value written per pass: a gauge that is recorded keeps a series for every owner it ever saw, so an owner whose roll ended would export its last age forever, and owners that churn would fill the SDK's series limit. A hold is dropped when the reconciler ends it, and on its own when no pass refreshed it for heldRollStale, so a runner deleted or a template reverted mid-wait stops being observed. The series carries no owner: a runner is per owner, so its owner on a series would be a person, which no exported series names. An operator reads which runner is held from the Events on it.
-const heldRollStale = 5 * time.Minute
+// UNIT_BOUNDARY_DESCRIPTION: how long the roll held longest right now has waited, as an observation of the rolls held right now rather than a value written per pass: a gauge that is recorded keeps a series for every owner it ever saw, so an owner whose roll ended would export its last age forever, and owners that churn would fill the SDK's series limit. A hold is dropped when the reconciler ends it, and on its own when no pass refreshed it for heldRollStale, so a runner deleted or a template reverted mid-wait stops being observed; heldRollStale outlives the backstops that refresh a live hold — the drift pass, which hands its agents over five minutes and runs later under queue congestion, and the ten-minute rollout sweep — by a wide margin, since a hold that waited for one of them is being held and dropping it would export zero in the middle of it and reset whatever alert reads the series. The series carries no owner: a runner is per owner, so its owner on a series would be a person, which no exported series names. An operator reads which runner is held from the Events on it.
+const heldRollStale = 30 * time.Minute
 
 const (
 	heldRollName = "platform.vm_runner.roll_held_for_idle"

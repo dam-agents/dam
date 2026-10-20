@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -288,6 +289,43 @@ func TestASingleRefusedConnectDoesNotSkipTheIdleWait(t *testing.T) {
 	for _, event := range events {
 		assert.NotEqual(t, reasonRollImageCacheUnreachable, event.Reason, "no pass skipped the idle wait")
 	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a fake API server that numbers every write and refuses one carrying an older number, which is what the real one does and what the default fake client does not: a pass that writes an annotation and then submits the roll from the object it read before that write is refused, and the retry reads the version its own write left.
+func enforceResourceVersions(t *testing.T, r *AgentReconciler) {
+	t.Helper()
+	cs := r.client.(*fake.Clientset)
+	version := 1000
+	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
+		stored, err := cs.Tracker().Get(action.GetResource(), dep.Namespace, dep.Name)
+		if err != nil {
+			return false, nil, nil
+		}
+		if current := stored.(*appsv1.Deployment).ResourceVersion; dep.ResourceVersion != current {
+			return true, nil, k8serrors.NewConflict(appsv1.Resource("deployments"), dep.Name, errors.New("the object has been modified"))
+		}
+		version++
+		dep.ResourceVersion = strconv.Itoa(version)
+		return false, nil, nil
+	})
+}
+
+// TEST_SCENARIO: the grace has expired and the cache is still out of reach, so this pass rolls the busy runner. Every stamp it would clear first is cleared by the roll's own write; a pass that wrote one first would submit the roll from the version it read before that write, the API server would refuse it, and the retry — reading a runner with no stamp — would record a fresh outage and hold again, so the runner would never roll while the cache stayed down.
+func TestAnExpiredGraceRollsTheRunnerInOnePass(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	backdateRunnerAnnotation(t, r, "owner-a", annRunnerCacheDown, defaultRunnerCacheDownGrace+time.Minute)
+	enforceResourceVersions(t, r)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true), "the pass wrote before the roll and lost the roll's write to a conflict")
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "an expired grace must roll the runner, not start it over")
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "the roll's own write clears the stamp")
 }
 
 // TEST_SCENARIO: a pod change undone before the roll leaves a stamp from the pass that recorded the outage. The stamp is what the grace is measured from, so one left behind makes the next refusal pass the minute at once and roll a runner with busy agents; the pass that finds nothing to roll clears it.

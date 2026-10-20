@@ -263,7 +263,7 @@ func repairRunnerMeta(meta *metav1.ObjectMeta, labels map[string]string, refs []
 
 // UNIT_BOUNDARY_DESCRIPTION: a roll reboots every machine of the owner, and an agent in the middle of a turn loses that turn. So a changed runner whose owner has a busy agent — one whose `/api/status` does not say `idle`, the idle checker's own probe — does not take its place in the roll: it holds no place, so other owners roll meanwhile, and the next pass or sweep offers it again. The agents are probed at once, so an owner with many machines waits one probe timeout rather than one per machine. `rollout.idleWait` bounds the wait from the first pass that found it busy, recorded on the Deployment so a controller restart does not start the wait over; past it, the runner rolls with the agent busy, since an owner who is never idle must still get the release. An agent that does not answer counts as idle. A roll that exists for a release whose machines must reboot onto it waits for nothing: that release's fix reaches a machine only by rebooting it, so waiting out a busy agent is what leaves the fix off it. It returns the machines in a turn, and the roll reports them once it wrote the Deployment, so the report names a roll that happened rather than one another runner took the place ahead of. A roll for a changed pod shape keeps the wait, since nothing of that release rides on it.
 // UNIT_BOUNDARY_DESCRIPTION: a runner that cannot reach the node's image cache service boots only the trees its own machines already hold, so every image its owner has not booted yet is refused, and the image update job holds every move it makes. Waiting for a turn to end protects that turn and, once the cache is truly gone, costs the owner every image move for as long as the idle wait — so such a runner rolls without waiting. Only that case, asked of the runner itself: a runner that answers nothing at all may still have a working cache and is waited for as before. And only once the refusal has lasted `defaultRunnerCacheDownGrace`: one refused connect is also what a cache service restarted or a socket rebound under a healthy runner looks like, and rolling on it would end the turns the wait exists to protect. The first pass that sees the refusal records when it saw it on the Deployment; the pass that finds it older than the grace rolls, or keeps waiting while the write that would clear it does not land.
-// UNIT_BOUNDARY_DESCRIPTION: a hold is recorded and reported once per transition rather than once per pass, and only after the write that records it landed: a pass whose annotation write conflicts reads the runner as it was, would report the same transition again, and the read-your-writes cache keeps that from happening at all. Its age is observed as a metric while it lasts.
+// UNIT_BOUNDARY_DESCRIPTION: a hold is recorded and reported once per transition rather than once per pass, and only after the write that records it landed: a pass whose annotation write conflicts reads the runner as it was, would report the same transition again, and the read-your-writes cache keeps that from happening at all. Its age is observed as a metric while it lasts. A pass that is about to roll writes nothing first: every stamp it would clear is cleared by the roll's own write, which carries the resource version this pass read, so an expired grace is never spent on a write the roll then loses to a conflict.
 func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner string, existing *appsv1.Deployment, reboots bool, ready []string) (busy []string, waits bool, over rollWaitOver) {
 	busy = r.busyAgents(ctx, ready)
 	if len(busy) == 0 || reboots {
@@ -286,11 +286,6 @@ func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner stri
 			telemetry.RunnerRollHeld(owner, since)
 			return busy, true, rollWaitOver{}
 		}
-		existing = r.annotateRunner(ctx, existing, annRunnerCacheDown, "")
-		if existing == nil {
-			telemetry.RunnerRollHeld(owner, since)
-			return busy, true, rollWaitOver{}
-		}
 		slog.Warn("vm runner: the runner has not reached the node's image cache for longer than the grace, rolling it without waiting for its owner's agents to go idle", "owner", owner, "since", since, "imageCache", refused)
 		mount := ""
 		if source := runnerImageCacheSource(existing); source != "" {
@@ -299,30 +294,30 @@ func (r *AgentReconciler) runnerRollWaitsForIdle(ctx context.Context, owner stri
 		telemetry.RunnerRollEnded(owner)
 		return busy, false, rollWaitOver{reason: reasonRollImageCacheUnreachable, message: fmt.Sprintf("rolling this runner without waiting for its owner's agents to go idle: it has not reached the node's image cache for %s, so it boots only images its machines already hold.%s %s", held.Truncate(time.Minute), mount, refused)}
 	}
-	existing = r.runnerHoldEnds(ctx, existing, annRunnerCacheDown)
-
 	wait := r.config.VM.Runner.Rollout.IdleWait.AsDuration()
 	if wait <= 0 {
 		wait = defaultRunnerIdleWait
 	}
 	since, held := runnerHoldSince(existing, annRunnerBusy)
-	if !held {
-		now := time.Now()
-		if updated := r.annotateRunner(ctx, existing, annRunnerBusy, now.UTC().Format(time.RFC3339)); updated != nil {
-			slog.Info("vm runner: the pod changed, waiting for the owner's agents to finish their turns", "owner", owner, "busy", busy, "idleWait", wait)
-			r.runnerEvent(ctx, updated, corev1.EventTypeNormal, reasonRollHeldForIdle, fmt.Sprintf("holding this runner's changed pod back until %s goes idle, at most %s; its machines reboot when it rolls", strings.Join(busy, ", "), wait))
+	if held {
+		if age := time.Since(since); age >= wait {
+			slog.Warn("vm runner: the owner's agents stayed busy past the idle wait, rolling anyway", "owner", owner, "busy", busy, "since", since, "idleWait", wait)
+			telemetry.RunnerRollEnded(owner)
+			return busy, false, rollWaitOver{reason: reasonRollIdleWaitOver, message: fmt.Sprintf("rolling this runner past the idle wait: %s stayed busy for %s, the whole %s, and its machines reboot when it rolls", strings.Join(busy, ", "), age.Truncate(time.Minute), wait)}
 		}
-		telemetry.RunnerRollHeld(owner, now)
-		return busy, true, rollWaitOver{}
 	}
-	age := time.Since(since)
-	if age < wait {
+	existing = r.runnerHoldEnds(ctx, existing, annRunnerCacheDown)
+	if held {
 		telemetry.RunnerRollHeld(owner, since)
 		return busy, true, rollWaitOver{}
 	}
-	slog.Warn("vm runner: the owner's agents stayed busy past the idle wait, rolling anyway", "owner", owner, "busy", busy, "since", since, "idleWait", wait)
-	telemetry.RunnerRollEnded(owner)
-	return busy, false, rollWaitOver{reason: reasonRollIdleWaitOver, message: fmt.Sprintf("rolling this runner past the idle wait: %s stayed busy for %s, the whole %s, and its machines reboot when it rolls", strings.Join(busy, ", "), age.Truncate(time.Minute), wait)}
+	now := time.Now()
+	if updated := r.annotateRunner(ctx, existing, annRunnerBusy, now.UTC().Format(time.RFC3339)); updated != nil {
+		slog.Info("vm runner: the pod changed, waiting for the owner's agents to finish their turns", "owner", owner, "busy", busy, "idleWait", wait)
+		r.runnerEvent(ctx, updated, corev1.EventTypeNormal, reasonRollHeldForIdle, fmt.Sprintf("holding this runner's changed pod back until %s goes idle, at most %s; its machines reboot when it rolls", strings.Join(busy, ", "), wait))
+	}
+	telemetry.RunnerRollHeld(owner, now)
+	return busy, true, rollWaitOver{}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a roll that passed its wait says on the runner once it wrote the Deployment, so a roll another runner's place kept from starting this pass does not announce a roll that did not happen.
