@@ -67,7 +67,8 @@ For such an agent the chat shows an update notice instead of the picker, and new
 
 The ETE LiteLLM proxy answers Claude Code's auto-mode permission check on the model call itself, through the beta header the proxy accepts.
 Claude Code's mode default is `auto`.
-A settings file that names no mode is given it at start, except on a model the catalog excludes it for, as Haiku, which gets the mode that asks.
+A settings file that names no mode is given it, or the mode that asks on a model the catalog excludes it for, as Haiku.
+The default follows the agent's model at each start, and a mode an owner picks is kept as it is.
 
 ## Provider compatibility
 

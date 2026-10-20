@@ -1,4 +1,4 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 
 const REPORT_BACKGROUND_WORK = "node /usr/local/lib/report-background-work.mjs";
@@ -36,16 +36,29 @@ try {
   }
   settings.hooks = hooks;
 
+  const filledPath = join(process.env.HOME, ".platform", "claude-default-mode");
+  let filled = null;
+  try {
+    filled = readFileSync(filledPath, "utf8").trim() || null;
+  } catch {}
+  const chosen = settings.permissions?.defaultMode;
+  const modeForModel = /haiku/i.test(settings.model ?? "")
+    ? "default"
+    : "auto";
+  const keepsChosen = chosen !== undefined && chosen !== filled;
   settings.permissions = {
     ...settings.permissions,
-    defaultMode:
-      settings.permissions?.defaultMode ??
-      (/haiku/i.test(settings.model ?? "") ? "default" : "auto"),
+    defaultMode: keepsChosen ? chosen : modeForModel,
   };
 
   mkdirSync(dirname(path), { recursive: true });
   writeFileSync(`${path}.tmp`, JSON.stringify(settings, null, 2));
   renameSync(`${path}.tmp`, path);
+  if (keepsChosen) rmSync(filledPath, { force: true });
+  else {
+    mkdirSync(dirname(filledPath), { recursive: true });
+    writeFileSync(filledPath, modeForModel);
+  }
 } catch (err) {
   process.stderr.write(`sync-claude-settings: ${err.message}\n`);
 }

@@ -96,7 +96,7 @@ Generated projection of the ADR log. Read this first when authoring a new decisi
 | 106 | [The default image bakes its harness tools](106-baked-harness-tools.md) |  | agent-images | The default image carries base's and every harness's tools in a layer of its own, installed at build time by the image's own installer, instead of booting on a tools directory each node installs and never prunes. |
 | 107 | [Rename and Delete on a provisional session row wake the Agent](107-provisional-row-actions.md) | 099 | home-feed | A sleeping or waking Agent's session list still shows the attention record's rows as a provisional preview, but Rename and Delete on such a row wake the Agent and run once it answers; the Agent still decides which sessions exist. |
 | 108 | [Every spend figure comes from the gateway meter, per session too](108-measured-session-spend.md) |  | spend-limits | The Model Router stamps each forwarded model call with its session and harness, the gateway meter records them, and every spend figure — per session, per turn and per sub-agent included — reads the meter; the router's own record carries no cost. |
-| 109 | [A pod service takes an env change as a signal, with no env snapshot to re-read](109-pod-service-reload-signal.md) |  | agent-lifecycle | agent-runtime no longer writes the merged env for a pod service to re-read on a reload signal; a service that wants fresh env is one that does not handle the signal. |
+| 111 | [A pod service takes an env change as a signal, with no env snapshot to re-read](111-pod-service-reload-signal.md) |  | agent-lifecycle | agent-runtime no longer writes the merged env for a pod service to re-read on a reload signal; a service that wants fresh env is one that does not handle the signal. |
 
 ## Superseded
 

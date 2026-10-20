@@ -1,15 +1,16 @@
 ---
-id: 109
+id: 111
 title: A pod service takes an env change as a signal, with no env snapshot to re-read
 status: accepted
 subsystem: agent-lifecycle
 summary: agent-runtime no longer writes the merged env for a pod service to re-read on a reload signal; a service that wants fresh env is one that does not handle the signal.
 ---
 
-# ADR-109: A pod service takes an env change as a signal, with no env snapshot to re-read
+# ADR-111: A pod service takes an env change as a signal, with no env snapshot to re-read
 
 **Date:** 2026-10-20
 **Status:** Accepted
+**Amends:** ADR-066 — its reload half only; the supervision half stands.
 **Owner:** @JanPokorny
 
 ## Context

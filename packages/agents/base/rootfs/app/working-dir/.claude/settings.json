@@ -1,9 +1,6 @@
 {
   "theme": "dark",
   "enableAllProjectMcpServers": true,
-  "permissions": {
-    "defaultMode": "auto"
-  },
   "skipDangerousModePermissionPrompt": true,
   "model": "opus"
 }
