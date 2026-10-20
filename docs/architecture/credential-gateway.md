@@ -156,7 +156,7 @@ A request that reaches the harness address by another spelling, outside the guar
 
 **Credentials and leaf.** The controller copies the keys the gateway reads, from every Secret granted to any of the owner's vm Agents, into one per-owner Secret, each key prefixed with its Secret's name; a Secret not granted, or another owner's, never enters it.
 The controller writes it only when its content changes, so a grant, a revocation or a rotation reaches the mounted files without a restart.
-Its pod is stamped twice per content hash of that Secret, as an agent's own gateway pod is per revision (**Rotation**, above), so a rotation is in use as soon.
+Its pod is stamped twice per content hash of the credentials in that Secret — a change to its files alone does not stamp it, since Envoy reads those as the volume updates — as an agent's own gateway pod is per revision (**Rotation**, above), so a rotation is in use as soon.
 One leaf names every host any of the agents intercepts, from the same issuer, so a machine's CA is unchanged.
 The resolver is one CoreDNS with one block per agent's resolver port, each answering with that agent's ClusterIP and reading its file again on change.
 
