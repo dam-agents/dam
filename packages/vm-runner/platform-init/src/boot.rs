@@ -13,8 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::guest::{self, SeedDigest};
 use crate::pool_guard::{
     disk_short, eviction_pass, guard_look, guest_room, read_grant, room_of, ClaimRequest,
-    EvictionKind, EvictionPass, PoolGuard, Room, EVICT_AGES, EVICT_BELOW_PERCENT, POOL_GUARD_FLOOR,
-    POOL_GUARD_STEP,
+    EvictionKind, EvictionPass, PoolGuard, Room, EVICT_AGES, EVICT_BELOW_PERCENT, POOL_GUARD_STEP,
 };
 
 const BOOT_LOG_CAP: u64 = 32 << 20;
@@ -1767,7 +1766,6 @@ fn guard_pool(dir: File) {
     let mut moved: Option<std::time::Instant> = None;
     let mut marked: Option<Room> = None;
     let mut marked_at: Option<std::time::Instant> = None;
-    let mut last_held = 0;
     let mut trim_failing = false;
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
@@ -1873,7 +1871,6 @@ fn guard_pool(dir: File) {
         if let Err(e) = flush_filesystem(home) {
             logf!("WARNING: syncing the disk after sizing the storage guard: {e}");
         }
-        let was = held;
         let held = sized_held;
         let state = guest_state();
         publish(state.granted, state.room, held);
