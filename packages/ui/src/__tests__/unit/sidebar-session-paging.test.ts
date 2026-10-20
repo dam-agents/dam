@@ -137,10 +137,22 @@ describe("an agent's session list with a filter on", () => {
     expect(html).toContain("No sessions match the filter.");
   });
 
-  it("TEST_SCENARIO: while a page loads, Load more is not offered a second time", () => {
+  it("TEST_SCENARIO: while a page loads, Load more stays in place, so keyboard focus stays on it, and says it is loading without loading a second time", () => {
     h.filters = slackOnly;
     h.list.isFetchingNextPage = true;
-    expect(render()).not.toContain("sidebar-agent-sessions-load-more");
+    const html = render();
+    expect(html).toContain('data-testid="sidebar-agent-sessions-load-more"');
+    expect(html).toContain('aria-disabled="true"');
+    expect(html).toContain('aria-busy="true"');
+    expect(html).toContain("Loading…");
+  });
+
+  it("TEST_SCENARIO: a page that failed to load offers Retry in place of Load more", () => {
+    h.filters = slackOnly;
+    h.list.fetchNextPageFailed = true;
+    const html = render();
+    expect(html).not.toContain("sidebar-agent-sessions-load-more");
+    expect(html).toContain('data-testid="sidebar-agent-sessions-more-failed"');
   });
 });
 

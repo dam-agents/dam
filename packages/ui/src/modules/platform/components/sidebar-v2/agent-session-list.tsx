@@ -70,6 +70,11 @@ export function AgentSessionList({
   const filtered = isFiltered(filters);
   const readableNext = hasNextPage && list.answerable;
   const canFetch = readableNext && !isFetchingNextPage && !fetchNextPageFailed;
+  const emptyText = !filtered
+    ? "No sessions yet."
+    : hasNextPage
+      ? "No loaded sessions match the filter."
+      : "No sessions match the filter.";
   const endRef = useLoadOnReach(
     canFetch && !filtered,
     () => void fetchNextPage(),
@@ -105,11 +110,7 @@ export function AgentSessionList({
         rows.length === 0 &&
         (!hasNextPage || filtered) && (
           <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
-            {!filtered
-              ? "No sessions yet."
-              : hasNextPage
-                ? "No loaded sessions match the filter."
-                : "No sessions match the filter."}
+            {emptyText}
           </p>
         )}
       {rest.map(({ session, state }) => (
@@ -132,14 +133,18 @@ export function AgentSessionList({
         />
       )}
       {isFetchingNextPage && !retryingNext && <SessionListSkeleton />}
-      {canFetch && filtered && (
+      {readableNext && filtered && !fetchNextPageFailed && !retryingNext && (
         <button
           type="button"
           data-testid="sidebar-agent-sessions-load-more"
-          onClick={() => void fetchNextPage()}
-          className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+          aria-disabled={isFetchingNextPage || undefined}
+          aria-busy={isFetchingNextPage || undefined}
+          onClick={() => {
+            if (!isFetchingNextPage) void fetchNextPage();
+          }}
+          className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
         >
-          Load more
+          {isFetchingNextPage ? "Loading…" : "Load more"}
         </button>
       )}
       {readableNext && (fetchNextPageFailed || retryingNext) && (
