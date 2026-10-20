@@ -6,13 +6,14 @@ export interface IdleTimeoutMinutes {
   vm: number;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the idle window an Agent hibernates after, in minutes: its own override, else the chart-wide default, which is a separate value for vm Agents. A vm Agent is not offered the setting, so it reads the vm default; one that carries an override anyway — a Template or starter kit seed, or one whose Backend moved — honours it, as a container Agent does. The controller's `effectiveIdleTimeout` reads the same value.
 export function resolveEffectiveHibernationTimeoutMin(
   override: string | undefined,
   vm: boolean,
   idle: IdleTimeoutMinutes,
 ): number {
-  if (vm) return idle.vm;
-  return override != null ? durationToMinutes(override) : idle.container;
+  if (override != null) return durationToMinutes(override);
+  return vm ? idle.vm : idle.container;
 }
 
 export interface DefaultResourceLimits {

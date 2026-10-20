@@ -189,6 +189,7 @@ Whether an Agent is "idle" is **derived from observed activity, never stored** �
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back.
 It runs even when the default is never-hibernate, for the Agents that opt in, and once at start-up, since a restart forgets the shortest window it saw.
 It skips any Agent already at rest — pair observed at zero *and* hibernation published.
+It also skips any machine a [runner roll](vm-runner-upgrades.md#rolls) is waiting on: the roll's `runner-awaiting` list names the machines that were ready before it, and a hibernated machine would never come back ready.
 For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to scale *up*, so scale-down and scale-up can never disagree.
@@ -227,7 +228,8 @@ A Template can seed this override — a workload whose real work runs off-sessio
 The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for scale-up and scale-down.
 The UI offers it as *Sleep after being idle for* a short list of windows or *Never* (`0`), shows a custom value that is not in the list as its own option, and shows the *effective* value; an Agent created without a pick keeps its Template's seed.
 An Agent that never sleeps carries an *Always on* tag.
-**A vm Agent has no per-agent timeout.** It boots in seconds, so it always takes the chart-wide vm idle timeout, ignores any override, and the UI does not offer the setting.
+**A vm Agent reads the vm default.** It boots in seconds, so the chart carries a separate default for it, `controller.agent.base.vmIdleTimeout`, and the UI does not offer the setting on a vm Agent.
+An override still counts where one exists — a Template or starter kit seed, or an Agent whose [Backend](vm-runtime-migration.md) moved — and it is read exactly as a container Agent's is, `0` included.
 A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported — a machine the kernel, its seccomp filter or its runner's own OOM kill took down is booting again, and that reason says why the machine went down rather than that it is up to nothing.
 The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
 A boot the runner reports as copying a disk, a conversion or a migration seed's restore, is held for as long as the runner says so, since the runner bounds it at six hours and a hibernation would start the copy again from nothing; reclaim counts it as booting for the same reason.

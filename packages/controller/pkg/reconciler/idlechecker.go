@@ -8,6 +8,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"sync/atomic"
 	"time"
 
@@ -108,6 +109,11 @@ func (c *IdleChecker) check(ctx context.Context) {
 
 	now := time.Now().UTC()
 	atZero := c.agentsAtZero(ctx)
+	awaiting, err := c.machinesAwaitingRoll(ctx)
+	if err != nil {
+		passErr = err
+		return
+	}
 	hibernated := 0
 	shortest := time.Duration(0)
 	for i := range agents.Items {
@@ -118,6 +124,11 @@ func (c *IdleChecker) check(ctx context.Context) {
 			shortest = effective
 		}
 		if shouldRunMigrating(agent.GetAnnotations(), runtimeMigrationOfObject(agent), effective, now) {
+			continue
+		}
+
+		if awaiting[name] {
+			slog.Debug("idle checker: skipping a machine a runner roll waits on", "agent", name)
 			continue
 		}
 
@@ -144,6 +155,29 @@ func (c *IdleChecker) check(ctx context.Context) {
 	c.shortestObservedTimeout.Store(int64(shortest))
 	slog.Debug("idle checker sweep complete",
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready, so hibernating one of them leaves the roll waiting out its settle timeout and gives up on machines that were only idle. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout.
+func (c *IdleChecker) machinesAwaitingRoll(ctx context.Context) (map[string]bool, error) {
+	deps, err := c.client.AppsV1().Deployments(c.config.Namespace).List(ctx, metav1.ListOptions{
+		LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent,
+	})
+	if err != nil {
+		return nil, err
+	}
+	awaiting := map[string]bool{}
+	for i := range deps.Items {
+		dep := &deps.Items[i]
+		if dep.Annotations[annRunnerRolledAt] == "" || dep.Annotations[annRunnerStalled] != "" {
+			continue
+		}
+		for _, id := range strings.Split(dep.Annotations[annRunnerAwaiting], ",") {
+			if id != "" {
+				awaiting[id] = true
+			}
+		}
+	}
+	return awaiting, nil
 }
 
 func hibernationPublished(agent *unstructured.Unstructured) bool {

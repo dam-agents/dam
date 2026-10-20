@@ -356,14 +356,102 @@ func TestIdleChecker_ZeroPerAgentTimeoutNeverHibernates(t *testing.T) {
 	assert.Equal(t, 5*time.Minute, checker.checkInterval(), "an always-on agent does not speed the sweep up")
 }
 
-// TEST_SCENARIO: A vm agent starts fast enough that nobody plans around its sleep, so it always takes the chart's vm idle timeout and ignores its own override, "0s" included.
-func TestEffectiveIdleTimeout_VMIgnoresOverride(t *testing.T) {
+func runnerDeployment(annotations map[string]string) *appsv1.Deployment {
+	return &appsv1.Deployment{ObjectMeta: metav1.ObjectMeta{
+		Name:        "platform-vm-runner-owner-1",
+		Namespace:   "test-agents",
+		Annotations: annotations,
+		Labels: map[string]string{
+			"app.kubernetes.io/component": vmRunnerComponent,
+			envoyOwnerLabel:               testOwner,
+		},
+	}}
+}
+
+// TEST_SCENARIO: A runner roll waits for every machine that was ready before it to be ready again, and a hibernated machine never comes back ready, so the idle checker must leave a machine listed in the runner's `runner-awaiting` alone until the roll settles or gives up. Without the pin the sweep hibernates it a fraction of a second after the roll starts, and the roll waits out its settle timeout.
+func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("rolled-agent", staleTime, nil)
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	ss := agentStatefulSet("rolled-agent", 1)
+	runner := runnerDeployment(map[string]string{
+		annRunnerRolledAt: time.Now().UTC().Format(time.RFC3339),
+		annRunnerAwaiting: "rolled-agent,another-agent",
+	})
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runner)
+	checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+
+	checker.check(context.Background())
+
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "rolled-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *gotSS.Spec.Replicas, "a machine the roll awaits stays up")
+}
+
+// TEST_SCENARIO: The pin is the roll's own record, so it is released the moment the roll settles or gives up: the runner's `runner-awaiting` and its roll stamp are cleared in one write, and the sweep hibernates a machine the next pass finds idle again.
+func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	settle := func(t *testing.T, annotations map[string]string) int32 {
+		t.Helper()
+		agent := idleAgentCR("rolled-agent", staleTime, nil)
+		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+		ss := agentStatefulSet("rolled-agent", 1)
+		checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runnerDeployment(annotations))
+		checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+
+		checker.check(context.Background())
+
+		gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "rolled-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		return *gotSS.Spec.Replicas
+	}
+
+	rolling := map[string]string{
+		annRunnerRolledAt: time.Now().UTC().Format(time.RFC3339),
+		annRunnerAwaiting: "rolled-agent",
+	}
+	assert.Equal(t, int32(1), settle(t, rolling), "the roll pins the machine while it holds the wait")
+	assert.Equal(t, int32(0), settle(t, map[string]string{}), "a settled roll leaves nothing behind to pin the machine")
+	assert.Equal(t, int32(0), settle(t, map[string]string{annRunnerAwaiting: "rolled-agent"}), "a wait with no roll stamp behind it is no roll")
+	stalled := map[string]string{
+		annRunnerRolledAt: time.Now().UTC().Format(time.RFC3339),
+		annRunnerAwaiting: "rolled-agent",
+		annRunnerStalled:  time.Now().UTC().Format(time.RFC3339),
+	}
+	assert.Equal(t, int32(0), settle(t, stalled), "a roll whose own pod never started is waiting on nothing of the owner's")
+}
+
+// TEST_SCENARIO: A vm agent reads the chart's vm idle timeout only when it carries no override of its own; one that carries an override honours it as a container agent does, "0s" included, so a starter kit's never-hibernate seed keeps a machine awake.
+func TestEffectiveIdleTimeout(t *testing.T) {
 	base := config.AgentBase{IdleTimeout: config.Duration(time.Hour), VMIdleTimeout: config.Duration(5 * time.Minute)}
 	never := &metav1.Duration{}
-	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(never, true, base))
+	hour := &metav1.Duration{Duration: time.Hour}
+	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, true, base))
 	assert.Equal(t, 5*time.Minute, effectiveIdleTimeout(nil, true, base))
+	assert.Equal(t, time.Hour, effectiveIdleTimeout(hour, true, base))
 	assert.Equal(t, time.Duration(0), effectiveIdleTimeout(never, false, base))
 	assert.Equal(t, time.Hour, effectiveIdleTimeout(nil, false, base))
+}
+
+// TEST_SCENARIO: A vm agent that carries a never-hibernate override outlives the chart's vm idle timeout, and one past its own positive override hibernates inside it.
+func TestIdleChecker_VMHonoursItsOwnTimeout(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	swept := func(t *testing.T, override time.Duration) int32 {
+		t.Helper()
+		agent := withHibernationTimeout(idleAgentCR("vm-agent", staleTime, nil), override)
+		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+		checker, client := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("vm-agent", 1))
+		checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+
+		checker.check(context.Background())
+
+		gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "vm-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		return *gotSS.Spec.Replicas
+	}
+
+	assert.Equal(t, int32(1), swept(t, 0), "a never-hibernate vm agent outlives the chart's vm idle timeout")
+	assert.Equal(t, int32(0), swept(t, time.Minute), "a vm agent past its own short override hibernates")
 }
 
 // TEST_SCENARIO: A vm agent woken five minutes ago is idle by its activity stamp, but its idle clock runs from the moment it turned ready, and a boot in progress is not idle; a boot copying a disk is held past the cap, since the runner bounds it; a decided start failure, a refused start, a boot past the cap, a hibernation the runner has not confirmed, and a ready that aged out are hibernated as before.

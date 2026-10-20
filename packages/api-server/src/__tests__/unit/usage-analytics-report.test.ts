@@ -188,7 +188,7 @@ describe("usage analytics report", () => {
   // TEST_SCENARIO: are grouped by the size the agent had when it ran out, so x1 (now 1x)
   // TEST_SCENARIO: keeps its event under 4x, the deleted agent's event is dropped, and
   // TEST_SCENARIO: agents are the distinct agents behind the events.
-  // TEST_SCENARIO: A vm agent is never always on, even with a "0s" override (x3).
+  // TEST_SCENARIO: A vm agent honours its "0s" override, so it counts as always on too (x3).
   it("sizes live agents and leaves out agents nobody counted", () => {
     const live = (
       id: string,
@@ -260,7 +260,7 @@ describe("usage analytics report", () => {
       {
         size: "custom",
         agents: 1,
-        alwaysOn: 0,
+        alwaysOn: 1,
         outOfMemoryEvents: 0,
         outOfMemoryAgents: 0,
       },
