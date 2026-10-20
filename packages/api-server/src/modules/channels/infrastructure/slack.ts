@@ -1461,8 +1461,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         : {
             error:
               `${user} is not your owner, nor in a conversation you are ` +
-              `connected to. You may message directly only your owner and ` +
-              `the people in your connected conversations`,
+              `connected to. You may message directly only your owner, the ` +
+              `person in a 1:1 DM you are connected to, and the members of ` +
+              `channels you are connected to`,
           };
     }
     let reach: Set<string> | "unlinked";
