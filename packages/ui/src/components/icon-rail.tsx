@@ -59,7 +59,7 @@ import type { NotificationItem } from "../modules/notifications/lib/notification
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
 import { useStore } from "../store.js";
 import type { AgentView } from "../types.js";
-import { StatusBadge, stateDotClass, stateLabel } from "./status-indicator.js";
+import { stateDotClass, stateLabel } from "./status-indicator.js";
 
 const SIDEBAR_ACTIVITY_PAGE = 5;
 const AGENT_SESSION_PAGE = 5;
@@ -80,17 +80,6 @@ function applySidebarOrder<T extends { id: string }>(
   }
   for (const agent of byId.values()) ordered.push(agent);
   return ordered;
-}
-
-function formatAgentSubtitle(agent: AgentView): string {
-  const cpu = agent.size?.cpu;
-  const mem = agent.size?.memory;
-  if (!cpu && !mem) return "";
-  const cpuNum = cpu ? parseInt(cpu, 10) / (cpu.endsWith("m") ? 1000 : 1) : 0;
-  const memStr = mem
-    ? mem.replace("Gi", " GiB").replace("Mi", " MiB")
-    : "";
-  return cpuNum && memStr ? `${cpuNum} CPU · ${memStr}` : memStr || `${cpuNum} CPU`;
 }
 
 interface Destination {
@@ -668,8 +657,8 @@ export function IconRail({
                                 }
                               }}
                               className={cn(
-                                "group/agent relative flex w-full cursor-pointer items-center gap-3 rounded-lg border border-border p-3 text-left transition-colors hover:bg-muted/40",
-                                isSelected && "bg-muted/40",
+                                "group/agent relative flex w-full items-center gap-3 rounded-lg px-3 py-1.5 text-left transition-colors hover:bg-muted cursor-pointer",
+                                isSelected && "bg-muted",
                                 clickVariant === 6 &&
                                   excludedAgentIds.has(agent.id) &&
                                   "opacity-40",
@@ -678,49 +667,21 @@ export function IconRail({
                               <AgentAvatar
                                 agentId={agent.id}
                                 state={display.state}
-                                className="!size-10 shrink-0 self-start"
+                                className="!size-6"
                               />
-                              <div className="min-w-0 flex-1">
-                                <span className="block truncate text-base font-medium text-foreground">
-                                  {agent.name}
-                                </span>
-                                {formatAgentSubtitle(agent) && (
-                                  <span className="block truncate text-sm text-muted-foreground">
-                                    {formatAgentSubtitle(agent)}
-                                  </span>
+                              <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
+                                {agent.name}
+                              </span>
+                              {hasUnread &&
+                                !isSelected &&
+                                clickVariant !== 6 && (
+                                  <span
+                                    aria-label="Unread sessions"
+                                    className="absolute top-1/2 right-3 size-2 -translate-y-1/2 rounded-full bg-accent group-hover/agent:invisible group-focus-within/agent:invisible"
+                                  />
                                 )}
-                                {agent.channels.length > 0 && (
-                                  <div className="mt-1.5 flex flex-wrap gap-1">
-                                    {agent.channels.map((ch) => {
-                                      const label =
-                                        ch.type === "slack"
-                                          ? ch.slackChannelId
-                                          : ch.type;
-                                      return (
-                                      <Badge
-                                        key={`${ch.type}-${label}`}
-                                        variant="muted"
-                                        size="sm"
-                                      >
-                                        <ConnectionIcon iconSlug={ch.type} alt="" size={16} />
-                                        {label}
-                                      </Badge>
-                                      );
-                                    })}
-                                  </div>
-                                )}
-                              </div>
-                              <div className="flex shrink-0 items-center gap-1 self-start">
-                                <StatusBadge state={display.state} />
-                                {hasUnread &&
-                                  !isSelected &&
-                                  clickVariant !== 6 && (
-                                    <span
-                                      aria-label="Unread sessions"
-                                      className="size-2 rounded-full bg-accent"
-                                    />
-                                  )}
-                                {clickVariant === 6 ? (
+                              {clickVariant === 6 ? (
+                                <span className="flex shrink-0 items-center gap-0.5">
                                   <Tooltip
                                     content={
                                       excludedAgentIds.has(agent.id)
@@ -754,13 +715,33 @@ export function IconRail({
                                       )}
                                     </button>
                                   </Tooltip>
-                                ) : (
+                                </span>
+                              ) : (
+                                <span
+                                  className={cn(
+                                    "flex shrink-0 items-center gap-0.5 transition-opacity group-hover/agent:opacity-100 focus-within:opacity-100",
+                                    isSelected ? "opacity-100" : "opacity-0",
+                                  )}
+                                >
+                                  <Tooltip content="New chat" side="right">
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation();
+                                        navigateToAgentLanding(agent.id);
+                                      }}
+                                      className="rounded p-0.5 text-muted-foreground hover:text-foreground"
+                                      aria-label={`New chat with ${agent.name}`}
+                                    >
+                                      <NewTab size={16} />
+                                    </button>
+                                  </Tooltip>
                                   <AgentOverflowMenu
                                     agent={agent}
                                     display={display}
                                   />
-                                )}
-                              </div>
+                                </span>
+                              )}
                             </div>
                           )}
                           {isExpanded &&
