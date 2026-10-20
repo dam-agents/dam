@@ -41,7 +41,7 @@ DAM provides it as a platform.
 * **🤝 Built for teams.** Agents can live in Slack or Telegram and be shared across teammates.
   The web UI and `dam` CLI connect to the same live sessions.
 
-* **🧠 Any harness, any model.** Use Claude Code, Codex, Pi Agent, Bob, or any ACP compatible runtime with your own model endpoints.
+* **🧠 Any harness, any model.** Use Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, or any ACP compatible runtime with your own model endpoints.
 
 * **💸 Know what agents cost.** See usage and cost by user, agent, harness, and model, with an activity trail showing what ran and when.
 
@@ -81,7 +81,7 @@ Agents can turn meetings, feedback, and discussions into durable, linked knowled
 
 | Block                   | What it provides                                                                     |
 | ----------------------- | ------------------------------------------------------------------------------------ |
-| **Harnesses**           | Claude Code, Codex, Pi Agent, Bob, or any ACP compatible runtime                     |
+| **Harnesses**           | Claude Code, Codex, Pi Agent, Bob, GitHub Copilot, or any ACP compatible runtime     |
 | **Models**              | AWS Bedrock, internal gateways, LiteLLM, open weight models, and other endpoints     |
 | **Security**            | Isolated agents, credential isolation, network controls, and optional human approval |
 | **Cost & budgets**      | Per user and per agent visibility, budgets, telemetry, and activity history          |

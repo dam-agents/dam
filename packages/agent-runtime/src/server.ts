@@ -265,6 +265,7 @@ const modelCallExporter = createModelCallExporter({
  */
 let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
 let isRuntimeSession: ((sessionId: string) => boolean) | null = null;
+let runningSessionsOf: ((harness: string) => string[]) | null = null;
 const TERMINAL_PIN_REFRESH_MS = 2_000;
 const terminalSessionOf = createTerminalSessionLookup(
   Object.values(harnessManifests).flatMap((m) =>
@@ -282,6 +283,7 @@ const modelRouter = composeModelRouter({
   },
   isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
   terminalSessionOf,
+  runningSessionsOf: (harness) => runningSessionsOf?.(harness) ?? [],
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -504,6 +506,14 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+runningSessionsOf = (harness) =>
+  Object.entries(sessionMetadata.all())
+    .filter(
+      ([sessionId, entry]) =>
+        (entry.meta.harness ?? defaultHarness) === harness &&
+        acpRuntime.isSessionRunning(sessionId),
+    )
+    .map(([sessionId]) => sessionId);
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
@@ -773,6 +783,7 @@ function attachPty(
     slot.client = null;
     slot.detachedAt = Date.now();
     markTerminalSeen(slot.sessionId);
+    void sessionsService.adoptHarnessTitle(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -917,6 +928,7 @@ function attachPty(
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(slot.sessionId, `exited ${exitCode}`);
+        void sessionsService.adoptHarnessTitle(slot.sessionId);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
