@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { VerdictPart } from "../../../types.js";
 import { denyAllPrompt } from "../../approvals/lib/deny-all.js";
+import { withAttachmentNames } from "../../files/lib/upload-path.js";
 import { denyOnceOption } from "../lib/permission-deny-all.js";
 import type {
   PendingPermission,
@@ -25,7 +26,7 @@ function toolTitle(toolCall: unknown): string {
       kind?: string;
       toolCallId?: string;
     };
-    return tc.title ?? tc.kind ?? "this tool call";
+    return withAttachmentNames(tc.title ?? tc.kind ?? "this tool call");
   }
   return "this tool call";
 }
@@ -33,7 +34,8 @@ function toolTitle(toolCall: unknown): string {
 function toolLocation(toolCall: unknown): string | null {
   if (toolCall && typeof toolCall === "object") {
     const tc = toolCall as { locations?: { path?: string }[] };
-    return tc.locations?.[0]?.path ?? null;
+    const path = tc.locations?.[0]?.path;
+    return path === undefined ? null : withAttachmentNames(path);
   }
   return null;
 }
