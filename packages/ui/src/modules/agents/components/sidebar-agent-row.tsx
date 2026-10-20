@@ -20,7 +20,6 @@ interface Props {
   onStep: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
   actions: ReactNode;
-  /** How many icons `actions` shows, so the name stops short of them. */
   actionCount: 2 | 3;
   children?: ReactNode;
 }

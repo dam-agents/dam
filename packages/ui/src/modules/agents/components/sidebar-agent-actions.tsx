@@ -10,7 +10,6 @@ import type { BindMessenger } from "../../sandboxes/components/channels/messenge
 
 type Channels = { slack?: boolean; telegram?: boolean };
 
-/** Whether the row has messenger channels for the Agent actions kebab. */
 export function hasChannelActions(channels: Channels): boolean {
   return Boolean(channels.slack || channels.telegram);
 }
