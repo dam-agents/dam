@@ -44,3 +44,38 @@ export function providerErrorCopy({
     }))
     .exhaustive();
 }
+
+export interface StatusLineCopy {
+  lead: string;
+  rest: string;
+}
+
+export function statusLineCopy({
+  condition,
+  providerName,
+  busy,
+}: {
+  condition: ProviderCondition;
+  providerName: string | null;
+  busy: boolean;
+}): StatusLineCopy | null {
+  const provider = providerName ?? "The model provider";
+  return match(condition)
+    .with({ kind: "no-outage" }, () => null)
+    .with({ kind: "dam-side" }, ({ since }) => ({
+      lead: `${getBrand().name} cannot reach model providers`,
+      rest: `since ${clockLabel(since)}.`,
+    }))
+    .with({ kind: "degraded" }, ({ outage }) =>
+      busy
+        ? {
+            lead: `${provider} is not responding`,
+            rest: "— the agent keeps trying.",
+          }
+        : {
+            lead: `${provider} has had problems since ${clockLabel(outage.since)}`,
+            rest: "— messages may fail.",
+          },
+    )
+    .exhaustive();
+}

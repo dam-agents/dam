@@ -33,6 +33,9 @@ vi.mock(
     ProviderConnectDialog: () => null,
   }),
 );
+vi.mock("../../modules/provider-status/api/queries.js", () => ({
+  useProviderStatus: () => ({ data: undefined }),
+}));
 vi.mock("../../modules/providers/hooks/use-provider-items.js", () => ({
   useProviderItems: () => ({ itemByType: state.items, isPending: false }),
 }));

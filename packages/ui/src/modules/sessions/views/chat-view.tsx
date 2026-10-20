@@ -130,6 +130,7 @@ import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
+import { ProviderStatusLine } from "../components/provider-status-line.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
 import {
   RewritableMessage,
@@ -154,6 +155,7 @@ import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
   pushSessionPath,
   useSessionUrlSync,
@@ -318,6 +320,7 @@ export function ChatView() {
   const harnessStatusQuery = useHarnessConfigStatus(selectedAgent);
   const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const sessionTemplateId = useSessionTemplateId(selectedAgent, sessionId);
   const carried = (selectedAgent && harnessStatus?.harnesses) || [];
   const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
   const harnessesPending =
@@ -1043,6 +1046,7 @@ export function ChatView() {
                 </p>
               )}
               {!statusLineInThread && <PermissionStatusLine />}
+              <ProviderStatusLine templateId={sessionTemplateId} busy={busy} />
             </ChatColumn>
           </div>
 

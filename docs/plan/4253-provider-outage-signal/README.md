@@ -148,7 +148,7 @@ No module imports another module's internals.
 | 01  | ☑    | [Status from failed gateway calls](./01-gateway-call-outcomes.md) | Event, `provider-status` module, call window, evaluate job, snapshot, `providerStatus.list`, architecture page | —          |
 | 02  | ☑    | [Public status sources](./02-public-status-sources.md)            | Proxy readiness, Statuspage components, Bob status, status page links                                          | 01         |
 | 03  | ☑    | [The failed turn names the outage](./03-failed-turn-card.md)      | UI status query, provider error kind, card text and actions, refresh after a failed turn                       | 01         |
-| 04  | ☐    | [Status line and Providers badge](./04-status-line-and-badge.md)  | Status line above the message box, "Degraded" badge in Settings › Providers                                    | 03         |
+| 04  | ☑    | [Status line and Providers badge](./04-status-line-and-badge.md)  | Status line above the message box, "Degraded" badge in Settings › Providers                                    | 03         |
 | 05  | ☐    | [Outage banner](./05-outage-banner.md)                            | `Notice` danger tone, banner at the top of the main area in both layouts, close per outage                     | 03         |
 
 After 01, slice 02 and the UI slices 03–05 do not depend on each other; 04 and 05 reuse the status query of 03.
