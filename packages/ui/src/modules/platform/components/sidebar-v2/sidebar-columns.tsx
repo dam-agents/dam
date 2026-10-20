@@ -1,9 +1,9 @@
 import {
   Add,
-  AddAlt,
+  AddComment,
   Bot,
-  Box,
   Chat,
+  Gift,
   Home,
   Settings,
   Tools,
@@ -205,7 +205,7 @@ function AvatarStrip({
               <Bot size={14} /> New agent
             </DropdownMenuItem>
             <DropdownMenuItem onSelect={() => setKitBrowserOpen(true)}>
-              <Box size={14} /> Use a starter kit
+              <Gift size={14} /> Use a starter kit
             </DropdownMenuItem>
           </DropdownMenuContent>
         </DropdownMenu>
@@ -474,7 +474,7 @@ function ActivityRow({
         session={session}
         active={active}
         working={item.working}
-        needsApproval={false}
+        needsApproval={item.needsApproval}
         unread={item.unread}
         conversation={[item.agent.name, conversation]
           .filter(Boolean)
@@ -550,7 +550,7 @@ function AgentColumn({
               label="New session"
               onClick={go(() => startSession(agent.id))}
             >
-              <AddAlt size={16} />
+              <AddComment size={16} />
             </HeaderIcon>
             <HeaderIcon
               label="Configure agent"

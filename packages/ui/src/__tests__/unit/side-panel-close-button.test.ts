@@ -1,11 +1,14 @@
-// TEST_OVERVIEW: Every side panel's top bar ends with a Close panel X, after the panel's own actions and behind a vertical border; clicking it closes the whole panel, or runs the panel's own close when it brings one, and hands focus to the rail's open tab.
+// TEST_OVERVIEW: Every side panel's top bar ends with a Close panel X, after the panel's own actions and behind a vertical border; clicking it closes the whole panel, or runs the panel's own close when it brings one, and hands focus to the rail's open tab, or with no rail to the top bar's open tab or the main region. Where clearing the tab closes nothing, only a panel with its own close shows it.
 import { Children, createElement, isValidElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
-import { SidePanelCloseButton } from "../../modules/sessions/components/side-panel-close-button.js";
+import {
+  SidePanelCloseButton,
+  SidePanelCloseScope,
+} from "../../modules/sessions/components/side-panel-close-button.js";
 import { SidebarSection } from "../../modules/sessions/components/sidebar-section.js";
 import { createSidePanelSlice } from "../../modules/sessions/store/side-panel.js";
 import type { PlatformStore } from "../../store.js";
@@ -21,10 +24,19 @@ store.current = createStore<PlatformStore>()(
 );
 
 type Click = (e: {
-  currentTarget: { closest: (s: string) => unknown };
+  currentTarget: {
+    closest: (s: string) => unknown;
+    ownerDocument?: {
+      querySelector: (s: string) => unknown;
+      getElementById: (id: string) => unknown;
+    };
+  };
 }) => void;
 
-const outsidePanel = { currentTarget: { closest: () => null } };
+const noPage = { querySelector: () => null, getElementById: () => null };
+const outsidePanel = {
+  currentTarget: { closest: () => null, ownerDocument: noPage },
+};
 
 function closeButton(node: ReactNode): { onClick: Click } {
   for (const child of Children.toArray(node)) {
@@ -107,6 +119,47 @@ it.each([
   closeButton(SidePanelCloseButton({ onClose: () => {} })).onClick({
     currentTarget: {
       closest: (s) => (s === '[data-testid="side-panel"]' ? panel : null),
+    },
+  });
+  expect(focused).toEqual([expected]);
+});
+
+// TEST_SCENARIO: Where clearing the side-panel tab closes nothing, such as the classic chat's sections, a section header shows no X; a panel that brings its own close, such as a delegation, keeps it.
+it.each([
+  ["a section header", {}, false],
+  ["a panel with its own close", { onClose: () => {} }, true],
+])("in a scope that closes no side panel, %s", (_, props, shown) => {
+  const html = renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(
+        SidePanelCloseScope,
+        { value: false },
+        createElement(SidePanelCloseButton, props),
+      ),
+    ),
+  );
+  expect(html.includes('data-testid="side-panel-close"')).toBe(shown);
+});
+
+// TEST_SCENARIO: With no rail around the panel, as in the classic chat, focus goes to the top bar's open tab, or to the main region when no tab is open, such as for a delegation.
+it.each([
+  ["the top bar's open tab", true, "top-bar-tab"],
+  ["the main region", false, "main"],
+])("with no rail, hands focus to %s", (_, pressed, expected) => {
+  const focused: string[] = [];
+  const button = (id: string) => ({ focus: () => focused.push(id) });
+  closeButton(SidePanelCloseButton({ onClose: () => {} })).onClick({
+    currentTarget: {
+      closest: () => null,
+      ownerDocument: {
+        querySelector: (s) =>
+          pressed && s.includes("side-panel-tab-")
+            ? button("top-bar-tab")
+            : null,
+        getElementById: (id) => (id === "main" ? button("main") : null),
+      },
     },
   });
   expect(focused).toEqual([expected]);

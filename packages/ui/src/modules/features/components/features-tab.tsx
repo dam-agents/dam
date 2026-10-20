@@ -70,7 +70,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "new-layout",
     label: "New layout",
     description:
-      "A sidebar of agent avatars beside your conversations, with pinned sessions and a dashboard Home. Turn it off to return to the current layout.",
+      "A sidebar of agent avatars beside your conversations, with pinned sessions, a dashboard Home, and one side panel on the right with an icon bar for files, changes, artifacts and the browser. Turn it off to return to the current layout.",
   },
 ];
 
