@@ -10,5 +10,6 @@ export {
   kitUpdateEvent,
   sessionPairFields,
   workspaceCommandEvent,
+  agentInstructionsEvent,
   workspaceSeedEvent,
 } from "./domain/outbox-events.js";

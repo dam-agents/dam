@@ -19,6 +19,7 @@ describe("resolveDrivers", () => {
   it("activates every built-in by default when nothing is declared", () => {
     const r = resolveDrivers(mk({}));
     expect(Object.keys(r).sort()).toEqual([
+      "agent-instructions",
       "env",
       "file",
       "initialization",
@@ -79,6 +80,7 @@ describe("resolveDrivers", () => {
       "skill-ref",
     ]);
     expect(Object.keys(eventDrivers(r)).sort()).toEqual([
+      "agent-instructions",
       "harness-config",
       "initialization",
       "satellite-outcome",

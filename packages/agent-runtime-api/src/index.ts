@@ -233,6 +233,7 @@ export {
   satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
   workspaceCommandEventPayload,
+  agentInstructionsEventPayload,
   workspaceSeedEventPayload,
   helloInput,
 } from "./modules/runtime/types.js";

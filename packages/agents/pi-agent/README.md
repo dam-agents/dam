@@ -24,7 +24,7 @@ Change in [`app/working-dir/.pi/agent/settings.json`](rootfs/app/working-dir/.pi
 usr/local/bin/
   harness-chat           ← chat-mode entrypoint (pi-acp, which runs pi through pi-platform)
   harness-terminal       ← terminal-mode entrypoint (pi-platform)
-  pi-platform            ← runs pi with the platform's extensions and pi-memory loaded from the image
+  pi-platform            ← runs pi with the platform's extensions and pi-memory loaded from the image, and links the platform instructions
 usr/local/share/pi-platform/
   pi-acp-patch.mjs       ← temporary pi-acp fix, loaded by harness-chat (see "pi-acp patch")
   extensions/pi-dynamic-providers/
@@ -39,6 +39,12 @@ app/
       auth.json          ← placeholder credentials
       APPEND_SYSTEM.md   ← appended to the system prompt (global)
 ```
+
+## Platform instructions
+
+`pi-platform` links `~/.pi/agent/AGENTS.md`, Pi's global context file, to `/etc/AGENTS.md` at every start, so the platform instructions never sit in a file the owner edits.
+Pi reads the global file first, then one `AGENTS.md` (or `CLAUDE.md`) in each directory from `/` down to the work directory, so the agent's own `~/AGENTS.md` and `work/AGENTS.md` load after it ([agent instructions](../../../docs/architecture/agent-images.md#agent-instructions)).
+A regular file the owner put at `~/.pi/agent/AGENTS.md` is kept, and then replaces the platform instructions for that agent.
 
 ## MCP servers
 
