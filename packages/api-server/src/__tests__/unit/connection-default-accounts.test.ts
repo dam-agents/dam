@@ -176,7 +176,10 @@ describe("contestedDefaultAccounts", () => {
       storage("s3-a", "Lake"),
       storage("s3-b", "Archive"),
     ]);
-    expect(both.map((g) => g.key)).toEqual(["github:github.com", "aws-profile"]);
+    expect(both.map((g) => g.key)).toEqual([
+      "github:github.com",
+      "aws-profile",
+    ]);
   });
 
   /** TEST_SCENARIO: Marking a default clears the other grants of its group,

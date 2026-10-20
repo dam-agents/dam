@@ -10,8 +10,7 @@ import { githubAccountKind } from "./github-accounts.js";
 
 export const DEFAULT_ACCOUNT_KINDS = [githubAccountKind, awsProfileKind];
 
-export type DefaultAccountKindId =
-  (typeof DEFAULT_ACCOUNT_KINDS)[number]["id"];
+export type DefaultAccountKindId = (typeof DEFAULT_ACCOUNT_KINDS)[number]["id"];
 
 export function preferenceGroupOf(
   contributions: readonly Contribution[],
