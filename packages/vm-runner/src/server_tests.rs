@@ -44,6 +44,8 @@ struct Fake {
     stop_delay: Mutex<Duration>,
     delete_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
+    // UNIT_BOUNDARY_DESCRIPTION: a start this many calls in fails with this message, so a test can break the boot that follows a grow without touching the one before it.
+    fail_start_at: Mutex<Option<(usize, String)>>,
     // UNIT_BOUNDARY_DESCRIPTION: a signal the VMM of the next start dies by, which that start returns as the kill the runtime read, as the real one does when its boot monitor reaps the child.
     start_killed: Mutex<Option<i32>>,
     fail_grow_once: Mutex<Option<String>>,
@@ -186,6 +188,14 @@ impl Runtime for Fake {
         }
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
+        }
+        let nth = locked(&self.booted_mib).len();
+        let failing = locked(&self.fail_start_at).clone();
+        if let Some((at, message)) = failing {
+            if at == nth {
+                *locked(&self.fail_start_at) = None;
+                anyhow::bail!(message);
+            }
         }
         if let Some(signal) = locked(&self.start_killed).take() {
             let mut vmm = stand_in_vmm();
@@ -680,6 +690,23 @@ async fn a_machine_that_cannot_grow_is_booted_again_whole() {
         ]
     );
     assert_eq!(*locked(&h.fake.booted_mib), vec![1024, 2048, 2048]);
+}
+
+// TEST_SCENARIO: the RAM a grow asks for is what most often kills the machine asking, and the reboot that follows a failed grow is a boot that can fail on its own. The kill the grow read rides in the error the reboot returns, so the machine names the death it was restarted for rather than a boot that broke, and the OOM count that death spent is not left to label a later kill.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_grow_that_failed_on_a_kill_names_it_even_when_the_reboot_fails() {
+    let h = Harness::with("grow-kill-reboot", |c| c.boot_mib = 1024);
+    *locked(&h.fake.fail_grow_once) = Some("the VMM did not add the RAM".into());
+    *locked(&h.fake.fail_start_at) = Some((2, "the boot after the grow broke".into()));
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    h.fake.keep_signal(pid, libc::SIGKILL);
+    h.server.put("m1", spec(true)).unwrap();
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+    let _ = vmm.kill();
+    let _ = vmm.wait();
 }
 
 // TEST_SCENARIO: readiness does not wait for the grow, so a guest can answer, and the agent read ready, before its grow fails. A reboot then would make the agent flap and lose a prompt sent to it. So the guest is left running at its boot size, and its next start boots it whole.
