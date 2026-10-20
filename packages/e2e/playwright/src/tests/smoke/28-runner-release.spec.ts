@@ -34,6 +34,7 @@ test.skip(laneBackend !== "vm", "only a machine boots a runner release");
 
 test.describe.configure({ mode: "serial" });
 
+const derivedMarker = "-e2e";
 const markerPath = "e2e-runner-release-marker.txt";
 const installValues = "/tmp/e2e-runner-release-roll-values.yaml";
 const heldForReboot =
@@ -129,6 +130,30 @@ async function expectInstallRestored(): Promise<void> {
     .toBe("");
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the newest record the controller had logged when a hop began, read from the node's own clock rather than this machine's, which drifts from it across a suspend, and a second back, since a stamp carries no fraction and a hop's own line can land in the second one before it. A hop reads only what was logged after it, so an earlier run's line for the same owner and release cannot answer for this one. Nothing is a cutoff when the log is empty, which is the same thing: no line of an earlier run exists to be read.
+function controllerWatermark(): string | undefined {
+  const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
+  const stamps = kubectl(
+    "-n",
+    RELEASE_NS,
+    "logs",
+    "-l",
+    selector,
+    "--tail=1",
+    "--timestamps=true",
+  )
+    .split("\n")
+    .flatMap((line) => {
+      const stamp = /^\S* ?(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})/.exec(line);
+      return stamp ? [stamp[1]] : [];
+    })
+    .sort();
+  const newest = stamps[stamps.length - 1];
+  return newest === undefined
+    ? undefined
+    : new Date(Date.parse(`${newest}Z`) - 1_000).toISOString();
+}
+
 function controllerLog(since?: string): string {
   const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
   return kubectl(
@@ -143,7 +168,10 @@ function controllerLog(since?: string): string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a hop of the roll must leave behind: a pod of the new release, a boot that is not the one before, HOME as it was, and an agent ready on it. The reconciler's own line, logged since the hop began, says the release rolled the pod, so a reboot for another reason cannot pass for the release reaching the machine, and one hop's line cannot answer for the next.
-async function rolledOnto(image: string, since: string): Promise<void> {
+async function rolledOnto(
+  image: string,
+  since: string | undefined,
+): Promise<void> {
   let boot = "";
   await expect
     .poll(
@@ -226,7 +254,7 @@ test.beforeAll(async () => {
   installImage = runnerImage();
   installRepository = installImage.split("@")[0].replace(/:[^/]*$/, "");
   owner = podField(pod, ".metadata.labels.agent-platform\\.ai/owner");
-  secondKey = `${kubectl(
+  const rebootKey = kubectl(
     "-n",
     AGENT_NS,
     "exec",
@@ -236,11 +264,12 @@ test.beforeAll(async () => {
     "--",
     "cat",
     "/usr/local/libexec/vm-runner/reboot-id",
-  ).trim()}-e2e`;
+  ).trim();
   expect(
-    installImage.endsWith(`:${secondKey}`),
-    `the install already runs ${secondKey}; put the chart back on its own values before a run`,
-  ).toBe(false);
+    [installImage, rebootKey].filter((seen) => seen.endsWith(derivedMarker)),
+    "an earlier run left the install on its derived release; put the chart back on its own values before a run",
+  ).toEqual([]);
+  secondKey = `${rebootKey}${derivedMarker}`;
   machine = { boot: guestBoot(), pod };
   expect(
     machine.boot,
@@ -282,7 +311,7 @@ test("rolls the live guest onto a release that declares a reboot", async () => {
     guestBoot(),
     "the machine is on another boot than the one the hop starts from",
   ).toBe(machine.boot);
-  const since = new Date().toISOString();
+  const since = controllerWatermark();
   installMoved = true;
   upgrade(
     `virtualization.runner.image.repository=${installRepository}`,
@@ -299,7 +328,7 @@ test("rolls it back onto the release the install holds", async () => {
     guestBoot(),
     "the machine is on another boot than the one the hop starts from",
   ).toBe(machine.boot);
-  const since = new Date().toISOString();
+  const since = controllerWatermark();
   upgrade();
   await rolledOnto(installImage, since);
   installMoved = false;

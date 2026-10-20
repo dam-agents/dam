@@ -3,7 +3,7 @@
 #MISE hide=true
 #MISE dir="{{cwd}}"
 #MISE env={ LIMA_INSTANCE = "platform-k3s-test" }
-#USAGE arg "<key>" help="The reboot key the second release declares, which is also its tag; e.g. runner-2"
+#USAGE arg "<key>" help="The reboot key the second release declares, which is also its tag; e.g. runner-1-e2e"
 # A runner release reaches an owner's machines as a hand-off in place, unless the
 # release declares a reboot key its pod does not run, which rolls the pod and
 # reboots them (see packages/vm-runner/reboot-id and
