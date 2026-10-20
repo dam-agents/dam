@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -10,9 +10,10 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_OUT_OF_CAPACITY, REASON_STORAGE_FULL, STATE_RUNNING,
+    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerImageCache,
+    RunnerPressure, RunnerUsage, SeedResult, State, StorageUsage, REASON_AWAITING_ALLOCATION,
+    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_OOM_KILLED,
+    REASON_OUT_OF_CAPACITY, REASON_SECCOMP_KILLED, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
@@ -27,7 +28,7 @@ use crate::metrics::{Gauges, Metrics};
 use crate::plan::{
     admissible, gateway_port_admissible, quiet_limit, reads_ready, step, Action, Health,
 };
-use crate::runtime::{redact, Machine, Runtime, Update};
+use crate::runtime::{ended, redact, Ended, Machine, Runtime, Update};
 use crate::share::{self, write_share, SeedFile, SHARE_DIR};
 use crate::state::{
     self, is_image_ref, is_machine_id, machine_dir, read_spec, write_spec, IMAGE_DIGEST_FILE,
@@ -100,6 +101,12 @@ struct Boot {
     note: Option<(String, Instant, Option<&'static str>)>,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the kill that took a machine's VMM down, as the runner reaped it: the reason the Agent is told and the sentence that says it. It outlives the boot the runner starts after it, so the owner reads why the machine restarted rather than a machine that flapped, and it goes once the machine's guest answers again.
+struct Killed {
+    reason: &'static str,
+    message: String,
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: what the runtime and the guest last said about a machine. `error` is set only with the unknown state, when the runtime could not be read.
 #[derive(Clone, PartialEq, Eq)]
 struct Seen {
@@ -108,7 +115,7 @@ struct Seen {
     error: Option<String>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner knows about one machine beyond its files. `asked` counts the specs stored in `desired`, so a worker can tell that a newer one arrived while its action ran. `seeding` is set while a seed is uploaded into the machine's share, and no worker starts while it is. `version` changes whenever the status this entry reports changes, which is what a waiting status read answers on. `looked` counts every change to `seen`, so a probe that ran while something newer was recorded drops its older answer. `secrets` holds every env value this machine was given, because a guest that prints its environment puts them on the console, and the console outlives a spec change. `cancel` is the machine's own child of the runner's lifetime, cancelled by a delete so the action in flight stops waiting on its fetch. `acting_mib` is the memory of the spec the action in flight runs with, which a newer spec stored behind it does not change. `resident_mib` is what the prober last measured the running machine's VMM holding, kept beside `seen` rather than in it, so a figure that moves at every probe does not move the status version and wake every waiting read. `resident_stale` is whether the last probe of the machine could not read that figure or the machine's state, which admission counts at least at the warm-up floor while it stands, because a figure from before the failure is not what the machine holds now. `warming_since` is when the machine's last boot began, which admission counts it at the warm-up floor for WARMUP after. `deletes` counts the delete calls in progress, and `deleting` stays set after one gave up waiting, and while any runtime call it waited on still runs, so the worker still takes no further action and no ensure clears it. `calls` is held by every start, stop or delete call into the runtime until that call returns, also after the runner gave up waiting for it, so it counts one more holder per call still running. `gave_up` is when the runner last restarted the machine for going quiet, which holds its next such restart back. `killed` is the signal that took the machine's VMM down, which the status reports until the guest answers again. `restarts` counts those restarts since the controller last asked the machine stopped: the controller publishes no count for a hibernated Agent, so one kept across the stop would read after the wake as a crash the user never had.
 #[derive(Default)]
 struct MachineEntry {
     desired: Option<MachineSpec>,
@@ -118,6 +125,7 @@ struct MachineEntry {
     deleting: bool,
     seeding: bool,
     failure: Option<Failed>,
+    killed: Option<Killed>,
     health: Health,
     restarts: i32,
     gave_up: Option<Instant>,
@@ -130,6 +138,7 @@ struct MachineEntry {
     version: u64,
     acting_mib: i32,
     resident_mib: Option<i32>,
+    resident_stale: bool,
     warming_since: Option<Instant>,
     cpu: Option<(Instant, u64)>,
     cpu_milli: u64,
@@ -184,6 +193,49 @@ struct Machines {
     cpu: crate::cpu::Window,
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what `oom_kills_seen` holds until the first reap reads a cgroup's oom_kill count: a figure the cgroup could plausibly reach (u64::MAX), so a runner that reads no cgroup never mistakes it for a baseline.
+const OOM_KILLS_UNREAD: u64 = u64::MAX;
+
+// UNIT_BOUNDARY_DESCRIPTION: how long an exit the reaper collected is kept while no report can be made of it — the machine's start call is still running, or it is converging, or its owner asked it down and the stop has not finished. Past it the record goes, since a death that old explains nothing the machine reads now.
+const EXIT_KEPT: Duration = Duration::from_secs(120);
+
+// UNIT_BOUNDARY_DESCRIPTION: the most kernel OOM kills the reaper carries unmatched between ticks. The kernel counts a kill before its victim is read, and a victim the reaper never sees — the loader, or a machine whose record is gone — would otherwise leave a credit that labels a later operator's `kill -9` as memory; a handful covers a burst, and what is past it is dropped rather than carried.
+const OOM_CREDIT_CAP: u64 = 8;
+
+// UNIT_BOUNDARY_DESCRIPTION: the signal the loader recorded for a VMM it reaped, read and removed in one step so one death is reported once: a VMM that died while its machine had no runner is the case where this process never saw the status at all. A record that cannot be parsed still counts as a death, so it is not read forever.
+fn read_exit_record(state_dir: &std::path::Path, pid: i32) -> Option<Option<i32>> {
+    let path = state_dir
+        .join(crate::state::EXIT_RECORDS)
+        .join(pid.to_string());
+    let text = fs::read_to_string(&path).ok()?;
+    let _ = fs::remove_file(&path);
+    Some(text.trim().parse().ok())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: removes the loader's records for pids no machine names any more, and any record older than a death still explains: a machine deleted while its record was being written leaves a file nothing would ever read.
+fn prune_exit_records(state_dir: &std::path::Path, named: &BTreeSet<i32>) {
+    let dir = state_dir.join(crate::state::EXIT_RECORDS);
+    let Ok(entries) = fs::read_dir(&dir) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let named_here = name
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+            .is_some_and(|pid| named.contains(&pid));
+        let stale = entry
+            .metadata()
+            .and_then(|meta| meta.modified())
+            .ok()
+            .and_then(|at| at.elapsed().ok())
+            .is_some_and(|age| age > EXIT_KEPT);
+        if !named_here || stale {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
+}
+
 pub struct Server {
     config: Config,
     runtime: Arc<dyn Runtime>,
@@ -197,6 +249,12 @@ pub struct Server {
     storage_look: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
     storage_unmeasured: std::sync::atomic::AtomicBool,
+    // UNIT_BOUNDARY_DESCRIPTION: the cgroup's oom_kill count as the last reap saw it: OOM_KILLS_UNREAD until one reads it, since a runner with no cgroup to read falls back to the signal alone.
+    oom_kills_seen: AtomicU64,
+    // UNIT_BOUNDARY_DESCRIPTION: kernel OOM kills counted but not yet matched to a victim this reaper reported. One credit is spent per SIGKILL it reports, so an operator's `kill -9` beside a real OOM is not read as memory, and an OOM counted before its victim was read is not lost.
+    oom_credit: AtomicU64,
+    // UNIT_BOUNDARY_DESCRIPTION: every death the reaper has collected and not yet reported or dropped, by pid, with the signal that ended it when one did: the runtime's own sweep of these children discards the status, and the status read once is all there is, so a machine still starting when its VMM dies keeps its record until the start call returns.
+    exits: Mutex<BTreeMap<i32, (Option<i32>, Instant)>>,
     shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
@@ -274,6 +332,22 @@ fn check_id(id: &str) -> Result<(), Rejected> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how a person restages the image the runner refuses as an archive, which is the one thing a staging run cannot learn by itself — where this runner's images live. `host_runner` is set where the binary runs on a Mac, which is the host runner: it owns its image directory, so the staging is told to stay on that Mac, in the home the directory sits in, since a shell a person opens has neither. A runner pod reads a mount of the install's cache directory instead, whose node directory no process in the pod can see, so the hint says where that directory is named rather than the mount's path.
+fn restage_hint(image_dir: &Path, host_runner: bool) -> String {
+    if host_runner {
+        return format!(
+            "`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME={} mise run image:stage-vm <image>`",
+            shell_quote(image_dir.parent().unwrap_or(Path::new("/")))
+        );
+    }
+    "`mise run image:stage-vm <image>`, with `VM_IMAGE_DIR` set to the node directory this runner's pod mounts its image cache from".to_string()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one shell word, so a hint a person pastes works for a directory with a space or a quote in it. Every value it is given is single-quoted, and a quote inside one closes the quoting, escapes itself and opens it again.
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', r"'\''"))
+}
+
 impl Server {
     // UNIT_BOUNDARY_DESCRIPTION: a runner over its state directory. It must be built inside the tokio runtime that will serve it, because every published port is a task on that runtime. Machines already on disk get their ports published again, since the listeners died with the previous process while the machines' ports did not. Each one the runtime finds running is measured before the runner admits anything, and the prober takes it from there: a runner that took the machines over in a hand-off or a restart would otherwise count each at the warm-up floor until the controller first asked about it, and admit a start into memory its running guests already hold.
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
@@ -297,6 +371,9 @@ impl Server {
             storage_look: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
             storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
+            oom_kills_seen: AtomicU64::new(OOM_KILLS_UNREAD),
+            oom_credit: AtomicU64::new(0),
+            exits: Mutex::new(BTreeMap::new()),
             shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
@@ -309,13 +386,26 @@ impl Server {
                     tracing::warn!(machine = %id, error = %e, "republishing machine port");
                 }
             }
-            if server.runtime.state(&id).ok() == Some(State::Running) {
-                let resident = server.runtime.resident_mib(&id);
-                locked(&server.machines)
-                    .entries
-                    .entry(id)
-                    .or_default()
-                    .resident_mib = resident;
+            match server.runtime.state(&id) {
+                Ok(State::Running) => {
+                    let resident = server.runtime.resident_mib(&id);
+                    locked(&server.machines)
+                        .entries
+                        .entry(id)
+                        .or_default()
+                        .resident_mib = resident;
+                }
+                // UNIT_BOUNDARY_DESCRIPTION: a record this runner cannot read is not a machine that holds nothing: when a VMM process holds its directory, the machine is recorded as unknown so the runner counts it, as admission does, until a look reads it again. Left unrecorded, a running machine would be missing from everything counted off the entries — the storage every guest may add — and the others would be granted its room.
+                Ok(_) => {}
+                Err(e) => {
+                    if server.runtime.holds_vmm(&id) {
+                        locked(&server.machines).entries.entry(id).or_default().seen = Some(Seen {
+                            state: State::Unknown,
+                            ready: false,
+                            error: Some(format!("{e:#}")),
+                        });
+                    }
+                }
             }
         }
         server.hold_images();
@@ -362,6 +452,13 @@ impl Server {
         locked(&server.machines).pressure.version =
             server.versions.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(cgroup) = server.config.cgroup_dir.clone() {
+            // UNIT_BOUNDARY_DESCRIPTION: a node's kubelet can make the runner's cgroup kill every process in it for one process's memory, which no OOM score of the VMMs' own prevents: one machine's growth would then end the runner and every machine of the owner. The kubelet writes memory.oom.group and leaves it 0 while singleProcessOOMKill is on, its default, so a runner that reads it set says so on its console, and the gauge keeps saying it on every scrape.
+            if crate::pressure::oom_group(&cgroup) == Some(true) {
+                tracing::warn!(
+                    cgroup = %cgroup.display(),
+                    "vm runner: its cgroup kills the whole runner for one machine's memory (memory.oom.group=1); the node's kubelet must not group OOM kills for these runners"
+                );
+            }
             let sampler = Arc::downgrade(&server);
             server.background(move |lifetime| {
                 if let Err(e) = crate::pressure::working_set_mib(&cgroup) {
@@ -431,6 +528,143 @@ impl Server {
                 }
             }
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of every machine's VMM that has ended, and says on the machine what killed it: a VMM killed by a signal is a machine the kernel took for memory, or one its own seccomp filter killed, and either is said on the status with a counter of its own. It runs every second, ahead of the runtime's own sweep of these children in the same tick, and it collects every machine's status before it decides anything: that sweep reads the same statuses and throws them away, so one read has to serve both, and a machine whose start call is still running keeps its collected exit until that call returns rather than losing it to a boot failure. A status this process cannot read is a machine another runner release booted, whose VMM the loader reaps and records, so a kill is still named after a hand-off. Only a machine its owner asked to run is reported — the runner's own stop, delete and start kill VMMs too — and those kills are guarded here by the action in flight, by a runtime call still holding the machine after its wait gave up, and by the spec that asked the machine down. A SIGKILL counts as the kernel's only when the cgroup counted an OOM kill this reaper has not yet matched to a victim, so an operator's `kill -9` and a container runtime's stop are not reported as memory. A kill is read once, and it goes when the guest answers, when its owner asks the machine down, and with the machine.
+    pub fn reap_killed(&self) {
+        self.collect_exits();
+        self.match_oom_kills();
+        for (id, pid, signal) in self.reportable_kills() {
+            let reason = match signal {
+                libc::SIGSYS => REASON_SECCOMP_KILLED,
+                libc::SIGKILL if self.take_oom_credit() => REASON_OOM_KILLED,
+                libc::SIGKILL => {
+                    tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal the kernel's OOM killer did not count, so it was not the kernel's; the machine restarts with no reason saying it ran out of memory");
+                    locked(&self.exits).remove(&pid);
+                    continue;
+                }
+                _ => {
+                    tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal no reason on the status explains");
+                    locked(&self.exits).remove(&pid);
+                    continue;
+                }
+            };
+            let message = match reason {
+                REASON_SECCOMP_KILLED => format!(
+                    "the machine's VMM made a call its seccomp filter forbids (signal {signal}), so the guest was killed; the runner restarts it"
+                ),
+                _ => format!(
+                    "the kernel killed the machine's VMM to free memory (signal {signal}); the runner restarts it"
+                ),
+            };
+            tracing::warn!(machine = %id, pid, signal, reason, "vm runner: a machine's VMM was killed");
+            self.metrics.killed(reason);
+            locked(&self.exits).remove(&pid);
+            let mut machines = locked(&self.machines);
+            if let Some(entry) = machines.entries.get_mut(&id) {
+                entry.killed = Some(Killed { reason, message });
+                // UNIT_BOUNDARY_DESCRIPTION: the machine is stopped now, and says so rather than at its next probe: a status that read running would tell the controller the machine is up when its VMM is gone, and the kill it just reported would wake nobody. `looked` moves with the record, so a probe that looked before the kill drops its older answer instead of recording the dead machine as running again.
+                entry.seen = Some(Seen {
+                    state: State::Stopped,
+                    ready: false,
+                    error: None,
+                });
+                entry.looked += 1;
+                self.bump(entry);
+            }
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: keeps every ended child's status, wherever the machine it belongs to stands: a VMM that dies while its start or grow call still runs is the very case the runtime's sweep would erase, and the call's own failure would then read as a boot that broke rather than the kill it was. A status is read once and kept, and the loader's record covers a VMM this process is no longer the parent of.
+    fn collect_exits(&self) {
+        let mut named = BTreeSet::new();
+        let ids: Vec<String> = locked(&self.machines).entries.keys().cloned().collect();
+        for id in ids {
+            let Some(pid) = self.runtime.vmm_record_pid(&id) else {
+                continue;
+            };
+            if locked(&self.exits).contains_key(&pid) {
+                continue;
+            }
+            // UNIT_BOUNDARY_DESCRIPTION: a pid this process is not the parent of reads as nothing, which is every machine that outlived the runner that booted it: its death is the record the loader wrote, and reading it here is what keeps a hand-off from hiding a kill.
+            let signal = match ended(pid) {
+                Ended::Signalled(signal) => Some(signal),
+                Ended::Exited => None,
+                Ended::Running => match read_exit_record(&self.config.state_dir, pid) {
+                    Some(signal) => signal,
+                    None => continue,
+                },
+            };
+            named.insert(pid);
+            locked(&self.exits).insert(pid, (signal, Instant::now()));
+        }
+        locked(&self.exits).retain(|_, (_, at)| at.elapsed() < EXIT_KEPT);
+        prune_exit_records(&self.config.state_dir, &named);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the kernel counts an OOM kill at the second it makes one, and the victim is read at the tick after, so the count is turned into credits every tick and each credit is spent by the first SIGKILL this reaper reports. A cgroup that cannot be read says nothing about who killed the machine, so every SIGKILL is read as memory there.
+    fn match_oom_kills(&self) {
+        let Some(now) = self
+            .config
+            .cgroup_dir
+            .as_ref()
+            .and_then(|cgroup| crate::pressure::oom_kills(cgroup))
+        else {
+            return;
+        };
+        let before = self.oom_kills_seen.swap(now, Ordering::Relaxed);
+        if before == OOM_KILLS_UNREAD {
+            return;
+        }
+        let counted = now.saturating_sub(before);
+        if counted > 0 {
+            let credit = self.oom_credit.load(Ordering::Relaxed) + counted;
+            self.oom_credit
+                .store(credit.min(OOM_CREDIT_CAP), Ordering::Relaxed);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether one kernel OOM kill is still unmatched: spent by the SIGKILL it is reported for, or granted outright where no cgroup can be read to count them.
+    fn take_oom_credit(&self) -> bool {
+        if self
+            .config
+            .cgroup_dir
+            .as_ref()
+            .and_then(|cgroup| crate::pressure::oom_kills(cgroup))
+            .is_none()
+        {
+            return true;
+        }
+        self.oom_credit
+            .try_update(Ordering::Relaxed, Ordering::Relaxed, |credit| {
+                credit.checked_sub(1)
+            })
+            .is_ok()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the machines whose collected death can be reported now, with the machine, its pid and the signal: one its owner asked to run, with no action in flight, not converging or deleting, not already saying a kill, and no runtime call still holding it after its wait gave up. A death collected for any other machine is kept, not dropped — the call in flight is what will make it reportable next tick.
+    fn reportable_kills(&self) -> Vec<(String, i32, i32)> {
+        let exits = locked(&self.exits);
+        let machines = locked(&self.machines);
+        let mut found = Vec::new();
+        for (id, entry) in machines.entries.iter() {
+            if entry.converging
+                || entry.deleting
+                || entry.action.is_some()
+                || Arc::strong_count(&entry.calls) > 1
+                || entry.killed.is_some()
+                || !entry.desired.as_ref().is_some_and(|spec| spec.running)
+            {
+                continue;
+            }
+            let Some(pid) = self.runtime.vmm_record_pid(id) else {
+                continue;
+            };
+            if let Some((Some(signal), _)) = exits.get(&pid) {
+                found.push((id.clone(), pid, *signal));
+            }
+        }
+        found
     }
 
     pub fn pressure(&self) -> RunnerPressure {
@@ -581,6 +815,14 @@ impl Server {
             .collect())
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node image cache service now, asked by the controller before it holds a changed runner pod back for a busy agent. A runner with no service configured needs no one and answers reachable, since it boots only the trees staged on its node.
+    pub fn image_cache(&self) -> RunnerImageCache {
+        match &self.config.images {
+            Some(images) => images.reach(),
+            None => RunnerImageCache::default(),
+        }
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it. While a seed is being uploaded the spec is stored and no worker is started, because a guest booted then would read half a seed; the controller's next ensure after the upload starts it.
     pub fn put(
         self: &Arc<Self>,
@@ -595,6 +837,10 @@ impl Server {
             let entry = machines.entries.entry(id.to_string()).or_default();
             if !spec.running && entry.restarts != 0 {
                 entry.restarts = 0;
+                self.bump(entry);
+            }
+            // UNIT_BOUNDARY_DESCRIPTION: an owner that asked the machine down ends the report of what took its VMM down: a hibernated machine the kernel killed says it is hibernated, not that it is short of memory it no longer asks for.
+            if !spec.running && entry.killed.take().is_some() {
                 self.bump(entry);
             }
             let known = &mut entry.secrets;
@@ -622,9 +868,12 @@ impl Server {
             }
             let _admitting = boots.then(|| locked(&self.admission));
             if boots {
-                if let Err(e) = self.room_for(id, &spec) {
-                    self.metrics.refused();
-                    return Ok(self.refuse(id, status, REASON_OUT_OF_CAPACITY, e.to_string()));
+                if let Err((reason, e)) = self.room_for(id, &spec) {
+                    // UNIT_BOUNDARY_DESCRIPTION: a start waiting for the node is not a refusal the alert is about: it is retried at the machine watch's cadence and ends when the node enacts the resize or the room it granted is freed, where an out-of-capacity refusal is the owner's pool being full until agents stop.
+                    if reason == REASON_OUT_OF_CAPACITY {
+                        self.metrics.refused();
+                    }
+                    return Ok(self.refuse(id, status, reason, e.to_string()));
                 }
             }
             let mut machines = locked(&self.machines);
@@ -1189,7 +1438,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as the cache's fault or the image's, whichever it is, and never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
     fn resolve(
         &self,
         id: &str,
@@ -1437,6 +1686,7 @@ impl Server {
             cpu_limit_milli: cgroup.and_then(|c| crate::cpu::limit_milli(c).ok().flatten()),
             working_set_mib: sampled.map(|p| p.0),
             pressured: sampled.map(|p| p.1),
+            oom_group: cgroup.and_then(crate::pressure::oom_group),
         })
     }
 
@@ -1469,6 +1719,9 @@ impl Server {
                     disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
                     cpu_milli,
                     id,
+                    cpus: status.cpus,
+                    memory_mib: status.memory_mib,
+                    warming: status.warming,
                     state: status.state,
                     used_mib: status.used_mib,
                     disk_gib: status.disk_gib,
@@ -1502,6 +1755,7 @@ impl Server {
             },
             cpu,
             machines,
+            machine_figures: true,
         })
     }
 
@@ -1546,23 +1800,28 @@ impl Server {
                 share.is_dir().then_some((id, share))
             })
             .collect();
-        let (up, running) = {
+        let (up, stopping) = {
             let machines = locked(&self.machines);
-            let (mut up, mut running) = (BTreeSet::new(), 0);
+            let (mut up, mut stopping) = (BTreeSet::new(), BTreeSet::new());
             for (id, entry) in &machines.entries {
                 let state = entry
                     .action
                     .map(Action::state)
                     .or(entry.seen.as_ref().map(|s| s.state));
-                if state == Some(State::Running) {
-                    running += 1;
-                }
                 if !matches!(state, Some(State::Stopped | State::Absent)) {
                     up.insert(id.clone());
                 }
+                if matches!(entry.action, Some(Action::Stop)) {
+                    stopping.insert(id.clone());
+                }
             }
-            (up, running)
+            (up, stopping)
         };
+        // UNIT_BOUNDARY_DESCRIPTION: the shed request is split among the machines that hold scratch to give back, so one a look has not seen run yet, or one on its way up, takes no part of it. Neither does a machine on its way down, for the whole of its stop: it frees all of its scratch by stopping, and asking it would only ask less of the machines that stay. A machine whose record cannot be read counts as running here on the same evidence admission asks for, so a restart on an undecodable record does not leave the shortage to the others.
+        let running = up
+            .iter()
+            .filter(|id| !stopping.contains(*id) && self.known_running(id))
+            .count();
         let storage = (self.config.measure_storage)();
         let look = self.versions.fetch_add(1, Ordering::Relaxed);
         for (id, share) in &shares {
@@ -1632,8 +1891,9 @@ impl Server {
         let archive = cache::archive_path(&self.config.image_dir, image);
         if archive.exists() {
             return Err(unusable(format!(
-                "{} is a staged image archive, which the runner does not boot; restage the image with `mise run image:stage-vm`",
-                archive.display()
+                "{} is a staged image archive, which the runner does not boot; restage the image with {}",
+                archive.display(),
+                restage_hint(&self.config.image_dir, cfg!(target_os = "macos")),
             )));
         }
         Ok(None)
@@ -1724,11 +1984,12 @@ impl Server {
             .is_some_and(MachineEntry::warming)
     }
 
-    fn resident(&self, id: &str) -> Option<i32> {
+    // UNIT_BOUNDARY_DESCRIPTION: what the prober last measured the machine holding, with whether that figure is from before a read that has failed since, which admission counts at least at the warm-up floor.
+    fn resident(&self, id: &str) -> Option<(i32, bool)> {
         locked(&self.machines)
             .entries
             .get(id)
-            .and_then(|e| e.resident_mib)
+            .and_then(|e| e.resident_mib.map(|mib| (mib, e.resident_stale)))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the memory each machine a worker is converging holds or is about to. A machine being created has no spec on disk yet, so without this two creates racing each other would both fit into the room for one. What counts is the action in flight as well as the spec stored behind it: a machine still booting holds its memory even when the spec behind the boot is a stop, and a restart may be moving between the applied size and the desired one, so it is counted at the larger of the two.
@@ -1763,16 +2024,49 @@ impl Server {
             .collect()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine.
-    fn room_for(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
-        self.capacity().room_for(
-            id,
-            spec.memory_mib,
-            &self.committing(),
-            &|other| self.known_running(other),
-            &|other| self.resident(other),
-            &|other| self.warming(other),
-        )
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine. The controller also caps admission at the memory the node granted the pod, which is below the limit the runner is held to while an in-place resize waits for room. A machine the cap refuses but the limit would take is refused as waiting for the node, not as the owner's memory being full: the room it lacks is the one the controller is already asking the node for, so no machine is hibernated for it and the controller retries it at once rather than at the parked tick. A machine both bounds refuse reports the limit's shortfall, since the node cannot grant room the runner never had. A restart of a machine the runner counts as running is admitted against the limit alone: its boot replaces memory it already holds, and the request the cap comes from is sized from the use it holds while idle, which is below that boot.
+    fn room_for(&self, id: &str, spec: &MachineSpec) -> Result<(), (&'static str, anyhow::Error)> {
+        let mut capacity = self.capacity();
+        let limit = capacity.limit_mib;
+        // UNIT_BOUNDARY_DESCRIPTION: a restart of a machine already running replaces its own footprint, and boots at the warm-up floor, which is above the idle use the controller's request was sized from: capping it at that request refuses a roll, an image or env change, a CA rotation and a guest gone quiet for good, since the machine's use cannot shrink further to make the request grow. The exemption lasts as long as the restart does, because the worker stops the old VMM and boots its replacement in one action: an ensure that lands between the two reads the runtime as stopped, and refusing that already-admitted restart would have the controller stop the machine behind it.
+        let restarting = self.known_running(id) || self.restart_in_flight(id);
+        let capped = !restarting && spec.admit_mib > 0 && (limit == 0 || spec.admit_mib < limit);
+        let committing = self.committing();
+        let running = |other: &str| self.known_running(other);
+        let resident = |other: &str| self.resident(other);
+        let warming = |other: &str| self.warming(other);
+        let admits = |capacity: &Capacity| {
+            capacity.room_for(
+                id,
+                spec.memory_mib,
+                &committing,
+                &running,
+                &resident,
+                &warming,
+            )
+        };
+        if capped {
+            capacity.limit_mib = spec.admit_mib;
+        }
+        let Err(refused) = admits(&capacity) else {
+            return Ok(());
+        };
+        if capped {
+            capacity.limit_mib = limit;
+            return match admits(&capacity) {
+                Ok(()) => Err((
+                    REASON_AWAITING_ALLOCATION,
+                    anyhow::anyhow!(
+                        "this machine's {} MiB does not fit the {} MiB the node has allocated this runner so far, less the {} MiB the runner keeps for itself: it starts once the node grants the rest, which the controller is asking it for",
+                        spec.memory_mib,
+                        spec.admit_mib,
+                        self.config.reserve_mib
+                    ),
+                )),
+                Err(over_limit) => Err((REASON_OUT_OF_CAPACITY, over_limit)),
+            };
+        }
+        Err((REASON_OUT_OF_CAPACITY, refused))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine has been quiet past its limit. A guest that answered is remembered in this process's memory and also in the share's seeded record, which outlives the process. After a hand-off, a runner restart or a crash the memory is empty, so the record is what lets the new runner restart a guest that answered before and went quiet before or during the change.
@@ -1867,6 +2161,10 @@ impl Server {
         if let Some(boot) = &answered {
             self.metrics.became_ready(boot.action, boot.at.elapsed());
         }
+        // UNIT_BOUNDARY_DESCRIPTION: a guest that answered again is a machine the kill no longer explains, so the reason goes with the boot that answered it.
+        if seen.ready {
+            entry.killed = None;
+        }
         let mut seen = seen;
         let now = SystemTime::now();
         let settled = entry.action.is_none() && seen.state == State::Running;
@@ -1877,6 +2175,11 @@ impl Server {
         seen.ready |= settled && entry.boot.is_none() && entry.health.within_grace(now);
         let mut changed = entry.seen.as_ref() != Some(&seen);
         changed |= answered.as_ref().is_some_and(|boot| boot.note.is_some());
+        // UNIT_BOUNDARY_DESCRIPTION: a machine the runtime says is stopped or gone holds no memory, and stopped machines are not probed again, so the figure goes with the VMM here: left behind, it outlives a stop and counts again if the launch record later stops decoding, as evidence that a VMM still holds the machine.
+        if matches!(seen.state, State::Stopped | State::Absent) {
+            entry.resident_mib = None;
+            entry.resident_stale = false;
+        }
         entry.seen = Some(seen);
         entry.looked += 1;
         entry.probed = Some(Instant::now());
@@ -1899,7 +2202,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting up to a minute for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing. A machine known not to be running holds none, so no figure outlives its VMM.
+    // UNIT_BOUNDARY_DESCRIPTION: one probe of one machine. While an action is in flight the runtime is not asked — the action is the state — but the guest is, because it can answer before the start call that booted it returns. A probe that finds the machine quiet past its limit restarts it at once, by ensuring the latest spec the controller sent, rather than waiting for the controller's next reconcile to do the same. A probe whose read of the resident memory fails keeps the figure the last one read, as the adoption of a handed-off machine does, and one whose read of the machine's state fails keeps both figures too, since the runtime did not say the VMM stopped: neither a failed measurement nor an unread state is a machine holding nothing, and either leaves a figure no probe could refresh, which admission counts at least at the warm-up floor. A machine known not to be running holds none, so no figure outlives its VMM.
     fn probe(self: &Arc<Self>, id: &str) {
         let Some((action, looked)) = locked(&self.machines)
             .entries
@@ -1926,12 +2229,16 @@ impl Server {
             .map(|usec| (Instant::now(), usec));
         self.record(id, seen, Some(looked));
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            if !running && !unread {
+                entry.resident_mib = None;
+                entry.resident_stale = false;
+            } else if resident.is_some() {
+                entry.resident_mib = resident;
+                entry.resident_stale = false;
+            } else {
+                entry.resident_stale = entry.resident_mib.is_some();
+            }
             if !unread {
-                if !running {
-                    entry.resident_mib = None;
-                } else if resident.is_some() {
-                    entry.resident_mib = resident;
-                }
                 entry.cpu_milli = match (entry.cpu, cpu) {
                     (Some((from, before)), Some((to, now))) if now >= before => {
                         let micros = to.duration_since(from).as_micros() as u64;
@@ -1998,14 +2305,36 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state is unknown counts as running, which is what a launch record that cannot be read records: the room of a VMM that may be up is not room to hand to another, and its spec cannot be matched to a size either, so it is counted at the whole handout.
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state cannot be read counts as running only when something says a VMM may hold it — this runner measured it, or a VMM process holds its directory — because a record that no longer decodes would otherwise hold the whole handout on a stopped machine and refuse every start for its owner.
+    // UNIT_BOUNDARY_DESCRIPTION: whether a restart of a machine that should run is the action in flight, which admission exempts from the ceiling the same way it exempts the boot of a machine the runner still counts as running: the machine holds its footprint across the stop and the boot the worker runs as one action.
+    fn restart_in_flight(&self, id: &str) -> bool {
+        locked(&self.machines).entries.get(id).is_some_and(|e| {
+            e.converging
+                && matches!(e.action, Some(Action::Restart { .. }))
+                && e.desired.as_ref().is_some_and(|d| d.running)
+        })
+    }
+
     fn known_running(&self, id: &str) -> bool {
-        let recorded = locked(&self.machines)
+        let (recorded, measured) = locked(&self.machines)
             .entries
             .get(id)
-            .and_then(|e| e.seen.as_ref().map(|seen| seen.state));
-        let state = recorded.unwrap_or_else(|| self.runtime.state(id).unwrap_or(State::Unknown));
-        matches!(state, State::Running | State::Unknown)
+            .map(|e| {
+                (
+                    e.seen.as_ref().map(|seen| seen.state),
+                    e.resident_mib.is_some(),
+                )
+            })
+            .unwrap_or_default();
+        match recorded {
+            Some(State::Running) => true,
+            Some(State::Unknown) => measured || self.runtime.holds_vmm(id),
+            Some(_) => false,
+            None => match self.runtime.state(id) {
+                Ok(state) => state == State::Running,
+                Err(_) => measured || self.runtime.holds_vmm(id),
+            },
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what the controller is told about a machine, built from what the runner has recorded: no runtime call and no probe, except for a machine nothing has been recorded about yet. An action in flight is reported as the machine's state. A guest that answers its health endpoint is ready even before the start call that booted it returns — but only on the way up.
@@ -2064,8 +2393,12 @@ impl Server {
             .and_then(|e| e.boot.as_ref())
             .and_then(|boot| boot.note.as_ref())
             .filter(|_| failed.is_none() && !status.ready && reads_ready(state));
-        if failed.is_none() && !status.ready && reads_ready(state) && entry.is_some_and(copies_disk)
-        {
+        // UNIT_BOUNDARY_DESCRIPTION: a boot copying a disk is the reason the machine is not up yet, and the controller exempts that boot from its not-ready bound and holds it past its idle cap, so a kill from before it does not explain it: the copy reads over the kill until the guest answers.
+        let copying = failed.is_none()
+            && !status.ready
+            && reads_ready(state)
+            && entry.is_some_and(copies_disk);
+        if copying {
             status.reason = REASON_COPYING_DISK.into();
             status.message = COPYING_DISK.into();
         }
@@ -2078,6 +2411,13 @@ impl Server {
             } else {
                 format!("{}; {note}", status.message)
             };
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: what took the machine's VMM down is said until the guest answers again, through the boot that follows it: a machine the kernel killed for memory, or one its seccomp filter killed, is not a machine that flapped for no reason. A failure of the machine's own, such as a boot that failed, wins over it, and so does a boot that copies a disk.
+        if let Some(killed) = entry.and_then(|e| e.killed.as_ref()) {
+            if failed.is_none() && !copying {
+                status.reason = killed.reason.to_string();
+                status.message = killed.message.clone();
+            }
         }
         drop(machines);
         // UNIT_BOUNDARY_DESCRIPTION: read after the lock is let go, so a stalled disk holds up only this read. A guest's first answer writes the seeded record before it marks the machine ready, so a status that read ready above reads the record from that answer.

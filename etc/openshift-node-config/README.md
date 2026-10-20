@@ -15,11 +15,14 @@ Applying either file drains and reboots every node of the pools it reaches, one 
 
 The chart's defaults and the values an OpenShift install uses for them:
 
-| Path                                   | Chart value                             | Writer                  | Readers                                                 |
-| -------------------------------------- | --------------------------------------- | ----------------------- | ------------------------------------------------------- |
-| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath` | the release stager      | VM runners, read-only                                   |
-| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath`    | the image cache service | VM runners, read-only, and the cache's socket inside it |
-| `/var/lib/platform-harness-tools`      | none                                    | none                    | none                                                    |
+| Path                                   | Chart value                                                                                 | Writer                  | Readers                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
+| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath`                                                     | the release stager      | VM runners, read-only                                   |
+| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath` (no default: a root the chart names an install inside) | the image cache service | VM runners, read-only, and the cache's socket inside it |
+| `/var/lib/platform-harness-tools`      | none                                                                                        | none                    | none                                                    |
+
+Each install's cache directory is the chart's own subdirectory of this root, named `<release namespace>/<release name>` — the pair the cluster keeps unique — and the chart derives it, so no value can give two installs one directory: the nodes are shared, and the service is the only writer of the directory it serves.
+The kubelet creates that subdirectory on the node, for the `DirectoryOrCreate` volume of the cache pod, and the service labels it for containers as it opens it.
 
 `/var/lib/platform-harness-tools` held the harness tools before the default image baked them, and no pod mounts it any more.
 The MachineConfig still creates it, because a change to the MachineConfig drains and reboots every node; drop it the next time the MachineConfig changes for another reason.
@@ -43,11 +46,11 @@ Why this label and mechanism:
 
 ### Every node host path the platform mounts
 
-| Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                 | Created by this MachineConfig               |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------- | ------------------------------------------- |
-| `virtualization.imageCache.hostPath` (`/var/lib/platform-images`)                | image cache service (writes); VM runners (read-only, from the controller)                                      | `container_file_t:s0`, `root:root 0700` | yes                                         |
-| `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755` | yes                                         |
-| `/var/lib/kubelet/device-plugins`, `/dev`                                        | KVM device plugin ([`helm/extra/kvm-device-plugin.yaml`](../../helm/extra/kvm-device-plugin.yaml)), privileged | the host's own labels                   | no: system paths, and the pod is privileged |
+| Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                                                                 | Created by this MachineConfig                                                                            |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `virtualization.imageCache.hostPath` (under `/var/lib/platform-images`)          | image cache service (writes); VM runners (read-only, from the controller)                                      | inherited from the directory above, then `container_file_t:s0` set by the cache service | the parent only: the kubelet creates the install's own `<release namespace>/<release name>` subdirectory |
+| `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755`                                                 | yes                                                                                                      |
+| `/var/lib/kubelet/device-plugins`, `/dev`                                        | KVM device plugin ([`helm/extra/kvm-device-plugin.yaml`](../../helm/extra/kvm-device-plugin.yaml)), privileged | the host's own labels                                                                   | no: system paths, and the pod is privileged                                                              |
 
 Every other volume the chart and the controller create is a claim, a ConfigMap, a Secret, a projected volume or an `emptyDir`.
 
@@ -201,9 +204,9 @@ Give the nodes that directory first, with the chart changes above.
    Each install stages into its own subdirectory, named after its agent namespace, because every stager keeps only the newest few releases in its directory.
    A chart from before the subdirectories staged releases at the top of the directory; nothing reads those any more, and they can be removed by hand.
 2. The upgrade to a chart that names releases over the machine API changes every runner pod's shape, whether or not the install had a release directory before, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
-   The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
-   Expect the whole roll to take about owners / `maxConcurrent` × (runner restart + machine boot), plus the idle waits.
-3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots.
+   The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, or `maxConcurrentPercent` of them where that is set, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
+   Expect the whole roll to take about owners / width × (runner restart + machine boot), plus the idle waits.
+3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots — except for a release that declares a reboot key the pod does not run (`packages/vm-runner/reboot-id`), whose fix reaches a machine only by rebooting it, so the runner holds it and the controller rolls the runner pods onto it instead of handing off, under the same width and without waiting for idle agents (that roll ends the turn each busy agent is in); a pod built from a release that declares no key takes it in place, since there is nothing to compare, until its pod's shape changes for another reason, which rolls it onto a release that carries a key; a runner that holds that release as failed keeps its pod, since a pod on it would fail the same way.
    The first live hand-off is the first proof of the hand-off on OpenShift; it happens at the next chart upgrade that changes the runner image.
 
 Watch the first hand-off:

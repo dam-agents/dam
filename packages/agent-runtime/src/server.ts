@@ -41,12 +41,10 @@ import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
-import {
-  createPodServiceSupervisor,
-  createProviderEnvSnapshot,
-} from "./modules/pod-service.js";
+import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  servesHarness,
   VENDORED_PRICE_TABLE,
 } from "./modules/model-catalog/index.js";
 import {
@@ -86,6 +84,7 @@ import { createWebSocketChannel } from "./modules/acp/infrastructure/create-webs
 import {
   composeRuntimeChannel,
   createArtifactTouchReporter,
+  createToolApprovalReporter,
   createEnvPlugin,
   createEnvStateStore,
   staleEnvReason,
@@ -224,12 +223,13 @@ const artifactTouchReporter = createArtifactTouchReporter({
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
 
+const toolApprovalReporter = createToolApprovalReporter({
+  client: harnessClient,
+  log: (msg) => process.stderr.write(`[tool-approvals] ${msg}\n`),
+});
+
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
-const providerEnvSnapshot = createProviderEnvSnapshot({
-  stateBackend,
-  envReader: envStore,
-});
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
       command: podServicePath,
@@ -237,10 +237,6 @@ const podService = existsSync(podServicePath)
       log: podLog,
     })
   : null;
-const refreshPodEnv = (): void => {
-  providerEnvSnapshot.write();
-  podService?.refreshEnv();
-};
 
 const modelCatalog = createModelCatalog({
   envState: () => envStore.state(),
@@ -356,6 +352,28 @@ const nativeConnectionOf = (
   const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
   return home ? native(home) : null;
 };
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models
+ * through the Model Router needs each session's model; one that runs on a
+ * native Connection, or an agent holding no provider whose API the harness
+ * speaks, keeps the harness's own model configuration. Before the pod's env
+ * arrives nothing is known, so a model is required.
+ */
+const modelRequired = (harness: string): boolean => {
+  const binding = harnessManifests[harness]?.modelRouter;
+  if (binding === undefined) return false;
+  if (!envStore.ready()) return true;
+  return (
+    nativeConnectionOf(harness, null) === null &&
+    envStore.state().providers.some((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      return (
+        alias !== null &&
+        servesHarness({ dialects: PROVIDER_DIALECTS[alias] }, harness, binding)
+      );
+    })
+  );
+};
 const nativeEnv = (connectionId: string): Record<string, string> =>
   envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
 /**
@@ -462,6 +480,7 @@ const {
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
+  agentRequests: toolApprovalReporter,
   onToolActivity: changes.onToolActivity,
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
@@ -477,6 +496,7 @@ const {
   unroutedProviderEnv,
   routerEnv: routerEnvOf,
   nativeConnectionOf,
+  modelRequired,
   nativeEnv,
   leaseIdleMs: config.LEASE_IDLE_MS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
@@ -540,7 +560,7 @@ const runtimeChannel = await composeRuntimeChannel({
       store: envStore,
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
-        refreshPodEnv();
+        podService?.refreshEnv();
         void modelCatalog.refresh();
         scheduleRecovery();
       },
@@ -551,10 +571,8 @@ const runtimeChannel = await composeRuntimeChannel({
     }),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
-  onSnapshotProcessed: (contributions) => {
-    reconcileOnState?.(contributions);
-    setupGitCredentialHelper(contributions);
-  },
+  onContributionsApplied: setupGitCredentialHelper,
+  ...(reconcileOnState && { onSnapshotProcessed: reconcileOnState }),
 });
 
 const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
@@ -1191,7 +1209,7 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) refreshPodEnv();
+  if (envStore.ready()) podService?.refreshEnv();
 
   modelCatalog.onChange(() =>
     acpRuntime.applyEnvChange({

@@ -8,6 +8,7 @@ export type {
 export {
   initializationEvent,
   kitUpdateEvent,
+  sessionPairFields,
   workspaceCommandEvent,
   workspaceSeedEvent,
 } from "./domain/outbox-events.js";

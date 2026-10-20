@@ -3,6 +3,7 @@ import {
   asc,
   eq,
   inArray,
+  isNull,
   agents as agentsTable,
   connectionGrants,
   connections as connectionsTable,
@@ -15,6 +16,7 @@ import {
   sessionPairSchema,
   type SessionPair,
 } from "api-server-api";
+import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { GrantedProvider } from "../domain/session-pair.js";
 
 export interface SessionPairRepo {
@@ -23,7 +25,15 @@ export interface SessionPairRepo {
   grantedProviders(agentId: string): Promise<GrantedProvider[]>;
 }
 
-export function createSessionPairRepo(db: Db): SessionPairRepo {
+export interface FillableSessionPairRepo extends SessionPairRepo {
+  writeIfEmpty(
+    agentId: string,
+    pair: SessionPair,
+    note?: DefaultModelNote,
+  ): Promise<boolean>;
+}
+
+export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
   return {
     async read(agentId) {
       const rows = await db
@@ -37,8 +47,19 @@ export function createSessionPairRepo(db: Db): SessionPairRepo {
     async write(agentId, pair) {
       await db
         .update(agentsTable)
-        .set({ sessionPair: pair })
+        .set({ sessionPair: pair, defaultModelNote: null })
         .where(eq(agentsTable.id, agentId));
+    },
+
+    async writeIfEmpty(agentId, pair, note) {
+      const rows = await db
+        .update(agentsTable)
+        .set({ sessionPair: pair, defaultModelNote: note ?? null })
+        .where(
+          and(eq(agentsTable.id, agentId), isNull(agentsTable.sessionPair)),
+        )
+        .returning({ id: agentsTable.id });
+      return rows.length > 0;
     },
 
     async grantedProviders(agentId) {

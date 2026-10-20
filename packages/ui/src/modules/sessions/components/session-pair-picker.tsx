@@ -24,6 +24,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
 import {
+  rememberFirstModel,
   rememberSessionPair,
   useGrantProvider,
   useHarnessCatalog,
@@ -31,8 +32,8 @@ import {
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
-  useRememberedPair,
 } from "../api/session-pair.js";
+import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import {
   addableProviders,
   attachableProviders,
@@ -42,11 +43,9 @@ import {
   sameSideGroups,
 } from "../lib/catalog-groups.js";
 import {
-  fittingProviders,
   harnessDisplayName,
   harnessOptions,
   modelProviderLabel,
-  nextPair,
   type ProviderConnectionRef,
   providerOptions,
 } from "../lib/session-pair-options.js";
@@ -82,7 +81,6 @@ export function SessionPairPicker({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
-  const { data: remembered } = useRememberedPair(agentId);
   const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
   const setPair = useStore((s) => s.setNextSessionPair);
   const providers = useProviderConnections(agentId);
@@ -105,13 +103,7 @@ export function SessionPairPicker({
   const harnessName = (name: string) => harnessDisplayName(name, views);
   const names = carried.map((h) => h.name);
   const harnesses = harnessOptions(names, views);
-  const pair = nextPair(
-    chosen,
-    remembered ?? null,
-    names,
-    fittingProviders(views, providers.granted),
-    defaultHarness,
-  );
+  const pair = useNextSessionPair(agentId, names, defaultHarness);
   const harness =
     (chosen && names.includes(chosen.harness) ? chosen.harness : null) ??
     pair?.harness ??
@@ -141,7 +133,10 @@ export function SessionPairPicker({
     useHarnessConfigured(agentId, harness),
   );
   const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
-  const choose = (next: SessionPair) => setPair(agentId, next);
+  const choose = (next: SessionPair) => {
+    setPair(agentId, next);
+    if (routed) void rememberFirstModel(agentId, next);
+  };
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
   const catalogModels = useHarnessCatalogModels(
@@ -161,7 +156,8 @@ export function SessionPairPicker({
     void showConfirm(
       <p>
         Sessions running on <strong>{name}</strong> stop until it is attached
-        again. Schedules and channels that use it move to another provider.
+        again. Schedules and channels that use it don&rsquo;t run until you
+        choose another model.
       </p>,
       `Disconnect ${name} from this agent?`,
       { kind: "destructive", confirmLabel: "Disconnect" },
@@ -174,7 +170,7 @@ export function SessionPairPicker({
   const label = !pair
     ? undefined
     : routed
-      ? (modelIndicatorLabel(groups, pair.model) ?? "Default model")
+      ? (modelIndicatorLabel(groups, pair.model) ?? "Choose a model")
       : modelProviderLabel(
           pair.model,
           provider?.name,
@@ -406,6 +402,7 @@ export function SetAsDefault({
   defaults: Readonly<Record<string, string>>;
   remembered: SessionPair | null | undefined;
 }) {
+  if (pair.model === null) return null;
   const saved =
     !!remembered &&
     remembered.harness === pair.harness &&

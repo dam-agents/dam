@@ -47,6 +47,14 @@ export function useRememberedPair(agentId: string | null) {
   });
 }
 
+export function providerModelsKey(
+  agentId: string | null,
+  harness: string | null,
+  provider: string | null,
+) {
+  return ["provider-models", agentId, harness, provider] as const;
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Old runtime path: remove when agents.runtimeFleet.outdated is empty on prod.
  * The models one provider lists for a harness, asked per provider.
@@ -59,7 +67,7 @@ export function useProviderModels(
   const operable = useIsAgentOperable(agentId);
   const answerable = useIsAgentAnswerableSoon(agentId);
   const query = useQuery({
-    queryKey: ["provider-models", agentId, harness, provider],
+    queryKey: providerModelsKey(agentId, harness, provider),
     queryFn:
       agentId && harness && operable
         ? async () => {
@@ -81,6 +89,17 @@ export function useProviderModels(
   return { ...query, operable, answerable };
 }
 
+export function harnessCatalogModelsKey(
+  agentId: string | null,
+  harness: string | null,
+  grantedIds: readonly string[],
+) {
+  return ["harness-catalog-models", agentId, harness, grantedIds] as const;
+}
+
+const CATALOG_POLL_MS = 5_000;
+const CATALOG_POLL_LIMIT = 12;
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: keyed by the agent's granted providers, so a
  * grant or revoke asks again at once, and polled until the catalog has caught
@@ -89,8 +108,6 @@ export function useProviderModels(
  * provider still unavailable after a minute, or a failing read, stops the
  * poll; `waiting` says the poll is still running.
  */
-const CATALOG_POLL_MS = 5_000;
-const CATALOG_POLL_LIMIT = 12;
 export function useHarnessCatalogModels(
   agentId: string | null,
   harness: string | null,
@@ -106,7 +123,7 @@ export function useHarnessCatalogModels(
     state.status !== "error" &&
     state.dataUpdateCount < CATALOG_POLL_LIMIT &&
     !catalogSettled(state.data, grantedIds);
-  const queryKey = ["harness-catalog-models", agentId, harness, grantedIds];
+  const queryKey = harnessCatalogModelsKey(agentId, harness, grantedIds);
   const query = useQuery({
     queryKey,
     queryFn:
@@ -133,10 +150,14 @@ export function useHarnessCatalogModels(
   };
 }
 
+export function harnessConfigCurrentKey(agentId: string, harness: string) {
+  return ["harness-config-current", agentId, harness] as const;
+}
+
 export function useHarnessConfigured(agentId: string, harness: string) {
   const operable = useIsAgentOperable(agentId);
   return useQuery({
-    queryKey: ["harness-config-current", agentId, harness],
+    queryKey: harnessConfigCurrentKey(agentId, harness),
     queryFn: operable
       ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
       : skipToken,
@@ -179,6 +200,7 @@ export function useGrantProvider(agentId: string | null) {
         trpc.connections.getAgentConnections.queryKey(),
         trpc.harnessConfig.sessionPair.queryKey(),
         egressRulesKeys.all,
+        trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't update model providers",
     },
@@ -255,19 +277,42 @@ export async function settledNextSessionPair(
 }
 
 export function rememberSessionPair(agentId: string, pair: SessionPair): void {
+  const key = trpc.harnessConfig.sessionPair.queryKey({ agentId });
+  const previous = queryClient.getQueryData<SessionPair | null>(key);
+  const resolved = pair.provider !== null;
+  if (resolved) queryClient.setQueryData<SessionPair | null>(key, pair);
   void api.harnessConfig.rememberSessionPair
     .mutate({ agentId, ...pair })
-    .then(() =>
-      queryClient.invalidateQueries({
-        queryKey: trpc.harnessConfig.sessionPair.queryKey({ agentId }),
-      }),
-    )
-    .catch((err: unknown) =>
+    .catch((err: unknown) => {
+      if (resolved)
+        queryClient.setQueryData<SessionPair | null>(key, previous ?? null);
       emitToast({
         kind: "error",
         message: `Couldn't save the default harness and model: ${err instanceof Error ? err.message : String(err)}`,
-      }),
-    );
+      });
+    })
+    .finally(() => queryClient.invalidateQueries({ queryKey: key }));
+}
+
+export async function rememberFirstModel(
+  agentId: string,
+  pair: SessionPair,
+): Promise<void> {
+  if (pair.model === null) return;
+  let saved: SessionPair | null;
+  try {
+    saved = await queryClient.ensureQueryData({
+      ...trpc.harnessConfig.sessionPair.queryOptions({ agentId }),
+      retry: false,
+    });
+  } catch (err) {
+    emitToast({
+      kind: "error",
+      message: `Couldn't check the agent's default model, so ${pair.model} was not saved as its default: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+  if (!saved?.model) rememberSessionPair(agentId, pair);
 }
 
 export function harnessOfSession(

@@ -88,6 +88,17 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
+      name: "MachineImageCacheUnreachable → agent-pod-failed (the node's cache, not the image)",
+      snapshot: {
+        ...base,
+        agentPodNotReadyReason: "MachineImageCacheUnreachable",
+      },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "MachineImageCacheUnreachable",
+      },
+    },
+    {
       name: "over-budget carries its message — the runner's refusal arrives this way, and it is not a budget problem",
       snapshot: {
         ...base,
@@ -97,6 +108,30 @@ describe("classifyWakeFailure", () => {
       expected: {
         kind: "over-budget",
         message: "the VM runner has 512 MiB for machines",
+      },
+    },
+    {
+      name: "AwaitingAllocation → progressing (the node has not granted the runner its memory yet; it starts on its own)",
+      snapshot: { ...base, agentPodNotReadyReason: "AwaitingAllocation" },
+      expected: { kind: "agent-pod-not-ready" },
+    },
+    {
+      name: "MachineAwaitingAllocation → progressing (the runner's own spelling of the same wait)",
+      snapshot: {
+        ...base,
+        agentPodNotReadyReason: "MachineAwaitingAllocation",
+      },
+      expected: { kind: "agent-pod-not-ready" },
+    },
+    {
+      name: "MachineAllocationUnreadable → agent-pod-failed (the node never reported the grant; the hold ended naming the problem)",
+      snapshot: {
+        ...base,
+        agentPodNotReadyReason: "MachineAllocationUnreadable",
+      },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "MachineAllocationUnreadable",
       },
     },
     {

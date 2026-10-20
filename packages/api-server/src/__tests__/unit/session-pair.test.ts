@@ -171,10 +171,11 @@ describe("resolveSessionPair on a runtime that routes by model name", () => {
     ).toEqual(remembered);
   });
 
-  /** TEST_SCENARIO: The saved provider is gone. The run stays on the saved
-   * harness, on its default provider (Codex's own OpenAI, held here), and
-   * takes that provider's first listed model rather than the old one. */
-  it("stays on the harness and takes the default provider's first model", () => {
+  /** TEST_SCENARIO: The saved model's provider is gone. The run stays on the
+   * saved harness but takes no other provider or model in its place, so it
+   * reports that the agent has no default model rather than running on one
+   * the person never picked. */
+  it("stays on the harness and leaves the model unset when its provider is gone", () => {
     expect(
       routed({
         remembered: { harness: "codex", provider: "gone", model: "cb/glm" },
@@ -188,7 +189,7 @@ describe("resolveSessionPair on a runtime that routes by model name", () => {
           "ibm/aws/opus",
         ],
       }),
-    ).toEqual({ harness: "codex", provider: "oai", model: "openai/gpt-5.5" });
+    ).toEqual({ harness: "codex", provider: null, model: null });
   });
 
   /** TEST_SCENARIO: A schedule names a model on a provider other than the
@@ -223,16 +224,15 @@ describe("resolveSessionPair on a runtime that routes by model name", () => {
 
   /** TEST_SCENARIO: A run asked for on a harness with no pair saved for it
    * (the fire resolver passes an empty pair for the requested harness) takes
-   * the default provider; with nothing listed yet the model is left to the
-   * harness. */
-  it("takes the default provider for a harness with nothing saved", () => {
+   * no provider or model the person did not pick. */
+  it("leaves provider and model unset for a harness with nothing saved", () => {
     expect(
       routed({
         remembered: { harness: "codex", provider: null, model: null },
         agentHarness: "claude-code",
         granted: [{ id: "lite", type: "ibm-litellm" }],
       }),
-    ).toEqual({ harness: "codex", provider: "lite", model: null });
+    ).toEqual({ harness: "codex", provider: null, model: null });
   });
 
   /** TEST_SCENARIO: Claude Code's own spelling of a saved model folds into

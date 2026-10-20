@@ -13,7 +13,7 @@ use vm_runner::release::relabel;
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-image-cache",
-    about = "The only writer of a node's VM image cache: fetches, preloads and evicts for every runner on the node"
+    about = "The only writer of a node's VM image cache: fetches, preloads and evicts for every runner of the install on the node"
 )]
 struct Args {
     #[arg(long = "image-dir", default_value = "/var/lib/platform/images")]

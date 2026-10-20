@@ -107,6 +107,7 @@ import {
   bindConversation,
   listConversationsByAgent,
   unbindConversation,
+  setConversationAmbient,
   allConversationAgentIds,
   deleteConversationsByAgent,
 } from "./modules/channels/infrastructure/telegram-conversations-repository.js";
@@ -133,12 +134,17 @@ import {
 import {
   composeRuntimeDelivery,
   createBullConnection,
+  sessionPairFields,
 } from "./modules/runtime-delivery/index.js";
 import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
+  composeConvertingFirePair,
+  composeDefaultConverter,
   composeFirePair,
+  composeScheduleModelForFire,
   composeSessionChoicesValidator,
+  isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
@@ -207,6 +213,7 @@ import {
   createContentApp,
   createShareAuthRoutes,
   createShareViewerApp,
+  shareSessionCookie,
   type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
@@ -247,6 +254,7 @@ import {
 import {
   composeApprovalsSystem,
   composeSpendLimitQuestions,
+  composeToolApprovalReports,
   createApprovalsCleanupHook,
   createSpendQuestionStore,
   listPendingApprovalAgentIds,
@@ -264,6 +272,7 @@ import {
   createL7PromotionReconcile,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
+  markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
 import {
   composeConnectionsAtBoot,
@@ -271,6 +280,7 @@ import {
   createConnectionGrantsCleanupHook,
   createConnectionNames,
   createGrantedConnectionTemplates,
+  createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
@@ -510,6 +520,7 @@ export async function bootstrap() {
     },
     shareBaseUrl: config.shareBaseUrl,
   });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
     share: {
       baseUrl: config.shareBaseUrl,
@@ -517,11 +528,12 @@ export async function bootstrap() {
         auth: createShareAuthRoutes({
           auth: shareAuth,
           brandName: config.brand.name,
-          secureCookie: new URL(config.shareBaseUrl).protocol === "https:",
+          sessionCookie: shareCookie,
         }),
         viewer: createShareViewerApp({
           viewer: shareViewer,
           auth: shareAuth,
+          sessionCookie: shareCookie,
           renderTokens: shareRenderTokens,
           brandName: config.brand.name,
           uiBaseUrl: config.uiBaseUrl,
@@ -611,6 +623,19 @@ export async function bootstrap() {
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
   });
+  const outcomePairFields = async (
+    agentId: string,
+  ): Promise<Record<string, unknown>> =>
+    sessionPairFields(
+      await firePair(agentId, {}).catch((err: unknown) => {
+        if (!isNoDefaultModelError(err)) throw err;
+        getLogger().info(
+          { err, agentId },
+          "outcome turn: no saved default to run it on",
+        );
+        return null;
+      }),
+    );
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),
   );
@@ -655,6 +680,7 @@ export async function bootstrap() {
 
   const outcomeDeliveryDeps = {
     repo: satellitesBoot.repo,
+    pairFields: outcomePairFields,
     bump: (
       agentId: string,
       events: Parameters<typeof runtimeDelivery.runtimeMutator.bump>[1],
@@ -947,6 +973,33 @@ export async function bootstrap() {
   });
   const metricsReader = composeMetricsReader(config);
   const telemetryReader = composeTelemetryReader(config);
+  const { converter: defaultConverter, helloSaga: defaultConversionSaga } =
+    composeDefaultConverter({
+      db,
+      namespace: config.namespace,
+      catalog: harnessCatalog,
+      getCapabilities: async (agentId) =>
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+      specHarness: async (agentId) =>
+        (await agentsRepo.get(agentId))?.spec.harness,
+      modelsRanBy: async (agentId, hours) =>
+        metricsReader
+          ? (await metricsReader.tokenSpendByModel([agentId], { hours }))
+              .sort((a, b) => b.outputTokens - a.outputTokens)
+              .map((r) => r.model)
+          : [],
+      movedToNewImage: async (agentId) =>
+        (await agentsRepo.get(agentId))?.imageUpdateFrom !== undefined,
+      isRunning: (agentId) => agentsRepo.isReady(agentId),
+      wake: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+      lastHelloAt: async (agentId) =>
+        (
+          await runtimeDelivery.agentsRuntimeRepo.get(agentId)
+        )?.runtimeLastHelloAt?.getTime() ?? null,
+      ownerOf: async (agentId) => (await agentsRepo.get(agentId))?.owner,
+      log: (msg) => getLogger().info(msg),
+    });
 
   const sessionWatcher = composeSessionWatcher({
     db,
@@ -1139,7 +1192,12 @@ export async function bootstrap() {
     return hold.reason;
   };
   const channelSpendHold = async (agentId: string) => {
-    const provider = (await firePair(agentId, {}))?.provider;
+    const provider = (
+      await firePair(agentId, {}).catch((err: unknown) => {
+        if (isNoDefaultModelError(err)) return undefined;
+        throw err;
+      })
+    )?.provider;
     return spendHold({
       agentId,
       ...(provider ? { connectionId: provider } : {}),
@@ -1183,7 +1241,7 @@ export async function bootstrap() {
       namespace: config.namespace,
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
-      firePair: (agentId) => firePair(agentId, {}),
+      firePair: composeConvertingFirePair(defaultConverter, firePair),
     });
 
   const agentIcons =
@@ -1260,6 +1318,7 @@ export async function bootstrap() {
             bind: bindConversation(db),
             listByAgent: listConversationsByAgent(db),
             unbind: unbindConversation(db),
+            setAmbient: setConversationAmbient(db),
           },
           oauthConfig: {
             keycloakExternalUrl: config.keycloakExternalUrl,
@@ -1338,6 +1397,19 @@ export async function bootstrap() {
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+  await markTrustedRowsTakenOverAdapter(db, trustedHosts)
+    .then((marked) => {
+      if (marked > 0)
+        getLogger().info(
+          { marked },
+          "egress-rules: marked preset rows taken over by connections",
+        );
+    })
+    .catch((err) => {
+      getLogger().warn(
+        `egress-rules: marking preset rows taken over by connections failed: ${formatError(err)}`,
+      );
+    });
 
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
@@ -1364,6 +1436,7 @@ export async function bootstrap() {
       },
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),
+    providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
     spend: spend.check,
     wrapperFrameSender,
@@ -1403,6 +1476,22 @@ export async function bootstrap() {
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
+    scheduleModelFor: composeScheduleModelForFire({
+      db,
+      getCapabilities: async (agentId) =>
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+    }),
+    defaultPendingAfterMove: async (agentId) => {
+      if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
+      void defaultConverter
+        .ensureForFire(agentId)
+        .catch((err: unknown) =>
+          getLogger().warn({ err, agentId }, "default conversion failed"),
+        );
+      return true;
+    },
     restoreActivity: (agentId, stamp) =>
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,
@@ -1741,6 +1830,7 @@ export async function bootstrap() {
   );
   const subAgentOutcomes = composeSubAgentOutcomeDelivery({
     db,
+    pairFields: outcomePairFields,
     bump: (agentId, events) =>
       runtimeDelivery.runtimeMutator.bump(agentId, events),
     enqueue: (agentId) =>
@@ -1881,6 +1971,8 @@ export async function bootstrap() {
       ownerSub: owner,
     });
   const harnessDeps = {
+    toolApprovalsFor: (owner: string) =>
+      composeToolApprovalReports(approvalsRelay, owner),
     satellitesBoot,
     secretStore,
     spendHold,
@@ -1960,6 +2052,7 @@ export async function bootstrap() {
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
+    defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();
     gettingStarted.stop();

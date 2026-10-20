@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use crate::api::{MachineSpec, State};
 use crate::state::is_image_ref;
 
-// UNIT_BOUNDARY_DESCRIPTION: the next thing the runner does to bring one machine to the spec it was asked for, and nothing about doing it. The controller sends the whole desired spec on every reconcile, so this decision is made again and again against a machine that is already in some state. It is pure so that a wrong decision can be found without a hypervisor, before it restarts every agent once a minute.
+// UNIT_BOUNDARY_DESCRIPTION: the next thing the runner does to bring one machine to the spec it was asked for, and nothing about doing it. The controller sends the whole desired spec on every reconcile, so this decision is made again and again against a machine that is already in some state. It is pure so that a wrong decision can be found without a hypervisor, before it restarts every agent on every reconcile.
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted, while the boot it runs now has not answered yet, or soon after it was last restarted for going quiet. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
@@ -262,7 +262,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the reconcile sends the same spec about once a minute, so the usual answer must be nothing. Acting on a machine that is already right restarts every agent once a minute.
+    // TEST_SCENARIO: the reconcile sends the same spec again and again, on every machine change and on every drift sweep, so the usual answer must be nothing. Acting on a machine that is already right restarts its agent.
     #[test]
     fn a_machine_that_is_already_what_it_should_be_is_left_alone() {
         let applied = running_spec();
@@ -299,7 +299,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a running machine asked to stop is stopped, and one already down is left alone, or the runner stops the same machine every minute.
+    // TEST_SCENARIO: a running machine asked to stop is stopped, and one already down is left alone, or the controller's stop, sent with every reconcile, stops it again and again.
     #[test]
     fn a_stop_reaches_a_running_machine_and_leaves_a_stopped_one_alone() {
         let stop = MachineSpec {
@@ -728,7 +728,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one every reconcile. If that difference were a change, every machine that pulls with credentials would restart once a minute.
+    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one every reconcile. If that difference were a change, every machine that pulls with credentials would restart at each reconcile.
     #[test]
     fn a_registry_credential_is_never_a_reason_to_restart() {
         let desired = MachineSpec {
@@ -780,6 +780,7 @@ mod tests {
             migration: None,
             expect_seed: None,
             nested_virtualization: false,
+            admit_mib: 0,
         }
     }
 

@@ -4,9 +4,11 @@ import { useMemo } from "react";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { useAgentsList } from "../../agents/api/queries.js";
+import { useApprovalsForOwner } from "../../approvals/api/queries.js";
 import { useAttention } from "../api/queries.js";
 import {
   type ActivitySession,
+  activitySessionKey,
   toActivitySessions,
 } from "../lib/activity-sessions.js";
 
@@ -14,6 +16,7 @@ export type AgentActivitySession = ActivitySession & { agent: AgentView };
 
 export function useActivitySessions() {
   const attention = useAttention();
+  const approvals = useApprovalsForOwner();
   const agents = useAgentsList();
   const openSessionKey = useStore((s) =>
     s.view === "chat" && s.selectedAgent && s.sessionId
@@ -26,16 +29,25 @@ export function useActivitySessions() {
     const running = new Set(
       agents.filter((a) => a.state === "running").map((a) => a.id),
     );
-    return toActivitySessions(attention.data?.items ?? [], running).flatMap(
-      (item) => {
-        const agent = byId.get(item.session.agentId);
-        if (!agent) return [];
-        return [
-          { ...item, agent, unread: item.unread && item.id !== openSessionKey },
-        ];
-      },
+    const waiting = new Set(
+      (approvals.data ?? []).flatMap((a) =>
+        a.status === "pending" && a.sessionId
+          ? [activitySessionKey(a.agentId, a.sessionId)]
+          : [],
+      ),
     );
-  }, [attention.data, agents, openSessionKey]);
+    return toActivitySessions(
+      attention.data?.items ?? [],
+      running,
+      waiting,
+    ).flatMap((item) => {
+      const agent = byId.get(item.session.agentId);
+      if (!agent) return [];
+      return [
+        { ...item, agent, unread: item.unread && item.id !== openSessionKey },
+      ];
+    });
+  }, [attention.data, approvals.data, agents, openSessionKey]);
 
   return {
     items,

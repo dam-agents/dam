@@ -47,6 +47,20 @@ fi
 
 unset _ROUTER_BASE _ROUTED
 
+# Claude Code sends its OTLP export through one proxied socket, where an export
+# that waits behind another times out and is dropped. The agent's gateway takes
+# it on its own address instead, and only an exact NO_PROXY entry makes Claude
+# Code send it there directly.
+if [ "${PLATFORM_TELEMETRY_VIA_GATEWAY:-}" = 1 ] && [ -n "${HTTPS_PROXY:-}" ]; then
+	_proxy_host=${HTTPS_PROXY#*://}
+	_proxy_host=${_proxy_host%%/*}
+	_proxy_host=${_proxy_host%:*}
+	export OTEL_EXPORTER_OTLP_ENDPOINT="${HTTPS_PROXY%/}/__platform_otlp"
+	case ",${NO_PROXY:-}," in *",$_proxy_host,"*) ;; *) export NO_PROXY="${NO_PROXY:+$NO_PROXY,}$_proxy_host" ;; esac
+	case ",${no_proxy:-}," in *",$_proxy_host,"*) ;; *) export no_proxy="${no_proxy:+$no_proxy,}$_proxy_host" ;; esac
+	unset _proxy_host
+fi
+
 # Workloads extend the router environment here.
 for _hook in /usr/local/lib/model-gateway.d/*.sh; do [ -r "$_hook" ] && . "$_hook"; done
 unset _hook

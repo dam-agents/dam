@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { getBrand } from "../../../../brand.js";
 import { useTelegramBot } from "../../../telegram/api/queries.js";
 
-type BindMessenger = "slack" | "telegram";
+export type BindMessenger = "slack" | "telegram";
 
 interface BindStep {
   title: string;

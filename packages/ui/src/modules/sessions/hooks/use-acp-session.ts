@@ -287,7 +287,7 @@ export function useAcpSession(
   });
 
   const chooseSessionModel = useCallback(
-    async (value: string) => {
+    async (value: string, onPinned?: () => void) => {
       const sid = useStore.getState().sessionId;
       if (!sid || !selectedAgent) return;
       try {
@@ -297,6 +297,7 @@ export function useAcpSession(
           sessionId: sid,
           model: value,
         });
+        onPinned?.();
         await queryClient.invalidateQueries({
           queryKey: acpSessionsKeys.agent(selectedAgent),
         });

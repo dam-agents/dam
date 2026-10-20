@@ -56,6 +56,7 @@ function harness(claimed: JobRow[][]) {
   const released: number[] = [];
   let call = 0;
   const deliver = createOutcomeDelivery({
+    pairFields: async () => ({}),
     repo: {
       claimUndeliveredOutcomes: async () => claimed[call++] ?? [],
       releaseOutcomes: async (_o: string, _s: string, sequences: number[]) => {
@@ -230,6 +231,7 @@ describe("waking an agent with a finished job", () => {
   it("still records the turn when the agent cannot be woken", async () => {
     const events: unknown[] = [];
     const deliver = createOutcomeDelivery({
+      pairFields: async () => ({}),
       repo: {
         claimUndeliveredOutcomes: async () => [job()],
         markWoken: async () => {},
@@ -268,6 +270,7 @@ describe("reporting an outcome reaches the wake", () => {
     };
     const events: unknown[] = [];
     const deliver = createOutcomeDelivery({
+      pairFields: async () => ({}),
       repo: repo as never,
       bump: async (_agentId, list) => {
         events.push(...list);
@@ -312,6 +315,7 @@ describe("an agent that could not be woken", () => {
     const stamped: { satellite: string; sequence: number }[][] = [];
     let wakeWorks = false;
     const deliver = createOutcomeDelivery({
+      pairFields: async () => ({}),
       repo: {
         claimUndeliveredOutcomes: async () => [job()],
         markWoken: async (_agentId: string, refs: never[]) => {
@@ -339,6 +343,7 @@ describe("an agent that could not be woken", () => {
     wakeWorks = true;
     const retry = createOutcomeWakeRetry(
       {
+        pairFields: async () => ({}),
         repo: {
           agentsWithPendingOutcomes: async () => ["agent-1"],
           undeliveredFor: async () => [{ satellite: "gpu-box", sequence: 7 }],
@@ -371,6 +376,7 @@ describe("one job owes one turn", () => {
   it("keeps the claim when the turn was written but the enqueue failed", async () => {
     const released: number[] = [];
     const deliver = createOutcomeDelivery({
+      pairFields: async () => ({}),
       repo: {
         claimUndeliveredOutcomes: async () => [job()],
         markWoken: async () => {},
@@ -401,6 +407,7 @@ describe("one job owes one turn", () => {
   it("releases the claim when no turn was written at all", async () => {
     const released: number[] = [];
     const deliver = createOutcomeDelivery({
+      pairFields: async () => ({}),
       repo: {
         claimUndeliveredOutcomes: async () => [job()],
         markWoken: async () => {},
@@ -435,6 +442,7 @@ describe("the hourly sweep", () => {
     const woken: string[] = [];
     const retry = createOutcomeWakeRetry(
       {
+        pairFields: async () => ({}),
         repo: {
           agentsWithPendingOutcomes: async () => ["agent-1"],
           undeliveredFor: async () => [],
@@ -469,6 +477,7 @@ describe("the sweep never wakes blindly", () => {
     const woken: string[] = [];
     const retry = createOutcomeWakeRetry(
       {
+        pairFields: async () => ({}),
         repo: {
           agentsWithPendingOutcomes: async () => ["agent-1"],
           undeliveredFor: async () => [],
@@ -510,6 +519,7 @@ describe("an agent the user stopped", () => {
     const unwoken = new Set(["gpu-box#7"]);
     const events: unknown[] = [];
     const deps = {
+      pairFields: async () => ({}),
       repo: {
         claimUndeliveredOutcomes: async () => [job()],
         agentsWithPendingOutcomes: async () => ["agent-1"],

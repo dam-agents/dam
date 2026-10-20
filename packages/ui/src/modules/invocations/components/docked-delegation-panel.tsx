@@ -1,4 +1,4 @@
-import { AddComment, Bot, Close, Locked } from "@carbon/icons-react";
+import { AddComment, Bot, Locked } from "@carbon/icons-react";
 import type { DelegationNode } from "api-server-api";
 import { useMemo } from "react";
 
@@ -10,6 +10,7 @@ import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import {
@@ -64,15 +65,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => close(null)}
-        >
-          <Close size={16} />
-        </Button>
+        <SidePanelCloseButton onClose={() => close(null)} />
       </div>
       {node ? (
         <PanelBody

@@ -155,6 +155,7 @@ Without the scope, an agent's post goes out as the app and its text opens with a
 The emoji is a robot face.
 To use the workspace's own emoji instead, upload one per agent avatar and turn on **Use custom emoji for agents** where the agent's Slack channel is connected or edited.
 The fields beside each avatar are prefilled `<brand.short>-agent-1` to `-8` (for example `dam-agent-1`).
+The footer under every agent post opens with the same emoji, then "Sent by" and the agent's name.
 
 **Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing.
 Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and re-run the install flow when Slack asks.
@@ -219,14 +220,19 @@ A mention in a channel no instance is bound to gets an ephemeral rejection.
 ## Telegram Integration
 
 Platform runs a single Telegram bot for the entire installation.
-A Telegram chat (DM or group) binds to at most one instance; the binding routes every message in that chat.
+A Telegram chat (DM or group) binds to at most one instance.
+In a direct chat the instance answers every message; in a group it answers messages that mention the bot or reply to it, and with ambient mode on it reads every message and chimes in when it can help.
 
 1. Create one bot with [@BotFather](https://t.me/BotFather) and copy its token.
+   In BotFather, turn the bot's **Group Privacy** off (Bot Settings → Group Privacy).
+   With it on, Telegram shows the bot only commands and replies to its own messages in groups, so mentions and ambient mode do not work there; a bot that is a group's admin sees everything anyway.
+   A bot already in a group must be removed and added again for the change to take effect there.
 2. Deploy with the token (and, recommended, the bot's handle): `--set=apiServer.telegramBotToken=<token> --set=apiServer.telegramBotName=<handle>`.
 3. Connect a chat: add the bot to a chat (or message it directly) and send `/bind` (or just `/start`).
    In groups, only chat admins can start the flow.
    Complete the browser login and pick the instance.
 4. The bot confirms in the chat.
+5. Optionally, in a group, a chat admin sends `/ambient on` to have the instance read every message; `/ambient off` turns it back to mentions and replies only, and `/ambient` alone shows the current mode.
 
 **Access model** — connecting a chat is the owner's consent; anyone in the chat can drive the instance, no account needed.
 Every turn runs under the instance's own credentials, and `/unbind` in the chat disconnects it (the owner can also disconnect it from the web UI).

@@ -27,7 +27,8 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   `gh pr checks <n> | grep dam:review` shows its run; it takes up to an hour.
   Its reviews come from `dam-code-protector[bot]` (earlier `dam-application[bot]`); the login has changed before, so match the body, which starts with `🛡️ **Code Guardian 🛡️**`.
 - Review posted + CI finished → one round of the `review-remediation` skill.
-  Babysit is its caller: skip its offer of the re-review command and run `gh pr edit <n> --add-label code-guardian-review` yourself.
+  Babysit is its caller: skip its offer of the re-review command and request the next round yourself with the delta label, `gh pr edit <n> --add-label code-guardian-rereview`, which reviews only the new commits.
+  Take the label from the worklist's `rereview.delta_label` when it differs; with no `delta_label`, use `rereview.label` (`code-guardian-review`, a full review).
   Wait.
   Repeat.
 - Wait by blocking on checks, never `sleep`: `dam:review` is a check that completes when the review round ends, so `gh pr checks <n> --watch --interval 60` returns when both the round and CI are done.
@@ -36,10 +37,10 @@ Opening the PR is the `pr-open` skill's; each fix round is the `review-remediati
   After `--watch` returns, confirm a guardian review on HEAD (`gh api --paginate repos/<repo>/pulls/<n>/reviews --jq '.[]|select(.body|startswith("🛡️ **Code Guardian 🛡️**")).commit_id' | tail -1` equals the head SHA); if none exists, go back to the guard.
   The wait can last an hour, longer than a foreground tool call: run `--watch` in the background, or give it a tool timeout above an hour where the harness allows one.
   `gh pr view --json` names the author `dam-code-protector`; `gh api` names it `dam-code-protector[bot]`.
-- A bot account cannot be requested as a reviewer, so `--add-reviewer` does not start a review; the `code-guardian-review` label is the only way to ask for another review.
+- A bot account cannot be requested as a reviewer, so `--add-reviewer` does not start a review; a label is the only way to ask for another review: `code-guardian-rereview` for a delta round on the new commits, `code-guardian-review` for a full review of the whole PR.
 - `gh run rerun` only when the run's `headSha` == HEAD: a push already re-ran everything, and rerunning a superseded run cancels the fresh one.
 - Merge conflict → merge the base branch as its own commit (never rebase), wait for green.
-  Non-trivial merge → label for another guardian review.
+  Non-trivial merge → label `code-guardian-review` for a full guardian review.
 - Approved + green + mergeable → notify the user.
   Merge only if told to.
 - `main` merges through GitHub's merge queue; its one required check is `verify`.

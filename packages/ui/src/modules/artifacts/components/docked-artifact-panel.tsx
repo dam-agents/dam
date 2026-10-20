@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import {
   useArtifact,
   useArtifactContent,
@@ -187,6 +188,7 @@ export function DockedArtifactPanel({ agentId, onSendPrompt }: Props) {
             )}
           </>
         )}
+        <SidePanelCloseButton />
       </div>
 
       <div className="min-h-0 flex-1">

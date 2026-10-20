@@ -5,6 +5,7 @@ import type { ClientChannel } from "../../infrastructure/client-channel.js";
 interface PendingRequest {
   sessionId: string | null;
   line: string;
+  unwatched: boolean;
 }
 
 export interface PendingAgentRequests {
@@ -24,6 +25,21 @@ export interface PendingAgentRequestsDeps {
   channelsFor(sessionId: string | null): Iterable<ClientChannel>;
   sendToAgent(frame: unknown): void;
   onExpired(): void;
+  observer: AgentRequestObserver;
+}
+
+export const noopAgentRequests: AgentRequestObserver = {
+  held: () => {},
+  waiting: () => {},
+  answered: () => {},
+  abandoned: () => {},
+};
+
+export interface AgentRequestObserver {
+  held(id: JsonRpcId, sessionId: string, line: string): void;
+  waiting(id: JsonRpcId, sessionId: string, line: string): void;
+  answered(id: JsonRpcId, sessionId: string, result: unknown): void;
+  abandoned(id: JsonRpcId, sessionId: string): void;
 }
 
 /**
@@ -37,6 +53,11 @@ export interface PendingAgentRequestsDeps {
  * expires. Forgetting a session drops its requests the same way, because the
  * session id is reused after a reset: a question left open must not follow
  * that id into the next conversation, and must not keep the runtime busy.
+ * The observer hears of every held request, of the first moment no channel
+ * can answer it — so the platform can record it while nobody watches the
+ * session — and of how each request ended, answered or dropped. The end
+ * matters even for a request a client mirrored itself: the platform settles
+ * its record on the answer the runtime accepted, whoever wrote the record.
  */
 export function createPendingAgentRequests(
   deps: PendingAgentRequestsDeps,
@@ -65,8 +86,21 @@ export function createPendingAgentRequests(
     expiryTimers.delete(sessionId);
   }
 
+  function announceUnwatched(sessionId: string): void {
+    for (const [id, req] of pending) {
+      if (req.sessionId !== sessionId || req.unwatched) continue;
+      req.unwatched = true;
+      deps.observer.waiting(id, sessionId, req.line);
+    }
+  }
+
+  function abandoned(id: JsonRpcId, req: PendingRequest): void {
+    if (req.sessionId !== null) deps.observer.abandoned(id, req.sessionId);
+  }
+
   function updateExpiryTimer(sessionId: string): void {
     const shouldRun = hasFor(sessionId) && !hasOpenChannel(sessionId);
+    if (shouldRun) announceUnwatched(sessionId);
     if (shouldRun && !expiryTimers.get(sessionId)) {
       expiryTimers.set(
         sessionId,
@@ -78,17 +112,18 @@ export function createPendingAgentRequests(
   }
 
   function abortRequestsOf(sessionId: string, message: string): number {
-    const aborted: JsonRpcId[] = [];
+    const aborted: [JsonRpcId, PendingRequest][] = [];
     for (const [id, req] of pending) {
-      if (req.sessionId === sessionId) aborted.push(id);
+      if (req.sessionId === sessionId) aborted.push([id, req]);
     }
-    for (const id of aborted) {
+    for (const [id, req] of aborted) {
       pending.delete(id);
       deps.sendToAgent({
         jsonrpc: "2.0",
         id,
         error: { code: -32000, message },
       });
+      abandoned(id, req);
     }
     return aborted.length;
   }
@@ -104,7 +139,8 @@ export function createPendingAgentRequests(
 
   return {
     onAgentRequest(id, sessionId, line) {
-      pending.set(id, { sessionId, line });
+      pending.set(id, { sessionId, line, unwatched: false });
+      if (sessionId !== null) deps.observer.held(id, sessionId, line);
       const out = rewriteAuthError(line);
       for (const channel of deps.channelsFor(sessionId)) {
         if (channel.isOpen()) channel.send(out);
@@ -118,6 +154,8 @@ export function createPendingAgentRequests(
       pending.delete(frame.id);
       if (req.sessionId !== null) updateExpiryTimer(req.sessionId);
       deps.sendToAgent(frame);
+      if (req.sessionId !== null)
+        deps.observer.answered(frame.id, req.sessionId, frame.result);
       return true;
     },
 
@@ -150,6 +188,7 @@ export function createPendingAgentRequests(
     },
 
     clear() {
+      for (const [id, req] of pending) abandoned(id, req);
       pending.clear();
       for (const t of expiryTimers.values()) clearTimeout(t);
       expiryTimers.clear();

@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -137,6 +137,8 @@ A move never strands an Agent.
 It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a container that crashes seconds after it becomes ready does not prove the move.
 If the controller instead reports, for that spec, a failure the image can cause, the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
 The failures are: the image cannot be pulled or unpacked, the machine cannot boot it, or the controller's `StartFailed` condition.
+A start the node refused is not one of them: a machine whose runner cannot reach its node's image cache carries a reason of its own ([vm-image-cache](vm-image-cache.md)), and the job holds the move instead, writing nothing back and marking nothing refused, because the image is not what failed and the image it came from would fail the same way there.
+It says so once per move, so the upgrade reads as waiting rather than as dropped.
 The controller sets `StartFailed` only from the pod or machine that runs the current spec, or from a refusal to admit that spec, never from the pod a roll replaces, which exits too.
 On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.
@@ -144,6 +146,7 @@ The controller sets `StartFailed` for one of three reasons.
 Either the container, or a guest that answered and then went quiet, restarted three times on this spec and is not ready now.
 Or it ran on this spec and never became ready, not counting the time an image pull takes: for ten minutes in a container, or for two minutes in a vm machine.
 A vm boot the runner reports as copying a disk before its guest answers does not count either: the runner holds it for up to six hours, and a move back would restart the machine and the copy with it.
+Nor does the boot that follows a machine the kernel killed for memory or the guest's own seccomp filter killed, by the reason the runner gives it (`MachineOOMKilled`, `MachineSeccompKilled`): the image is not what the kernel weighed, nor what made the call the filter forbids.
 Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
 The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
 It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.

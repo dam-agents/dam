@@ -1,5 +1,19 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
 import { createWorld, frames } from "./acp-world.js";
+import type { AgentRequestObserver } from "../pending-agent-requests.js";
+
+function recordingObserver() {
+  const heard: unknown[][] = [];
+  const handed: unknown[][] = [];
+  const observer: AgentRequestObserver = {
+    held: (id, sessionId) => handed.push(["held", id, sessionId]),
+    waiting: (id, sessionId) => heard.push(["waiting", id, sessionId]),
+    answered: (id, sessionId, result) =>
+      heard.push(["answered", id, sessionId, result]),
+    abandoned: (id, sessionId) => heard.push(["abandoned", id, sessionId]),
+  };
+  return { heard, handed, observer };
+}
 
 /**
  * TEST_OVERVIEW: unanswered requests.
@@ -8,7 +22,9 @@ import { createWorld, frames } from "./acp-world.js";
  * is there to answer. The question must wait, follow the user back in if
  * they return, and die cleanly if they don't: the agent gets an error so
  * the tool call aborts instead of hanging forever. Resetting the session
- * ends the question the same way, since the session id lives on.
+ * ends the question the same way, since the session id lives on. A question
+ * nobody can see is reported to the platform the moment that is so, and its
+ * end is reported too, so the platform can show it without a viewer.
  */
 
 const ORPHAN_TTL_MS = 60_000;
@@ -173,5 +189,144 @@ describe("acp-runtime: unanswered requests", () => {
     expect(world.harness().answersTo(77)).toEqual([]);
     expect(world.harness().answersTo(53)).toEqual([]);
     expect(world.runtime.status().idle).toBe(false);
+  });
+
+  /**
+   * TEST_SCENARIO: The agent asks while nobody watches the session. The
+   * platform must hear of the question at once, not when someone opens the
+   * session, so Home can show it with the time the agent asked. An answer
+   * that comes later must be reported too, with what was chosen, so the
+   * platform's record of the question ends with it.
+   */
+  it("should report a question nobody can see when it is asked, and its answer", () => {
+    const { heard, observer } = recordingObserver();
+    const world = createWorld({ agentRequests: observer });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.send(frames.prompt(2, SESSION, "delete the build folder"));
+    alice.disconnect();
+
+    world.harness().emit(frames.requestPermission(54, SESSION));
+    expect(heard).toEqual([["waiting", 54, SESSION]]);
+
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+    bob.send(frames.permissionAnswer(54));
+    expect(heard).toEqual([
+      ["waiting", 54, SESSION],
+      [
+        "answered",
+        54,
+        SESSION,
+        { outcome: { outcome: "selected", optionId: "allow" } },
+      ],
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: The user watches the session when the agent asks, then
+   * closes the tab before answering. The platform needs no report while the
+   * prompt is on screen, since the client relay records it, but must hear of
+   * it once nobody can see it, and exactly once however often viewers come
+   * and go.
+   */
+  it("should report a question once, when its last viewer leaves", () => {
+    const { heard, observer } = recordingObserver();
+    const world = createWorld({ agentRequests: observer });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    world.harness().emit(frames.requestPermission(55, SESSION));
+    expect(heard).toEqual([]);
+
+    alice.disconnect();
+    expect(heard).toEqual([["waiting", 55, SESSION]]);
+
+    const bob = world.connect();
+    bob.send(frames.loadSession(1, SESSION));
+    bob.disconnect();
+    expect(heard).toEqual([["waiting", 55, SESSION]]);
+  });
+
+  /**
+   * TEST_SCENARIO: A question nobody saw expires, or the session is reset
+   * under it. Either way the agent no longer waits for an answer, so the
+   * platform must hear that the question is gone and stop offering it.
+   */
+  it("should report a question nobody answered when it expires or is reset", () => {
+    vi.useFakeTimers();
+    const { heard, observer } = recordingObserver();
+    const world = createWorld({
+      orphanTtlMs: ORPHAN_TTL_MS,
+      agentRequests: observer,
+    });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    alice.disconnect();
+    world.harness().emit(frames.requestPermission(56, SESSION));
+    vi.advanceTimersByTime(ORPHAN_TTL_MS);
+    world.harness().emit(frames.requestPermission(57, SESSION));
+    world.runtime.resetSession(SESSION);
+
+    expect(heard).toEqual([
+      ["waiting", 56, SESSION],
+      ["abandoned", 56, SESSION],
+      ["waiting", 57, SESSION],
+      ["abandoned", 57, SESSION],
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: The user answers a question while watching it. The runtime
+   * accepts that answer, so it is the arbiter of what the tool did: the
+   * platform must hear the answer it accepted, even though the chat relay
+   * wrote the row. A record the relay settled differently is then corrected.
+   */
+  it("should report the answer a viewer gave, under the question's own id", () => {
+    const { heard, handed, observer } = recordingObserver();
+    const world = createWorld({ agentRequests: observer });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    world.harness().emit(frames.requestPermission(58, SESSION));
+    alice.send(frames.permissionAnswer(58));
+
+    expect(handed).toEqual([["held", 58, SESSION]]);
+    expect(heard).toEqual([
+      [
+        "answered",
+        58,
+        SESSION,
+        { outcome: { outcome: "selected", optionId: "allow" } },
+      ],
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: A user keeps the chat open from the moment the agent asks,
+   * and the session is reset under that question. The runtime no longer holds
+   * it, so the platform must hear its end: otherwise Home keeps offering a
+   * decision that reaches nothing.
+   */
+  it("should report the end of a watched question when its session resets", () => {
+    const { heard, observer } = recordingObserver();
+    const world = createWorld({ agentRequests: observer });
+
+    const alice = world.connect();
+    alice.send(frames.newSession(1));
+    world.harness().replyTo("session/new", { sessionId: SESSION });
+    world.harness().emit(frames.requestPermission(59, SESSION));
+    world.runtime.resetSession(SESSION);
+
+    expect(world.harness().answersTo(59)).toEqual([
+      expect.objectContaining({ error: expect.anything() }),
+    ]);
+    expect(heard).toEqual([["abandoned", 59, SESSION]]);
   });
 });

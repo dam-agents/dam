@@ -98,7 +98,7 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: hibernated for room that would still not suffice.
 // UNIT_BOUNDARY_DESCRIPTION: A `partial` reclaim, on the runner's own pressure
 // UNIT_BOUNDARY_DESCRIPTION: signal, hibernates what it can instead: near an
-// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes every machine of the owner,
+// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes a machine of the owner,
 // UNIT_BOUNDARY_DESCRIPTION: freeing some memory beats freeing none. When no
 // UNIT_BOUNDARY_DESCRIPTION: agent says it is idle, it hibernates the agents
 // UNIT_BOUNDARY_DESCRIPTION: that did not answer as a last resort, as the kill
@@ -141,7 +141,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		if left <= 0 {
 			break
 		}
-		if c.vmMiB == 0 || c.refused || c.booting && !partial {
+		if c.vmMiB == 0 || c.holdsNothing || c.booting && !partial {
 			continue
 		}
 		idle, answered := r.podStatus(ctx, c.name)
@@ -175,12 +175,12 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 // UNIT_BOUNDARY_DESCRIPTION: a running machine's use is learned only when its
 // UNIT_BOUNDARY_DESCRIPTION: agent reconciles, which a settled agent does every
 // UNIT_BOUNDARY_DESCRIPTION: few minutes, while guests grow within seconds. So
-// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner about their
-// UNIT_BOUNDARY_DESCRIPTION: running machines, hibernates idle agents of an
-// UNIT_BOUNDARY_DESCRIPTION: owner under pressure, and returns one agent of each
-// UNIT_BOUNDARY_DESCRIPTION: owner whose runner pod's request differs from what
-// UNIT_BOUNDARY_DESCRIPTION: their counts call for, for the caller to reconcile
-// UNIT_BOUNDARY_DESCRIPTION: so the request follows them.
+// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner, in one read,
+// UNIT_BOUNDARY_DESCRIPTION: about their running machines, hibernates idle
+// UNIT_BOUNDARY_DESCRIPTION: agents of an owner under pressure, and returns one
+// UNIT_BOUNDARY_DESCRIPTION: agent of each owner whose runner pod's request
+// UNIT_BOUNDARY_DESCRIPTION: differs from what their counts call for, for the
+// UNIT_BOUNDARY_DESCRIPTION: caller to reconcile so the request follows them.
 func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	if r.agentCache == nil || !r.config.VM.Enabled {
 		return nil
@@ -234,33 +234,46 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	}
 	r.refreshVMPool(ctx, owner)
 	var first *apiv1.Agent
+	var up []string
 	lock := r.ownerLock(owner)
 	for _, a := range agents {
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil || !running {
 			continue
 		}
-		// UNIT_BOUNDARY_DESCRIPTION: the status is read and its sample kept
-		// UNIT_BOUNDARY_DESCRIPTION: under the owner's lock, the one a reconcile
-		// UNIT_BOUNDARY_DESCRIPTION: records the runner's answer under, so the two
-		// UNIT_BOUNDARY_DESCRIPTION: cannot cross: a sample read before a refusal
-		// UNIT_BOUNDARY_DESCRIPTION: is kept before it, and the answer that follows
-		// UNIT_BOUNDARY_DESCRIPTION: drops it. Kept outside, the older reading lands
-		// UNIT_BOUNDARY_DESCRIPTION: after the refusal and counts a machine the
-		// UNIT_BOUNDARY_DESCRIPTION: runner holds nothing of.
-		lock.Lock()
-		status, err := runner.Status(ctx, a.Name)
-		if err == nil {
-			r.noteMachineUse(a.Name, status)
-			if first == nil && !r.refusedWithoutMachine(a) {
-				first = a
-			}
+		up = append(up, a.Name)
+		if first == nil && !r.refusedWithoutMachine(a) {
+			first = a
 		}
-		lock.Unlock()
 	}
 	if first == nil {
 		return "", false
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it. A runner that does not mark its machines with the memory figures is older than them — a runner release the controller has not rolled yet — and is asked about each machine in turn, as it was before, since its zeroes would count a warming machine at its measured use and forget the size a machine still runs at. A failed read leaves the last measurements in place, as a failed status read of one machine did, and does not end the pass: a measured machine counts at its last use and one never measured at its warm-up floor, or its size when that is smaller, as it does on any pass, and under the runner's pressure signal the need comes from the kernel's working set, which needs no measurement at all. Every sample is kept under the owner's lock, the one a reconcile records the runner's answer under, so the two cannot cross: a sample read before a refusal is kept before it, and the answer that follows drops it.
+	lock.Lock()
+	usage, err := runner.Usage(ctx)
+	switch {
+	case err != nil:
+		slog.WarnContext(ctx, "vm memory: reading the runner's usage", "owner", owner, "error", err)
+	case usage.MachineFigures:
+		held := make(map[string]vmrunner.MachineUsage, len(usage.Machines))
+		for _, m := range usage.Machines {
+			held[m.ID] = m
+		}
+		for _, name := range up {
+			m := held[name]
+			r.noteMachineUse(name, vmrunner.MachineStatus{State: m.State, CPUs: m.CPUs, MemoryMiB: m.MemoryMiB, UsedMiB: m.UsedMiB, Warming: m.Warming})
+		}
+	default:
+		for _, name := range up {
+			status, err := runner.Status(ctx, name)
+			if err != nil {
+				continue
+			}
+			r.noteMachineUse(name, status)
+		}
+	}
+	lock.Unlock()
 	demand, err := r.heldRunnerDemand(ctx, owner, first, true)
 	if err != nil {
 		return "", false
@@ -317,14 +330,30 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 	return nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what the owner reads while a start waits for the node: it is not their memory that is gone, so the message says what the platform is doing about it rather than quote a pool that has room. Where the node has deferred or refused the resize the controller frees that room from their idle agents itself, and the sentence stays true: the machine starts once the node grants what it holds.
+const vmAwaitingAllocationMessage = "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does."
+
 // UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for memory frees the
 // UNIT_BOUNDARY_DESCRIPTION: room it lacks from the owner's idle agents, and
 // UNIT_BOUNDARY_DESCRIPTION: the parked retry starts it once their machines
-// UNIT_BOUNDARY_DESCRIPTION: have stopped.
-func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *apiv1.Agent, owner string) error {
+// UNIT_BOUNDARY_DESCRIPTION: have stopped. `boundMiB` is the room the start is
+// UNIT_BOUNDARY_DESCRIPTION: measured against: the owner's pool for a start the
+// UNIT_BOUNDARY_DESCRIPTION: pool refused, and what the node holds for the
+// UNIT_BOUNDARY_DESCRIPTION: runner for one the node has not granted, where the
+// UNIT_BOUNDARY_DESCRIPTION: pool has room and its figure would free nothing.
+func (r *AgentReconciler) reclaimForRefusedStart(ctx context.Context, agent *apiv1.Agent, owner string, boundMiB func() (int, error)) error {
 	_, err := r.reclaimRunnerMemory(ctx, owner, agent.Name, func() (int, error) {
-		demand, err := r.ownerRunnerDemand(ctx, owner, agent, true)
-		return r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, 100), err
+		bound, err := boundMiB()
+		if err != nil || bound <= 0 {
+			return 0, err
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: the room to free is the one the runner holds or is about to hold, which leaves the other starts waiting for the node out of it: a waiting start holds nothing yet, and counting it here would ask for room no idle agent can give, so neither waiter is ever admitted. The request the resize carries keeps counting them; only this reclaim total does not. The start being admitted is the one it is for, so it is counted on its own.
+		held, err := r.heldRunnerDemand(ctx, owner, agent, false)
+		if err != nil {
+			return 0, err
+		}
+		own := r.accountedMemoryMiB(ctx, owner, agent.Name, &agent.Spec)
+		return held.memoryMiB + own + r.config.VM.Runner.ReserveMiB - bound, nil
 	}, false)
 	return err
 }

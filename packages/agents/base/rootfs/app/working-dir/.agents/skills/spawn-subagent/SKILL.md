@@ -38,7 +38,7 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
 1. **Choose what it runs on — do not guess.** Call `list_harnesses` and `list_connections` and show the human what is available.
    If it is not obvious which to use, **ask them**.
    `list_harnesses` names the provider each harness would run on, or the provider this agent lacks for it: tell the user what to attach rather than spawning there.
-   The model needs nothing: a sub-agent on your own harness runs on this session's model and settings, any other on the harness's default model.
+   A sub-agent on your own harness runs on this session's model and settings; on any other harness, pass `model` (one `list_harnesses` lists for it), or the spawn is refused.
    When the user set this session's platform sub-agents to a harness, model, mode or effort, those bind: a `harness` you omit is that one, another is refused, and the spawn result names what was set.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`, `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any setup option from the table below and, to pick the model, `model`, `mode` and `configOptions` as in "Choose the model per spawn".
    Never pick a model through `env`: the platform then records no harness config and runs none of its checks.
@@ -77,7 +77,7 @@ Examples below are Python; the JS names are the camelCase equivalents (`listImag
 - **Look first** — run `d.list_images()` and `d.list_connections()` and show the human what is available, as with the tools.
 - **What it runs on** — `harness=` one of `claude-code`, `codex`, `pi`, `bob`, on that harness's default image and size.
   `image="<full ref>"` runs a custom image instead, with `harness` saying which harness is inside it; prefer `seed` and `install` below over building an image.
-- **Model** — one of your model providers that the harness runs on, and the harness's default model unless you pick one (see "Choose the model per spawn").
+- **Model** — one of your model providers that the harness runs on, and a model you pick (see "Choose the model per spawn"); a spawn with no model is refused.
 - **Connections** — only your own grants, for what the task needs beyond the model; its network access follows your egress rules, so what you can reach, it can reach.
 
 ## Quickstart: a sub-agent that returns a single integer

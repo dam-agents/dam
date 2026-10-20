@@ -50,7 +50,7 @@ func collectStrings(v any, key string, out map[string]int) {
 // TEST_SCENARIO: two agents with the same Connection render the same chains, so only the agent suffix keeps their listeners, clusters and stat prefixes apart. No listener name, cluster name or stat prefix may appear twice in the owner's files, or Envoy refuses them all.
 func TestRenderOwnerGateway_NamesNeverCollide(t *testing.T) {
 	cfg := telemetryTestCfg()
-	got, err := renderOwnerGateway(ownerTestAgents(), cfg)
+	got, err := renderOwnerGateway(ownerTestAgents(), cfg, "")
 	require.NoError(t, err)
 
 	listenerNames, clusterNames, statPrefixes := map[string]int{}, map[string]int{}, map[string]int{}
@@ -80,7 +80,7 @@ func TestRenderOwnerGateway_NamesNeverCollide(t *testing.T) {
 
 // TEST_SCENARIO: each agent's ext_authz and spend records go to its own ext-authz Service, which is how the api-server knows the agent, so no agent's filters may name another agent's cluster or authority.
 func TestRenderOwnerGateway_EachListenerNamesOnlyItsOwnAgent(t *testing.T) {
-	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg)
+	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg, "")
 	require.NoError(t, err)
 	for _, l := range resourcesOf(t, got.LDS) {
 		name := l["name"].(string)
@@ -121,7 +121,7 @@ func guardAdmits(routes []any, path string) bool {
 
 // TEST_SCENARIO: the mesh sees one principal for every agent of the owner, so the guard is what keeps an agent off a sibling's harness paths. Its own path reaches the harness stamped with its name; a sibling's path, a path that only starts like its own, and any other path are refused at the gateway.
 func TestRenderOwnerGateway_HarnessGuardRefusesSiblingPath(t *testing.T) {
-	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg)
+	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg, "")
 	require.NoError(t, err)
 	routes := guardRoutes(t, got.LDS, "agent-a")
 	assert.True(t, guardAdmits(routes, "/api/agents/agent-a/runtime/trpc"))
@@ -136,7 +136,7 @@ func TestRenderOwnerGateway_HarnessGuardRefusesSiblingPath(t *testing.T) {
 
 // TEST_SCENARIO: a guest can name the harness by another spelling, an IP or a short name, which skips the guard's route. Such a request must never carry the guard's stamp, so every route that can reach the harness outside the guard strips the header the agent's harness policy requires, and both harness routes on the agent listener lead into the guard.
 func TestRenderOwnerGateway_OnlyTheGuardStampsTheAgent(t *testing.T) {
-	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg)
+	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg, "")
 	require.NoError(t, err)
 	for _, l := range resourcesOf(t, got.LDS) {
 		name := l["name"].(string)
@@ -177,24 +177,55 @@ func TestRenderOwnerGateway_OnlyTheGuardStampsTheAgent(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: an owner gateway serves several agents in one Envoy, told apart only by the listener port. Each agent's OTLP route lives on its own listener, so its export carries its own attribution stamp and never a sibling's, and the route names stay apart so the access-log filter of one agent never matches another's route.
+func TestRenderOwnerGateway_EachAgentsOTLPRouteStampsItself(t *testing.T) {
+	got, err := renderOwnerGateway(ownerTestAgents(), telemetryTestCfg(), "")
+	require.NoError(t, err)
+	seen := map[string]bool{}
+	for _, l := range resourcesOf(t, got.LDS) {
+		name := l["name"].(string)
+		agent, ok := strings.CutPrefix(name, "agent_egress_")
+		if !ok {
+			continue
+		}
+		hcm := l["filter_chains"].([]any)[len(l["filter_chains"].([]any))-1].(map[string]any)["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		rc := hcm["route_config"].(map[string]any)
+		var otlp map[string]any
+		for _, r := range rc["virtual_hosts"].([]any)[0].(map[string]any)["routes"].([]any) {
+			if r.(map[string]any)["match"].(map[string]any)["prefix"] == "/__platform_otlp/" {
+				otlp = r.(map[string]any)
+			}
+		}
+		require.NotNil(t, otlp, name)
+		assert.Equal(t, "gateway_otlp_"+agent, otlp["name"])
+		assert.Equal(t, "otel_collector", otlp["route"].(map[string]any)["cluster"], "the collector cluster is the owner's shared one")
+		assert.Equal(t, []any{map[string]any{
+			"header":        map[string]any{"key": "x-platform-agent-id", "value": agent},
+			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+		}}, rc["request_headers_to_add"])
+		seen[agent] = true
+	}
+	assert.Equal(t, map[string]bool{"agent-a": true, "agent-b": true}, seen)
+}
+
 // TEST_SCENARIO: the readiness probe compares the body of an agent's health path with the revision rendered for it, so the listener must answer that path with exactly that revision, and a change to one agent's chains must change only that agent's revision.
 func TestRenderOwnerGateway_HealthPathServesTheRevision(t *testing.T) {
 	agents := ownerTestAgents()
-	before, err := renderOwnerGateway(agents, bootstrapTestCfg)
+	before, err := renderOwnerGateway(agents, bootstrapTestCfg, "")
 	require.NoError(t, err)
 	assert.Contains(t, before.LDS, "inline_string: "+before.Revisions["agent-a"])
 	agents[1].Chains = agents[1].Chains[:1]
-	after, err := renderOwnerGateway(agents, bootstrapTestCfg)
+	after, err := renderOwnerGateway(agents, bootstrapTestCfg, "")
 	require.NoError(t, err)
 	assert.Equal(t, before.Revisions["agent-a"], after.Revisions["agent-a"])
 	assert.NotEqual(t, before.Revisions["agent-b"], after.Revisions["agent-b"])
 }
 
-// TEST_SCENARIO: the owner's credentials are one Secret mounted once, its keys prefixed by the Secret they came from, so the SDS file each chain reads is that flat name and its watched directory is the mount itself.
+// TEST_SCENARIO: the owner's files and its credentials are one Secret mounted once, its credential keys prefixed by the Secret they came from, so the SDS file each chain reads is that flat name beside the listener file that names it, in the one directory the pod mounts.
 func TestRenderOwnerGateway_CredentialsReadFromTheOwnerSecret(t *testing.T) {
-	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg)
+	got, err := renderOwnerGateway(ownerTestAgents(), bootstrapTestCfg, "")
 	require.NoError(t, err)
-	assert.Contains(t, got.LDS, "path: "+envoyCredentialsRoot+"/platform-conn-gh."+sdsFileKeyForHost("api.github.com"))
+	assert.Contains(t, got.LDS, "path: "+ownerGatewayCredentialRoot+"/platform-conn-gh."+sdsFileKeyForHost("api.github.com"))
 	assert.NotContains(t, got.LDS, "/cred-")
 	assert.Contains(t, got.LDS, "tls_certificate_sds_secret_configs")
 	assert.NotContains(t, got.LDS, "/tls.key")

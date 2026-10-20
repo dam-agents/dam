@@ -1,7 +1,0 @@
-paths:
-  # The cache keys build.yml and e2e.yml share are anchored in both under one
-  # name, so check:workflow-anchors can compare them, though one file may
-  # never alias its copy.
-  .github/workflows/{build,e2e}.yml:
-    ignore:
-      - 'anchor ".+" is defined but not used'

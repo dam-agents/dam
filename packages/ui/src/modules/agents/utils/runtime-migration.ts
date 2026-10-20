@@ -12,7 +12,6 @@ export interface VmRuntimeAnswer {
 }
 
 export type RuntimeBadge =
-  | { kind: "new"; label: string; title: string }
   | { kind: "migrating"; label: string; title: string }
   | { kind: "failed"; label: string; title: string };
 
@@ -60,7 +59,7 @@ export function migrationTitle(migration: RuntimeMigrationView): string {
   return migration.message ?? migrationPhaseDescription(migration);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows. A migration under way is badged with its phase, and a failed one distinctly, whatever the experiment says, since the user started it and has something to decide. Otherwise, with the vm-sandboxes experiment off the new runtime is the rare case and is the one badged; with it on the new runtime is the default and nothing is badged, since an agent still on the old container runtime already shows its Migrate action. Nothing is badged until both answers behind the experiment have arrived, so a row does not flip from one badge to the other on load.
+// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows. A migration under way is badged with its phase, and a failed one distinctly, since the user has something to decide. Nothing else is badged: the new runtime is the default and an agent still on the old container runtime already shows its Migrate action. Nothing is badged until the install has answered, so no badge appears a moment late on load.
 export function runtimeBadge(
   agent: Pick<AgentView, "vm" | "runtimeMigration">,
   vmRuntime: VmRuntimeAnswer,
@@ -79,13 +78,7 @@ export function runtimeBadge(
           label: `Migrating: ${migrationPhaseLabel(migration.phase).toLowerCase()}`,
           title: migrationTitle(migration),
         };
-  return !vmRuntime.vm && agent.vm
-    ? {
-        kind: "new",
-        label: "New runtime",
-        title: "Runs on the new sandbox runtime",
-      }
-    : null;
+  return null;
 }
 
 export type MigrateAction =
@@ -105,7 +98,7 @@ export type MigrateAction =
       retryable: boolean;
     };
 
-// UNIT_BOUNDARY_DESCRIPTION: what an agent row offers for the runtime migration. A migration under way shows its phase and, until the agent has started on the new runtime, the way back; a failed one shows its reason with Retry and Abort. The migration's own state is read regardless of the experiment, since a user who turned it off mid-way still has to be able to finish or undo the move. A container agent the api-server would refuse still shows the action, disabled, so the user can find out why instead of wondering where the button went.
+// UNIT_BOUNDARY_DESCRIPTION: what an agent row offers for the runtime migration. A migration under way shows its phase and, until the agent has started on the new runtime, the way back; a failed one shows its reason with Retry and Abort. A container agent the api-server would refuse still shows the action, disabled, so the user can find out why instead of wondering where the button went.
 export function migrateAction(
   agent: Pick<AgentView, "vm" | "runtimeMigratable" | "runtimeMigration">,
   vmRuntime: VmRuntimeAnswer,
