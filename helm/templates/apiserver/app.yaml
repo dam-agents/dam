@@ -88,7 +88,8 @@ spec:
             "checksum/harness-templates" (include (print $.Template.BasePath "/harness-templates.yaml") . | sha256sum)
             "checksum/starter-kits" (include (print $.Template.BasePath "/starter-kits.yaml") . | sha256sum)
             "checksum/git-repos" (include (print $.Template.BasePath "/git-repos.yaml") . | sha256sum)
-            "checksum/credentials" (include (print $.Template.BasePath "/apiserver/credentials.yaml") . | sha256sum) }}
+            "checksum/credentials" (include (print $.Template.BasePath "/apiserver/credentials.yaml") . | sha256sum)
+            "checksum/extra-cas" (include (print $.Template.BasePath "/apiserver/extra-cas.yaml") . | sha256sum) }}
       {{- include "platform.podAnnotations" (dict "root" $ "component" .Values.apiServer "internal" $checksums) | nindent 6 }}
     spec:
       enableServiceLinks: false
@@ -149,6 +150,12 @@ spec:
             # to the database connection rather than the whole process.
             - name: DATABASE_CA_CERT_PATH
               value: /etc/platform/pg-ca/ca.crt
+            {{- end }}
+            {{- if .Values.controller.gatewayUpstreamExtraCAs }}
+            # Node reads it once at start; the extra-cas checksum restarts the pod
+            # when the CA changes.
+            - name: NODE_EXTRA_CA_CERTS
+              value: /etc/platform/extra-cas/extra-cas.crt
             {{- end }}
             {{- if .Values.clickstack.enabled }}
             # Agent-telemetry read path: HTTP-query the ClickStack ClickHouse
@@ -626,6 +633,11 @@ spec:
               mountPath: /etc/platform/pg-ca
               readOnly: true
             {{- end }}
+            {{- if .Values.controller.gatewayUpstreamExtraCAs }}
+            - name: extra-cas
+              mountPath: /etc/platform/extra-cas
+              readOnly: true
+            {{- end }}
             {{- if dig "platformProvider" "caConfigMap" "name" "" .Values.apiServer }}
             - name: platform-provider-ca
               mountPath: /etc/platform/platform-provider-ca
@@ -707,6 +719,11 @@ spec:
         - name: pg-ca
           configMap:
             name: {{ include "platform.fullname" . }}-apiserver-db-ca
+        {{- end }}
+        {{- if .Values.controller.gatewayUpstreamExtraCAs }}
+        - name: extra-cas
+          configMap:
+            name: {{ include "platform.fullname" . }}-apiserver-extra-cas
         {{- end }}
         {{- with dig "platformProvider" "caConfigMap" dict .Values.apiServer }}
         {{- if .name }}
