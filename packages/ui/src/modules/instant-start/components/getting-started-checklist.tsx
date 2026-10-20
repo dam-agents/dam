@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { CatchStyles } from "../../agents/components/catch-styles.js";
@@ -12,6 +12,7 @@ import {
   completeQuest,
   endCelebration,
   FIRST_AGENT_QUEST_ID,
+  resetCharacterUnlocks,
   useCharacterUnlocks,
 } from "../../agents/lib/character-unlocks.js";
 import {
@@ -27,12 +28,10 @@ export function GettingStartedChecklist() {
   const { caught, rewards, working, celebrating, collected } =
     useCharacterUnlocks();
   const [expanded, setExpanded] = useState(true);
-  const bootRef = useRef(false);
-
   useEffect(() => {
-    if (bootRef.current) return;
-    bootRef.current = true;
-    completeQuest(FIRST_AGENT_QUEST_ID);
+    resetCharacterUnlocks();
+    const t = setTimeout(() => completeQuest(FIRST_AGENT_QUEST_ID), 50);
+    return () => clearTimeout(t);
   }, []);
 
   const inFlight = celebrating?.name ?? null;

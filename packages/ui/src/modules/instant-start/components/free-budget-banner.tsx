@@ -30,7 +30,7 @@ export function FreeBudgetBanner() {
           </p>
           <p className="text-sm text-muted-foreground">
             {budgetExhausted
-              ? "Connect your own LLM provider to keep chatting"
+              ? `${formatUsd(freeBudget.limit)} free budget used up — connect a provider to continue`
               : `${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`}
           </p>
         </div>
@@ -47,7 +47,7 @@ export function FreeBudgetBanner() {
         <div
           className={cn(
             "h-full transition-all duration-500",
-            budgetExhausted ? "bg-muted-foreground/50" : "bg-primary",
+            budgetExhausted ? "bg-foreground" : "bg-primary",
           )}
           style={{ width: `${pct}%` }}
         />
@@ -90,7 +90,7 @@ function ProgressRing({
         strokeLinecap="round"
         className={cn(
           "transition-all duration-500",
-          exhausted ? "text-muted-foreground/50" : "text-primary",
+          exhausted ? "text-foreground" : "text-primary",
         )}
       />
     </svg>

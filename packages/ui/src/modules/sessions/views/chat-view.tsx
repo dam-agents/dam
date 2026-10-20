@@ -813,13 +813,11 @@ export function ChatView() {
                 )}
                 {instantStart?.budgetExhausted &&
                 !instantStart.providerAdded ? (
-                  <div className="px-4 md:px-8">
-                    <ChatColumn>
-                      <div className="flex h-12 items-center justify-center rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground">
-                        Chat disabled — connect a provider to continue
-                      </div>
-                    </ChatColumn>
-                  </div>
+                  <ChatColumn className="px-4 md:px-8">
+                    <div className="flex h-12 items-center justify-center rounded-lg border border-border bg-muted/50 text-sm text-muted-foreground">
+                      Chat disabled — connect a provider to continue
+                    </div>
+                  </ChatColumn>
                 ) : (
                   <ChatInputArea
                     textareaRef={textareaRef}
@@ -827,7 +825,7 @@ export function ChatView() {
                     loadingSession={loadingSession}
                     onSend={sendPrompt}
                     onStop={stopAgent}
-                    rotatingPlaceholder={instantStart ? undefined : rotatingPlaceholder}
+                    rotatingPlaceholder={rotatingPlaceholder}
                     onConfigureSection={
                       selectedAgent ? setConfigureSection : undefined
                     }

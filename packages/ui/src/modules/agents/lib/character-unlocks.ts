@@ -163,6 +163,12 @@ export function endCelebration() {
   setState({ collected: state.celebrating.name, celebrating: null });
 }
 
+export function resetCharacterUnlocks() {
+  if (workTimer) clearTimeout(workTimer);
+  workTimer = null;
+  setState(initialState());
+}
+
 export function requestCharacterPicker() {
   setState({ pickerRequest: state.pickerRequest + 1 });
 }
@@ -192,10 +198,4 @@ export function unlockAllCharacters() {
     collected: null,
     pickerRequest: 0,
   });
-}
-
-export function resetCharacterUnlocks() {
-  if (workTimer) clearTimeout(workTimer);
-  workTimer = null;
-  setState(initialState());
 }

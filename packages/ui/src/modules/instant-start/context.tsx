@@ -25,14 +25,14 @@ export interface InstantStartState {
 
 const INITIAL_BUDGET: FreeBudget = {
   used: 0,
-  limit: 5.0,
+  limit: 20.0,
   unit: "usd",
   resetsAt: null,
 };
 
 const EXHAUSTED_BUDGET: FreeBudget = {
-  used: 5.0,
-  limit: 5.0,
+  used: 20.0,
+  limit: 20.0,
   unit: "usd",
   resetsAt: null,
 };
