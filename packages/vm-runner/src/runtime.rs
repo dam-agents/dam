@@ -307,13 +307,14 @@ pub fn vmms_left(
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a process has let go of everything once it is gone, or is a zombie with no thread left beside it. A zombie main thread alone is not enough: the threads it leaves share its open files and close them only when the last one exits.
+// UNIT_BOUNDARY_DESCRIPTION: a process has let go of everything once it is gone, or is a zombie with no thread left beside it. A zombie main thread alone is not enough: the threads it leaves share its open files and close them only when the last one exits. A Mac asks the kernel, which is where the scan found the process: a `/proc` mounted on a Mac is a filesystem view the kernel's own table need not agree with, and a pid missing from it would read as a process that exited while the kernel still holds it, which authorizes removing the lock and sockets that keep a second VMM off a disk the first is still writing.
+#[cfg_attr(target_os = "macos", allow(unused_variables))]
 fn exited(proc_root: &Path, pid: i32) -> bool {
     #[cfg(target_os = "macos")]
-    if !proc_root.is_dir() {
-        return darwin::exited(pid);
-    }
+    return darwin::exited(pid);
+    #[cfg(not(target_os = "macos"))]
     let dir = proc_root.join(pid.to_string());
+    #[cfg(not(target_os = "macos"))]
     let zombie = fs::read_to_string(dir.join("stat")).is_ok_and(|stat| {
         matches!(
             stat.rsplit_once(") ")
@@ -321,8 +322,11 @@ fn exited(proc_root: &Path, pid: i32) -> bool {
             Some("Z" | "X")
         )
     });
-    !dir.exists()
-        || (zombie && fs::read_dir(dir.join("task")).is_ok_and(|tasks| tasks.count() <= 1))
+    #[cfg(not(target_os = "macos"))]
+    {
+        !dir.exists()
+            || (zombie && fs::read_dir(dir.join("task")).is_ok_and(|tasks| tasks.count() <= 1))
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the host runner's process table. A Mac has no /proc, so the VMMs holding a machine's directory are found through the kernel's process list and each process's arguments, as `/proc/<pid>/cmdline` finds them on Linux.
@@ -909,6 +913,7 @@ pub fn timed<T>(
 mod tests {
     use super::*;
     use crate::testdir::TempDir;
+    #[cfg(not(target_os = "macos"))]
     use std::path::PathBuf;
 
     // TEST_SCENARIO: a VMM is found by the machine directory on its command line, and taken down, on the host's own process table: /proc on Linux, the kernel's process list on a Mac, which has no /proc. A machine whose directory only prefixes the VMM's is not matched.
@@ -1239,6 +1244,59 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: a Mac finds a VMM in the kernel's process table, so it must ask the kernel whether that process has exited too. A `/proc` mounted on a Mac is a separate view the kernel's table need not agree with, and a pid missing from it would read as a process that exited while the kernel still lists it, which authorizes a start to remove the lock and sockets of a machine a live VMM is still holding. The holder here is a real process the kernel names, and the `/proc` view is a scratch directory holding no such pid: a start must fail and keep every file that keeps a second VMM off the disk.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_live_vmm_the_kernel_lists_is_not_read_as_gone_from_a_proc_view() {
+        let dir = TempDir::new("proc-view-holder");
+        let vm_dir = dir.path().join("m1");
+        fs::create_dir_all(&vm_dir).unwrap();
+        let mut vmm = std::process::Command::new("sh")
+            .args(["-c", "read _", "_boot-vm"])
+            .arg(format!("{}/", vm_dir.display()))
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        for file in STALE_RUNTIME_FILES {
+            fs::write(vm_dir.join(file), "held by a VMM").unwrap();
+        }
+        let found = orphan_pids(Path::new("/proc"), &vm_dir).unwrap();
+        assert!(
+            found.pids().contains(&pid),
+            "the kernel did not name the live holder this test needs: {found:?}"
+        );
+
+        // UNIT_BOUNDARY_DESCRIPTION: a `/proc` view that holds another process and not the holder, which is the disagreement between the two tables that the start must not read as an exit.
+        let proc_view = TempDir::new("proc-view-absent");
+        fs::create_dir_all(proc_view.path().join("1")).unwrap();
+
+        let cleared = clear_for_start(
+            "m1",
+            proc_view.path(),
+            &vm_dir,
+            found.pids(),
+            Duration::from_millis(80),
+        );
+        let alive = !exited(Path::new("/proc"), pid);
+        let kept: Vec<bool> = STALE_RUNTIME_FILES
+            .iter()
+            .map(|file| vm_dir.join(file).exists())
+            .collect();
+        if alive {
+            assert!(
+                cleared.is_err(),
+                "a start cleared a machine a live VMM the kernel lists still holds: {cleared:?}"
+            );
+            assert!(
+                kept.iter().all(|kept| *kept),
+                "a start removed the files that keep a second VMM off a disk a live one holds: {kept:?}"
+            );
+        }
+        vmm.kill().ok();
+        vmm.wait().ok();
+    }
+
     // TEST_SCENARIO: a machine's VMM is found by its directory on the command line. Of three processes only the one naming this machine's directory is its VMM — not one for a machine whose directory name merely starts the same way, and not the runner itself.
     #[cfg(not(target_os = "macos"))]
     #[test]
@@ -1295,6 +1353,7 @@ mod tests {
     }
 
     // TEST_SCENARIO: a stopped VMM's command line goes blank while it is still exiting: first still running, then with its main thread a zombie while another thread still holds the machine's published port. A VMM seen before the stop is waited out through both, and counts as gone only once its last thread is.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_stopped_vmm_is_waited_out_until_its_last_thread_exits() {
         let proc = TempDir::new("exiting");
@@ -1883,6 +1942,8 @@ mod tests {
         );
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a stand-in `/proc` entry, which is a Linux process table alone: a Mac reads the kernel's own list, so nothing there consults this.
+    #[cfg(not(target_os = "macos"))]
     fn process(proc: &TempDir, pid: i32, cmdline: &str) {
         let dir = proc.path().join(pid.to_string());
         fs::create_dir_all(&dir).unwrap();
