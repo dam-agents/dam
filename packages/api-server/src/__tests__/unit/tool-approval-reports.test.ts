@@ -108,7 +108,7 @@ function setup() {
       args: { path: "/tmp/a" },
       options: OPTIONS,
     });
-  return { rows, relay, reports, waiting };
+  return { rows, repo, relay, reports, waiting };
 }
 
 let events: DomainEvent[] = [];
@@ -292,5 +292,27 @@ describe("tool approval reports", () => {
         resolution: "allow_once",
       }),
     );
+  });
+
+  // TEST_SCENARIO: the report read its row as pending, and another writer decided it before the row update landed, so the report's own settle loses. It must still settle the row on the answer the harness got: losing the row decision is not losing the right to state what the tool did.
+  it("corrects the row when its pending settle loses the race", async () => {
+    const { rows, repo, reports, waiting } = setup();
+    await waiting();
+    const settle = repo.resolvePending;
+    repo.resolvePending = async (id, _verdict, decidedBy, opts) => {
+      await settle(id, "allow_once", decidedBy, opts);
+      return false;
+    };
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: { outcome: "selected", optionId: "no" },
+    });
+
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "deny_once",
+    });
   });
 });

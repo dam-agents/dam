@@ -25,8 +25,15 @@ export interface PendingAgentRequestsDeps {
   channelsFor(sessionId: string | null): Iterable<ClientChannel>;
   sendToAgent(frame: unknown): void;
   onExpired(): void;
-  observer?: AgentRequestObserver;
+  observer: AgentRequestObserver;
 }
+
+export const noopAgentRequests: AgentRequestObserver = {
+  held: () => {},
+  waiting: () => {},
+  answered: () => {},
+  abandoned: () => {},
+};
 
 export interface AgentRequestObserver {
   held(id: JsonRpcId, sessionId: string, line: string): void;
@@ -83,12 +90,12 @@ export function createPendingAgentRequests(
     for (const [id, req] of pending) {
       if (req.sessionId !== sessionId || req.unwatched) continue;
       req.unwatched = true;
-      deps.observer?.waiting(id, sessionId, req.line);
+      deps.observer.waiting(id, sessionId, req.line);
     }
   }
 
   function abandoned(id: JsonRpcId, req: PendingRequest): void {
-    if (req.sessionId !== null) deps.observer?.abandoned(id, req.sessionId);
+    if (req.sessionId !== null) deps.observer.abandoned(id, req.sessionId);
   }
 
   function updateExpiryTimer(sessionId: string): void {
@@ -133,7 +140,7 @@ export function createPendingAgentRequests(
   return {
     onAgentRequest(id, sessionId, line) {
       pending.set(id, { sessionId, line, unwatched: false });
-      if (sessionId !== null) deps.observer?.held(id, sessionId, line);
+      if (sessionId !== null) deps.observer.held(id, sessionId, line);
       const out = rewriteAuthError(line);
       for (const channel of deps.channelsFor(sessionId)) {
         if (channel.isOpen()) channel.send(out);
@@ -148,7 +155,7 @@ export function createPendingAgentRequests(
       if (req.sessionId !== null) updateExpiryTimer(req.sessionId);
       deps.sendToAgent(frame);
       if (req.sessionId !== null)
-        deps.observer?.answered(frame.id, req.sessionId, frame.result);
+        deps.observer.answered(frame.id, req.sessionId, frame.result);
       return true;
     },
 

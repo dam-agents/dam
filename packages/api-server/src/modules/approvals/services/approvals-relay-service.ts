@@ -143,14 +143,16 @@ export function createApprovalsRelayService(
       const row = await deps.repo.getPending(rowId);
       if (!row || row.payload.kind !== "acp_native") return;
       const verdict = verdictOfOutcome(row.payload.options ?? [], outcome);
-      const settled =
-        row.status === "pending"
-          ? await deps.repo.resolvePending(row.id, verdict, "in-session", {
-              markDelivered: true,
-            })
-          : opts?.authoritative === true &&
-            (await deps.repo.correctResolvedVerdict(row.id, verdict));
-      if (!settled) return;
+      const casWon =
+        row.status === "pending" &&
+        (await deps.repo.resolvePending(row.id, verdict, "in-session", {
+          markDelivered: true,
+        }));
+      const corrected =
+        !casWon &&
+        opts?.authoritative === true &&
+        (await deps.repo.correctResolvedVerdict(row.id, verdict));
+      if (!casWon && !corrected) return;
       emit({
         type: EventType.ApprovalResolved,
         approvalId: row.id,

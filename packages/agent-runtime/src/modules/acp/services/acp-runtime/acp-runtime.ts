@@ -189,7 +189,7 @@ export interface AcpRuntimeDeps {
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onSubAgentSpawn?: (spawn: SubAgentSpawn) => void;
   onToolActivity?: (activity: ToolActivity) => void;
-  agentRequests?: AgentRequestObserver;
+  agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
   modeSettingId?: string;
@@ -405,7 +405,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onExpired() {
       lease.maybeRecycle();
     },
-    ...(deps.agentRequests && { observer: deps.agentRequests }),
+    observer: deps.agentRequests,
   });
 
   let nextOutboundId = 1;

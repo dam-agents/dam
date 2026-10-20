@@ -655,7 +655,12 @@ export type {
   ApprovalDismissManyOutcome,
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
-export { acpNativeRowId } from "./modules/approvals/format.js";
+export { acpNativeRowId, recordedToolOf } from "./modules/approvals/format.js";
+export {
+  PERMISSION_OPTIONS_MAX,
+  TOOL_CALL_ID_MAX,
+  TOOL_NAME_MAX,
+} from "./modules/approvals/format.js";
 export type {
   ToolApprovalEndedInput,
   ToolApprovalReports,

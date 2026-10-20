@@ -62,7 +62,7 @@ export interface LeaseRouterDeps {
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
-  agentRequests?: AgentRequestObserver;
+  agentRequests: AgentRequestObserver;
   createRuntime: (
     pair: LeasePair,
     scoped: {
@@ -70,7 +70,7 @@ export interface LeaseRouterDeps {
       backgroundWork: BackgroundWorkRegistry;
       onHarnessExited: () => void;
       harnessSpawned: () => void;
-      agentRequests?: AgentRequestObserver;
+      agentRequests: AgentRequestObserver;
     },
   ) => AcpRuntime;
   idleCheckMs?: number;
@@ -200,9 +200,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       harnessSpawned: () => {
         lease.process = nextProcess++;
       },
-      ...(deps.agentRequests && {
-        agentRequests: unwatchedRequestsOf(() => self!, deps.agentRequests),
-      }),
+      agentRequests: unwatchedRequestsOf(() => self!, deps.agentRequests),
     });
     const lease: Lease = {
       key,
@@ -237,8 +235,8 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       return clientId;
     };
     return {
-      held(id) {
-        clientIdOf(id);
+      held(id, sessionId, line) {
+        report.held(clientIdOf(id), sessionId, line);
       },
       waiting(id, sessionId, line) {
         report.waiting(clientIdOf(id), sessionId, line);

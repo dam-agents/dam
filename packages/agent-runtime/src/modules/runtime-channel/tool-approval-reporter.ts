@@ -1,10 +1,12 @@
+import { PERMISSION_OPTIONS_MAX, recordedToolOf } from "api-server-api";
+
 import type { HarnessClient } from "./harness-client.js";
 import type { AgentRequestObserver } from "../acp/index.js";
 
 const ATTEMPTS = 3;
 const ATTEMPT_TIMEOUT_MS = 5_000;
 const RETRY_DELAY_MS = 2_000;
-const TOOL_NAME_MAX = 4096;
+const OPTION_ID_MAX = 512;
 
 interface PermissionRequestFrame {
   method?: unknown;
@@ -117,26 +119,23 @@ export function createToolApprovalReporter(opts: {
       const frame = permissionRequestIn(line);
       if (!frame) return;
       approvable.add(key(id, sessionId));
-      const toolCall = frame.params?.toolCall ?? {};
       const rawOptions: unknown = frame.params?.options;
-      const options = (Array.isArray(rawOptions) ? rawOptions : []).filter(
-        (o): o is { optionId: string; kind?: unknown } =>
-          typeof (o as { optionId?: unknown } | null)?.optionId === "string",
-      );
+      const options = (Array.isArray(rawOptions) ? rawOptions : [])
+        .filter(
+          (o): o is { optionId: string; kind?: unknown } =>
+            typeof (o as { optionId?: unknown } | null)?.optionId === "string",
+        )
+        .slice(0, PERMISSION_OPTIONS_MAX);
+      const { toolName, toolCallId } = recordedToolOf(frame.params?.toolCall);
       enqueue(key(id, sessionId), `approval ${String(id)}`, () =>
         opts.client.approvals.v1.waiting.mutate({
           sessionId,
           rpcId: id,
-          toolName:
-            typeof toolCall.title === "string" && toolCall.title !== ""
-              ? toolCall.title.slice(0, TOOL_NAME_MAX)
-              : "tool call",
-          ...(typeof toolCall.toolCallId === "string" && {
-            toolCallId: toolCall.toolCallId,
-          }),
-          args: toolCall.rawInput,
+          toolName,
+          ...(toolCallId !== undefined && { toolCallId }),
+          args: frame.params?.toolCall?.rawInput,
           options: options.map((o) => ({
-            optionId: o.optionId,
+            optionId: o.optionId.slice(0, OPTION_ID_MAX),
             kind: o.kind as never,
           })),
         }),

@@ -119,6 +119,42 @@ describe("tool approval reporter", () => {
     ).toEqual([[], [{ optionId: "ok", kind: undefined }]]);
   });
 
+  // TEST_SCENARIO: the harness writes the frame, so a tool call id or an option list can exceed what the recording route accepts. The report must be shaped to that route's bounds instead of being rejected, and both row writers must name the tool the same way, or the second cannot join the first's row.
+  it("shapes an oversized frame to the route's bounds and the shared mapping", async () => {
+    const { client, sent } = fakeClient();
+    const reporter = createToolApprovalReporter({ client, log: () => {} });
+    const options = Array.from({ length: 20 }, (_, n) => ({
+      optionId: `opt-${n}`,
+      kind: "allow_once",
+    }));
+
+    reporter.held(12, "s-1", "{}");
+    reporter.waiting(
+      12,
+      "s-1",
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 12,
+        method: "session/request_permission",
+        params: {
+          sessionId: "s-1",
+          toolCall: { toolCallId: "c".repeat(600), title: "" },
+          options,
+        },
+      }),
+    );
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+
+    const report = sent[0]![1] as {
+      toolName: string;
+      toolCallId: string;
+      options: unknown[];
+    };
+    expect(report.toolName).toBe("tool call");
+    expect(report.toolCallId).toHaveLength(512);
+    expect(report.options).toHaveLength(16);
+  });
+
   // TEST_SCENARIO: an agent request that is not a permission prompt has nothing to approve, so neither it nor its end is reported.
   it("reports nothing for an agent request that is not a permission prompt", async () => {
     const { client, sent } = fakeClient();

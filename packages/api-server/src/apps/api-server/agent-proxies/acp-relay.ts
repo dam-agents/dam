@@ -7,7 +7,7 @@ import { isAgentWakeTimeoutError } from "../../../modules/agents/index.js";
 import { createActivityStamper } from "./activity-stamper.js";
 import { readyOrAnswering } from "./ready-or-answering.js";
 import type { ApprovalsRelayService } from "../../../modules/approvals/compose.js";
-import { acpNativeRowId } from "api-server-api";
+import { acpNativeRowId, recordedToolOf } from "api-server-api";
 import type { SessionPresence } from "./session-presence.js";
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { emit, EventType } from "../../../events.js";
@@ -127,7 +127,7 @@ export function createAcpRelay(
         const sessionId = msg.params?.sessionId;
         if (!sessionId || !identity) return;
         const tc = msg.params.toolCall ?? {};
-        const toolName = (tc.title as string | undefined) ?? "tool call";
+        const { toolName, toolCallId } = recordedToolOf(tc);
         const options = (msg.params.options ?? []).map((o) => ({
           optionId: o.optionId,
           kind: o.kind as
@@ -149,7 +149,7 @@ export function createAcpRelay(
             rpcId: msg.id,
             ownerSub: identity.owner,
             toolName,
-            toolCallId: tc.toolCallId,
+            ...(toolCallId !== undefined && { toolCallId }),
             args: tc.rawInput,
             options,
           })

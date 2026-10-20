@@ -14,7 +14,10 @@ import {
   type Harness,
 } from "./acp-world.js";
 import { createAcpRuntime } from "../acp-runtime.js";
-import type { AgentRequestObserver } from "../pending-agent-requests.js";
+import {
+  noopAgentRequests,
+  type AgentRequestObserver,
+} from "../pending-agent-requests.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import {
@@ -100,10 +103,10 @@ function createLeaseWorld(opts: {
     idleCheckMs: IDLE_CHECK_MS,
     leaseIdleMs: LEASE_IDLE_MS,
     log: () => {},
-    ...(opts.agentRequests && { agentRequests: opts.agentRequests }),
+    agentRequests: opts.agentRequests ?? noopAgentRequests,
     createRuntime: (pair, scoped) =>
       createAcpRuntime({
-        ...(scoped.agentRequests && { agentRequests: scoped.agentRequests }),
+        agentRequests: scoped.agentRequests,
         workingDir: "/workspace",
         idleReapDelayMs: IDLE_REAP_DELAY_MS,
         onArtifactTouch: () => {},
@@ -357,6 +360,38 @@ describe("acp-runtime: one harness process per harness", () => {
     const platform = world.connect();
     platform.send({ jsonrpc: "2.0", id: heard[0], result: { outcome: "x" } });
     expect(world.harness("claude-code").answersTo(7)).toEqual([
+      expect.objectContaining({ result: { outcome: "x" } }),
+    ]);
+  });
+
+  /** TEST_SCENARIO: The user watches the session when the agent asks, so no
+   * waiting report goes out, and answers in the chat. The platform must still
+   * hear the end under the id the client saw: the lease router wraps the
+   * observer, and a wrapper that swallows a method leaves the record of a
+   * watched request open forever. */
+  it("forwards the held and answered reports of a watched question", () => {
+    const heard: unknown[][] = [];
+    const observer: AgentRequestObserver = {
+      held: (id, sessionId) => heard.push(["held", id, sessionId]),
+      waiting: (id, sessionId) => heard.push(["waiting", id, sessionId]),
+      answered: (id, sessionId) => heard.push(["answered", id, sessionId]),
+      abandoned: (id, sessionId) => heard.push(["abandoned", id, sessionId]),
+    };
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const viewer = world.connect();
+    startSession(world, viewer, "claude-code", "s-a", 1, {});
+    world.harness("claude-code").emit(frames.requestPermission(11, "s-a"));
+
+    expect(heard.map(([kind]) => kind)).toEqual(["held"]);
+    const routed = heard[0]![1];
+    expect(routed).toMatch(/^platform-lease-in-[0-9a-f]+-\d+-11$/);
+
+    viewer.send({ jsonrpc: "2.0", id: routed, result: { outcome: "x" } });
+    expect(heard.map(([kind]) => kind)).toEqual(["held", "answered"]);
+    expect(world.harness("claude-code").answersTo(11)).toEqual([
       expect.objectContaining({ result: { outcome: "x" } }),
     ]);
   });
