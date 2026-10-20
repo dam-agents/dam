@@ -783,6 +783,7 @@ function attachPty(
     slot.client = null;
     slot.detachedAt = Date.now();
     markTerminalSeen(slot.sessionId);
+    void sessionsService.adoptHarnessTitle(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -927,6 +928,7 @@ function attachPty(
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(slot.sessionId, `exited ${exitCode}`);
+        void sessionsService.adoptHarnessTitle(slot.sessionId);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));

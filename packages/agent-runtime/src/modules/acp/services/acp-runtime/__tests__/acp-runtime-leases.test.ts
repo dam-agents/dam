@@ -318,6 +318,26 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(client.reply(2)?.result).toEqual({ value: "x" });
   });
 
+  /** TEST_SCENARIO: a terminal Session's title is known only to its harness,
+   * so a session/list that names a harness reaches that harness's process,
+   * started for it, and no other. */
+  it("asks the named harness for its listing", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(frames.initialize(0));
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/list",
+      params: { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    });
+    expect(world.harnessCount("codex")).toBe(1);
+    expect(world.harnessCount("claude-code")).toBe(0);
+    const codex = world.harness("codex");
+    codex.replyTo("initialize", {});
+    expect(codex.received("session/list")).toHaveLength(1);
+  });
+
   /** TEST_SCENARIO: Two harnesses ask the client a question with the same
    * request id. Each answer reaches the harness that asked it. */
   it("keeps agent requests from two processes apart", () => {
