@@ -11,7 +11,7 @@ import {
 } from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
 
-type BumpCall = { agentId: string; events: unknown[] };
+type QueueCall = { agentId: string; change: unknown; inLock: boolean };
 type MergeCall = {
   agentId: string;
   patch: HarnessConfigSnapshotPatch;
@@ -26,19 +26,28 @@ function makeService(opts?: {
   granted?: GrantedProvider[];
 }) {
   const calls = {
-    bumps: [] as BumpCall[],
+    queues: [] as QueueCall[],
     enqueues: [] as string[],
     merges: [] as MergeCall[],
     pairs: [] as SessionPair[],
+    locked: 0,
   };
+  let holdingLock = false;
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
     surface: "ui",
-    runtimeMutator: {
-      bump: async (agentId, events) => {
-        calls.bumps.push({ agentId, events });
+    eventQueue: {
+      queue: async (agentId, change, tx) => {
+        calls.queues.push({
+          agentId,
+          change,
+          inLock: holdingLock && tx !== undefined,
+        });
         return 1;
       },
+    },
+    runtimeMutator: {
+      bump: async () => 1,
       enqueueAfterCommit: async (agentId) => {
         calls.enqueues.push(agentId);
       },
@@ -47,6 +56,15 @@ function makeService(opts?: {
       read: async () => opts?.snapshot ?? null,
       merge: async (agentId, patch, mergeOpts) => {
         calls.merges.push({ agentId, patch, confirmed: mergeOpts.confirmed });
+      },
+      locked: async (_agentId, work) => {
+        calls.locked += 1;
+        holdingLock = true;
+        try {
+          return await work({} as never);
+        } finally {
+          holdingLock = false;
+        }
       },
     },
     pairRepo: {
@@ -73,7 +91,6 @@ function makeService(opts?: {
     specHarness: async () => undefined,
     getCapabilities: async () => opts?.capabilities,
     isSettled: async () => opts?.settled ?? true,
-    now: () => 1000,
   });
   return { service, calls };
 }
@@ -101,7 +118,7 @@ describe("harness-config service: harnesses chosen per session", () => {
         configOptions: { effort: "high" },
       }),
     ).rejects.toThrow(/does not carry the codex harness/);
-    expect(calls.bumps).toEqual([]);
+    expect(calls.queues).toEqual([]);
   });
 
   it("sends a change for a carried harness with the harness named", async () => {
@@ -110,8 +127,9 @@ describe("harness-config service: harnesses chosen per session", () => {
       harness: "codex",
       configOptions: { effort: "high" },
     });
-    expect(calls.bumps[0]?.events[0]).toMatchObject({
-      payload: { harness: "codex", configOptions: { effort: "high" } },
+    expect(calls.queues[0]?.change).toMatchObject({
+      harness: "codex",
+      configOptions: { effort: "high" },
     });
   });
 
@@ -228,16 +246,14 @@ describe("harness-config service", () => {
   it("fires a one-shot harness-config event carrying the change, then enqueues", async () => {
     const { service, calls } = makeService();
     await service.apply("a1", { model: "opus", unset: ["mode"] });
-    expect(calls.bumps).toHaveLength(1);
-    expect(calls.bumps[0]!.agentId).toBe("a1");
-    expect(calls.bumps[0]!.events).toEqual([
+    expect(calls.queues).toEqual([
       {
-        id: "harness-config:a1:1000",
-        kind: "harness-config",
-        payload: { model: "opus", unset: ["mode"] },
-        expiresAt: new Date(1000 + 30 * 24 * 60 * 60 * 1000),
+        agentId: "a1",
+        change: { model: "opus", unset: ["mode"] },
+        inLock: true,
       },
     ]);
+    expect(calls.merges).toHaveLength(1);
     expect(calls.enqueues).toEqual(["a1"]);
   });
 
@@ -246,7 +262,7 @@ describe("harness-config service", () => {
     await expect(service.apply("a1", { model: "opus" })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
-    expect(calls.bumps).toHaveLength(0);
+    expect(calls.queues).toHaveLength(0);
     expect(calls.enqueues).toHaveLength(0);
   });
 

@@ -31,13 +31,13 @@ import { harnessFits } from "../../templates/index.js";
 import { NoDefaultModelError } from "../domain/no-default-model.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
-import { harnessConfigEvent } from "../domain/harness-config-event.js";
+import type { DbTx } from "db";
+import type { HarnessConfigEventQueue } from "../infrastructure/config-event-queue.js";
 import { getLogger } from "../../../core/logger.js";
-
-const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createHarnessConfigService(deps: {
   surface: string;
+  eventQueue: HarnessConfigEventQueue;
   runtimeMutator: RuntimeMutator;
   snapshotRepo: HarnessConfigSnapshotRepo;
   pairRepo: SessionPairRepo;
@@ -47,10 +47,7 @@ export function createHarnessConfigService(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
-  now?: () => number;
 }): HarnessConfigService {
-  const now = deps.now ?? (() => Date.now());
-
   async function requireOwned(agentId: string): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
       throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
@@ -95,11 +92,27 @@ export function createHarnessConfigService(deps: {
             message: `this agent's image does not carry the ${change.harness} harness; apply its image update first`,
           });
       }
-      const ts = now();
-      await deps.runtimeMutator.bump(agentId, [
-        harnessConfigEvent(agentId, change, ts, new Date(ts + EVENT_TTL_MS)),
-      ]);
-      await deps.runtimeMutator.enqueueAfterCommit(agentId);
+      /* UNIT_BOUNDARY_DESCRIPTION: the change the Agent is sent and the
+       * declaration the panel shows commit together under the snapshot lock, so
+       * a reset or a second change cannot reorder one against the other. */
+      await deps.snapshotRepo.locked(agentId, async (tx) => {
+        await deps.eventQueue.queue(agentId, change, tx);
+        await deps.snapshotRepo.merge(
+          agentId,
+          await declaredBy(agentId, change, tx),
+          {
+            confirmed: false,
+            ...(change.harness !== undefined && { harness: change.harness }),
+            tx,
+          },
+        );
+      });
+      await deps.runtimeMutator.enqueueAfterCommit(agentId).catch((err) => {
+        getLogger().warn(
+          { err, agentId },
+          "harness-config: asking the agent to fetch the change failed",
+        );
+      });
       emit({
         type: EventType.HarnessConfigChanged,
         agentId,
@@ -107,21 +120,6 @@ export function createHarnessConfigService(deps: {
         actorSub: deps.ownerSub,
         surface: deps.surface,
       });
-      try {
-        await deps.snapshotRepo.merge(
-          agentId,
-          await declaredBy(agentId, change),
-          {
-            confirmed: false,
-            ...(change.harness !== undefined && { harness: change.harness }),
-          },
-        );
-      } catch (err) {
-        getLogger().warn(
-          { err, agentId },
-          "harness-config: recording the declared snapshot failed",
-        );
-      }
     },
 
     async sessionPair(agentId) {
@@ -256,6 +254,7 @@ export function createHarnessConfigService(deps: {
   async function declaredBy(
     agentId: string,
     change: HarnessConfigChange,
+    tx: DbTx,
   ): Promise<HarnessConfigSnapshotPatch> {
     const unset = new Set(change.unset ?? []);
     const patch: HarnessConfigSnapshotPatch = {};
@@ -269,7 +268,7 @@ export function createHarnessConfigService(deps: {
       ...[...unset].filter((f) => f !== "model" && f !== "mode"),
     ];
     if (optionIds.length === 0) return patch;
-    const stored = await deps.snapshotRepo.read(agentId, change.harness);
+    const stored = await deps.snapshotRepo.read(agentId, change.harness, tx);
     const configOptions = { ...(stored?.configOptions ?? {}) };
     for (const [id, value] of Object.entries(change.configOptions ?? {})) {
       configOptions[id] = value;
