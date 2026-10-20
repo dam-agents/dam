@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 

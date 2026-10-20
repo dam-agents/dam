@@ -62,7 +62,9 @@ type fakeNode struct {
 	usage  vmrunner.RunnerUsage
 	// UNIT_BOUNDARY_DESCRIPTION: what the fake runner answers to a read of its image cache: reachable unless a test says otherwise, and the refusal it reports when it is not.
 	imageCache vmrunner.RunnerImageCache
-	onPut      func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: the image-cache read answers a 500, as a runner that cannot be asked about its cache does, which is not the same as a runner that says its cache is unreachable.
+	imageCacheFails bool
+	onPut           func(vmrunner.MachineSpec)
 	// UNIT_BOUNDARY_DESCRIPTION: what the controller this test builds asked the runner, so a test can hold a reconcile or a memory pass to the reads it costs: one status read per machine is work a usage read that lists every machine already answers.
 	statusReads int
 	usageReads  int
@@ -154,6 +156,10 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			return
 		}
 		if r.URL.Path == "/image-cache" {
+			if n.imageCacheFails {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
 			require.NoError(t, json.NewEncoder(w).Encode(n.imageCache))
 			return
 		}

@@ -374,6 +374,25 @@ func TestAnOutageNoPassCouldWatchDoesNotCountTowardTheGrace(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: a runner that cannot be asked about its image cache is not a runner whose cache is out of reach: it may have a working one, so its busy agents keep the idle wait, and no pass spends the grace on a read that failed.
+func TestARunnerThatCannotBeAskedKeepsTheIdleWait(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+	nodes["owner-a"].imageCacheFails = true
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "an unanswered runner waits for its agent")
+	dep := runnerDeploymentOf(t, r, "owner-a")
+	assert.Empty(t, dep.Annotations[annRunnerCacheDown], "a read that failed is not an outage to measure")
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 1, "the wait is what holds it, and it says so once")
+	assert.Equal(t, reasonRollHeldForIdle, events[0].Reason)
+}
+
 // TEST_SCENARIO: a roll that says it passes the idle wait says so once it wrote the Deployment. A write that fails leaves the roll for the next pass, and the next pass is the one that announces it.
 func TestTheWaitOverEventFollowsTheRoll(t *testing.T) {
 	ctx := context.Background()
