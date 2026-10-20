@@ -293,6 +293,21 @@ export const BALANCE_PROVIDER_TYPES: ReadonlySet<ProviderPresetType> = new Set([
   "curve-bender",
 ]);
 
+export const KEY_CHECK_TEMPLATE_IDS = [
+  "anthropic",
+  "anthropic-oauth",
+  "openai",
+  "ibm-litellm",
+  "curve-bender",
+] as const;
+export type KeyCheckTemplateId = (typeof KEY_CHECK_TEMPLATE_IDS)[number];
+
+export function hasKeyCheck(
+  templateId: string,
+): templateId is KeyCheckTemplateId {
+  return (KEY_CHECK_TEMPLATE_IDS as readonly string[]).includes(templateId);
+}
+
 export const PROVIDER_PRESET_TYPES = Object.keys(
   PROVIDERS,
 ) as readonly ProviderPresetType[];

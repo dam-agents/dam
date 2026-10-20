@@ -1,3 +1,4 @@
+import { stripContinuedFrom } from "./continued-from.js";
 import { isNonNullObject, parseFrame } from "./frames.js";
 
 export type RewriteCut =
@@ -64,7 +65,7 @@ function userMessagesOf(frames: readonly UpdateFrame[]): UserMessage[] {
   });
   return messages.map((m) => ({
     ...m,
-    text: m.text.replace(/\s+/g, " ").trim(),
+    text: stripContinuedFrom(m.text).replace(/\s+/g, " ").trim(),
   }));
 }
 

@@ -1068,15 +1068,18 @@ function workspaceOf(
   );
 }
 
+type RefuseOutsideReach = (
+  conversationId: string,
+  teamId: SlackWorkspace,
+  directMessage?: { user: string | null },
+) => Promise<{ error: string } | null>;
+
 async function resolveOutboundTarget(
   gateway: SlackGateway,
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
   turnWorkspace: TurnWorkspace,
-  refuseOutsideOwnerReach: (
-    conversationId: string,
-    teamId: SlackWorkspace,
-  ) => Promise<{ error: string } | null>,
+  refuseOutsideOwnerReach: RefuseOutsideReach,
 ): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   if (!conversationId) {
     if (bound.length === 1)
@@ -1104,6 +1107,10 @@ async function resolveOutboundTarget(
   }
 
   if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
+    const refused = await refuseOutsideOwnerReach(conversationId, teamId, {
+      user: conversationId,
+    });
+    if (refused) return refused;
     try {
       return {
         id: await gateway.openDirectMessage(conversationId, teamId),
@@ -1114,9 +1121,6 @@ async function resolveOutboundTarget(
         error: `could not open a direct message with ${conversationId}: ${formatError(err)}`,
       };
     }
-  }
-  if (conversationId.startsWith("D")) {
-    return { id: conversationId, teamId };
   }
   let lookup: SlackConversationLookup;
   try {
@@ -1140,8 +1144,12 @@ async function resolveOutboundTarget(
       error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
     };
   }
-  if (!info.isDirectMessage) {
-    const refused = await refuseOutsideOwnerReach(conversationId, teamId);
+  if (!info.isGroupDirectMessage) {
+    const refused = await refuseOutsideOwnerReach(
+      conversationId,
+      teamId,
+      info.isDirectMessage ? { user: info.directMessageUser } : undefined,
+    );
     if (refused) return refused;
   }
   return { id: conversationId, teamId };
@@ -1403,12 +1411,62 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return reach;
   }
 
+  async function mayMessageDirectly(
+    gw: SlackGateway,
+    instanceName: string,
+    userId: string,
+    teamId: SlackWorkspace,
+  ): Promise<boolean> {
+    const owner = await getInstanceOwner(instanceName);
+    if (owner) {
+      const ownerUsers = await identityLinks.externalUsersOf("slack", owner);
+      if (ownerUsers.includes(userId)) return true;
+    }
+    const bound = (
+      await channelRegistry.resolveSlackChannelsByInstance(instanceName)
+    ).filter((c) => c.teamId === teamId);
+    for (const { id } of bound.filter((c) => isDirectMessageId(c.id))) {
+      const lookup = await gw.getConversationInfo(id, teamId);
+      if (lookup.kind === "found" && lookup.directMessageUser === userId)
+        return true;
+    }
+    const boundIds = new Set(bound.map((c) => c.id));
+    const shared = await gw.listSharedChannels(userId, teamId);
+    return shared.some((id) => boundIds.has(id));
+  }
+
   async function refuseOutsideOwnerReach(
     gw: SlackGateway,
     instanceName: string,
     conversationId: string,
     teamId: SlackWorkspace,
+    directMessage?: { user: string | null },
   ): Promise<{ error: string } | null> {
+    if (directMessage) {
+      const { user } = directMessage;
+      if (!user) {
+        return {
+          error: `could not tell who ${conversationId} is a direct message with, so it is not one you may post into`,
+        };
+      }
+      let allowed: boolean;
+      try {
+        allowed = await mayMessageDirectly(gw, instanceName, user, teamId);
+      } catch (err) {
+        return {
+          error: `could not check whether you may message ${user} directly: ${formatError(err)}`,
+        };
+      }
+      return allowed
+        ? null
+        : {
+            error:
+              `${user} is not your owner, nor in a conversation you are ` +
+              `connected to. You may message directly only your owner, the ` +
+              `person in a 1:1 DM you are connected to, and the members of ` +
+              `channels you are connected to`,
+          };
+    }
     let reach: Set<string> | "unlinked";
     try {
       reach = await ownerReach(gw, instanceName, teamId);
@@ -6020,7 +6078,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         conversationId,
         turnWorkspace(instanceName),
-        (id, teamId) => refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+        (id, teamId, dm) =>
+          refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) {
         return target;
@@ -6332,10 +6391,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               boundChannelIds,
               args.conversationId ?? turn?.channel,
               turnWorkspace(instanceName),
-              async (id, teamId) =>
+              async (id, teamId, dm) =>
                 id === turn?.channel
                   ? null
-                  : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+                  : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
             );
       if ("error" in target) return target;
 
@@ -6440,10 +6499,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         args.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId) =>
+        async (id, teamId, dm) =>
           id === turnChannel
             ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) return target;
 
@@ -6600,10 +6659,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         query.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId) =>
+        async (id, teamId, dm) =>
           id === turnChannel
             ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) return target;
 

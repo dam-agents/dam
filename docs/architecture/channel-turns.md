@@ -256,7 +256,7 @@ What the agent sees:
   An unnamed call while any Slack turn is live, and one naming a turn the Agent is not running, are both refused: answering them as though a turn had been declined would record nothing, and the turn would then be repaired as undelivered — posting the very answer the Agent chose to withhold.
 - **Slack reach is where the owner is a member.** A bound Agent may post beyond its bound conversations, into a channel that both the bot and the Agent's owner are members of (known from the owner's linked Slack identity), public or private alike: reaching a channel means being able to post there, and Slack lets a person post only where they have joined, so seeing a public channel is not reaching it.
   Other channels are left out of `describe_channel` and refused as a target, and an owner with no linked identity reaches none.
-  A Slack user id opens a DM.
+  A Slack user id opens a DM, but only with the owner, the person in a bound 1:1 DM, or a member of a bound channel, and a DM id is held to the same rule: the shared bot can open a DM with anyone in the workspace, so without it an Agent could message people who never met it or its owner.
   Membership is verified at send time; a bound conversation short-circuits every check, since the binding is the channel's consent.
   Every outbound post is made by the bot and footed with an [Agent Footer](#the-agent-footer).
   The binding governs who may drive the Agent inbound; the owner's membership governs where it may go outbound.
@@ -306,6 +306,6 @@ The two messengers diverge slightly on what a top-level post means:
 
 - **Slack:** the worker posts outside any thread, producing a new top-level message.
   A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
-  An Agent-initiated DM lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
+  An Agent-initiated DM goes only to someone within the Agent's reach (above); it lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
   The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

@@ -84,6 +84,61 @@ describe("file-ops key-targeted merge", () => {
   });
 });
 
+describe("file-ops temporary file name", () => {
+  let home: string;
+  let target: string;
+  beforeEach(() => {
+    home = mkdtempSync(join(tmpdir(), "file-ops-tmp-"));
+    target = join(home, "settings.json");
+  });
+  afterEach(() => rmSync(home, { recursive: true, force: true }));
+  const apply = (key: string) =>
+    applyFiles(
+      new Map([
+        [
+          target,
+          [
+            {
+              format: "json" as const,
+              mergeMode: "key-targeted" as const,
+              keyPath: key,
+              content: true,
+            },
+          ],
+        ],
+      ]),
+      { agentHome: home, log: () => {} },
+    );
+
+  it("writes through a temporary name of its own process", async () => {
+    writeFileSync(target, JSON.stringify({ theme: "dark" }));
+    const own = `${target}.${process.pid}.tmp`;
+    writeFileSync(own, "stale");
+    await apply("mine");
+    expect(existsSync(own)).toBe(false);
+    expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({
+      theme: "dark",
+      mine: true,
+    });
+  });
+
+  it("leaves the temporary file of another writer in place", async () => {
+    writeFileSync(target, JSON.stringify({ theme: "dark" }));
+    const theirs = `${target}.tmp`;
+    writeFileSync(theirs, '{"hooks":"from a kit"}');
+    await apply("mine");
+    expect(readFileSync(theirs, "utf8")).toBe('{"hooks":"from a kit"}');
+    expect(JSON.parse(readFileSync(target, "utf8"))).toEqual({
+      theme: "dark",
+      mine: true,
+    });
+    expect(readdirSync(home).sort()).toEqual([
+      "settings.json",
+      "settings.json.tmp",
+    ]);
+  });
+});
+
 describe("file-ops removal of what the platform wrote", () => {
   let home: string;
   beforeEach(() => {

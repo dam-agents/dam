@@ -320,6 +320,9 @@ fn magic_at(device: &str, offset: u64, magic: &[u8]) -> bool {
 // UNIT_BOUNDARY_DESCRIPTION: what a disk that predates the subvolume layout is told: it is never booted, formatted or rewritten, so what it holds is kept for an operator to recover.
 const PREDATES_SUBVOLUMES: &str = "predates the btrfs subvolume layout, which this platform-init alone boots; refusing to boot it, and the disk is kept as it is";
 
+// UNIT_BOUNDARY_DESCRIPTION: the storage disk's mount options. Compressed with zstd level 1, and discarding synchronously: a freed extent is then discarded to the disk file the host claim pays for before the filesystem hands it out again, so a block the storage guard takes for its own can never be one whose backing is still unreturned. Asynchronous discard queues the same discards but lets the allocator reuse a freed extent before its discard runs, which leaves that backing on the claim until something else frees it; the guard's own growth is the caller that raced it.
+const STORAGE_DISK_OPTIONS: &str = "compress=zstd:1,discard=sync";
+
 // UNIT_BOUNDARY_DESCRIPTION: mounts the storage disk, which the runner formats as btrfs before the first boot, compressed with zstd level 1 and grown online to its disk, and returns the platform's root on it: the whole filesystem, with AGENT_DIR and SYSTEM_DIR as subvolumes. The system subvolume is made on the first boot; the agent's is the home's seed (see stage). A disk from before that layout — ext4, or btrfs that holds DISK_ROOT_DIR at its top — fails the boot. A disk with no filesystem is never formatted here either, since the only disk that has none is one whose filesystem was lost, and formatting it would erase what is left; the boot stops with the reason on the console.
 fn mount_storage(target: &Path) -> PathBuf {
     if let Err(e) = mkdir_all(target) {
@@ -336,7 +339,7 @@ fn mount_storage(target: &Path) -> PathBuf {
         target,
         "btrfs",
         libc::MS_NOATIME,
-        "compress=zstd:1",
+        STORAGE_DISK_OPTIONS,
     ) {
         fatal!("mounting the storage disk's btrfs: {e}; the disk is kept as it is");
     }
@@ -801,13 +804,32 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
         }
     }
     drop(stopped);
-    release_pool_guard();
-    // SAFETY: sync(2) takes no arguments.
-    unsafe { libc::sync() };
-    let frozen = File::open(guest::AGENT_HOME).and_then(|home| {
-        // SAFETY: FIFREEZE takes no pointed-to payload, and `home` keeps its descriptor open for the call.
-        succeeded(unsafe { libc::ioctl(home.as_raw_fd(), FIFREEZE as _, 0) } == 0)
+    let mut stopping = || {
+        let progress = AgentResponse::Progress {
+            message: "stopping the workload".into(),
+            percent: None,
+            layer: None,
+        };
+        let _ = send(conn, &progress);
+    };
+    let guard = take_pool_guard(&mut stopping);
+    let frozen = std::sync::Mutex::new(None);
+    keeping_progress(&mut stopping, || {
+        if let Some(mut guard) = guard {
+            guard.release();
+        }
+        // SAFETY: sync(2) takes no arguments.
+        unsafe { libc::sync() };
+        let result = File::open(guest::AGENT_HOME).and_then(|home| {
+            // SAFETY: FIFREEZE takes no pointed-to payload, and `home` keeps its descriptor open for the call.
+            succeeded(unsafe { libc::ioctl(home.as_raw_fd(), FIFREEZE as _, 0) } == 0)
+        });
+        *frozen.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
     });
+    let frozen = frozen
+        .into_inner()
+        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(|| Err(io::Error::other("the storage disk was not frozen")));
     match frozen {
         Ok(()) => AgentResponse::Ok {
             data: Some(serde_json::json!({"filesystems_quiesced": true})),
@@ -822,6 +844,13 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // TEST_SCENARIO: the storage disk is mounted with synchronous discards, so a freed extent reaches the disk file the owner's claim pays for before the filesystem can hand it to the storage guard, and compresses what it holds.
+    #[test]
+    fn the_storage_disk_discards_before_it_reuses() {
+        assert!(STORAGE_DISK_OPTIONS.contains("discard=sync"));
+        assert!(STORAGE_DISK_OPTIONS.contains("compress=zstd:1"));
+    }
 
     // TEST_SCENARIO: the shares reach the guest as smolvm's launcher names them, `tag:target:mode`. A target is any absolute path, a colon included, and anything but `rw` is read-only, so a share is never writable by a misread.
     #[test]

@@ -159,6 +159,8 @@ export const runtimeManifestSchema = z.object({
 
   initializeCapabilities: initializeCapabilities.optional(),
 
+  harnessState: z.enum(["claude-code"]).optional(),
+
   drivers: z.record(z.string(), driverEntry).default({}),
 
   sessionHistory: z
