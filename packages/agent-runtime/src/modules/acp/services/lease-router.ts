@@ -52,7 +52,7 @@ export interface LeaseRouterDeps {
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
-  modelRequired?: (harness: string) => boolean;
+  modelRequired: (harness: string) => boolean;
   settingScope?: (harness: string, id: string) => "process" | "session" | null;
   settingsError?: (
     harness: string,
@@ -469,7 +469,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
   }
 
   const missesModel = (choice: SessionChoice): boolean =>
-    choice.model === null && deps.modelRequired?.(choice.harness) === true;
+    choice.model === null && deps.modelRequired(choice.harness);
 
   function isSessionRunning(sessionId: string): boolean {
     return (

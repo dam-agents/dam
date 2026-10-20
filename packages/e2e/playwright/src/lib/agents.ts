@@ -133,9 +133,7 @@ export function sidebarAgentRow(page: Page, agentName: string): Locator {
     .locator("li")
     .filter({
       has: page.getByTestId("sidebar-agent-row").filter({
-        hasText: new RegExp(
-          `^${agentName}\\s*(\\(no default model\\))?\\s*(\\(unread\\))?$`,
-        ),
+        hasText: new RegExp(`^${agentName}\\s*(\\(unread\\))?$`),
       }),
     })
     .first();

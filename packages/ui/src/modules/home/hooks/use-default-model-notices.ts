@@ -5,9 +5,9 @@ import { useCallback, useMemo } from "react";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { useAttention } from "../api/queries.js";
-import { defaultModelNoticeId } from "../lib/default-model-copy.js";
 
 interface DefaultModelNotices {
+  all: readonly DefaultModelNotice[];
   byAgentEvenDismissed: ReadonlyMap<string, DefaultModelNotice>;
   waiting: readonly DefaultModelNotice[];
   dismiss: (notice: DefaultModelNotice) => void;
@@ -24,7 +24,7 @@ export function useDefaultModelNotices(): DefaultModelNotices {
       }),
   });
 
-  const { byAgentEvenDismissed, waiting } = useMemo(() => {
+  const { all, byAgentEvenDismissed, waiting } = useMemo(() => {
     const notices = attention.data?.defaultModels ?? [];
     const dismissed = new Set(
       (attention.data?.dismissed ?? [])
@@ -32,20 +32,21 @@ export function useDefaultModelNotices(): DefaultModelNotices {
         .map((d) => d.id),
     );
     return {
+      all: notices,
       byAgentEvenDismissed: new Map(
         notices.map((n) => [n.agentId, n] as const),
       ),
-      waiting: notices.filter((n) => !dismissed.has(defaultModelNoticeId(n))),
+      waiting: notices.filter((n) => !dismissed.has(n.id)),
     };
   }, [attention.data]);
 
   const dismiss = useCallback(
     (notice: DefaultModelNotice) =>
       dismissItems.mutate({
-        items: [{ kind: "default-model", id: defaultModelNoticeId(notice) }],
+        items: [{ kind: "default-model", id: notice.id }],
       }),
     [dismissItems],
   );
 
-  return { byAgentEvenDismissed, waiting, dismiss };
+  return { all, byAgentEvenDismissed, waiting, dismiss };
 }

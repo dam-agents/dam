@@ -826,7 +826,6 @@ export function ChatView() {
       {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
       <ContributionGapNotice agentId={selectedAgent} />
       <WorkspaceFailureNotice agentId={selectedAgent} />
-      <DefaultModelNotice agentId={selectedAgent} />
     </>
   );
 
@@ -1152,7 +1151,7 @@ export function ChatView() {
                       onChoose={(value) =>
                         void chooseSessionModel(value, () => {
                           if (harnessStatus?.modelRouter && sessionHarness)
-                            rememberFirstModel(selectedAgent, {
+                            void rememberFirstModel(selectedAgent, {
                               harness: sessionHarness,
                               provider: null,
                               model: value,
@@ -1181,6 +1180,13 @@ export function ChatView() {
                       : "Configure defaults"}
                   </Button>
                 ) : null}
+              </ChatColumn>
+            </div>
+          )}
+          {!hasPendingPermission && selectedAgent && (
+            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+              <ChatColumn>
+                <DefaultModelNotice agentId={selectedAgent} />
               </ChatColumn>
             </div>
           )}

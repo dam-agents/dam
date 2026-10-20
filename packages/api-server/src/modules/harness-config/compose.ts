@@ -1,3 +1,4 @@
+import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import type {
   DefaultModelNotice,
@@ -88,22 +89,23 @@ export function composeDefaultConverter(deps: {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
-  modelsRanBy?: (agentId: string, hours: number) => Promise<string[]>;
+  modelsRanBy: (agentId: string, hours: number) => Promise<string[]>;
   movedToNewImage: (agentId: string) => Promise<boolean>;
   isRunning: (agentId: string) => Promise<boolean>;
   wake: (agentId: string) => Promise<WakeStamp | null>;
   lastHelloAt: (agentId: string) => Promise<number | null>;
   ownerOf: (agentId: string) => Promise<string | undefined>;
   log: (msg: string) => void;
-}): DefaultConverter {
+}): { converter: DefaultConverter; helloSaga: Subscription } {
   const { db, namespace, ownerOf, ...rest } = deps;
   const converter = createDefaultConverter({
     ...rest,
     onSaved: (agentId) => {
       void ownerOf(agentId)
         .then((ownerSub) => {
-          if (ownerSub)
-            emit({ type: EventType.AttentionChanged, ownerSub, agentId });
+          if (!ownerSub) return;
+          emit({ type: EventType.HarnessConfigChanged, ownerSub, agentId });
+          emit({ type: EventType.AttentionChanged, ownerSub, agentId });
         })
         .catch((err: Error) =>
           deps.log(
@@ -115,8 +117,7 @@ export function composeDefaultConverter(deps: {
     snapshotRepo: createHarnessConfigSnapshotRepo(db),
     catalogView: createRuntimeCatalogReader(namespace),
   });
-  startConvertDefaultOnHelloSaga(converter);
-  return converter;
+  return { converter, helloSaga: startConvertDefaultOnHelloSaga(converter) };
 }
 
 export function composeScheduleModelForFire(deps: {

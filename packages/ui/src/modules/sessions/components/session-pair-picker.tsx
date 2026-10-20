@@ -135,7 +135,7 @@ export function SessionPairPicker({
   const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
   const choose = (next: SessionPair) => {
     setPair(agentId, next);
-    if (routed) rememberFirstModel(agentId, next);
+    if (routed) void rememberFirstModel(agentId, next);
   };
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;

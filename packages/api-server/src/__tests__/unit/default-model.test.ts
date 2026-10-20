@@ -263,6 +263,7 @@ describe("the one-time default conversion", () => {
       },
       lastHelloAt: async () =>
         opts.helloAfterWake === false ? 0 : Number.MAX_SAFE_INTEGER,
+      onSaved: () => {},
       now: () => (clock += 60_000),
       log: () => {},
       sleep: async () => {},

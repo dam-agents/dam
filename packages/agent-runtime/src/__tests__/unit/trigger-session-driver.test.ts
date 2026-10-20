@@ -62,7 +62,11 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
 describe("createTriggerSessionDriver", () => {
   it("stamps platformMeta into _meta.platform on session/new", async () => {
     const { runtime, sent } = fakeRuntime();
-    const driver = createTriggerSessionDriver({ acpRuntime: runtime });
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+    });
 
     const res = await driver.start({
       task: "do it",
@@ -84,7 +88,11 @@ describe("createTriggerSessionDriver", () => {
 
   it("sends no _meta when platformMeta is omitted", async () => {
     const { runtime, sent } = fakeRuntime();
-    const driver = createTriggerSessionDriver({ acpRuntime: runtime });
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+    });
 
     await driver.start({ task: "do it" });
 
@@ -97,7 +105,11 @@ describe("createTriggerSessionDriver", () => {
    * live session's model inside its harness. */
   it("opens a new session on the fire's model", async () => {
     const { runtime, sent } = fakeRuntime();
-    const driver = createTriggerSessionDriver({ acpRuntime: runtime });
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+    });
     await driver.start({ task: "do it", model: "opus" });
     const newFrame = sent.find((f) => f.method === "session/new");
     expect(newFrame.params._meta.platform).toEqual({ model: "opus" });
@@ -110,7 +122,11 @@ describe("createTriggerSessionDriver", () => {
    * model by pinning the session to it before the resume. */
   it("pins a resumed session to the fire's model first", async () => {
     const { runtime, sent } = fakeRuntime();
-    const driver = createTriggerSessionDriver({ acpRuntime: runtime });
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+    });
     await driver.start({ task: "do it", resumeSessionId: "s0", model: "opus" });
     const methods = sent.map((f) => f.method).filter(Boolean);
     expect(methods.indexOf("_platform/session/pin_model")).toBeLessThan(
@@ -149,6 +165,7 @@ describe("createTriggerSessionDriver", () => {
     const { runtime, sent } = fakeRuntime();
     const driver = createTriggerSessionDriver({
       acpRuntime: runtime,
+      modelRequired: () => false,
       modelMissing: () => missing,
     });
     const pins = () =>

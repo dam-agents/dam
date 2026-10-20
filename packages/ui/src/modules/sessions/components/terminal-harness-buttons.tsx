@@ -14,7 +14,7 @@ import {
 import { terminalHarnessChoice } from "../lib/session-pair-options.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: one button per harness a new web terminal can start with. Opening one makes it the agent's next session pair, which the terminal hands the runtime on connect: on the agent's default model when the default is on that harness, else with no model, so the harness starts on its own default, which the terminal shows and the person can switch. A harness whose fitting providers the owner holds but has not granted asks which to attach first; a harness that cannot start is greyed and its tooltip says why.
+// UNIT_BOUNDARY_DESCRIPTION: one button per harness a new web terminal can start with. Opening one makes it the agent's next session pair, which the terminal hands the runtime on connect: on the agent's default model and the provider it was saved with when the default is on that harness, else with no model, so the harness starts on its own default, which the terminal shows and the person can switch. A harness whose fitting providers the owner holds but has not granted asks which to attach first; a harness that cannot start is greyed and its tooltip says why.
 export function TerminalHarnessButtons({
   agentId,
   onOpen,
@@ -38,8 +38,12 @@ export function TerminalHarnessButtons({
   });
 
   if (choice.kind === "loading") return null;
-  const defaultModelOn = (harness: string): string | null =>
-    remembered?.harness === harness ? remembered.model : null;
+  const defaultOn = (harness: string) =>
+    remembered?.harness === harness &&
+    remembered.provider !== null &&
+    remembered.model !== null
+      ? { provider: remembered.provider, model: remembered.model }
+      : null;
   if (choice.kind === "fallback")
     return (
       <Button
@@ -74,13 +78,16 @@ export function TerminalHarnessButtons({
             )}
             onClick={async () => {
               if (unavailable || attach.pending) return;
+              const saved = defaultOn(name);
               const chosen =
-                provider ?? (await attach.ask(name, attachable))?.[0];
+                saved?.provider ??
+                provider ??
+                (await attach.ask(name, attachable))?.[0];
               if (!chosen) return;
               setNextSessionPair(agentId, {
                 harness: name,
                 provider: chosen,
-                model: defaultModelOn(name),
+                model: saved?.model ?? null,
               });
               onOpen();
             }}

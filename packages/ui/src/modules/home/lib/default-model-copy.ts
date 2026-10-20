@@ -1,8 +1,5 @@
 import type { DefaultModelNotice } from "api-server-api";
 
-export const defaultModelNoticeId = (notice: DefaultModelNotice): string =>
-  `${notice.agentId}:${notice.state}`;
-
 export const defaultModelStopsRuns = (
   notice: DefaultModelNotice | undefined,
 ): boolean => notice !== undefined && notice.state !== "changed";

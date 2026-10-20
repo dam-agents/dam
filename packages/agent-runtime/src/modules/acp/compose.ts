@@ -97,7 +97,7 @@ export interface ComposeAcpOptions {
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
   routerEnv?: (harness: string) => Record<string, string>;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
-  modelRequired?: (harness: string) => boolean;
+  modelRequired: (harness: string) => boolean;
   nativeEnv?: (connectionId: string) => Record<string, string>;
   leaseIdleMs?: number;
   beforeSpawn?: () => Promise<void>;
@@ -318,7 +318,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     ...(opts.nativeConnectionOf && {
       nativeConnectionOf: opts.nativeConnectionOf,
     }),
-    ...(opts.modelRequired && { modelRequired: opts.modelRequired }),
+    modelRequired: opts.modelRequired,
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
       sessionListAnswer(sessionMetadata, isRunning, terminalSessionPins?.()),
@@ -455,7 +455,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   const triggerDriver = createTriggerSessionDriver({
     acpRuntime: runtime,
     modelRequired: (harness) =>
-      opts.modelRequired?.(harness ?? opts.defaultHarness) === true,
+      opts.modelRequired(harness ?? opts.defaultHarness),
     modelMissing: (sessionId) => runtime.modelMissing(sessionId),
   });
   reportTurn = createOnceReporter({

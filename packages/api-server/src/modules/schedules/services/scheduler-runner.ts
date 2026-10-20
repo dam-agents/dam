@@ -88,9 +88,9 @@ export interface SchedulerRunnerDeps {
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<ActivityStamp | null>;
-  ensureDefault?: (agentId: string) => Promise<ActivityStamp | null>;
-  defaultPendingAfterMove?: (agentId: string) => Promise<boolean>;
-  scheduleModelFor?: (
+  ensureDefault: (agentId: string) => Promise<ActivityStamp | null>;
+  defaultPendingAfterMove: (agentId: string) => Promise<boolean>;
+  scheduleModelFor: (
     agentId: string,
     model: string,
   ) => Promise<string | undefined>;
@@ -197,13 +197,12 @@ export function createSchedulerRunner(
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
     if (!continues && opts.wakeFirst) {
-      const stamp = await deps.ensureDefault?.(sched.agentId);
+      const stamp = await deps.ensureDefault(sched.agentId);
       if (stamp) earlyWake.set(sched, stamp);
     }
-    const model =
-      sched.spec.model && deps.scheduleModelFor
-        ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
-        : sched.spec.model;
+    const model = sched.spec.model
+      ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
+      : sched.spec.model;
     if (model) payload.model = model;
     const choices = {
       ...(sched.spec.harness && { harness: sched.spec.harness }),
@@ -540,7 +539,7 @@ export function createSchedulerRunner(
         );
         return "onboarding-pending";
       }
-      if (await deps.defaultPendingAfterMove?.(sched.agentId)) {
+      if (await deps.defaultPendingAfterMove(sched.agentId)) {
         log(
           `run-now: agent ${sched.agentId} is setting up its default model; refusing`,
         );

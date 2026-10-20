@@ -14,6 +14,7 @@ export type DefaultModelState =
   "not-set" | "no-provider" | "provider-gone" | "changed";
 
 export interface DefaultModelNotice {
+  id: string;
   agentId: string;
   state: DefaultModelState;
   harness: string;

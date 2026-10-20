@@ -7,6 +7,7 @@ import type { AttentionRepository } from "../../modules/attention/infrastructure
 import { createAttentionService } from "../../modules/attention/services/attention-service.js";
 
 const notSet: DefaultModelNotice = {
+  id: "agent-a:not-set",
   agentId: "agent-a",
   state: "not-set",
   harness: "claude-code",

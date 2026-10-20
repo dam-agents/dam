@@ -111,9 +111,10 @@ The bell also lists the Agents on the Model Router whose saved default needs the
 An Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
 They are computed on every read from the Agent's saved default, its granted providers and the conversion's note, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
 A pending default, one still being converted, says nothing.
-The same notice puts a warning dot on the Agent in the sidebar, a banner above its chat and on Home, and "Won't run" on its schedules that name no model; only the bell's card can be dismissed, per Agent and state, and a changed default is shown in the bell alone.
+The same notice puts a line under the chat's model control, a count in the banner on Home, and "Won't run" on the Agent's schedules that name no model.
+Only the bell's card can be dismissed, per Agent and state; the others show every notice that stops runs, and a changed default is shown in the bell alone.
 A dismissal is dropped once its notice no longer holds, so the same state coming back later is shown again, and an Agent's dismissals go with it.
-Saving a default or converting one sends the owner the attention hint, and changing an Agent's providers refreshes the list in the tab that changed them.
+Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default, and changing an Agent's providers refreshes the list in the tab that changed them.
 
 ## Seen, unread, and dismissed
 

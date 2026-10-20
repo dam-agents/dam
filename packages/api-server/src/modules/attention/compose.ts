@@ -18,16 +18,14 @@ export function composeAttentionService(deps: {
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
   ownsAgent: (agentId: string) => Promise<boolean>;
-  defaultModelNotices?: () => Promise<DefaultModelNotice[]>;
+  defaultModelNotices: () => Promise<DefaultModelNotice[]>;
 }): AttentionService {
   return createAttentionService({
     repo: createAttentionRepository(deps.db),
     ownerSub: deps.ownerSub,
     ownsApproval: deps.ownsApproval,
     ownsAgent: deps.ownsAgent,
-    ...(deps.defaultModelNotices && {
-      defaultModelNotices: deps.defaultModelNotices,
-    }),
+    defaultModelNotices: deps.defaultModelNotices,
     log: (message) => process.stderr.write(`${message}\n`),
   });
 }

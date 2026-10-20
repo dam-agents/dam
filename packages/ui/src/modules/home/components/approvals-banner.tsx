@@ -9,9 +9,7 @@ import { defaultModelStopsRuns } from "../lib/default-model-copy.js";
 export function ApprovalsBanner() {
   const openSidePanel = useOpenSidePanel();
   const approvals = useWaitingApprovals();
-  const notices = useDefaultModelNotices().waiting.filter(
-    defaultModelStopsRuns,
-  );
+  const notices = useDefaultModelNotices().all.filter(defaultModelStopsRuns);
   if (approvals.length === 0 && notices.length === 0) return null;
   const needDefault = `${String(notices.length)} ${notices.length === 1 ? "agent needs" : "agents need"} a default model`;
   const approvalsCopy =

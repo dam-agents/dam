@@ -223,10 +223,10 @@ function makeDeps(opts?: {
 
   const runner = createSchedulerRunner({
     ...(opts?.firePair ? { firePair: opts.firePair } : {}),
-    ...(opts?.ensureDefault ? { ensureDefault: opts.ensureDefault } : {}),
-    ...(opts?.defaultPendingAfterMove
-      ? { defaultPendingAfterMove: opts.defaultPendingAfterMove }
-      : {}),
+    ensureDefault: opts?.ensureDefault ?? (async () => null),
+    defaultPendingAfterMove:
+      opts?.defaultPendingAfterMove ?? (async () => false),
+    scheduleModelFor: async (_agentId, model) => model,
     ...(opts?.validateSessionChoices
       ? { validateSessionChoices: opts.validateSessionChoices }
       : {}),

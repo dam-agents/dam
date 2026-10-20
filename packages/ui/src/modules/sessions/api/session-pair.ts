@@ -279,25 +279,40 @@ export async function settledNextSessionPair(
 export function rememberSessionPair(agentId: string, pair: SessionPair): void {
   const key = trpc.harnessConfig.sessionPair.queryKey({ agentId });
   const previous = queryClient.getQueryData<SessionPair | null>(key);
-  queryClient.setQueryData<SessionPair | null>(key, pair);
+  const resolved = pair.provider !== null;
+  if (resolved) queryClient.setQueryData<SessionPair | null>(key, pair);
   void api.harnessConfig.rememberSessionPair
     .mutate({ agentId, ...pair })
-    .then(() => queryClient.invalidateQueries({ queryKey: key }))
     .catch((err: unknown) => {
-      queryClient.setQueryData<SessionPair | null>(key, previous ?? null);
+      if (resolved)
+        queryClient.setQueryData<SessionPair | null>(key, previous ?? null);
       emitToast({
         kind: "error",
         message: `Couldn't save the default harness and model: ${err instanceof Error ? err.message : String(err)}`,
       });
-    });
+    })
+    .finally(() => queryClient.invalidateQueries({ queryKey: key }));
 }
 
-export function rememberFirstModel(agentId: string, pair: SessionPair): void {
-  const key = trpc.harnessConfig.sessionPair.queryKey({ agentId });
-  const state = queryClient.getQueryState<SessionPair | null>(key);
-  if (pair.model === null || state?.status !== "success" || state.data?.model)
+export async function rememberFirstModel(
+  agentId: string,
+  pair: SessionPair,
+): Promise<void> {
+  if (pair.model === null) return;
+  let saved: SessionPair | null;
+  try {
+    saved = await queryClient.ensureQueryData({
+      ...trpc.harnessConfig.sessionPair.queryOptions({ agentId }),
+      retry: false,
+    });
+  } catch (err) {
+    emitToast({
+      kind: "error",
+      message: `Couldn't check the agent's default model, so ${pair.model} was not saved as its default: ${err instanceof Error ? err.message : String(err)}`,
+    });
     return;
-  rememberSessionPair(agentId, pair);
+  }
+  if (!saved?.model) rememberSessionPair(agentId, pair);
 }
 
 export function harnessOfSession(

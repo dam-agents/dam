@@ -54,12 +54,12 @@ export function createDefaultConverter(deps: {
     agentId: string,
     harness: string,
   ) => Promise<HarnessCatalogView | null>;
-  modelsRanBy?: (agentId: string, hours: number) => Promise<string[]>;
-  movedToNewImage?: (agentId: string) => Promise<boolean>;
-  isRunning?: (agentId: string) => Promise<boolean>;
-  wake?: (agentId: string) => Promise<WakeStamp | null>;
-  lastHelloAt?: (agentId: string) => Promise<number | null>;
-  onSaved?: (agentId: string) => void;
+  modelsRanBy: (agentId: string, hours: number) => Promise<string[]>;
+  movedToNewImage: (agentId: string) => Promise<boolean>;
+  isRunning: (agentId: string) => Promise<boolean>;
+  wake: (agentId: string) => Promise<WakeStamp | null>;
+  lastHelloAt: (agentId: string) => Promise<number | null>;
+  onSaved: (agentId: string) => void;
   log: (msg: string) => void;
   sleep?: (ms: number) => Promise<void>;
   now?: () => number;
@@ -71,7 +71,7 @@ export function createDefaultConverter(deps: {
 
   const modelsRan = async (agentId: string): Promise<string[]> => {
     for (const hours of RAN_WINDOWS_HOURS) {
-      const ran = (await deps.modelsRanBy?.(agentId, hours)) ?? [];
+      const ran = await deps.modelsRanBy(agentId, hours);
       if (ran.length > 0) return ran;
     }
     return [];
@@ -87,7 +87,7 @@ export function createDefaultConverter(deps: {
     deps.log(
       `[default-conversion] ${agentId}: ${pair.model === null ? "default not set" : `default set to ${pair.model}`} on ${pair.harness}${note ? ` (in place of ${note.changedFrom})` : ""}`,
     );
-    deps.onSaved?.(agentId);
+    deps.onSaved(agentId);
     return pair.model === null ? "not-set" : "converted";
   };
 
@@ -166,30 +166,27 @@ export function createDefaultConverter(deps: {
   ): Promise<boolean> => {
     const deadline = now() + HELLO_WAIT_MS;
     while (now() < deadline) {
-      if (((await deps.lastHelloAt?.(agentId)) ?? 0) >= since) return true;
+      if (((await deps.lastHelloAt(agentId)) ?? 0) >= since) return true;
       await sleep(POLL_MS);
     }
     return false;
   };
 
-  const moved = async (agentId: string): Promise<boolean> =>
-    (await deps.movedToNewImage?.(agentId)) ?? false;
-  const running = async (agentId: string): Promise<boolean> =>
-    (await deps.isRunning?.(agentId)) ?? true;
-
   return {
     convert,
     ensure,
     async pendingAfterMove(agentId) {
-      if (!(await moved(agentId))) return false;
-      return !(await running(agentId)) || !(await deps.pairRepo.read(agentId));
+      if (!(await deps.movedToNewImage(agentId))) return false;
+      return (
+        !(await deps.isRunning(agentId)) || !(await deps.pairRepo.read(agentId))
+      );
     },
     async ensureForFire(agentId) {
-      if (!(await moved(agentId))) return null;
+      if (!(await deps.movedToNewImage(agentId))) return null;
       let stamp: WakeStamp | null = null;
-      if (!(await running(agentId))) {
+      if (!(await deps.isRunning(agentId))) {
         const since = now();
-        stamp = (await deps.wake?.(agentId)) ?? null;
+        stamp = await deps.wake(agentId);
         if (!(await helloSince(agentId, since)))
           throw new NoDefaultModelError(undefined, { pending: true });
       }

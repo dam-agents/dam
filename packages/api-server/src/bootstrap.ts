@@ -971,32 +971,33 @@ export async function bootstrap() {
   });
   const metricsReader = composeMetricsReader(config);
   const telemetryReader = composeTelemetryReader(config);
-  const defaultConverter = composeDefaultConverter({
-    db,
-    namespace: config.namespace,
-    catalog: harnessCatalog,
-    getCapabilities: async (agentId) =>
-      (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
-        ?.runtimeCapabilities ?? null,
-    specHarness: async (agentId) =>
-      (await agentsRepo.get(agentId))?.spec.harness,
-    ...(metricsReader && {
-      modelsRanBy: async (agentId: string, hours: number) =>
-        (await metricsReader.tokenSpendByModel([agentId], { hours }))
-          .sort((a, b) => b.outputTokens - a.outputTokens)
-          .map((r) => r.model),
-    }),
-    movedToNewImage: async (agentId) =>
-      (await agentsRepo.get(agentId))?.imageUpdateFrom !== undefined,
-    isRunning: (agentId) => agentsRepo.isReady(agentId),
-    wake: (agentId) => agentsRepo.wakeIfHibernated(agentId),
-    lastHelloAt: async (agentId) =>
-      (
-        await runtimeDelivery.agentsRuntimeRepo.get(agentId)
-      )?.runtimeLastHelloAt?.getTime() ?? null,
-    ownerOf: async (agentId) => (await agentsRepo.get(agentId))?.owner,
-    log: (msg) => getLogger().info(msg),
-  });
+  const { converter: defaultConverter, helloSaga: defaultConversionSaga } =
+    composeDefaultConverter({
+      db,
+      namespace: config.namespace,
+      catalog: harnessCatalog,
+      getCapabilities: async (agentId) =>
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+      specHarness: async (agentId) =>
+        (await agentsRepo.get(agentId))?.spec.harness,
+      modelsRanBy: async (agentId, hours) =>
+        metricsReader
+          ? (await metricsReader.tokenSpendByModel([agentId], { hours }))
+              .sort((a, b) => b.outputTokens - a.outputTokens)
+              .map((r) => r.model)
+          : [],
+      movedToNewImage: async (agentId) =>
+        (await agentsRepo.get(agentId))?.imageUpdateFrom !== undefined,
+      isRunning: (agentId) => agentsRepo.isReady(agentId),
+      wake: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+      lastHelloAt: async (agentId) =>
+        (
+          await runtimeDelivery.agentsRuntimeRepo.get(agentId)
+        )?.runtimeLastHelloAt?.getTime() ?? null,
+      ownerOf: async (agentId) => (await agentsRepo.get(agentId))?.owner,
+      log: (msg) => getLogger().info(msg),
+    });
 
   const sessionWatcher = composeSessionWatcher({
     db,
@@ -2057,6 +2058,7 @@ export async function bootstrap() {
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
+    defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();
     gettingStarted.stop();

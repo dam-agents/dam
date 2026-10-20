@@ -34,28 +34,25 @@ function toItem(row: AttentionRecordRow): AttentionItem {
 const agentOfDefaultModelNoticeId = (id: string): string =>
   id.slice(0, Math.max(0, id.lastIndexOf(":")));
 
-const defaultModelNoticeId = (notice: DefaultModelNotice): string =>
-  `${notice.agentId}:${notice.state}`;
-
 export function createAttentionService(deps: {
   repo: AttentionRepository;
   ownerSub: string;
   ownsApproval: (approvalId: string) => Promise<boolean>;
   ownsAgent: (agentId: string) => Promise<boolean>;
-  defaultModelNotices?: () => Promise<DefaultModelNotice[]>;
-  log?: (message: string) => void;
+  defaultModelNotices: () => Promise<DefaultModelNotice[]>;
+  log: (message: string) => void;
 }): AttentionService {
   return {
     async listForOwner(): Promise<AttentionList> {
       const [records, allDismissals, notices] = await Promise.all([
         deps.repo.listForOwner(deps.ownerSub, ATTENTION_FEED_LIMIT),
         deps.repo.listDismissals(deps.ownerSub),
-        deps.defaultModelNotices?.().catch((err: Error) => {
-          deps.log?.(`[attention] default-model notices: ${err.message}`);
+        deps.defaultModelNotices().catch((err: Error) => {
+          deps.log(`[attention] default-model notices: ${err.message}`);
           return null;
-        }) ?? [],
+        }),
       ]);
-      const current = new Set((notices ?? []).map(defaultModelNoticeId));
+      const current = new Set((notices ?? []).map((notice) => notice.id));
       const resolved =
         notices === null
           ? []

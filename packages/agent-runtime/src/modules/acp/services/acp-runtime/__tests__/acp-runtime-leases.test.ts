@@ -87,7 +87,7 @@ function createLeaseWorld(opts: {
       providers.includes("conn-bedrock")
         ? "conn-bedrock"
         : null,
-    ...(opts.modelRequired && { modelRequired: () => true }),
+    modelRequired: () => opts.modelRequired === true,
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
       Object.keys(settings).some((id) => !SESSION_SETTINGS[id])

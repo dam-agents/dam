@@ -14,7 +14,6 @@ import { useFeed } from "../api/queries.js";
 import { useDefaultModelNotices } from "../hooks/use-default-model-notices.js";
 import { useDismissals } from "../hooks/use-dismissals.js";
 import { useStickyResolved } from "../hooks/use-sticky-resolved.js";
-import { defaultModelNoticeId } from "../lib/default-model-copy.js";
 import { FeedApprovalCard } from "./feed-approval-card.js";
 import { FeedCardSkeleton } from "./feed-card-skeleton.js";
 import { FeedDefaultModelCard } from "./feed-default-model-card.js";
@@ -70,7 +69,7 @@ export function ApprovalsPanel({ className }: { className?: string }) {
               const agent = agentOf(notice.agentId);
               return (
                 <FeedDefaultModelCard
-                  key={defaultModelNoticeId(notice)}
+                  key={notice.id}
                   notice={notice}
                   agentName={agent?.name ?? notice.agentId}
                   avatarName={agent?.name}

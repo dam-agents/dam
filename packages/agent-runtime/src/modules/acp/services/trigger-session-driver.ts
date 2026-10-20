@@ -58,11 +58,9 @@ export class NoSessionModelError extends Error {
 
 export function createTriggerSessionDriver(deps: {
   acpRuntime: AcpRuntime;
-  modelRequired?: (harness: string | undefined) => boolean;
-  modelMissing?: (sessionId: string) => boolean;
+  modelRequired: (harness: string | undefined) => boolean;
+  modelMissing: (sessionId: string) => boolean;
 }): TriggerSessionDriver {
-  const missing = (sessionId: string) =>
-    deps.modelMissing?.(sessionId) === true;
   return {
     async start({
       task,
@@ -76,12 +74,12 @@ export function createTriggerSessionDriver(deps: {
       const pins =
         !!resumeSessionId &&
         !!model &&
-        (!keepSessionModel || missing(resumeSessionId));
+        (!keepSessionModel || deps.modelMissing(resumeSessionId));
       if (
         resumeSessionId
-          ? !pins && missing(resumeSessionId)
+          ? !pins && deps.modelMissing(resumeSessionId)
           : !(model ?? platformMeta?.model) &&
-            deps.modelRequired?.(platformMeta?.harness) === true
+            deps.modelRequired(platformMeta?.harness)
       )
         throw new NoSessionModelError();
       const caller = createInProcessCaller((channel) =>
@@ -119,7 +117,7 @@ export function createTriggerSessionDriver(deps: {
           });
           sessionId = resumeSessionId;
           openedOn = openedModel(res);
-          if (missing(sessionId)) throw new NoSessionModelError();
+          if (deps.modelMissing(sessionId)) throw new NoSessionModelError();
         } else {
           const res = await caller.request<
             OpenedSession & { sessionId: string }

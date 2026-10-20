@@ -31,6 +31,7 @@ export function defaultModelNoticeOf(input: {
   const { agentId, pair, note } = input;
   if (!input.routed || !pair) return null;
   const notice = (state: DefaultModelNotice["state"]): DefaultModelNotice => ({
+    id: `${agentId}:${state}`,
     agentId,
     state,
     harness: pair.harness,

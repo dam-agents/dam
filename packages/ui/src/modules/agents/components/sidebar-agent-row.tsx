@@ -15,7 +15,6 @@ interface Props {
   selected: boolean;
   current: boolean;
   unread: boolean;
-  noDefaultModel: boolean;
   orderReady: boolean;
   onMove: (agentId: string, drop: OrderDrop) => void;
   onStep: (agentId: string, step: -1 | 1) => void;
@@ -30,7 +29,6 @@ export function SidebarAgentRow({
   selected,
   current,
   unread,
-  noDefaultModel,
   orderReady,
   onMove,
   onStep,
@@ -84,18 +82,6 @@ export function SidebarAgentRow({
           >
             {agent.name}
           </span>
-          {noDefaultModel && (
-            <>
-              <span
-                aria-hidden
-                className={cn(
-                  "size-2 shrink-0 rounded-full bg-warning group-hover/agent:hidden",
-                  open && "hidden",
-                )}
-              />
-              <span className="sr-only">(no default model)</span>
-            </>
-          )}
           {unread && (
             <>
               <span
