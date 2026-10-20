@@ -28,15 +28,16 @@ import {
   resolveSessionPair,
 } from "../domain/session-pair.js";
 import { harnessFits } from "../../templates/index.js";
+import { NoDefaultModelError } from "../domain/no-default-model.js";
 import type { RuntimeMutator } from "../../runtime-delivery/index.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
-import { harnessConfigEvent } from "../domain/harness-config-event.js";
+import type { DbTx } from "db";
+import type { HarnessConfigEventQueue } from "../infrastructure/config-event-queue.js";
 import { getLogger } from "../../../core/logger.js";
-
-const EVENT_TTL_MS = 30 * 24 * 60 * 60 * 1000;
 
 export function createHarnessConfigService(deps: {
   surface: string;
+  eventQueue: HarnessConfigEventQueue;
   runtimeMutator: RuntimeMutator;
   snapshotRepo: HarnessConfigSnapshotRepo;
   pairRepo: SessionPairRepo;
@@ -46,10 +47,12 @@ export function createHarnessConfigService(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
-  now?: () => number;
+  retireReset?: (
+    agentId: string,
+    tx: DbTx,
+    harness?: string,
+  ) => Promise<unknown>;
 }): HarnessConfigService {
-  const now = deps.now ?? (() => Date.now());
-
   async function requireOwned(agentId: string): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
       throw new TRPCError({ code: "NOT_FOUND", message: "agent not found" });
@@ -94,11 +97,34 @@ export function createHarnessConfigService(deps: {
             message: `this agent's image does not carry the ${change.harness} harness; apply its image update first`,
           });
       }
-      const ts = now();
-      await deps.runtimeMutator.bump(agentId, [
-        harnessConfigEvent(agentId, change, ts, new Date(ts + EVENT_TTL_MS)),
-      ]);
-      await deps.runtimeMutator.enqueueAfterCommit(agentId);
+      /* UNIT_BOUNDARY_DESCRIPTION: the change the Agent is sent and the
+       * declaration the panel shows commit together under the snapshot lock, so
+       * a reset or a second change cannot reorder one against the other. */
+      await deps.snapshotRepo.locked(agentId, async (tx) => {
+        /* UNIT_BOUNDARY_DESCRIPTION: an explicit mode choice outranks a pending
+         * one-off correction, and retires it here so a runtime report of the old
+         * mode arriving afterwards cannot bring the correction back. A change
+         * that carries no mode leaves the correction alone, and the harness the
+         * choice names decides whether it is about this correction at all. */
+        if (change.mode !== undefined || change.unset?.includes("mode"))
+          await deps.retireReset?.(agentId, tx, change.harness);
+        await deps.eventQueue.queue(agentId, change, tx);
+        await deps.snapshotRepo.merge(
+          agentId,
+          await declaredBy(agentId, change, tx),
+          {
+            confirmed: false,
+            ...(change.harness !== undefined && { harness: change.harness }),
+            tx,
+          },
+        );
+      });
+      await deps.runtimeMutator.enqueueAfterCommit(agentId).catch((err) => {
+        getLogger().warn(
+          { err, agentId },
+          "harness-config: asking the agent to fetch the change failed",
+        );
+      });
       emit({
         type: EventType.HarnessConfigChanged,
         agentId,
@@ -106,21 +132,6 @@ export function createHarnessConfigService(deps: {
         actorSub: deps.ownerSub,
         surface: deps.surface,
       });
-      try {
-        await deps.snapshotRepo.merge(
-          agentId,
-          await declaredBy(agentId, change),
-          {
-            confirmed: false,
-            ...(change.harness !== undefined && { harness: change.harness }),
-          },
-        );
-      } catch (err) {
-        getLogger().warn(
-          { err, agentId },
-          "harness-config: recording the declared snapshot failed",
-        );
-      }
     },
 
     async sessionPair(agentId) {
@@ -136,10 +147,6 @@ export function createHarnessConfigService(deps: {
           catalog: deps.catalog,
           getCapabilities: deps.getCapabilities,
           specHarness: deps.specHarness,
-          availableModels: async (id, h) =>
-            (await deps.snapshotRepo.read(id, h))?.availableModels?.map(
-              (m) => m.value,
-            ) ?? null,
         },
         agentId,
         harness ? { harness } : {},
@@ -161,6 +168,11 @@ export function createHarnessConfigService(deps: {
         });
       const granted = await deps.pairRepo.grantedProviders(agentId);
       const routed = routesByModelName(await deps.getCapabilities(agentId));
+      if (routed && pair.model === null)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: "pick a model for the default; it cannot be left unset",
+        });
       if (routed) pair = await routedPair(agentId, pair, granted);
       const provider = granted.find((p) => p.id === pair.provider);
       if (
@@ -199,6 +211,16 @@ export function createHarnessConfigService(deps: {
       if (invalid)
         throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
       await deps.pairRepo.write(agentId, pair);
+      emit({
+        type: EventType.HarnessConfigChanged,
+        ownerSub: deps.ownerSub,
+        agentId,
+      });
+      emit({
+        type: EventType.AttentionChanged,
+        ownerSub: deps.ownerSub,
+        agentId,
+      });
     },
   };
 
@@ -213,7 +235,6 @@ export function createHarnessConfigService(deps: {
     pair: SessionPair,
     granted: readonly { id: string; type: ProviderPresetType }[],
   ): Promise<SessionPair> {
-    if (pair.model === null) return pair;
     const model = qualifiedPairModel(pair.model);
     if (model === null)
       throw new TRPCError({
@@ -245,6 +266,7 @@ export function createHarnessConfigService(deps: {
   async function declaredBy(
     agentId: string,
     change: HarnessConfigChange,
+    tx: DbTx,
   ): Promise<HarnessConfigSnapshotPatch> {
     const unset = new Set(change.unset ?? []);
     const patch: HarnessConfigSnapshotPatch = {};
@@ -258,7 +280,7 @@ export function createHarnessConfigService(deps: {
       ...[...unset].filter((f) => f !== "model" && f !== "mode"),
     ];
     if (optionIds.length === 0) return patch;
-    const stored = await deps.snapshotRepo.read(agentId, change.harness);
+    const stored = await deps.snapshotRepo.read(agentId, change.harness, tx);
     const configOptions = { ...(stored?.configOptions ?? {}) };
     for (const [id, value] of Object.entries(change.configOptions ?? {})) {
       configOptions[id] = value;
@@ -284,7 +306,7 @@ export function harnessConfigSupportOf(
   };
 }
 
-function sessionModelSupported(capabilities: unknown): boolean {
+export function sessionModelSupported(capabilities: unknown): boolean {
   if (capabilities == null) return false;
   return (capabilities as { sessionModel?: unknown }).sessionModel === true;
 }
@@ -311,7 +333,7 @@ function harnessConfigCatalogOf(
   return parsed.success ? parsed.data : null;
 }
 
-function defaultHarnessOf(capabilities: unknown): string | null {
+export function defaultHarnessOf(capabilities: unknown): string | null {
   const raw = (capabilities as { defaultHarness?: unknown } | null)
     ?.defaultHarness;
   return typeof raw === "string" && raw !== "" ? raw : null;
@@ -328,10 +350,6 @@ export interface PairResolverDeps {
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
-  availableModels?: (
-    agentId: string,
-    harness: string,
-  ) => Promise<readonly string[] | null>;
 }
 
 export async function resolveRememberedPair(
@@ -369,13 +387,6 @@ export async function resolveFirePair(
   if (!deps.catalog.harnesses.some((h) => h.name === agentHarness))
     return undefined;
   const routed = routesByModelName(capabilities);
-  const listedFor = async (
-    harness: string,
-  ): Promise<readonly string[] | null> =>
-    (await deps.availableModels?.(agentId, harness)) ?? null;
-  const listed = routed
-    ? await listedFor(preferred.harness ?? stored?.harness ?? agentHarness)
-    : null;
   const requestedHarness = preferred.harness ?? stored?.harness ?? agentHarness;
   const savedForHarness = stored?.harness === requestedHarness ? stored : null;
   const remembered: SessionPair | null = routed
@@ -400,7 +411,7 @@ export async function resolveFirePair(
             model: preferred.model,
           }
         : stored;
-  return resolveSessionPair({
+  const pair = resolveSessionPair({
     remembered,
     agentHarness,
     defaultHarness: deps.catalog.default,
@@ -408,6 +419,8 @@ export async function resolveFirePair(
     fits: (harness, type, templateId) =>
       harnessFits(deps.catalog, harness, type, templateId),
     routed,
-    availableModels: () => listed,
   });
+  if (requireLeases && routed && pair?.model === null && granted.length > 0)
+    throw new NoDefaultModelError(preferred.model);
+  return pair;
 }

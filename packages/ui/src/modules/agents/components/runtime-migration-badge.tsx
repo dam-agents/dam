@@ -4,17 +4,17 @@ import { match } from "ts-pattern";
 import { Badge } from "@/components/ui/badge";
 
 import type { AgentView } from "../../../types.js";
-import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
-import { runtimeBadge } from "../utils/runtime-migration.js";
+import { runtimeMigrationBadge } from "../utils/runtime-migration.js";
 
-export function VmRuntimeBadge({
+// UNIT_BOUNDARY_DESCRIPTION: where an agent's move to the new runtime shows. The move is started for the agent's owner by an operator, so it is read-only here: its phase, with the controller's reason as the tooltip, and a failure distinctly, since a stuck move is never mistaken for one still running.
+export function RuntimeMigrationBadge({
   agent,
   labelClassName,
 }: {
   agent: AgentView;
   labelClassName?: string;
 }) {
-  const badge = runtimeBadge(agent, useVmRuntime());
+  const badge = runtimeMigrationBadge(agent);
   if (!badge) return null;
   const { Icon, variant } = match(badge.kind)
     .with("migrating", () => ({ Icon: Migrate, variant: "info" as const }))

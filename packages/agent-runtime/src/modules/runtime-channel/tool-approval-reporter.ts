@@ -1,13 +1,10 @@
 import {
-  permissionOptionsOf,
+  permissionOptionKindsOf,
   recordedOptionsOf,
   recordedToolOf,
   TOOL_CALL_ID_MAX,
 } from "api-server-api";
-import type {
-  AcpPermissionOption,
-  AcpPermissionOptionKind,
-} from "api-server-api";
+import type { AcpPermissionOptionKind } from "api-server-api";
 
 import type { HarnessClient } from "./harness-client.js";
 import type { AgentRequestObserver } from "../acp/index.js";
@@ -37,7 +34,7 @@ function permissionRequestIn(line: string): PermissionRequestFrame | null {
 
 function outcomeOf(
   result: unknown,
-  options: readonly AcpPermissionOption[],
+  kinds: ReadonlyMap<string, AcpPermissionOptionKind>,
 ): {
   outcome: string;
   optionId?: string;
@@ -46,14 +43,12 @@ function outcomeOf(
   const outcome = (result as { outcome?: unknown } | null)?.outcome as
     { outcome?: unknown; optionId?: unknown } | undefined;
   if (typeof outcome?.outcome !== "string") return null;
-  const optionId =
-    typeof outcome.optionId === "string"
-      ? outcome.optionId.slice(0, TOOL_CALL_ID_MAX)
-      : undefined;
-  const kind = options.find((o) => o.optionId === optionId)?.kind;
+  const chosen = typeof outcome.optionId === "string" ? outcome.optionId : "";
+  const kind = kinds.get(chosen);
+  const optionId = chosen.slice(0, TOOL_CALL_ID_MAX);
   return {
     outcome: outcome.outcome.slice(0, OUTCOME_MAX),
-    ...(optionId !== undefined && { optionId }),
+    ...(chosen !== "" && { optionId }),
     ...(kind !== undefined && { kind }),
   };
 }
@@ -104,7 +99,7 @@ export function createToolApprovalReporter(opts: {
   log: (msg: string) => void;
 }): AgentRequestObserver {
   const chains = new Map<string, Promise<void>>();
-  const approvable = new Map<string, AcpPermissionOption[]>();
+  const approvable = new Map<string, Map<string, AcpPermissionOptionKind>>();
   const key = (id: unknown, sessionId: string) =>
     JSON.stringify([sessionId, id]);
 
@@ -154,17 +149,13 @@ export function createToolApprovalReporter(opts: {
     });
   }
 
-  function optionsIn(line: string): AcpPermissionOption[] {
-    return permissionOptionsOf(permissionRequestIn(line)?.params?.options);
-  }
-
   return {
     held(id, sessionId, line) {
       const frame = permissionRequestIn(line);
       if (!frame) return;
       approvable.set(
         key(id, sessionId),
-        permissionOptionsOf(frame.params?.options),
+        permissionOptionKindsOf(frame.params?.options),
       );
     },
 
@@ -172,8 +163,7 @@ export function createToolApprovalReporter(opts: {
       const frame = permissionRequestIn(line);
       if (!frame) return;
       const k = key(id, sessionId);
-      const options = optionsIn(line);
-      approvable.set(k, options);
+      approvable.set(k, permissionOptionKindsOf(frame.params?.options));
       const { toolName, toolCallId } = recordedToolOf(frame.params?.toolCall);
       enqueue(
         k,
@@ -186,6 +176,7 @@ export function createToolApprovalReporter(opts: {
               toolName,
               ...(toolCallId !== undefined && { toolCallId }),
               args: frame.params?.toolCall?.rawInput,
+              idsWhole: true,
               options: recordedOptionsOf(frame.params?.options),
             },
             { signal },
@@ -196,10 +187,10 @@ export function createToolApprovalReporter(opts: {
     },
 
     answered(id, sessionId, result) {
-      const options = approvable.get(key(id, sessionId));
-      if (options === undefined) return;
+      const kinds = approvable.get(key(id, sessionId));
+      if (kinds === undefined) return;
       approvable.delete(key(id, sessionId));
-      const outcome = outcomeOf(result, options);
+      const outcome = outcomeOf(result, kinds);
       enqueue(key(id, sessionId), `approval ${String(id)} answer`, (signal) =>
         opts.client.approvals.v1.ended.mutate(
           { sessionId, rpcId: id, ...(outcome && { outcome }) },

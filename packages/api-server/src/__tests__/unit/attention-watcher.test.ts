@@ -98,6 +98,7 @@ function harness(): Harness {
     listDismissals: async () => [],
     ownedSessionKeys: async () => new Set<string>(),
     setDismissals: async () => {},
+    deleteDismissals: async () => {},
     deleteSessions: async (_agentId, sessionIds) => {
       if (failWrite) {
         failWrite = false;

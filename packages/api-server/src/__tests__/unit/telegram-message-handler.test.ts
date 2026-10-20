@@ -2,7 +2,6 @@ import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import {
-  COMMAND_PATTERN,
   TELEGRAM_COMMANDS,
   createTelegramMessageHandler,
   type ThreadLike,
@@ -22,18 +21,14 @@ const oauthConfig: KeycloakOAuthConfig = {
 
 function makeThread(opts?: { isDM?: boolean; id?: string }) {
   const posts: string[] = [];
-  const thread: ThreadLike & { posts: string[]; subscribed: boolean } = {
+  const thread: ThreadLike & { posts: string[] } = {
     id: opts?.id ?? "chat-42",
     isDM: opts?.isDM ?? false,
     posts,
-    subscribed: false,
     async post(message) {
       posts.push(
         typeof message === "string" ? message : JSON.stringify(message),
       );
-    },
-    async subscribe() {
-      thread.subscribed = true;
     },
   };
   return thread;
@@ -42,14 +37,17 @@ function makeThread(opts?: { isDM?: boolean; id?: string }) {
 function harness(opts?: {
   boundTo?: string | null;
   bindings?: Record<string, string>;
+  ambient?: boolean;
   isAdmin?: boolean;
   termsAccepted?: boolean;
+  readsGroupMessages?: boolean;
 }) {
   const { store: pendingOAuthFlows, map: pendingOAuthFlowsMap } =
     createInspectableTtlStore<TelegramOAuthPending>();
   const unbind = vi.fn(async () => {});
   const bind = vi.fn(async () => "bound" as const);
-  const relay = vi.fn(async () => {});
+  const setAmbient = vi.fn(async () => {});
+  const relay = vi.fn();
   const agentFor = (conversationId: string) =>
     opts?.bindings ? opts.bindings[conversationId] : opts?.boundTo;
 
@@ -57,13 +55,21 @@ function harness(opts?: {
     conversations: {
       findAgentByConversation: async (conversationId) => {
         const agentId = agentFor(conversationId);
-        return agentId ? { agentId, authorizedBy: "kc|owner-1" } : null;
+        return agentId
+          ? {
+              agentId,
+              authorizedBy: "kc|owner-1",
+              ambient: opts?.ambient ?? false,
+            }
+          : null;
       },
       bind,
       listByAgent: async () => [],
       unbind,
+      setAmbient,
     },
     isChatAdmin: async () => opts?.isAdmin ?? true,
+    canReadGroupMessages: async () => opts?.readsGroupMessages ?? true,
     decodeChatId: (threadId) => threadId,
     fetchChatTitle: async () => "Team chat",
     oauthConfig,
@@ -81,6 +87,7 @@ function harness(opts?: {
     pendingOAuthFlowsMap,
     unbind,
     bind,
+    setAmbient,
     relay,
   };
 }
@@ -187,16 +194,16 @@ describe("telegram message handler", () => {
     expect(h.relay).not.toHaveBeenCalled();
   });
 
-  it("relays a bound chat's message to the bound agent and subscribes", async () => {
+  it("relays an addressed message in a bound group to its agent", async () => {
     const h = harness({ boundTo: "agent-1" });
     const thread = makeThread();
     await h.handle(thread, { text: "hello agent", author: author() }, true);
-    expect(thread.subscribed).toBe(true);
     expect(h.relay).toHaveBeenCalledWith(
       "agent-1",
       thread,
       "hello agent",
       expect.objectContaining({ userId: "tg-7" }),
+      false,
     );
   });
 
@@ -216,7 +223,6 @@ describe("telegram message handler", () => {
       const h = harness({ boundTo: "agent-1" });
       const thread = makeThread({ isDM: true });
       await h.handle(thread, { text: `/${command}`, author: author() }, true);
-      expect(COMMAND_PATTERN.test(`/${command}`)).toBe(true);
       expect(h.relay).not.toHaveBeenCalled();
       expect(thread.posts.length).toBeGreaterThan(0);
     }
@@ -255,6 +261,7 @@ describe("telegram binding covers the whole chat", () => {
       thread,
       "hi",
       expect.objectContaining({ userId: "tg-7" }),
+      false,
     );
   });
 
@@ -280,5 +287,103 @@ describe("telegram binding covers the whole chat", () => {
     await h.handle(thread, { text: "/unbind", author: author() }, true);
     expect(h.unbind).toHaveBeenCalledWith(CHAT);
     expect(thread.posts.join("\n")).toContain("Chat disconnected");
+  });
+});
+
+describe("telegram ambient mode", () => {
+  const CHAT = "telegram:-100777";
+
+  /**
+   * TEST_SCENARIO: Ambient is off by default, as on Slack: a group message
+   * that neither mentions the bot nor replies to it does not reach the
+   * agent, and the bot says nothing about it.
+   */
+  it("drops a group message nobody addressed while ambient is off", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" } });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "lunch at noon?", author: author() }, false);
+    expect(h.relay).not.toHaveBeenCalled();
+    expect(thread.posts).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: With ambient on, the same message reaches the agent as a
+   * read-along message, so the turn tells the agent it may stay silent.
+   */
+  it("relays a group message nobody addressed as ambient when ambient is on", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" }, ambient: true });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "lunch at noon?", author: author() }, false);
+    expect(h.relay).toHaveBeenCalledWith(
+      "agent-1",
+      thread,
+      "lunch at noon?",
+      expect.objectContaining({ userId: "tg-7" }),
+      true,
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: In a group no agent is bound to, ordinary chatter reaches
+   * the handler too, and the bot must stay silent there.
+   */
+  it("stays silent on chatter in a group with no binding", async () => {
+    const h = harness({ bindings: {} });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "lunch at noon?", author: author() }, false);
+    expect(h.relay).not.toHaveBeenCalled();
+    expect(thread.posts).toEqual([]);
+  });
+
+  it("reports the mode to anyone on a bare `/ambient`", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" }, isAdmin: false });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "/ambient", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain("Ambient mode is off");
+    expect(h.setAmbient).not.toHaveBeenCalled();
+  });
+
+  it("lets only a group admin switch ambient mode", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" }, isAdmin: false });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "/ambient on", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain(
+      "Only group admins can `/ambient`.",
+    );
+    expect(h.setAmbient).not.toHaveBeenCalled();
+  });
+
+  /**
+   * TEST_SCENARIO: An admin turns ambient on for the chat. When Telegram's
+   * Group Privacy hides ordinary messages from the bot here, the reply says
+   * so, because ambient mode cannot work until that changes.
+   */
+  it("turns ambient on for the chat and warns when Group Privacy hides messages", async () => {
+    const h = harness({
+      bindings: { [CHAT]: "agent-1" },
+      readsGroupMessages: false,
+    });
+    const thread = makeThread({ id: `${CHAT}:99` });
+    await h.handle(thread, { text: "/ambient on", author: author() }, true);
+    expect(h.setAmbient).toHaveBeenCalledWith(CHAT, true);
+    const posted = thread.posts.join("\n");
+    expect(posted).toContain("Ambient mode turned on");
+    expect(posted).toContain("Group Privacy");
+  });
+
+  it("does nothing when ambient mode is already in the asked state", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" } });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "/ambient off", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain("Ambient mode is already off.");
+    expect(h.setAmbient).not.toHaveBeenCalled();
+  });
+
+  it("explains that a direct chat has no ambient mode", async () => {
+    const h = harness({ boundTo: "agent-1" });
+    const dm = makeThread({ isDM: true });
+    await h.handle(dm, { text: "/ambient on", author: author() }, true);
+    expect(dm.posts.join("\n")).toContain("every message reaches the agent");
+    expect(h.setAmbient).not.toHaveBeenCalled();
   });
 });

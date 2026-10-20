@@ -346,6 +346,9 @@ export async function composeRuntimeChannel(
               sessionSettings: plugin.sessionSettings,
               platformSubagentSettings: true,
             }),
+            ...(plugin?.derivedStartMode && {
+              derivedStartMode: plugin.derivedStartMode,
+            }),
             ...(nativeTemplates?.length && { nativeTemplates }),
           };
         }),

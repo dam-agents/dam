@@ -35,7 +35,6 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   spawnedBy: null,
   vm: false,
   runtimeMigration: null,
-  runtimeMigratable: false,
   ...overrides,
 });
 

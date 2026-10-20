@@ -93,7 +93,8 @@
             "claude-code",
             "codex",
             "pi",
-            "bob"
+            "bob",
+            "copilot"
           ]
         },
         "providers": {
@@ -218,7 +219,8 @@
           "claude-code",
           "codex",
           "pi",
-          "bob"
+          "bob",
+          "copilot"
         ]
       }
     },

@@ -1,3 +1,9 @@
+import {
+  CLAUDE_TIERS,
+  chatModels,
+  compareModelVersions,
+  newestOfTier,
+} from "agent-runtime-api";
 import { aliasOrder, HARNESS_HOME_PROVIDERS } from "api-server-api";
 import type {
   CatalogEntry,
@@ -10,34 +16,7 @@ import {
 } from "../../model-catalog/index.js";
 import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 
-const TIERS = ["fable", "opus", "sonnet", "haiku"] as const;
 const ROUTER_PLACEHOLDER = "platform:conn:router";
-
-const isDateLike = (part: string): boolean => part.length >= 8;
-const versionKey = (id: string): [number[], number[]] => {
-  const parts = id.match(/\d+/g) ?? [];
-  return [
-    parts.filter((p) => !isDateLike(p)).map(Number),
-    parts.filter(isDateLike).map(Number),
-  ];
-};
-const cmpParts = (a: number[], b: number[]): number => {
-  for (let i = 0; i < Math.max(a.length, b.length); i++) {
-    const d = (a[i] ?? -1) - (b[i] ?? -1);
-    if (d) return d;
-  }
-  return 0;
-};
-const byVersion = (a: string, b: string): number => {
-  const [va, da] = versionKey(a);
-  const [vb, db] = versionKey(b);
-  return cmpParts(va, vb) || cmpParts(da, db) || (a < b ? -1 : a > b ? 1 : 0);
-};
-const newest = (ids: readonly string[], tier: string): string | null => {
-  const tiered = ids.filter((id) => id.toLowerCase().includes(tier));
-  return tiered.length ? [...tiered].sort(byVersion).at(-1)! : null;
-};
-const NOT_A_CHAT_MODEL = /embed|rerank|tts|whisper|moderation|image|audio/i;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Claude Code's tier slots, which its picker and
@@ -47,11 +26,14 @@ const NOT_A_CHAT_MODEL = /embed|rerank|tts|whisper|moderation|image|audio/i;
  */
 export function tierModels(
   candidates: readonly string[],
-): Record<(typeof TIERS)[number], string> | null {
-  const ids = candidates.filter((id) => !NOT_A_CHAT_MODEL.test(id));
+): Record<(typeof CLAUDE_TIERS)[number], string> | null {
+  const ids = chatModels(candidates);
   if (ids.length === 0) return null;
-  const [fable, opus, sonnet, haiku] = TIERS.map((t) => newest(ids, t));
-  const fallback = opus ?? sonnet ?? haiku ?? [...ids].sort(byVersion).at(-1)!;
+  const [fable, opus, sonnet, haiku] = CLAUDE_TIERS.map((t) =>
+    newestOfTier(ids, t),
+  );
+  const fallback =
+    opus ?? sonnet ?? haiku ?? [...ids].sort(compareModelVersions).at(-1)!;
   return {
     fable: fable ?? fallback,
     opus: fallback,
@@ -65,7 +47,9 @@ export function tierModels(
  * Model Router. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the smallest window among
  * the models Claude Code may run on, since it reads the window per process,
  * not per model. A credential variable the manifest names gets the router's
- * placeholder because the client will not start without one. Provider env
+ * placeholder because the client will not start without one, and a model
+ * variable it names gets the default provider's first model for the same
+ * reason. Provider env
  * never reaches a harness process, so PLATFORM_MODEL_ROUTER_SERVES is what
  * an image script keys on to point its harness at the router.
  */
@@ -98,6 +82,10 @@ export function routerEnvFor(input: {
         aliasOrder(a.alias, input.harness) - aliasOrder(b.alias, input.harness),
     );
   const defaultProvider = serving[0];
+  const defaultEntry = defaultProvider?.entries[0];
+  if (defaultEntry)
+    for (const name of binding.defaultModelEnv ?? [])
+      env[name] = renderName(defaultEntry, binding);
   if (binding.bobGateway) {
     env.BOB_GATEWAY_URL = env.PLATFORM_MODEL_ROUTER_URL;
     env.BOBSHELL_API_KEY = ROUTER_PLACEHOLDER;

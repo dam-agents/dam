@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-//MISE description="Test (with the real adapters, when CLAUDE_AGENT_ACP, CODEX_ACP, PI_ACP or BOB_CLI name them) that each manifest's declared initialize capabilities match what the live harness answers"
+//MISE description="Test (with the real adapters, when CLAUDE_AGENT_ACP, CODEX_ACP, PI_ACP, BOB_CLI or COPILOT_CLI name them) that each manifest's declared initialize capabilities match what the live harness answers"
 //MISE sources=["*/rootfs/app/runtime-manifest.yaml", "test-lib/acp-client.mjs", ".mise/tasks/test/harness-initialize-capabilities"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
@@ -20,6 +20,7 @@ const targets = [
   { name: "claude-code", bin: process.env.CLAUDE_AGENT_ACP, args: (b) => ["node", [b]], env: { ANTHROPIC_API_KEY: "x", DISABLE_TELEMETRY: "1", DISABLE_AUTOUPDATER: "1" } },
   { name: "codex", bin: process.env.CODEX_ACP, args: (b) => ["node", [b]], env: { OPENAI_API_KEY: "x", CODEX_HOME: home } },
   { name: "pi-agent", bin: process.env.PI_ACP, args: (b) => ["node", [b]], env: { PI_OFFLINE: "1" } },
+  { name: "copilot", bin: process.env.COPILOT_CLI, args: (b) => [b, ["--acp", "--stdio"]], env: { COPILOT_PROVIDER_BASE_URL: "http://127.0.0.1:1/v1", COPILOT_MODEL: "x", COPILOT_OFFLINE: "true", COPILOT_AUTO_UPDATE: "false" }, authMethods: () => [] },
   { name: "bob", bin: process.env.BOB_CLI, args: (b) => ["node", [b, "acp", "--trust", "--accept-license", "--auto-approve", "--disable-mcp"]], env: { BOB_GATEWAY_URL: "http://127.0.0.1:1", BOB_API_KEY: "x", BOB_LOG_LEVEL: "error" } },
 ];
 let checked = 0;
@@ -37,7 +38,7 @@ try {
       // TEST_SCENARIO: The runtime answers a client's initialize from the manifest before any harness runs, so what it declares must be what the pinned harness itself answers: capabilities and auth methods, field for field.
       const live = await c.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true }, terminal: true }, clientInfo: { name: "dam", version: "0" } }, 60_000);
       assert.deepEqual(live.agentCapabilities, declared.agentCapabilities, `${t.name}: agentCapabilities drifted`);
-      assert.deepEqual(live.authMethods ?? [], declared.authMethods ?? [], `${t.name}: authMethods drifted`);
+      assert.deepEqual(t.authMethods ? t.authMethods(live.authMethods) : (live.authMethods ?? []), declared.authMethods ?? [], `${t.name}: authMethods drifted`);
       if (declared.agentInfo) assert.deepEqual({ name: live.agentInfo?.name, title: live.agentInfo?.title }, declared.agentInfo, `${t.name}: agentInfo drifted`);
       checked++;
       console.log(`${t.name}: manifest matches ${live.agentInfo?.name ?? t.name} ${live.agentInfo?.version ?? ""}`);

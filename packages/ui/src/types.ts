@@ -197,7 +197,6 @@ export interface AgentView {
   spawnedBy: string | null;
   vm: boolean;
   runtimeMigration: RuntimeMigrationView | null;
-  runtimeMigratable: boolean;
   kind?: AgentKind;
 }
 
@@ -214,16 +213,6 @@ export interface RuntimeMigrationView {
   phase: RuntimeMigrationPhase;
   message?: string;
   attempts?: number;
-  abortable: boolean;
-  retryable: boolean;
-}
-
-export interface RuntimeMigrationPlanView {
-  unmovable: { path: string; reason: string }[];
-  bootsSleepingAgent: boolean;
-  retentionMs: number | null;
-  allowed: boolean;
-  refusal: { type: string; reasons: string[] } | null;
 }
 
 interface QuietWindowView {

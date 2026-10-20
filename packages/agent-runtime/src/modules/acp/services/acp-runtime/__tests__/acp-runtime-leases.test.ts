@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
+import {
+  CONFIGURE_SESSION_METHOD,
+  NO_MODEL_REASON,
+  PIN_MODEL_METHOD,
+} from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
   createClient,
@@ -19,6 +23,7 @@ import {
   type AgentRequestObserver,
 } from "../pending-agent-requests.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
+import { createContinuedFromStore } from "../../../infrastructure/continued-from-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import {
   createLeaseRouter,
@@ -61,6 +66,7 @@ const ALIAS_OF: Record<string, string> = {
 function createLeaseWorld(opts: {
   providers: string[];
   agentRequests?: AgentRequestObserver;
+  modelRequired?: boolean;
 }) {
   let providers = opts.providers;
   let keptProcesses = 0;
@@ -82,6 +88,7 @@ function createLeaseWorld(opts: {
       providers.includes("conn-bedrock")
         ? "conn-bedrock"
         : null,
+    modelRequired: () => opts.modelRequired === true,
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
       Object.keys(settings).some((id) => !SESSION_SETTINGS[id])
@@ -111,6 +118,9 @@ function createLeaseWorld(opts: {
         idleReapDelayMs: IDLE_REAP_DELAY_MS,
         onArtifactTouch: () => {},
         undeliveredPrompts: createInMemoryUndeliveredStore(),
+        continuedFrom: createContinuedFromStore(memoryDocumentBackend(), () =>
+          new Date().toISOString(),
+        ),
         activeTurns: createActiveTurnStore(memoryDocumentBackend()),
         sessionMetadata: metadata.store,
         backgroundWork: scoped.backgroundWork,
@@ -310,6 +320,26 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(claude.received("control/getEnv")).toHaveLength(1);
     claude.replyTo("control/getEnv", { value: "x" });
     expect(client.reply(2)?.result).toEqual({ value: "x" });
+  });
+
+  /** TEST_SCENARIO: a terminal Session's title is known only to its harness,
+   * so a session/list that names a harness reaches that harness's process,
+   * started for it, and no other. */
+  it("asks the named harness for its listing", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(frames.initialize(0));
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/list",
+      params: { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    });
+    expect(world.harnessCount("codex")).toBe(1);
+    expect(world.harnessCount("claude-code")).toBe(0);
+    const codex = world.harness("codex");
+    codex.replyTo("initialize", {});
+    expect(codex.received("session/list")).toHaveLength(1);
   });
 
   /** TEST_SCENARIO: Two harnesses ask the client a question with the same
@@ -569,6 +599,59 @@ describe("acp-runtime: one harness process per harness", () => {
       data: { platform: { reason: PROVIDER_REMOVED_REASON } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
+  });
+
+  /** TEST_SCENARIO: On a harness that reaches its models through the Model
+   * Router, a session with no model never reaches the harness, which would
+   * otherwise run a model the user never chose: session/new without one is
+   * refused as no-model, and an old session's prompt or edited resend is
+   * refused (a prompt sent as a notification is dropped) until a model is
+   * pinned on it. */
+  it("refuses a turn on a session with no model", () => {
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+    });
+    world.metadata.store.set("old", { mode: "chat" });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    client.send(frames.prompt(2, "old", "hi"));
+    expect(client.reply(2)?.error).toMatchObject({
+      message: expect.stringMatching(/Providers page/),
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    client.send({
+      jsonrpc: "2.0",
+      method: "session/prompt",
+      params: { sessionId: "old", prompt: [{ type: "text", text: "hi" }] },
+    });
+    client.send({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "platform/rewriteFrom",
+      params: { sessionId: "old", messageId: "m-1", prompt: [] },
+    });
+    expect(client.reply(5)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    expect(world.harnessCount("claude-code")).toBe(0);
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: PIN_MODEL_METHOD,
+      params: { sessionId: "old", model: "ibm/aws/claude-sonnet-4-6" },
+    });
+    expect(client.reply(3)?.result).toEqual({
+      model: "ibm/aws/claude-sonnet-4-6",
+    });
+    client.send(frames.prompt(4, "old", "now"));
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["now"]);
   });
 
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is
@@ -957,7 +1040,8 @@ describe("acp-runtime: one harness process per harness", () => {
 
   /** TEST_SCENARIO: After the agent restarts, a client that loads a saved
    * session gets its saved model and mode on the new harness process before
-   * it can prompt, so both survive the restart. */
+   * it can prompt, so both survive the restart. The mode follows the model's
+   * own answer, since the harness reads a mode against the model it holds. */
   it("re-applies the saved model and settings when a client loads the session", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     world.metadata.store.set("saved", {
@@ -971,6 +1055,8 @@ describe("acp-runtime: one harness process per harness", () => {
     const harness = world.harness("claude-code");
     harness.replyToSession("session/load", "saved", {});
     expect(modelFrames(harness, "saved")).toEqual(["ibm/aws/claude-opus-4-8"]);
+    expect(harness.received("session/set_mode")).toEqual([]);
+    harness.replyToSession("session/set_config_option", "saved", {});
     expect(harness.received("session/set_mode")).toEqual([
       expect.objectContaining({
         params: { sessionId: "saved", modeId: "plan" },

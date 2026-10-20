@@ -66,10 +66,11 @@ import {
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
+import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
+import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
-import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
 import { WorkspaceFailureNotice } from "../../agents/components/workspace-failure-notice.js";
 import { useAgentReachability } from "../../agents/hooks/use-agent-reachability.js";
 import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
@@ -93,6 +94,7 @@ import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
+import { useContinuedFrom } from "../../invocations/api/queries.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -119,7 +121,10 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
-import { useProviderConnections } from "../api/session-pair.js";
+import {
+  rememberFirstModel,
+  useProviderConnections,
+} from "../api/session-pair.js";
 import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
@@ -127,6 +132,10 @@ import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
 import { ClassicChatLayout } from "../components/classic-chat-layout.js";
+import {
+  ContinuedFromPrelude,
+  ContinuedFromUnavailable,
+} from "../components/continued-from-prelude.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
@@ -146,12 +155,15 @@ import {
 } from "../components/side-panel-bar.js";
 import { SidePanelShell } from "../components/side-panel-shell.js";
 import { Terminal } from "../components/terminal.js";
+import { ThreadDivider } from "../components/thread-divider.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
+import { useHasModelChoices } from "../hooks/use-has-model-choices.js";
+import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
@@ -319,6 +331,11 @@ export function ChatView() {
   const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
   const carried = (selectedAgent && harnessStatus?.harnesses) || [];
+  const sessionHarness =
+    currentSession?.harness ??
+    (currentSession && harnessStatus?.modelRouter
+      ? (harnessStatus.defaultHarness ?? carried[0]?.name)
+      : undefined);
   const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
   const harnessesPending =
     !harnessStatus?.harnesses &&
@@ -338,6 +355,20 @@ export function ChatView() {
           routed: harnessStatus?.modelRouter ?? false,
         }
       : null;
+  const nextSessionPair = useNextSessionPair(
+    pickable?.routed ? pickable.agentId : null,
+    carried.map((h) => h.name),
+    pickable?.defaultHarness,
+  );
+  const routedAgent = harnessStatus?.modelRouter ? selectedAgent : null;
+  const newPairHasChoices = useHasModelChoices(
+    routedAgent,
+    nextSessionPair?.harness,
+  );
+  const sessionHasChoices = useHasModelChoices(
+    currentSession ? routedAgent : null,
+    sessionHarness,
+  );
   const providerConnections = useProviderConnections(newSessionAgent);
   const noProviders =
     !!newSessionAgent &&
@@ -350,7 +381,24 @@ export function ChatView() {
   const [providersModal, setProvidersModal] = useState<boolean | null>(null);
 
   const view = useStore((s) => s.view);
-  const chatIdle = !sessionId && messages.length === 0;
+  const continuesInvocation = useStore((s) =>
+    selectedAgent && !sessionId
+      ? s.drafts[draftKey(selectedAgent, null)]?.continuesInvocation
+      : undefined,
+  );
+  const draftRead = useContinuedFrom(selectedAgent, continuesInvocation);
+  const dropDraftContinuation = useStore((s) => s.dropDraftContinuation);
+  const sessionCopy = useStore((s) => s.continuedFrom);
+  const copy = sessionId
+    ? sessionCopy
+    : draftRead?.kind === "ready"
+      ? draftRead.copy
+      : null;
+  const copyUnavailable =
+    !sessionId && draftRead?.kind === "unavailable" ? draftRead.reason : null;
+  const copyInView = copy !== null && shown[0]?.loadOlderBefore === undefined;
+  const chatIdle =
+    !sessionId && messages.length === 0 && continuesInvocation === undefined;
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
@@ -858,7 +906,9 @@ export function ChatView() {
               )}
               {!loadingSession &&
                 !sessionError &&
-                conversationEmpty(messages, queuedPrompts) && (
+                conversationEmpty(messages, queuedPrompts) &&
+                continuesInvocation === undefined &&
+                copy === null && (
                   <div className="flex flex-1 flex-col items-center justify-center text-center">
                     <h2 aria-label={selectedAgentName ?? undefined}>
                       <button
@@ -893,22 +943,28 @@ export function ChatView() {
                     {startNotice && <div className="mt-6">{startNotice}</div>}
                   </div>
                 )}
+              {copyInView && (
+                <ContinuedFromPrelude
+                  copy={copy}
+                  avatarAgent={agentView ?? undefined}
+                />
+              )}
+              {copyUnavailable !== null && selectedAgent && (
+                <ContinuedFromUnavailable
+                  reason={copyUnavailable}
+                  onDrop={() => dropDraftContinuation(selectedAgent)}
+                />
+              )}
               <A2uiActionProvider value={sendFormPrompt}>
                 <A2uiConversationProvider value={a2uiConversation}>
                   <DelegationOwnersProvider value={delegationOwners}>
                     {items.map((item) => {
                       if (item.kind === "divider") {
                         return (
-                          <div
+                          <ThreadDivider
                             key={item.key}
-                            className="flex items-center gap-3 py-2"
-                          >
-                            <span className="h-px flex-1 bg-border/60" />
-                            <span className="text-2xs text-muted-foreground">
-                              {dividerLabel(item, now)}
-                            </span>
-                            <span className="h-px flex-1 bg-border/60" />
-                          </div>
+                            label={dividerLabel(item, now)}
+                          />
                         );
                       }
                       if (userRuns.inner.has(item.message.id)) return null;
@@ -1076,7 +1132,10 @@ export function ChatView() {
                 ? "No LLM provider connected to this agent."
                 : formLocksComposer
                   ? COMPOSER_LOCKED_REASON
-                  : null
+                  : (nextSessionPair?.model === null && newPairHasChoices) ||
+                      (sessionHasChoices && !currentSession?.model)
+                    ? "Choose a model for this session first."
+                    : null
             }
           />
           {!hasPendingPermission && pickable && (
@@ -1109,18 +1168,27 @@ export function ChatView() {
               <ChatColumn>
                 {selectedAgent && pairOutdated ? (
                   <SessionPairOutdatedNotice agentId={selectedAgent} />
-                ) : selectedAgent && currentSession?.harness ? (
+                ) : selectedAgent && currentSession && sessionHarness ? (
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <ModelIndicator
                       agentId={selectedAgent}
-                      harness={currentSession.harness}
+                      harness={sessionHarness}
                       provider={currentSession.provider ?? null}
                       model={currentSession.model ?? null}
                       settings={currentSession.settings}
                       carried={harnessStatus?.harnesses ?? []}
                       routed={harnessStatus?.modelRouter ?? false}
                       turnRunning={busy}
-                      onChoose={(value) => void chooseSessionModel(value)}
+                      onChoose={(value) =>
+                        void chooseSessionModel(value, () => {
+                          if (harnessStatus?.modelRouter && sessionHarness)
+                            void rememberFirstModel(selectedAgent, {
+                              harness: sessionHarness,
+                              provider: null,
+                              model: value,
+                            });
+                        })
+                      }
                       onConfigure={(change) => void configureSession(change)}
                       onNewSession={() => handleNewSession(true)}
                     />
@@ -1143,6 +1211,13 @@ export function ChatView() {
                       : "Configure defaults"}
                   </Button>
                 ) : null}
+              </ChatColumn>
+            </div>
+          )}
+          {!hasPendingPermission && selectedAgent && (
+            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+              <ChatColumn>
+                <DefaultModelNotice agentId={selectedAgent} />
               </ChatColumn>
             </div>
           )}
@@ -1253,7 +1328,7 @@ export function ChatView() {
               </button>
               {agentView && (
                 <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-                  <VmRuntimeBadge
+                  <RuntimeMigrationBadge
                     agent={agentView}
                     labelClassName="@max-[279px]:sr-only"
                   />

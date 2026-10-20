@@ -322,7 +322,7 @@ describe("image update tick", () => {
   });
 
   // TEST_SCENARIO: the pod's idle flag covers a running turn, queued prompts,
-  // TEST_SCENARIO: an open terminal and kept background work; any of them
+  // TEST_SCENARIO: a live terminal and kept background work; any of them
   // TEST_SCENARIO: keeps the agent where it is, and so does a failed probe.
   it.each([
     ["is busy", async () => false],

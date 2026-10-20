@@ -170,6 +170,7 @@ export function useAcpSession(
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
+    useStore.getState().setContinuedFrom(null);
     useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages, selectedAgent]);
 
@@ -182,6 +183,7 @@ export function useAcpSession(
       setMessages([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setRunStarts([]);
+      useStore.getState().setContinuedFrom(null);
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
@@ -285,7 +287,7 @@ export function useAcpSession(
   });
 
   const chooseSessionModel = useCallback(
-    async (value: string) => {
+    async (value: string, onPinned?: () => void) => {
       const sid = useStore.getState().sessionId;
       if (!sid || !selectedAgent) return;
       try {
@@ -295,6 +297,7 @@ export function useAcpSession(
           sessionId: sid,
           model: value,
         });
+        onPinned?.();
         await queryClient.invalidateQueries({
           queryKey: acpSessionsKeys.agent(selectedAgent),
         });

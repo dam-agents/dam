@@ -432,6 +432,14 @@ impl Harness {
             .collect()
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: holds the worker at the moment it refused a planned action, before it decides whether that refusal is still the newest spec, so a test can accept a spec inside that window rather than racing it.
+    fn hold_refusal(&self) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (reached, refused) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        *locked(&self.server.refusal_gate) = Some((reached, released));
+        (refused, release)
+    }
+
     fn machine<R>(&self, id: &str, change: impl FnOnce(&mut MachineEntry) -> R) -> R {
         change(
             locked(&self.server.machines)
@@ -1296,6 +1304,156 @@ async fn a_machine_is_refused_above_the_memory_the_node_granted() {
     machine.admit_mib = 4096;
     assert_eq!(h.server.put("m1", machine).unwrap().state, STATE_CREATING);
     assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a boot the runner admitted is the runner's to finish. The controller re-sends the machine on every reconcile, and the ceiling it carries moves under it — a node that stops reporting its grant re-sends the one-MiB ceiling that authorizes nothing, a node that grants less sends a smaller figure. Deciding that ceiling again would refuse a boot already carrying out, which the controller answers by stopping the machine it had just started, so an action in flight keeps the admission it was given, on a Create from a machine with no record and on a Start from a stopped one alike.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_in_flight_keeps_the_admission_it_was_given() {
+    for (label, stop_first) in [("create", false), ("start", true)] {
+        let h = Harness::with(&format!("boot-admitted-{label}"), |c| c.memory_mib = 8192);
+        let mut machine = spec(true);
+        machine.memory_mib = 3072;
+        machine.admit_mib = 4096;
+        if stop_first {
+            h.server.put("m1", spec(false)).unwrap();
+            assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+        }
+        // TEST_SCENARIO: the boot is held inside the runtime, so the ensure below lands while it runs rather than at whatever speed this host schedules the test.
+        let (held, release) = h.fake.hold_start();
+        let booting = if stop_first {
+            STATE_STARTING
+        } else {
+            STATE_CREATING
+        };
+        assert_eq!(
+            h.server.put("m1", machine.clone()).unwrap().state,
+            booting,
+            "{label}"
+        );
+        held.recv_timeout(ACTION_DEADLINE)
+            .expect("the boot never reached the runtime");
+
+        let mut shrunk = machine.clone();
+        shrunk.admit_mib = 1024;
+        let answered = h.server.put("m1", shrunk.clone()).unwrap();
+        assert_ne!(
+            answered.reason, REASON_AWAITING_ALLOCATION,
+            "{label}: a boot already in flight was admitted again: {answered:?}"
+        );
+        assert_eq!(answered.state, booting, "{label}: {answered:?}");
+        release.send(()).unwrap();
+        assert_eq!(h.settle("m1").await.state, STATE_RUNNING, "{label}");
+
+        // TEST_SCENARIO: the same ceiling on a machine that holds nothing is decided afresh, and it refuses.
+        h.server.put("m1", spec(false)).unwrap();
+        assert_eq!(h.settle("m1").await.state, STATE_STOPPED, "{label}");
+        assert_eq!(
+            h.server.put("m1", shrunk).unwrap().reason,
+            REASON_AWAITING_ALLOCATION,
+            "{label}: a ceiling that authorizes nothing admitted a cold start"
+        );
+    }
+}
+
+// TEST_SCENARIO: an action the convergence loop plans after the one before it ended is a new operation. A boot admitted under a ceiling that covered it then fails, and the worker stays alive because a newer spec arrived while it ran: the step it plans next is a fresh start, and the newer spec's own ceiling has to admit it. Inheriting the first boot's admission would boot a machine this spec cannot pay for, which is memory the node never granted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_step_planned_after_a_failed_boot_is_admitted_on_its_own() {
+    let h = Harness::with("planned-admission", |c| c.memory_mib = 8192);
+    let mut machine = spec(true);
+    machine.memory_mib = 3072;
+    machine.admit_mib = 4096;
+    *locked(&h.fake.fail_start_once) = Some("guest agent never became ready".into());
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m1", machine.clone()).unwrap();
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot never reached the runtime");
+
+    let mut shrunk = machine.clone();
+    shrunk.admit_mib = 1024;
+    h.server.put("m1", shrunk).unwrap();
+    release.send(()).unwrap();
+
+    let settled = h.settle("m1").await;
+    assert_eq!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count(),
+        1,
+        "the failed boot was retried under a ceiling that does not cover it: {:?} {:?}",
+        h.fake.calls(),
+        settled
+    );
+    assert_eq!(settled.reason, REASON_AWAITING_ALLOCATION, "{settled:?}");
+}
+
+// TEST_SCENARIO: a restart of a machine the runtime reports running replaces memory it already holds, so it is exempt from the ceiling wherever the plan comes from. A revision change accepted while a boot was still in flight is planned by the worker that booted it, not by a PUT: reading that plan as a new operation and capping it would refuse a restart the same PUT would have admitted, and the machine would be left on the old revision.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_planned_by_the_worker_is_exempt_like_one_a_put_asks_for() {
+    let h = Harness::with("planned-restart", |c| c.memory_mib = 4096);
+    let mut machine = spec(true);
+    machine.memory_mib = 3072;
+    machine.admit_mib = 4096;
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m1", machine.clone()).unwrap();
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot never reached the runtime");
+
+    // TEST_SCENARIO: a revision change arrives under a ceiling far below what the machine boots at, while that boot is still running.
+    let mut changed = machine.clone();
+    changed.admit_mib = 1024;
+    changed.revision = "r2".into();
+    h.server.put("m1", changed.clone()).unwrap();
+    release.send(()).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let applied = h.machine("m1", |e| e.desired.clone().unwrap().revision);
+    assert_eq!(
+        applied, "r2",
+        "the restart onto the new revision was refused for a ceiling a PUT of the same spec would have been exempt from"
+    );
+    assert!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count() >= 2,
+        "the replacement never booted: {:?}",
+        h.fake.calls()
+    );
+}
+
+// TEST_SCENARIO: a refusal ends this worker only if the spec it refused is still the newest one. A spec accepted between the refusal and the cleanup started no worker, because this one still held the machine, so ending here would leave a start the runner accepted with nothing to run it until something else asked again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_step_settles_only_on_the_spec_it_refused() {
+    let h = Harness::with("refusal-settle", |c| c.memory_mib = 4096);
+    let mut machine = spec(true);
+    machine.memory_mib = 3072;
+    machine.admit_mib = 4096;
+    *locked(&h.fake.fail_start_once) = Some("guest agent never became ready".into());
+    let (booted, release_boot) = h.fake.hold_start();
+    h.server.put("m1", machine.clone()).unwrap();
+    booted
+        .recv_timeout(ACTION_DEADLINE)
+        .expect("the boot never reached the runtime");
+
+    // TEST_SCENARIO: the ceiling shrinks under the boot, so the step the worker plans after it fails is refused.
+    let mut shrunk = machine.clone();
+    shrunk.admit_mib = 1024;
+    h.server.put("m1", shrunk).unwrap();
+    // TEST_SCENARIO: the gate is armed before the failing boot is released, so the spec below is the one accepted behind the refusal.
+    let (refused, release_refusal) = h.hold_refusal();
+    release_boot.send(()).unwrap();
+    refused
+        .recv_timeout(ACTION_DEADLINE)
+        .expect("the refusal never happened");
+
+    let mut restored = machine.clone();
+    restored.admit_mib = 4096;
+    h.server.put("m1", restored).unwrap();
+    release_refusal.send(()).unwrap();
+
+    let settled = h.settle("m1").await;
+    assert_eq!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count(),
+        2,
+        "the spec accepted behind the refusal was left with no worker to start it: {:?} {settled:?}",
+        h.fake.calls()
+    );
+    assert_eq!(settled.state, STATE_RUNNING, "{settled:?}");
 }
 
 // TEST_SCENARIO: a machine that is already running comes back under a ceiling sized from what it holds while idle, which is below the size it boots at: a revision roll, an image or env change, a CA rotation and a guest gone quiet all restart a running machine, and refusing those for good would park the agent and scale its gateway away. A machine that is not running is still capped, so the ceiling keeps gating every footprint the runner does not already hold.

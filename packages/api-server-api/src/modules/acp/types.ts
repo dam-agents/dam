@@ -149,6 +149,16 @@ export const platformUndeliveredMetaSchema = z.array(
   platformUndeliveredPromptSchema,
 );
 export const platformSupersededMetaSchema = z.array(z.string());
+
+export const CONTINUED_FROM_TEXT_MAX = 1024 * 1024;
+export const CONTINUED_FROM_LABEL_MAX = 200;
+export const platformContinuedFromSchema = z.object({
+  invocationId: z.string().min(1),
+  label: z.string().min(1).max(CONTINUED_FROM_LABEL_MAX),
+  prompt: z.string().max(CONTINUED_FROM_TEXT_MAX),
+  result: z.string().max(CONTINUED_FROM_TEXT_MAX),
+});
+export type PlatformContinuedFrom = z.infer<typeof platformContinuedFromSchema>;
 export type PlatformUndeliveredPrompt = z.infer<
   typeof platformUndeliveredPromptSchema
 >;

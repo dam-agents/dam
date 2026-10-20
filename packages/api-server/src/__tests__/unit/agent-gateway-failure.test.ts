@@ -47,11 +47,6 @@ describe("gatewayFailure", () => {
         {} as RuntimeFeatures,
         [],
         [],
-        {
-          virtualizationEnabled: false,
-          defaultMounts: [],
-          defaultStorageSize: "10Gi",
-        },
       ),
     );
     expect(view.gatewayFailure).toBe("exited with code 1 (Error)");

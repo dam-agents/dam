@@ -54,7 +54,6 @@ const agent = (
   spawnedBy: null,
   vm: false,
   runtimeMigration: null,
-  runtimeMigratable: false,
 });
 
 describe("slots", () => {

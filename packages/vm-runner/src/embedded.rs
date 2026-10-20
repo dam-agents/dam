@@ -55,6 +55,28 @@ const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 // UNIT_BOUNDARY_DESCRIPTION: the label smolvm stores on every machine this runner creates. smolvm never reads it; it is how an operator listing smolvm's machines tells the runner's own from anything else in the same database.
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
+// UNIT_BOUNDARY_DESCRIPTION: the longest name smolvm binds a unix socket under in a machine's directory: the VMM's control socket, which grow speaks to. Every other socket there (agent.sock, agent.ready, egress.sock, ports.sock) is shorter.
+pub const LONGEST_MACHINE_SOCKET: &str = "control.sock";
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes a unix socket path may hold, NUL included: sockaddr_un's sun_path, 104 on macOS and 108 on Linux. libkrun refuses a longer path as it starts the VM, so a machine whose directory does not leave room for it never boots.
+#[cfg(target_os = "macos")]
+const SUN_PATH_LEN: usize = 104;
+#[cfg(not(target_os = "macos"))]
+const SUN_PATH_LEN: usize = 108;
+
+// UNIT_BOUNDARY_DESCRIPTION: refuses a machine directory whose sockets would not fit a unix socket path. smolvm puts every machine at one fixed depth under HOME, so one check at start, on the directory a machine of any name would get, covers them all, and the refusal names the path and the limit, where a boot under it says only that libkrun rejected its configuration.
+pub fn machine_sockets_fit(machine_dir: &Path) -> anyhow::Result<()> {
+    let longest = machine_dir.join(LONGEST_MACHINE_SOCKET);
+    let len = longest.as_os_str().len();
+    anyhow::ensure!(
+        len < SUN_PATH_LEN,
+        "a machine's sockets would not fit a unix socket path: {} is {len} bytes and this host allows {}; run the runner under a shorter HOME",
+        longest.display(),
+        SUN_PATH_LEN - 1
+    );
+    Ok(())
+}
+
 impl Smolvm {
     pub fn open(allow_nesting: bool, btrfs: PathBuf) -> anyhow::Result<Self> {
         let nested = allow_nesting && host_nests(Path::new("/sys"));
@@ -87,13 +109,15 @@ impl Smolvm {
             return Ok(());
         };
         let dir = vm_data_dir(id);
-        let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
+        let vmms = orphan_pids(&self.proc_root, &dir)
+            .map(|found| found.pids())
+            .unwrap_or_default();
         if vmms.is_empty() {
             return Err(refused.into());
         }
         tracing::warn!(machine = id, error = %refused, "the guest did not stop cleanly; powering it off");
         kill_orphans(&self.proc_root, &dir);
-        vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
+        let _ = vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
         Ok(end()?)
     }
 
@@ -166,10 +190,12 @@ impl Runtime for Smolvm {
                 && state_probe::resolve_state(id, &record) != RecordState::Running
             {
                 let dir = vm_data_dir(id);
-                let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
+                let vmms = orphan_pids(&self.proc_root, &dir)
+                    .map(|found| found.pids())
+                    .unwrap_or_default();
                 let _ = self.runtime.stop_machine(id);
                 kill_orphans(&self.proc_root, &dir);
-                vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
+                let _ = vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
                 record = self.existing(id)?;
             }
             if !matches!(
@@ -233,7 +259,9 @@ impl Runtime for Smolvm {
     fn start(&self, id: &str, boot_mib: i32, _memory_mib: i32) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
-            let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
+            let vmms = orphan_pids(&self.proc_root, &dir)
+                .map(|found| found.pids())
+                .unwrap_or_default();
             let _ = self.runtime.stop_machine(id);
             clear_for_start(id, &self.proc_root, &dir, vmms, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
@@ -359,8 +387,9 @@ impl Runtime for Smolvm {
     }
 
     fn holds_vmm(&self, id: &str) -> bool {
-        // UNIT_BOUNDARY_DESCRIPTION: a scan that could not look has not shown that no VMM holds the machine, so it answers as one that found a VMM: a machine whose record no longer decodes is then counted and keeps its storage share.
-        orphan_pids(&self.proc_root, &vm_data_dir(id)).map_or(true, |pids| !pids.is_empty())
+        // UNIT_BOUNDARY_DESCRIPTION: a scan that could not look, or one that left a process the kernel would not describe, has not shown that no VMM holds the machine, so it answers as one that found a VMM: a machine whose record no longer decodes is then counted and keeps its storage share.
+        orphan_pids(&self.proc_root, &vm_data_dir(id))
+            .map_or(true, |found| !found.named.is_empty() || found.unknown > 0)
     }
 
     fn cpu_usec(&self, id: &str) -> Option<u64> {
@@ -805,6 +834,21 @@ mod tests {
                 _lock: lock,
             }
         }
+    }
+
+    // TEST_SCENARIO: smolvm binds a machine's sockets at a fixed depth under HOME, and a unix socket path holds a bounded number of bytes, so a long HOME makes every boot fail with libkrun's EINVAL. The runner refuses such a directory at start, naming the path and the limit, and takes one with room.
+    #[test]
+    fn a_machine_directory_whose_sockets_cannot_fit_is_refused() {
+        let room = SUN_PATH_LEN - 1 - LONGEST_MACHINE_SOCKET.len() - 1;
+        let fits = PathBuf::from(format!("/{}", "d".repeat(room - 1)));
+        machine_sockets_fit(&fits).unwrap();
+        let over = PathBuf::from(format!("/{}", "d".repeat(room)));
+        let err = machine_sockets_fit(&over).unwrap_err().to_string();
+        assert!(err.contains(&format!("{SUN_PATH_LEN} bytes")), "{err}");
+        assert!(
+            err.contains(&format!("allows {}", SUN_PATH_LEN - 1)),
+            "{err}"
+        );
     }
 
     fn spec() -> MachineSpec {

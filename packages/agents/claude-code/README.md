@@ -18,6 +18,10 @@ In plan mode every edit and command waits for an approval, and nobody is there t
 A person can still turn plan mode on: the session's mode setting (ACP `session/set_mode`), `--permission-mode plan` or Shift+Tab in the terminal.
 `ExitPlanMode` stays, so a session in plan mode can still present its plan.
 
+Files a user attaches to a message, and files a channel brings in, land under `~/.uploads/`, outside the session's working directory.
+`managed-settings.json` allows `Read(~/.uploads/**)`, so a session in "Ask for approvals" reads them without asking.
+The rule covers every session's attachments: the sessions of one agent share its home, so it reaches no file the agent could not already read.
+
 ## Model Router
 
 Every provider but Bedrock (the LiteLLM proxies, the Anthropic key and subscription) reaches Claude Code through the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router): [`model-gateway.sh`](rootfs/usr/local/lib/model-gateway.sh), sourced by `harness-chat`, `harness-terminal` and the login profile, repoints `ANTHROPIC_BASE_URL` at the router, names the harness with `ANTHROPIC_CUSTOM_HEADERS`, turns on gateway model discovery and drops a provider's `ANTHROPIC_MODEL` pin, since the session's model is a per-turn choice the runtime sends over ACP.

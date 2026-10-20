@@ -331,6 +331,32 @@ describe("applyUpdate — turn boundaries", () => {
     ]);
   });
 
+  /**
+   * TEST_SCENARIO: A follow-up chat's first prompt reaches the harness with the
+   * sub-agent's copy in front of the typed text. A reload from the harness's
+   * own history replays that prompt whole; the bubble must still show only
+   * what the user typed, whatever markup the escaped label holds.
+   */
+  test("a follow-up chat's copied block never shows in the first bubble", () => {
+    const out = applyUpdate([], {
+      sessionUpdate: "user_message_chunk" as const,
+      messageId: "u1",
+      content: {
+        type: "text" as const,
+        text: [
+          '<continued-from label="Refactor &lt;Button/&gt; props">',
+          "This chat continues the work of a sub-agent that has finished.",
+          "<prompt>\nRename the size prop.\n</prompt>",
+          "<result>\nDone.\n</result>",
+          "</continued-from>",
+          "",
+          "why that name?",
+        ].join("\n"),
+      },
+    });
+    expect(out[0].parts).toEqual([{ kind: "text", text: "why that name?" }]);
+  });
+
   test("replayed channel history shows as a history part, the frame does not", () => {
     const out = applyUpdate([], {
       sessionUpdate: "user_message_chunk" as const,

@@ -22,8 +22,8 @@ That answer is what the runtime of a new agent follows, and it is not a feature:
 **An install that can run microVMs creates every new agent it is not told otherwise about as one**: the api-server applies this in the one create every path ends in, rather than trusting each caller, so a kit that declares nothing, a [sub-agent](invocations.md) spawn, the CLI and the API land where the forms do.
 A kit that declares `backend: vm` ([starter-kits](starter-kits.md#kit-backend)) is the one declaration that can refuse instead: on an install without virtualization the kit is hidden and the create refuses it, since there is no machine to put the agent on.
 No kit can declare that it needs a container, so the install's answer never meets a kit it would have to refuse.
-One ask still beats the install's answer, for now: a create that names the container Backend itself gets one, which is how the e2e suite stages the container Agent its migration spec moves.
-**An install without virtualization keeps creating containers**, which is how a local or development install runs.
+**A container agent cannot be created there at all**: a create that asks for one is refused with a message naming the runtime the install does make, rather than quietly made a machine instead, so nothing new lands on the legacy path.
+**An install without virtualization keeps creating containers**, which is how a local or development install runs, and is the only place a container Agent is created at all.
 
 ### Install preflight
 
