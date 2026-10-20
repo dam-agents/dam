@@ -27,6 +27,7 @@ import {
 import {
   turnFailureReasonToken,
   turnFailureUserCopy,
+  noDefaultModelUserCopy,
 } from "./turn-failure-copy.js";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
@@ -37,6 +38,7 @@ import {
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
+import { isNoDefaultModelError } from "../../harness-config/index.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
@@ -715,7 +717,9 @@ export function createTelegramWorker(deps: {
         ? wakeFailureReasonToken(err.failure)
         : err instanceof AcpTurnAbandonedError
           ? turnFailureReasonToken(err)
-          : "acp-error";
+          : isNoDefaultModelError(err)
+            ? "no-default-model"
+            : "acp-error";
       getLogger().warn(
         { agentId, reason: failureReason, error: String(err), ambientTurn },
         "telegram.turn.failed",
@@ -725,6 +729,10 @@ export function createTelegramWorker(deps: {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       } else if (err instanceof AcpTurnAbandonedError) {
         await thread.post(turnFailureUserCopy(err)).catch(() => {});
+      } else if (isNoDefaultModelError(err)) {
+        await thread
+          .post(noDefaultModelUserCopy(err, deps.uiBaseUrl, agentId))
+          .catch(() => {});
       } else if (isAgentStoppedError(err) && err.disabled) {
         await thread
           .post("This agent is disabled by its owner — ask them to enable it.")

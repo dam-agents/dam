@@ -1,5 +1,5 @@
 {
-  "id": "31f0ce6b-6efe-40db-8648-cbf26d8cd148",
+  "id": "e6ddac34-37b4-43e2-a5b8-723bdd526472",
   "prevId": "b0eba99b-613d-47ca-8bca-c866c999d8de",
   "version": "7",
   "dialect": "postgresql",
@@ -936,6 +936,12 @@
         },
         "session_pair": {
           "name": "session_pair",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "default_model_note": {
+          "name": "default_model_note",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false
@@ -4872,13 +4878,6 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
-        },
-        "ambient": {
-          "name": "ambient",
-          "type": "boolean",
-          "primaryKey": false,
-          "notNull": true,
-          "default": false
         },
         "created_at": {
           "name": "created_at",

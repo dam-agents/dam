@@ -66,6 +66,7 @@ import {
   ContributionFailuresBadge,
 } from "../../agents/components/contribution-failures-badge.js";
 import { ContributionGapNotice } from "../../agents/components/contribution-gap-notice.js";
+import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
 import { RuntimeOutdatedNotice } from "../../agents/components/runtime-outdated-notice.js";
 import { UnsupportedContributionsBadge } from "../../agents/components/unsupported-contributions-badge.js";
@@ -119,7 +120,10 @@ import {
   setSessionRunning,
   useAgentSession,
 } from "../api/queries.js";
-import { useProviderConnections } from "../api/session-pair.js";
+import {
+  rememberFirstModel,
+  useProviderConnections,
+} from "../api/session-pair.js";
 import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
@@ -152,6 +156,8 @@ import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
+import { useHasModelChoices } from "../hooks/use-has-model-choices.js";
+import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import {
@@ -319,6 +325,11 @@ export function ChatView() {
   const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
   const carried = (selectedAgent && harnessStatus?.harnesses) || [];
+  const sessionHarness =
+    currentSession?.harness ??
+    (currentSession && harnessStatus?.modelRouter
+      ? (harnessStatus.defaultHarness ?? carried[0]?.name)
+      : undefined);
   const pairOutdated = carried.length > 0 && !routesSessionPairs(carried);
   const harnessesPending =
     !harnessStatus?.harnesses &&
@@ -338,6 +349,20 @@ export function ChatView() {
           routed: harnessStatus?.modelRouter ?? false,
         }
       : null;
+  const nextSessionPair = useNextSessionPair(
+    pickable?.routed ? pickable.agentId : null,
+    carried.map((h) => h.name),
+    pickable?.defaultHarness,
+  );
+  const routedAgent = harnessStatus?.modelRouter ? selectedAgent : null;
+  const newPairHasChoices = useHasModelChoices(
+    routedAgent,
+    nextSessionPair?.harness,
+  );
+  const sessionHasChoices = useHasModelChoices(
+    currentSession ? routedAgent : null,
+    sessionHarness,
+  );
   const providerConnections = useProviderConnections(newSessionAgent);
   const noProviders =
     !!newSessionAgent &&
@@ -1076,7 +1101,10 @@ export function ChatView() {
                 ? "No LLM provider connected to this agent."
                 : formLocksComposer
                   ? COMPOSER_LOCKED_REASON
-                  : null
+                  : (nextSessionPair?.model === null && newPairHasChoices) ||
+                      (sessionHasChoices && !currentSession?.model)
+                    ? "Choose a model for this session first."
+                    : null
             }
           />
           {!hasPendingPermission && pickable && (
@@ -1109,18 +1137,27 @@ export function ChatView() {
               <ChatColumn>
                 {selectedAgent && pairOutdated ? (
                   <SessionPairOutdatedNotice agentId={selectedAgent} />
-                ) : selectedAgent && currentSession?.harness ? (
+                ) : selectedAgent && currentSession && sessionHarness ? (
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <ModelIndicator
                       agentId={selectedAgent}
-                      harness={currentSession.harness}
+                      harness={sessionHarness}
                       provider={currentSession.provider ?? null}
                       model={currentSession.model ?? null}
                       settings={currentSession.settings}
                       carried={harnessStatus?.harnesses ?? []}
                       routed={harnessStatus?.modelRouter ?? false}
                       turnRunning={busy}
-                      onChoose={(value) => void chooseSessionModel(value)}
+                      onChoose={(value) =>
+                        void chooseSessionModel(value, () => {
+                          if (harnessStatus?.modelRouter && sessionHarness)
+                            void rememberFirstModel(selectedAgent, {
+                              harness: sessionHarness,
+                              provider: null,
+                              model: value,
+                            });
+                        })
+                      }
                       onConfigure={(change) => void configureSession(change)}
                       onNewSession={() => handleNewSession(true)}
                     />
@@ -1143,6 +1180,13 @@ export function ChatView() {
                       : "Configure defaults"}
                   </Button>
                 ) : null}
+              </ChatColumn>
+            </div>
+          )}
+          {!hasPendingPermission && selectedAgent && (
+            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+              <ChatColumn>
+                <DefaultModelNotice agentId={selectedAgent} />
               </ChatColumn>
             </div>
           )}

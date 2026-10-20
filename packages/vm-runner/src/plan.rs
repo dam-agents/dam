@@ -780,6 +780,7 @@ mod tests {
             migration: None,
             expect_seed: None,
             nested_virtualization: false,
+            admit_mib: 0,
         }
     }
 

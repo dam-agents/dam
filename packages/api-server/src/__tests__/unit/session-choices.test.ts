@@ -239,7 +239,6 @@ describe("a subagent model beside a natively run provider", () => {
   } as HarnessCatalog;
   const IBM = { id: "lite", type: "ibm-litellm", templateId: "ibm-litellm" };
   const BEDROCK = { id: "bed", type: "bedrock", templateId: "bedrock" };
-  const LISTED = ["ibm/gpt-5.5", "bedrock/sonnet", "bedrock/haiku"];
   const checkFor = (
     granted: (typeof IBM)[],
     saved: SessionPair | null = null,
@@ -261,7 +260,6 @@ describe("a subagent model beside a natively run provider", () => {
             pairRepo,
             getCapabilities: async () => capabilities,
             specHarness: async () => undefined,
-            availableModels: async () => LISTED,
           },
           agentId,
           preferred,
@@ -271,11 +269,9 @@ describe("a subagent model beside a natively run provider", () => {
 
   /** TEST_SCENARIO: One Claude Code process reaches either the Model Router
    * or Bedrock, so a schedule whose fire model and subagent model sit on
-   * different sides is refused at save, not on every fire. With no model the
-   * fire runs the default provider's first listed model: IBM's on an agent
-   * that holds IBM, so a Bedrock subagent model is refused, and Bedrock's on
-   * an agent that holds only Bedrock, so a Bedrock one passes there and a
-   * routed one is refused. */
+   * different sides is refused at save, not on every fire. A schedule with no
+   * model fires on the saved default; with none saved the fire's side is not
+   * known, so the save check passes and the fire reports the missing default. */
   it("refuses a subagent model on the other side of the model the fire runs", async () => {
     const both = checkFor([IBM, BEDROCK]);
     expect(
@@ -287,30 +283,29 @@ describe("a subagent model beside a natively run provider", () => {
       /subagentModel setting bedrock\/opus cannot run beside ibm\/gpt-5\.5/,
     );
     expect(
-      await both("a", { settings: { subagentModel: "bedrock/haiku" } }),
-    ).toMatch(/cannot run beside ibm\/gpt-5\.5/);
-    expect(
       await both("a", {
         model: "bedrock/sonnet",
         settings: { subagentModel: "bedrock/haiku" },
       }),
     ).toBeUndefined();
-
-    const bedrockOnly = checkFor([BEDROCK]);
     expect(
-      await bedrockOnly("a", { settings: { subagentModel: "bedrock/haiku" } }),
+      await both("a", { settings: { subagentModel: "bedrock/haiku" } }),
     ).toBeUndefined();
+
+    const savedIbm = checkFor([IBM, BEDROCK], {
+      harness: "claude-code",
+      provider: "lite",
+      model: "ibm/gpt-5.5",
+    });
     expect(
-      await bedrockOnly("a", {
-        settings: { subagentModel: "claude/ibm/gpt-5.5" },
-      }),
-    ).toMatch(/cannot run beside bedrock\/sonnet/);
+      await savedIbm("a", { settings: { subagentModel: "bedrock/haiku" } }),
+    ).toMatch(/cannot run beside ibm\/gpt-5\.5/);
   });
 
   /** TEST_SCENARIO: The saved default names a model on a provider since
-   * revoked, so the fire falls back to the default provider (here Bedrock)
-   * and the check takes that side, not the stale model's. */
-  it("takes the side of the fallback when the saved model's provider is gone", async () => {
+   * revoked, so the agent has no default model; the save check does not
+   * guess a side for the fire, which reports the missing default instead. */
+  it("passes the side check while the agent has no default model", async () => {
     const check = checkFor([BEDROCK], {
       harness: "claude-code",
       provider: "gone",
@@ -318,6 +313,6 @@ describe("a subagent model beside a natively run provider", () => {
     });
     expect(
       await check("a", { settings: { subagentModel: "claude/ibm/gpt-5.5" } }),
-    ).toMatch(/cannot run beside bedrock\/sonnet/);
+    ).toBeUndefined();
   });
 });

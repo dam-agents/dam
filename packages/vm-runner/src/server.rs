@@ -11,9 +11,9 @@ use tokio_util::task::TaskTracker;
 
 use crate::api::{
     CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerImageCache,
-    RunnerPressure, RunnerUsage, SeedResult, State, StorageUsage, REASON_BOOT_FAILED,
-    REASON_COPYING_DISK, REASON_HOME_FULL, REASON_OOM_KILLED, REASON_OUT_OF_CAPACITY,
-    REASON_SECCOMP_KILLED, REASON_STORAGE_FULL, STATE_RUNNING,
+    RunnerPressure, RunnerUsage, SeedResult, State, StorageUsage, REASON_AWAITING_ALLOCATION,
+    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_OOM_KILLED,
+    REASON_OUT_OF_CAPACITY, REASON_SECCOMP_KILLED, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
@@ -868,9 +868,12 @@ impl Server {
             }
             let _admitting = boots.then(|| locked(&self.admission));
             if boots {
-                if let Err(e) = self.room_for(id, &spec) {
-                    self.metrics.refused();
-                    return Ok(self.refuse(id, status, REASON_OUT_OF_CAPACITY, e.to_string()));
+                if let Err((reason, e)) = self.room_for(id, &spec) {
+                    // UNIT_BOUNDARY_DESCRIPTION: a start waiting for the node is not a refusal the alert is about: it is retried at the machine watch's cadence and ends when the node enacts the resize or the room it granted is freed, where an out-of-capacity refusal is the owner's pool being full until agents stop.
+                    if reason == REASON_OUT_OF_CAPACITY {
+                        self.metrics.refused();
+                    }
+                    return Ok(self.refuse(id, status, reason, e.to_string()));
                 }
             }
             let mut machines = locked(&self.machines);
@@ -2021,16 +2024,49 @@ impl Server {
             .collect()
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine.
-    fn room_for(&self, id: &str, spec: &MachineSpec) -> anyhow::Result<()> {
-        self.capacity().room_for(
-            id,
-            spec.memory_mib,
-            &self.committing(),
-            &|other| self.known_running(other),
-            &|other| self.resident(other),
-            &|other| self.warming(other),
-        )
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine. The controller also caps admission at the memory the node granted the pod, which is below the limit the runner is held to while an in-place resize waits for room. A machine the cap refuses but the limit would take is refused as waiting for the node, not as the owner's memory being full: the room it lacks is the one the controller is already asking the node for, so no machine is hibernated for it and the controller retries it at once rather than at the parked tick. A machine both bounds refuse reports the limit's shortfall, since the node cannot grant room the runner never had. A restart of a machine the runner counts as running is admitted against the limit alone: its boot replaces memory it already holds, and the request the cap comes from is sized from the use it holds while idle, which is below that boot.
+    fn room_for(&self, id: &str, spec: &MachineSpec) -> Result<(), (&'static str, anyhow::Error)> {
+        let mut capacity = self.capacity();
+        let limit = capacity.limit_mib;
+        // UNIT_BOUNDARY_DESCRIPTION: a restart of a machine already running replaces its own footprint, and boots at the warm-up floor, which is above the idle use the controller's request was sized from: capping it at that request refuses a roll, an image or env change, a CA rotation and a guest gone quiet for good, since the machine's use cannot shrink further to make the request grow. The exemption lasts as long as the restart does, because the worker stops the old VMM and boots its replacement in one action: an ensure that lands between the two reads the runtime as stopped, and refusing that already-admitted restart would have the controller stop the machine behind it.
+        let restarting = self.known_running(id) || self.restart_in_flight(id);
+        let capped = !restarting && spec.admit_mib > 0 && (limit == 0 || spec.admit_mib < limit);
+        let committing = self.committing();
+        let running = |other: &str| self.known_running(other);
+        let resident = |other: &str| self.resident(other);
+        let warming = |other: &str| self.warming(other);
+        let admits = |capacity: &Capacity| {
+            capacity.room_for(
+                id,
+                spec.memory_mib,
+                &committing,
+                &running,
+                &resident,
+                &warming,
+            )
+        };
+        if capped {
+            capacity.limit_mib = spec.admit_mib;
+        }
+        let Err(refused) = admits(&capacity) else {
+            return Ok(());
+        };
+        if capped {
+            capacity.limit_mib = limit;
+            return match admits(&capacity) {
+                Ok(()) => Err((
+                    REASON_AWAITING_ALLOCATION,
+                    anyhow::anyhow!(
+                        "this machine's {} MiB does not fit the {} MiB the node has allocated this runner so far, less the {} MiB the runner keeps for itself: it starts once the node grants the rest, which the controller is asking it for",
+                        spec.memory_mib,
+                        spec.admit_mib,
+                        self.config.reserve_mib
+                    ),
+                )),
+                Err(over_limit) => Err((REASON_OUT_OF_CAPACITY, over_limit)),
+            };
+        }
+        Err((REASON_OUT_OF_CAPACITY, refused))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine has been quiet past its limit. A guest that answered is remembered in this process's memory and also in the share's seeded record, which outlives the process. After a hand-off, a runner restart or a crash the memory is empty, so the record is what lets the new runner restart a guest that answered before and went quiet before or during the change.
@@ -2270,6 +2306,15 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state cannot be read counts as running only when something says a VMM may hold it — this runner measured it, or a VMM process holds its directory — because a record that no longer decodes would otherwise hold the whole handout on a stopped machine and refuse every start for its owner.
+    // UNIT_BOUNDARY_DESCRIPTION: whether a restart of a machine that should run is the action in flight, which admission exempts from the ceiling the same way it exempts the boot of a machine the runner still counts as running: the machine holds its footprint across the stop and the boot the worker runs as one action.
+    fn restart_in_flight(&self, id: &str) -> bool {
+        locked(&self.machines).entries.get(id).is_some_and(|e| {
+            e.converging
+                && matches!(e.action, Some(Action::Restart { .. }))
+                && e.desired.as_ref().is_some_and(|d| d.running)
+        })
+    }
+
     fn known_running(&self, id: &str) -> bool {
         let (recorded, measured) = locked(&self.machines)
             .entries

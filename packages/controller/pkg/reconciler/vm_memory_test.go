@@ -466,7 +466,7 @@ func TestAReclaimAfterAnotherDoesNotCountItsVictimsAgain(t *testing.T) {
 		return n
 	}
 
-	require.NoError(t, r.reclaimForRefusedStart(ctx, agent, testOwner))
+	require.NoError(t, r.reclaimForRefusedStart(ctx, agent, testOwner, func() (int, error) { return r.runnerLimitMiB(ctx, testOwner) }))
 	require.Equal(t, 2, reclaimed(), "the start needs 992 MiB, two agents counted at 956 MiB each")
 
 	r.ownerMemoryPass(ctx, testOwner, peers, nil)
@@ -528,7 +528,7 @@ func TestARefusalRecordedAtTheRunnerIsNotUndoneByAStaleAgent(t *testing.T) {
 		r.vmRunning.Store(name, true)
 	}
 	r.vmRunning.Store(refused.Name, true)
-	r.vmAnswers.Store(refused.Name, true)
+	r.vmAnswers.Store(refused.Name, vmrunner.ReasonOutOfCapacity)
 	stale := *cachedAgent(t, r, refused.Name)
 	stale.Status.Conditions = nil
 	agents := []*apiv1.Agent{&stale, cachedAgent(t, r, "warm-a"), cachedAgent(t, r, "warm-b")}
@@ -564,7 +564,7 @@ func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
 				require.NoError(t, err)
 			}
 			if tc.recorded {
-				r.vmAnswers.Store("peer", refusedAnswer(vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonImageUnavailable}))
+				r.vmAnswers.Store("peer", vmrunner.ReasonImageUnavailable)
 			}
 
 			d, err := r.ownerRunnerDemand(ctx, testOwner, agent, true)
@@ -622,7 +622,7 @@ func TestARetriedStartFreesRoomForItselfUnderItsOwnPark(t *testing.T) {
 		metav1.PatchOptions{})
 	require.NoError(t, err)
 
-	require.NoError(t, r.reclaimForRefusedStart(ctx, cachedAgent(t, r, refused.Name), testOwner))
+	require.NoError(t, r.reclaimForRefusedStart(ctx, cachedAgent(t, r, refused.Name), testOwner, func() (int, error) { return r.runnerLimitMiB(ctx, testOwner) }))
 
 	assert.False(t, reclaimedAgent(t, r, "refused-peer"), "a machine that holds nothing was hibernated for room it could not give")
 	assert.True(t, reclaimedAgent(t, r, "idle-a"), "the start needs 376 MiB, and the idlest agent that holds memory gives 956 MiB")
@@ -709,7 +709,7 @@ func TestThePassDemandLeavesOutARefusedMachineEvenAsItsAnchor(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, 3072+600+256, full.memoryMiB, "a start the runner has not refused counts itself")
 
-	r.vmAnswers.Store(agent.Name, true)
+	r.vmAnswers.Store(agent.Name, vmrunner.ReasonOutOfCapacity)
 	held, err := r.heldRunnerDemand(ctx, testOwner, agent, true)
 	require.NoError(t, err)
 	assert.Equal(t, 600+256, held.memoryMiB, "the pass's demand leaves the refused anchor out")

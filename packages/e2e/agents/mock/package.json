@@ -5,10 +5,10 @@
   "type": "module",
   "dependencies": {
     "@trpc/server": "^11.19.0",
-    "undici": "8.10.2"
+    "undici": "8.12.2"
   },
   "devDependencies": {
-    "@types/node": "^26.6.4",
+    "@types/node": "^26.6.5",
     "dev-config": "workspace:*",
     "mock-agent-api": "workspace:*",
     "tsup": "^8.5.1",

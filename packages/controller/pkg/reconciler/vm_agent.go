@@ -44,6 +44,10 @@ const (
 	vmReadinessPoll   = 3 * time.Second
 	vmNotReadyPollMax = time.Minute
 	vmHealthPoll      = time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how long a start may wait for the node to report what it granted before the wait is published as a state of its own. It sits well inside the api-server's 120 s wake, whose clock starts before the controller's hold does, so the named state is published before that final read rather than after it; a node that has not answered in a minute of three-second retries is not merely late.
+	grantUnreadableBound = 60 * time.Second
+	// UNIT_BOUNDARY_DESCRIPTION: how often an unreadable grant is asked about with a resize, since the API server validates one against what the node supports and the answer cannot change between two asks a few seconds apart.
+	grantProbeInterval = 30 * time.Second
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 
@@ -172,11 +176,33 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if pullErr != nil {
 		return vmrunner.MachineStatus{}, false, pullErr
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: a machine that should stop is sized from its spec when the pool cannot be read. A stop acts on no size, and refusing it would leave a machine up that the controller asked to stop, holding everything the stop releases.
+	// UNIT_BOUNDARY_DESCRIPTION: a machine that should stop is sized from its spec when the pool cannot be read, and takes no admission ceiling either. A stop acts on no size, and refusing it would leave a machine up that the controller asked to stop, holding everything the stop releases.
 	memoryMiB, err := r.machineMemoryMiB(ctx, owner, spec)
 	if err != nil && running {
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the machine: %w", err)
 	}
+	admitMiB, err := r.runnerAdmitMiB(ctx, owner)
+	if err != nil && running && !errors.Is(err, errGrantUnknown) {
+		return vmrunner.MachineStatus{}, false, err
+	}
+	if err != nil && running {
+		// UNIT_BOUNDARY_DESCRIPTION: an unreadable grant never stops or shrinks a machine that holds memory, and what a machine holds is only ever the runner's current answer: the controller's cache is kept from the last running reading, so a machine that exited since would read as holding memory and its cold start would be admitted against the whole pool. One the runner reports booting, running, restarting or stopping is admitted against the limit alone, as a restart is, since its boot replaces memory it already holds and no new footprint is asked for. Only a start the runner reports holding nothing waits.
+		live, statusErr := runner.Status(ctx, name)
+		switch {
+		case statusErr != nil:
+			// UNIT_BOUNDARY_DESCRIPTION: a failed read is no evidence either way, and acting on it is how a restart in flight becomes a stop: the answer returns without parking, so the Agent keeps its gateway and the restart the runner already performs, and the reconcile is retried.
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading the state of %s to admit it against a node that has not reported its grant: %w", name, statusErr)
+		case holdsMemory(live.State):
+			admitMiB = 0
+			r.grantHolds.Delete(name)
+		case live.State == vmrunner.StateUnknown:
+			// UNIT_BOUNDARY_DESCRIPTION: the runner says it cannot read the machine's own record, which is a machine that may still hold its memory: absence of an active state is not proof of a stop, so this is retried rather than held, parked or admitted.
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("the runner cannot read the record of %s, so whether it holds memory is unknown and it may not be admitted against a node that has not reported its grant", name)
+		default:
+			return r.holdUnreadableGrant(ctx, owner, name, demand, live.State), false, nil
+		}
+	}
+	r.grantHolds.Delete(name)
 
 	machine := vmrunner.MachineSpec{
 		Image:           spec.Image,
@@ -194,6 +220,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		ExpectSeed:      runtimeMigrationExpectSeed(agent),
 
 		NestedVirtualization: wantsNesting(agent, r.config.AgentTemplateDefaults) && r.config.VM.Runner.NestedVirtualization,
+		AdmitMiB:             admitMiB,
 	}
 	if runtimeMigrationOf(agent.Annotations, agent.Status).seedable() {
 		machine.Migration = &vmrunner.MachineMigration{}
@@ -202,7 +229,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
 	if err == nil && running {
 		// UNIT_BOUNDARY_DESCRIPTION: the answer is kept whether it refused or admitted the machine: the Agent's status carries a refusal one reconcile late, and a machine that is still booting is not yet a live machine to count by.
-		r.vmAnswers.Store(name, refusedAnswer(st))
+		r.vmAnswers.Store(name, answerReason(st))
 		if refusedAnswer(st) {
 			// UNIT_BOUNDARY_DESCRIPTION: a refusal leaves the machine holding nothing, so the pod is sized for what the owner holds and not for the start the runner refused, or the next reconcile of any other agent would raise it again.
 			if held, heldErr := r.heldRunnerDemand(ctx, owner, agent, running); heldErr == nil {
@@ -659,6 +686,34 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 		return fmt.Errorf("%w: it is %s", errMachineStopping, st.State)
 	}
 	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a start held on an unreadable grant reads as once the wait outlasts grantUnreadableBound: the problem named, and the cadence it is retried at, since nothing the owner does frees memory the node has not reported.
+const vmAllocationUnreadableMessage = "The node has not reported how much memory it granted this owner's VM runner, so this start can't be admitted yet. The platform keeps retrying every 30 seconds; if this lasts, an admin should check that the cluster can resize pods in place."
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the state a runner reports is one that holds memory. A machine booting, running, restarting or stopping does; a start, and a machine that stopped or that the runner has no record of, does not.
+func holdsMemory(state string) bool {
+	switch state {
+	case vmrunner.StateCreating, vmrunner.StateStarting, vmrunner.StateRestarting, vmrunner.StateRunning, vmrunner.StateStopping:
+		return true
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit has room for and the node has granted nothing it can be admitted against waits for the node to report. That wait is short when the node is merely late, so the Agent is retried at the machine watch's cadence under the reason a waiting start carries, and the resize the start needs is asked for in this same reconcile, even when it asks for nothing new, so a node that cannot report is told apart from one that has not answered yet. A wait that outlasts the bound ends in a state that names the problem and is retried at the parked tick: the promise of an automatic start has to have a way out, while the start keeps holding.
+func (r *AgentReconciler) holdUnreadableGrant(ctx context.Context, owner, name string, demand runnerDemand, state string) vmrunner.MachineStatus {
+	since, held := r.grantHolds.Load(name)
+	if !held {
+		since = time.Now()
+		r.grantHolds.Store(name, since)
+	}
+	if r.config.VM.Runner.HostAddress == "" {
+		r.probeRunnerResize(ctx, owner, demand)
+	}
+	if time.Since(since.(time.Time)) >= grantUnreadableBound {
+		return vmrunner.MachineStatus{State: state, Reason: apiv1.ReasonAllocationUnreadable, Message: vmAllocationUnreadableMessage}
+	}
+	return vmrunner.MachineStatus{State: state, Reason: vmrunner.ReasonAwaitingAllocation, Message: vmAwaitingAllocationMessage}
 }
 
 func machineStopped(st vmrunner.MachineStatus) bool {

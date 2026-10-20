@@ -60,6 +60,19 @@ describe("wakeFailureUserCopy for a start failure", () => {
     }
   });
 
+  // TEST_SCENARIO: a node that never reported what it granted the runner is the platform's fault, so the sentence sends the reader to an admin rather than to the owner, who cannot report it.
+  it("sends a reader to an admin for a grant the node never reported", () => {
+    const copy = wakeFailureUserCopy(
+      classifyWakeFailure({
+        ...notReady,
+        agentPodNotReadyReason: "MachineAllocationUnreadable",
+      }),
+    );
+    expect(copy).toContain("has not reported how much memory");
+    expect(copy).toContain("admin");
+    expect(copy).not.toContain("crashed");
+  });
+
   // TEST_SCENARIO: whoever wrote in a channel need not own the agent, so a full storage pool is the owner's, not the reader's, and the reader is told to contact the owner.
   it("speaks of the owner's storage, not the reader's", () => {
     const copy = wakeFailureUserCopy(
