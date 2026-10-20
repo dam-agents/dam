@@ -8,8 +8,8 @@ import { useRememberedPair } from "../api/session-pair.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the Connection template that a session's model
  * calls go to. A session names its provider only when the user picked one;
- * otherwise it runs on the agent's default pair, and an agent with one
- * granted provider Connection uses that one.
+ * otherwise it runs on the agent's default pair, and an agent whose granted
+ * provider Connections all use one template uses that template.
  */
 export function useSessionTemplateId(
   agentId: string | null,
@@ -28,5 +28,6 @@ export function useSessionTemplateId(
     .filter(
       (templateId) => templateId && providerTypeForTemplateId(templateId),
     );
-  return providers.length === 1 ? (providers[0] ?? null) : null;
+  const distinct = [...new Set(providers)];
+  return distinct.length === 1 ? (distinct[0] ?? null) : null;
 }

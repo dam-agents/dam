@@ -1,8 +1,9 @@
-import { Warning } from "@carbon/icons-react";
+import { Launch, Warning } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
@@ -29,7 +30,7 @@ export function ProviderErrorCard({
   className,
 }: Props) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const { title, message, hint } = useProviderErrorCopy(
+  const { title, message, hint, statusLink } = useProviderErrorCopy(
     templateId,
     interrupted,
   );
@@ -50,6 +51,18 @@ export function ProviderErrorCard({
         </div>
         <p className="text-xs text-muted-foreground break-words">{hint}</p>
         <ErrorActions rawError={rawError} onRetry={onRetry}>
+          {statusLink && (
+            <Button asChild variant="outline" size="sm">
+              <a
+                href={statusLink.url}
+                {...externalLinkProps}
+                data-testid="provider-status-link"
+              >
+                {statusLink.name} status
+                <Launch size={16} />
+              </a>
+            </Button>
+          )}
           {agentId && (
             <Button
               variant="outline"

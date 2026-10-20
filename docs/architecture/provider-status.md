@@ -1,6 +1,6 @@
 # Provider status
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -49,6 +49,7 @@ The thresholds are constants in the code.
 The gateway signal needs traffic: a provider that nobody called in the last five minutes has no window.
 So the job also reads public sources that need no key, as a second signal.
 It reads only the sources of templates that have a Connection in the install.
+When it cannot read the install's Connections, it reads every source, so a failed read does not end an outage or reset its count of failed runs.
 
 | Templates                          | Source                      | Degraded when                                                                                     |
 | ---------------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -84,7 +85,8 @@ Every signed-in user reads the same status, because an outage belongs to the pro
 
 ## Screens
 
-The screens read the status query every 60 seconds, when the window gets focus, and at once after a turn fails.
+The screens read the status query every 60 seconds, when the window gets focus or the connection to the server comes back, and at once after a turn fails.
+A failed turn's card also reads it when it shows, so a turn that this tab did not send also gets a fresh status.
 
 **The failed turn.** When a model call fails with a status or a message that says the provider is down or overloaded, the chat shows a red card in the agent's column, also when the agent wrote no reply text.
 Other errors keep their own look.
@@ -95,7 +97,7 @@ The card names the provider of the session:
 - the fault is on the platform's side: the platform cannot reach model providers, and neither the provider nor the setup is the cause;
 - the card saw an outage that has ended: the provider works again, and the user can retry now.
 
-The card's actions are Retry, where the message can be sent again; Switch provider, which opens the agent's Providers section; and Raw error, which shows the original error text.
+The card's actions are Retry, where the message can be sent again; Switch provider, which opens the agent's Providers section; the provider's own status page, while the provider is degraded and has one; and Raw error, which shows the original error text.
 Claude Code writes its own copy of the error as reply text before the turn fails; a reply that holds nothing but that copy is the failure itself, so the chat shows the card in its place and the copy only under Raw error.
 Retry then sends the same prompt again as a new message, and the failed exchange stays above it.
 A reply that streamed other text before it failed keeps its text, and its card says that the response was interrupted and has no Retry.
@@ -103,9 +105,9 @@ Pi ends such a turn like a normal one, with the error in its reply, so it gets n
 The card lives only in the open chat: a reload or a reconnect rebuilds the chat from the transcript, which holds the harness's text and no card.
 
 **The status line.** While the provider of the open session is degraded, a line at the end of the chat, above the message box, says so: while a turn runs, that the provider is not responding and the agent keeps trying; otherwise, since when the provider has had problems and that messages may fail.
-While the fault is on the platform's side, the line says that the platform cannot reach model providers.
+While the fault is on the platform's side, the line says that the platform cannot reach model providers, also when the session's provider is not known.
 The line also shows before a turn fails, so a user who waits on a turn that the harness retries learns the cause early; it shows on Pi too, which ends a failed turn with no error.
-The session's provider is the one the session names, else the agent's default pair, else the agent's only provider Connection.
+The session's provider is the one the session names, else the agent's default pair, else the template that all of the agent's provider Connections use.
 
 **The Providers badge.** In Settings › Providers, the row of a connected provider says "Degraded" instead of "Connected" while that Connection's template has an outage, or while the fault is on the platform's side.
 

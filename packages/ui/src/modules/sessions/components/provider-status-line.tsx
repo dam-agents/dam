@@ -10,7 +10,6 @@ interface Props {
 
 export function ProviderStatusLine({ templateId, busy }: Props) {
   const condition = useOutageFor(templateId);
-  if (templateId === null) return null;
   const copy = statusLineCopy({
     condition,
     providerName: providerNameFor(templateId),

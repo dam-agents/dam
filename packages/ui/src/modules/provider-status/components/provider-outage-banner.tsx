@@ -9,6 +9,7 @@ import { useState, useSyncExternalStore } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
+import { externalLinkProps } from "@/lib/external-link";
 import { cn } from "@/lib/utils";
 
 import {
@@ -16,9 +17,10 @@ import {
   subscribeApiHealth,
 } from "../../../lib/api-health.js";
 import {
-  readPersistedFlag,
-  writePersistedFlag,
-} from "../../../lib/persisted-prefs.js";
+  browserStorage,
+  safeGetItem,
+  safeSetItem,
+} from "../../../lib/safe-storage.js";
 import { useStore } from "../../../store.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { useProviderStatus } from "../api/queries.js";
@@ -45,22 +47,31 @@ export function ProviderOutageBanner({ className }: { className?: string }) {
   const { data: status } = useProviderStatus();
   const { data: connections } = useAppConnections();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
+  const [closed, setClosed] = useState<ReadonlyMap<string, string>>(
+    () => new Map(),
+  );
   if (apiHealth !== "connected" || !status || !connections) return null;
 
   const state = bannerState(
     status,
     new Set(connections.map((c) => c.templateId)),
-    (key) => closed.has(key) || readPersistedFlag(key, false),
+    ({ key, since }) =>
+      closed.get(key) === since || safeGetItem(browserStorage, key) === since,
   );
   if (!state) return null;
-  const { hideKeys } = state;
+  const { hides } = state;
   const { tone, lead, body } = bannerCopy(state);
   const Icon = TONE_ICON[tone];
 
   function handleClose() {
-    for (const key of hideKeys) writePersistedFlag(key, true);
-    setClosed((prev) => new Set([...prev, ...hideKeys]));
+    for (const { key, since } of hides) safeSetItem(browserStorage, key, since);
+    setClosed(
+      (prev) =>
+        new Map([
+          ...prev,
+          ...hides.map(({ key, since }) => [key, since] as const),
+        ]),
+    );
   }
 
   return (
@@ -82,7 +93,7 @@ export function ProviderOutageBanner({ className }: { className?: string }) {
         <div className="hidden shrink-0 items-center gap-3 sm:flex">
           {state.statusLinks.map((link) => (
             <Button key={link.url} asChild variant="link" size="inline">
-              <a href={link.url} target="_blank" rel="noreferrer">
+              <a href={link.url} {...externalLinkProps}>
                 {link.name} status
                 <Launch size={14} />
               </a>

@@ -1,7 +1,11 @@
 import type { ProviderStatusService } from "api-server-api";
 import { formatError } from "../../../core/format-error.js";
 import { getLogger } from "../../../core/logger.js";
-import { sourcesInUse, type SourceReading } from "../domain/public-signals.js";
+import {
+  SOURCE_TEMPLATES,
+  sourcesInUse,
+  type SourceReading,
+} from "../domain/public-signals.js";
 import { nextSnapshot, statusView } from "../domain/status.js";
 import type { PublicSources } from "../infrastructure/public-sources.js";
 import type { CallWindow } from "../infrastructure/redis-call-window.js";
@@ -30,7 +34,7 @@ export function createProviderStatusService(deps: {
         { reason: formatError(err) },
         "provider_status.templates_unread",
       );
-      return [];
+      templateIds = Object.values(SOURCE_TEMPLATES).flat();
     }
     return Promise.all(
       sourcesInUse(templateIds).map((source) => deps.sources.read(source)),
