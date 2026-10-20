@@ -4,7 +4,8 @@ import { CLK_TCK } from "../domain/snapshot.js";
 
 const CMDLINE_MAX_BYTES = 4096;
 const KEEP_VARIABLE = Buffer.from("PLATFORM_KEEP=");
-const STARTUP_VARIABLE = Buffer.from("PLATFORM_STARTUP=");
+const USER_SERVICE_VARIABLE = Buffer.from("RC_USER_SERVICES=");
+const SERVICE_NAME_VARIABLE = Buffer.from("RC_SVCNAME=");
 
 export interface ProcessTable {
   scan(): Promise<ProcSnapshot>;
@@ -34,7 +35,10 @@ async function readMarks(
     const environ = await readFile(`${dir}/environ`);
     return {
       keepMark: variableOf(environ, KEEP_VARIABLE),
-      startupItem: variableOf(environ, STARTUP_VARIABLE),
+      startupItem:
+        variableOf(environ, USER_SERVICE_VARIABLE) === "yes"
+          ? variableOf(environ, SERVICE_NAME_VARIABLE)
+          : null,
     };
   } catch {
     return { keepMark: null, startupItem: null };
@@ -111,7 +115,8 @@ async function readProcess(
  * start time, CPU ticks, resident memory, command line, and the regular file
  * behind stdout or stderr, if any. A process that vanishes mid-read is
  * skipped. From the environment it takes the PLATFORM_KEEP and
- * PLATFORM_STARTUP values alone and drops every other variable at once,
+ * RC_USER_SERVICES and RC_SVCNAME values alone, which name the agent's own
+ * openrc service a supervisor runs, and drops every other variable at once,
  * because agents hold credentials there.
  */
 export function createProcessTable(procRoot = "/proc"): ProcessTable {

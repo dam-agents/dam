@@ -1,6 +1,12 @@
-// TEST_OVERVIEW: A vm agent's Startup Items reach the Processes panel, and the user controls them there. The scan reads PLATFORM_STARTUP beside the keep mark, and a reaper child whose tree carries it is one Startup Item row, keyed by the item, showing the item's own command, never keeping the agent awake. The panel's list joins the configured items with those rows, so a disabled or exited item is listed too, with its log as output. The list file the agent edits is read and written by the runtime for the user's Disable and Remove, and each of the user's actions goes through the image's control, refusing an item that is off or unknown.
-import { spawn } from "node:child_process";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+// TEST_OVERVIEW: A vm agent's Startup Items — its own openrc services, run as root from ~/.config/rc — reach the Processes panel, and the user controls them there. The scan takes the service name a supervise-daemon carries (RC_USER_SERVICES, RC_SVCNAME) beside the keep mark, and the supervisor's tree is one Startup Item row, keyed by the service, showing the service's own command, never keeping the agent awake. The panel's list joins the services on disk with those rows, so a disabled or exited service is listed too, with its log as output. The user's Disable removes the boot link and Remove deletes the script; Start, Stop and Restart go through rc-service, refusing a service that is off or unknown.
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readlinkSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -22,7 +28,8 @@ import {
 import { createProcessesService } from "../../modules/processes/services/processes-service.js";
 
 const RUNTIME = 8;
-const LOOP = "/bin/sh /usr/local/lib/platform-startup/loop";
+const SUPERVISOR = (name: string) =>
+  `supervise-daemon ${name} --start --chdir /home/agent/work /bin/sh -- -c serve`;
 
 function proc(
   pid: number,
@@ -71,10 +78,10 @@ function inventory(extra: ScannedProcess[]) {
 }
 
 describe("Startup Item rows", () => {
-  // TEST_SCENARIO: an item runs as a loop under the reaper, and the loop starts the item's command in a group of its own; both carry PLATFORM_STARTUP. The panel lists one row for the item, showing its command rather than the loop, and an item never keeps the agent awake, since it starts again at every wake.
-  it("lists an item's loop as one Startup Item row showing its command", () => {
+  // TEST_SCENARIO: openrc's supervise-daemon runs one of the agent's services under the reaper, and the service's command below it; the supervisor carries the service's name. The panel lists one row for the service, showing its command rather than the supervisor, and a service never keeps the agent awake, since it starts again at every wake.
+  it("lists a service's supervisor as one Startup Item row showing its command", () => {
     const { trees, running, tracked } = inventory([
-      proc(300, 1, LOOP, "web"),
+      proc(300, 1, SUPERVISOR("web"), "web"),
       proc(301, 300, "sh -c python3 -m http.server 8799", "web"),
       proc(302, 301, "python3 -m http.server 8799", "web"),
       proc(400, 1, "sleep 100"),
@@ -98,20 +105,23 @@ describe("Startup Item rows", () => {
     ).toEqual(["detached"]);
   });
 
-  // TEST_SCENARIO: a mark that fails the id rule makes no Startup Item, which no Login item would list; the tree stays a Detached Process, so nothing that runs is hidden.
-  it("leaves a tree with a malformed mark a Detached Process", () => {
+  // TEST_SCENARIO: a service name that fails the name rule makes no Startup Item, which no Login item would list, and neither does a process that only inherited a service's variables below another root; such a tree stays a Detached Process, so nothing that runs is hidden.
+  it("leaves a tree with a malformed name, or a name below its root, a Detached Process", () => {
     const { running } = inventory([
       proc(300, 1, "sh -c serve", "../escape"),
       proc(301, 300, "serve", "../escape"),
+      proc(400, 1, "sh -c other"),
+      proc(401, 400, "child", "web"),
     ]);
 
     expect(running.find((row) => row.pid === 300)?.kind).toBe("detached");
+    expect(running.find((row) => row.pid === 400)?.kind).toBe("detached");
   });
 
   // TEST_SCENARIO: the panel shows every configured item, so the user can turn a disabled one back on or read the log of one that exited; an item runs when the scan found its row.
   it("lists configured items with or without a running row", () => {
     const { running, trees } = inventory([
-      proc(300, 1, LOOP, "web"),
+      proc(300, 1, SUPERVISOR("web"), "web"),
       proc(301, 300, "sh -c serve", "web"),
     ]);
     const items = startupItemsFrom(
@@ -121,7 +131,7 @@ describe("Startup Item rows", () => {
         { id: "off", command: "sleep infinity", disabled: true },
       ],
       running,
-      (id) => `/home/agent/.platform/startup-logs/${id}.log`,
+      (id) => `/home/agent/.local/state/rc/${id}.log`,
       (row) => trees.find((t) => t.key === row.key)?.startupItem ?? null,
     );
 
@@ -132,7 +142,7 @@ describe("Startup Item rows", () => {
         disabled: false,
         running: true,
         listed: true,
-        outputPath: "/home/agent/.platform/startup-logs/web.log",
+        outputPath: "/home/agent/.local/state/rc/web.log",
       },
       {
         id: "setup",
@@ -140,7 +150,7 @@ describe("Startup Item rows", () => {
         disabled: false,
         running: false,
         listed: true,
-        outputPath: "/home/agent/.platform/startup-logs/setup.log",
+        outputPath: "/home/agent/.local/state/rc/setup.log",
       },
       {
         id: "off",
@@ -148,17 +158,17 @@ describe("Startup Item rows", () => {
         disabled: true,
         running: false,
         listed: true,
-        outputPath: "/home/agent/.platform/startup-logs/off.log",
+        outputPath: "/home/agent/.local/state/rc/off.log",
       },
     ]);
   });
 });
 
-describe("an item no entry names", () => {
-  // TEST_SCENARIO: an item keeps running after its entry left the list — a stop that failed, an entry edited out — and the panel lists it, as not listed, with the command it runs, so nothing that runs is hidden.
+describe("a service no script names", () => {
+  // TEST_SCENARIO: a service keeps running after its script left ~/.config/rc — removed while it ran — and the panel lists it, as not listed, with the command it runs, so nothing that runs is hidden.
   it("lists a running item that no entry names", () => {
     const { running, trees } = inventory([
-      proc(300, 1, LOOP, "gone"),
+      proc(300, 1, SUPERVISOR("gone"), "gone"),
       proc(301, 300, "sh -c serve", "gone"),
     ]);
     const items = startupItemsFrom(
@@ -182,8 +192,8 @@ describe("an item no entry names", () => {
 });
 
 describe("the process scan", () => {
-  // TEST_SCENARIO: the scan takes PLATFORM_STARTUP from a process's environment as it takes PLATFORM_KEEP, and nothing else, since the agent's credentials sit beside them.
-  it("reads PLATFORM_STARTUP and drops every other variable", async () => {
+  // TEST_SCENARIO: the scan takes the service name a user-mode openrc supervisor carries, as it takes PLATFORM_KEEP, and nothing else, since the agent's credentials sit beside them; a system service's name is no Startup Item.
+  it("reads a user service's name and drops every other variable", async () => {
     const proc = mkdtempSync(join(tmpdir(), "proc-"));
     writeFileSync(join(proc, "uptime"), "1000.00 900.00\n");
     const dir = join(proc, "42");
@@ -196,7 +206,7 @@ describe("the process scan", () => {
     writeFileSync(join(dir, "cmdline"), "sh\0-c\0serve\0");
     writeFileSync(
       join(dir, "environ"),
-      "GH_TOKEN=platform:conn:abc\0PLATFORM_STARTUP=web\0PATH=/bin\0",
+      "GH_TOKEN=platform:conn:abc\0RC_USER_SERVICES=yes\0RC_SVCNAME=web\0PATH=/bin\0",
     );
 
     const { processes } = await createProcessTable(proc).scan();
@@ -210,100 +220,65 @@ describe("the process scan", () => {
   });
 });
 
-describe("the Startup Items list", () => {
-  function home(list: unknown) {
+describe("the agent's services on disk", () => {
+  function home(services: Record<string, string>, atBoot: string[]) {
     const dir = mkdtempSync(join(tmpdir(), "home-"));
-    mkdirSync(join(dir, ".platform"));
-    writeFileSync(
-      join(dir, ".platform", "startup.json"),
-      typeof list === "string" ? list : JSON.stringify(list),
-    );
-    return dir;
+    const initDir = join(dir, ".config", "rc", "init.d");
+    const bootDir = join(dir, ".config", "rc", "runlevels", "default");
+    mkdirSync(initDir, { recursive: true });
+    mkdirSync(bootDir, { recursive: true });
+    for (const [name, body] of Object.entries(services))
+      writeFileSync(join(initDir, name), body);
+    for (const name of atBoot)
+      symlinkSync(join(initDir, name), join(bootDir, name));
+    return { dir, initDir, bootDir };
   }
 
-  // TEST_SCENARIO: the user's Disable is written into the list the agent edits, and Remove takes the item out of it, so the image's boot and `platform-startup` both see the user's decision.
-  it("reads items and writes the user's Disable and Remove into the list", async () => {
-    const dir = home({
-      items: [
-        { id: "web", command: "serve" },
-        { id: "setup", command: "make setup" },
-      ],
-    });
+  const script = (command: string, args = "") =>
+    `#!/sbin/openrc-run\ncommand=${command}\n${args ? `command_args="${args}"\n` : ""}`;
+
+  // TEST_SCENARIO: each script in ~/.config/rc/init.d is a service, showing its command and arguments, on at boot when the default runlevel links it. The user's Disable removes that link and turning it on makes it again; Remove deletes the script and its link, so the boot and the agent see the user's choice.
+  it("lists services and writes the user's Disable and Remove as openrc keeps them", async () => {
+    const { dir, initDir, bootDir } = home(
+      {
+        web: script("/usr/bin/python3", "-m http.server 8799"),
+        setup: script("/usr/bin/make", "setup"),
+      },
+      ["web"],
+    );
     const store = createStartupItemStore(dir);
 
     expect(store.list()).toEqual([
-      { id: "web", command: "serve", disabled: false },
-      { id: "setup", command: "make setup", disabled: false },
+      { id: "setup", command: "/usr/bin/make setup", disabled: true },
+      {
+        id: "web",
+        command: "/usr/bin/python3 -m http.server 8799",
+        disabled: false,
+      },
     ]);
     expect(await store.setDisabled("web", true)).toBe(true);
+    expect(existsSync(join(bootDir, "web"))).toBe(false);
+    expect(await store.setDisabled("setup", false)).toBe(true);
+    expect(readlinkSync(join(bootDir, "setup"))).toBe(join(initDir, "setup"));
     expect(await store.remove("setup")).toBe(true);
+    expect(existsSync(join(initDir, "setup"))).toBe(false);
+    expect(existsSync(join(bootDir, "setup"))).toBe(false);
     expect(await store.setDisabled("nope", true)).toBe(false);
-
-    const written = JSON.parse(
-      readFileSync(join(dir, ".platform", "startup.json"), "utf8"),
-    );
-    expect(written).toEqual({
-      items: [{ id: "web", command: "serve", disabled: true }],
-    });
     expect(store.logPath("web")).toBe(
-      join(dir, ".platform", "startup-logs", "web.log"),
+      join(dir, ".local", "state", "rc", "web.log"),
     );
   });
 
-  // TEST_SCENARIO: the user's Disable waits while `platform-startup` holds the list lock — an add that stops the old instance holds it for up to fifteen seconds — and is written only once the lock is free, so neither write is lost.
-  it("waits for the list lock before it writes", async () => {
-    const dir = home({ items: [{ id: "web", command: "serve" }] });
-    const holder = spawn("flock", [
-      join(dir, ".platform", "startup.lock"),
-      "sleep",
-      "1",
-    ]);
-    await new Promise((r) => setTimeout(r, 200));
-    const listPath = join(dir, ".platform", "startup.json");
-    const before = readFileSync(listPath, "utf8");
-
-    const write = createStartupItemStore(dir).setDisabled("web", true);
-    await new Promise((r) => setTimeout(r, 300));
-    expect(readFileSync(listPath, "utf8"), "held: not written yet").toBe(
-      before,
-    );
-    expect(await write).toBe(true);
-    expect(JSON.parse(readFileSync(listPath, "utf8")).items[0].disabled).toBe(
-      true,
-    );
-    holder.kill();
-  });
-
-  // TEST_SCENARIO: a file that does not parse starts nothing at boot, so the panel lists nothing rather than failing.
-  it("reads a list that does not parse as empty", () => {
-    expect(createStartupItemStore(home("{not json")).list()).toEqual([]);
-    expect(createStartupItemStore(home({ items: "x" })).list()).toEqual([]);
-  });
-
-  // TEST_SCENARIO: the boot's ctl drops a malformed entry alone and runs the rest, so the runtime does the same: one bad entry hides no valid item, and an id outside the rule — a path, say — is never read, so the log it names is never tailed. The user's choice is written without losing the entry the runtime could not read.
-  it("drops a malformed entry alone, as the boot does, and keeps it on write", async () => {
-    const dir = home({
-      items: [
-        { id: "web", command: "serve" },
-        { id: "../escape", command: "x" },
-        { id: "nocommand" },
-        "junk",
-      ],
-    });
+  // TEST_SCENARIO: a file whose name fails the name rule is not a service, so a path never names a log outside the log directory; an agent with no ~/.config/rc lists nothing.
+  it("lists no file of another shape, and nothing without the directory", () => {
+    const { dir } = home({ web: script("serve"), ".hidden": script("x") }, []);
     const store = createStartupItemStore(dir);
 
     expect(store.list().map((i) => i.id)).toEqual(["web"]);
     expect(() => store.logPath("../escape")).toThrow();
-    await store.setDisabled("web", true);
-    const written = JSON.parse(
-      readFileSync(join(dir, ".platform", "startup.json"), "utf8"),
-    );
-    expect(written.items).toHaveLength(4);
-    expect(written.items[0]).toEqual({
-      id: "web",
-      command: "serve",
-      disabled: true,
-    });
+    expect(
+      createStartupItemStore(mkdtempSync(join(tmpdir(), "empty-"))).list(),
+    ).toEqual([]);
   });
 });
 
@@ -316,8 +291,7 @@ describe("the user's control of Startup Items", () => {
       available: () => true,
       list: () => list.map((i) => ({ ...i, disabled: disabled.get(i.id)! })),
       setDisabled: async (id, value) => {
-        if (id === "locked")
-          throw new Error("the Startup Items list stayed locked; try again");
+        if (id === "readonly") throw new Error("EROFS: read-only file system");
         disabled.set(id, value);
         return true;
       },
@@ -417,16 +391,16 @@ describe("the user's control of Startup Items", () => {
     expect(runs).toEqual(["stop web", "stop stuck", "start broken"]);
   });
 
-  // TEST_SCENARIO: a list that stays locked past the wait is reported to the user, and nothing is stopped or written.
-  it("reports a list that stays locked", async () => {
+  // TEST_SCENARIO: a change to the service on disk that fails is reported to the user, and nothing is stopped.
+  it("reports a change on disk that fails", async () => {
     const { processes, runs } = service([
-      { id: "locked", command: "serve", disabled: false },
+      { id: "readonly", command: "serve", disabled: false },
     ]);
 
-    const result = await processes.setStartupItemEnabled("locked", false);
+    const result = await processes.setStartupItemEnabled("readonly", false);
     expect(result.ok ? null : result.error).toEqual({
       kind: "NotAllowed",
-      message: "the Startup Items list stayed locked; try again",
+      message: "EROFS: read-only file system",
     });
     expect(runs).toEqual([]);
   });
@@ -439,7 +413,7 @@ describe("the user's control of Startup Items", () => {
           scannedAt: Date.now(),
           processes: [
             proc(RUNTIME, 1, "node dist/server.js"),
-            proc(300, 1, LOOP, "web"),
+            proc(300, 1, SUPERVISOR("web"), "web"),
           ],
         }),
         bootId: async () => "boot",

@@ -61,7 +61,7 @@ A pod runs one chat harness per [Harness Lease](sessions.md#session-inside-the-p
 A row carries the **output file** behind the process's stdout or stderr when that is a regular file, and the user can read its tail.
 The runtime reads only a file a scan recorded, never a path a caller names, with one exception: a Startup Item's log, which it builds from an item id that passed the same id rule as the list, and only for an item the list or a running row names.
 Claude Code writes every tool call's output, foreground or `run_in_background`, to a file of its own, so its Turn Processes and Harness Tasks always have output; a process writing to a pipe or a terminal has none.
-The scan reads each process's environment for two variables, the keep mark and the Startup Item mark, and drops the rest unread, because agents hold credentials there.
+The scan reads each process's environment for the keep mark and the openrc user-service name, and drops the rest unread, because agents hold credentials there.
 
 A row also says when it is a **container** or a **container runtime**, read from its command line alone, without asking the runtime.
 Docker and k3s run each container under a containerd shim that is re-parented to the reaper, so it lists as a Detached Process; its command names the containerd namespace (`moby` for Docker) and the container id, and a k3s shim runs from k3s's own paths.
@@ -117,27 +117,22 @@ Marks and user choices live in the processes document, keyed so a reused pid nev
 ## Startup Items
 
 A **Startup Item** is a command a vm agent's machine starts at every boot, so it comes back after a hibernation, a restart and a new image, like a Mac's login items; the UI calls them **Login items**.
-The agent adds and removes them with `platform-startup`, a command in every agent image, and they live in a list in the agent's home, `~/.platform/startup.json`, the one place every boot and every image keep.
+It is an openrc **user service** of root, the agent's account: a script in `~/.config/rc/init.d/<name>` with a `command`, started at boot when `~/.config/rc/runlevels/default` links it, and controlled with `rc-service --user`.
+The agent writes them as plain openrc scripts, and they live in the home, the one place every boot and every image keep.
 
-The image runs them through openrc, which platform-init already boots on a machine ([vm-runner](vm-runner.md)): `platform-startup`, the one service in the image's `default` runlevel, starts each enabled item at boot and stops it in openrc's `shutdown` on a stop.
-Each item runs under a small loop with openrc's `start-stop-daemon`, in `~/work`, in a session and process group of its own and a cgroup of its own, so a restart of the entrypoint keeps it.
-The loop restarts an item that exits with a failure after 1, 2, 4 … up to 60 seconds, and back to 1 once a run lasted a minute, while a clean exit ends it until the next boot, so a one-shot setup runs once.
-openrc's own supervisor is not used for that: it restarts a clean exit too and stops only its direct child, not the group the item started.
-A stop ends the item's whole group, and kills what is left of it after a few seconds.
-An item gets what an openrc service gets of the environment, which the image's openrc config names, `PATH` and the gateway's proxy and CA variables, and no credential placeholder; its output goes to a log of its own in the home.
+OpenRC itself does the work.
+platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and one system service in the image's `default` runlevel, `platform-user-services`, runs `openrc --user default` at boot and `openrc --user shutdown` on a stop, for root, as a login would for a person; nobody logs in to a machine.
+The image's `/etc/rc/user/rc.conf` makes every such service supervised by `supervise-daemon`, which restarts it two seconds after it exits, run in `~/work`, logged to `~/.local/state/rc/<name>.log`, and stopped with its whole process group; a script overrides any of it.
+A service gets what the image's own services get of the environment, `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF`, and no credential placeholder.
+User services need OpenRC 0.60 or later; the image takes OpenRC alone from Debian testing through an apt pin, until its stable release ships one.
 
-Every process of an item carries `PLATFORM_STARTUP=<id>`, which the process scan reads beside the keep mark, so the item's tree under the reaper is one **Startup Item** row rather than a Detached Process.
-The panel lists every configured item in a section of its own, running, exited or off, with its log as output and history, and keeps a running item's row out of the background groups, the header count and the finished history.
-A running item that no entry names any more — its entry removed while it could not be stopped, or edited out of the file — is listed there too, as no longer in the list, so nothing that runs is hidden; the user can still stop it.
-The runtime reads the list the way the boot does: each entry on its own, under the same id rule, so a malformed entry is dropped alone and hides no other item.
-**An item never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark; the panel refuses a keep choice for an item.
-The user restarts, stops, turns off or removes an item there, through the image's own control; turning one off is written into the list, so the next boot skips it, and `platform-startup` refuses to turn it on again or remove it, the same rule as a user's choice about a kept process.
-A remove takes the entry out of the list only once the item stopped; one that will not stop stays listed, and the user is told so.
-An `add` that replaces an item writes the new command only once the old one stopped, so the list never names a command that does not run.
-`platform-startup`, the runtime and the image's control each hold one lock on the list for every change and every start or stop, so the user's choice and the agent's change never lose each other's write, and two controls never start one item twice.
-An `add` stops the item first whatever the list says, since one can run with no entry.
-A choice the user made is kept when the control then fails, and the item's status says so: an item turned off that still runs reads as off from the next wake, still running.
-Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc, and an image without the control has none.
+The supervisor of a user service carries its name (`RC_USER_SERVICES`, `RC_SVCNAME`), which the process scan reads beside the keep mark, so its tree under the reaper is one **Startup Item** row rather than a Detached Process; a process below another root that only inherited those variables is not.
+The panel lists every service in a section of its own, running, exited or off, with its log as output and history, and keeps a running service's row out of the background groups, the header count and the finished history.
+A service that runs with no script any more is listed there too, as no longer in the list, so nothing that runs is hidden; the user can still stop it.
+**A service never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark; the panel refuses a keep choice for one.
+The user restarts, stops, turns off or removes a service there: turning it off removes its boot link, so the next boot skips it, and removing it deletes its script and link once it stopped; one that will not stop stays listed, and the user is told so.
+A choice the user made is kept when openrc then fails, and the service's status says so.
+Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc.
 
 **Stop.** The user can stop any listed process that has one: the runtime signals its whole tree — every descendant, and the process group its root leads — to terminate, and after a short grace kills what is left, matching each process by its start time so a reused pid is never hit.
 The row moves to the finished history as stopped by the user; a Turn Process just ends, and its tool call fails in front of the agent.

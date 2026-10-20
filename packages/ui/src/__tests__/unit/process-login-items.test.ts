@@ -35,7 +35,7 @@ function item(over: Partial<StartupItem>): StartupItem {
     disabled: false,
     running: false,
     listed: true,
-    outputPath: "/home/agent/.platform/startup-logs/web.log",
+    outputPath: "/home/agent/.local/state/rc/web.log",
     ...over,
   };
 }
@@ -68,7 +68,7 @@ describe("login items", () => {
 
     expect(findListedProcess(list, loginItemOutputKey("web"))).toEqual({
       command: "npm run serve",
-      outputPath: "/home/agent/.platform/startup-logs/web.log",
+      outputPath: "/home/agent/.local/state/rc/web.log",
       status: "Off",
       running: false,
     });

@@ -1,31 +1,20 @@
-import { execFile, spawn } from "node:child_process";
+import { execFile } from "node:child_process";
 import {
-  closeSync,
   existsSync,
+  lstatSync,
   mkdirSync,
-  openSync,
+  readdirSync,
   readFileSync,
-  renameSync,
-  writeFileSync,
+  rmSync,
+  symlinkSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
-import { z } from "zod";
+import { join } from "node:path";
 import { startupItemIdSchema } from "agent-runtime-api";
 import type { StartupItemConfig } from "../domain/startup-items.js";
 
-const CTL = "/usr/local/lib/platform-startup/ctl";
 const OPENRC_BOOTED = "/run/openrc/softlevel";
-const CTL_TIMEOUT_MS = 90_000;
-// UNIT_BOUNDARY_DESCRIPTION: how long a write waits for the list lock. `platform-startup add` holds it while it stops the old instance, which takes up to 15 seconds, and starts the new one.
-const LOCK_WAIT_S = 60;
-
-const entrySchema = z.object({
-  id: startupItemIdSchema,
-  command: z.string(),
-  disabled: z.boolean().optional(),
-});
-
-type Entry = z.infer<typeof entrySchema>;
+const RUNTIME_DIR = "/run/user/0";
+const RC_TIMEOUT_MS = 30_000;
 
 export interface StartupItemStore {
   available(): boolean;
@@ -38,118 +27,103 @@ export interface StartupItemStore {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agent's Startup Items as the image keeps
- * them: the list in `~/.platform/startup.json`, which the agent edits with
- * `platform-startup` and the user's Disable writes into, and the image's
- * `ctl`, which starts and stops one item. Only a vm machine, which openrc
- * booted, has them: a container agent runs the same image without openrc, and
- * an image built before Startup Items has no `ctl`. Each entry is read on its
- * own, with the same id rule `ctl` applies, and a malformed entry is dropped
- * alone, so the runtime and the boot see the same items and an id never names
- * a path outside the log directory. A write keeps the entries it cannot read,
- * so the agent's own file loses nothing to the user's choice. Every write
- * holds the list lock `platform-startup` holds, so neither loses the other's
- * write. Node has no flock: `flock(1)` locks a descriptor this process
- * opened and passes it, and the lock stays with that open file until the
- * write is done and it is closed.
+ * them: openrc's user services for root, a script each in
+ * `~/.config/rc/init.d`, started at boot when `~/.config/rc/runlevels/default`
+ * links it. The agent writes them; the user's Disable removes the link and
+ * Remove deletes both, and Start, Stop and Restart go through
+ * `rc-service --user`. Only a vm machine, which openrc booted, has them: a
+ * container agent runs the same image without openrc. A name is read under
+ * the same rule as the scan's, so a file of another shape is not an item and
+ * never names a path outside the log directory.
  */
 export function createStartupItemStore(agentHome: string): StartupItemStore {
-  const listPath = join(agentHome, ".platform", "startup.json");
-  const logDir = join(agentHome, ".platform", "startup-logs");
-  const lockPath = join(agentHome, ".platform", "startup.lock");
+  const initDir = join(agentHome, ".config", "rc", "init.d");
+  const bootDir = join(agentHome, ".config", "rc", "runlevels", "default");
+  const logDir = join(agentHome, ".local", "state", "rc");
 
-  async function locked<T>(change: () => T): Promise<T> {
-    mkdirSync(dirname(lockPath), { recursive: true });
-    const fd = openSync(lockPath, "a");
-    try {
-      const code = await new Promise<number | null>((resolve) => {
-        const child = spawn("flock", ["-x", "-w", String(LOCK_WAIT_S), "3"], {
-          stdio: ["ignore", "ignore", "ignore", fd],
-        });
-        child.on("error", () => resolve(null));
-        child.on("exit", resolve);
-      });
-      if (code !== 0)
-        throw new Error("the Startup Items list stayed locked; try again");
-      return change();
-    } finally {
-      closeSync(fd);
-    }
-  }
+  const name = (id: string) => startupItemIdSchema.parse(id);
+  const script = (id: string) => join(initDir, name(id));
+  const bootLink = (id: string) => join(bootDir, name(id));
 
-  function readRaw(): unknown[] {
+  function present(path: string): boolean {
     try {
-      const parsed: unknown = JSON.parse(readFileSync(listPath, "utf8"));
-      const items =
-        typeof parsed === "object" && parsed !== null
-          ? (parsed as { items?: unknown }).items
-          : undefined;
-      return Array.isArray(items) ? items : [];
+      lstatSync(path);
+      return true;
     } catch {
-      return [];
+      return false;
     }
   }
 
-  function entries(raw: unknown[]): Entry[] {
-    return raw.flatMap((item) => {
-      const entry = entrySchema.safeParse(item);
-      return entry.success ? [entry.data] : [];
+  function commandOf(path: string): string {
+    try {
+      const text = readFileSync(path, "utf8");
+      const command = /^\s*command="?([^"\n]*)"?\s*$/m.exec(text)?.[1] ?? "";
+      const args = /^\s*command_args="([^"]*)"\s*$/m.exec(text)?.[1] ?? "";
+      return [command, args].filter(Boolean).join(" ") || path;
+    } catch {
+      return path;
+    }
+  }
+
+  function rcService(args: string[]): Promise<string | null> {
+    return new Promise((resolve) => {
+      execFile(
+        "rc-service",
+        ["--user", ...args],
+        {
+          timeout: RC_TIMEOUT_MS,
+          env: {
+            PATH: process.env.PATH,
+            HOME: agentHome,
+            XDG_RUNTIME_DIR: RUNTIME_DIR,
+          },
+        },
+        (error, stdout, stderr) => {
+          resolve(error ? `${stderr}${stdout}`.trim() || error.message : null);
+        },
+      );
     });
   }
 
-  function write(raw: unknown[]): void {
-    mkdirSync(dirname(listPath), { recursive: true });
-    const tmp = `${listPath}.tmp`;
-    writeFileSync(tmp, JSON.stringify({ items: raw }, null, 2));
-    renameSync(tmp, listPath);
-  }
-
-  function isEntry(item: unknown, id: string): boolean {
-    return entrySchema.safeParse(item).data?.id === id;
-  }
-
   return {
-    available: () => existsSync(CTL) && existsSync(OPENRC_BOOTED),
+    available: () => existsSync(OPENRC_BOOTED),
 
     list() {
-      return entries(readRaw()).map((item) => ({
-        id: item.id,
-        command: item.command,
-        disabled: item.disabled === true,
-      }));
+      let entries: string[];
+      try {
+        entries = readdirSync(initDir);
+      } catch {
+        return [];
+      }
+      return entries
+        .filter((entry) => startupItemIdSchema.safeParse(entry).success)
+        .sort()
+        .map((id) => ({
+          id,
+          command: commandOf(join(initDir, id)),
+          disabled: !present(join(bootDir, id)),
+        }));
     },
 
-    setDisabled: (id, disabled) =>
-      locked(() => {
-        const raw = readRaw();
-        const index = raw.findIndex((item) => isEntry(item, id));
-        if (index === -1) return false;
-        const { disabled: _drop, ...rest } = raw[index] as Entry;
-        raw[index] = disabled ? { ...rest, disabled: true } : rest;
-        write(raw);
-        return true;
-      }),
-
-    remove: (id) =>
-      locked(() => {
-        const raw = readRaw();
-        if (!raw.some((item) => isEntry(item, id))) return false;
-        write(raw.filter((item) => !isEntry(item, id)));
-        return true;
-      }),
-
-    logPath: (id) => join(logDir, `${startupItemIdSchema.parse(id)}.log`),
-
-    run(action, id) {
-      return new Promise((resolve) => {
-        execFile(
-          CTL,
-          [action, id],
-          { timeout: CTL_TIMEOUT_MS },
-          (error, _stdout, stderr) => {
-            resolve(error ? stderr.trim() || error.message : null);
-          },
-        );
-      });
+    async setDisabled(id, disabled) {
+      if (!present(script(id))) return false;
+      if (disabled) rmSync(bootLink(id), { force: true });
+      else if (!present(bootLink(id))) {
+        mkdirSync(bootDir, { recursive: true });
+        symlinkSync(script(id), bootLink(id));
+      }
+      return true;
     },
+
+    async remove(id) {
+      if (!present(script(id))) return false;
+      rmSync(bootLink(id), { force: true });
+      rmSync(script(id), { force: true });
+      return true;
+    },
+
+    logPath: (id) => join(logDir, `${name(id)}.log`),
+
+    run: (action, id) => rcService([name(id), action]),
   };
 }

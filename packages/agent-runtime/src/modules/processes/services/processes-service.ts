@@ -145,8 +145,8 @@ function withDescendants(
  * publishes how many Detached Processes keep the agent awake, which makes the
  * runtime busy. It also reports a harness restart that waits for kept
  * Harness Tasks, and applies it on request. It lists the agent's Startup
- * Items beside the rows, and starts, stops, disables and removes one for the
- * user through the image's own control. Watchers get a data-less notice
+ * Items, its own openrc services, beside the rows, and starts, stops,
+ * disables and removes one for the user through openrc. Watchers get a data-less notice
  * when a row appears, goes, or changes whether it keeps the agent awake, and
  * when a waiting restart appears or goes; CPU and memory changes are polled.
  */
@@ -367,7 +367,7 @@ export function createProcessesService(
     );
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: a write of the Startup Items list, which waits for the lock `platform-startup` holds; a lock that stays taken is reported to the user, and the list is left as it was.
+  // UNIT_BOUNDARY_DESCRIPTION: a change to the agent's openrc services on disk for the user, the boot link or the script; one that fails is reported to the user.
   async function listWrite(
     write: () => Promise<boolean>,
   ): Promise<Result<void, ProcessesDomainError>> {

@@ -56,7 +56,7 @@ const item = {
   disabled: false,
   running: false,
   listed: true,
-  outputPath: "/home/agent/.platform/startup-logs/web.log",
+  outputPath: "/home/agent/.local/state/rc/web.log",
 };
 
 describe("the Processes list", () => {
