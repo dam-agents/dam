@@ -38,6 +38,17 @@ const listsBare = (
   p.entries.find((e) => e.upstreamId === bare) ??
   p.entries.find((e) => e.upstreamId.toLowerCase() === bare.toLowerCase());
 
+const listsDeployment = (
+  p: CatalogProvider,
+  bare: string,
+): CatalogEntry | undefined => {
+  const wanted = bare.toLowerCase();
+  return p.entries.find(
+    (e) =>
+      (e.upstreamId.split("/").at(-1) ?? e.upstreamId).toLowerCase() === wanted,
+  );
+};
+
 function resolveQualified(
   parsed: { alias: ProviderAlias; upstreamId: string },
   providers: readonly CatalogProvider[],
@@ -53,7 +64,11 @@ function resolveQualified(
  * name is looked for on the session's provider, then the harness's default
  * provider, then the single provider that lists it; several candidates are
  * refused by name, so no call is billed to a provider the user did not pick.
- * The entry must serve the request's dialect: the router never translates.
+ * A bare name no provider lists itself falls back to the id whose last path
+ * segment is that name, since a provider fronting a cloud account serves an
+ * exact model under the deployment prefix it hosts it on (`aws/<id>`), and a
+ * harness names a tier by a bare id of its own. The entry must serve the
+ * request's dialect: the router never translates.
  */
 export function resolveTarget(input: ResolveInput): ResolveOutcome {
   const { model, dialect, harness, providers, sessionModel } = input;
@@ -86,18 +101,28 @@ export function resolveTarget(input: ResolveInput): ResolveOutcome {
         aliasOrder(a.alias, input.harnessName) -
         aliasOrder(b.alias, input.harnessName),
     )[0];
-    const listing = eligible.filter((p) => listsBare(p, bare));
-    entry =
-      (onSession && listsBare(onSession, bare)) ??
-      (byDefault && listsBare(byDefault, bare)) ??
-      (listing.length === 1 ? listsBare(listing[0]!, bare) : undefined) ??
-      null;
+    const pick = (
+      lists: (p: CatalogProvider, id: string) => CatalogEntry | undefined,
+    ) => {
+      const listing = eligible.filter((p) => lists(p, bare) !== undefined);
+      return {
+        listing,
+        found:
+          (onSession && lists(onSession, bare)) ??
+          (byDefault && lists(byDefault, bare)) ??
+          (listing.length === 1 ? lists(listing[0]!, bare) : undefined) ??
+          null,
+      };
+    };
+    const exact = pick(listsBare);
+    const { found, listing } = exact.found ? exact : pick(listsDeployment);
+    entry = found;
     if (!entry) {
       return listing.length > 1
         ? {
             ok: false,
             status: 400,
-            reason: `model '${bare}' is served by several providers (${listing.map((p) => p.alias).join(", ")}); name one as <alias>/${bare}`,
+            reason: `model '${bare}' is served by several providers (${listing.map((p) => p.alias).join(", ")}); name one with its provider`,
           }
         : {
             ok: false,

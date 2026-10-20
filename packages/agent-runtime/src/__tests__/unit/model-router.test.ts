@@ -4,8 +4,10 @@
  * header it claims at the credential gateway and the model rewritten to the
  * upstream id. A qualified name routes outright; a bare name resolves on the
  * session's provider, then the harness's default provider, then the single
- * provider listing it, and is refused when several do. A dialect the provider
- * does not serve is refused. Responses stream back with only the model field
+ * provider listing it, and is refused when several do. A bare name no one
+ * lists itself resolves to the id whose last path segment is that name.
+ * A dialect the provider does not serve is refused. Responses stream back
+ * with only the model field
  * rewritten to the name the harness asked for, on every dialect. The
  * platform's self-hosted endpoint takes no key, so its calls carry none.
  */
@@ -209,6 +211,7 @@ beforeAll(async () => {
       listedAt: null,
       entries: [
         entry(ibm, "aws/claude-opus-4-8"),
+        entry(ibm, "aws/claude-sonnet-5"),
         entry(ibm, "gpt-5.5"),
         entry(ibm, "only-here"),
       ],
@@ -574,6 +577,32 @@ describe("bare names", () => {
     expect(r.status).toBe(200);
     expect(seen[0]!.path).toBe("/ant/v1/messages");
     expect(r.json?.model).toBe("claude/anthropic/claude-opus-4-8");
+  });
+
+  /** TEST_SCENARIO: Claude Code names a tier by the bare id its client ties to
+   * it (`claude-sonnet-5`), while IBM serves that exact model only under its
+   * `aws/` deployment prefix; the call goes to IBM with the prefixed id, and
+   * the response names it back to the harness. A bare id no provider serves,
+   * even one differing by a trailing segment (`claude-sonnet-5-5`), stays a
+   * 404 rather than matching a longer id. */
+  it("falls back to the deployment prefix of the bare name", async () => {
+    seen.length = 0;
+    const r = await call(
+      "/v1/messages",
+      { model: "claude-sonnet-5", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(r.status).toBe(200);
+    expect(seen[0]!.path).toBe("/ibm/v1/messages");
+    expect(seen[0]!.body.model).toBe("aws/claude-sonnet-5");
+    expect(r.json?.model).toBe("claude/ibm/aws/claude-sonnet-5");
+    const other = await call(
+      "/v1/messages",
+      { model: "claude-sonnet-5-5", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(other.status).toBe(404);
+    expect(other.text).toContain("lists model 'claude-sonnet-5-5'");
   });
 });
 
