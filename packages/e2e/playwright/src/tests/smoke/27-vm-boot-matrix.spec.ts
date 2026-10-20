@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: platform-init is a machine's PID 1 and the only holder of its agent's home, so a boot cut short must never cost the owner what is on the disk. This spec breaks a boot the ways a host failure does: it kills the machine's VMM at three points of a boot, each one a step platform-init itself says it reached, and it kills a running guest whose writes are synced into HOME. It also empties the layout mark an unclean stop can leave empty. Each of them must end in one of two ways: the machine boots with the file in HOME readable, or it refuses to boot and says why. Two more cases need room the lane's node cannot spare, a disk with no block left and an owner's claim with none, so a run opts into them by environment, and the second needs a claim with a size of its own, which the lane's provisioner does not give it. Only the vm lane runs it, and the config runs it beside the other specs that boot their own agent.
+// TEST_OVERVIEW: platform-init is a machine's PID 1 and the only holder of its agent's home, so a boot cut short must never cost the owner what is on the disk. This spec breaks a boot the ways a host failure does: it kills the machine's VMM once at each step of a boot that platform-init itself says it reached, and it kills a running guest whose writes are synced into HOME. It also empties the layout mark an unclean stop can leave empty. Each of them must end in one of two ways: the machine boots with the file in HOME readable, or it refuses to boot and says why. Two more cases need room the lane's node cannot spare, a disk with no block left and an owner's claim with none, so a run opts into them by environment, and the second needs a claim with a size of its own, which the lane's provisioner does not give it. Only the vm lane runs it, and the config runs it beside the other specs that boot their own agent.
 import { expect, test } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
@@ -227,12 +227,15 @@ test.afterAll(async () => {
   if (!agentId) return;
   try {
     onRunnerHost(agentId, `rm -f /tmp/boot-matrix-* ${claimFillPath}`);
-  } finally {
-    await api.agents.delete.mutate({ id: agentId });
+  } catch (error) {
+    console.log(
+      `[e2e] could not clear this spec's files off the runner: ${(error as Error).message}`,
+    );
   }
+  await api.agents.delete.mutate({ id: agentId });
 });
 
-// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must land inside the boot: the console the watcher copied just before it holds the step's line and no hand-off to the image's entrypoint, and the runner must report at least one of these VMMs dead by the signal the watcher sent. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
+// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must land inside the boot: the console the watcher copied just before it holds the step's line and no hand-off to the image's entrypoint. The runner must also say a VMM of this machine died by the signal the watcher sent — once over the case and not per kill, because the side of the start call a death falls on depends on the machine's speed, and the runner reports a death before that line in the start's failure and after it in the reaper's own line, which two runs of this case never saw. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
 test("comes back from its VMM killed at points across a boot", async () => {
   test.setTimeout(1_200_000);
   const reportedBefore = runnerKilledVmms(agentId).length;
