@@ -122,7 +122,7 @@ index 6851407..48fee7a 100644
          argv.push(std::ptr::null());
  
 diff --git i/src/agent/manager.rs w/src/agent/manager.rs
-index cffe2dd..0e7fb82 100644
+index cffe2dd..9386bc6 100644
 --- i/src/agent/manager.rs
 +++ w/src/agent/manager.rs
 @@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
@@ -184,15 +184,25 @@ index cffe2dd..0e7fb82 100644
 +        // A launch that failed because its VMM was killed: the status word is read
 +        // once, and the pid file written here is removed below, so the pid and the
 +        // signal are left where the embedder that asked for the start reads them. A
-+        // signal this teardown sends afterwards is not one of them: it has not been
-+        // reaped yet, so nothing is noted for it.
-+        if let Some(signal) = process::take_exit_signal(pid) {
++        // signal this teardown sends afterwards does not replace the note: the first
++        // note for a pid in its window is the death itself.
++        if let Some(signal) = process::peek_exit_signal(pid) {
 +            write_launch_exit(&self.pid_file, pid, signal);
 +        }
          process::stop_vm_process(pid, Duration::ZERO, process::VM_SIGKILL_TIMEOUT)?;
          if process::is_alive(pid) {
              return Err(Error::agent("abort launch", "VMM is still alive"));
-@@ -4176,6 +4204,18 @@ fn boot_failure_reason(
+@@ -3135,6 +3163,9 @@ impl AgentManager {
+             .map_err(|e| Error::agent("spawn boot subprocess", e.to_string()))?;
+ 
+         let child_pid = child.id() as i32;
++        // The pid may be one the kernel has just handed out again: whatever was
++        // noted at it belongs to the process this spawn replaces.
++        process::forget_exit_signal(child_pid);
+         // Register the detached VM PID for the serve supervisor's selective
+         // reaper. The boot subprocess owns its process group and is never
+         // `wait()`ed, so it would zombie on exit; the supervisor tick reaps it.
+@@ -4176,6 +4207,18 @@ fn boot_failure_reason(
  
  #[cfg(test)]
  mod tests {
@@ -287,7 +297,7 @@ index 9550f0d..03475e9 100644
  
      // Start DNS filter listener if configured
 diff --git i/src/process.rs w/src/process.rs
-index 7928c4c..a52f6fa 100644
+index 7928c4c..744a30d 100644
 --- i/src/process.rs
 +++ w/src/process.rs
 @@ -2200,7 +2200,11 @@ pub fn register_vm_child(pid: i32) {
@@ -303,7 +313,7 @@ index 7928c4c..a52f6fa 100644
          match ret {
              // >0 = reaped; drop from tracking.
              r if r > 0 => false,
-@@ -2212,6 +2216,64 @@ pub fn reap_vm_children() {
+@@ -2212,6 +2216,86 @@ pub fn reap_vm_children() {
      });
  }
  
@@ -325,7 +335,7 @@ index 7928c4c..a52f6fa 100644
 +#[cfg(unix)]
 +const NOTE_KEPT: Duration = Duration::from_secs(60);
 +
-+/// Remember the signal in a wait status, for [`take_exit_signal`].
++/// Remember the signal in a wait status, for [`peek_exit_signal`].
 +///
 +/// Public because an embedder that reaps one of these children itself — its own
 +/// `waitpid`, for a status word only one reader gets — has to leave the signal
@@ -336,39 +346,61 @@ index 7928c4c..a52f6fa 100644
 +        let now = Instant::now();
 +        let mut notes = EXIT_SIGNALS.get_or_init(Default::default).lock().unwrap();
 +        notes.retain(|_, (at, _)| now.saturating_duration_since(*at) < NOTE_KEPT);
-+        notes.insert(pid, (now, libc::WTERMSIG(status)));
++        // The first note for a pid is the death itself; a later one in the same
++        // window is a teardown reaping what it just killed, and must not stand in
++        // for a signal the process was already killed by. A pid spawned again
++        // forgets its note, so nothing stale is kept by this.
++        notes.entry(pid).or_insert((now, libc::WTERMSIG(status)));
 +    }
 +}
 +
-+/// The signal that ended a child this process reaped, offered once: taking it
-+/// removes it. `None` for a child that exited on its own, one that has not been
-+/// reaped here, and one nothing noted.
++/// The signal that ended the child at `pid`, for every reader there is: the
++/// code that reaped it, the boot that was waiting for the same child, and the
++/// embedder's own check all read the same word, and any of them acting on it
++/// first must not leave the others with nothing. `None` for a child that exited
++/// on its own, one that has not been reaped here, and one nothing noted.
 +#[cfg(unix)]
-+pub fn take_exit_signal(pid: Pid) -> Option<i32> {
-+    take_exit_signal_at(pid, Instant::now())
++pub fn peek_exit_signal(pid: Pid) -> Option<i32> {
++    peek_exit_signal_at(pid, Instant::now())
 +}
 +
-+/// [`take_exit_signal`] read at a given instant, so a test can ask what a
++/// [`peek_exit_signal`] read at a given instant, so a test can ask what a
 +/// reader an hour later would get.
 +#[cfg(unix)]
-+fn take_exit_signal_at(pid: Pid, now: Instant) -> Option<i32> {
-+    let (at, signal) = EXIT_SIGNALS
++fn peek_exit_signal_at(pid: Pid, now: Instant) -> Option<i32> {
++    let mut notes = EXIT_SIGNALS.get_or_init(Default::default).lock().unwrap();
++    let (at, signal) = *notes.get(&pid)?;
++    if now.saturating_duration_since(at) < NOTE_KEPT {
++        return Some(signal);
++    }
++    notes.remove(&pid);
++    None
++}
++
++/// Forget any note left for `pid`, for a caller that has just spawned a process
++/// there: the kernel reuses pids, and a new process must not inherit the end of
++/// the one it replaced.
++#[cfg(unix)]
++pub fn forget_exit_signal(pid: Pid) {
++    EXIT_SIGNALS
 +        .get_or_init(Default::default)
 +        .lock()
 +        .unwrap()
-+        .remove(&pid)?;
-+    (now.saturating_duration_since(at) < NOTE_KEPT).then_some(signal)
++        .remove(&pid);
 +}
 +
 +#[cfg(not(unix))]
-+pub fn take_exit_signal(_pid: Pid) -> Option<i32> {
++pub fn peek_exit_signal(_pid: Pid) -> Option<i32> {
 +    None
 +}
++
++#[cfg(not(unix))]
++pub fn forget_exit_signal(_pid: Pid) {}
 +
  /// No-op on non-Linux: VM scope adoption + the serve supervisor reaper are
  /// Linux-only; nothing registers VM children here.
  #[cfg(not(target_os = "linux"))]
-@@ -2343,6 +2405,7 @@ pub fn try_wait(pid: Pid) -> Option<i32> {
+@@ -2343,6 +2427,7 @@ pub fn try_wait(pid: Pid) -> Option<i32> {
          let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
  
          if result == pid {
@@ -376,7 +408,7 @@ index 7928c4c..a52f6fa 100644
              // Process exited
              let exit_code = if libc::WIFEXITED(status) {
                  libc::WEXITSTATUS(status)
-@@ -2392,6 +2455,7 @@ pub fn wait(pid: Pid) -> i32 {
+@@ -2392,6 +2477,7 @@ pub fn wait(pid: Pid) -> i32 {
              return -1;
          }
  
@@ -384,18 +416,19 @@ index 7928c4c..a52f6fa 100644
          return if libc::WIFEXITED(status) {
              libc::WEXITSTATUS(status)
          } else if libc::WIFSIGNALED(status) {
-@@ -5332,4 +5396,42 @@ mod tests {
+@@ -5332,4 +5418,93 @@ mod tests {
          let _ = child.wait();
          assert!(!cmdline_contains(pid, &token), "a dead PID must not match");
      }
 +
 +    /// The signal in a child's status word is the one fact about how a process
 +    /// went down, and the status is read once. An embedder that watches the same
-+    /// child is not the process that reaped it here, so the signal is kept for it,
-+    /// and offered once: a kill is neither lost nor reported twice.
++    /// child, and a boot still waiting on it, are not the process that reaped it
++    /// here, so the signal is kept for them: any reader may act on it, and a
++    /// reader that acts first leaves the others the same answer.
 +    #[cfg(unix)]
 +    #[test]
-+    fn a_reaped_child_keeps_its_signal_for_the_embedder_once() {
++    fn a_reaped_child_keeps_its_signal_for_every_reader() {
 +        let child = std::process::Command::new("sleep")
 +            .arg("60")
 +            .spawn()
@@ -405,8 +438,14 @@ index 7928c4c..a52f6fa 100644
 +        // SAFETY: kill(2) takes plain integers and touches no memory here.
 +        assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
 +        assert_eq!(wait(pid), 128 + libc::SIGKILL);
-+        assert_eq!(take_exit_signal(pid), Some(libc::SIGKILL));
-+        assert_eq!(take_exit_signal(pid), None, "a signal is offered once");
++        assert_eq!(peek_exit_signal(pid), Some(libc::SIGKILL), "the reaper's reader");
++        assert_eq!(
++            peek_exit_signal(pid),
++            Some(libc::SIGKILL),
++            "and the reader that comes second, which is what a tick taking the word from a boot's wait would otherwise be left without"
++        );
++        forget_exit_signal(pid);
++        assert_eq!(peek_exit_signal(pid), None, "a pid spawned again inherits nothing");
 +    }
 +
 +    /// A note outlives the pid it names only until a reader can no longer be
@@ -418,12 +457,56 @@ index 7928c4c..a52f6fa 100644
 +        let pid = 0x7fff_0000 as Pid;
 +        note_exit_signal(pid, libc::SIGKILL);
 +        assert_eq!(
-+            take_exit_signal_at(pid, Instant::now() + NOTE_KEPT),
++            peek_exit_signal_at(pid, Instant::now() + NOTE_KEPT),
 +            None,
-+            "a note nobody took inside its window names no kill"
++            "a note nobody read inside its window names no kill"
 +        );
++        assert_eq!(peek_exit_signal(pid), None, "and it is gone, not offered twice");
 +        note_exit_signal(pid, libc::SIGKILL);
-+        assert_eq!(take_exit_signal(pid), Some(libc::SIGKILL), "a fresh note is offered");
-+        assert_eq!(take_exit_signal(pid), None, "and offered once");
++        assert_eq!(peek_exit_signal(pid), Some(libc::SIGKILL), "a fresh note is offered");
++    }
++
++    /// A teardown that reaps what it killed must not replace the signal the
++    /// process was already killed by: a launch that fails because its VMM was
++    /// killed writes that signal down for the embedder, then stops it, and the
++    /// stop's own SIGKILL would otherwise be what the embedder reads — naming an
++    /// operator's or a seccomp kill as the kernel's memory kill.
++    #[cfg(unix)]
++    #[test]
++    fn a_teardown_does_not_replace_the_signal_a_process_was_killed_by() {
++        let pid = 0x7ffe_0000 as Pid;
++        note_exit_signal(pid, libc::SIGSYS);
++        note_exit_signal(pid, libc::SIGKILL);
++        assert_eq!(
++            peek_exit_signal(pid),
++            Some(libc::SIGSYS),
++            "the death it was noted for stays the one every reader gets"
++        );
++        forget_exit_signal(pid);
++        note_exit_signal(pid, libc::SIGKILL);
++        assert_eq!(peek_exit_signal(pid), Some(libc::SIGKILL), "a pid with no note takes one");
++    }
++
++    /// A pid is the kernel's to hand out again, and the note of the process that
++    /// held it must not survive into the next one: a process spawned at that pid
++    /// forgets whatever was noted there, so its own death is the only one its pid
++    /// can ever report.
++    #[cfg(unix)]
++    #[test]
++    fn a_pid_spawned_again_forgets_the_note_before_it() {
++        let mut child = std::process::Command::new("sleep")
++            .arg("60")
++            .spawn()
++            .expect("spawn sleep");
++        let pid = child.id() as Pid;
++        note_exit_signal(pid, libc::SIGSYS);
++        forget_exit_signal(pid);
++        assert_eq!(
++            peek_exit_signal(pid),
++            None,
++            "the process now at this pid inherits no signal"
++        );
++        let _ = child.kill();
++        let _ = child.wait();
 +    }
  }

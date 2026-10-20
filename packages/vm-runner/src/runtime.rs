@@ -991,7 +991,7 @@ mod tests {
         let pid = i32::try_from(vmm.id()).unwrap();
         assert!(matches!(ended(pid), Ended::Running));
         assert!(
-            smolvm::process::take_exit_signal(pid).is_none(),
+            smolvm::process::peek_exit_signal(pid).is_none(),
             "a live child has no signal to keep"
         );
         // SAFETY: kill(2) takes plain integers and touches no memory here.
@@ -1003,7 +1003,7 @@ mod tests {
         }
         assert!(matches!(ended(pid), Ended::Running | Ended::Signalled(_)));
         assert_eq!(
-            smolvm::process::take_exit_signal(pid),
+            smolvm::process::peek_exit_signal(pid),
             Some(libc::SIGKILL),
             "the boot's wait still finds the signal this reap took"
         );

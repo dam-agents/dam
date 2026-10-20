@@ -594,6 +594,21 @@ mod tests {
         // TEST_SCENARIO: what a reader sees if the write stopped before the rename, which is a name no reader looks for.
         std::fs::write(exits.join(".4243.part"), "").unwrap();
         assert!(!exits.join("4243").exists());
+        // TEST_SCENARIO: a record published by rename replaces the name a reader polls, and never writes through it: a writer that opened the final path would truncate a record another death left there, and a reader of that name would catch it empty, which is the failure the rename exists to rule out. The name points at a file here, so a write through it lands in that file and the rename leaves it alone.
+        let pointed_at = dir.join("pointed-at");
+        std::fs::write(&pointed_at, "").unwrap();
+        std::os::unix::fs::symlink(&pointed_at, exits.join("4244"))
+            .expect("a name to publish over");
+        record_exit(&exits, 4244, libc::SIGTERM).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&pointed_at).unwrap(),
+            "",
+            "the final name is replaced, never written through"
+        );
+        assert_eq!(
+            std::fs::read_to_string(exits.join("4244")).unwrap(),
+            libc::SIGTERM.to_string()
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

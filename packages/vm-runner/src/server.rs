@@ -193,7 +193,7 @@ struct Machines {
     cpu: crate::cpu::Window,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what `oom_kills_seen` holds until the first reap reads a cgroup's oom_kill count: a figure the cgroup could plausibly reach (u64::MAX), so a runner that reads no cgroup never mistakes it for a baseline.
+// UNIT_BOUNDARY_DESCRIPTION: what `OomKills::seen` holds until a sample reads a cgroup's oom_kill count: a figure the cgroup could plausibly reach (u64::MAX), so a runner that reads no cgroup never mistakes it for a baseline.
 const OOM_KILLS_UNREAD: u64 = u64::MAX;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long an exit the reaper collected is kept while no report can be made of it — the machine's start call is still running, or it is converging, or its owner asked it down and the stop has not finished. Past it the record goes, since a death that old explains nothing the machine reads now.
@@ -204,6 +204,37 @@ const OOM_CREDIT_CAP: usize = 8;
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a counted OOM kill stays spendable. The kernel counts the kill as it makes one and the victim is read at the tick after, so a credit is spent within a tick or two; past that it belonged to something this reaper never saw, and spending it would blame whichever machine an operator kills next.
 const OOM_CREDIT_TTL: Duration = Duration::from_secs(5);
+
+// UNIT_BOUNDARY_DESCRIPTION: the cgroup's count as the runner has read it, and the kills counted but not yet spent, each with the instant it was counted: OOM_KILLS_UNREAD until a sample reads one, since a runner with no cgroup to read falls back to the signal alone.
+struct OomKills {
+    seen: u64,
+    credits: Vec<Instant>,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: where the count this runner last read is kept for the runner that replaces it, so a kill counted between the two — while the old runner exits and the new one has not sampled yet — is still credited to its victim instead of being taken for the new runner's starting point.
+const OOM_KILL_COUNT: &str = "oom-kill-count";
+
+// UNIT_BOUNDARY_DESCRIPTION: the count a starting runner begins from: the one the runner it replaces last read, since a kill that landed in between is still the count it will read, and a cgroup the kernel recreated reads lower than that and starts afresh. Absent — a first start — it begins where the cgroup stands, since a count from before this pod means nothing here.
+fn oom_kills_seen_before(state_dir: &std::path::Path, cgroup: Option<&std::path::Path>) -> u64 {
+    let counted = cgroup
+        .and_then(crate::pressure::oom_kills)
+        .unwrap_or(OOM_KILLS_UNREAD);
+    std::fs::read_to_string(state_dir.join(OOM_KILL_COUNT))
+        .ok()
+        .and_then(|last| last.trim().parse().ok())
+        .map_or(counted, |last: u64| last.min(counted))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: keeps the count this runner last read for the next one, best-effort: a runner that cannot write it only loses the handoff window's credits, which is what it had before the file existed.
+fn persist_oom_kills(state_dir: &std::path::Path, counted: u64) {
+    if counted == OOM_KILLS_UNREAD {
+        return;
+    }
+    let _ = std::fs::create_dir_all(state_dir);
+    if let Err(e) = std::fs::write(state_dir.join(OOM_KILL_COUNT), counted.to_string()) {
+        tracing::warn!(error = %e, "vm runner: could not keep the OOM kill count for the next runner");
+    }
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the signal the loader recorded for a VMM it reaped, read and removed in one step so one death is reported once: a VMM that died while its machine had no runner is the case where this process never saw the status at all. A record that holds no signal yet is not a death, and not a machine that exited on its own either: the loader writes one only for a signalled child, so the file stays for the next read.
 fn read_exit_record(state_dir: &std::path::Path, pid: i32) -> Option<i32> {
@@ -247,10 +278,8 @@ pub struct Server {
     storage_look: Mutex<()>,
     storage_short: std::sync::atomic::AtomicBool,
     storage_unmeasured: std::sync::atomic::AtomicBool,
-    // UNIT_BOUNDARY_DESCRIPTION: the cgroup's oom_kill count as the last reap saw it: OOM_KILLS_UNREAD until one reads it, since a runner with no cgroup to read falls back to the signal alone.
-    oom_kills_seen: AtomicU64,
-    // UNIT_BOUNDARY_DESCRIPTION: kernel OOM kills counted but not yet matched to a victim this reaper reported, each with the instant it was counted. One credit is spent per SIGKILL it reports, so an operator's `kill -9` beside a real OOM is not read as memory, and an OOM counted before its victim was read is not lost; a credit is dropped once it is past OOM_CREDIT_TTL, since a victim this runner never saw says nothing about the next kill it does see.
-    oom_credit: Mutex<Vec<Instant>>,
+    // UNIT_BOUNDARY_DESCRIPTION: the cgroup's oom_kill count as this runner last read it, with the kills counted but not yet matched to a victim it reported. One credit is spent per SIGKILL it reports, so an operator's `kill -9` beside a real OOM is not read as memory, and an OOM counted before its victim was read is not lost. The count and the credits share one lock: a boot, a grow and the tick all sample the count, and a sample that another of them has already moved past must not put the count back, or the same kill is credited twice.
+    oom: Mutex<OomKills>,
     // UNIT_BOUNDARY_DESCRIPTION: every death the reaper has collected and not yet reported or dropped, by pid, with the signal that ended it when one did: the runtime's own sweep of these children discards the status, and the status read once is all there is, so a machine still starting when its VMM dies keeps its record until the start call returns.
     exits: Mutex<BTreeMap<i32, (Option<i32>, Instant)>>,
     shed_request: Mutex<Option<(u64, String)>>,
@@ -354,12 +383,15 @@ impl Server {
     pub fn start(config: Config, runtime: Arc<dyn Runtime>) -> anyhow::Result<Arc<Self>> {
         let forwarder = Forwarder::new(tokio::runtime::Handle::current(), config.listen.clone());
         let lifetime = CancellationToken::new();
-        // UNIT_BOUNDARY_DESCRIPTION: the OOM kill count this runner starts from is read now, before the machine API serves, so an OOM kill that lands while the runner it replaces hands its machines over is still counted, and still names the machine it took.
-        let oom_kills_seen = config
-            .cgroup_dir
-            .as_ref()
-            .and_then(|cgroup| crate::pressure::oom_kills(cgroup))
-            .unwrap_or(OOM_KILLS_UNREAD);
+        // UNIT_BOUNDARY_DESCRIPTION: the OOM kill count this runner starts from is read now, before the machine API serves, and against what the runner it replaces last read, so an OOM kill that lands while the machines are handed over is still counted and still names the machine it took.
+        let oom = OomKills {
+            seen: oom_kills_seen_before(&config.state_dir, config.cgroup_dir.as_deref()),
+            credits: Vec::new(),
+        };
+        // UNIT_BOUNDARY_DESCRIPTION: the count this runner starts from is kept at once, so the runner that replaces it knows which kills were already accounted for while these machines were handed over.
+        if config.cgroup_dir.is_some() {
+            persist_oom_kills(&config.state_dir, oom.seen);
+        }
         let server = Arc::new(Self {
             config,
             runtime,
@@ -378,8 +410,7 @@ impl Server {
             storage_look: Mutex::new(()),
             storage_short: std::sync::atomic::AtomicBool::new(false),
             storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
-            oom_kills_seen: AtomicU64::new(oom_kills_seen),
-            oom_credit: Mutex::new(Vec::new()),
+            oom: Mutex::new(oom),
             exits: Mutex::new(BTreeMap::new()),
             shed_request: Mutex::new(None),
             #[cfg(test)]
@@ -593,7 +624,13 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: keeps every ended child's status, wherever the machine it belongs to stands: a VMM that dies while its start or grow call still runs is the very case the runtime's own sweep would erase, and the call's own failure would then read as a boot that broke rather than the kill it was. A status is read once and kept, and the loader's record covers a VMM this process is no longer the parent of.
     fn collect_exits(&self) {
-        let ids: Vec<String> = locked(&self.machines).entries.keys().cloned().collect();
+        // UNIT_BOUNDARY_DESCRIPTION: a machine the runner is acting on is left to its action: a boot, a grow, a stop or a delete reads the death of its own VMM itself, and the notes and records it reads are the same ones a collection would take, so collecting first is what would leave the action with nothing to name.
+        let ids: Vec<String> = locked(&self.machines)
+            .entries
+            .iter()
+            .filter(|(_, entry)| !entry.converging && !entry.deleting && entry.action.is_none())
+            .map(|(id, _)| id.clone())
+            .collect();
         for id in ids {
             let Some(pid) = self.runtime.vmm_pid(&id) else {
                 continue;
@@ -625,7 +662,7 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: the kernel counts an OOM kill at the second it makes one, and the victim is read at the tick after, so the count is turned into credits every tick and each credit is spent by a SIGKILL this reaper reports. A cgroup that cannot be read says nothing about who killed the machine, so every SIGKILL is read as memory there.
     fn match_oom_kills(&self) {
-        let Some(now) = self
+        let Some(counted) = self
             .config
             .cgroup_dir
             .as_ref()
@@ -633,15 +670,28 @@ impl Server {
         else {
             return;
         };
-        let before = self.oom_kills_seen.swap(now, Ordering::Relaxed);
-        if before == OOM_KILLS_UNREAD {
+        self.credit_oom(counted);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one sample of the count turned into credits, in the same critical section that moves the count it was worked out from: a boot, a grow and the tick each sample the count, and two of them in the other order would credit the same kills twice. A sample below the count already read is a cgroup the kernel recreated, which starts afresh. Credits past OOM_CREDIT_TTL are dropped before the cap is applied, so a set of credits whose victims this runner never saw cannot refuse a kill it has just counted.
+    fn credit_oom(&self, counted: u64) {
+        let mut oom = locked(&self.oom);
+        if oom.seen == OOM_KILLS_UNREAD {
+            oom.seen = counted;
+            persist_oom_kills(&self.config.state_dir, counted);
             return;
         }
-        let counted = usize::try_from(now.saturating_sub(before)).unwrap_or(usize::MAX);
-        if counted > 0 {
-            let mut credit = locked(&self.oom_credit);
-            let kept = credit.len().saturating_add(counted).min(OOM_CREDIT_CAP);
-            credit.resize(kept, Instant::now());
+        if counted <= oom.seen {
+            return;
+        }
+        let fresh = usize::try_from(counted.saturating_sub(oom.seen)).unwrap_or(usize::MAX);
+        oom.seen = counted;
+        let now = Instant::now();
+        oom.credits
+            .retain(|at| now.saturating_duration_since(*at) < OOM_CREDIT_TTL);
+        let room = OOM_CREDIT_CAP.saturating_sub(oom.credits.len());
+        for _ in 0..fresh.min(room) {
+            oom.credits.push(now);
         }
     }
 
@@ -656,9 +706,16 @@ impl Server {
         {
             return true;
         }
-        let mut credit = locked(&self.oom_credit);
-        credit.retain(|at| at.elapsed() < OOM_CREDIT_TTL);
-        credit.pop().is_some()
+        let mut oom = locked(&self.oom);
+        let now = Instant::now();
+        oom.credits
+            .retain(|at| now.saturating_duration_since(*at) < OOM_CREDIT_TTL);
+        if oom.credits.pop().is_none() {
+            return false;
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: the count is kept only once a kill it counted has been named, so a runner that credits a kill and exits before reporting it leaves the count where the runner that replaces it reads it again.
+        persist_oom_kills(&self.config.state_dir, oom.seen);
+        true
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the machines whose collected death can be reported now, with the machine, its pid and the signal: one its owner asked to run, with no action in flight, not converging or deleting, not already saying a kill, and no runtime call still holding it after its wait gave up. A death collected for any other machine is kept, not dropped — the call in flight is what will make it reportable next tick. They come in the order of their names, not of a hash map's buckets: with one OOM count between two deaths the kernel says which process it took by nothing the host can read, so the same two deaths must be blamed the same way on every runner, and a machine's own name is the part of that which does not change.
