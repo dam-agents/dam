@@ -229,6 +229,26 @@ describe("tool approval option identity", () => {
     expect(await deliver(options, "allow")).toEqual([{ outcome: "cancelled" }]);
     expect(await sweep(options, "allow")).toEqual(["cancelled"]);
   });
+
+  // TEST_SCENARIO: the recorder keeps an option's id but not a kind it does not recognize, and keeps an option that states none. No shipped harness states its options that way, and an option whose kind is unknown may grant more than the verdict asks for, so answering it with an approval is guessing. Both verdicts cancel instead.
+  it("never answers an option whose kind is missing or unrecognized", async () => {
+    const options = legacyRecordedOptionsOf([
+      { optionId: "persist", kind: "persist" },
+      { optionId: "opaque" },
+      { optionId: "no", kind: "reject_once" },
+    ]);
+
+    expect(pickOptionId(options, "allow_once", { idsWhole: true })).toBeNull();
+    expect(pickOptionId(options, "allow", { idsWhole: true })).toBeNull();
+    expect(pickOptionId(options, "allow_once")).toBeNull();
+    expect(pickOptionId(options, "allow")).toBeNull();
+    expect(await deliver(options, "allow_once")).toEqual([
+      { outcome: "cancelled" },
+    ]);
+    expect(await deliver(options, "allow")).toEqual([{ outcome: "cancelled" }]);
+    expect(await sweep(options, "allow_once")).toEqual(["cancelled"]);
+    expect(await sweep(options, "allow")).toEqual(["cancelled"]);
+  });
 });
 
 /**

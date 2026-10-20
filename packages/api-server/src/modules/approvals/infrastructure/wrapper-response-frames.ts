@@ -16,10 +16,13 @@ import type {
  * a legacy row answers only a provably intact option of exactly the wanted
  * kind and cancels otherwise. Every catalog is answered that way, because a
  * whole id says which option it is, not how far the permission it grants
- * reaches: a one-time verdict never becomes the persistent kind. In the other
- * direction the runtime holds the whole request, so the kind it reports states
- * what an option the row dropped was. That kind decides the verdict only when the runtime reports it: the
- * chat client's own answer travels unvalidated.
+ * reaches: a one-time verdict never becomes the persistent kind, and an option
+ * that states no kind is never sent, because nothing proves what it grants.
+ * Every harness the platform ships states a kind on every option.
+ * In the other direction the runtime holds the whole request, so the kind it
+ * reports states what an option the row dropped was. That kind decides the
+ * verdict only when the runtime reports it: the chat client's own answer
+ * travels unvalidated.
  */
 export function pickOptionId(
   options: readonly AcpPermissionOption[],
@@ -34,21 +37,13 @@ export function pickOptionId(
         : verdict === "allow"
           ? "allow_always"
           : "allow_once";
-  if (opts?.idsWhole !== true) {
-    return (
-      options.find(
-        (o) => o.kind === want && o.optionId.length < TOOL_CALL_ID_MAX,
-      )?.optionId ?? null
-    );
-  }
-  const direct = options.find((o) => o.kind === want);
-  if (direct) return direct.optionId;
-  const isAllow = verdict === "allow" || verdict === "allow_once";
-  if (!isAllow) return null;
-  const first = options[0];
-  return first !== undefined && first.kind === undefined
-    ? first.optionId
-    : null;
+  return (
+    options.find(
+      (o) =>
+        o.kind === want &&
+        (opts?.idsWhole === true || o.optionId.length < TOOL_CALL_ID_MAX),
+    )?.optionId ?? null
+  );
 }
 
 export function verdictOfOutcome(
