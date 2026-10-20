@@ -74,7 +74,7 @@ function claimKb(): { used: number; capacity: number } {
   return { used, capacity: used + avail };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine and the guest's own free space, from one guest command: one line of `/platform/storage-room`, the id of the look that wrote the grant and the bytes the guest may still add to the owner's claim, then the guest's `df`. They are read together because they are only comparable as one look — the runner writes a new grant every 30 s and the guard moves under whichever grant it reads — so a grant compared with a room read a look apart reads short for no defect. The grant figure is not a share this spec works out for itself, because what the guard must do is hold the guest to the grant it was given. The id is what tells a renewal from the grant of an earlier look, and no grant at all reads as NaN, which is what an unmeasured claim looks like. The `df` follows the grant by microseconds, and the bounds keep the guard's own step and the case's slack, so that gap is inside what they allow.
+// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine and the guest's own free space, from one guest command: one line of `/platform/storage-room`, the id of the look that wrote the grant and the bytes the guest may still add to the owner's claim, then the guest's `df`. They are read together because they are only comparable as one look — the runner writes a new grant every 30 s and the guard moves under whichever grant it reads — so a grant compared with a room read a look apart reads short for no defect. The grant figure is not a share this spec works out for itself, because what the guard must do is hold the guest to the grant it was given. The id is what tells a renewal from the grant of an earlier look. The grant line is printed even when the file is absent — `cat` alone prints nothing there, and the `df` line would slide into the grant's place and read as a grant — so an unmeasured claim reads as NaN, which fails the caller's check rather than passing one.
 function readRoom(id: string = probeId): {
   id: string;
   grantMiB: number;
@@ -82,7 +82,7 @@ function readRoom(id: string = probeId): {
 } {
   const [grant, avail] = inGuest(
     id,
-    "cat /platform/storage-room 2>/dev/null; df -Pk /home/agent | tail -1",
+    'printf "%s\\n" "$(cat /platform/storage-room 2>/dev/null)"; df -Pk /home/agent | tail -1',
   ).split("\n");
   const [grantId = "", bytes = ""] = (grant ?? "").trim().split(/\s+/);
   const mib = Number(bytes) / 1048576;
