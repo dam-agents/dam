@@ -22,6 +22,7 @@ const { harnessConfigCurrentKey, harnessCatalogModelsKey, providerModelsKey } =
   await import("../../modules/sessions/api/session-pair.js");
 const { scheduleSessionsKey } =
   await import("../../modules/schedules/api/queries.js");
+const { termsKeys } = await import("../../modules/terms/api/queries.js");
 
 const unsubscribes: (() => void)[] = [];
 
@@ -211,5 +212,6 @@ it("refreshes the install and catalog families", async () => {
     metering: trpc.spend.metering.queryKey(),
     links: trpc.links.all.queryKey(),
     version: ["version"],
+    "terms document": termsKeys.document(),
   });
 });

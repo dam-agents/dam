@@ -44,6 +44,7 @@ const NO_PUSH_PATHS: readonly KeyPath[] = [
   ["usage", "inspect", "availability"],
   ["links", "all"],
   ["version"],
+  ["terms", "document"],
 ];
 
 function pathOf(queryKey: readonly unknown[]): readonly string[] {
