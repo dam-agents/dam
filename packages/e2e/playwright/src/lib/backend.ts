@@ -345,9 +345,9 @@ export function runnerGrows(
   });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from.
+// UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from. An empty result means there is no such pod, which is how a Mac host runner runs its machines, outside the cluster; the lookup ranges over the list rather than indexing it, because kubectl fails a jsonpath into an index an empty list does not have.
 export function runnerPod(agentId: string): string {
-  return kubectl(
+  const pods = kubectl(
     "-n",
     AGENT_NS,
     "get",
@@ -355,17 +355,20 @@ export function runnerPod(agentId: string): string {
     "-l",
     hostSelector(agentId, "vm"),
     "-o",
-    "jsonpath={.items[*].metadata.name}",
-  ).split(" ")[0];
+    'jsonpath={range .items[*]}{.metadata.name}{"\\n"}{end}',
+  );
+  return pods.split("\n")[0];
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root on the agent's VM runner, as an operator with the pod would: the owner's claim is $HOME, and a machine's VMM is a `_boot-vm` child of the runner.
 export function onRunnerHost(agentId: string, script: string): string {
+  const pod = runnerPod(agentId);
+  if (!pod) throw new Error(`no VM runner hosts the machine of ${agentId}`);
   return kubectl(
     "-n",
     AGENT_NS,
     "exec",
-    runnerPod(agentId),
+    pod,
     "-c",
     "vm-runner",
     "--",
@@ -378,6 +381,7 @@ export function onRunnerHost(agentId: string, script: string): string {
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
 export function inGuest(agentId: string, script: string): string {
   const pod = runnerPod(agentId);
+  if (!pod) throw new Error(`no VM runner hosts the machine of ${agentId}`);
   return kubectl(
     "-n",
     AGENT_NS,
@@ -395,6 +399,7 @@ export function inGuest(agentId: string, script: string): string {
     script,
   );
 }
+
 export async function deleteBackendHost(
   agentId: string,
   backend: Backend,
