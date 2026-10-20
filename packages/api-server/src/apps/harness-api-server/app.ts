@@ -1,6 +1,7 @@
 import { serve } from "@hono/node-server";
 import { Hono } from "hono";
 import type { CoreV1Api } from "@kubernetes/client-node";
+import { capabilities } from "agent-runtime-api";
 import type {
   AgentsService,
   ArtifactTouchService,
@@ -97,6 +98,7 @@ export interface HarnessApiServerAppDeps {
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  readAgentCapabilities: (agentId: string) => Promise<unknown>;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
   kitUpdateReporter: KitUpdateReporter;
@@ -296,6 +298,16 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
+    sessionMessagesFor: (agentId) => ({
+      accepts: async () =>
+        capabilities
+          .safeParse(await deps.readAgentCapabilities(agentId))
+          .data?.events.includes("session-message") ?? false,
+      deliver: async (event) => {
+        await runtimeMutator.bump(agentId, [event]);
+        await runtimeMutator.enqueueAfterCommit(agentId);
+      },
+    }),
   });
   mountAgentKbRoutes(app, {
     k8s: k8sClient,

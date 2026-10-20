@@ -230,7 +230,11 @@ describe("createTriggerSessionDriver", () => {
       unattended: true,
       steer: true,
     });
-    await driver.start({ task: "due", resumeSessionId: "s0", unattended: true });
+    await driver.start({
+      task: "due",
+      resumeSessionId: "s0",
+      unattended: true,
+    });
 
     const surfaces = sent
       .filter((f) => f.method === "session/prompt")

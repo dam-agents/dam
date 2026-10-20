@@ -43,7 +43,9 @@ export function createSessionMessagePlugin(deps: {
     try {
       await deps.reporter.report(input);
     } catch (err) {
-      deps.log(`[session-message] event report failed: ${(err as Error).message}`);
+      deps.log(
+        `[session-message] event report failed: ${(err as Error).message}`,
+      );
     }
   };
 
@@ -51,7 +53,9 @@ export function createSessionMessagePlugin(deps: {
     name: KIND,
     bindEvent(kind: string): EventHandler {
       if (kind !== KIND) {
-        throw new Error(`plugin "${KIND}" does not handle event kind "${kind}"`);
+        throw new Error(
+          `plugin "${KIND}" does not handle event kind "${kind}"`,
+        );
       }
       return async (payload, { eventId }) => {
         const { sessionId, text, from } =

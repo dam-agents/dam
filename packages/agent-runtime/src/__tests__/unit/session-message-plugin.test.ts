@@ -39,7 +39,11 @@ function setup(fail?: Error) {
 const payload = {
   sessionId: "s-dev",
   text: "Stop: the spec changed.",
-  from: { sessionId: "s-slack", title: "Thread in #dev", type: "channel_slack" },
+  from: {
+    sessionId: "s-slack",
+    title: "Thread in #dev",
+    type: "channel_slack",
+  },
 };
 
 describe("session-message plugin", () => {
