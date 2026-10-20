@@ -266,7 +266,7 @@ impl Runtime for Smolvm {
             // UNIT_BOUNDARY_DESCRIPTION: smolvm reads the status of a VMM it is still waiting for itself, so a machine killed during its boot is not this process's to reap, and the only thing left of the kill is the signal smolvm kept. It goes in the error for the runner to report as the reason the machine restarted.
             let killed = booting_vmm_pid(&dir)
                 .and_then(|pid| {
-                    smolvm::process::take_exit_signal(pid).map(|signal| VmmKilled { pid, signal })
+                    smolvm::process::peek_exit_signal(pid).map(|signal| VmmKilled { pid, signal })
                 })
                 .or_else(|| launch_exit(&dir));
             kill_orphans(&self.proc_root, &dir);
@@ -404,7 +404,7 @@ impl Runtime for Smolvm {
     }
 
     fn vmm_exit_signal(&self, pid: i32) -> Option<i32> {
-        smolvm::process::take_exit_signal(pid)
+        smolvm::process::peek_exit_signal(pid)
     }
 }
 

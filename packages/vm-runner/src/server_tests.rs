@@ -129,7 +129,7 @@ impl Runtime for Fake {
     }
 
     fn vmm_exit_signal(&self, pid: i32) -> Option<i32> {
-        locked(&self.exit_signals).remove(&pid)
+        locked(&self.exit_signals).get(&pid).copied()
     }
 
     fn nests(&self) -> bool {
@@ -3922,22 +3922,25 @@ async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
-    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the death is waited for before the ticks: a read the test made later would otherwise decide whether the kill was ever collected.
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
-    let killed = unsafe { libc::kill(pid, libc::SIGKILL) };
-    assert_eq!(killed, 0, "the VMM was not signalled");
-    wait_ended_without_reaping(pid);
-    // TEST_SCENARIO: the production tick, three times over: the reaper collects, the runtime's sweep of the same child reads nothing left, and the machine is still starting.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    // TEST_SCENARIO: the sweep's own read, which erases the status on every host: the runtime reaps the child and keeps only the signal, so the reaper's ticks find no status left to read.
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the reap repeats until the kernel has run the child.
+    let deadline = Instant::now() + ACTION_DEADLINE;
+    let swept = loop {
+        match smolvm::process::try_wait(pid) {
+            Some(swept) => break swept,
+            None if Instant::now() < deadline => std::thread::sleep(Duration::from_millis(1)),
+            None => panic!("the VMM was never reaped"),
+        }
+    };
+    assert_eq!(swept, 128 + libc::SIGKILL);
+    let kept =
+        smolvm::process::peek_exit_signal(pid).expect("the runtime keeps the signal it read");
+    h.fake.keep_signal(pid, kept);
+    // TEST_SCENARIO: the production tick, three times over, each proving on its own that a machine still starting reports nothing: only the boot's own return can make the death reportable.
     for _ in 0..3 {
         h.server.reap_killed();
-        // TEST_SCENARIO: the sweep's own read, which erases the status on every host: it must find nothing, because the reaper collected the status before it.
-        let mut status = 0;
-        // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
-        let swept = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
-        assert_eq!(
-            swept, -1,
-            "the sweep found a status the reaper had not collected"
-        );
         assert_ne!(
             h.server.status("m1").reason,
             REASON_OOM_KILLED,
@@ -4151,7 +4154,9 @@ async fn a_credit_past_its_window_is_dropped_rather_than_spent() {
     h.server.reap_killed();
 
     // TEST_SCENARIO: the count of a kill this runner never saw a victim for, aged past the window it could still belong to a death in hand.
-    locked(&h.server.oom_credit).push(Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1));
+    locked(&h.server.oom)
+        .credits
+        .push(Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1));
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
@@ -4161,6 +4166,145 @@ async fn a_credit_past_its_window_is_dropped_rather_than_spent() {
     let status = h.server.status("m1");
     assert!(status.reason.is_empty(), "{status:?}");
     let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: a tick reads a growing VMM's death before the grow itself does — the sweep or the boot's monitor left the signal where both read — and the grow then reboots the machine, which hands it a new pid. The death must still be named, so the round leaves an acting machine's death to its action rather than reading it first, and the grow still finds the signal its reboot follows.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_death_a_tick_read_first_is_still_named_by_the_grow_that_reboots_the_machine() {
+    let h = Harness::with("grow-kill-collected", |c| c.boot_mib = 1024);
+    *locked(&h.fake.fail_grow_once) = Some("the VMM did not add the RAM".into());
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    h.fake.keep_signal(pid, libc::SIGKILL);
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m1", spec(true)).unwrap();
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot is in the gate");
+    h.server.collect_exits();
+    assert!(
+        locked(&h.server.exits).is_empty(),
+        "a death the machine's own action will read is not collected first"
+    );
+    release.send(()).expect("the boot is released");
+    let status = h.settle("m1").await;
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+    let _ = vmm.kill();
+    let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: a set of credits whose victims this runner never saw has aged out, and the kernel has counted one more kill since. The cap must count the credits that are still live, not the dead ones still in the vector: a full set of expired credits that refuses the kill just counted leaves a machine killed for memory restarting with no reason at all.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_full_set_of_aged_credits_does_not_refuse_a_kill_just_counted() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-expired-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("cgroup-expired", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let aged = Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1);
+    locked(&h.server.oom).credits = vec![aged; OOM_CREDIT_CAP];
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    counted(&cgroup, 1);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = vmm.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    h.server.reap_killed();
+    let status = h.server.status("m1");
+    assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
+}
+
+// TEST_SCENARIO: a boot, a grow and the tick all sample the cgroup's count, and the kernel may answer them in the other order: a sample of one kill that arrives after another worker has already read two must not move the count back, or the next sample counts one of those kills a second time and a machine an operator kills is named as memory.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_sample_another_worker_already_passed_credits_nothing() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-race-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("cgroup-race", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.credit_oom(2);
+    h.server.credit_oom(1);
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        2,
+        "the stale sample credited nothing"
+    );
+    h.server.credit_oom(2);
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        2,
+        "and the count it had already passed is not counted again"
+    );
+}
+
+// TEST_SCENARIO: the kernel counts an OOM kill between the runner that was reading the count exiting and the next one starting, which is the window a hand-off opens. The count the old runner last read is kept, so the kill is credited to the runner that follows and can be spent on the machine its loader record names — taken as the new runner's starting point, it is spent on nobody.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_kill_counted_while_no_runner_was_running_is_credited_to_the_next_one() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-handoff-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let dir = cgroup.clone();
+    let h = Harness::with("cgroup-handoff", move |config| {
+        config.cgroup_dir = Some(dir)
+    });
+    assert_eq!(
+        locked(&h.server.oom).seen,
+        0,
+        "the first runner reads the count"
+    );
+    // TEST_SCENARIO: the kill lands while no runner is reading the count at all.
+    let during = cgroup.clone();
+    let later = cgroup.clone();
+    let next = h
+        .hand_off(move |config| {
+            config.cgroup_dir = Some(during);
+            counted(&later, 1);
+        })
+        .await;
+    assert_eq!(
+        locked(&next.server.oom).seen,
+        0,
+        "the next runner starts where the last one read, not where the count now stands"
+    );
+    next.server.match_oom_kills();
+    assert_eq!(
+        locked(&next.server.oom).credits.len(),
+        1,
+        "the kill counted in between is still unmatched, and spendable"
+    );
+}
+
+// TEST_SCENARIO: the count a runner starts from is the one the runner before it last read, since a kill counted in the handoff window belongs to a machine the loader still records; a count below that is a cgroup the kernel recreated, which starts afresh rather than waiting for a figure it may never reach.
+#[test]
+fn a_starting_runner_begins_at_the_count_the_one_before_it_read() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-before-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    let state = std::env::temp_dir().join(format!("vmr-state-before-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&state);
+    fs::create_dir_all(&state).unwrap();
+    counted(&cgroup, 3);
+    let before = |state: &Path, cgroup: &Path| oom_kills_seen_before(state, Some(cgroup));
+    assert_eq!(before(&state, &cgroup), 3, "a first start");
+    fs::write(state.join(OOM_KILL_COUNT), "1").unwrap();
+    assert_eq!(before(&state, &cgroup), 1, "the count the last runner read");
+    fs::write(state.join(OOM_KILL_COUNT), "9").unwrap();
+    assert_eq!(
+        before(&state, &cgroup),
+        3,
+        "a recreated cgroup starts afresh"
+    );
 }
 
 // TEST_SCENARIO: two deaths and one count: nothing on the host says which process the kernel's count was for, so the same two deaths must be blamed the same way on every runner, and a machine's name is the one part of that a hash map's order cannot change. The count goes to the first name, on a fresh map each time.
