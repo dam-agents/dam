@@ -48,12 +48,15 @@ The sidebar's Agents section lists the Sessions of an Agent only while the user 
 An open Agent lists five Sessions, and each **View more** shows five more and moves keyboard focus to the first of them.
 An open Agent that is not the shown one lists the record's rows; the shown Agent lists its own list, and so does any Agent once the user asks for more.
 It offers more only when rows are hidden or more may exist: a feed shorter than its row limit lists every row filed for the owner.
+An open Agent with no row in a whole, loaded record shows "No sessions yet."; while the record is cut off, loading or unreadable, it lists its own list instead.
+That list says a hibernated Agent's Sessions show when it wakes, instead of loading until then.
+When that list's own first read fails, it offers a retry instead of "No sessions yet."
 View more asks the Agent for one more page of its list only when the loaded rows run out, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 Opening a Session from Activity leaves its Agent's row as it was, closed or open.
 
 The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
 An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
-Hibernated Agents fold under **See all (N hibernating)**, unless the user has one open or its chat or configuration page is shown; closing the shown Agent's Sessions keeps its row in place.
+Hibernated Agents fold under **See all (N hibernating)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
 An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
@@ -116,14 +119,16 @@ That is harmless — the row is a fresh capture of live state — but it means r
 
 ## Default-model notices
 
-The bell also lists the Agents on the Model Router whose saved default needs their owner ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+The bell also lists the Agents on the Model Router whose saved default stops a run nobody picks for ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+That state stops real work only where an Agent runs unattended, so one with no enabled Schedule and no bound Slack or Telegram Channel is not listed for it: nothing of its own fails yet.
+The conversion's note is not a run that fails, and it is shown whatever the Agent runs.
 An Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
-They are computed on every read from the Agent's saved default, its granted providers and the conversion's note, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
+They are computed on every read from the Agent's saved default, its granted providers, the conversion's note and what it runs unattended, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
 A pending default, one still being converted, says nothing.
 The same notice puts a line under the chat's model control, a count in the banner on Home, and "Won't run" on the Agent's schedules that name no model.
 Only the bell's card can be dismissed, per Agent and state; the others show every notice that stops runs, and a changed default is shown in the bell alone.
 A dismissal is dropped once its notice no longer holds, so the same state coming back later is shown again, and an Agent's dismissals go with it.
-Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default, and changing an Agent's providers refreshes the list in the tab that changed them.
+Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default, and changing an Agent's providers, Schedules or bound Channels refreshes the list in the tab that changed them, since any of them decides whether the notice holds at all.
 
 ## Seen, unread, and dismissed
 

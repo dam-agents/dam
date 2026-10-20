@@ -8,7 +8,23 @@ description: >-
 # DAM — what a tester needs to know
 
 DAM runs AI coding agents (Claude Code, Codex, Pi, Bob) in isolated environments.
-The nested install is a fresh, single-user platform at `http://localhost:4444`, signed in as the test owner from `credentials.env` (a local account of the bundled sign-in service).
+The nested install is a fresh platform at `http://localhost:4444` with four test accounts from `credentials.env` (local accounts of the bundled sign-in service); the suite signs in as the owner.
+
+## Test accounts
+
+DAM has no teams or workspaces: every account owns its own agents, connections, schedules and artifacts, and sees another account's work only through what that account shares (an artifact link, a public agent, a shared connection).
+
+| Role        | Account        | May                                                                                                  |
+| ----------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| `OWNER`     | `qa-owner`     | everything a user may, plus the usage analytics report (an inspector)                                |
+| `MEMBER`    | `qa-member`    | everything an ordinary user may with their own work; no usage report (a "We are sorry" page)         |
+| `INSPECTOR` | `qa-inspector` | what `MEMBER` may, plus the usage analytics report                                                   |
+| `OUTSIDER`  | `qa-outsider`  | the same as `MEMBER` — kept apart for checks that someone else cannot see or change the owner's work |
+
+No account sees the Slack workspaces tab in Settings: the QA install sets no Slack app.
+None of them can see, open or change another account's agents, connections, schedules or artifacts unless it was shared with them.
+There is no read-only account: any signed-in user may create their own agents, so DAM provides no `VIEWER`.
+Builds published before these accounts were added have only `qa-owner`; there another account cannot sign in, so a check that needs one is `blocked` on such a build, never failed.
 
 ## Vocabulary a user sees
 
@@ -33,8 +49,6 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
   records for it stays testable.
 - What a user creates with a free-text field (a schedule's prompt) needs an agent first; the agent's name is itself free text and shows wherever the agent is listed.
   The injection canary therefore names one Mock agent with its text (`canary` in `profile.json`) and deletes it.
-- One user.
-  ACs about sharing, other users' access or approvals between people need a second account — `testable: no — single user` until the profile adds one.
 - No service mesh: the VM's kernel cannot run Istio, so the nested install runs without it.
   Network isolation between agents is not enforced — an AC that one agent cannot reach or act as another is `testable: no — no mesh`.
 - No email, no SSO federation, no real billing.

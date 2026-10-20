@@ -150,7 +150,7 @@ Nor does the boot that follows a machine the kernel killed for memory or the gue
 Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
 The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
 It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.
-The vm bound is short because a moved vm Agent takes the new image when it wakes, and the vm idle timeout hibernates it again five minutes later.
+The vm bound is short because a moved vm Agent takes the new image when it wakes, and a vm idle timeout hibernates it again five minutes later, or its own override does where it carries one.
 At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
 An exit from out of memory or a full home volume does not count, since any image meets it.
 A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.

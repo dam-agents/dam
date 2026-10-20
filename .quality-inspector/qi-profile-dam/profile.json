@@ -19,7 +19,15 @@
     "default_candidate": "main",
     "default_baseline": "release",
     "helm_version": "{{config:helm_version}}",
-    "credentials": { "users": { "owner": { "username": "qa-owner" } }, "secrets": ["keycloak_admin"] },
+    "credentials": {
+      "users": {
+        "owner": { "username": "qa-owner" },
+        "member": { "username": "qa-member" },
+        "inspector": { "username": "qa-inspector" },
+        "outsider": { "username": "qa-outsider" }
+      },
+      "secrets": ["keycloak_admin"]
+    },
     "prerequisites": [
       { "kind": "manifest", "name": "cert-manager",
         "url": "https://github.com/cert-manager/cert-manager/releases/download/{{config:cert_manager_version}}/cert-manager.yaml",
@@ -43,7 +51,12 @@
       "terms": { "version": "qa", "text": "Nested QA environment." },
       "keycloak": {
         "admin": { "password": "{{secret:keycloak_admin}}" },
-        "testUser": { "enabled": true, "username": "{{user:owner.username}}", "password": "{{user:owner.password}}" }
+        "testUser": { "enabled": true, "username": "{{user:owner.username}}", "password": "{{user:owner.password}}" },
+        "extraTestUsers": [
+          { "username": "{{user:member.username}}", "password": "{{user:member.password}}", "firstName": "Member" },
+          { "username": "{{user:inspector.username}}", "password": "{{user:inspector.password}}", "firstName": "Inspector", "groups": ["inspectors"] },
+          { "username": "{{user:outsider.username}}", "password": "{{user:outsider.password}}", "firstName": "Outsider" }
+        ]
       }
     },
     "overlays": [

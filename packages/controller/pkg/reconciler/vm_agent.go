@@ -816,9 +816,11 @@ func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, startedAt, r
 		return false
 	}
 	at := killedAt()
-	// UNIT_BOUNDARY_DESCRIPTION: a guest that answered after the kill has ended the taking down it caused, and whatever comes after that — a seccomp kill, a boot that failed — is its own: the kill is not read again for an agent that has been up since, though the runner pod still carries it in its last termination for the rest of the episode.
-	if recovered := recoveredAt(); !recovered.IsZero() && recovered.After(at) {
-		return false
+	// UNIT_BOUNDARY_DESCRIPTION: a guest that answered after the kill has ended the taking down it caused, and whatever comes after that — a seccomp kill, a boot that failed — is its own: the kill is not read again for an agent that has been up since, though the runner pod still carries it in its last termination for the rest of the episode. Read only against a kill the runner still carries: a pod keeps one termination, so a restart after the kill replaces it and says nothing about when the kill was, and an answer from before it would then read as one after it and end an episode that still explains the agent.
+	if !at.IsZero() {
+		if recovered := recoveredAt(); !recovered.IsZero() && recovered.After(at) {
+			return false
+		}
 	}
 	if prev.Reason == apiv1.ReasonRunnerOutOfMemory {
 		return time.Since(prev.LastTransitionTime.Time) <= runnerOOMEpisode

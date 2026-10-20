@@ -16,7 +16,10 @@ seccomp (all from restricted-v2). The two real relaxations are:
     caps.add. NET_ADMIN and NET_RAW are the init container's alone.
     DAC_OVERRIDE is the VM runner's alone: it lets its VMMs read an
     image's files that the image keeps from root, such as a 0000
-    /etc/shadow, to serve them to the guest. A runner mounts the node
+    /etc/shadow, to serve them to the guest. So is SYS_RESOURCE: it lets
+    the runner and the loader lower their own OOM score below the one
+    the container runtime starts them at, where the node does not run
+    the pod in a user namespace of its own. A runner mounts the node
     image cache's hostPath, which this SCC refuses, so it runs under
     `virtualization.runner.scc`. The runner's own pod spec already asks
     for what this SCC requires — drop ALL, no escalation, runtime/default
@@ -26,7 +29,7 @@ Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
 adds — NET_ADMIN for an agent's iptables init,
-DAC_OVERRIDE for the runner alone.
+DAC_OVERRIDE and SYS_RESOURCE for the runner alone.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -45,6 +48,7 @@ allowedCapabilities:
   - NET_ADMIN
   - NET_RAW
   - DAC_OVERRIDE
+  - SYS_RESOURCE
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny

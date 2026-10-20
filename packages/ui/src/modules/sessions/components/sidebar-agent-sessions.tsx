@@ -3,13 +3,14 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
+import { useAgentRunState } from "../../agents/api/queries.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
 import {
   useFeatures,
@@ -95,7 +96,9 @@ export function SidebarAgentSessions({
 
   return (
     <>
-      {open || limit > SIDEBAR_SESSION_STEP ? (
+      {open ||
+      limit > SIDEBAR_SESSION_STEP ||
+      (preview.length === 0 && !previewComplete) ? (
         <AgentSessionList
           agentId={agentId}
           sessionActions={sessionActions}
@@ -148,7 +151,7 @@ function SessionPreview({
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  if (sessions.length === 0) return null;
+  if (sessions.length === 0) return <ListNote>No sessions yet.</ListNote>;
   const visible = sidebarSessionWindow(
     sessions,
     SIDEBAR_SESSION_STEP,
@@ -214,6 +217,9 @@ function AgentSessionList({
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
+  const runState = useAgentRunState(agentId);
+  const asleep =
+    list.loading && (runState === "hibernated" || runState === "hibernating");
   const openSession = useOpenSession();
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
   const telemetryBackend =
@@ -265,13 +271,29 @@ function AgentSessionList({
       className={LIST_CLASS}
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || list.loading}
+      aria-busy={list.provisional || (list.loading && !asleep && !list.failed)}
     >
-      {list.loading && <SessionListSkeleton />}
-      {!list.loading && rows.length === 0 && !hasNextPage && (
-        <p className="py-1.5 pl-12 text-xs text-muted-foreground">
-          No sessions yet.
-        </p>
+      {asleep ? (
+        <ListNote testId="sidebar-agent-asleep">
+          Its sessions show when it wakes.
+        </ListNote>
+      ) : (
+        list.loading && !list.failed && <SessionListSkeleton />
+      )}
+      {list.failed && (
+        <button
+          type="button"
+          onClick={() => void list.retry()}
+          disabled={list.retrying}
+          data-testid="sidebar-agent-sessions-failed"
+          className={`flex h-[30px] items-center gap-1 rounded-lg pl-12 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+        >
+          Couldn't load sessions. Retry
+          {list.retrying && <Spinner />}
+        </button>
+      )}
+      {!list.loading && !list.failed && rows.length === 0 && !hasNextPage && (
+        <ListNote>No sessions yet.</ListNote>
       )}
       {visible.map(({ session: s, state }) => (
         <SessionRow
@@ -322,6 +344,23 @@ function AgentSessionList({
         )
       )}
     </div>
+  );
+}
+
+function ListNote({
+  testId,
+  children,
+}: {
+  testId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <p
+      className="py-1.5 pl-12 text-xs text-muted-foreground"
+      data-testid={testId}
+    >
+      {children}
+    </p>
   );
 }
 

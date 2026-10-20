@@ -191,6 +191,7 @@ flowchart LR
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
+  An agent files what it publishes itself: the artifact tools tell it to look at the user's folders first and pick the one that fits, else leave the artifact ungrouped rather than create a folder nobody asked for.
 - The chat file panel's toolbar carries a **Create artifact / Sync to artifact** action that publishes the open file as above and switches the dock to the resulting artifact; binary and oversized files are excluded.
 - In a chat the preview shares one dock with the sandbox file viewer, so opening either evicts the other.
   The dock belongs to the chat it was opened in: switching Agent, going back or leaving the chat closes it, and so does entering a chat; moving between pages outside a chat keeps it open.
