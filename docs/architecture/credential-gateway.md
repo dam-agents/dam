@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -166,6 +166,12 @@ Once moved, the agent's own gateway pod and the objects around it are removed.
 Turning the flag off, or a refused owner, renders them again, and each agent moves back once its own gateway pod is ready.
 Until then its policies still admit the owner gateway and the owner gateway still renders it, so its grants stay current; the owner gateway goes once no agent is left on it.
 The controller renders the owner gateway after the runner call, so a machine's start never waits for it.
+
+**A listener the pod did not load.** These files are in-place updates to a running pod, so a load can be lost: Envoy refuses a listener whose credentials file the kubelet had not yet projected into the pod's Secret volume, or whose cluster had not arrived in the other file, and keeps the last good listener serving.
+Envoy also reads a file again only when its content changes, so re-rendering the same files — which is all a reconcile of an unchanged owner does — would leave that agent on the old listener for good.
+So a stale answer to the health probe is what makes the next renders repairs: while it stands, the files carry an xDS version of their own in place of the template's, on a wait that doubles from a few seconds, so each attempt is a file Envoy reads again and a listener that will not load anyway is not rewritten into a loop.
+The agent's listener is what proves the repair, and the files go back to the template's version once the pod serves the revision rendered for the agent.
+The attempts stop after about two minutes — the slowest way a file reaches a mounted volume — and the gateway keeps that listener, with the agent's readiness left reading the stale revision, since a file that cannot load for a reason of its own is not repaired by rewriting it.
 
 **Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.

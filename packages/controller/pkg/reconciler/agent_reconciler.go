@@ -97,6 +97,8 @@ type AgentReconciler struct {
 	migrationCopyMu       sync.Mutex
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
+	ownerStaleListeners   sync.Map
+	ownerGatewayRepairs   sync.Map
 	ownerGatewayBudget    int
 	ownerProbeClient      *http.Client
 }
@@ -684,6 +686,7 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 	if agent.Spec.IsVM() && r.ownerGatewayOn(agent.Labels[envoyOwnerLabel]) {
 		if svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(agent.Name), metav1.GetOptions{}); err == nil && svc.Annotations[annOwnerGatewayServed] == "true" {
 			if ok, msg := r.ownerListenerCurrent(ctx, agent.Name, svc.Spec.ClusterIP, r.config.EnvoyPort); !ok {
+				r.ownerStaleListeners.Store(agent.Name, struct{}{})
 				if r.requeue != nil {
 					r.requeue(agent.Name, ownerListenerRecheck)
 				}
@@ -692,6 +695,7 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 				}
 				return false, apiv1.ReasonOwnerGatewayListenerStale, msg
 			}
+			r.ownerStaleListeners.Delete(agent.Name)
 			return true, "", ""
 		}
 	}
@@ -826,6 +830,7 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)
 	r.ownerGatewayRevisions.Delete(name)
+	r.ownerStaleListeners.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)

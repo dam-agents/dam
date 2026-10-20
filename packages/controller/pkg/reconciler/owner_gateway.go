@@ -306,7 +306,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		granted    [][]corev1.Secret
 		leafAgents []ownerLeafAgent
 	)
-	render := func(names []string) error {
+	render := func(names []string, version string) error {
 		var agents []ownerGatewayAgent
 		var blocks []ownerResolverBlock
 		granted, leafAgents = nil, nil
@@ -322,13 +322,14 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			leafAgents = append(leafAgents, ownerLeafAgent{Secrets: m.secrets, L7Hosts: m.agent.Spec.L7Hosts})
 		}
 		var err error
-		if rendered, err = renderOwnerGateway(agents, r.config); err != nil {
+		if rendered, err = renderOwnerGateway(agents, r.config, version); err != nil {
 			return err
 		}
 		cm = buildOwnerGatewayConfigMap(owner, r.config, rendered, ownerResolverCorefile(blocks), refs)
 		return nil
 	}
-	if err := render(names); err != nil {
+	version := r.ownerGatewayRepairVersion(owner, names, time.Now())
+	if err := render(names, version); err != nil {
 		return nil, err
 	}
 	budget := cmp.Or(r.ownerGatewayBudget, ownerGatewayConfigBudget) - 4096
@@ -336,7 +337,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		if size := configMapSize(cm); size > budget {
 			r.ownerGatewayRefused.Store(owner, true)
 			slog.Warn("owner gateway: refused, past the 1 MiB a ConfigMap holds; its agents move back to their own gateways", "owner", owner, "agents", len(names), "KiB", size>>10)
-			if err := render(onIt); err != nil {
+			if err := render(onIt, version); err != nil {
 				return nil, err
 			}
 		} else {
@@ -527,6 +528,7 @@ func (r *AgentReconciler) ownerGatewayFailure(ctx context.Context, owner string)
 // UNIT_BOUNDARY_DESCRIPTION: removes everything an owner gateway is made of, once the owner has no vm Agent left. Its objects all carry the owner gateway's labels and name, so this is one delete each.
 func (r *AgentReconciler) deleteOwnerGateway(ctx context.Context, owner string) {
 	name, ns := ownerGatewayName(r.config.ReleaseName, owner), r.config.Namespace
+	r.ownerGatewayRepairs.Delete(owner)
 	opts := metav1.DeleteOptions{}
 	for _, del := range []func() error{
 		func() error { return r.client.AppsV1().Deployments(ns).Delete(ctx, name, opts) },
@@ -640,6 +642,48 @@ func retargetedGatewayService(svc *corev1.Service, owner string, slot int) *core
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's listener is current when its health path answers with the revision rendered for it last. Envoy applies a changed file about a second after the kubelet syncs it, and a file that does not load leaves the last good one running, so a stale or missing listener reads as not current rather than as an outage. The controller probes through the same port the agent's traffic takes.
+const (
+	// UNIT_BOUNDARY_DESCRIPTION: a repair rewrites the owner gateway's files, which re-projects the ConfigMap into the pod, so the retries are paced by the clock rather than by reconciles, which arrive with every event of every agent the pod serves. The window covers the slowest way a file reaches the pod — the periodic sync of a mounted Secret, about a minute and a half — after which the files go back to their one canonical version and stay, since a listener that cannot load for a reason of its own is not repaired by rewriting it.
+	ownerGatewayRepairEvery  = 3 * time.Second
+	ownerGatewayRepairWindow = 2 * time.Minute
+)
+
+// UNIT_BOUNDARY_DESCRIPTION: one owner's repair of a listener its gateway did not load: when the pod was first found not serving what was rendered, the next rewrite it is owed, how many it has had, and whether the giving-up has been logged.
+type ownerGatewayRepair struct {
+	first  time.Time
+	next   time.Time
+	tries  int
+	warned bool
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the xDS version a render carries, empty for an ordinary one. It is the files' only change that a repair needs: Envoy reads a watched file again only when its content changes, and re-rendering the files unchanged, which is all a reconcile of an unchanged owner does, can never replace one Envoy refused. While an agent of the owner answers an older listener, the version moves on a wait that doubles from a few seconds, so the usual lost load — a file that reaches the pod a moment after the one that names it — is repaired by the first attempt, and a listener that will not load anyway is not rewritten into a loop. It goes back to empty once the pod serves what was rendered.
+func (r *AgentReconciler) ownerGatewayRepairVersion(owner string, names []string, now time.Time) string {
+	m := ownerGatewayRepair{}
+	if v, ok := r.ownerGatewayRepairs.Load(owner); ok {
+		m = v.(ownerGatewayRepair)
+	}
+	switch {
+	case !slices.ContainsFunc(names, func(name string) bool { _, ok := r.ownerStaleListeners.Load(name); return ok }):
+		m = ownerGatewayRepair{}
+	case m.first.IsZero():
+		m.first, m.next = now, now.Add(ownerGatewayRepairEvery)
+	case now.Sub(m.first) > ownerGatewayRepairWindow:
+		if !m.warned {
+			slog.Warn("owner gateway: its pod has not loaded the files rendered for one of its agents; it keeps the listener it has", "owner", owner, "waited", ownerGatewayRepairWindow)
+			m.warned = true
+		}
+		m.tries = 0
+	case !now.Before(m.next):
+		m.tries++
+		m.next = now.Add(min(ownerGatewayRepairEvery<<(m.tries-1), ownerGatewayRepairWindow))
+	}
+	r.ownerGatewayRepairs.Store(owner, m)
+	if m.tries == 0 {
+		return ""
+	}
+	return fmt.Sprintf("%s-repair-%d", ownerGatewayTemplateRev, m.tries)
+}
+
 func (r *AgentReconciler) ownerListenerCurrent(ctx context.Context, agent, host string, port int) (bool, string) {
 	want, ok := r.ownerGatewayRevisions.Load(agent)
 	if !ok {

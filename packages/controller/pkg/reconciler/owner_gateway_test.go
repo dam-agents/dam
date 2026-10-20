@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -260,6 +261,69 @@ func TestOwnerGateway_ACredentialChangeSyncsItsPodTwice(t *testing.T) {
 	require.NoError(t, err)
 	r.refreshOwnerGatewayCredentials(ctx, testOwner, "next", []string{"my-agent"}, now.Add(time.Minute))
 	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev], "a pod going away is not synced")
+}
+
+// TEST_SCENARIO: Envoy reads a watched file again only when its content changes, and a file it refused leaves the last good listener serving, so a reconcile that renders the same files cannot repair one. The pod's health path is the proof: while it answers an older revision the agent is marked, and the files then carry an xDS version of their own, on a wait that doubles and within a window, so each attempt is a file Envoy reads again; they go back to their one canonical version once the pod answers the revision rendered for it.
+func TestOwnerGateway_ARefusedFileIsSentAgainUnderANewVersion(t *testing.T) {
+	ctx, ns := context.Background(), "test-agents"
+	r, _, agent := servedVMReconciler(t)
+	answer := "stale"
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(answer))
+	}))
+	t.Cleanup(srv.Close)
+	r.ownerProbeClient = &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}}}
+	requeued := &requeueLog{}
+	r.WithRequeue(t.Context(), requeued.add)
+	cm := func() *corev1.ConfigMap {
+		got, err := r.client.CoreV1().ConfigMaps(ns).Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		return got
+	}
+	canonical := cm().Data[ownerGatewayLDSKey]
+	require.Contains(t, canonical, "version_info: "+ownerGatewayTemplateRev)
+
+	rv := cm().ResourceVersion
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, rv, cm().ResourceVersion, "a render of an unchanged owner writes nothing, which is why a refused file is never read again")
+	assert.Contains(t, requeued.all(), ownerListenerRecheck, "a listener the pod does not serve asks for the agent back")
+
+	// TEST_SCENARIO: the wait doubles from a few seconds, and past the window the files keep their one canonical version rather than being rewritten for as long as the agent lives.
+	now := time.Now()
+	patience := func(after time.Duration) string {
+		return r.ownerGatewayRepairVersion("paced", []string{"my-agent"}, now.Add(after))
+	}
+	assert.Empty(t, patience(0), "the first render after the mark only arms the wait")
+	assert.Empty(t, patience(ownerGatewayRepairEvery-time.Millisecond))
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", patience(ownerGatewayRepairEvery))
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", patience(2*ownerGatewayRepairEvery-time.Millisecond), "a render inside the wait rewrites nothing")
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", patience(2*ownerGatewayRepairEvery))
+	assert.Empty(t, patience(ownerGatewayRepairWindow+time.Second), "a file that will not load is not rewritten forever")
+	assert.Empty(t, patience(ownerGatewayRepairWindow+ownerGatewayRepairEvery))
+
+	// TEST_SCENARIO: the repair is what the ConfigMap carries, so the pod's files change and Envoy reads them again.
+	r.ownerGatewayRepairs.Store(testOwner, ownerGatewayRepair{first: now, next: now})
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", ownerGatewayLDSVersion(t, cm()))
+	assert.Contains(t, requeued.all(), ownerListenerRecheck)
+
+	// TEST_SCENARIO: once the pod answers the revision rendered for it, the files keep their canonical version.
+	rev, _ := r.ownerGatewayRevisions.Load("my-agent")
+	answer = rev.(string)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, ownerGatewayTemplateRev, ownerGatewayLDSVersion(t, cm()))
+	rv = cm().ResourceVersion
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, rv, cm().ResourceVersion, "a settled owner writes nothing")
+}
+
+func ownerGatewayLDSVersion(t *testing.T, cm *corev1.ConfigMap) string {
+	t.Helper()
+	lds := cm.Data[ownerGatewayLDSKey]
+	return strings.TrimSpace(lds[strings.LastIndex(lds, "version_info: ")+len("version_info: "):])
 }
 
 // TEST_SCENARIO: an agent its owner gateway serves hibernates and wakes without its own gateway pod: the idle checker stops the machine and records the agent down on its Service, the agent still reads hibernated only once the machine stopped, and a wake records it up and starts the machine while its own gateway stays at zero. Its listener stays configured the whole time, so a wake needs no configuration change.
