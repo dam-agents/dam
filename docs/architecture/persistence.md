@@ -249,10 +249,11 @@ The old upper is renamed aside with the record of its image and deleted in the b
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root, empty on every boot whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays in the root: an image ships its caches there, and an empty folder over them rebuilt them each boot.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries until a fifth of the disk is free, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
-What it may delete is only what something other than the agent calls replaceable: an entry carrying a `CACHEDIR.TAG` signature wherever it sits, and any entry of `HOME`'s `.cache` and `.npm`, caches by the XDG specification and by npm; an unmarked `/tmp` or `/var/tmp` entry is never deleted, whatever its age: it is the agent's own work.
-An entry is one name directly in such a folder and goes whole or not at all: a tool keeping part of its cache takes it for complete and fails.
-Deletion is bound to the tree it judged, not the name it listed: the entry is opened once and its mark, mount and use are read through that descriptor.
+The caches share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
+A disk pass runs until a fifth of the disk is free; a claim's pass stops at the bytes the runner asked for.
+It deletes only from `HOME`'s `.cache` and `.npm`, caches by the XDG specification and by npm, and never from `/tmp` or `/var/tmp`, whatever a directory's mark or age: a tool can drop that mark, write work there and rename it while a pass runs, so no mark, timestamp, lock or descriptor makes one safe to delete.
+An entry goes whole or not at all: a tool keeping part of its cache takes it for complete and fails.
+Deletion is bound to the tree it judged, not the name it listed: the entry is opened once and its mount and use are read through that descriptor.
 Use is the newest modification or change time in the entry: a write moves those, a read moves none the guest keeps, and a reader is seen by its descriptors alone.
 An entry used in the last ten minutes stays, and so does one a process holds, locks (as `systemd-tmpfiles` leaves it), or works in.
 A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that rule on: each request is served once, by one pass that keeps what was used in the last hour, stops at the bytes the runner asked of that machine, and ends with that shortage, reading the request again before each entry.
