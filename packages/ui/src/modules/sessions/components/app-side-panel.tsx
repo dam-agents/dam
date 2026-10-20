@@ -25,13 +25,14 @@ export function AppSidePanelButtons() {
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
   const openSidePanel = useOpenSidePanel();
   const desktop = useIsDesktop();
+  const view = useStore((s) => s.view);
   if (desktop) return null;
   return (
     <SidePanelTabButtons
       tabs={appSidePanelTabs(
         hiddenSidePanelTabs({
           agent: false,
-          artifacts: false,
+          artifacts: view === "sandbox-home",
           canOpenBrowser: false,
           processesEnabled: false,
           gettingStarted,

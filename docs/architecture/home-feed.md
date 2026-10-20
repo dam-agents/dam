@@ -1,11 +1,11 @@
 # Home feed
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
-The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, a panel like the Artifacts panel beside it, that takes its room from the page.
+The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, which takes its room from the page.
 In an Agent's chat with the new layout off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
 
 ## What Home reads

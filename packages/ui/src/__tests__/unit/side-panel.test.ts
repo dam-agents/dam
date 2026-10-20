@@ -20,7 +20,8 @@ import type { PlatformStore } from "../../store.js";
 /**
  * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
  * icon bar. An Agent's chat offers Files, Changes, Browser and Processes;
- * every page, the chat included, offers Artifacts, Get started and Approvals.
+ * every page offers Get started and Approvals, and the chat and an Agent's
+ * configuration page also offer Artifacts.
  * A list tab shows its list, or the docked item it opened (a file, an
  * artifact, a process output). The Changes and Browser tabs show their docked
  * panel and nothing else. Clicking the active icon collapses the panel. A
