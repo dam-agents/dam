@@ -361,8 +361,6 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			return err
 		}
 		files, keys = buildOwnerGatewaySecret(owner, r.config, rendered, ownerResolverCorefile(blocks), granted, refs)
-		plan.observeCredentials(keys)
-		files.Annotations[annOwnerRegenerated] = plan.regenerated()
 		return nil
 	}
 	if err := render(names); err != nil {
@@ -392,6 +390,8 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	if size := secretSize(files); size > budget {
 		return nil, fmt.Errorf("the owner gateway's configuration for the %d agents still on it is %d KiB, past the 1 MiB one Secret holds; they keep its last configuration until each moves back", len(onIt), size>>10)
 	}
+	plan.observeCredentials(keys)
+	files.Annotations[annOwnerRegenerated] = plan.regenerated()
 	name := ownerGatewayName(r.config.ReleaseName, owner)
 	err = concurrently(
 		func() error {
@@ -931,18 +931,23 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, n
 	return p
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a credential file the pod has never been written is the one case a single flip cannot make whole: the kubelet moves the volume's data before it publishes the new file at the path a listener names, so a provider built during that flip reads a path that is not there yet and never reads again. Every arrival is therefore counted, and the agents that answer the render carrying it are each given one internal-listener generation, spent after that answer, by which time the pathname exists.
+// UNIT_BOUNDARY_DESCRIPTION: a credential file the pod has never been written is the one case a single flip cannot make whole: the kubelet moves the volume's data before it publishes the new file at the path a listener names, so a provider built during that flip reads a path that is not there yet and never reads again. An arrival is a key the applied render carries that the pod was never written, and only the render the owner keeps is observed: a revoked key is no arrival, since its pathname was there and its provider went with its chain, and the render a refused owner discards is never observed at all. The agents that answer the render carrying an arrival are each given one internal-listener generation, spent after that answer, by which time the pathname exists.
 func (p *ownerGatewayRepairPlan) observeCredentials(keys []string) {
 	if p == nil || p.set == nil {
 		return
 	}
 	p.set.mu.Lock()
 	defer p.set.mu.Unlock()
-	if !p.set.known {
-		p.set.known, p.set.seen = true, keys
-	} else if !slices.Equal(p.set.seen, keys) {
-		p.set.arrivals, p.set.seen = p.set.arrivals+1, keys
+	newer := false
+	for _, key := range keys {
+		if !slices.Contains(p.set.seen, key) {
+			newer = true
+		}
 	}
+	if newer && p.set.known {
+		p.set.arrivals++
+	}
+	p.set.known, p.set.seen = true, keys
 	p.arrivals = p.set.arrivals
 }
 

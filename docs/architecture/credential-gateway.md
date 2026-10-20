@@ -176,8 +176,9 @@ The kubelet flips a projected volume once, all keys together, so a file that nam
 The leaf TLS files stay a Secret of their own: cert-manager writes them, a rotation changes their content rather than their names, and the leaf-SDS file that names them never moves.
 One case the one volume does not close: a key the pod has never had.
 The kubelet moves the volume's data into place before it publishes the new key at the path a listener names, so a listener that arrives in that same flip can still name a file whose pathname appears a moment later, and the provider built then never reads it.
-The controller counts every credential file it newly writes and, once an agent answers a render that carried it, replaces that agent's internal listener — the one whose chains hold the providers — with a moved generation in its metadata, which is the only thing that builds those providers again; by the time the agent has answered, the pathname exists.
-A rotation of a file the pod already has is not an arrival and costs no listener replacement.
+The controller counts every credential file the render it applies newly carries and, once an agent answers a render that carried one, replaces that agent's internal listener — the one whose chains hold the providers — with a moved generation in its metadata, which is the only thing that builds those providers again; by the time the agent has answered, the pathname exists.
+A rotation of a file the pod already has is not an arrival, and neither is a revoked one: a key that leaves takes its chain with it.
+A render the owner refuses is never observed, so a refused owner gains no arrivals at all.
 An install that upgrades keeps the previous layout's ConfigMap and credentials Secret while a Deployment or a pod still mounts them, written with each render, and removes them once none does.
 
 **A listener the pod refused.** The files still land in the pod after the controller writes them — usually in a second, but the kubelet's documented fallback for a changed Secret is its sync period plus its cache delay, up to about a minute and a half — and Envoy applies the resources of one read one at a time.
