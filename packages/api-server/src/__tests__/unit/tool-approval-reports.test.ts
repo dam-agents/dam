@@ -548,4 +548,22 @@ describe("tool approval reports", () => {
       deliveredAt: expect.any(Date),
     });
   });
+
+  // TEST_SCENARIO: a watched client answers, but the runtime dropped that answer: nothing reached the harness, and Home's earlier verdict still waits for delivery. The client's own reply is not proof that the request is over, so it must not close the delivery.
+  it("keeps a lost delivery open when a client reply is not acknowledged", async () => {
+    const { rows, relay, repo, waiting } = setup();
+    await waiting();
+    await repo.resolvePending(ROW, "deny_once", "owner-1");
+
+    await relay.resolveAcpNativeFromInSession(ROW, {
+      outcome: "selected",
+      optionId: "allow",
+    });
+
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "deny_once",
+      deliveredAt: null,
+    });
+  });
 });

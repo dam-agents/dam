@@ -124,7 +124,9 @@ export function createApprovalsRelayService(
         !casWon &&
         opts?.authoritative === true &&
         (await deps.repo.correctResolvedVerdict(row.id, verdict));
-      if (!casWon) await deps.repo.markDelivered(row.id);
+      if (!casWon && opts?.authoritative === true) {
+        await deps.repo.markDelivered(row.id);
+      }
       if (!casWon && !corrected) return "settled";
       emit({
         type: EventType.ApprovalResolved,

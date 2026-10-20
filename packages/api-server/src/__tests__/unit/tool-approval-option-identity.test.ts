@@ -6,7 +6,10 @@ import {
   TOOL_CALL_ID_MAX,
 } from "api-server-api";
 
-import { verdictOfOutcome } from "../../modules/approvals/infrastructure/wrapper-response-frames.js";
+import {
+  pickOptionId,
+  verdictOfOutcome,
+} from "../../modules/approvals/infrastructure/wrapper-response-frames.js";
 
 const shared = "x".repeat(TOOL_CALL_ID_MAX);
 const aliased = [
@@ -51,5 +54,19 @@ describe("tool approval option identity", () => {
         { reportedByRuntime: false },
       ),
     ).toBe("allow_once");
+  });
+
+  // TEST_SCENARIO: before option ids were kept whole, a recorded catalog shortened them, so one id could stand for both an allow and a reject. Those rows survive the upgrade, and Home and the delivery sweeper both answer from them: a denial must cancel rather than send an id the harness may read as the allow.
+  it("cancels a denial whose reject id a legacy catalog also records as an allow", () => {
+    const legacy = [
+      { optionId: shared, kind: "allow_once" as const },
+      {
+        optionId: `${shared}-reject`.slice(0, TOOL_CALL_ID_MAX),
+        kind: "reject_once" as const,
+      },
+    ];
+
+    expect(pickOptionId(legacy, "deny_once")).toBeNull();
+    expect(pickOptionId(legacy, "allow_once")).toBe(shared);
   });
 });

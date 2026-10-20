@@ -9,7 +9,9 @@ import type {
  * the runtime, and the verdict a reported outcome becomes when it travels
  * back. A verdict only ever answers in its own direction: a denial picks a
  * reject option or cancels, because the row's catalog is bounded and the
- * option it lost cannot be told apart from an allow. In the other direction
+ * option it lost cannot be told apart from an allow, and an id a catalog
+ * recorded twice — once as an allow, once as a shorter reject — is never sent
+ * for a denial: the harness knows only one meaning for it. In the other direction
  * the runtime holds the whole request, so the kind it reports states what an
  * option the row dropped was. That kind decides the verdict only when the
  * runtime reports it: the chat client's own answer travels unvalidated.
@@ -26,10 +28,18 @@ export function pickOptionId(
         : verdict === "allow"
           ? "allow_always"
           : "allow_once";
-  const direct = options.find((o) => o.kind === want);
-  if (direct) return direct.optionId;
   const isAllow = verdict === "allow" || verdict === "allow_once";
-  const fallback = options.find((o) => {
+  const allowIds = new Set(
+    options
+      .filter((o) => o.kind?.startsWith("allow") === true)
+      .map((o) => o.optionId),
+  );
+  const answerable = options.filter(
+    (o) => isAllow || !allowIds.has(o.optionId),
+  );
+  const direct = answerable.find((o) => o.kind === want);
+  if (direct) return direct.optionId;
+  const fallback = answerable.find((o) => {
     if (!o.kind) return false;
     return isAllow ? o.kind.startsWith("allow") : o.kind.startsWith("reject");
   });
