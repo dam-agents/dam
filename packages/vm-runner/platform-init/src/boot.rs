@@ -3214,14 +3214,24 @@ mod tests {
         let held_before_move = guard.held();
         let reachable = before_move.saturating_add(held_before_move);
         let writing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let epoch = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let began = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let landed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let (stop, tried, took) = (writing.clone(), attempts.clone(), landed.clone());
+        let (stop, generation, started, took) = (
+            writing.clone(),
+            epoch.clone(),
+            began.clone(),
+            landed.clone(),
+        );
+        let began_in_step = began.clone();
+        let epoch_in_step = epoch.clone();
         let top_for_writer = top.clone();
         let writer = std::thread::spawn(move || {
             let mut kept: Vec<File> = Vec::new();
             let mut tries = 0usize;
             while stop.load(std::sync::atomic::Ordering::Acquire) {
+                // UNIT_BOUNDARY_DESCRIPTION: the generation is read before the allocation is asked for and published with it, so the move below can tell an attempt that began under the room it released from one that was already in the filesystem when it released it: a count alone accepts a failed attempt whose syscall returned before the release and whose counter was published after, which is a schedule real threads reach on a loaded host.
+                let mine = generation.load(std::sync::atomic::Ordering::Acquire);
                 let path = top_for_writer.join(format!("racing-{tries}"));
                 tries += 1;
                 match File::create(&path)
@@ -3238,24 +3248,24 @@ mod tests {
                         std::thread::yield_now();
                     }
                 }
-                // UNIT_BOUNDARY_DESCRIPTION: an attempt is counted once it is over, and the move below waits for the next count, so an allocation the test reads is one the move saw: spawning a writer and hoping the scheduler gives it a turn between two resizes fails a correct guard on a loaded host, and one that never ran at all would leave the bound below with nothing to check.
-                tried.fetch_add(1, std::sync::atomic::Ordering::Release);
+                // UNIT_BOUNDARY_DESCRIPTION: the attempt is published with the generation it read before it began, so a move waiting on a generation is answered only by an attempt that started under that generation: spawning a writer and hoping the scheduler gives it a turn between two resizes fails a correct guard on a loaded host, and one that never ran at all would leave the bound below with nothing to check.
+                started.store(mine, std::sync::atomic::Ordering::Release);
             }
             kept
         });
-        // UNIT_BOUNDARY_DESCRIPTION: the shrink is held open across a whole allocation of the writer's rather than raced against it: it drops a step, waits, bounded, for the writer's next attempt to finish, and only then drops another. A writer blocked in the filesystem when the wait starts still finishes inside the window, and every step still holds within one file of what it was asked for once that allocation landed, which is the guard's own promise: a move that released the whole guard and let it regrow would have left the guard short of what it was asked for, with the room gone to the writer.
+        // UNIT_BOUNDARY_DESCRIPTION: the shrink is held open across a whole allocation of the writer's rather than raced against it: it drops a step, publishes that step's generation once the room is committed, waits, bounded, for the writer to begin an attempt under that generation, and only then drops another. A writer blocked in the filesystem when the wait starts still finishes inside the window, and every step still holds within one file of what it was asked for once that allocation landed, which is the guard's own promise: a move that released the whole guard and let it regrow would have left the guard short of what it was asked for, with the room gone to the writer.
         for left in (4..=19u64).rev() {
             let size = left * POOL_GUARD_STEP;
             guard.size(&dir, size).unwrap();
             // UNIT_BOUNDARY_DESCRIPTION: the step's room is committed before the writer is asked to use it, because btrfs frees a dropped file's extents in its next transaction and the writer's own preallocation cannot be given space the filesystem has not released yet.
             flush_filesystem(&top).unwrap();
-            // UNIT_BOUNDARY_DESCRIPTION: the count is taken once the step's room is committed, so the attempt the wait below finds is one the writer made with that room free: a count taken before the resize is already satisfied by an attempt that finished while the guard still held the step, and the wait would pass without the writer ever having seen the release.
-            let released_at = attempts.load(std::sync::atomic::Ordering::Acquire);
+            // UNIT_BOUNDARY_DESCRIPTION: the step's generation goes out after the resize and the flush, and the wait below takes it only from an attempt that read it before its own allocation: an attempt already inside the filesystem when the step was released carries the previous generation, however late its counter is published, so it cannot stand in for one the release made room for.
+            let step = epoch_in_step.fetch_add(1, std::sync::atomic::Ordering::AcqRel) + 1;
             let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            while attempts.load(std::sync::atomic::Ordering::Acquire) <= released_at {
+            while began_in_step.load(std::sync::atomic::Ordering::Acquire) != step {
                 assert!(
                     std::time::Instant::now() < until,
-                    "the writer finished no allocation attempt after the guard released the room for {} MiB",
+                    "the writer began no allocation after the guard released the room for {} MiB",
                     size >> 20
                 );
                 std::thread::yield_now();
