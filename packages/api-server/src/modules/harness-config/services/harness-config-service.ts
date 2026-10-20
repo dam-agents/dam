@@ -47,6 +47,7 @@ export function createHarnessConfigService(deps: {
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
+  retireReset?: (agentId: string, tx: DbTx) => Promise<void>;
 }): HarnessConfigService {
   async function requireOwned(agentId: string): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
@@ -96,6 +97,12 @@ export function createHarnessConfigService(deps: {
        * declaration the panel shows commit together under the snapshot lock, so
        * a reset or a second change cannot reorder one against the other. */
       await deps.snapshotRepo.locked(agentId, async (tx) => {
+        /* UNIT_BOUNDARY_DESCRIPTION: an explicit mode choice outranks a pending
+         * one-off correction, and retires it here so a runtime report of the old
+         * mode arriving afterwards cannot bring the correction back. A change
+         * that carries no mode leaves the correction alone. */
+        if (change.mode !== undefined || change.unset?.includes("mode"))
+          await deps.retireReset?.(agentId, tx);
         await deps.eventQueue.queue(agentId, change, tx);
         await deps.snapshotRepo.merge(
           agentId,

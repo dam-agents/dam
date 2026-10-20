@@ -28,6 +28,7 @@ function harness(opts: {
   const calls = {
     queries: [] as { after: string; limit: number }[],
     rosters: 0,
+    retired: [] as { agentId: string; inLock: boolean }[],
     claims: [] as { agentId: string; inLock: boolean; accepted: boolean }[],
     queued: [] as {
       agentId: string;
@@ -53,6 +54,12 @@ function harness(opts: {
         return opts.froze ?? true;
       },
       frozen: async () => !(opts.froze ?? true),
+      retire: async (agentId, tx) => {
+        calls.retired.push({
+          agentId,
+          inLock: holdingLock && tx !== undefined,
+        });
+      },
       pending: async (input) => {
         calls.queries.push(input);
         return queues.shift() ?? [];

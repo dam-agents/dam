@@ -81,12 +81,14 @@ export function composeHarnessConfigModule(deps: {
   isSettled: (agentId: string) => Promise<boolean>;
 }): { service: HarnessConfigService } {
   const { db, outboxRepo, ...serviceDeps } = deps;
+  const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
       snapshotRepo: createHarnessConfigSnapshotRepo(db),
       pairRepo: createSessionPairRepo(db),
       eventQueue: createHarnessConfigEventQueue({ db, outboxRepo }),
+      retireReset: (agentId, tx) => resetRepo.retire(agentId, tx),
     }),
   };
 }

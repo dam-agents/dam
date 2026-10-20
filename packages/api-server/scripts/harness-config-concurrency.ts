@@ -174,6 +174,28 @@ function reset(
   });
 }
 
+/* UNIT_BOUNDARY_DESCRIPTION: the app's own wiring — a Config save retires a pending correction. */
+const serviceRetiring = (name: string) => {
+  const repo = resetRepo(name);
+  return createHarnessConfigService({
+    surface: "check",
+    eventQueue,
+    runtimeMutator: { enqueueAfterCommit: async () => {} } as never,
+    snapshotRepo,
+    pairRepo: {} as never,
+    catalog: { harnesses: [] } as never,
+    ownerSub: "owner-check",
+    isOwnedAgent: async () => true,
+    getCapabilities: async () => ({
+      harnessConfig: true,
+      harnesses: [{ name: HARNESS, harnessConfig: true, sessionModel: false }],
+    }),
+    specHarness: async () => undefined,
+    isSettled: async () => true,
+    retireReset: (agentId, tx) => repo.retire(agentId, tx),
+  });
+};
+
 const service = createHarnessConfigService({
   surface: "check",
   eventQueue,
@@ -183,7 +205,10 @@ const service = createHarnessConfigService({
   catalog: { harnesses: [] } as never,
   ownerSub: "owner-check",
   isOwnedAgent: async () => true,
-  getCapabilities: async () => null,
+  getCapabilities: async () => ({
+    harnessConfig: true,
+    harnesses: [{ name: HARNESS, harnessConfig: true, sessionModel: false }],
+  }),
   specHarness: async () => undefined,
   isSettled: async () => true,
 });
@@ -381,8 +406,12 @@ async function main() {
     const name = "stale";
     const repo = resetRepo(name);
     await repo.roster();
-    /* TEST_SCENARIO: this boot reads the pending list, then stalls before its transaction. */
-    const pending = await repo.pending({ after: "", limit: 100 });
+    /* TEST_SCENARIO: this boot reads the pending list, then stalls before its
+     * transaction. Narrowed to this Agent so the case is about its own
+     * correction; the other members are covered by the cohort cases. */
+    const pending = (await repo.pending({ after: "", limit: 100 })).filter(
+      (id) => id === agentId,
+    );
     await reset(name, { repo }).run();
     await service.apply(agentId, { mode: "bypassPermissions" });
     /* TEST_SCENARIO: resumed with the list it read before the other boot's correction. */
@@ -408,6 +437,71 @@ async function main() {
       (await declaration(agentId)) === "bypassPermissions" &&
         seen.map((event) => event.mode).join(",") === "auto,bypassPermissions",
       JSON.stringify({ declaration: await declaration(agentId), seen }),
+    );
+  }
+
+  process.stdout.write("a delayed runtime report against the owner's choice\n");
+  {
+    const agentId = await agent("bypassPermissions", { named: true });
+    const name = "report";
+    const repo = resetRepo(name);
+    const config = serviceRetiring(name);
+    await repo.roster();
+    /* TEST_SCENARIO: this boot reads the pending list, then stalls before its
+     * transaction. Narrowed to this Agent so the case is about its own
+     * correction; the other members are covered by the cohort cases. */
+    const pending = (await repo.pending({ after: "", limit: 100 })).filter(
+      (id) => id === agentId,
+    );
+    /* TEST_SCENARIO: the hello captured the old Bypass settings before the owner
+     * acted, and its registration commits; its snapshot merge has not run yet. */
+    await agentsRuntimeRepo.upsertHello({
+      agentId,
+      protocolVersion: "1",
+      capabilities: { harnessConfig: true },
+      agentRuntimeVersion: "check",
+    });
+    /* TEST_SCENARIO: the owner chooses Plan through the real Config service. */
+    await config.apply(agentId, { harness: HARNESS, mode: "plan" });
+    /* TEST_SCENARIO: the delayed report merges its stale Bypass over the owner's declaration. */
+    await snapshotRepo.merge(
+      agentId,
+      { mode: "bypassPermissions" },
+      { confirmed: true, harness: HARNESS },
+    );
+    check(
+      "the delayed report really restores Bypass in the display snapshot",
+      (await declaration(agentId)) === "bypassPermissions",
+      JSON.stringify({ declaration: await declaration(agentId) }),
+    );
+    let once = true;
+    const stale = await reset(name, {
+      repo: {
+        ...repo,
+        pending: async () => {
+          if (!once) return [];
+          once = false;
+          return pending;
+        },
+      },
+    }).run();
+    const seen = await events(agentId);
+    const rows = (await db.execute(sql`
+      SELECT settled_at IS NOT NULL AS settled FROM harness_config_resets
+      WHERE reset = ${`${RESET_NAME}-${RUN}-${name}`} AND agent_id = ${agentId}
+    `)) as unknown as { settled: boolean }[];
+    check(
+      "the frozen member was retired by the owner's choice, so the pass corrects nothing",
+      stale.reset === 0 &&
+        stale.failed === 0 &&
+        pending.length === 1 &&
+        rows[0]?.settled === true,
+      JSON.stringify({ stale, rows, pending }),
+    );
+    check(
+      "no Auto follows the owner's Plan",
+      seen.map((event) => event.mode).join(",") === "plan",
+      JSON.stringify({ seen }),
     );
   }
 

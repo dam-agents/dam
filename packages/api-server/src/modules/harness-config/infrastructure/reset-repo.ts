@@ -7,6 +7,7 @@ export interface HarnessConfigResetRepo {
   roster(tx?: Db | DbTx): Promise<boolean>;
   pending(input: { after: string; limit: number }): Promise<string[]>;
   claim(agentId: string, tx: Db | DbTx): Promise<boolean>;
+  retire(agentId: string, tx: Db | DbTx): Promise<void>;
   frozen(tx?: Db | DbTx): Promise<boolean>;
 }
 
@@ -16,7 +17,10 @@ export interface HarnessConfigResetRepo {
  * pass's own row and the eligible Agents in one transaction, so membership is
  * fixed before any Agent is processed: an Agent created, granted the preset or
  * set to the old mode after that moment is never eligible, and an Agent whose
- * correction failed stays pending and is retried on a later start.
+ * correction failed stays pending and is retried on a later start. An owner who
+ * chooses a mode retires the pending correction: their choice outranks a repair
+ * of the old image, and a runtime report that arrives afterwards carrying the
+ * old mode cannot bring it back.
  */
 export function createHarnessConfigResetRepo(deps: {
   db: Db;
@@ -74,6 +78,14 @@ export function createHarnessConfigResetRepo(deps: {
         RETURNING agent_id
       `)) as unknown as unknown[];
       return rows.length > 0;
+    },
+
+    async retire(agentId, tx) {
+      await tx.execute(sql`
+        UPDATE harness_config_resets SET settled_at = now()
+        WHERE reset = ${deps.reset} AND agent_id = ${agentId}
+          AND settled_at IS NULL
+      `);
     },
 
     async frozen(tx = deps.db) {
