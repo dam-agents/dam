@@ -87,7 +87,7 @@ A Session row shows its harness icon in place of the harness name in its context
 A pinned row shows no pin mark, since its section says it is pinned; its unpin button shows with its other actions, on hover or while the row holds keyboard focus.
 The tree's Agents header carries one session filter, by state and by Session type: it narrows the Pinned section and every Agent's list, and the control shows a mark while a filter is on.
 Beside it, a Group by menu offers All sessions or Group by agents, the tree; like the filter, the choice lasts until the page reloads.
-All sessions replaces the Agents with one list of the unpinned Sessions in the owner's attention record, newest activity first, each row led by its Agent's avatar and name, twenty at a time with View more; a Session older than the record shows only under its Agent.
+All sessions replaces the Agents with one list of the unpinned Sessions in the owner's attention record, newest activity first, each row led by its Agent's avatar and name, twenty at a time with View more; a Session older than the record shows only under its Agent, which the list says at its end when the record is full.
 The filter narrows the pages already loaded, so while it is on an Agent's list loads a further page only when the user clicks **Load more**; when the filter is removed, every Agent's list keeps its first page only.
 The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list; pinning from the keyboard keeps focus on the moved row, or on its Agent's row when that Agent is closed.

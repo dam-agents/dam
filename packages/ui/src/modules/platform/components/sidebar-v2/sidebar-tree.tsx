@@ -266,6 +266,14 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   View more
                 </button>
               )}
+              {unpinned.length <= flatShown && !activity.complete && (
+                <p
+                  className="py-1.5 pr-2 pl-[42px] text-xs text-muted-foreground"
+                  data-testid="sidebar-flat-end"
+                >
+                  Older sessions show under their agent in Group by agents.
+                </p>
+              )}
             </>
           )}
           {groupBy === "agents" && (

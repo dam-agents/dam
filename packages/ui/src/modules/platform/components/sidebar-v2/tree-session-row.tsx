@@ -94,7 +94,8 @@ export function togglePinKeepingFocus(
       ].find((button) => !button.closest("[inert]")) ??
       document.querySelector<HTMLElement>(
         `[data-agent-id="${CSS.escape(agentId)}"] button[aria-expanded]`,
-      )
+      ) ??
+      document.querySelector<HTMLElement>('[data-testid="sidebar-group-by"]')
     )?.focus();
   });
 }
@@ -103,7 +104,9 @@ export function togglePinKeepingFocus(
  * UNIT_BOUNDARY_DESCRIPTION: One Session row of the new layout's sidebar tree,
  * read from its Agent's own list: the activity dot, the context line, and the
  * row's actions. A pin keeps keyboard focus on the moved row, or on its Agent
- * row when the row's new place is closed. Rename and Delete wake the Agent and
+ * row when the row's new place is closed or still closing, or, in the flat
+ * All sessions list, which shows no Agent rows and only its first pages, on
+ * the Group by control. Rename and Delete wake the Agent and
  * run once it answers.
  */
 export function TreeSessionRow({
