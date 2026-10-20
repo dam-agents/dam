@@ -40,6 +40,9 @@ struct Fake {
     start_delay: Mutex<Duration>,
     // UNIT_BOUNDARY_DESCRIPTION: the next start reports that it is inside the gate and then waits for the test to let it go, so a test can act while a boot is provably in flight rather than within a delay a loaded machine can outlast.
     start_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    // UNIT_BOUNDARY_DESCRIPTION: the ordinal of the start that `hold_nth_start` holds, so a test can gate the reboot after a grow and let the small boot before it through.
+    hold_start_at: Mutex<Option<usize>>,
+    nth_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
     start_release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     stop_delay: Mutex<Duration>,
     delete_delay: Mutex<Duration>,
@@ -49,6 +52,10 @@ struct Fake {
     // UNIT_BOUNDARY_DESCRIPTION: a signal the VMM of the next start dies by, which that start returns as the kill the runtime read, as the real one does when its boot monitor reaps the child.
     start_killed: Mutex<Option<i32>>,
     fail_grow_once: Mutex<Option<String>>,
+    // UNIT_BOUNDARY_DESCRIPTION: a grow whose VMM the kernel kills, as memory pressure does: the grow answers with that death, and the replacement start is held by `start_held`/`start_release`, so a test can sample the OOM count while the recovery is still in flight, which is the moment a hold has to exist by.
+    grow_killed: Mutex<Option<i32>>,
+    // UNIT_BOUNDARY_DESCRIPTION: the start time this runtime persists for a machine's VMM, which is what a loader record is judged against after that VMM is gone.
+    vmm_start_times: Mutex<HashMap<String, u64>>,
     booted_mib: Mutex<Vec<i32>>,
     start_sizes: Mutex<Vec<i32>>,
     console: Mutex<String>,
@@ -81,6 +88,19 @@ impl Fake {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: holds the next start inside the gate until the returned sender is used, and answers a receiver that says when the start is in it, so the test orders its own steps against a boot that is still running instead of racing a delay.
+    // UNIT_BOUNDARY_DESCRIPTION: holds the start whose number is `hold_start_at`, for a boot whose place in the sequence is what matters — the reboot a failed grow runs, rather than the small boot before it.
+    fn hold_nth_start(
+        &self,
+        nth: usize,
+    ) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (held, held_at) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        *locked(&self.hold_start_at) = Some(nth);
+        *locked(&self.nth_held) = Some(held);
+        *locked(&self.start_release) = Some(released);
+        (held_at, release)
+    }
+
     fn hold_start(&self) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
         let (held, held_at) = std::sync::mpsc::channel();
         let (release, released) = std::sync::mpsc::channel();
@@ -184,6 +204,16 @@ impl Runtime for Fake {
         locked(&self.booted_mib).push(boot_mib);
         locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
+        let nth = locked(&self.booted_mib).len();
+        if locked(&self.hold_start_at).is_some_and(|at| at == nth) {
+            *locked(&self.hold_start_at) = None;
+            if let Some(held) = locked(&self.nth_held).take() {
+                let _ = held.send(());
+            }
+            if let Some(release) = locked(&self.start_release).take() {
+                let _ = release.recv();
+            }
+        }
         if let Some(held) = locked(&self.start_held).take() {
             let _ = held.send(());
             if let Some(release) = locked(&self.start_release).take() {
@@ -231,7 +261,23 @@ impl Runtime for Fake {
         if let Some(message) = locked(&self.fail_grow_once).take() {
             anyhow::bail!(message);
         }
+        if let Some(signal) = locked(&self.grow_killed).take() {
+            // UNIT_BOUNDARY_DESCRIPTION: the grow's own VMM dies here, on a child this test spawns, and the pid the machine reports stays the dead one until the reboot replaces it: the runner reads the death by that pid before the reboot, which is the moment the hold has to be made. The signal is kept where the runner's own reader looks, exactly as the runtime's sweep leaves one it reaped itself.
+            let mut vmm = stand_in_vmm();
+            let pid = i32::try_from(vmm.id()).unwrap();
+            locked(&self.vmm_pids).insert(id.to_string(), pid);
+            // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+            unsafe { libc::kill(pid, signal) };
+            let ended = vmm.wait().expect("the VMM is waited on");
+            let signal = ended.signal().unwrap_or(signal);
+            self.keep_signal(pid, signal);
+            anyhow::bail!("the VMM died growing: {signal}");
+        }
         Ok(())
+    }
+
+    fn vmm_start_time(&self, id: &str) -> Option<u64> {
+        locked(&self.vmm_start_times).get(id).copied()
     }
 
     fn stop(&self, id: &str) -> anyhow::Result<()> {
@@ -4546,6 +4592,192 @@ async fn a_claimed_record_from_before_this_vmm_is_not_its_death() {
     );
 }
 
+// TEST_SCENARIO: a machine's VMM is reaped by the loader, so the kernel no longer answers for its identity, and the record under its pid names a predecessor instead. Judging that record by a kernel look would find nothing and admit it, reporting the machine as killed by its filter when it was killed by the kernel. The comparison is against the identity the runtime wrote down while the VMM ran, so a mismatch is still refused once both processes are gone.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reaped_vmm_is_judged_against_the_identity_its_runtime_recorded() {
+    let h = Harness::new("reaped-identity");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+    h.fake.set_vmm("m1", pid);
+    // UNIT_BOUNDARY_DESCRIPTION: the identity this machine's VMM was booted with, which outlives the process in the runtime's record.
+    locked(&h.fake.vmm_start_times).insert("m1".into(), started);
+    let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&records).unwrap();
+    // TEST_SCENARIO: the loader reaps the VMM, and a predecessor's record is what lies under its pid: nothing answers for the dead process's identity any more.
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let _ = vmm.wait();
+    assert_eq!(
+        smolvm::process::process_start_time(pid),
+        None,
+        "the kernel answered for identity after the reap"
+    );
+    fs::write(
+        records.join(pid.to_string()),
+        format!("{}\n{}", started + 1, libc::SIGSYS),
+    )
+    .unwrap();
+    assert!(
+        h.server.vmm_exit("m1").is_none(),
+        "a predecessor's record was admitted once the kernel stopped answering for identity"
+    );
+    // TEST_SCENARIO: the machine's own record is the one its runtime recorded, and it is read.
+    fs::write(
+        records.join(pid.to_string()),
+        format!("{started}\n{}", libc::SIGSYS),
+    )
+    .unwrap();
+    assert!(
+        matches!(h.server.vmm_exit("m1"), Some((_, Some(libc::SIGSYS)))),
+        "the machine's own death was refused"
+    );
+}
+
+// TEST_SCENARIO: an unrelated kill leaves a credit in the pool and it ages out before the next sample. A boot then dies of an operator's SIGKILL, and the credit must not be handed to it: an aged credit belongs to a death this runner never saw, and reviving it would report the operator's kill as memory.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_claim_does_not_revive_an_expired_credit() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-claim-expiry-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("claim-expiry", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        1,
+        "the unrelated kill was not credited"
+    );
+    // TEST_SCENARIO: the credit ages past its window without any sample noticing, which is what an idle runner does between ticks.
+    locked(&h.server.oom).credits = vec![Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1)];
+    // TEST_SCENARIO: a machine's own boot dies now, and its claim must find no count to take.
+    h.server.claim_own_kill("m1");
+    assert!(
+        locked(&h.server.oom)
+            .holds
+            .get("m1")
+            .is_none_or(Option::is_none),
+        "an aged credit was revived as a hold for a machine that died after it expired"
+    );
+    assert!(
+        locked(&h.server.oom).credits.is_empty(),
+        "the aged credit was left in the pool"
+    );
+}
+
+// TEST_SCENARIO: a runner renames a record aside to read it and exits before reporting it, and the runner that replaces it must still read that death: the claim names no live runner, so the death is recovered instead of pruned.
+#[test]
+fn an_interrupted_claim_is_read_by_the_next_runner() {
+    let dir = std::env::temp_dir().join(format!("vmr-claim-recover-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let exits = dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&exits).unwrap();
+    // TEST_SCENARIO: the claim a runner left, naming a runner that is gone: a process this test started and let exit, so no liveness check answers for it.
+    let mut gone = std::process::Command::new("true")
+        .spawn()
+        .expect("a process to name");
+    let gone_pid = gone.id();
+    let _ = gone.wait();
+    fs::write(exits.join(format!(".4242.claim.0.{gone_pid}")), "7\n9").unwrap();
+    let recovered = claim_exit_record(&dir, 4242).expect("the abandoned claim is recovered");
+    assert_eq!(
+        read_claimed(&recovered, &exits.join("4242")),
+        Some((Some(7), 9)),
+        "the death a runner claimed and never reported was not read by the runner that replaced it"
+    );
+}
+
+// TEST_SCENARIO: the pruner inspects an old record, the loader publishes a new death under the same name before the pruner removes anything, and the new death must survive. This drives the production pruner, gated between the claim and the removal, so the interleaving is ordered rather than raced.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_pruner_does_not_delete_a_newer_publication() {
+    let h = Harness::new("prune-race");
+    let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
+    std::fs::create_dir_all(&records).unwrap();
+    // UNIT_BOUNDARY_DESCRIPTION: an old record, backdated past the window so the pruner will want it gone.
+    let record = records.join("4242");
+    std::fs::write(&record, "1\n12").unwrap();
+    let old = std::fs::File::options().write(true).open(&record).unwrap();
+    old.set_modified(SystemTime::now() - EXIT_KEPT - Duration::from_secs(30))
+        .unwrap();
+    drop(old);
+    // TEST_SCENARIO: the pruner is held after claiming the old file, and the loader publishes the machine's real death on the freed name meanwhile.
+    let (in_the_prune, let_go) = std::sync::mpsc::channel::<()>();
+    let (release, released) = std::sync::mpsc::channel::<()>();
+    *h.server.prune_gate.0.lock().unwrap() = Some((in_the_prune, released));
+    let pruning = h.server.clone();
+    let pruner = std::thread::spawn(move || pruning.reap_killed());
+    let _ = let_go.recv_timeout(Duration::from_secs(10)).map(|()| {
+        std::fs::write(records.join(".4242.part"), "9\n9").unwrap();
+        std::fs::rename(records.join(".4242.part"), &record).unwrap();
+    });
+    let _ = release.send(());
+    let _ = pruner.join();
+    assert_eq!(
+        std::fs::read_to_string(&record).unwrap(),
+        "9\n9",
+        "the pruner deleted a death the loader published after it looked"
+    );
+}
+
+// TEST_SCENARIO: a grow's VMM dies of a SIGKILL, the runtime boots its whole-size replacement and that recovery outlives a credit's window, while the tick samples the kernel's count and expires it in the meantime. The hold has to exist from the moment the death is read, so the replacement's arrival cannot erase the count the death belongs to. This drives the production create, grow, recovery, tick and settlement, and never seeds the hold itself.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_grows_own_kill_survives_the_recovery_it_started() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-grow-oom-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("grow-oom", |config| {
+        config.cgroup_dir = Some(cgroup.clone());
+        config.boot_mib = 1024;
+    });
+    // TEST_SCENARIO: the boot's grow dies of a SIGKILL, and the reboot that follows is held so the count can be sampled while it runs.
+    *locked(&h.fake.grow_killed) = Some(libc::SIGKILL);
+    // UNIT_BOUNDARY_DESCRIPTION: the reboot the failed grow runs is the second start, and it is the one held, so the count is sampled while that recovery is provably in flight.
+    let (in_the_boot, let_go) = h.fake.hold_nth_start(2);
+    // UNIT_BOUNDARY_DESCRIPTION: the create is scheduled from this test's own runtime, so its worker's waits have a reactor under them, and this task keeps running while the boot is in flight.
+    h.server.put("m1", spec(true)).unwrap();
+    // TEST_SCENARIO: the count is sampled and expired while the recovery still runs, which is the window the hold has to already cover. The boot is provably in flight before the first sample, so nothing here races a delay.
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !locked(&h.server.oom).holds.contains_key("m1") {
+        assert!(
+            Instant::now() < deadline,
+            "the grow's death was read and no hold was made for it: {:?}",
+            h.fake.calls()
+        );
+        counted(&cgroup, 1);
+        h.server.reap_killed();
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    {
+        let mut oom = locked(&h.server.oom);
+        oom.credits.clear();
+        if let Some(Some(held)) = oom.holds.get_mut("m1") {
+            *held = Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1);
+        }
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: the recovery is still held here, so the hold has survived a window in which no ordinary credit could; letting it go lets the reboot finish and the machine settle.
+    let _ = in_the_boot.try_recv();
+    let _ = let_go.send(());
+    h.settle("m1").await;
+    assert!(
+        h.server.status("m1").reason == REASON_OOM_KILLED
+            || locked(&h.server.oom)
+                .holds
+                .get("m1")
+                .is_some_and(Option::is_some),
+        "the grow's own kill was lost while its replacement booted: {:?}",
+        h.server.status("m1")
+    );
+}
+
 // TEST_SCENARIO: two samples reach the runner while one machine's boot has already seen its VMM die, and both run at once: the count each brings is one victim, so exactly one hold may result and no count may be dropped. Made with the production sample path from both callers, gated inside the runtime so both are past every eligibility check before either takes a credit.
 #[tokio::test(flavor = "multi_thread")]
 async fn two_samples_at_once_do_not_lose_a_counted_kill() {
@@ -4737,6 +4969,8 @@ async fn a_record_of_the_incarnation_before_is_not_the_replacements_death() {
     let pid = i32::try_from(replacement.id()).unwrap();
     h.fake.set_vmm("m1", pid);
     let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+    // UNIT_BOUNDARY_DESCRIPTION: the identity the runtime recorded for the VMM this machine booted, which is what a record is judged against.
+    locked(&h.fake.vmm_start_times).insert("m1".into(), started);
     let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&records).unwrap();
     let record = records.join(pid.to_string());

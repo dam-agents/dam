@@ -432,6 +432,14 @@ impl Runtime for Smolvm {
         booting_vmm_pid(&vm_data_dir(id))
     }
 
+    fn vmm_start_time(&self, id: &str) -> Option<u64> {
+        // UNIT_BOUNDARY_DESCRIPTION: the identity smolvm wrote down when it booted this machine's VMM, which is the only thing left to compare a record against once the VMM is gone: a record carries the start time the kernel gave its process, and the kernel answers for a live process alone. A VMM still booting is named by its pid file, which carries the same pair.
+        let record = self.record(id).ok()??;
+        record
+            .pid_start_time
+            .or_else(|| booting_vmm_start_time(&vm_data_dir(id)))
+    }
+
     fn vmm_exit_signal(&self, pid: i32) -> Option<i32> {
         smolvm::process::peek_exit_signal(pid)
     }
@@ -709,6 +717,11 @@ fn launch_exit(dir: &Path) -> Option<VmmKilled> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the pid file smolvm writes for a machine it is booting, which is the only naming of a VMM whose record carries no pid yet. Its first line is the pid, its second the process's start time; a pid the kernel has since reused fails that comparison and is refused, and one written without a start time is taken as it is, as a record without one is.
+fn booting_vmm_start_time(dir: &Path) -> Option<u64> {
+    let text = std::fs::read_to_string(dir.join("agent.pid")).ok()?;
+    text.lines().nth(1)?.trim().parse().ok()
+}
+
 fn booting_vmm_pid(dir: &Path) -> Option<i32> {
     let text = std::fs::read_to_string(dir.join("agent.pid")).ok()?;
     let mut lines = text.lines();

@@ -570,10 +570,17 @@ mod tests {
             reap_children(-1, &exits);
             std::thread::sleep(Duration::from_millis(5));
         }
+        let record = std::fs::read_to_string(exits.join(pid.to_string())).unwrap();
+        let (start, signal) = record.split_once('\n').expect("a start time and a signal");
         assert_eq!(
-            std::fs::read_to_string(exits.join(pid.to_string())).unwrap(),
+            signal,
             libc::SIGSYS.to_string(),
             "the VMM's signal is what the next runner names the kill by"
+        );
+        // TEST_SCENARIO: the record names the process it is about, and the loader read that identity from the child while it was still a zombie: the kernel stops answering for a reaped process, so the field is what that read produced rather than anything this test can ask for now.
+        assert!(
+            start.parse::<u64>().is_ok(),
+            "the record carries no start time, so nothing could tell this death from a predecessor's: {record:?}"
         );
         let _ = vmm.wait();
 
@@ -605,7 +612,7 @@ mod tests {
         record_exit(&exits, 4242, Some(77), libc::SIGSYS).unwrap();
         assert_eq!(
             std::fs::read_to_string(exits.join("4242")).unwrap(),
-            "77\n12",
+            format!("77\n{}", libc::SIGSYS),
             "the record names the death and the process it belongs to"
         );
         assert!(
@@ -626,7 +633,10 @@ mod tests {
             "",
             "the final name is replaced, never written through"
         );
-        assert_eq!(std::fs::read_to_string(exits.join("4244")).unwrap(), "\n15");
+        assert_eq!(
+            std::fs::read_to_string(exits.join("4244")).unwrap(),
+            format!("\n{}", libc::SIGTERM)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

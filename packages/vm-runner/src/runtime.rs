@@ -54,6 +54,11 @@ pub trait Runtime: Send + Sync {
         None
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: the start time the kernel gave the VMM this machine runs now, as the runtime persisted it when it booted that VMM, or nothing when the runtime keeps none. A record the loader leaves names the process it is about by that same start time, and the comparison must survive the death of both processes: the kernel can report a live process's identity and never a reaped one's, so a record read after its VMM is gone can only be judged against an identity that was written down while that VMM ran.
+    fn vmm_start_time(&self, _id: &str) -> Option<u64> {
+        None
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: the signal that ended the VMM of `pid`, when the runtime's own code reaped it: a boot being waited on and a sweep of the runtime's children both read the status of a process this runner also watches, and the status word is read once. The signal is kept rather than dropped with it, and offered once. `None` for a process that exited on its own, one still running, and one whose status nothing here read.
     fn vmm_exit_signal(&self, _pid: i32) -> Option<i32> {
         None

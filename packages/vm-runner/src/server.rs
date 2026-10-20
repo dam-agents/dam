@@ -244,10 +244,37 @@ fn persist_oom_kills(state_dir: &std::path::Path, counted: u64) {
 fn claim_exit_record(state_dir: &std::path::Path, pid: i32) -> Option<PathBuf> {
     let dir = state_dir.join(crate::state::EXIT_RECORDS);
     let published = dir.join(pid.to_string());
-    let claimed = dir.join(format!(".{pid}.claim"));
-    fs::rename(&published, &claimed).ok()?;
-    Some(claimed)
+    let claimed = dir.join(format!(
+        ".{pid}.claim.{}",
+        CLAIM_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+    ));
+    match fs::rename(&published, &claimed) {
+        Ok(()) => Some(claimed),
+        // UNIT_BOUNDARY_DESCRIPTION: nothing is published under the pid, so the only record a reader can still recover is a claim an earlier runner left when it exited between renaming and reading: it names a death no one reported, and the runner that replaces it has to read it or that death is only pruned. Such a claim is adopted by renaming it to this reader's own name, which cannot collide because every claim carries the sequence number of the reader that made it, so a claim another reader is still holding is never taken from it and never read twice.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            let prefix = format!(".{pid}.claim.");
+            let abandoned = fs::read_dir(&dir)
+                .ok()?
+                .flatten()
+                .map(|entry| entry.file_name())
+                .find(|name| {
+                    name.to_str().is_some_and(|name| {
+                        name.strip_prefix(&prefix)
+                            // UNIT_BOUNDARY_DESCRIPTION: the claim names the runner that made it, and only a runner no process answers for has abandoned it: the liveness of that pid is what tells a dead reader apart from one still deciding, and a claim whose reader is alive is left for it. A reclaimed pid makes this skip an abandoned claim until the pruner takes it, which loses nothing a live reader is not entitled to.
+                            .and_then(|rest| rest.rsplit('.').next())
+                            .and_then(|runner| runner.parse::<i32>().ok())
+                            .is_some_and(|runner| !smolvm::process::is_alive(runner))
+                    })
+                })?;
+            fs::rename(dir.join(&abandoned), &claimed).ok()?;
+            Some(claimed)
+        }
+        Err(_) => None,
+    }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: what makes one reader's claim name its own. Every claim is `.<pid>.claim.<sequence>.<runner pid>`, so two readers of the same record never rename onto one path: a fixed name would let the second rename over the first, and the first would then read a record it never claimed.
+static CLAIM_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 // UNIT_BOUNDARY_DESCRIPTION: what a claimed record says: the start time the kernel gave the process that died, when the loader could read it, and the signal that ended it. A record with no signal in it is not a death, and not a machine that exited on its own either, since the loader writes one only for a signalled child — so it goes back where it was read from, unless the loader has published a newer one there in the meantime, which is then the record that stands: the link that puts it back fails when anything holds that name, so a newer death is never replaced by the one being restored.
 fn read_claimed(
@@ -273,20 +300,63 @@ fn read_claimed(
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: removes the loader's records that no death still explains: a machine deleted while its record was being written, or a pid this runner never matched to a machine, leaves a file nothing would ever read. Only age decides: a record written while a tick is looking at the machine of its pid is not yet readable by that tick, and pruning it as unnamed would drop the kill it names.
-fn prune_exit_records(state_dir: &std::path::Path) {
+// UNIT_BOUNDARY_DESCRIPTION: a test's hold between inspecting a record and removing it, so the interleaving it guards is ordered rather than raced. Production never installs one.
+pub struct PruneGate(
+    #[allow(dead_code)] Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+);
+
+fn prune_exit_records(state_dir: &std::path::Path, gate: &PruneGate) {
     let dir = state_dir.join(crate::state::EXIT_RECORDS);
     let Ok(entries) = fs::read_dir(&dir) else {
         return;
     };
     for entry in entries.flatten() {
-        let stale = entry
-            .metadata()
+        let name = entry.file_name();
+        let Some(name) = name.to_str().map(str::to_string) else {
+            continue;
+        };
+        // UNIT_BOUNDARY_DESCRIPTION: a record is pruned by the file it inspected and never by the name it found: the loader publishes a new record for the same pid by renaming onto that name, so removing by name would delete a death published after this looked, and the newest death in the directory is exactly the one that must survive. Only a name with no dot is a publication; a claim or a writer's scratch file belongs to a reader that is mid-operation, and its own path decides its lifetime.
+        // UNIT_BOUNDARY_DESCRIPTION: a claim is pruned by its own name once the runner that made it is gone, which is the same liveness test the reader adopts an abandoned claim by: a claim whose reader died would otherwise hold a death forever in a name nothing polls.
+        let published = !name.starts_with('.') && name.chars().all(|c| c.is_ascii_digit());
+        if !published {
+            let abandoned = name
+                .strip_prefix('.')
+                .and_then(|rest| rest.split_once(".claim."))
+                .and_then(|(_, rest)| rest.rsplit('.').next())
+                .and_then(|runner| runner.parse::<i32>().ok())
+                .is_some_and(|runner| !smolvm::process::is_alive(runner));
+            if abandoned
+                && fs::metadata(entry.path())
+                    .and_then(|meta| meta.modified())
+                    .ok()
+                    .and_then(|at| at.elapsed().ok())
+                    .is_some_and(|age| age > EXIT_KEPT)
+            {
+                let _ = fs::remove_file(entry.path());
+            }
+            continue;
+        }
+        let Ok(pid) = name.parse::<i32>() else {
+            continue;
+        };
+        let Some(claimed) = claim_exit_record(state_dir, pid) else {
+            continue;
+        };
+        // UNIT_BOUNDARY_DESCRIPTION: the moment between claiming and removing, which is where a publication can arrive: a test gates it here to prove the file removed is the one inspected and never a newer one that took its name.
+        if let Some((reached, release)) = gate.0.lock().ok().and_then(|mut g| g.take()) {
+            let _ = reached.send(());
+            let _ = release.recv();
+        }
+        let stale = fs::metadata(&claimed)
             .and_then(|meta| meta.modified())
             .ok()
             .and_then(|at| at.elapsed().ok())
             .is_some_and(|age| age > EXIT_KEPT);
         if stale {
-            let _ = fs::remove_file(entry.path());
+            let _ = fs::remove_file(&claimed);
+        } else {
+            let _ = fs::hard_link(&claimed, dir.join(name));
+            let _ = fs::remove_file(&claimed);
         }
     }
 }
@@ -312,6 +382,7 @@ pub struct Server {
     // UNIT_BOUNDARY_DESCRIPTION: a test's gate on the moment a planned action is refused and the worker has not yet settled, which is the only window in which a spec can be accepted behind a refusal; never armed outside tests.
     #[cfg(test)]
     refusal_gate: Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
+    prune_gate: PruneGate,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -442,6 +513,7 @@ impl Server {
             shed_request: Mutex::new(None),
             #[cfg(test)]
             refusal_gate: Mutex::new(None),
+            prune_gate: PruneGate(Mutex::new(None)),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -671,7 +743,7 @@ impl Server {
             }
         }
         locked(&self.exits).retain(|_, (_, at)| at.elapsed() < EXIT_KEPT);
-        prune_exit_records(&self.config.state_dir);
+        prune_exit_records(&self.config.state_dir, &self.prune_gate);
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the exit of a machine's VMM as one read says it, with the signal that ended it when one did, or nothing while the VMM runs. A pid this process is not the parent of reads as nothing at all, which is every machine that outlived the runner that booted it: its death is the record the loader wrote or the signal the runtime kept, and reading either here is what keeps a hand-off, and a kill during a boot, from hiding a kill. The pid is the record's, given only while it still names the process the record meant, so a reused pid is never read as this machine's and never reaped.
@@ -686,18 +758,19 @@ impl Server {
                 } else {
                     // UNIT_BOUNDARY_DESCRIPTION: a record names the process it is about by the start time the kernel gave that process, so which incarnation died is decided by comparing that against the start time of the VMM the machine runs now — never by a pid, which the kernel hands out again, and never by asking whether some process is alive at that number, which says nothing about which one. A record of any other incarnation is dropped: the machine's own VMM is alive, so this one cannot be its death.
                     let claimed = claim_exit_record(&self.config.state_dir, pid)?;
-                    let running = smolvm::process::process_start_time(pid);
                     let published = self
                         .config
                         .state_dir
                         .join(crate::state::EXIT_RECORDS)
                         .join(pid.to_string());
                     let (start, signal) = read_claimed(&claimed, &published)?;
-                    let this_one = match (start, running) {
-                        // UNIT_BOUNDARY_DESCRIPTION: two start times decide it. Equal means the record is about the very process the machine runs, so it is this machine's death whatever the pid has since been given to; different means a predecessor's.
-                        (Some(recorded), Some(now)) => recorded == now,
-                        // UNIT_BOUNDARY_DESCRIPTION: a record whose loader could not read a start time, and a runtime that cannot give one, fall back to what remains: a live holder means the record is not its death, since the loader writes only after a reap.
-                        _ => !smolvm::process::is_alive(pid),
+                    // UNIT_BOUNDARY_DESCRIPTION: the record is judged against the identity the runtime wrote down when it booted this machine's VMM, never against a look at the kernel now: by the time a record is read the process it names is gone, and the kernel answers for a live process alone, so a look would find nothing and let a predecessor's record through as this machine's death. A machine whose runtime persists no identity has nothing to compare, and its records are judged by the pool's window alone, as before.
+                    let expected = self.runtime.vmm_start_time(id);
+                    let this_one = match (start, expected) {
+                        // UNIT_BOUNDARY_DESCRIPTION: two start times decide it. Equal means the record is about the very process the machine runs, so it is this machine's death whatever the pid has since been given to; different means a predecessor's, however long ago that predecessor died.
+                        (Some(recorded), Some(known)) => recorded == known,
+                        // UNIT_BOUNDARY_DESCRIPTION: with no identity on either side the record is taken: the state directory holds records only for machines this runtime booted, and refusing every record a runtime cannot date would silence every kill on such a runtime. The window the record was published in is what keeps an unrelated death out.
+                        _ => true,
                     };
                     // UNIT_BOUNDARY_DESCRIPTION: a record of another incarnation is no exit of this one, and not a clean one either: answering with the absence of a signal would report a machine that shut itself down tidily, which is a death this VMM never had.
                     if !this_one {
@@ -765,6 +838,10 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: hands the pool's credits to the machines still waiting for one, inside the count's own critical section: a machine waiting for a count and a sample that brings one are written by different callers and different threads, and this is what makes each count reach exactly one machine once.
     fn give_hold_credits(oom: &mut OomKills) {
+        // UNIT_BOUNDARY_DESCRIPTION: the pool's window is enforced here, in the critical section that assigns, and not only where the count is sampled: an unmatched credit that aged out belongs to a death this runner never saw, and handing it to a machine whose own boot or grow has just failed would revive it as that machine's memory death. A hold may outlive the window only because it was valid when ownership was established, which is what this does first.
+        let now = Instant::now();
+        oom.credits
+            .retain(|at| now.saturating_duration_since(*at) < OOM_CREDIT_TTL);
         let mut waiting: Vec<String> = oom
             .holds
             .iter()
@@ -1088,8 +1165,10 @@ impl Server {
             drop(machines);
             let server = self.clone();
             let target = id.to_string();
-            self.work
-                .spawn_blocking(move || server.converge(&target, action, asked));
+            self.work.spawn_blocking(move || {
+                let server = server.clone();
+                server.converge(&target, action, asked);
+            });
             status.state = action.label().to_string();
             status.ready = false;
             return Ok(status);
@@ -1358,7 +1437,7 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the worker that brings one machine to its latest spec. It runs one action, and steps again only if a newer spec arrived while that action ran — which is how a stop sent mid-boot is honoured once the boot returns. It never steps again on its own result: an action that succeeds and still leaves the machine short, such as a guest that dies as it boots, is retried on the next reconcile rather than in a tight loop. Each decision to end is taken in the critical section that ends the worker, because a spec a PUT stored between the two would find the worker still marked and start none.
-    fn converge(&self, id: &str, first: Action, asked: u64) {
+    fn converge(self: &Arc<Self>, id: &str, first: Action, asked: u64) {
         let mut settle = Settle {
             server: self,
             id,
@@ -1484,7 +1563,7 @@ impl Server {
         )
     }
 
-    fn run(&self, id: &str, action: Action, mut spec: MachineSpec) {
+    fn run(self: &Arc<Self>, id: &str, action: Action, mut spec: MachineSpec) {
         let auths = std::mem::take(&mut spec.pull_auths);
         let started = Instant::now();
         let result = match action {
@@ -1531,7 +1610,12 @@ impl Server {
         self.observe(id, false);
     }
 
-    fn create(&self, id: &str, spec: &MachineSpec, auths: &[String]) -> anyhow::Result<()> {
+    fn create(
+        self: &Arc<Self>,
+        id: &str,
+        spec: &MachineSpec,
+        auths: &[String],
+    ) -> anyhow::Result<()> {
         write_share(
             &self.config.state_dir,
             id,
@@ -1567,7 +1651,7 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: brings an existing machine to the spec in place: stopped if running, its record updated, started again — so it keeps its disk and its port, whatever changed. The stored spec is what the record holds, so it is written as the record is, before the boot: a boot that fails leaves the next action comparing against the shape the machine really has. A new image is fetched and its launch read before the machine is touched, so the agent is down for the stop and boot and not for a pull, and a pull that fails leaves it running as it was. The image is also resolved again when the record's tree is gone from the host — evicted, or an image directory moved or relaid under a stopped machine — because a start boots the path the record names and would otherwise fail every time until the image changed. The new digest is recorded only once the old machine is stopped, which is when the cache stops holding the old tree for it.
     fn reshape(
-        &self,
+        self: &Arc<Self>,
         id: &str,
         spec: &MachineSpec,
         auths: &[String],
@@ -1746,7 +1830,12 @@ impl Server {
         Some(Resolved { digest, launch })
     }
 
-    fn start_machine(&self, id: &str, action: Action, spec: &MachineSpec) -> anyhow::Result<()> {
+    fn start_machine(
+        self: &Arc<Self>,
+        id: &str,
+        action: Action,
+        spec: &MachineSpec,
+    ) -> anyhow::Result<()> {
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             entry.warming_since = Some(Instant::now());
             entry.boot = Some(Boot {
@@ -1771,9 +1860,9 @@ impl Server {
             size
         };
         let port = state::port(&self.config.state_dir, id);
-        // UNIT_BOUNDARY_DESCRIPTION: the grow's own death is the evidence a hold is made of, so it is claimed inside the call, at the moment the grow's failure is read and before the reboot replaces the pid: the recovery may outlive every credit's window, and by the time the call answers the machine's pid names its replacement.
-        let claimed = Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let claim_here = claimed.clone();
+        // UNIT_BOUNDARY_DESCRIPTION: the grow's own death is the evidence a hold is made of, so the hold is taken inside the call, at the moment the grow's failure is read and before the reboot replaces the pid. A flag consumed once the call answers would be too late to be a claim: the recovery below can outlive every credit's window, and the count the death belongs to is sampled and expired by the tick while the call still runs, so a hold made afterwards has nothing left to be assigned from.
+        let claiming = self.clone();
+        let claimed = id.to_string();
         let result = self.runtime_call(id, "the runtime's start", RUNTIME_CALL_LIMIT, move || {
             boot_and_grow(
                 &*runtime,
@@ -1781,14 +1870,9 @@ impl Server {
                 boot,
                 size,
                 || healthy(port),
-                || {
-                    claim_here.store(true, std::sync::atomic::Ordering::SeqCst);
-                },
+                || claiming.claim_own_kill(&claimed),
             )
         });
-        if claimed.load(std::sync::atomic::Ordering::SeqCst) {
-            self.claim_own_kill(id);
-        }
         self.metrics
             .start(action, started.elapsed(), result.is_ok());
         if let Ok(Booted { whole, killed }) = &result {
