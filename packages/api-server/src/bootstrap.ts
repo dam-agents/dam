@@ -248,6 +248,7 @@ import {
 import {
   composeApprovalsSystem,
   composeSpendLimitQuestions,
+  composeToolApprovalReports,
   createApprovalsCleanupHook,
   createSpendQuestionStore,
   listPendingApprovalAgentIds,
@@ -1900,6 +1901,8 @@ export async function bootstrap() {
       ownerSub: owner,
     });
   const harnessDeps = {
+    toolApprovalsFor: (owner: string) =>
+      composeToolApprovalReports(approvalsRelay, owner),
     satellitesBoot,
     secretStore,
     spendHold,

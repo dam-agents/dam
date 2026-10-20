@@ -83,6 +83,7 @@ import { createWebSocketChannel } from "./modules/acp/infrastructure/create-webs
 import {
   composeRuntimeChannel,
   createArtifactTouchReporter,
+  createToolApprovalReporter,
   createEnvPlugin,
   createEnvStateStore,
   staleEnvReason,
@@ -219,6 +220,11 @@ const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
 const artifactTouchReporter = createArtifactTouchReporter({
   client: harnessClient,
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
+});
+
+const toolApprovalReporter = createToolApprovalReporter({
+  client: harnessClient,
+  log: (msg) => process.stderr.write(`[tool-approvals] ${msg}\n`),
 });
 
 const podServicePath = "/usr/local/bin/pod-service";
@@ -451,6 +457,7 @@ const {
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
+  agentRequests: toolApprovalReporter,
   onToolActivity: changes.onToolActivity,
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,

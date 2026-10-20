@@ -6,6 +6,7 @@ import type {
   KbPublishGate,
   RuntimeDeliveryService,
   SessionDirectoryService,
+  ToolApprovalReports,
 } from "api-server-api";
 import { harnessRouter } from "api-server-api/harness-router";
 import type { K8sClient } from "../../modules/agents/infrastructure/k8s.js";
@@ -18,6 +19,7 @@ export interface RuntimeTrpcDeps {
   sessionDirectory: SessionDirectoryService;
   artifactTouchesFor: (owner: string) => ArtifactTouchService;
   kbPublish: KbPublishGate;
+  toolApprovalsFor: (owner: string) => ToolApprovalReports;
 }
 
 export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
@@ -53,6 +55,7 @@ export function mountRuntimeTrpc(app: Hono, deps: RuntimeTrpcDeps): void {
         sessionDirectory: deps.sessionDirectory,
         artifactTouches: deps.artifactTouchesFor(verified.owner),
         kbPublish: deps.kbPublish,
+        toolApprovals: deps.toolApprovalsFor(verified.owner),
       }),
     });
   });

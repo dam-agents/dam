@@ -5,3 +5,4 @@ export type { SubAgentSessionStore } from "./infrastructure/sub-agent-session-st
 export { SessionModelError } from "./services/trigger-session-driver.js";
 export type { RunningHarness } from "./services/acp-runtime/acp-runtime.js";
 export type { HarnessWork, ReportedTask } from "./services/harness-work.js";
+export type { AgentRequestObserver } from "./services/acp-runtime/pending-agent-requests.js";
