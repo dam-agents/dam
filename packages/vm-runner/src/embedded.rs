@@ -88,7 +88,7 @@ impl Smolvm {
         };
         let dir = vm_data_dir(id);
         let vmms = orphan_pids(&self.proc_root, &dir)
-            .map(|found| found.pids)
+            .map(|found| found.pids())
             .unwrap_or_default();
         if vmms.is_empty() {
             return Err(refused.into());
@@ -169,7 +169,7 @@ impl Runtime for Smolvm {
             {
                 let dir = vm_data_dir(id);
                 let vmms = orphan_pids(&self.proc_root, &dir)
-                    .map(|found| found.pids)
+                    .map(|found| found.pids())
                     .unwrap_or_default();
                 let _ = self.runtime.stop_machine(id);
                 kill_orphans(&self.proc_root, &dir);
@@ -238,7 +238,7 @@ impl Runtime for Smolvm {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
             let vmms = orphan_pids(&self.proc_root, &dir)
-                .map(|found| found.pids)
+                .map(|found| found.pids())
                 .unwrap_or_default();
             let _ = self.runtime.stop_machine(id);
             clear_for_start(id, &self.proc_root, &dir, vmms, VMM_EXIT_WAIT)
@@ -367,7 +367,7 @@ impl Runtime for Smolvm {
     fn holds_vmm(&self, id: &str) -> bool {
         // UNIT_BOUNDARY_DESCRIPTION: a scan that could not look, or one that left a process the kernel would not describe, has not shown that no VMM holds the machine, so it answers as one that found a VMM: a machine whose record no longer decodes is then counted and keeps its storage share.
         orphan_pids(&self.proc_root, &vm_data_dir(id))
-            .map_or(true, |found| !found.pids.is_empty() || found.unknown > 0)
+            .map_or(true, |found| !found.named.is_empty() || found.unknown > 0)
     }
 
     fn cpu_usec(&self, id: &str) -> Option<u64> {
