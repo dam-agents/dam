@@ -11,7 +11,6 @@ export interface SessionHarness {
     render: (model: string) => string;
   };
   configured: () => { mode: string | null; model: string | null };
-  env?: Record<string, string>;
 }
 
 export interface SessionSettingInput {
@@ -24,22 +23,21 @@ export interface SessionSettingInput {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the mode the runtime picks for a session that
- * picked none, or null when it picks none because the harness's own start
- * modes name one. Those are the mode its config file names, and the one an env
- * variable its manifest binds for the purpose names — both reach the harness at
- * start, so the session is on them before any frame arrives. Where both name
- * none, the catalog's default for the model the session runs on applies: its
- * own model, or the file's where the session names none.
+ * picked none, and only for a harness whose manifest opts in: one that starts
+ * on no mode of its own. A harness that does not opt in keeps its own sources
+ * of a start mode — a thinking level, a pinned persona — so the runtime names
+ * none. Where it does opt in, the mode the agent's config file names still
+ * wins, since the harness is on it at start; otherwise the catalog's default
+ * for the model the session runs on applies: its own model, or the file's
+ * where the session names none.
  */
 export function derivedMode(input: SessionSettingInput): string | null {
   const { settings, model, harness } = input;
   const mode = modeSettingOf(harness);
-  if (mode === undefined || settings[mode.id] !== undefined) return null;
+  if (mode === undefined || !mode.derive || settings[mode.id] !== undefined)
+    return null;
   const configured = harness?.configured();
-  const pinned = mode.startModeEnv
-    ? harness?.env?.[mode.startModeEnv]?.trim()
-    : "";
-  if (configured?.mode || pinned) return null;
+  if (configured?.mode) return null;
   return startModeFor(
     harness?.catalog,
     model ?? configured?.model ?? null,
@@ -51,20 +49,31 @@ export function derivedMode(input: SessionSettingInput): string | null {
  * UNIT_BOUNDARY_DESCRIPTION: the frames that carry one session's settings
  * into its harness: the session's model, its mode, and every config option it
  * picked. A mode the session picked is the session's and is sent as it is. A
- * session that picked none gets the mode `derivedMode` picks, and none where it
- * picks none, since the harness is on its own start mode already.
+ * session that picked none gets the mode `derivedMode` picks, marked
+ * `derived` so the runtime can tell the harness's echo of it from a mode the
+ * session or the harness chose, and none where it picks none, since the
+ * harness is on its own start mode already. The model comes first, and the
+ * settings are sent one at a time, because a harness reads its mode against
+ * the model it holds.
  */
 export function sessionSettingFrames(
   input: SessionSettingInput,
 ): SessionSettingFrame[] {
   const { sessionId, settings, model, native, harness } = input;
   const modeId = modeSettingOf(harness)?.id;
-  const mode =
-    modeId === undefined ? null : (settings[modeId] ?? derivedMode(input));
+  const chosen = modeId === undefined ? undefined : settings[modeId];
+  const derived = chosen === undefined ? derivedMode(input) : null;
+  const mode = chosen ?? derived ?? undefined;
   return [
     ...modelFrames(harness, sessionId, model, native),
-    ...(mode !== null
-      ? [{ method: "session/set_mode", params: { sessionId, modeId: mode } }]
+    ...(modeId !== undefined && mode !== undefined
+      ? [
+          {
+            method: "session/set_mode",
+            params: { sessionId, modeId: mode },
+            ...(chosen === undefined && { derived: true }),
+          },
+        ]
       : []),
     ...Object.entries(settings).flatMap(
       ([id, value]): SessionSettingFrame[] => {
@@ -84,7 +93,7 @@ export function sessionSettingFrames(
 
 export function modeSettingOf(
   harness: SessionHarness | undefined,
-): { id: string; startModeEnv?: string } | undefined {
+): { id: string; derive: boolean } | undefined {
   const found = Object.entries(harness?.sessionSettings ?? {}).find(
     ([, binding]) => "mode" in binding,
   );
@@ -92,10 +101,7 @@ export function modeSettingOf(
   const [id, binding] = found;
   return {
     id,
-    ...("mode" in binding &&
-      binding.startModeEnv !== undefined && {
-        startModeEnv: binding.startModeEnv,
-      }),
+    derive: "mode" in binding && binding.deriveStartMode === true,
   };
 }
 

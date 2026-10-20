@@ -2,10 +2,13 @@
  * TEST_OVERVIEW: A session that picks no mode starts on the mode the catalog
  * defaults to for the session's model, so a Claude Code chat session starts in
  * auto like the terminal, and one on a model that cannot use auto starts on
- * the mode that model allows. A mode the session or the agent's file names
- * always wins, and a mode derived this way follows a model switch, since the
- * new model may not allow it. The harness reporting the derived mode back does
- * not turn it into a mode the session picked.
+ * the mode that model allows. Only a harness whose manifest opts in gets that
+ * mode: one with start modes of its own, such as Pi's thinking levels or Bob's
+ * pinned persona, is left on them. A mode the session or the agent's file names
+ * always wins, and a derived mode follows a model switch, since the new model
+ * may not allow it. The mode is sent after the model's own answer, and neither
+ * the harness echoing it back nor a late echo of the mode derived for the
+ * earlier model turns it into a mode the session picked.
  */
 import type { HarnessConfigCatalog } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
@@ -18,6 +21,7 @@ import {
 import {
   createSessionMetadata,
   createWorld,
+  frames as wire,
   type Harness,
 } from "../../modules/acp/services/acp-runtime/__tests__/acp-world.js";
 
@@ -52,32 +56,33 @@ const harness = (
   configuredModel: string | null = null,
 ): SessionHarness => ({
   catalog: CATALOG,
-  sessionSettings: { mode: { mode: true } },
+  sessionModelFrame: { configOption: "model", render: (model) => model },
+  sessionSettings: { mode: { mode: true, deriveStartMode: true } },
   configured: () => ({ mode: configuredMode, model: configuredModel }),
 });
 
-const bobHarness = (env: Record<string, string>): SessionHarness => ({
+const ownStartModeHarness = (): SessionHarness => ({
   catalog: {
     options: [
       {
         id: "mode",
-        name: "Mode",
+        name: "Thinking",
         category: "mode",
-        default: "agent",
+        default: "medium",
         choices: [
-          { value: "agent", name: "Agent" },
-          { value: "plan", name: "Plan" },
+          { value: "off", name: "Off" },
+          { value: "medium", name: "Medium" },
+          { value: "high", name: "High" },
         ],
       },
     ],
   },
-  sessionSettings: { mode: { mode: true, startModeEnv: "BOB_CHAT_MODE" } },
+  sessionSettings: { mode: { mode: true } },
   configured: () => ({ mode: null, model: null }),
-  env,
 });
 
-const modeFrame = (frames: { method: string; params: unknown }[]) =>
-  frames.find((frame) => frame.method === "session/set_mode");
+const modeFrame = (sent: { method: string; params: unknown }[]) =>
+  sent.find((frame) => frame.method === "session/set_mode");
 
 const frames = (
   settings: Record<string, string>,
@@ -100,6 +105,7 @@ describe("session start mode", () => {
     expect(modeFrame(frames({}, "ibm/claude-opus-4-5"))).toEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "auto" },
+      derived: true,
     });
   });
 
@@ -110,6 +116,7 @@ describe("session start mode", () => {
     expect(modeFrame(frames({}, "ibm/claude-haiku-4-5"))).toEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "default" },
+      derived: true,
     });
   });
 
@@ -129,7 +136,9 @@ describe("session start mode", () => {
    * model: it is sent as it is and never marked derived, so a model switch
    * leaves it alone. */
   it("sends a mode the session picked as it is", () => {
-    expect(modeFrame(frames({ mode: "plan" }, "ibm/claude-opus-4-5"))).toEqual({
+    expect(
+      modeFrame(frames({ mode: "plan" }, "ibm/claude-opus-4-5")),
+    ).toStrictEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "plan" },
     });
@@ -166,7 +175,7 @@ describe("session start mode", () => {
   /** TEST_SCENARIO: A harness that binds no mode setting gets no mode frame,
    * and its other settings still reach it. */
   it("sends no mode frame for a harness that binds none", () => {
-    const frames = sessionSettingFrames({
+    const sent = sessionSettingFrames({
       sessionId: "s",
       settings: { effort: "high" },
       model: null,
@@ -177,7 +186,7 @@ describe("session start mode", () => {
         configured: () => ({ mode: null, model: null }),
       },
     });
-    expect(frames).toEqual([
+    expect(sent).toEqual([
       {
         method: "session/set_config_option",
         params: { sessionId: "s", configId: "effortLevel", value: "high" },
@@ -185,41 +194,30 @@ describe("session start mode", () => {
     ]);
   });
 
-  it("names the setting the mode hangs on", () => {
-    expect(modeSettingOf(harness())).toEqual({ id: "mode" });
+  it("names the setting the mode hangs on and whether it opts in", () => {
+    expect(modeSettingOf(harness())).toEqual({ id: "mode", derive: true });
+    expect(modeSettingOf(ownStartModeHarness())).toEqual({
+      id: "mode",
+      derive: false,
+    });
     expect(modeSettingOf(undefined)).toBeUndefined();
   });
 
-  /** TEST_SCENARIO: The harness reads a start mode from an env variable its
-   * manifest binds, as Bob reads a connection's pinned mode: the pinned mode
-   * is the session's start, so the runtime sends none and the pin stays. */
-  it("leaves a start mode the harness's env names to the harness", () => {
+  /** TEST_SCENARIO: Pi binds its ACP mode to a thinking level and has its own
+   * precedence for it — the resumed session's level, a per-model level, then
+   * the global default. Its manifest names none of that, so it does not opt
+   * in, and an unset session gets no mode frame: the level Pi chose stands
+   * instead of being replaced by the catalog's default. */
+  it("leaves a harness with start modes of its own on them", () => {
     const input = {
       sessionId: "s",
       settings: {},
       model: "ibm/claude-opus-4-5",
       native: false,
-      harness: bobHarness({ BOB_CHAT_MODE: "plan" }),
+      harness: ownStartModeHarness(),
     };
     expect(sessionSettingFrames(input)).toEqual([]);
     expect(derivedMode(input)).toBe(null);
-  });
-
-  /** TEST_SCENARIO: The same variable is empty, as an agent with no pin has
-   * it: the harness starts on nothing it read, so the catalog's default
-   * applies. */
-  it("derives the catalog default where the env variable is empty", () => {
-    expect(
-      modeFrame(
-        sessionSettingFrames({
-          sessionId: "s",
-          settings: {},
-          model: null,
-          native: false,
-          harness: bobHarness({}),
-        }),
-      )?.params,
-    ).toEqual({ sessionId: "s", modeId: "agent" });
   });
 });
 
@@ -236,7 +234,6 @@ function runtimeWorld() {
     sessionMetadata: metadata.store,
     modeSettingId: "mode",
     sessionSettingFrames: (sessionId) => sessionSettingFrames(input(sessionId)),
-    derivedModeOf: (sessionId) => derivedMode(input(sessionId)),
   });
   return { world, metadata };
 }
@@ -262,9 +259,54 @@ const reportMode = (mode: string) => ({
   },
 });
 
+const answerModelFrame = (harness: Harness): void => {
+  const frame = harness
+    .received("session/set_config_option")
+    .filter(
+      (sent) => (sent.params as { configId?: string }).configId === "model",
+    )
+    .at(-1);
+  if (frame === undefined) throw new Error("the model was never sent");
+  harness.emit({ jsonrpc: "2.0", id: frame.id, result: {} });
+};
+
+const switchModel = (
+  metadata: ReturnType<typeof createSessionMetadata>,
+  world: { runtime: { syncSessionSettings: (id: string) => void } },
+  harness: Harness,
+): void => {
+  metadata.store.set("s", {
+    ...metadata.store.get("s")!.meta,
+    model: "ibm/claude-haiku-4-5",
+  });
+  world.runtime.syncSessionSettings("s");
+  answerModelFrame(harness);
+};
+
 describe("session start mode on the wire", () => {
-  /** TEST_SCENARIO: An unset session reaches its harness in auto when the
-   * harness reports that mode back, the session has still picked none, so a
+  /** TEST_SCENARIO: A harness reads its mode against the model it holds, so
+   * the runtime sends the model first and waits for its answer: the derived
+   * mode reaches the harness only afterwards, never beside the model it was
+   * not derived for, and the session's prompt waits for both. */
+  it("sends the derived mode after the harness applied the model", () => {
+    const { world } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    const harness = world.harness();
+    harness.replyTo("session/new", { sessionId: "s" });
+    expect(modesSent(harness)).toEqual([]);
+
+    client.send(wire.prompt(2, "s", "hello"));
+    answerModelFrame(harness);
+    expect(modesSent(harness)).toEqual(["auto"]);
+    expect(harness.received("session/prompt")).toEqual([]);
+
+    harness.replyTo("session/set_mode", {});
+    expect(harness.received("session/prompt").length).toBe(1);
+  });
+
+  /** TEST_SCENARIO: An unset session reaches its harness in auto, the harness
+   * reports that mode back, and the session has still picked none, so a
    * switch to a model that cannot use auto derives the mode again. */
   it("derives the mode again when the model changes", () => {
     const { world, metadata } = runtimeWorld();
@@ -272,34 +314,64 @@ describe("session start mode on the wire", () => {
     client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
     world.harness().replyTo("session/new", { sessionId: "s" });
     const harness = world.harness();
+    answerModelFrame(harness);
     expect(modesSent(harness)).toEqual(["auto"]);
-    world.runtime.syncSessionSettings("s");
+    harness.replyTo("session/set_mode", {});
     harness.emit(reportMode("auto"));
     expect(metadata.store.get("s")?.meta.settings).toBeUndefined();
 
-    metadata.store.set("s", {
-      ...metadata.store.get("s")!.meta,
-      model: "ibm/claude-haiku-4-5",
-    });
-    world.runtime.syncSessionSettings("s");
+    switchModel(metadata, world, harness);
+    harness.replyTo("session/set_mode", {});
     expect(modesSent(harness)).toEqual(["auto", "default"]);
   });
 
   /** TEST_SCENARIO: The session is torn down and its harness reports the
-   * derived mode: the runtime recomputes the mode it derives, so the report is
-   * still no pick of the session's and a model switch derives again. */
+   * derived mode: the runtime knows the mode it derived from the session's own
+   * metadata, so the report is still no pick of the session's. */
   it("recognizes the derived mode after a teardown", () => {
     const { world, metadata } = runtimeWorld();
     const client = world.connect();
     client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
     world.harness().replyTo("session/new", { sessionId: "s" });
+    answerModelFrame(world.harness());
     world.runtime.resetSession("s");
     world.harness().emit(reportMode("auto"));
     expect(metadata.store.get("s")?.meta.settings).toBeUndefined();
   });
 
-  /** TEST_SCENARIO: A mode the harness adopts on its own belongs to the
-   * session, so a later model switch leaves it alone. */
+  /** TEST_SCENARIO: The session moved to a model that cannot use auto while
+   * the harness had not yet reported the auto it was sent: both echoes arrive
+   * late, and neither becomes the session's own mode, so switching back to a
+   * model that takes auto derives auto again. */
+  it("keeps a late echo of an earlier model's mode out of the session", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    const harness = world.harness();
+    answerModelFrame(harness);
+    expect(metadata.store.get("s")?.meta.derivedModes).toEqual(["auto"]);
+
+    harness.replyTo("session/set_mode", {});
+    switchModel(metadata, world, harness);
+    harness.replyTo("session/set_mode", {});
+    expect(modesSent(harness)).toEqual(["auto", "default"]);
+
+    harness.emit(reportMode("auto"));
+    harness.emit(reportMode("default"));
+    expect(metadata.store.get("s")?.meta.settings).toBeUndefined();
+
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      model: "ibm/claude-opus-4-5",
+    });
+    world.runtime.syncSessionSettings("s");
+    answerModelFrame(harness);
+    expect(modesSent(harness)).toEqual(["auto", "default", "auto"]);
+  });
+
+  /** TEST_SCENARIO: A mode the session picked belongs to the session, so a
+   * later model switch leaves it alone. */
   it("keeps a mode the session picked when the model changes", () => {
     const { world, metadata } = runtimeWorld();
     const client = world.connect();
@@ -311,26 +383,14 @@ describe("session start mode on the wire", () => {
     );
     world.harness().replyTo("session/new", { sessionId: "s" });
     const harness = world.harness();
+    answerModelFrame(harness);
+    harness.replyTo("session/set_mode", {});
     expect(modesSent(harness)).toEqual(["plan"]);
     harness.emit(reportMode("plan"));
     expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "plan" });
 
-    metadata.store.set("s", {
-      ...metadata.store.get("s")!.meta,
-      model: "ibm/claude-haiku-4-5",
-    });
-    world.runtime.syncSessionSettings("s");
+    switchModel(metadata, world, harness);
+    harness.replyTo("session/set_mode", {});
     expect(modesSent(harness)).toEqual(["plan"]);
-  });
-
-  /** TEST_SCENARIO: A mode the harness switches to on its own, beside the one
-   * the runtime derived, is the session's from then on. */
-  it("keeps a mode the harness switched to beside a derived one", () => {
-    const { world, metadata } = runtimeWorld();
-    const client = world.connect();
-    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
-    world.harness().replyTo("session/new", { sessionId: "s" });
-    world.harness().emit(reportMode("plan"));
-    expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "plan" });
   });
 });

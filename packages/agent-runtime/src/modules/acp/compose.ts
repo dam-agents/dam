@@ -37,7 +37,6 @@ import {
   type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
 import {
-  derivedMode,
   modeSettingOf,
   sessionSettingFrames,
   type SessionHarness,
@@ -332,13 +331,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const ownPins = harness?.terminalSessionPins;
       const settingInput = (sessionId: string) => ({
         sessionId,
-        harness: harness && {
-          ...harness,
-          env: opts.envReader.forLease({
-            harness: pair.harness,
-            provider: null,
-          }),
-        },
+        harness,
         model: runtime.sessionChoice(sessionId).model,
         native: pair.native !== undefined,
         settings: sessionMetadata.get(sessionId)?.meta.settings ?? {},
@@ -379,7 +372,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
         onHarnessExited: scoped.onHarnessExited,
         sessionSettingFrames: (sessionId) =>
           sessionSettingFrames(settingInput(sessionId)),
-        derivedModeOf: (sessionId) => derivedMode(settingInput(sessionId)),
         modeSettingId: modeSettingOf(harness)?.id,
         workingDir: opts.workingDir,
         sessionMetadata,

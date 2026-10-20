@@ -46,15 +46,18 @@ A run nobody picks for stays on the harness asked for, on the saved pair's provi
 Each binding says how the harness takes the value.
 A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` or `session/set_config_option` to that session only, never by recycling a harness other sessions share.
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
+Settings are sent one at a time, in the order the runtime lists them, each after the harness answered the one before, because a harness reads a setting against the state an earlier one left: a mode is read against the model the session holds.
+A prompt waits for all of them.
 A setting always holds a value: the picker starts on the agent's configured value for the harness, or the manifest's `default` for the option where nothing is configured, and offers no unset choice, so a change always names a value the harness applies.
-A session that names no mode starts on the mode the agent's config file names, which the harness reads itself; where that file names none, the runtime derives one from the catalog: the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow.
-A session that names no model runs on the model the file names, so that model's constraints are the ones applied.
-A harness that reads a start mode from an env variable keeps it too: the manifest binds the variable, the Connection pins its value, and the runtime derives nothing where the variable carries one.
-Bob reads `BOB_CHAT_MODE` that way, and it wins over the catalog's default `agent`.
-Claude Code's catalog defaults to `auto`, so a chat session starts in auto as its terminal does, and a session on a model that cannot use auto, such as Haiku, starts asking instead.
+A session that names no mode starts on the mode the agent's config file names, which the harness reads itself.
+Where that file names none, the runtime derives one from the catalog — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
+A harness that keeps its own sources of a start mode does not opt in: Pi's ACP mode is its thinking level, which it takes from the resumed session, then a per-model value, then the global default, and Bob's is the persona a Connection pins.
+Claude Code opts in, and its catalog defaults to `auto`, so a chat session starts in auto as its terminal does, and a session on a model that cannot use auto, such as Haiku, starts asking instead.
 The terminal launcher keeps its own fallback, which asks for no model, so a Haiku terminal session still passes `auto`.
+A session that names no model runs on the model the file names, so that model's constraints are the ones applied.
 The derived mode is the runtime's, not the session's: it never replaces a mode the owner or the session picked, and a change of the session's model derives it again, since the new model may allow another mode than the old one.
-A mode the harness changes on its own, as plan mode handing over to implementation does, becomes the session's saved mode; the derived mode the harness merely reports back does not, so the session keeps naming none.
+The modes a runtime derived for a session are kept with it in the session metadata, so the harness echoing one back never makes it the session's own — not after a teardown, and not when a late echo still carries the mode derived for the model before.
+A mode the harness changes on its own, as plan mode handing over to implementation does, becomes the session's saved mode.
 A change made mid-turn waits for the turn to end, and the next prompt waits for the harness to answer the change.
 A process-scoped one (`env`) is a value the harness reads only at start, such as Claude Code's prompt-cache TTL or Bob's approvals flag; it joins the Harness Lease key, so the session moves to a process started with it and the other sessions' process is left alone.
 Such a move is refused while the session's turn runs.

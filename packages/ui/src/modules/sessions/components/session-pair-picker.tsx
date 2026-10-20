@@ -136,11 +136,12 @@ export function SessionPairPicker({
     return fit.granted.length === 0 && fit.addable.length === 0;
   };
   const capability = carried.find((h) => h.name === harness);
+  const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
+    pair?.harness === harness ? (pair.model ?? null) : null,
   );
-  const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
   const choose = (next: SessionPair) => setPair(agentId, next);
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;

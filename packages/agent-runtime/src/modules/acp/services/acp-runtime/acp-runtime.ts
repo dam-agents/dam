@@ -192,7 +192,6 @@ export interface AcpRuntimeDeps {
   agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
-  derivedModeOf?: (sessionId: string) => string | null;
   modeSettingId?: string;
 }
 
@@ -200,6 +199,7 @@ export interface SessionSettingFrame {
   method: string;
   params: Record<string, unknown>;
   critical?: boolean;
+  derived?: boolean;
 }
 
 export const SCHEDULE_SURFACE = "schedule";
@@ -704,6 +704,26 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: the modes the runtime derived for a session are
+   * kept with it, in the metadata store rather than this process, so a harness
+   * echoing one never makes it the session's own — not after a teardown, and
+   * not when the session's model moved on and a later answer still carries the
+   * mode derived for the model before. A harness that switches on its own to a
+   * mode the runtime once derived before is read as an echo; the session keeps
+   * naming none and derives again on the next model change.
+   */
+  function recordDerivedMode(sessionId: string, modeId: unknown): void {
+    if (typeof modeId !== "string") return;
+    const entry = deps.sessionMetadata?.get(sessionId);
+    if (entry?.meta.derivedModes?.includes(modeId)) return;
+    if (entry === undefined) return;
+    deps.sessionMetadata?.set(sessionId, {
+      ...entry.meta,
+      derivedModes: [...(entry.meta.derivedModes ?? []), modeId],
+    });
+  }
+
   function syncSettings(sessionId: string): void {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
@@ -714,6 +734,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const value = JSON.stringify(params);
       if (applied.get(key) === value) continue;
       applied.set(key, value);
+      if (frame.derived) recordDerivedMode(sessionId, params.modeId);
       const outboundId = nextOutboundId++;
       outboundIdToClient.set(outboundId, {
         channel: settingsChannel,
@@ -1727,7 +1748,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (
             id &&
             entry &&
-            deps.derivedModeOf?.(sessionId) !== reportedMode &&
+            !entry.meta.derivedModes?.includes(reportedMode) &&
             entry.meta.settings?.[id] !== reportedMode
           )
             deps.sessionMetadata?.set(sessionId, {

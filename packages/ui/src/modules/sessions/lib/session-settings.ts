@@ -2,7 +2,11 @@ import type {
   HarnessCapability,
   HarnessConfigCurrent,
 } from "agent-runtime-api";
-import { modelConstraintsFor, SUBAGENT_MODEL_SETTING } from "agent-runtime-api";
+import {
+  modelConstraintsFor,
+  startModeFor,
+  SUBAGENT_MODEL_SETTING,
+} from "agent-runtime-api";
 
 import {
   findModel,
@@ -20,9 +24,17 @@ export function sessionSettingOptions(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the value each setting shows before the owner
+ * picks one: the agent's configured value for the harness, else the option's
+ * own. A mode with neither is the runtime's to choose, and it chooses by the
+ * session's model, so the picker asks the same rule — a session on a model
+ * that cannot use the option's default shows the mode it really starts in.
+ */
 export function settingDefaults(
   capability: HarnessCapability | undefined,
   configured: HarnessConfigCurrent | null | undefined,
+  model: string | null,
 ): Record<string, string> {
   return Object.fromEntries(
     sessionSettingOptions(capability)
@@ -30,7 +42,8 @@ export function settingDefaults(
       .flatMap((o) => {
         const value =
           (o.id === "mode"
-            ? configured?.mode
+            ? (configured?.mode ??
+              startModeFor(capability?.harnessConfigCatalog, model, o.id))
             : configured?.configOptions[o.id]) ?? o.default;
         return value &&
           (o.choices.some((c) => c.value === value) || isModelOption(o))

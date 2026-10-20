@@ -15,6 +15,7 @@ export const platformSessionMetaSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   settings: sessionSettingsSchema.optional(),
+  derivedModes: z.array(z.string()).optional(),
   title: z.string().optional(),
   customTitle: z.string().optional(),
 });

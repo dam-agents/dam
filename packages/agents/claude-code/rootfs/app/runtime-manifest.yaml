@@ -56,7 +56,7 @@ drivers:
     # read from the env at start and a session that picks one runs in a Claude
     # process of its own.
     sessionSettings:
-      mode: { mode: true }
+      mode: { mode: true, deriveStartMode: true }
       effort: { configOption: effort }
       cacheTtl: { env: [CLAUDE_CODE_PROMPT_CACHE_TTL, CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL] }
       subagentModel: { env: [CLAUDE_CODE_SUBAGENT_MODEL] }

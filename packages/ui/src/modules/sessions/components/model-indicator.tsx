@@ -75,6 +75,7 @@ export function ModelIndicator({
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
+    model,
   );
   const { granted, owned, loaded } = useProviderConnections(agentId);
   const { grant, pending } = useGrantProvider(agentId);

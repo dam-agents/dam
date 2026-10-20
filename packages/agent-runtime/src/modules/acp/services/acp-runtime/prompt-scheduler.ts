@@ -43,6 +43,13 @@ export interface PromptSubmission {
   queuedAt?: string;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: settings are submitted in the order the runtime
+ * wants them applied and sent one at a time, each after the harness answered
+ * the one before, because a harness reads a setting against the state an
+ * earlier one left — a mode against the model the session holds. A prompt
+ * waits for both.
+ */
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
   submitSetting(submission: PromptSubmission): PromptFate;
@@ -236,10 +243,8 @@ export function createPromptScheduler(
     const head = settings?.[0];
     if (settings === undefined || head === undefined) return;
     if (activeTurns.has(sessionId) || !sessionLoaded(head)) return;
-    for (const entry of [...settings]) {
-      if (!sendSetting(entry)) break;
-      settings.shift();
-    }
+    if (!sendSetting(head)) return;
+    settings.shift();
     if (settings.length === 0) pendingSettings.delete(sessionId);
   }
 
@@ -531,6 +536,7 @@ export function createPromptScheduler(
       const sessionId = submission.sessionId;
       if (
         !pendingSettings.has(sessionId) &&
+        !settingsInFlight.has(sessionId) &&
         !activeTurns.has(sessionId) &&
         sessionLoaded(submission) &&
         sendSetting(submission)

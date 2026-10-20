@@ -554,6 +554,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
+    storedModel || null,
   );
   if (!routed)
     return (
