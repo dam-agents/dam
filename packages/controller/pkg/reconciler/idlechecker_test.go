@@ -524,6 +524,37 @@ func TestIdleChecker_LastRollReleasesItsPinAtTheSettleTimeout(t *testing.T) {
 	assert.False(t, pinned["my-agent"], "a wait that timed out pins nothing")
 }
 
+// TEST_SCENARIO: A runner already on the pod it should run whose new pod never becomes ready asks for no place in the roll, so nothing else ever evaluates its wait. Its turn must give the wait up at the settle timeout too: the roll is marked stalled, so the release goes no further, and the pin on the owner's machines ends with the wait.
+func TestIdleChecker_LastUnreadyPodRollReleasesItsPin(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStarting})
+	setRolledAt(t, r, testOwner, time.Now().Add(-time.Hour))
+	dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Annotations[annRunnerAwaiting] = "my-agent"
+	dep.Status.ReadyReplicas = 0
+	_, err = r.client.AppsV1().Deployments(r.config.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	r.ReconcileRunnerRollout(ctx)
+
+	dep, err = r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, dep.Annotations[annRunnerStalled], "a pod that never started keeps the release from advancing, marked stalled")
+	agent := idleAgentCR("my-agent", time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339), nil)
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	checker, client := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("my-agent", 1))
+	checker.config.VM.Enabled = true
+	checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+	checker.check(ctx)
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "a stalled roll pins nothing, so its machine hibernates again")
+}
+
 // TEST_SCENARIO: A vm agent reads the chart's vm idle timeout only when it carries no override of its own; one that carries an override honours it as a container agent does, "0s" included, so a starter kit's never-hibernate seed keeps a machine awake.
 func TestEffectiveIdleTimeout(t *testing.T) {
 	base := config.AgentBase{IdleTimeout: config.Duration(time.Hour), VMIdleTimeout: config.Duration(5 * time.Minute)}

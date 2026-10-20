@@ -1,0 +1,28 @@
+{
+  "cases": [
+    { "duration": "0", "minutes": 0 },
+    { "duration": "0s", "minutes": 0 },
+    { "duration": "+0s", "minutes": 0 },
+    { "duration": "-0s", "minutes": 0 },
+    { "duration": "1ns", "minutes": 1 },
+    { "duration": "0.1ns", "minutes": 0 },
+    { "duration": "1us", "minutes": 1 },
+    { "duration": "1µs", "minutes": 1 },
+    { "duration": "1μs", "minutes": 1 },
+    { "duration": "1500ms", "minutes": 1 },
+    { "duration": "45s", "minutes": 1 },
+    { "duration": "1.s", "minutes": 1 },
+    { "duration": "90s", "minutes": 2 },
+    { "duration": "1m", "minutes": 1 },
+    { "duration": "5m", "minutes": 5 },
+    { "duration": "30m", "minutes": 30 },
+    { "duration": "1h", "minutes": 60 },
+    { "duration": "1h30m", "minutes": 90 },
+    { "duration": "1.5h", "minutes": 90 },
+    { "duration": ".5h", "minutes": 30 },
+    { "duration": "+5m", "minutes": 5 },
+    { "duration": "2h", "minutes": 120 },
+    { "duration": "-1m", "minutes": 0 },
+    { "duration": "-1h30m", "minutes": 0 }
+  ]
+}

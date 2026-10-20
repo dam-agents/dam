@@ -550,15 +550,31 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 	return podReady && dep.Annotations[annRunnerAwaiting] == "", false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: settles the owner's own roll once its new pod is ready and every machine that was ready before the roll is ready again, or gone with its agent, and gives the wait up at `rollout.settleTimeout` whether or not any machine comes back. It runs on the owner's turn, under the owner's lock and outside the roll lock, so the runner it calls holds up only this owner. The timeout is checked here and not only where a place in the roll is asked for: a runner already on its configured pod asks for no place, so a wait it never finishes would otherwise outlive the timeout that bounds it — and that wait is what pins its machines awake. It returns the Deployment as it now stands.
+// UNIT_BOUNDARY_DESCRIPTION: settles the owner's own roll once its new pod is ready and every machine that was ready before the roll is ready again, or gone with its agent, and gives the wait up at `rollout.settleTimeout` whatever the pod is doing. It runs on the owner's turn, under the owner's lock and outside the roll lock, so the runner it calls holds up only this owner. The timeout is checked here and not only where a place in the roll is asked for: a runner already on its configured pod asks for no place, so a wait it never finishes would otherwise outlive the timeout that bounds it — and that wait is what pins its machines awake. A pod that never became ready keeps its place, since its release goes no further, and is marked stalled; the mark is also what stops the pin, so a broken release cannot hold the owner's machines up for good.
 func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, dep *appsv1.Deployment) *appsv1.Deployment {
 	awaiting := dep.Annotations[annRunnerAwaiting]
 	rolledAt, err := time.Parse(time.RFC3339, dep.Annotations[annRunnerRolledAt])
-	if err != nil || awaiting == "" || !runnerPodRolledOut(dep) {
+	if err != nil || awaiting == "" {
 		return dep
 	}
 	_, timeout := runnerRolloutLimits(r.config.VM.Runner)
-	if time.Since(rolledAt) > timeout {
+	timedOut := time.Since(rolledAt) > timeout
+	if !runnerPodRolledOut(dep) {
+		if !timedOut {
+			return dep
+		}
+		if r.runnerPodStuckOnItsOwner(ctx, owner) {
+			slog.Error("vm runner: the rolled pod never started for a reason of its own owner, skipping it so the next runner may roll", "owner", owner, "runner", dep.Name, "timeout", timeout)
+			telemetry.RunnerRollSkipped(ctx)
+			r.releaseRunnerRoll(ctx, dep, "skipped, its pod never started for a reason of its own owner")
+			return dep
+		}
+		if dep.Annotations[annRunnerStalled] == "" {
+			r.markRunnerRollStalled(ctx, dep, timeout)
+		}
+		return dep
+	}
+	if timedOut {
 		slog.Warn("vm runner: the roll's machines did not all come back in time, the next runner may roll", "owner", owner, "awaiting", awaiting, "timeout", timeout)
 		r.releaseRunnerRoll(ctx, dep, "gave up at the settle timeout, its machines did not all come back")
 		return dep
