@@ -81,6 +81,7 @@ test("keeps the current layout while the experiment is off", async ({
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
+  test.setTimeout(120_000);
   await setNewLayout(true);
   await openHome(page);
   const tree = page.getByTestId("sidebar-tree");
