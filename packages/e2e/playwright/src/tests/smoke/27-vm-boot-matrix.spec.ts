@@ -782,16 +782,8 @@ test("launches the claim filler and takes it down as the runner would", () => {
       existsSync(claim),
       "the fill was removed by a teardown it refused to run",
     ).toBe(true);
-    const gate = join(dir, "gate");
-    rmSync(gate, { force: true });
     const racer = run(
-      launch(
-        [
-          `i=0`,
-          `while [ ! -e ${gate} ] && [ $i -lt 2000 ]; do sleep 0.05; i=$((i + 1)); done`,
-          `echo late > ${claim}`,
-        ].join("\n"),
-      ),
+      launch(`while [ -e ${claim} ]; do :; done; echo late > ${claim}`),
     );
     expect(racer.status, `the racing launch failed: ${racer.stderr}`).toBe(0);
     const racerGroup = readFileSync(`${filler}.pid`, "utf8")
@@ -799,15 +791,10 @@ test("launches the claim filler and takes it down as the runner would", () => {
       .split(" ")[1];
     groups.push(racerGroup);
     const drained = run(locally(stopFillerAndClear()));
-    expect(
-      drained.status,
-      `the teardown failed while the filler had not yet allocated: ${drained.stderr}`,
-    ).toBe(0);
-    writeFileSync(gate, "");
-    spawnSync("sh", ["-c", "sleep 0.5"]);
+    expect(drained.status, `the teardown failed: ${drained.stderr}`).toBe(0);
     expect(
       existsSync(claim),
-      "the filler allocated after the teardown removed the fill, so a writer outlived the removal",
+      "the filler wrote after the teardown removed the fill, so a writer outlived the removal",
     ).toBe(false);
     expect(
       members(racerGroup),
