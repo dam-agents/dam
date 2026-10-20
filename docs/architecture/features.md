@@ -1,6 +1,6 @@
 # Experimental features
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -23,7 +23,8 @@ That answer is what the runtime of a new agent follows, and it is not a feature:
 A kit that declares `backend: vm` ([starter-kits](starter-kits.md#kit-backend)) is the one declaration that can refuse instead: on an install without virtualization the kit is hidden and the create refuses it, since there is no machine to put the agent on.
 No kit can declare that it needs a container, so the install's answer never meets a kit it would have to refuse.
 **A container agent cannot be created there at all**: a create that asks for one is refused with a message naming the runtime the install does make, rather than quietly made a machine instead, so nothing new lands on the legacy path.
-**An install without virtualization keeps creating containers**, which is how a local or development install runs, and is the only place a container Agent is created at all.
+**An install without virtualization keeps creating containers**, and is the only place a container Agent is created at all: an install whose host cannot virtualize, such as an Intel Mac or a Linux host whose k3s VM gets no hypervisor.
+A local install is one of these only on such a host: where it can virtualize, `cluster:install` turns virtualization on by default, so a fresh local cluster creates machines like any other, on an Apple silicon Mac on one runner on the Mac's own hypervisor ([vm-host-runner](vm-host-runner.md)).
 
 ### Install preflight
 
