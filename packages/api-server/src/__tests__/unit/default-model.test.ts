@@ -445,6 +445,8 @@ describe("defaultModelNoticeOf", () => {
       note?: { changedFrom: string };
       aliases?: string[];
       routed?: boolean;
+      schedules?: { enabled: boolean }[];
+      channels?: { type: string }[];
     } = {},
   ) =>
     defaultModelNoticeOf({
@@ -453,6 +455,8 @@ describe("defaultModelNoticeOf", () => {
       pair: p,
       note: opts.note ?? null,
       grantedAliases: new Set(opts.aliases ?? ["anthropic"]),
+      schedules: opts.schedules ?? [{ enabled: true }],
+      channels: opts.channels ?? [],
     })?.state ?? null;
 
   // TEST_SCENARIO: the owner is told about a default with no model, one with no provider to pick from, one whose model names a provider alias the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default and one that runs as saved say nothing.
@@ -483,5 +487,46 @@ describe("defaultModelNoticeOf", () => {
     expect(
       notice(pair("ibm/aws/claude-opus-4-8", "lite"), { routed: false }),
     ).toBeNull();
+  });
+
+  // TEST_SCENARIO: a default that stops runs fails nothing on an Agent with no enabled Schedule and no Slack or Telegram Channel bound, so its owner is not told; an enabled Schedule or a bound Channel makes every such state count, while a Schedule that is off leaves it silent again.
+  it("says nothing where no unattended run exists", () => {
+    const none = { schedules: [], channels: [] };
+    expect(notice(pair(null, null), none)).toBeNull();
+    expect(notice(pair(null, null), { ...none, aliases: [] })).toBeNull();
+    expect(notice(pair("ibm/aws/claude-opus-4-8", "lite"), none)).toBeNull();
+    expect(
+      notice(pair(null, null), {
+        schedules: [{ enabled: false }],
+        channels: [],
+      }),
+    ).toBeNull();
+
+    expect(notice(pair(null, null), { schedules: [{ enabled: true }] })).toBe(
+      "not-set",
+    );
+    expect(
+      notice(pair(null, null), {
+        schedules: [],
+        channels: [{ type: "slack" }],
+      }),
+    ).toBe("not-set");
+    expect(
+      notice(pair(null, null), {
+        schedules: [],
+        channels: [{ type: "telegram" }],
+      }),
+    ).toBe("not-set");
+  });
+
+  // TEST_SCENARIO: a converted default names the model every run pays for, so its owner is told even on an Agent that runs nothing unattended.
+  it("tells a conversion whatever the Agent runs", () => {
+    expect(
+      notice(pair("anthropic/claude-sonnet-5-5"), {
+        note: { changedFrom: "haiku" },
+        schedules: [],
+        channels: [],
+      }),
+    ).toBe("changed");
   });
 });
