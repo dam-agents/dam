@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -128,11 +128,11 @@ flowchart TD
 As the bot.
 Through the owner's Slack Account Connection the Agent posts wherever the owner can (§2).
 
-| Situation                                        | What happens                                                                                                                                                 | Drawback                                                          |
-| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| Posts top-level into a channel, from any session | Allowed where **its owner is a member** (public or private), via the owner's linked Slack account; bound conversations and the running turn's channel always | Unlinked owner: no channels beyond the bound ones; DMs still work |
-| DMs someone                                      | Any workspace member, by user id                                                                                                                             | No relationship with the Agent or its owner needed                |
-| Someone replies to such a post                   | Routed by that conversation's bindings: its default Agent, or nobody                                                                                         | Never the posting Agent by itself; no continuity                  |
+| Situation                                        | What happens                                                                                                                                                 | Drawback                                                                                                      |
+| ------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------- |
+| Posts top-level into a channel, from any session | Allowed where **its owner is a member** (public or private), via the owner's linked Slack account; bound conversations and the running turn's channel always | Unlinked owner: no channels beyond the bound ones; DMs with members of its connected conversations still work |
+| DMs someone                                      | Its owner, or a member of a conversation it is connected to (the person in a bound DM included), by user id or DM id                                         | Anyone else is refused, even when the bot could open the DM                                                   |
+| Someone replies to such a post                   | Routed by that conversation's bindings: its default Agent, or nobody                                                                                         | Never the posting Agent by itself; no continuity                                                              |
 
 ### 1.7 What the agent is handed, per case
 
@@ -175,11 +175,11 @@ Both belong to the Agent; they differ in identity and scope.
 |                      | Bot (any binding)                                                                        | Owner's Slack Account Connection                                                  |
 | -------------------- | ---------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- |
 | Acts as              | The bot, with the Agent's footer                                                         | The owner, no footer                                                              |
-| Can post             | Channels the owner is in, DMs, group DMs                                                 | Anywhere the owner can                                                            |
+| Can post             | Channels the owner is in, DMs with the owner or members of its conversations, group DMs  | Anywhere the owner can                                                            |
 | Can read             | Only what the platform shows it: bound threads, the channel window, threads it was shown | Everything the owner can see, search included                                     |
 | The platform sees it | Yes: counts as the turn's answer, security-logged                                        | No: the agent must close the turn with `no_reply_needed`, or the reminder follows |
 
-Outside its bound conversations, the bot never reaches a channel the owner couldn't, provided the owner's Slack identity is linked.
+Outside its bound conversations, the bot never reaches a channel the owner couldn't, provided the owner's Slack identity is linked, and it messages directly only the owner and the people in its conversations.
 
 ---
 
@@ -302,7 +302,7 @@ Everything else (DM people, attach files, look people up, react) is within the o
 | **Steering / image support** (harness) | Mid-turn message joins the turn vs. becomes the next one; pictures in the prompt vs. "text only"                                                                                                                                                                                                                                 |
 | **Egress rules**                       | Allow-all: nothing refused. Restricted: unmatched hosts refused on unattended turns, held for the owner when a UI/CLI session is open; an attached provider Connection's own hosts, ports and paths always pass, and `api.anthropic.com` when it sets Claude Code's env ([the rule](security-and-credentials.md#hitl-ext_authz)) |
 | **Connection grants**                  | A Slack Account Connection adds the owner's Slack MCP server with no channel awareness; only the harness's asking stands between the channel and it                                                                                                                                                                              |
-| **Owner's Slack identity linked**      | Unlinked: the Agent posts into no channel beyond its bound ones; DMs and group DMs still work                                                                                                                                                                                                                                    |
+| **Owner's Slack identity linked**      | Unlinked: the Agent posts into no channel beyond its bound ones, and DMs no one but the members of its bound conversations; group DMs still work                                                                                                                                                                                 |
 | **Whispers** (per Agent)               | On: anyone in a conversation the Agent is connected to can reach it privately (§1.8). Off: new whispers to it are refused and open whisper threads end; past whispers stay private                                                                                                                                               |
 | **Ambient** (per binding)              | §1.2                                                                                                                                                                                                                                                                                                                             |
 | **Owner stopped the Agent**            | Slack can't wake it. Hibernated Agents wake normally                                                                                                                                                                                                                                                                             |

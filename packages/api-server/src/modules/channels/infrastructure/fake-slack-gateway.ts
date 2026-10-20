@@ -406,7 +406,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
             name: channel.name,
             directMessageUser: null,
           }
-        : { kind: "not-found" };
+        : channelId.startsWith("D-")
+          ? {
+              kind: "found",
+              isMember: true,
+              isDirectMessage: true,
+              isGroupDirectMessage: false,
+              name: null,
+              directMessageUser: channelId.slice("D-".length),
+            }
+          : { kind: "not-found" };
     },
 
     async listSharedChannels(userId, teamId) {
