@@ -76,7 +76,7 @@ import {
   noDefaultModelUserCopy,
 } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
-import { NoDefaultModelError } from "../../harness-config/index.js";
+import { isNoDefaultModelError } from "../../harness-config/index.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -3033,7 +3033,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const postFailure = async (err: unknown) => {
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
-        : err instanceof NoDefaultModelError
+        : isNoDefaultModelError(err)
           ? "no-default-model"
           : isAgentWakeTimeoutError(err)
             ? wakeFailureReasonToken(err.failure)
@@ -3054,7 +3054,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ? err.disabled
           ? `This agent is disabled by its owner — ask them to enable it.${renderTurnFiles(ctx)}`
           : `This agent was put to sleep by its owner — try again in a moment, or ask its owner to wake it.${renderTurnFiles(ctx)}`
-        : err instanceof NoDefaultModelError
+        : isNoDefaultModelError(err)
           ? `${noDefaultModelUserCopy(err, uiBaseUrl, instanceName)}${renderTurnFiles(ctx)}`
           : isAgentWakeTimeoutError(err)
             ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
@@ -5386,7 +5386,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
-        : err instanceof NoDefaultModelError
+        : isNoDefaultModelError(err)
           ? "no-default-model"
           : isAgentWakeTimeoutError(err)
             ? wakeFailureReasonToken(err.failure)

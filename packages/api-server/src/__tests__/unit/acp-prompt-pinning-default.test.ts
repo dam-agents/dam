@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionPair } from "api-server-api";
 
 import { promptPinningDefault } from "../../core/acp-client.js";
-import { NoDefaultModelError } from "../../modules/harness-config/index.js";
+import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 
 const noModel = {
   code: -32001,

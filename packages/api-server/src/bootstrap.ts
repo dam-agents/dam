@@ -138,11 +138,12 @@ import {
 import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
+  composeConvertingFirePair,
   composeDefaultConverter,
   composeFirePair,
   composeScheduleModelForFire,
   composeSessionChoicesValidator,
-  NoDefaultModelError,
+  isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
@@ -626,7 +627,7 @@ export async function bootstrap() {
   ): Promise<Record<string, unknown>> =>
     sessionPairFields(
       await firePair(agentId, {}).catch((err: unknown) => {
-        if (!(err instanceof NoDefaultModelError)) throw err;
+        if (!isNoDefaultModelError(err)) throw err;
         getLogger().info(
           { err, agentId },
           "outcome turn: no saved default to run it on",
@@ -1192,7 +1193,7 @@ export async function bootstrap() {
   const channelSpendHold = async (agentId: string) => {
     const provider = (
       await firePair(agentId, {}).catch((err: unknown) => {
-        if (err instanceof NoDefaultModelError) return undefined;
+        if (isNoDefaultModelError(err)) return undefined;
         throw err;
       })
     )?.provider;
@@ -1239,16 +1240,7 @@ export async function bootstrap() {
       namespace: config.namespace,
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
-      firePair: async (agentId) => {
-        const outcome = await defaultConverter.convert(agentId);
-        try {
-          return await firePair(agentId, {});
-        } catch (err) {
-          if (err instanceof NoDefaultModelError && outcome === "waiting")
-            throw new NoDefaultModelError(undefined, { pending: true });
-          throw err;
-        }
-      },
+      firePair: composeConvertingFirePair(defaultConverter, firePair),
     });
 
   const agentIcons =

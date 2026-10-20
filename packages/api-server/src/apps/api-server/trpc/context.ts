@@ -10,7 +10,7 @@ import { TRPCError } from "@trpc/server";
 import {
   composeDefaultModelNotices,
   composeHarnessConfigModule,
-  NoDefaultModelError,
+  isNoDefaultModelError,
 } from "../../../modules/harness-config/index.js";
 import { agentsInstallSettings } from "../../../config.js";
 import { composeBudgetsModule } from "../../../modules/budgets/index.js";
@@ -271,7 +271,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       runtimeMutator,
       sessionPair: (agentId) =>
         firePair(agentId, {}).catch((err: unknown) => {
-          if (err instanceof NoDefaultModelError)
+          if (isNoDefaultModelError(err))
             throw new TRPCError({
               code: "PRECONDITION_FAILED",
               message: `${err.message.charAt(0).toUpperCase()}${err.message.slice(1)}.`,

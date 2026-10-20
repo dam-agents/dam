@@ -11,6 +11,7 @@ import {
   resolveFirePair,
   harnessesOf,
 } from "./services/harness-config-service.js";
+import { NoDefaultModelError } from "./domain/no-default-model.js";
 import { createSessionPairRepo } from "./infrastructure/session-pair-repo.js";
 import {
   createSessionChoicesValidator,
@@ -118,6 +119,22 @@ export function composeDefaultConverter(deps: {
     catalogView: createRuntimeCatalogReader(namespace),
   });
   return { converter, helloSaga: startConvertDefaultOnHelloSaga(converter) };
+}
+
+export function composeConvertingFirePair(
+  converter: DefaultConverter,
+  firePair: FirePair,
+): (agentId: string) => Promise<SessionPair | null | undefined> {
+  return async (agentId) => {
+    const outcome = await converter.convert(agentId);
+    try {
+      return await firePair(agentId, {});
+    } catch (err) {
+      if (err instanceof NoDefaultModelError && outcome === "waiting")
+        throw new NoDefaultModelError(undefined, { pending: true });
+      throw err;
+    }
+  };
 }
 
 export function composeScheduleModelForFire(deps: {

@@ -40,8 +40,8 @@ export function TerminalHarnessButtons({
   if (choice.kind === "loading") return null;
   const defaultOn = (harness: string) =>
     remembered?.harness === harness &&
-    remembered.provider !== null &&
-    remembered.model !== null
+    remembered.model !== null &&
+    granted.some((p) => p.id === remembered.provider)
       ? { provider: remembered.provider, model: remembered.model }
       : null;
   if (choice.kind === "fallback")

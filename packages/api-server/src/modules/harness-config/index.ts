@@ -1,4 +1,5 @@
 export {
+  composeConvertingFirePair,
   composeDefaultConverter,
   composeDefaultModelNotices,
   composeFirePair,
@@ -18,4 +19,5 @@ export type {
   SessionChoicesValidator,
 } from "./services/session-choices.js";
 export type { DefaultConverter } from "./services/default-conversion.js";
-export { NoDefaultModelError } from "./domain/no-default-model.js";
+export type { NoDefaultModelError } from "./domain/no-default-model.js";
+export { isNoDefaultModelError } from "./domain/no-default-model.js";

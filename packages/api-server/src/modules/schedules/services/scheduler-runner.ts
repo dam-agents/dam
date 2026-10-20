@@ -23,7 +23,7 @@ import type {
 } from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
 import {
-  NoDefaultModelError,
+  isNoDefaultModelError,
   type FirePair,
 } from "../../harness-config/index.js";
 import { emit, EventType } from "../../../events.js";
@@ -390,7 +390,7 @@ export function createSchedulerRunner(
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
         noteFire("failure", { stage: "commit" });
-        const final = lastAttempt || err instanceof NoDefaultModelError;
+        const final = lastAttempt || isNoDefaultModelError(err);
         if (final) {
           await deps.repo.recordFire(sched.id, reason, null).catch(() => {});
           await emitFired(sched, "failure");
@@ -485,7 +485,7 @@ export function createSchedulerRunner(
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
-      const final = lastAttempt || err instanceof NoDefaultModelError;
+      const final = lastAttempt || isNoDefaultModelError(err);
       const after = final ? nextFireAt(spec, now()) : fireAt;
       if (stage === "commit")
         await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
@@ -567,7 +567,7 @@ export function createSchedulerRunner(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
         await emitFired(sched, "failure");
-        if (err instanceof NoDefaultModelError) {
+        if (isNoDefaultModelError(err)) {
           await deps.repo.stampFire(scheduleId, err.message).catch(() => {});
           return "no-default-model";
         }

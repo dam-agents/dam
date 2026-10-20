@@ -13,3 +13,7 @@ export class NoDefaultModelError extends Error {
     this.pending = opts.pending ?? false;
   }
 }
+
+export function isNoDefaultModelError(e: unknown): e is NoDefaultModelError {
+  return e instanceof NoDefaultModelError;
+}

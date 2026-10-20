@@ -11,10 +11,8 @@ import { createSchedulerRunner } from "../../modules/schedules/services/schedule
 import type { SchedulesRepository } from "../../modules/schedules/infrastructure/schedules-repository.js";
 import type { ScheduleQueue } from "../../modules/schedules/infrastructure/schedule-queue.js";
 import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
-import {
-  NoDefaultModelError,
-  type FirePair,
-} from "../../modules/harness-config/index.js";
+import type { FirePair } from "../../modules/harness-config/index.js";
+import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import type { AgentActivityStamp } from "../../modules/agents/index.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import type { ScheduleStatusPatch } from "../../modules/schedules/domain/status-transitions.js";
