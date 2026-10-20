@@ -4085,10 +4085,14 @@ mod tests {
         let names = |now, dev| -> Vec<String> {
             let mut roots = open_scratch_roots(&[(s.to_path_buf(), mount_of(s), false)]);
             roots.iter_mut().for_each(|root| root.dev = Some(dev));
-            scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3])
-                .iter()
-                .map(|entry| entry.name.to_string_lossy().into_owned())
-                .collect()
+            let mut named: Vec<String> =
+                scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3])
+                    .iter()
+                    .map(|entry| entry.name.to_string_lossy().into_owned())
+                    .collect();
+            // TEST_SCENARIO: entries of one pass with the same second's time are ordered by the order the folder lists them, which is no contract, so a test that names them sorts them.
+            named.sort();
+            named
         };
 
         assert!(
@@ -4827,7 +4831,7 @@ mod tests {
         let pass = eviction_pass(false, 0, Some(50), Some(&request), None, None, 0).unwrap();
         assert_eq!(pass.kind, EvictionKind::Claim);
         let started = PassRun {
-            started: Some("r1"),
+            started: Some(request.id.as_str()),
             ..idle()
         };
         assert!(
@@ -4840,9 +4844,22 @@ mod tests {
             !entry_stands(&pass, &h, &at, started),
             "another request is another pass"
         );
-        fs::write(&at, "r1 2097152").unwrap();
+        let retargeted = ClaimRequest {
+            id: request.id.clone(),
+            bytes: Some(2 << 20),
+        };
         assert!(
-            !entry_stands(&pass, &h, &at, started),
+            !pass_stands(
+                &pass,
+                GuestState {
+                    granted: true,
+                    room: 8 << 30,
+                    held: 0
+                },
+                Some(50),
+                Some(&retargeted),
+                idle()
+            ),
             "the same request asking for other bytes ends it too"
         );
         fs::remove_file(&at).unwrap();
