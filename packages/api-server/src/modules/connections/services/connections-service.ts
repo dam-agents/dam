@@ -1034,11 +1034,9 @@ export function createConnectionsService(deps: {
               conn.id,
             );
             await rotateHeaderValue(conn, conn.auth, value);
-            if (check) {
-              await deps.repo.mergeInputs(conn.id, {
-                [KEY_CHECK_INPUT_KEY]: check,
-              });
-            }
+            await deps.repo.mergeInputs(conn.id, {
+              [KEY_CHECK_INPUT_KEY]: check,
+            });
           }
           if (contributions) {
             await deps.repo.updateContributions(conn.id, contributions);

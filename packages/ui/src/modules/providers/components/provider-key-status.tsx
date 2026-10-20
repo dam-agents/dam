@@ -36,8 +36,7 @@ export function ProviderKeyStatus({
         <p className="flex items-start gap-1.5 text-xs text-danger">
           <WarningFilled size={12} aria-hidden className="mt-0.5 shrink-0" />
           <span>
-            The provider refused this key ({check.detail}) on {at}. Replace the
-            key.
+            Key refused on {at} ({check.detail}). Replace the key.
           </span>
         </p>
       );
