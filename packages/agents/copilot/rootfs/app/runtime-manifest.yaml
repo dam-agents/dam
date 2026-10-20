@@ -1,0 +1,63 @@
+# GitHub Copilot CLI runtime manifest. Copilot is the ACP agent itself
+# (`copilot --acp`). Other drivers keep the defaults of the base manifest.
+manifestVersion: 1
+
+# Copilot's BYOK provider speaks one wire API per process; Chat Completions
+# reaches the most providers. Its ACP takes the model as a session config
+# option it does not advertise. Its calls carry no session marker, so the
+# router routes them by the qualified name alone.
+modelRouter:
+  dialects: [openai-chat]
+  sessionModel: { configOption: model }
+  credentialEnv: [COPILOT_PROVIDER_API_KEY]
+  # BYOK refuses to start without a model.
+  defaultModelEnv: [COPILOT_MODEL]
+
+# Declared so the runtime answers initialize before any harness process runs.
+# Re-captured from the image pin by test:harness-initialize-capabilities. The
+# login method names the binary's own path, which differs per install, so the
+# runtime offers none: BYOK needs no login.
+initializeCapabilities:
+  agentCapabilities: {"auth": {"logout": {}}, "loadSession": true, "mcpCapabilities": {"http": true, "sse": true}, "promptCapabilities": {"image": true, "audio": false, "embeddedContext": true}, "sessionCapabilities": {"close": {}, "list": {}}}
+  authMethods: []
+  agentInfo: {"name": "Copilot", "title": "Copilot"}
+
+drivers:
+  # Copilot reads MCP servers from ~/.copilot/mcp-config.json; the default
+  # `type` / `url` / `headers` entry shape is Copilot's own, and an entry with
+  # no `tools` list exposes every tool.
+  mcp-entry:
+    path: "$HOME/.copilot/mcp-config.json"
+    keyPath: mcpServers
+
+  # Copilot's ~/.copilot/settings.json holds the defaults the Config panel
+  # writes; a session's mode is a live ACP config option.
+  harness-config:
+    file: "$HOME/.copilot/settings.json"
+    sessionSettings:
+      mode: { configOption: mode }
+    keys:
+      configOptions:
+        mode: platform.mode
+    catalog:
+      options:
+        - id: model
+          name: Model
+          description: AI model to use
+          category: model
+          choices: []
+        - id: mode
+          name: Mode
+          description: How Copilot works through a prompt
+          category: mode
+          default: "https://agentclientprotocol.com/protocol/session-modes#agent"
+          choices:
+            - value: "https://agentclientprotocol.com/protocol/session-modes#agent"
+              name: "Agent"
+              description: "Answers and implements, turn by turn"
+            - value: "https://agentclientprotocol.com/protocol/session-modes#plan"
+              name: "Plan"
+              description: "Writes a plan for multi-step work before it implements"
+            - value: "https://agentclientprotocol.com/protocol/session-modes#autopilot"
+              name: "Autopilot"
+              description: "Keeps working until the task is done, without stopping to ask"

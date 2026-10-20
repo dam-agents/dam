@@ -1,0 +1,13 @@
+# The npm package is a loader that runs the native binary of its
+# platform-specific optional dependency.
+[tools]
+"npm:@github/copilot" = "1.0.96"
+
+[oci.env]
+PLATFORM_HARNESS = "copilot"
+# No GitHub login, telemetry, web tools, GitHub MCP server or update check:
+# every model call goes to the Model Router, and the image pins the CLI.
+COPILOT_OFFLINE = "true"
+COPILOT_AUTO_UPDATE = "false"
+# The platform instructions, as a symlink to /etc/AGENTS.md.
+COPILOT_CUSTOM_INSTRUCTIONS_DIRS = "/etc/copilot"

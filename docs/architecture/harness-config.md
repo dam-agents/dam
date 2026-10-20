@@ -132,7 +132,7 @@ One process reaches either the router or Bedrock, so a session's subagent model 
 No model counts as the router side, since a session without a Bedrock model reaches the router.
 A schedule's pair is checked at save against the model its fire resolves to (the schedule's own, else the saved default; with no default model the check passes and the fire reports the missing default), and each harness reports the templates it runs natively in its runtime capabilities.
 
-Each harness's manifest declares in its `modelRouter` section the dialects it speaks (Claude Code: Messages; Codex: Responses; Bob: chat; Pi: all three) and its name spelling (Claude Code's gateway discovery keeps only ids containing `claude`, lowercased, so it sees `claude/<alias>/<id>`); a harness's view of the catalog is the entries whose provider serves one of its dialects.
+Each harness's manifest declares in its `modelRouter` section the dialects it speaks (Claude Code: Messages; Codex: Responses; Bob and Copilot: chat; Pi: all three) and its name spelling (Claude Code's gateway discovery keeps only ids containing `claude`, lowercased, so it sees `claude/<alias>/<id>`); a harness's view of the catalog is the entries whose provider serves one of its dialects.
 The catalog is built when the env rail materialises, rebuilt on every env change and on a timer; a failed listing keeps that Connection's last good list, marked unavailable, and never empties another's.
 A failed listing is retried after two seconds, then twice as long each time up to five minutes, and an env change starts that ladder over: a grant also restarts the agent's egress gateway, so the listings that follow it fail until the gateway is back.
 A Connection granted but not yet listed is in the view at once, unavailable and never listed, and every change to the catalog sends the harness-config watch notice.
@@ -148,6 +148,8 @@ Two ids of one provider that match that way, like two of its deployments, are re
 The session is read from what each harness stamps: Bob's `X-Task-Id` (the root task id is the ACP session id; `X-Parent-Task-Id` marks a subagent's calls), Codex's `session-id` header (its thread id, the ACP session id; a subagent's own `thread-id` beside it), Claude Code's request metadata `user_id` ending in `_session_<uuid>`, and Pi's `x-platform-session`, which its extension sets to the platform's session id.
 In a terminal, Codex and Bob run under their own id, which the router maps back to the platform's session id through the pins that their session-start hooks write (`terminalSessionPins`); Claude Code's terminal runs under the platform's id, and Pi's extension sends it.
 A Codex terminal also sends the platform's id in `x-platform-session` (`env_http_headers`), which names the session of a thread that has no pin, such as the TUI's title thread.
+Copilot stamps nothing on its calls, so a call from its chat process names no session and is routed by its qualified name alone.
+A Copilot terminal runs under the platform's id (`--session-id`) and sends it in `x-platform-session` through `COPILOT_PROVIDER_HEADERS`.
 The router stamps each forwarded call with `x-platform-session` (when it found a session) and `x-platform-harness`, and it never passes the stamp that a harness sent; the gateway's [meter](spend-limits.md#meter) records the stamp and removes it before the provider.
 
 The router **owns upstream auth**: the client's credential headers are dropped and the target Connection's placeholder is set in the header it claims at the [credential gateway](credential-gateway.md) (`Authorization: Bearer` for the LiteLLM proxies, the platform provider, OpenAI and the Anthropic subscription, `x-api-key` for the Anthropic key, `Authorization: Apikey` for Bob's gateway); the router never holds a secret.
@@ -176,6 +178,7 @@ Pi's image has no subagents, so Pi has neither setting.
 A harness without a `modelRouter` section (a custom template's own harness) lists its models from the `modelDiscovery` source its manifest declares: the first source whose variable is set answers, through the OpenAI model list, LiteLLM's model info or Bedrock's inference-profile listing, under the manifest's prefix and case.
 Routed harnesses answer from the [model catalog](#the-model-catalog) instead.
 Nothing is seeded into a harness's config file; a run with no choice gets the agent's default ([session settings](#session-settings)).
+A routed harness that refuses to start without a model names a variable in its manifest's `defaultModelEnv` (Copilot's `COPILOT_MODEL`), and the runtime sets it to the first model of the default provider that serves the harness; the session's own model then reaches it over ACP.
 A model the provider does not list fails the turn with the router's reason rather than being replaced.
 
 Bedrock stays native: Claude Code runs on it outside the router, and a routed Pi does not reach it.

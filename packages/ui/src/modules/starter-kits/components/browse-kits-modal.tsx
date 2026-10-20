@@ -23,6 +23,7 @@ const HARNESS_PILLS = [
   ["bob", "text-icon-violet"],
   ["claude-code", "text-icon-clay"],
   ["codex", "text-icon-green"],
+  ["copilot", "text-icon-teal"],
   ["pi", "text-icon-blue"],
 ] as const;
 
