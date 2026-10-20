@@ -85,10 +85,15 @@ export function executeRuntimeMigration(
     const result = await decideAndWrite<
       RuntimeMigrationRefusal | { type: "NotRequested" }
     >(deps, id, async (agent) => {
-      // UNIT_BOUNDARY_DESCRIPTION: the list this Agent came from may be a tick old, so the request is checked on the live read. One the operator withdrew in the meantime leaves no migration behind, or one the controller is still clearing up, and is not promoted back into a move nobody asked for; a request that is still there, whatever phase it reached, is decided as before.
+      // UNIT_BOUNDARY_DESCRIPTION: the list this Agent came from may be a tick old, so the request is checked on the live read, and every attempt decides again from the read it is about to write against. One the operator withdrew in the meantime leaves no migration behind, or one the controller is still clearing up, and is not promoted back into a move nobody asked for. One that already names a target is a decision — this service's own from an earlier tick, or that of a deployment overlapping this one — and deciding it again would overwrite what was accepted and the retry state that went with it, so the live request must still be undecided to be decided at all.
       if (
         !agent.runtimeMigration ||
         agent.runtimeMigration.phase === "aborting"
+      )
+        return { error: { type: "NotRequested" as const } };
+      if (
+        agent.runtimeMigration.phase === "requested" &&
+        !runtimeMigrationUndecided(agent)
       )
         return { error: { type: "NotRequested" as const } };
       const migration = await deps.migration(agent);
@@ -172,7 +177,7 @@ export function createRuntimeMigrationSwitch(deps: {
     if (started.ok) return;
     if (started.error.type === "NotRequested") {
       deps.log(
-        `[runtime-migration] ${agent.id} was asked to move and the request is gone; it is left where it is`,
+        `[runtime-migration] ${agent.id} was asked to move and the request is gone or already decided; it is left where it is`,
       );
       return;
     }

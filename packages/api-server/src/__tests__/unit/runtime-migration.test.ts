@@ -776,6 +776,60 @@ describe("a move an operator asks for", () => {
     await sweep.tick();
     expect(deps.writeMigration).not.toHaveBeenCalled();
   });
+
+  // TEST_SCENARIO: the list entry is undecided but the Agent it names is not — an overlapping deployment decided it between the list and the tick — so the live request is what is decided, and a target that is already recorded is never overwritten with a recomputed one.
+  it("leaves a request the live read finds already decided", async () => {
+    const asked = migrating("Requested");
+    const decided = migrating("Requested", {
+      runtimeMigrationTarget: JSON.stringify({ storageSize: "30Gi" }),
+      resourceVersion: "42",
+    });
+    const deps = writes(decided);
+    const logged: string[] = [];
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [asked],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: (message) => logged.push(message),
+    });
+    await sweep.tick();
+    expect(deps.writeMigration).not.toHaveBeenCalled();
+    expect(logged.join("\n")).toMatch(/already decided/);
+  });
+
+  // TEST_SCENARIO: a promotion that conflicts is decided again from the read it retries on, and that read may show the move already decided — by the writer that took the version, or by another sweep — so the retry writes nothing rather than replacing the standing target.
+  it("leaves a request that was decided while its promotion conflicted", async () => {
+    const asked = migrating("Requested");
+    const decided = migrating("Requested", {
+      runtimeMigrationTarget: JSON.stringify({ storageSize: "30Gi" }),
+      resourceVersion: "42",
+    });
+    const deps = writes(asked, decided);
+    deps.writeMigration.mockResolvedValueOnce({
+      ok: false,
+      reason: "conflict",
+    });
+    const sweep = createRuntimeMigrationSwitch({
+      listAgents: async () => [asked],
+      migration: async () => ({
+        virtualizationEnabled: true,
+        defaultMounts: CHART_MOUNTS,
+        defaultStorageSize: "10Gi",
+      }),
+      ...deps,
+      log: () => {},
+    });
+    await sweep.tick();
+    expect(deps.writeMigration).toHaveBeenCalledTimes(1);
+    expect(deps.writeMigration).toHaveBeenCalledWith(
+      "agent-1",
+      expect.objectContaining({ resourceVersion: "41" }),
+    );
+  });
 });
 
 describe("the moved agent's disk", () => {

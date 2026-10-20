@@ -284,10 +284,19 @@ func (r *AgentReconciler) runtimeMigrationPhase(ctx context.Context, agent *apiv
 	if m.recorded && phase == m.phase && message == m.message {
 		return nil
 	}
-	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+	// UNIT_BOUNDARY_DESCRIPTION: the phase this reconcile read can be older than the Cluster's own — the informer does not see this controller's own writes at once — so the write applies only while the live Agent still stands at the phase and request it was decided from. A move that verified, finished, or was re-requested in between keeps what it has; this turn's note is dropped and the next turn reads the phase that is there.
+	applied, err := updateAgentStatusWhile(ctx, r.dynamic, r.config.Namespace, agent.Name, func(obj *unstructured.Unstructured) bool {
+		live := runtimeMigrationOfObject(obj)
+		return live.phase == m.phase && live.requested == m.requested
+	}, func(s *apiv1.AgentStatus) {
 		setRuntimeMigrating(s, phase, message, agent.Generation)
-	}); err != nil {
+	})
+	if err != nil {
 		return err
+	}
+	if !applied {
+		slog.Info("runtime migration: the move advanced under this turn, so its note is dropped", "agent", agent.Name, "read", m.phase, "wrote", phase)
+		return nil
 	}
 	if phase != m.phase {
 		slog.Info("runtime migration: phase", "agent", agent.Name, "from", m.phase, "to", phase)
@@ -539,6 +548,19 @@ func (r *AgentReconciler) runtimeMigrationWithNothingToCopy(ctx context.Context,
 // UNIT_BOUNDARY_DESCRIPTION: removes what the vm side made — the copy Job, the machine with its disk and its seed, and the record of which volumes were copied — and then the condition, so a crash anywhere in between is finished by the next reconcile. The old volumes are not touched: they never lost their labels, so the container resumes on them. For an abort the condition goes; for a retry the migration starts over from the preflight with a fresh machine, because a machine whose boot failed may have seeded part of its disk. An abort does not wait on a runner that cannot be reached, since that is when a user most needs the container back: the machine it could not delete is marked as left on the Agent, and the orphan sweep removes it once the runner answers.
 func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv1.Agent, retry bool) error {
 	name := agent.Name
+	// UNIT_BOUNDARY_DESCRIPTION: tearing the vm side down destroys the disk the guest holds, so the live Agent decides it again immediately before: a stale phase cannot authorize the delete. A move that verified or finished, or was switched, leaves its machine standing and the next turn reads that.
+	live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return fmt.Errorf("reading the agent before the undo: %w", err)
+	}
+	standing, err := FromCacheObject[apiv1.Agent](live)
+	if err != nil {
+		return err
+	}
+	if phase := runtimeMigrationOf(standing.Annotations, standing.Status); phase.phase == apiv1.ReasonRuntimeMigrationVerified || standing.Spec.IsVM() {
+		slog.Info("runtime migration: the live Agent no longer owes an undo, so its machine stands", "agent", name, "phase", phase.phase)
+		return nil
+	}
 	prop := metav1.DeletePropagationBackground
 	if err := r.client.BatchV1().Jobs(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(name), metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("deleting the home copy job: %w", err)

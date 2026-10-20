@@ -126,19 +126,25 @@ A request an earlier api-server decided is left alone, so annotating an Agent wh
 **Watch it.** The Agent's `RuntimeMigrating` condition names the phase and why it waits, and the Agent's status counts the copy attempts; the page badges the Agent with the same phase, since it is the owner's to see, not to start.
 A migration that cannot finish fails on its own after three copy attempts or six hours, and at the first attempt when the home cannot fit the machine.
 
-**Abort it.** Until it is verified, remove the request and its companions in one write, conditioned on the phase you read: a boot that verifies in between makes the write fail rather than letting the abort land late.
+**Abort it.** Until it is verified, remove the request and its companions in one write, decided from one read of the Agent — the backend, the request, the phase and the version the write carries — and repeated whole on a conflict: a boot that verifies in between makes the write fail rather than letting the abort land late.
 
 ```sh
 agent=<agent>; ns=<agent-namespace>
-phase=$(kubectl get agent "$agent" -n "$ns" -o jsonpath='{.status.conditions[?(@.type=="RuntimeMigrating")].reason}')
-# Refuse a move that already finished: the machine is the Agent's runtime by then, and its disk holds what the guest has written since the boot.
-case "$phase" in Verified|"") echo "not abortable (phase: ${phase:-none})"; exit 1;; esac
-rv=$(kubectl get agent "$agent" -n "$ns" -o jsonpath='{.metadata.resourceVersion}')
-kubectl annotate agent "$agent" -n "$ns" --resource-version="$rv" \
-  agent-platform.ai/runtime-migration- agent-platform.ai/runtime-migration-target- agent-platform.ai/runtime-migration-retry-
+while :; do
+  # One read decides and carries the write: a phase from one read and a version from another are two decisions.
+  IFS='|' read -r backend request phase rv <<<"$(kubectl get agent "$agent" -n "$ns" -o jsonpath='{.spec.backend.type}{"|"}{.metadata.annotations.agent-platform\.ai/runtime-migration}{"|"}{.status.conditions[?(@.type=="RuntimeMigrating")].reason}{"|"}{.metadata.resourceVersion}')" || exit 1
+  # Refuse a move that already finished or switched: the machine is the Agent's runtime by then, and its disk holds what the guest has written since the boot.
+  case "$backend" in vm) echo "not abortable: the Agent already runs on the machine"; exit 1;; esac
+  case "$phase" in Verified) echo "not abortable: verified, the boot came from the copy"; exit 1;; esac
+  # Nothing recorded and nothing asked for is nothing to abort; a request the api-server has not decided has no phase yet and is abortable.
+  [ -z "$request$phase" ] && { echo "nothing to abort"; exit 1; }
+  kubectl annotate agent "$agent" -n "$ns" --resource-version="$rv" \
+    agent-platform.ai/runtime-migration- agent-platform.ai/runtime-migration-target- agent-platform.ai/runtime-migration-retry- && exit 0
+  echo "the Agent changed since this read; deciding the abort again"
+done
 ```
 
-A conflict on that write means the Agent changed since the read — a phase the boot moved on to, or another writer — and the abort must be read and decided again from a fresh read.
+A conflict on that write means the Agent changed since the read — a phase the boot moved on to, another writer — and the whole read and decision repeat against the Agent as it now is.
 The controller treats a withdrawn request before the verified boot as an abort: it deletes the copy Job and the machine with its seed, removes the condition, and the container resumes on its old volumes, since the spec was never switched.
 A verified migration cannot be aborted, by the guard above or by a write that skips it: the controller leaves a verified machine standing, the verified phase survives a withdrawn request, and the api-server switches the spec, so a late abort completes the move instead of destroying what the guest has written.
 What the copy missed is recovered from the retained volumes.

@@ -335,6 +335,33 @@ func TestAnAbortRemovesTheVMSideAndTheContainerResumes(t *testing.T) {
 	assert.Equal(t, int32(1), agentReplicas(t, r), "the container runs again")
 }
 
+// TEST_SCENARIO: the worker reads Agents from the informer, so a turn can hold a phase this controller has already advanced past. A turn that still reads Booting must not write its wait note over the verified condition — the machine booted from the copy, its disk is where the Agent's data is — and a request withdrawn after that boot leaves the machine standing.
+func TestAStaleBootingTurnDoesNotUndoAVerifiedMove(t *testing.T) {
+	ctx := context.Background()
+	stale := bootingAgentCR(t)
+	r, node, _ := setupVMReconciler(t, stale)
+	createAll(t, r, homePVC("home-agent-my-agent-0"))
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
+
+	require.NoError(t, r.Reconcile(ctx, stale))
+	verified := reloaded(t, r, stale)
+	requirePhase(t, verified, apiv1.ReasonRuntimeMigrationVerified)
+
+	verified = editStoredAgent(t, r, verified, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+	requirePhase(t, verified, apiv1.ReasonRuntimeMigrationVerified)
+
+	node.refusesEnsures = true
+	require.NoError(t, r.Reconcile(ctx, stale))
+	node.refusesEnsures = false
+	stale = reloaded(t, r, stale)
+	requirePhase(t, stale, apiv1.ReasonRuntimeMigrationVerified)
+
+	require.NoError(t, r.Reconcile(ctx, stale))
+	assert.Empty(t, node.deleted, "the verified machine keeps the disk the guest wrote to")
+	requirePhase(t, reloaded(t, r, stale), apiv1.ReasonRuntimeMigrationVerified)
+	assert.Equal(t, int32(0), agentReplicas(t, r), "the container does not come back beside it")
+}
+
 // TEST_SCENARIO: an abort that reaches the cluster after the verified boot is not an undo. The machine booted from the copy, so its disk is where the Agent's data is now and the guest may have written to it: the controller leaves the machine and its condition alone and the Backend switch, which the api-server still runs from the verified phase, decides the Agent.
 func TestAnAbortThatArrivesAfterVerificationKeepsTheMachine(t *testing.T) {
 	ctx := context.Background()
