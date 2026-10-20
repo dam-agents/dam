@@ -3049,6 +3049,8 @@ mod tests {
     // TEST_SCENARIO: a guard that held room when the guest stopped is emptied and closed first, so the stop's sync frees its blocks and the next boot does not find them still taken; the guard thread then finds no file and ends.
     #[test]
     fn a_clean_stop_empties_the_storage_guard() {
+        // TEST_SCENARIO: the stop publishes an empty state, so this test keeps out of the way of the ones that read the published state.
+        let _state = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
         let disk = TempDir::new("guard-stop");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
