@@ -2893,17 +2893,35 @@ mod tests {
         let disk = TempDir::new("guard-stop");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
+        let free = || {
+            flush_filesystem(disk.path()).unwrap();
+            let stat = statvfs(disk.path()).expect("the disk's free space");
+            #[allow(clippy::unnecessary_cast)]
+            let (size, avail) = (stat.f_frsize as u64, stat.f_bavail as u64);
+            size * avail
+        };
+        let base = free();
         let file = pool_guard(&dir).expect("an unnamed file on the disk");
-        file.set_len(1 << 20).unwrap();
+        preallocate(&file, 64 << 20).unwrap();
         let probe = file.try_clone().unwrap();
         *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(Guard { files: vec![file] });
         let mut released = take_pool_guard(|| {}).expect("the guard the stop takes");
-        released.release();
         assert!(POOL_GUARD
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .is_none());
-        assert_eq!(probe.metadata().unwrap().len(), 0);
+        assert_eq!(
+            probe.metadata().unwrap().nlink(),
+            0,
+            "the guard's file kept a name"
+        );
+        released.release();
+        drop(probe);
+        assert!(
+            free() + (8 << 20) >= base,
+            "the released guard kept {} MiB of the disk",
+            base.saturating_sub(free()) >> 20
+        );
     }
 
     // TEST_SCENARIO: the guard's files have no names, so no older platform-init, image or agent can find them, and the filesystem frees them once the guest stops; a disk where they cannot be made boots without a guard.

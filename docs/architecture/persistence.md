@@ -259,7 +259,8 @@ Each eviction, and a disk still short once nothing is left to evict, is a line o
 An agent that exits with its home nearly out of space or inodes is reported as a full home.
 A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
 A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, since a grown disk has more of both.
-The guest's storage disk is mounted with synchronous discards, so a block the agent frees reaches the runner's volume as the guest's filesystem frees it and stops counting against the owner's storage; platform-init also trims the whole disk every minute, for a device whose discards fail, and before its guard preallocates.
+platform-init mounts the guest's storage disk with synchronous discards, so a block the agent frees reaches the runner's volume as its filesystem frees it and stops counting against the owner's storage; it also trims the whole disk every minute and before its guard preallocates, which retries the ranges still free.
+Both use the same discard, so a device that refuses one returns nothing.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
@@ -291,15 +292,15 @@ A refused growth is reported and reconciliation continues: the runner still serv
 
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
-It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full does not have every guest delete its scratch again every minute.
-A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init sizes a preallocated file on the disk so the guest can write only what is left of its grant.
-A claim the runner cannot measure grants nothing at all, so no guest is held to it, and it says so in its log each time it loses the measure and each time it gets it back.
+It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full has not every guest delete its scratch again every minute.
+A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init preallocates unnamed files on the disk so the guest can write only what is left of its grant.
+A claim the runner cannot measure grants nothing, so no guest is held to it, and it says so each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
-The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
+The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
-Its blocks are only marked in the guest's filesystem, never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops.
-btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads what it holds from the file's blocks, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
-It gives a shrink's room up whole, its blocks never falling below the size it moves to, and empties the file at a clean stop.
+Their blocks are only marked in the guest's filesystem, never written, so they take nothing from the claim, and they have no names, so the filesystem frees them when the guest stops.
+btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads what it holds from its files' blocks, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
+A shrink drops whole files, never part of one, and a clean stop releases them all.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until their discard reaches it.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
