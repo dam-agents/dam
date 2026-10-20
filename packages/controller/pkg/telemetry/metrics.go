@@ -99,12 +99,12 @@ func RunnerHandoffStalled(ctx context.Context) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a held roll has waited, as an observation of the rolls held right now rather than a value written per pass: a gauge that is recorded keeps a series for every owner it ever saw, so an owner whose roll ended would export its last age forever, and owners that churn would fill the SDK's series limit. A hold is dropped when the reconciler ends it, and on its own when no pass refreshed it for heldRollStale, so a runner deleted or a template reverted mid-wait stops being observed.
+// UNIT_BOUNDARY_DESCRIPTION: how long the roll held longest right now has waited, as an observation of the rolls held right now rather than a value written per pass: a gauge that is recorded keeps a series for every owner it ever saw, so an owner whose roll ended would export its last age forever, and owners that churn would fill the SDK's series limit. A hold is dropped when the reconciler ends it, and on its own when no pass refreshed it for heldRollStale, so a runner deleted or a template reverted mid-wait stops being observed. The series carries no owner: a runner is per owner, so its owner on a series would be a person, which no exported series names. An operator reads which runner is held from the Events on it.
 const heldRollStale = 5 * time.Minute
 
 const (
 	heldRollName = "platform.vm_runner.roll_held_for_idle"
-	heldRollDesc = "How long each VM runner's changed pod has been held back from its roll right now, by owner: held for the owner's busy agents or for a node image cache the runner cannot reach"
+	heldRollDesc = "How long the changed pod held longest right now has been held back from its roll, for busy agents or for a node image cache the runner cannot reach; zero when no roll is held"
 )
 
 type heldRoll struct {
@@ -136,13 +136,15 @@ func (h *heldRolls) ended(owner string) {
 func (h *heldRolls) observe(now time.Time, o metric.Int64Observer) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
+	var oldest time.Duration
 	for owner, roll := range h.m {
 		if now.Sub(roll.seen) >= heldRollStale {
 			delete(h.m, owner)
 			continue
 		}
-		o.Observe(int64(now.Sub(roll.since).Seconds()), metric.WithAttributes(attribute.String("platform.vm_runner.owner", owner)))
+		oldest = max(oldest, now.Sub(roll.since))
 	}
+	o.Observe(int64(oldest.Seconds()))
 }
 
 func newHeldRollGauge(meter metric.Meter, h *heldRolls) (metric.Int64ObservableGauge, error) {

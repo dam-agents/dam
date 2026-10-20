@@ -11,22 +11,17 @@ import (
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
 )
 
-// TEST_OVERVIEW: the held-roll metric is an observation of the rolls held right now, not a value written per pass. A hold that ends leaves no series behind — a gauge keeps its last value for the process's life, so an owner whose roll settled would export its last age forever, and owners that churn would fill the SDK's series limit. A hold no pass refreshed stops being observed too, which is what a runner deleted or a template reverted mid-wait looks like.
-func TestTheHeldRollGaugeObservesOnlyTheRollsHeldNow(t *testing.T) {
+// TEST_OVERVIEW: the held-roll metric is an observation of the rolls held right now, not a value written per pass. A hold that ends leaves no age behind — a gauge keeps its last value for the process's life, so an owner whose roll settled would export its last age forever, and owners that churn would fill the SDK's series limit. A hold no pass refreshed stops being observed too, which is what a runner deleted or a template reverted mid-wait looks like. The series names no owner, since a runner is per owner and no exported series names a person.
+func TestTheHeldRollGaugeObservesOnlyWhatIsHeldNow(t *testing.T) {
 	reader := sdkmetric.NewManualReader()
 	meter := sdkmetric.NewMeterProvider(sdkmetric.WithReader(reader)).Meter("test")
 	held := &heldRolls{m: map[string]heldRoll{}}
 	_, err := newHeldRollGauge(meter, held)
 	require.NoError(t, err)
 
-	now := time.Now()
-	held.held("owner-a", now.Add(-90*time.Second))
-	held.held("owner-b", now.Add(-10*time.Second))
-
-	ages := func() map[string]int64 {
+	observed := func() []metricdata.DataPoint[int64] {
 		var rm metricdata.ResourceMetrics
 		require.NoError(t, reader.Collect(context.Background(), &rm))
-		got := map[string]int64{}
 		for _, scope := range rm.ScopeMetrics {
 			for _, m := range scope.Metrics {
 				if m.Name != heldRollName {
@@ -34,29 +29,35 @@ func TestTheHeldRollGaugeObservesOnlyTheRollsHeldNow(t *testing.T) {
 				}
 				data, ok := m.Data.(metricdata.Gauge[int64])
 				require.True(t, ok)
-				for _, point := range data.DataPoints {
-					owner, _ := point.Attributes.Value("platform.vm_runner.owner")
-					got[owner.AsString()] = point.Value
-				}
+				return data.DataPoints
 			}
 		}
-		return got
+		t.Fatal("the gauge was not exported")
+		return nil
 	}
 
-	got := ages()
-	require.Len(t, got, 2, "one series per held roll, and none for an owner never held")
-	assert.InDelta(t, 90, got["owner-a"], 5)
-	assert.InDelta(t, 10, got["owner-b"], 5)
+	now := time.Now()
+	held.held("owner-a", now.Add(-90*time.Second))
+	held.held("owner-b", now.Add(-10*time.Second))
 
-	held.ended("owner-b")
-	got = ages()
-	require.Len(t, got, 1, "a hold that ended leaves no series")
-	assert.Contains(t, got, "owner-a")
+	points := observed()
+	require.Len(t, points, 1, "one series, not one per owner")
+	assert.Empty(t, points[0].Attributes.ToSlice(), "an exported series names no owner")
+	assert.InDelta(t, 90, points[0].Value, 5, "the roll held longest is the age the series carries")
 
-	held.held("owner-c", now)
-	held.m["owner-c"] = heldRoll{since: now, seen: now.Add(-heldRollStale - time.Second)}
-	got = ages()
-	require.Len(t, got, 1, "a hold no pass refreshed stops being observed")
-	assert.NotContains(t, got, "owner-c")
-	assert.Contains(t, got, "owner-a")
+	held.ended("owner-a")
+	points = observed()
+	require.Len(t, points, 1)
+	assert.InDelta(t, 10, points[0].Value, 5)
+
+	held.m["owner-b"] = heldRoll{since: now, seen: now.Add(-heldRollStale - time.Second)}
+	held.held("owner-c", now.Add(-3*time.Second))
+	points = observed()
+	require.Len(t, points, 1)
+	assert.InDelta(t, 3, points[0].Value, 5, "a hold no pass refreshed has been dropped")
+
+	held.ended("owner-c")
+	points = observed()
+	require.Len(t, points, 1)
+	assert.Equal(t, int64(0), points[0].Value, "no held roll reads zero rather than the last age it had")
 }
