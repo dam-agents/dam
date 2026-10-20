@@ -99,7 +99,7 @@ function lines(out: string): string[] {
   return out.split("\n").filter((row) => row !== "");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what is not back yet about a Deployment's own rollout, read off the object rather than its pods: a template the cluster has not applied, pods that are not all the current revision and ready, an image other than the release that must run, or a release named or a roll still bringing machines back. Old ready pods therefore cannot answer for a replacement that is still coming.
+// UNIT_BOUNDARY_DESCRIPTION: what is not back yet about a Deployment's own rollout, read off the object rather than its pods: a template the cluster has not applied, pods that are not all the current revision and ready, an image other than the release that must run, a release named that is not that release, or a roll still bringing machines back. A runner that named the install's own release is left as it is, which is what a healthy runner holds; old ready pods therefore cannot answer for a replacement that is still coming.
 function notRolled(row: string, image: string | undefined): string {
   const [
     name,
@@ -129,7 +129,7 @@ function notRolled(row: string, image: string | undefined): string {
   return "";
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the install back on the release `cluster:install` put it on, read off the cluster alone, so a run that failed before it made an agent can still tell. A helm upgrade patches the templates while the pods that take them roll afterwards, and the controller reads its runner release from its own environment, so the values alone prove nothing: this waits until the restored controller and stager are the ones running and every runner has rolled onto the install's image with no release named and no roll in flight. What it answers is what is not back yet, so a timeout names the state that stayed.
+// UNIT_BOUNDARY_DESCRIPTION: the install back on the release `cluster:install` put it on, read off the cluster alone, so a run that failed before it made an agent can still tell. A helm upgrade patches the templates while the pods that take them roll afterwards, and the controller reads its runner release from its own environment, so the values alone prove nothing: this waits until the restored controller and stager are the ones running and every runner has rolled onto the install's image with no other release named and no roll in flight. What it answers is what is not back yet, so a timeout names the state that stayed.
 async function expectInstallRestored(): Promise<void> {
   await expect
     .poll(
@@ -202,10 +202,9 @@ async function expectInstallRestored(): Promise<void> {
     .toBe("");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how many lines the controller has logged, per pod, saying that this release reboots this owner's machines, counting only this owner and this release so one owner's roll cannot answer for another's. A hop compares these counts before it starts with the ones after, so a line an earlier run left cannot answer for it, and nothing compares one machine's clock with another's. A pod is counted by name, so a controller that rolled during the hop answers with its own fresh lines; a read that fails answers nothing for any pod, and the hop fails rather than passing on a read it could not make.
-function rebootLines(image: string): Map<string, number> {
+// UNIT_BOUNDARY_DESCRIPTION: how many lines each controller pod has logged saying that this release reboots this owner's machines, counting only this owner and this release, so one owner's roll cannot answer for another's. A hop compares one snapshot with another, so a line an earlier run left cannot answer for this hop, and no machine's clock is compared with another's. A pod is keyed by its own name, which a reused counter would lose: a controller that rolls during the hop answers with its own fresh lines. Nothing is answered when the read failed or a line carries no kubectl `[pod/<name>/<container>]` prefix to attribute it by, so a read the counter could not make never passes for a quiet log.
+function rebootLines(image: string): Map<string, number> | undefined {
   const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
-  const seen = new Map<string, number>();
   let out: string;
   try {
     out = kubectl(
@@ -218,8 +217,9 @@ function rebootLines(image: string): Map<string, number> {
       "--tail=-1",
     );
   } catch {
-    return new Map([["", Number.NaN]]);
+    return undefined;
   }
+  const seen = new Map<string, number>();
   for (const logged of out.split("\n")) {
     if (
       !logged.includes(heldForReboot) ||
@@ -227,10 +227,32 @@ function rebootLines(image: string): Map<string, number> {
       !logged.includes(`"release":"${image}"`)
     )
       continue;
-    const pod = /^\[([^/\]]+)\//.exec(logged)?.[1] ?? "";
+    const pod = /^\[[^/\]]+\/([^/\]]+)\/[^/\]]+\] /.exec(logged)?.[1];
+    if (pod === undefined) return undefined;
     seen.set(pod, (seen.get(pod) ?? 0) + 1);
   }
   return seen;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the counter before a hop, retried so one failed read does not fail the hop, and never a baseline a later read could mistake for zero: a hop whose baseline could not be read fails instead of passing.
+async function linesBefore(image: string): Promise<Map<string, number>> {
+  let counts = new Map<string, number>();
+  await expect
+    .poll(
+      () => {
+        const snapshot = rebootLines(image);
+        if (snapshot === undefined) return false;
+        counts = snapshot;
+        return true;
+      },
+      {
+        timeout: 60_000,
+        intervals: [2_000],
+        message: "the controller's log could not be read before the hop",
+      },
+    )
+    .toBe(true);
+  return counts;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a hop of the roll must leave behind: a pod of the new release, a boot that is not the one before, HOME as it was, and an agent ready on it. A line the reconciler logs for this owner and release that no pod had logged before the hop says the release rolled the pod, so a reboot for another reason cannot pass for the release reaching the machine, and one hop's line cannot answer for the next.
@@ -282,7 +304,7 @@ async function rolledOnto(
   await expect
     .poll(
       () =>
-        [...rebootLines(image)].some(
+        [...(rebootLines(image)?.entries() ?? [])].some(
           ([pod, count]) => count > (loggedBefore.get(pod) ?? 0),
         ),
       {
@@ -378,14 +400,14 @@ test("rolls the live guest onto a release that declares a reboot", async () => {
     guestBoot(),
     "the machine is on another boot than the one the hop starts from",
   ).toBe(machine.boot);
-  const loggedBefore = rebootLines(secondImage);
+  const before = await linesBefore(secondImage);
   installMoved = true;
   upgrade(
     `virtualization.runner.image.repository=${installRepository}`,
     `virtualization.runner.image.tag=${secondKey}`,
     "virtualization.runner.image.digest=",
   );
-  await rolledOnto(secondImage, loggedBefore);
+  await rolledOnto(secondImage, before);
 });
 
 // TEST_SCENARIO: the install's own release carries the key before the second one's, so the hop back is a release that declares a reboot of its own, and the machine reboots again. The chart is upgraded on the values the install holds, with nothing named, which is how an operator leaves a release.
@@ -395,8 +417,8 @@ test("rolls it back onto the release the install holds", async () => {
     guestBoot(),
     "the machine is on another boot than the one the hop starts from",
   ).toBe(machine.boot);
-  const loggedBefore = rebootLines(installImage);
+  const before = await linesBefore(installImage);
   upgrade();
-  await rolledOnto(installImage, loggedBefore);
+  await rolledOnto(installImage, before);
   installMoved = false;
 });
