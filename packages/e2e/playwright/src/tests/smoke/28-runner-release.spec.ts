@@ -21,14 +21,19 @@ import {
   waitAgentState,
   writeHomeFile,
 } from "../../lib/backend.js";
-import { kubectl, podField, RELEASE, RELEASE_NS } from "../../lib/cluster.js";
+import {
+  AGENT_NS,
+  kubectl,
+  podField,
+  RELEASE,
+  RELEASE_NS,
+} from "../../lib/cluster.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 test.skip(laneBackend !== "vm", "only a machine boots a runner release");
 
 test.describe.configure({ mode: "serial" });
 
-const secondKey = "runner-2";
 const markerPath = "e2e-runner-release-marker.txt";
 const installValues = "/tmp/e2e-runner-release-roll-values.yaml";
 const heldForReboot =
@@ -43,6 +48,8 @@ const token = refreshingToken();
 let agentId = "";
 const marker = `home-survives-${randomUUID()}`;
 let machine = { boot: "", pod: "" };
+let owner = "";
+let secondKey = "";
 let installImage = "";
 let installRepository = "";
 let secondImage = "";
@@ -79,6 +86,47 @@ function guestBoot(): string {
 
 function runnerImage(): string {
   return podField(runnerPod(agentId), ".spec.containers[0].image");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the install back on the release `cluster:install` put it on, read off the cluster alone, so a run that failed before it made an agent can still tell: the stager stages the install's release again, and every runner pod on the cluster is ready on that image. A helm upgrade applies the values while the pods that take them roll afterwards, so this waits rather than reading once; what it answers is what is not back yet, so a timeout names the state that stayed.
+async function expectInstallRestored(): Promise<void> {
+  await expect
+    .poll(
+      () => {
+        try {
+          const stager = kubectl(
+            "-n",
+            RELEASE_NS,
+            "get",
+            "daemonset",
+            "-l",
+            `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=vm-runner-releases`,
+            "-o",
+            "jsonpath={.items[*].spec.template.spec.containers[0].image}",
+          );
+          if (stager !== installImage) return `the stager stages ${stager}`;
+          const runners = kubectl(
+            "-n",
+            AGENT_NS,
+            "get",
+            "pod",
+            "-l",
+            "app.kubernetes.io/component=vm-runner",
+            "-o",
+            'jsonpath={range .items[*]}{.spec.containers[0].image}{" "}{.status.conditions[?(@.type=="Ready")].status}{"\\n"}{end}',
+          )
+            .split("\n")
+            .filter((line) => line !== "");
+          if (runners.length === 0) return "no runner pod is running";
+          const wrong = runners.find((line) => line !== `${installImage} True`);
+          return wrong === undefined ? "" : `a runner pod is ${wrong}`;
+        } catch (error) {
+          return String(error);
+        }
+      },
+      { timeout: 600_000, intervals: [5_000] },
+    )
+    .toBe("");
 }
 
 function controllerLog(since?: string): string {
@@ -137,10 +185,18 @@ async function rolledOnto(image: string, since: string): Promise<void> {
   await expectHomeFile(token, agentId, markerPath, marker, {
     timeoutMs: 120_000,
   });
+  const line = controllerLog(since)
+    .split("\n")
+    .find(
+      (logged) =>
+        logged.includes(heldForReboot) &&
+        logged.includes(`"owner":"${owner}"`) &&
+        logged.includes(`"release":"${image}"`),
+    );
   expect(
-    controllerLog(since),
-    `the pod did not roll because ${image} declares a reboot`,
-  ).toContain(heldForReboot);
+    line,
+    `the controller did not log that ${image} reboots this owner's machines`,
+  ).toBeDefined();
   machine = { boot, pod: runnerPod(agentId) };
 }
 
@@ -169,6 +225,18 @@ test.beforeAll(async () => {
   test.skip(pod === "", "the Mac's host runner runs outside the cluster");
   installImage = runnerImage();
   installRepository = installImage.split("@")[0].replace(/:[^/]*$/, "");
+  owner = podField(pod, ".metadata.labels.agent-platform\\.ai/owner");
+  secondKey = `${kubectl(
+    "-n",
+    AGENT_NS,
+    "exec",
+    pod,
+    "-c",
+    "vm-runner",
+    "--",
+    "cat",
+    "/usr/local/libexec/vm-runner/reboot-id",
+  ).trim()}-e2e`;
   expect(
     installImage.endsWith(`:${secondKey}`),
     `the install already runs ${secondKey}; put the chart back on its own values before a run`,
@@ -195,9 +263,13 @@ test.beforeAll(async () => {
 });
 
 test.afterAll(async () => {
-  test.setTimeout(600_000);
+  test.setTimeout(1_500_000);
   try {
-    if (installMoved) upgrade();
+    if (installMoved) {
+      upgrade();
+      await expectInstallRestored();
+      installMoved = false;
+    }
   } finally {
     if (agentId) await api.agents.delete.mutate({ id: agentId });
   }
@@ -229,6 +301,6 @@ test("rolls it back onto the release the install holds", async () => {
   ).toBe(machine.boot);
   const since = new Date().toISOString();
   upgrade();
-  installMoved = false;
   await rolledOnto(installImage, since);
+  installMoved = false;
 });
