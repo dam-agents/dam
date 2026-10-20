@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
 import { CatchStyles } from "../../agents/components/catch-styles.js";
@@ -28,11 +28,31 @@ export function GettingStartedChecklist() {
   const { caught, rewards, working, celebrating, collected } =
     useCharacterUnlocks();
   const [expanded, setExpanded] = useState(true);
+  const containerRef = useRef<HTMLDivElement>(null);
+
   useEffect(() => {
     resetCharacterUnlocks();
     const t = setTimeout(() => completeQuest(FIRST_AGENT_QUEST_ID), 50);
     return () => clearTimeout(t);
   }, []);
+
+  const handleClickOutside = useCallback(
+    (e: MouseEvent) => {
+      if (
+        expanded &&
+        containerRef.current &&
+        !containerRef.current.contains(e.target as Node)
+      ) {
+        setExpanded(false);
+      }
+    },
+    [expanded],
+  );
+
+  useEffect(() => {
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, [handleClickOutside]);
 
   const inFlight = celebrating?.name ?? null;
   const settledQuest = (id: string) =>
@@ -61,7 +81,7 @@ export function GettingStartedChecklist() {
   }));
 
   return (
-    <div className="fixed bottom-4 right-[4.5rem] z-[60] flex flex-col items-end gap-3">
+    <div ref={containerRef} className="fixed bottom-4 right-[4.5rem] z-[60] flex flex-col items-end gap-3">
       <CatchStyles />
       {celebrating && (
         <CatchCelebration

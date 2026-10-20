@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from "react";
+import { createContext, useContext, useEffect, useMemo, useState } from "react";
 import type { ReactNode } from "react";
 
 export type Approach = 1 | 2 | 3;
@@ -21,6 +21,8 @@ export interface InstantStartState {
   setAgentCreated: (v: boolean) => void;
   firstLanding: boolean;
   setFirstLanding: (v: boolean) => void;
+  curveBenderEnabled: boolean;
+  setCurveBenderEnabled: (v: boolean) => void;
 }
 
 const INITIAL_BUDGET: FreeBudget = {
@@ -64,6 +66,11 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
   const [providerAdded, setProviderAdded] = useState(false);
   const [agentCreated, setAgentCreated] = useState(false);
   const [firstLanding, setFirstLanding] = useState(false);
+  const [curveBenderEnabled, setCurveBenderEnabled] = useState(true);
+
+  useEffect(() => {
+    if (providerAdded) setCurveBenderEnabled(false);
+  }, [providerAdded]);
 
   const state = useMemo<InstantStartState>(
     () => ({
@@ -77,8 +84,10 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
       setAgentCreated,
       firstLanding,
       setFirstLanding,
+      curveBenderEnabled,
+      setCurveBenderEnabled,
     }),
-    [approach, budgetExhausted, providerAdded, agentCreated, firstLanding],
+    [approach, budgetExhausted, providerAdded, agentCreated, firstLanding, curveBenderEnabled],
   );
 
   if (!approach) return <>{children}</>;

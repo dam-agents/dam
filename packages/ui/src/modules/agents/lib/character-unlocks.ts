@@ -137,7 +137,10 @@ export function completeQuest(questId: string) {
   workTimer = setTimeout(() => {
     workTimer = null;
     const pool = CHAR_NAMES.filter((n) => !state.unlocked.has(n));
-    const reward = pool[Math.floor(Math.random() * pool.length)];
+    const reward =
+      questId === FIRST_AGENT_QUEST_ID && pool.includes("roller")
+        ? "roller"
+        : pool[Math.floor(Math.random() * pool.length)];
     if (!reward) {
       setState({ working: null });
       return;
