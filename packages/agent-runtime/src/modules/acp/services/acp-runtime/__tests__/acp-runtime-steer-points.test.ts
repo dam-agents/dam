@@ -217,4 +217,49 @@ describe("acp-runtime: steer points", () => {
     await settle();
     expect(world.harness().received(STEER_METHOD)).toHaveLength(1);
   });
+
+  /**
+   * TEST_SCENARIO: Another Session of the agent sends a message while this
+   * one runs a tool. The sender is a machine client that does not stay to
+   * watch, so the message must not wait for a viewer: it is steered at the
+   * next steer point like a typed one.
+   */
+  it("steers a message another Session sent", async () => {
+    const { world } = await turnRunning();
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call",
+        toolCallId: "t1",
+        status: "in_progress",
+      }),
+    );
+
+    const sender = world.connect({ viewer: false });
+    sender.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/prompt",
+      params: {
+        sessionId: SESSION,
+        prompt: [{ type: "text", text: "the spec changed" }],
+        _meta: { platform: { surface: "message" } },
+      },
+    });
+    sender.disconnect();
+    await settle();
+    expect(world.harness().received(STEER_METHOD)).toEqual([]);
+
+    world.harness().emit(
+      update({
+        sessionUpdate: "tool_call_update",
+        toolCallId: "t1",
+        status: "completed",
+      }),
+    );
+    await settle();
+    const steers = world.harness().received(STEER_METHOD);
+    expect(steers).toHaveLength(1);
+    expect(promptTexts(steers[0])).toEqual(["the spec changed"]);
+    expect(world.harness().received("session/prompt")).toHaveLength(1);
+  });
 });

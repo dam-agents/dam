@@ -203,6 +203,13 @@ export interface SessionSettingFrame {
 
 export const SCHEDULE_SURFACE = "schedule";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the surface of a message another of the agent's
+ * Sessions sent. Nobody waits on it, and it may join a turn in flight as a
+ * typed message does.
+ */
+export const MESSAGE_SURFACE = "message";
+
 export interface ReportableTurn {
   sessionId: string;
   reportTo: string;
@@ -2056,11 +2063,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           typed: typedPrompt,
           blocks: queueableBlocks(typedPrompt),
           editable: surface === "ui",
-          steerable: surface === "ui",
+          steerable: surface === "ui" || surface === MESSAGE_SURFACE,
           unattended:
             nonViewerChannels.has(channel) &&
             (isMachineSession(promptSessionId) ||
-              platformString(frame, "surface") === SCHEDULE_SURFACE),
+              surface === SCHEDULE_SURFACE ||
+              surface === MESSAGE_SURFACE),
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);
