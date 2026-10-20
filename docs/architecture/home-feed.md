@@ -77,6 +77,7 @@ Each avatar carries a badge that counts its unread Sessions and its waiting appr
 With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; a Session with an approval waiting on the user shows the approval dot on its row, as in every Session list, and counts in its Agent's avatar badge.
 With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
 Both column headers carry one session filter, by state and by Session type, and share it: a filter set under Home also narrows an Agent's own list, and the control shows a mark while a filter is on.
+The filter narrows the pages already loaded, so while it is on an Agent's own list loads a further page only when the user clicks **Load more**; when the filter is removed, every Agent's own list keeps its first page only.
 The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
 Pins are kept in the browser, so they do not follow the user to another device.
