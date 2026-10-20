@@ -1,6 +1,10 @@
-import type { ConnectionView } from "api-server-api";
-import { githubAccountGroups } from "api-server-api";
-import { useMemo } from "react";
+import type {
+  ConnectionView,
+  DefaultAccountGroup,
+  DefaultAccountKindId,
+} from "api-server-api";
+import { contestedDefaultAccounts } from "api-server-api";
+import { useMemo, type ReactNode } from "react";
 
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
@@ -11,6 +15,32 @@ export interface GrantDetails {
   preferred: boolean;
 }
 
+interface Wording {
+  current: (group: DefaultAccountGroup, active: ReactNode) => ReactNode;
+  prefer: (connectionName: string) => string;
+}
+
+const WORDING: Record<DefaultAccountKindId, Wording> = {
+  github: {
+    current: (group, active) => (
+      <>
+        On {group.scope} this agent acts as {active} unless it switches itself
+        with <code>gh auth switch</code>.
+      </>
+    ),
+    prefer: (name) => `Act as ${name} by default`,
+  },
+  "aws-profile": {
+    current: (_group, active) => (
+      <>
+        For Object Storage this agent uses {active} unless it names another
+        profile with <code>--profile</code>.
+      </>
+    ),
+    prefer: (name) => `Use ${name} by default`,
+  },
+};
+
 interface Props {
   granted: readonly ConnectionView[];
   grants: ReadonlyMap<string, GrantDetails>;
@@ -19,7 +49,7 @@ interface Props {
   className?: string;
 }
 
-export function GitHubAccountsCallout({
+export function DefaultAccountsCallout({
   granted,
   grants,
   onPrefer,
@@ -28,7 +58,7 @@ export function GitHubAccountsCallout({
 }: Props) {
   const groups = useMemo(
     () =>
-      githubAccountGroups(
+      contestedDefaultAccounts(
         granted.map((connection) => {
           const grant = grants.get(connection.id);
           return {
@@ -47,18 +77,23 @@ export function GitHubAccountsCallout({
     <Callout
       tone="info"
       size="sm"
-
       className={cn("flex flex-col gap-3 text-sm text-foreground", className)}
-      data-testid="github-accounts-callout"
+      data-testid="default-accounts-callout"
     >
       {groups.map((group) => {
+        const wording = WORDING[group.kind];
         const active = group.accounts.find((account) => account.active);
         return (
-          <div key={group.host} className="flex flex-col gap-2">
+          <div
+            key={group.key}
+            className="flex flex-col gap-2"
+            data-testid={`default-accounts-${group.kind}`}
+          >
             <p>
-              On {group.host} this agent acts as{" "}
-              <strong>{active?.connectionName}</strong> unless it switches
-              itself with <code>gh auth switch</code>.
+              {wording.current(
+                group,
+                <strong>{active?.connectionName}</strong>,
+              )}
             </p>
             <div className="flex flex-wrap items-center gap-2">
               {group.accounts
@@ -72,7 +107,7 @@ export function GitHubAccountsCallout({
                     onClick={() => onPrefer(account.connectionId)}
                     data-testid={`prefer-connection-${account.connectionId}`}
                   >
-                    Act as {account.connectionName} by default
+                    {wording.prefer(account.connectionName)}
                   </Button>
                 ))}
             </div>

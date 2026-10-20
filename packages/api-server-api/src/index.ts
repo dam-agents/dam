@@ -454,7 +454,6 @@ export {
   githubHostOf,
 } from "./modules/connections/github-accounts.js";
 export type {
-  GitHubAccount,
   GitHubAccountGroup,
   GitHubAccountSource,
 } from "./modules/connections/github-accounts.js";
@@ -471,7 +470,23 @@ export type {
   AwsProfile,
   AwsProfileSource,
 } from "./modules/connections/aws-profiles.js";
-export { preferenceGroupOf } from "./modules/connections/preference-group.js";
+export {
+  defaultAccountGroupKey,
+  defaultAccountGroups,
+} from "./modules/connections/default-accounts.js";
+export type {
+  DefaultAccount,
+  DefaultAccountGroup,
+  DefaultAccountKind,
+  DefaultAccountNaming,
+  DefaultAccountSource,
+} from "./modules/connections/default-accounts.js";
+export {
+  DEFAULT_ACCOUNT_KINDS,
+  contestedDefaultAccounts,
+  preferenceGroupOf,
+} from "./modules/connections/preference-group.js";
+export type { DefaultAccountKindId } from "./modules/connections/preference-group.js";
 
 export type {
   CaseStudyStatus,
