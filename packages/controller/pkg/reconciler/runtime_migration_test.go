@@ -362,6 +362,38 @@ func TestAStaleBootingTurnDoesNotUndoAVerifiedMove(t *testing.T) {
 	assert.Equal(t, int32(0), agentReplicas(t, r), "the container does not come back beside it")
 }
 
+// TEST_SCENARIO: a turn that still reads Booting must not recover from an unproven boot by making the machine again once the live Agent has verified: the guest owns the restored home by then, and deleting the machine destroys what it has written. It holds with the request still standing and with it withdrawn, since the api-server switches a verified move either way.
+func TestAStaleBootingTurnDoesNotRecopyAVerifiedMachine(t *testing.T) {
+	for _, request := range []string{"kept", "withdrawn"} {
+		t.Run(request, func(t *testing.T) {
+			ctx := context.Background()
+			stale := bootingAgentCR(t)
+			r, node, _ := setupVMReconciler(t, stale)
+			createAll(t, r, homePVC("home-agent-my-agent-0"))
+			node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
+
+			require.NoError(t, r.Reconcile(ctx, stale))
+			verified := reloaded(t, r, stale)
+			requirePhase(t, verified, apiv1.ReasonRuntimeMigrationVerified)
+			if request == "withdrawn" {
+				verified = editStoredAgent(t, r, verified, withoutAnnotations(annRuntimeMigration, annRuntimeMigrationTarget))
+				requirePhase(t, verified, apiv1.ReasonRuntimeMigrationVerified)
+			}
+
+			// TEST_SCENARIO: the runner reports the machine ready but its seeded record unreadable, which a stale turn reads as an unproven boot.
+			node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true})
+			require.NoError(t, r.Reconcile(ctx, stale))
+
+			node.refusesEnsures = false
+			live := reloaded(t, r, stale)
+			requirePhase(t, live, apiv1.ReasonRuntimeMigrationVerified)
+			assert.Empty(t, node.deleted, "the verified machine keeps the disk the guest wrote to")
+			assert.JSONEq(t, testSeedAnnotation(t), live.Annotations[annRuntimeMigrationSeed], "the seed the boot is held to is not removed")
+			assert.Equal(t, int32(0), agentReplicas(t, r), "the container does not come back beside it")
+		})
+	}
+}
+
 // TEST_SCENARIO: an abort that reaches the cluster after the verified boot is not an undo. The machine booted from the copy, so its disk is where the Agent's data is now and the guest may have written to it: the controller leaves the machine and its condition alone and the Backend switch, which the api-server still runs from the verified phase, decides the Agent.
 func TestAnAbortThatArrivesAfterVerificationKeepsTheMachine(t *testing.T) {
 	ctx := context.Background()
