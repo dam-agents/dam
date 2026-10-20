@@ -162,7 +162,7 @@ export interface RuntimeMigrationContext {
   homeBytes?: number | null;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner's VM pool, in the runner's own units: the storage every machine disk and the seed share, and the memory its machines are admitted against.
+// UNIT_BOUNDARY_DESCRIPTION: the owner's VM pool, in the runner's own units: the storage every machine disk and the seed share, and the memory the runner holds its machines to, with what is committed against it. That memory is its pod's limit on a cluster, and a share of the host on a laptop. Where the cluster resizes pods in place, a runner caps admission further at what the node has granted its pod, except for a restart of a machine it already runs, whose boot replaces memory it already holds.
 export interface VmPoolCapacity {
   storage: { usedBytes: number; usableBytes: number };
   memory: { committedMiB: number; limitMiB: number };

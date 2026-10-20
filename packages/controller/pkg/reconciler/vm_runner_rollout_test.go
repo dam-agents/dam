@@ -17,6 +17,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
@@ -698,6 +699,31 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 	assert.Equal(t, "d8a60be9a6efa104", dep.Annotations[annRunnerTemplate])
 }
 
+// TEST_SCENARIO: the chart gives every runner pod a PriorityClass, and a roll hash that covered it would reboot every machine of every owner on the install that first set one. The class is left out of what the roll compares, so an existing runner keeps its pod and takes the class at its next replacement, while a change to the pod itself still rolls.
+func TestThePriorityClassDoesNotRollTheFleet(t *testing.T) {
+	spec := func(class string) appsv1.DeploymentSpec {
+		return appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{
+			PriorityClassName: class,
+			Containers:        []corev1.Container{{Name: vmRunnerComponent, Image: "runner:1"}},
+		}}}
+	}
+	bare, err := runnerTemplateHash(runnerRollSpec(spec("")))
+	require.NoError(t, err)
+	classed, err := runnerTemplateHash(runnerRollSpec(spec("platform-vm-runner-priority")))
+	require.NoError(t, err)
+	assert.Equal(t, bare, classed, "adding the class rolled the fleet")
+
+	other, err := runnerTemplateHash(runnerRollSpec(spec("another-class")))
+	require.NoError(t, err)
+	assert.Equal(t, bare, other, "a different class rolled the fleet too")
+
+	changed := spec("platform-vm-runner-priority")
+	changed.Template.Spec.Containers[0].Args = []string{"--boot-mib=1024"}
+	real, err := runnerTemplateHash(runnerRollSpec(changed))
+	require.NoError(t, err)
+	assert.NotEqual(t, classed, real, "a real pod change still rolls")
+}
+
 // TEST_SCENARIO: a runner's pod is unchanged, but its labels were edited by hand and its owner reference points at nothing — the runner ServiceAccount was recreated. Both are restored without touching the pod, so no machine restarts and no roll starts. The claim, written by an older controller with the account as its owner, loses that reference, so a later deletion of the account cannot collect the owner's disks.
 func TestAnUnchangedRunnerGetsItsLabelsAndOwnerBack(t *testing.T) {
 	ctx := context.Background()
@@ -1182,6 +1208,68 @@ func TestARunnerPodWithTheOldReleaseMountRollsOnce(t *testing.T) {
 	assert.Empty(t, nodes["owner-a"].named, "a pod whose loader reads the ConfigMap is not named a release")
 	_, err = r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, r.runnerName("owner-a")+legacyRunnerReleaseSuffix, metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "the roll removes the old release ConfigMap")
+}
+
+// TEST_SCENARIO: the runner template the install has out there carries its own CPU limit and request, and the hash this controller wrote for it covered them, as every hash did before it left CPU out to move it in place. Both vintages shipped: the first covered memory and CPU, the second — the one a runner out there carries now — dropped memory and kept CPU. The reconcile must recognise either as the pod it would render, take the new hash in a metadata-only update, and leave the pod — and so every machine of the owner — alone.
+func TestARunnerThatCarriedConfiguredCPUDoesNotRollOnTheUpgrade(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		memory bool
+	}{
+		{name: "memory and cpu", memory: true},
+		{name: "cpu alone", memory: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _ := setupRolloutReconciler(t)
+			createRolloutRunner(t, r, "owner-a")
+			deps := r.client.AppsV1().Deployments("test-agents")
+			before, err := deps.Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
+			require.NoError(t, err)
+
+			// TEST_SCENARIO: the runner the install has out there was rendered with its CPU limit and request, and with the memory its pool gave it, which this head renders only onto the pod in place.
+			updated := before.DeepCopy()
+			configured := &updated.Spec
+			for i := range configured.Template.Spec.Containers {
+				c := &configured.Template.Spec.Containers[i]
+				c.Resources.Requests[corev1.ResourceCPU] = resource.MustParse("2")
+				c.Resources.Requests[corev1.ResourceMemory] = resource.MustParse("8Gi")
+				c.Resources.Limits[corev1.ResourceCPU] = resource.MustParse("12")
+				c.Resources.Limits[corev1.ResourceMemory] = resource.MustParse("16Gi")
+			}
+			pod := configured.Template.DeepCopy()
+
+			// TEST_SCENARIO: the stored hash is the pod as that release hashed it: the pod as it rendered it, less the image and the builtin release env, and less the memory the later vintage had already dropped.
+			old := configured.DeepCopy()
+			for i := range old.Template.Spec.Containers {
+				c := &old.Template.Spec.Containers[i]
+				c.Image = ""
+				for j := range c.Env {
+					if c.Env[j].Name == vmRunnerBuiltinEnv {
+						c.Env[j].Value = ""
+					}
+				}
+				if !tc.memory {
+					delete(c.Resources.Limits, corev1.ResourceMemory)
+					delete(c.Resources.Requests, corev1.ResourceMemory)
+				}
+			}
+			stored, err := runnerTemplateHash(*old)
+			require.NoError(t, err)
+			require.NotEqual(t, stored, before.Annotations[annRunnerTemplate], "the fixture stores the hash this head writes, not the one before it")
+
+			updated.Annotations[annRunnerTemplate] = stored
+			_, err = deps.Update(ctx, updated, metav1.UpdateOptions{})
+			require.NoError(t, err)
+
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			after, err := deps.Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
+			require.NoError(t, err)
+			assert.Empty(t, after.Annotations[annRunnerRolledAt], "the runner rolled, rebooting every machine of the owner")
+			assert.Equal(t, *pod, after.Spec.Template, "the pod the owner's machines boot on was replaced")
+			assert.NotEqual(t, stored, after.Annotations[annRunnerTemplate], "and it took the new hash without rolling")
+		})
+	}
 }
 
 // TEST_SCENARIO: an install that keeps runners off some nodes with a node affinity, which a nodeSelector cannot express, gets it on every runner pod; one that sets none renders no affinity, so the pinned template hash above holds and no runner rolls.

@@ -72,6 +72,9 @@ type AgentReconciler struct {
 	vmRecoveredAt         sync.Map
 	vmLive                sync.Map
 	vmAnswers             sync.Map
+	grantHolds            sync.Map
+	grantProbes           sync.Map
+	noNodeResize          sync.Map
 	vmDiskGrows           sync.Map
 	vmPools               sync.Map
 	usageSecrets          sync.Map
@@ -334,6 +337,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	alwaysOn := idleTimeout <= 0
 	autoRetry := alwaysOn || agent.Annotations[annSweepable] == "true" || migration.keepsUp()
 	overBudget := ""
+	awaiting, awaitingReason := "", ""
 	parked := false
 	if running {
 		if !autoRetry && r.wakeAlreadyDenied(name, lastActivity) {
@@ -439,9 +443,10 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		timer.mark("gatewayStatefulSet")
 		return nil
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused, or one with no status yet, keeps the old order: a parked agent retried every 30 s must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
+	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the old order: a parked agent retried every few seconds must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
-	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && lastReady.Reason != apiv1.ReasonOverBudget)
+	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAllocationUnreadable)
+	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && !parkedLast)
 	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted && !served
 	if gatewayUp {
 		if err := applyGateway(); err != nil {
@@ -507,9 +512,32 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		if machine.Reason == vmrunner.ReasonOutOfCapacity {
 			running, parked, overBudget = false, true, r.vmMemoryFullMessage(ctx, agent, owner)
 			r.recordParkedRetry(name)
-			if err := r.reclaimForRefusedStart(ctx, agent, owner); err != nil {
+			if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerLimitMiB(ctx, owner) }); err != nil {
 				return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 			}
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
+		if machine.Reason == vmrunner.ReasonAwaitingAllocation {
+			// UNIT_BOUNDARY_DESCRIPTION: a restart the runner is running keeps its exemption from the ceiling, but a runner from before that still answers the wait for a restart in flight. Parking that answer would stop the machine behind the restart the runner is already performing, so the fast retry is what acts on it, and the next reconcile reads the machine it booted.
+			restartInFlight := machine.State == vmrunner.StateRestarting
+			if !restartInFlight {
+				running, parked, awaiting, awaitingReason = false, true, vmAwaitingAllocationMessage, apiv1.ReasonAwaitingAllocation
+				r.recordParkedRetry(name)
+			}
+			if r.requeue != nil {
+				r.requeue(name, vmReadinessPoll)
+			}
+			// UNIT_BOUNDARY_DESCRIPTION: a resize the node has deferred or refused does not land on its own, so the room it did grant is freed the way a refused start frees it, and the start is retried at the parked tick too.
+			if !restartInFlight && r.runnerResizePending(ctx, owner) {
+				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
+					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
+				}
+			}
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: a start held on a node that has not reported what it granted keeps holding past the bound, but it stops promising an automatic start in seconds: it is published under a reason of its own that names the problem and is retried at the parked tick, so a person sees the diagnosis instead of a start that reads as coming up for ever.
+		if machine.Reason == apiv1.ReasonAllocationUnreadable {
+			running, parked, awaiting, awaitingReason = false, true, vmAllocationUnreadableMessage, apiv1.ReasonAllocationUnreadable
+			r.recordParkedRetry(name)
 		}
 	} else {
 		podSpec, refusal, err := r.renderedSpec(ctx, agent)
@@ -602,6 +630,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	if overBudget != "" {
 		err = r.publishOverBudget(ctx, agent, overBudget)
 		timer.mark("overBudget")
+		return err
+	}
+	if awaiting != "" {
+		err = r.publishParked(ctx, agent, awaitingReason, awaiting)
+		timer.mark("awaitingAllocation")
 		return err
 	}
 	err = r.publishReconciled(ctx, agent)

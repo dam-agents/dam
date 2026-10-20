@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -19,8 +19,15 @@ No reclaim is decided from an unread pool either: it is the pool that says how m
 **Every machine may grow to half the pool.** A machine's size is half of what its runner hands out — the runner's memory limit less its reserve — whatever its Agent's spec names, so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool.
 Every machine gets the install's vCPUs (`virtualization.runner.machineCPUs`); they are threads of the runner, so an idle machine costs nothing.
 The controller keeps the runner pod's CPU limit, resized in place, at the vCPUs of the machines that should be running plus one machine's worth for the runner itself and the VMMs' own threads, never above the owner's CPU pool: their UserBudget's `cpu`, else a CPU limit the install sets.
-Unless the pool caps it lower, a guest is never throttled below its vCPUs, and one runaway VMM cannot take the whole node.
-A cluster without in-place resize sets no CPU limit.
+A pod is created with the owner's whole CPU pool as its limit and an explicit zero CPU request behind it: it is bounded from its first second, the pool is the most a resize would ever give it, and a cluster that never applies a resize still never throttles a guest below its vCPUs.
+That bound needs a CPU figure to exist at all: the owner's UserBudget `cpu`, else a `limits.cpu` the install sets.
+An install that sets neither has no CPU pool of its own, so the bound comes from the memory pool it does set: every machine that pool can hold at the warm-up floor (`virtualization.runner.bootMiB`) plus one more for the runner, at the install's vCPUs each.
+An install with no warm-up floor to divide that pool by derives two machines' worth instead, each of which may take half the pool, so an owner can still run a pair and no single VMM takes the node's every core.
+That figure is a cap on the pod at creation, not a bound on how many machines are ever admitted, and not a guarantee that every guest keeps its vCPUs: once machines warm up, admission counts their measured use and headroom rather than their boot floors, so more of them may fit and then share the cap when they use their vCPUs together.
+Only an install that sets no memory limit has nothing to derive from: there the pod is created without a CPU limit, and the first in-place resize fits one at its machines' vCPUs plus one machine's worth, so only a cluster that never resizes leaves it unbounded.
+A CPU request the install sets above the owner's pool comes down to the pool at creation, since a pod whose request is above its limit is one the API refuses.
+A runner Deployment created before the controller rendered that limit gains it when it is next rolled for any reason, since its template is what the controller writes; until then its pod carries the install's `limits.cpu`, or whatever an install with no CPU figure derives above, or none.
+Unless the pool caps it lower, a guest is never throttled below its vCPUs, and, where that figure exists, one runaway VMM cannot take the whole node.
 The [host runner](vm-host-runner.md) admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the Agent's spec still sets its machine's memory; its vCPUs still come from the install.
 A new size reaches a running machine at its next start, not by rebooting it ([vm-runner](vm-runner.md)); until then the controller counts it at the larger of the two sizes, in memory and in vCPUs.
 A machine's size is the most its guest can see; the host commits only the pages the guest touches, and the guest hands freed pages back through free-page reporting, so an idle agent on a 2 GiB machine holds a few hundred MiB.
@@ -79,7 +86,30 @@ A machine the runtime says is stopped or gone holds nothing, so the figure a pro
 A record that no longer decodes is not that evidence: a stopped or hibernated machine's record fails the same way, and counting it would hold its room against every start its owner makes — an unknown VMM is not an absent one, and an unreadable record is not a running one.
 That limit is the one the kernel holds the runner to, read off its cgroup's `memory.max` at every admission and pressure sample, so a limit resized in place counts at once; a runner with no cgroup v2 limit to read uses the limit it was started with.
 
+**A runner admits only the memory the node granted it.**
+The pod's limit is the owner's whole pool, which the node has not necessarily reserved: placement, and eviction, go by the pod's request, and the request follows what the machines use rather than the pool.
+So each ensure carries the memory the node allocated the runner pod, and the runner admits against the smaller of that and its limit.
+On a cluster that cannot resize pods in place there is no such ceiling: the request there is the install's floor, which no resize will raise, so bounding admission by it would refuse machines the pool holds for good.
+The figure is what the node reports holding, not what the controller asked for: the container status' allocated memory, else the requests that status names, and a deferred or refused resize leaves both at what the pod holds.
+The request in the pod's spec is never the ceiling: it is the controller's ask from the moment it makes one, and the kubelet may not have enacted it.
+A runner pod that is running and reports neither field has no figure at all, and none is not the pool: a start is held under `AwaitingAllocation` while the controller asks the node for the resize in that same reconcile, so the retry after the node answers admits it.
+Unknown is not the same as nothing held: a machine the runner reports creating, starting, running, restarting or stopping holds memory already, so it is admitted against the pool limit alone, as a restart is.
+Only a start that holds nothing waits, and the figure that decides it comes from the runner rather than from the controller's own last reading, which is kept only while a machine runs and would read a restart in flight as a stop.
+The hold has a way out.
+It ends in `MachineAllocationUnreadable` once it outlasts a minute of retries every few seconds, and the Agent is then retried at the parked tick: the problem is named, a person sees a diagnosis rather than a start that reads as coming up for ever, and a wake fails on it at once instead of waiting out its own timeout.
+Asking with the resize is how the hold is told apart from a node that has merely not answered: the API server validates a resize against what the running node supports, so a node without in-place resize answers it invalid, and a runner pod that reports no grant is taken to be on such a node — its ceiling is dropped, and the start is admitted against the limit the way every start is on a cluster that cannot resize.
+A node that can resize and still reports nothing keeps the hold, since the figure it owes is one a resize would give it.
+A start that does not fit waits, until the node applies the resize the controller asked for; while the node defers or refuses that resize the `RunnerCapacity` condition on the owner's vm Agents says so.
+Waiting for the node is not the owner's pool being full: the runner reports it under `MachineAwaitingAllocation`, and the controller publishes it under its own `AwaitingAllocation` reason rather than `OverBudget`, so a wake waits for the start the way it waits for any boot instead of failing on it, and the admission-refusal alert leaves it out.
+The Agent is retried at the machine watch's few seconds rather than at the parked tick, and no idle agent is hibernated for room the node is already being asked for, so the person reads that their agent is waiting for the node.
+A resize the node has deferred or refused does not land on its own, so the room it did grant is freed the way a refused start frees it: the owner's idle agents hibernate, and the parked tick retries the start under the machine watch's cadence.
+Room to free is counted from the machines the runner holds or is about to hold, never from the owner's other starts waiting for the node: a waiting start holds nothing, so counting it would ask a reclaim for room no idle agent can give and neither start would ever be admitted, and a waiting agent is never itself the agent a reclaim hibernates.
+**A restart is not an admission.** A machine the runner already counts as running is restarted against the pool limit alone, never the grant: its boot replaces memory it already holds, and the request the ceiling comes from is sized from the use it holds while idle, below the warm-up floor it boots at, so capping that restart would refuse a revision roll, an image or env change, a CA rotation and a guest gone quiet for good — and no retry would ever grow the request the machine's own use cannot raise.
+The trade-off is that a restart wave — a roll, or a CA rotation across an install — can pass the node's grant until the request rises and the node enacts it, which is the behaviour every start had before this ceiling; the runner's own warm-up counting still holds the wave to the pool limit.
+Without that bound, machines on a node whose runners requested a fraction of their limits would grow into memory the node had promised elsewhere, and the kubelet, or the kernel, would then take the pod furthest over its own request: one owner's whole set of machines for one pod.
+
 **The scheduler reserves what the machines use.** The controller keeps the runner pod's memory request, resized in place, at the machines' counts plus the reserve, in 512 MiB steps so a guest that drifts at every probe does not resize the pod, within the install's request and the limit.
+That request is also what the runner may admit machines against, so the pod the scheduler has not enlarged starts nothing more than it reserved (above).
 The request rises a step as soon as the counts need it, but falls only once they are a quarter step below the step under it, so use that sits on a step boundary does not resize the pod at every pass; admission and the metric stay exact.
 A cluster without in-place resize keeps the install's request.
 A node that defers or refuses the resize leaves the pod at the request it has; each of the owner's vm Agents then carries a `RunnerCapacity` condition saying which, with the kubelet's account, and a Warning Event, while readiness is left alone, since the machines run at what the pod has ([observability](observability.md#platform-service-export)).
