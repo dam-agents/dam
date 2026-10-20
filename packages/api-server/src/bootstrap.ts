@@ -144,6 +144,7 @@ import {
   composeDefaultConverter,
   composeFirePair,
   composeScheduleModelForFire,
+  composeHarnessConfigReset,
   composeSessionChoicesValidator,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
@@ -636,6 +637,18 @@ export async function bootstrap() {
         );
         return null;
       }),
+    );
+  const harnessConfigReset = composeHarnessConfigReset({
+    db,
+    outboxRepo: runtimeDelivery.outboxRepo,
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    ownerOf: (agentId) => agentsRepo.getOwner(agentId),
+    log: (message) => process.stderr.write(`${message}\n`),
+  });
+  void harnessConfigReset
+    .run()
+    .catch((err: unknown) =>
+      getLogger().warn({ err }, "harness-config reset failed"),
     );
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),
@@ -1923,6 +1936,7 @@ export async function bootstrap() {
     config,
     api,
     db,
+    outboxRepo: runtimeDelivery.outboxRepo,
     channelManager,
     identityLinkService,
     pendingSlackOAuthFlows,
