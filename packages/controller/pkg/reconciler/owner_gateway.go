@@ -12,6 +12,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
@@ -306,7 +307,8 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		granted    [][]corev1.Secret
 		leafAgents []ownerLeafAgent
 	)
-	render := func(names []string, version string) error {
+	plan := r.ownerGatewayRepairPlan(owner, names, r.clockNow())
+	render := func(names []string) error {
 		var agents []ownerGatewayAgent
 		var blocks []ownerResolverBlock
 		granted, leafAgents = nil, nil
@@ -322,22 +324,26 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			leafAgents = append(leafAgents, ownerLeafAgent{Secrets: m.secrets, L7Hosts: m.agent.Spec.L7Hosts})
 		}
 		var err error
-		if rendered, err = renderOwnerGateway(agents, r.config, version); err != nil {
+		if rendered, err = renderOwnerGateway(agents, r.config, plan); err != nil {
 			return err
 		}
 		cm = buildOwnerGatewayConfigMap(owner, r.config, rendered, ownerResolverCorefile(blocks), refs)
 		return nil
 	}
-	version := r.ownerGatewayRepairVersion(owner, names, time.Now())
-	if err := render(names, version); err != nil {
+	if err := render(names); err != nil {
 		return nil, err
+	}
+	for name, after := range plan.due {
+		if r.requeue != nil {
+			r.requeue(name, max(after, 50*time.Millisecond))
+		}
 	}
 	budget := cmp.Or(r.ownerGatewayBudget, ownerGatewayConfigBudget) - 4096
 	if r.config.VM.Gateway.PerOwner {
 		if size := configMapSize(cm); size > budget {
 			r.ownerGatewayRefused.Store(owner, true)
 			slog.Warn("owner gateway: refused, past the 1 MiB a ConfigMap holds; its agents move back to their own gateways", "owner", owner, "agents", len(names), "KiB", size>>10)
-			if err := render(onIt, version); err != nil {
+			if err := render(onIt); err != nil {
 				return nil, err
 			}
 		} else {
@@ -643,53 +649,114 @@ func retargetedGatewayService(svc *corev1.Service, owner string, slot int) *core
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's listener is current when its health path answers with the revision rendered for it last. Envoy applies a changed file about a second after the kubelet syncs it, and a file that does not load leaves the last good one running, so a stale or missing listener reads as not current rather than as an outage. The controller probes through the same port the agent's traffic takes.
 const (
-	// UNIT_BOUNDARY_DESCRIPTION: a repair rewrites the owner gateway's files, which re-projects the ConfigMap into the pod, so the retries are paced by the clock rather than by reconciles, which arrive with every event of every agent the pod serves. The window covers the slowest way a file reaches the pod — the periodic sync of a mounted Secret, about a minute and a half — after which the files go back to their one canonical version and stay, since a listener that cannot load for a reason of its own is not repaired by rewriting it.
-	ownerGatewayRepairEvery  = 3 * time.Second
-	ownerGatewayRepairWindow = 2 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: a repair rewrites the owner gateway's files, which re-projects the ConfigMap into the pod, so the attempts are paced by a clock rather than by reconciles, which arrive with every event of every agent the pod serves. Three attempts, counted from the moment the rendering changed: the first waits out the usual lag between two mounted volumes — the ConfigMap that names a credential file and the Secret that holds it — and the last bounds how long a rendering that cannot load is rewritten. Past it the files keep what they have, and a listener the pod never loaded is named once.
+	ownerGatewayReapplyPace   = 3 * time.Second
+	ownerGatewayReapplyWindow = time.Minute
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: one owner's repair of a listener its gateway did not load: the agents of the owner it is for, when the attempt in hand started, when the next rewrite is due, how many the episode has had, and whether the giving-up has been logged.
+// UNIT_BOUNDARY_DESCRIPTION: when an owner renders new files for an agent, it applies them again after each of these waits, counted from the moment the new rendering was first written.
+var ownerGatewayReapplySchedule = []time.Duration{3 * time.Second, 15 * time.Second, 45 * time.Second}
+
+// UNIT_BOUNDARY_DESCRIPTION: what the controller still owes one agent's rendering: the revision the attempts are for, when they began, how many the files have been re-applied for it, whether giving up has been logged, and the generation its listeners carry. A rendering that changes while the attempts are still owed keeps its age, so a field changing under an agent that is already waiting does not restart the window; one that changes after they are spent starts a new episode, so a new rendering gets attempts of its own.
 type ownerGatewayRepair struct {
-	marked []string
-	first  time.Time
-	next   time.Time
-	tries  int
-	warned bool
+	revision   string
+	first      time.Time
+	tries      int
+	warned     bool
+	generation int
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the xDS version a render carries, empty for an ordinary one. It is the files' only change that a repair needs: Envoy reads a watched file again only when its content changes, and re-rendering the files unchanged, which is all a reconcile of an unchanged owner does, can never replace one Envoy refused. While an agent of the owner answers an older listener, the version moves on a wait that doubles from a few seconds, so the usual lost load — a file that reaches the pod a moment after the one that names it — is repaired by the first attempt, and a listener that will not load anyway is not rewritten into a loop. It goes back to empty once the pod serves what was rendered. An episode is one set of agents waiting on the repair: another agent that hits the same lost load starts its own, so the giving-up of one does not silence the repair for the next.
-func (r *AgentReconciler) ownerGatewayRepairVersion(owner string, names []string, now time.Time) string {
-	var stale []string
+// UNIT_BOUNDARY_DESCRIPTION: one owner's repairs, and the clock they share: the files are one ConfigMap, so one write serves every agent waiting on it, and that write's pace is what bounds the pod's projections however many agents join, or leave, an episode.
+type ownerGatewayRepairs struct {
+	owner   string
+	mu      sync.Mutex
+	next    time.Time
+	writes  int
+	version string
+	repairs map[string]*ownerGatewayRepair
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one render's decisions, filled as the agents are rendered, because an agent's revision is only known then, and read by the caller after. `version` is the xDS version of the files, which moves whenever an agent is owed a re-application: a listener Envoy refused, or one it accepted before the Secret its chains name was mounted, is only offered its file again when the projected file changes, and the controller writes nothing for a render that changes nothing. What an accepted listener needs instead, and no version can give it, is the generation `generation` returns, which is what makes Envoy recreate it. `due` holds the agents still owed an attempt, and when.
+type ownerGatewayRepairPlan struct {
+	now     time.Time
+	set     *ownerGatewayRepairs
+	stale   map[string]bool
+	version string
+	due     map[string]time.Duration
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the repairs an owner has in hand, pruned to the agents it still serves, and the pod answers that name the agents whose listeners did not load.
+func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, now time.Time) *ownerGatewayRepairPlan {
+	v, _ := r.ownerGatewayRepairs.LoadOrStore(owner, &ownerGatewayRepairs{owner: owner, repairs: map[string]*ownerGatewayRepair{}})
+	set := v.(*ownerGatewayRepairs)
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	p := &ownerGatewayRepairPlan{now: now, set: set, stale: map[string]bool{}, due: map[string]time.Duration{}, version: set.version}
+	served := make(map[string]bool, len(names))
 	for _, name := range names {
+		served[name] = true
 		if _, ok := r.ownerStaleListeners.Load(name); ok {
-			stale = append(stale, name)
+			p.stale[name] = true
 		}
 	}
-	slices.Sort(stale)
-	m := ownerGatewayRepair{}
-	if v, ok := r.ownerGatewayRepairs.Load(owner); ok {
-		m = v.(ownerGatewayRepair)
-	}
-	switch {
-	case len(stale) == 0:
-		m = ownerGatewayRepair{}
-	case !slices.Equal(stale, m.marked):
-		m = ownerGatewayRepair{marked: stale, first: now, next: now.Add(ownerGatewayRepairEvery)}
-	case now.Sub(m.first) > ownerGatewayRepairWindow:
-		if !m.warned {
-			slog.Warn("owner gateway: its pod has not loaded the files rendered for its agents; it keeps the listener it has", "owner", owner, "agents", len(stale), "waited", ownerGatewayRepairWindow)
-			m.warned = true
+	for name := range set.repairs {
+		if !served[name] {
+			delete(set.repairs, name)
 		}
-		m.tries = 0
-	case !now.Before(m.next):
-		m.tries++
-		m.next = now.Add(min(ownerGatewayRepairEvery<<(m.tries-1), ownerGatewayRepairWindow))
 	}
-	r.ownerGatewayRepairs.Store(owner, m)
-	if m.tries == 0 {
+	return p
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent's listener generation for this render, and the attempt it costs. A rendering the owner has not written before is owed re-applications: the pod may have taken the files while the Secret their chains name was not mounted yet, which leaves a credentials provider that never read its file and that no rewrite of the same listener can reach, so the listener is rendered again, its hash moved, and Envoy recreates it. An agent whose pod still answers an older revision is owed the same attempts, since a listener Envoy refused is only offered again when the projected file changes.
+func (p *ownerGatewayRepairPlan) generation(name, revision string, signs bool) int {
+	set := p.set
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	repair := set.repairs[name]
+	stale := p.stale[name]
+	spent := func(rp *ownerGatewayRepair) bool {
+		return rp.tries >= len(ownerGatewayReapplySchedule) || p.now.Sub(rp.first) >= ownerGatewayReapplyWindow
+	}
+	if repair == nil || (repair.revision != revision && spent(repair)) {
+		next := &ownerGatewayRepair{revision: revision, first: p.now}
+		if repair != nil {
+			next.generation = repair.generation
+		}
+		repair = next
+		set.repairs[name] = repair
+	}
+	repair.revision = revision
+	if repair.tries < len(ownerGatewayReapplySchedule) {
+		due := repair.first.Add(ownerGatewayReapplySchedule[repair.tries])
+		if !p.now.Before(due) && !p.now.Before(set.next) {
+			repair.tries++
+			set.next = p.now.Add(ownerGatewayReapplyPace)
+			set.writes++
+			set.version = fmt.Sprintf("%s-repair-%d", ownerGatewayTemplateRev, set.writes)
+			p.version = set.version
+			if signs {
+				repair.generation++
+			}
+			if repair.tries < len(ownerGatewayReapplySchedule) {
+				due = repair.first.Add(ownerGatewayReapplySchedule[repair.tries])
+				p.due[name] = max(due.Sub(p.now), set.next.Sub(p.now))
+			}
+		} else {
+			p.due[name] = max(due.Sub(p.now), set.next.Sub(p.now))
+		}
+	}
+	if stale && spent(repair) && !repair.warned {
+		repair.warned = true
+		slog.Warn("owner gateway: its pod has not loaded the files rendered for its agents; it keeps the listener it has", "agent", name, "owner", set.owner, "waited", ownerGatewayReapplyWindow)
+	}
+	return repair.generation
+}
+
+func (p *ownerGatewayRepairPlan) xdsVersion() string {
+	if p == nil {
 		return ""
 	}
-	return fmt.Sprintf("%s-repair-%d", ownerGatewayTemplateRev, m.tries)
+	return p.version
 }
 
 func (r *AgentReconciler) ownerListenerCurrent(ctx context.Context, agent, host string, port int) (bool, string) {

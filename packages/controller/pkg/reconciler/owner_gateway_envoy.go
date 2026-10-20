@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"slices"
 	"strings"
 
 	sigsyaml "sigs.k8s.io/yaml"
@@ -39,8 +40,8 @@ type ownerGatewayConfig struct {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Envoy configuration of an owner gateway, which serves every vm Agent of one owner. The bootstrap holds only what the agents share: the internal-listener extension, the stats sink and the clusters to the harness, the object store, the dynamic forward proxies and the collector. Each agent's listeners and clusters are files Envoy watches, every name suffixed with the agent, so one agent's change replaces only its own listener and drains only its own connections. Identity is the listener's port, which only the agent's own Service maps to. The mesh no longer tells an owner's agents apart at the harness, so each agent's harness route ends in a guard listener that admits only that agent's own path and stamps the agent on the request; every other route strips that header, and the agent's harness policy requires it. The listener answers its health path with a revision of what was rendered for it, so a readiness probe tells a stale listener from a current one. Size: about 11 KB shared plus 4 KB per credentialed host before spend metering; one ConfigMap holds at most 1 MiB, and an owner past that needs an xDS server in the controller instead of files.
-// UNIT_BOUNDARY_DESCRIPTION: `version` is the xDS version of the files. Envoy reads a file again only when it changes, and a file it refused leaves the last good one serving, so a repair of a refused load is a render with a version of its own: the same listeners and clusters under a version Envoy has not seen.
-func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, version string) (ownerGatewayConfig, error) {
+// UNIT_BOUNDARY_DESCRIPTION: `repair` carries what a render owes an owner's agents, and is nil for a plain one: a version of the files that changes while they are being re-applied, and a per-agent listener generation that makes Envoy recreate a listener it accepted with a signing provider it never loaded.
+func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, repair *ownerGatewayRepairPlan) (ownerGatewayConfig, error) {
 	var listeners, clusters []any
 	revisions := map[string]string{}
 	var shared bootstrapParams
@@ -52,6 +53,9 @@ func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, version 
 		agentListeners, agentClusters := ownerAgentResources(p)
 		p.HealthBody = ownerAgentRevision(agentListeners, agentClusters)
 		revisions[a.Name] = p.HealthBody
+		if repair != nil {
+			p.RepairGeneration = repair.generation(a.Name, p.HealthBody, slices.ContainsFunc(a.Chains, func(c envoyHostChain) bool { return len(c.Signers) > 0 }))
+		}
 		agentListeners, agentClusters = ownerAgentResources(p)
 		listeners = append(listeners, agentListeners...)
 		clusters = append(clusters, agentClusters...)
@@ -81,13 +85,13 @@ func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, version 
 	if out.Bootstrap, err = marshalYAML(bootstrap); err != nil {
 		return out, err
 	}
-	if out.LDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.listener.v3.Listener", version, listeners)); err != nil {
+	if out.LDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.listener.v3.Listener", repair.xdsVersion(), listeners)); err != nil {
 		return out, err
 	}
-	if out.CDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.cluster.v3.Cluster", version, clusters)); err != nil {
+	if out.CDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.cluster.v3.Cluster", repair.xdsVersion(), clusters)); err != nil {
 		return out, err
 	}
-	out.LeafSDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", version, []any{ev{
+	out.LeafSDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", repair.xdsVersion(), []any{ev{
 		"name": envoyLeafSDSName,
 		"tls_certificate": ev{
 			"certificate_chain": ev{"filename": envoyLeafTLSMount + "/tls.crt"},

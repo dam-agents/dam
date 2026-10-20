@@ -167,12 +167,15 @@ Turning the flag off, or a refused owner, renders them again, and each agent mov
 Until then its policies still admit the owner gateway and the owner gateway still renders it, so its grants stay current; the owner gateway goes once no agent is left on it.
 The controller renders the owner gateway after the runner call, so a machine's start never waits for it.
 
-**A listener the pod did not load.** These files are in-place updates to a running pod, so a load can be lost: Envoy refuses a listener whose credentials file the kubelet had not yet projected into the pod's Secret volume, or whose cluster had not arrived in the other file, and keeps the last good listener serving.
-Envoy also reads a file again only when its content changes, so re-rendering the same files — which is all a reconcile of an unchanged owner does — would leave that agent on the old listener for good.
-So a stale answer to the health probe is what makes the next renders repairs: while it stands, the files carry an xDS version of their own in place of the template's, on a wait that doubles from a few seconds, so each attempt is a file Envoy reads again and a listener that will not load anyway is not rewritten into a loop.
-The agent's listener is what proves the repair, and the files go back to the template's version once the pod serves the revision rendered for the agent.
-The attempts stop after about two minutes — the slowest way a file reaches a mounted volume — and the gateway keeps that listener, with the agent's readiness left reading the stale revision, since a file that cannot load for a reason of its own is not repaired by rewriting it.
-A later agent of the same owner that hits the same lost load starts a new episode of attempts, so one agent's give-up does not silence the repair for the next.
+**A listener the pod did not load.** These files are in-place updates to a running pod, and Envoy applies the resources of one read one at a time: it accepts the listeners whose clusters and files are there, refuses the others, and keeps the last good listener serving.
+Envoy also keeps a listener whose content it has already accepted, so a credentials provider that read its file too early — before the kubelet had projected it — never reads that file again, and the listener answers the health path all the same.
+The two failures are not the same thing: a refused listener is offered again when the file is read again, and an accepted one with a provider that never loaded is only repaired by a listener Envoy recreates.
+Re-rendering unchanged files repairs neither, and the controller writes nothing for a render that changes nothing, so the pod is not handed those files at all.
+So a new rendering of an agent is written, and then applied again on a schedule counted from that write: files that carry an xDS version of their own in place of the template's, and — for an agent that signs requests — a listener generation, so Envoy recreates that listener and its provider reads the file that is there by then.
+An accepted listener has no answer to give, so the attempts are bounded rather than driven by one: three of them, the first past the usual lag of a mounted Secret and the last under a minute, paced per owner, so the one ConfigMap is written no more often than every three seconds however many of the owner's agents are owed one.
+A file that reaches the volume after the last attempt is not repaired: the gateway keeps that listener, its readiness reads the revision rendered before the change, and the next change to that agent's rendering starts another episode.
+The minute is this controller's retry budget, not a property of mounted volumes: a node under pressure can hold a projection longer.
+A later agent of the same owner that hits the same lost load gets its own attempts, so one agent's spent schedule does not silence the repair for the next.
 
 **Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.

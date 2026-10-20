@@ -99,6 +99,7 @@ type AgentReconciler struct {
 	ownerGatewayRefused   sync.Map
 	ownerStaleListeners   sync.Map
 	ownerGatewayRepairs   sync.Map
+	clock                 func() time.Time
 	ownerGatewayBudget    int
 	ownerProbeClient      *http.Client
 }
@@ -173,6 +174,14 @@ func (r *AgentReconciler) statefulSet(ctx context.Context, name string, fromCach
 	return cachedGet(c, appsv1.Resource("statefulsets"), r.config.Namespace, name, func() (*appsv1.StatefulSet, error) {
 		return r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
 	})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the reconciler's clock, so a test drives the repair pacing without waiting for it.
+func (r *AgentReconciler) clockNow() time.Time {
+	if r.clock != nil {
+		return r.clock()
+	}
+	return time.Now()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how work the reconciler starts outside a reconcile — a machine watch — puts an Agent back on the queue, and the lifetime that work is bound to: the leader context, so it ends with the leadership that owns the queue. A requeue with no delay says the machine moved, which a person waiting on a wake needs now; a delayed one is a poll and can wait its turn.

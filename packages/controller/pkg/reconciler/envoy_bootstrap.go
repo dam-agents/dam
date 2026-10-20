@@ -52,6 +52,7 @@ type bootstrapParams struct {
 	UpstreamTrustedCA      string
 	Suffix                 string
 	HarnessGuardAgent      string
+	RepairGeneration       int
 	HealthBody             string
 	FlatCredentials        bool
 	LeafSDSPath            string
@@ -365,7 +366,7 @@ func buildInternalListener(p bootstrapParams) ev {
 		chains = append(chains, buildCollectorChain(p))
 	}
 	chains = append(chains, buildL4CatchAllChain(p))
-	return ev{
+	listener := ev{
 		"name":              p.named("tls_inspect_internal"),
 		"internal_listener": ev{},
 		"listener_filters": []any{
@@ -376,6 +377,10 @@ func buildInternalListener(p bootstrapParams) ev {
 		},
 		"filter_chains": chains,
 	}
+	if p.RepairGeneration > 0 {
+		listener["metadata"] = ev{"filter_metadata": ev{"platform": ev{"repair_generation": strconv.Itoa(p.RepairGeneration)}}}
+	}
+	return listener
 }
 
 func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
