@@ -13,7 +13,7 @@ use sha2::{Digest, Sha256};
 use crate::guest::{self, SeedDigest};
 use crate::pool_guard::{
     disk_short, eviction_pass, guard_look, guest_room, read_grant, room_of, ClaimRequest,
-    EvictionKind, PoolGuard, Room, EVICT_AGES, EVICT_BELOW_PERCENT,
+    EvictionKind, EvictionPass, PoolGuard, Room, EVICT_AGES, EVICT_BELOW_PERCENT,
 };
 
 const BOOT_LOG_CAP: u64 = 32 << 20;
@@ -1071,48 +1071,52 @@ fn purge_discarded(dir: &Path, names: &[impl AsRef<str>]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free or only entries used within the last EVICT_AGES pass are left. A request from the runner that the owner's claim is short (ClaimRequest) is served once, with one pass that stops at the bytes the runner asked this machine for and evicts nothing used within CLAIM_EVICT_AGE: the claim is mostly the agents' homes, which no eviction touches, so a claim that stays short would otherwise give every agent's /tmp a ten-minute life with nothing gained. The runner sends a new request only when the claim fills further. An entry is one name directly in a scratch folder, such as ~/.cache/go-build or /tmp/pr-body.md, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it, at the newest access time of its files, which the disk's mount keeps (strictatime, lazytime: a read moves it at once in memory and the disk gets it with the next flush), and while any process holds a file in it open or sits in it (in_use): a reader takes no lock, so neither the times nor the kernel's lock table show a turn that is only reading, and the files are matched by device and inode, since a name through another mount is the same file. Each entry is looked at again where it stands before it is deleted (still_evictable), with what processes hold read anew, so a file a tool opens while the pass runs keeps its entry. A grant that is spent serves one pass per CLAIM_EVICT_AGE, the age its pass spares (pool_guard::eviction_pass). The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed. A guest a grant holds back is not judged by this share at all but by the room its guard leaves it (POOL_GUARD_KEEP), so the pass that gives an agent down to its floor room again is the grant's own, run once per CLAIM_EVICT_AGE (pool_guard::eviction_pass).
+// UNIT_BOUNDARY_DESCRIPTION: scratch on the disk shares it with the agent's home, so a tool that fills /tmp or its home cache could leave the agent no room for its work. Every EVICT_INTERVAL, while the disk has less than EVICT_BELOW_PERCENT of it free, the scratch folders lose whole entries, until EVICT_UNTIL_PERCENT is free or nothing is left that EVICT_AGES allows and that a pass may delete (ScratchEntry::disposable). What a pass may delete is only what something other than the agent has declared replaceable, and never a tree it cannot tell from the agent's work: an entry carrying the Cache Directory Tagging Specification's signature (CACHEDIR_TAG) wherever it sits, and any entry of the folders a specification defines as a cache, the home's XDG cache directory and npm's cache (HOME_CACHES) — no entry of /tmp or /var/tmp that carries no mark, whatever its age, since a draft or a checkout there is the agent's own work and only the agent knows when it is done with it. That scope is what makes a delete safe to make without the tool's cooperation: no reader's absence, no timestamp and no lock is asked to prove that an unmarked tree is unused, which nothing in the guest can prove, and the one window no check can close — a tool that opens a file between the last look and the delete — can then only cost a cache its tool declared rebuildable. Within that scope an entry is one name directly in a scratch folder, such as ~/.cache/go-build or a /tmp directory a tool tagged, and it goes whole or not at all: a tool that loses some of its cache's files and keeps the rest sees a half cache that looks complete, and fails on it with an error that says nothing about the disk. An entry counts as used at the newest modification or change time anywhere in it — a write moves those, and a read moves none of them on this guest, which mounts the disk noatime under a root whose overlayfs keeps its own gate, so a read is no clock here — and while any process holds a file in it open or sits in it (in_use), matched by device and inode, since a name through another mount is the same file. Each entry is looked at again where it stands before it is deleted (still_evictable), with what processes hold read anew, and then deleted where it stands, whole, with no name of it left behind for a later pass to recognize (evict). A request from the runner that the owner's claim is short (ClaimRequest) is served once, with one pass that stops at the bytes the runner asked this machine for and evicts nothing used within CLAIM_EVICT_AGE: the claim is mostly the agents' homes, which no eviction touches, so a claim that stays short would otherwise give every agent's /tmp a ten-minute life with nothing gained. The shortage a pass was started for is read again before every entry it deletes (pass_stands), so a grant that comes back, or a claim the runner no longer calls short, ends a pass its absence started, and the levels a pass is judged by come from one state (pressure), so a grant and the guard's blocks it credits are never read from two different moments. A grant that is spent serves one pass per CLAIM_EVICT_AGE, the age its pass spares (pool_guard::eviction_pass). The disk is a sparse file on that claim, and the guest agent's trim hands what this frees back to it. Each eviction goes to the console, so the host sees why a cache vanished. A deleted file that is still open frees its space only when it is closed. A guest a grant holds back is not judged by this share at all but by the room its guard leaves it (POOL_GUARD_KEEP), so the pass that gives an agent down to its floor room again is the grant's own, run once per CLAIM_EVICT_AGE (pool_guard::eviction_pass).
 const EVICT_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 
-// UNIT_BOUNDARY_DESCRIPTION: the Cache Directory Tagging Specification's mark (bford.info/cachedir) that a directory holds only a cache its tool can rebuild. Go, cargo and ccache write it. In each pass a tagged entry goes before an untagged one, which may be an agent's work in progress.
+// UNIT_BOUNDARY_DESCRIPTION: the Cache Directory Tagging Specification's mark (bford.info/cachedir) that a directory holds only a cache its tool can rebuild. Go, cargo and ccache write it, and it is one of the two things that make an entry a pass's to delete: a directory of any scratch folder that carries it is offered at any age EVICT_AGES allows, while one that carries nothing is the agent's work unless its whole folder is a cache by specification (HOME_CACHES).
 const CACHEDIR_TAG: &str = "CACHEDIR.TAG";
 const CACHEDIR_TAG_SIGNATURE: &[u8] = b"Signature: 8a477f597d28d172789f06886806bc55";
-
-// UNIT_BOUNDARY_DESCRIPTION: the name an entry is renamed to before it is deleted, so a tool never sees it half deleted. An entry with this name was left by a delete that failed, and goes first. A file of the agent's own that happens to have this name is lost the same way, and only while the disk is short.
-const EVICTED_INFIX: &str = ".evicted.";
 
 struct ScratchEntry {
     path: PathBuf,
     shown: PathBuf,
     used: u64,
     bytes: u64,
-    rebuildable: bool,
-    leftover: bool,
+    declared: bool,
     age: u64,
     disk: Option<u64>,
     mount: u64,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a scratch folder opened for one pass. The pass names everything in it through `dir`'s descriptor and never by `shown`, so a folder swapped for a symlink after it was opened is not followed either. `mount` is the id of the mount it is on: nothing on another mount is scratch.
+// UNIT_BOUNDARY_DESCRIPTION: whether an entry is a pass's to delete: its whole folder is a cache by the specification that defines it (`declared`), or its own tool marked it with the Cache Directory Tagging Specification's signature. Read where the entry stands and not once when the pass listed it, so a tool that dropped its mark keeps its cache.
+impl ScratchEntry {
+    fn disposable(&self) -> bool {
+        self.declared || cache_tagged(&self.path)
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a scratch folder opened for one pass. The pass names everything in it through `dir`'s descriptor and never by `shown`, so a folder swapped for a symlink after it was opened is not followed either. `mount` is the id of the mount it is on: nothing on another mount is scratch. `declared` is whether a specification says the folder holds only caches, which makes its entries disposable without a mark of their own.
 struct ScratchRoot {
     dir: File,
     shown: PathBuf,
     mount: u64,
     dev: Option<u64>,
+    declared: bool,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the scratch folders eviction serves, each with the mount it is on at boot, before the agent runs: /tmp's own bind, and a home cache's home, or the cache itself when it already exists. A folder whose mount cannot be read is not served.
-fn scratch_folders() -> Vec<(PathBuf, u64)> {
+// UNIT_BOUNDARY_DESCRIPTION: the scratch folders eviction serves, each with the mount it is on at boot, before the agent runs, and whether its contents are caches by specification: /tmp and /var/tmp hold whatever the agent names, so only an entry one of its tools tagged there is disposable, while the home's XDG cache directory (user-specific, non-essential, regenerable data) and npm's documented cache folder hold nothing the agent wrote on purpose. A folder whose mount cannot be read is not served.
+fn scratch_folders() -> Vec<(PathBuf, u64, bool)> {
     let home = Path::new(guest::AGENT_HOME);
     SCRATCH_DIRS
         .iter()
-        .map(|(dir, ..)| PathBuf::from(dir))
-        .chain(HOME_CACHES.iter().map(|name| home.join(name)))
-        .filter_map(|dir| {
+        .map(|(dir, ..)| (PathBuf::from(dir), false))
+        .chain(HOME_CACHES.iter().map(|name| (home.join(name), true)))
+        .filter_map(|(dir, declared)| {
             match statx(libc::AT_FDCWD, &dir)
                 .or_else(|_| statx(libc::AT_FDCWD, dir.parent().unwrap_or(&dir)))
             {
-                Ok(info) => Some((dir, info.stx_mnt_id)),
+                Ok(info) => Some((dir, info.stx_mnt_id, declared)),
                 Err(e) => {
                     logf!("WARNING: reading the mount of {} ({e}); it is not evicted when the disk runs short", dir.display());
                     None
@@ -1134,9 +1138,9 @@ fn on_overlay(dir: &File) -> bool {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: opens the scratch folders for a pass, without following a symlink. A folder that is one, such as a ~/.cache an agent pointed at its work, is skipped, since what it points at is not scratch, and so is one that is no longer on the mount it had at boot, such as a work directory bound onto it. A missing folder is skipped quietly.
-fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
+fn open_scratch_roots(dirs: &[(PathBuf, u64, bool)]) -> Vec<ScratchRoot> {
     dirs.iter()
-        .filter_map(|(shown, boot_mount)| {
+        .filter_map(|(shown, boot_mount, declared)| {
             match OpenOptions::new()
                 .read(true)
                 .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
@@ -1153,6 +1157,7 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
                     dir,
                     shown: shown.clone(),
                     mount: info.stx_mnt_id,
+                    declared: *declared,
                 }),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => None,
                 Err(_) if fs::symlink_metadata(shown).is_ok_and(|info| info.is_symlink()) => {
@@ -1168,7 +1173,7 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
         .collect()
 }
 
-fn evict_scratch(dirs: &[(PathBuf, u64)]) {
+fn evict_scratch(dirs: &[(PathBuf, u64, bool)]) {
     let home = Path::new(guest::AGENT_HOME);
     let (mut stuck, mut served) = (false, None::<String>);
     let mut swept: Option<u64> = None;
@@ -1181,10 +1186,14 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
         if request.is_none() {
             served = None;
         }
+        // UNIT_BOUNDARY_DESCRIPTION: a look whose guard state moved under it selects nothing: the next one, a minute later, reads it again.
+        let Some(state) = pressure(home) else {
+            continue;
+        };
         let Some(pass) = eviction_pass(
-            POOL_GUARD_GRANTED.load(std::sync::atomic::Ordering::Relaxed),
-            POOL_GUARD_KEEP.load(std::sync::atomic::Ordering::Relaxed),
-            free_percent(home),
+            state.state.granted,
+            state.state.room,
+            state.share,
             request.as_ref(),
             served.as_deref(),
             swept,
@@ -1203,17 +1212,28 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
         };
         let roots = open_scratch_roots(dirs);
         for entry in scratch_entries(&roots, &locked, &held, now, pass.youngest) {
-            if !pass.continues(free_percent(home), freed) {
+            let Some(state) = pressure(home) else {
+                break;
+            };
+            if !pass_stands(
+                &pass,
+                &state,
+                request.as_ref(),
+                served.as_deref(),
+                swept,
+                now,
+                freed,
+            ) {
                 break;
             }
             let (Some(locked), Some(held)) = (locks_table(), in_use(Path::new("/proc"))) else {
                 logf!("WARNING: reading /proc; the rest of this pass's scratch is kept, since a file a tool has open or locked could not be told apart");
                 break;
             };
-            if !still_evictable(&entry, &locked, &held, now) {
+            if !entry.disposable() || !still_evictable(&entry, &locked, &held, now) {
                 continue;
             }
-            match evict(&entry.path, now) {
+            match evict(&entry.path) {
                 Ok(true) => {
                     freed += entry.bytes;
                     deleted.push(entry.shown.display().to_string());
@@ -1230,7 +1250,7 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
         }
         if !deleted.is_empty() {
             announce(&format!(
-                "the {} is short of room: deleted {freed} bytes of unused scratch: {}",
+                "the {} is short of room: deleted {freed} bytes of unused cache: {}",
                 if pass.kind == EvictionKind::Claim {
                     "owner's storage"
                 } else {
@@ -1239,11 +1259,14 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
                 deleted.join(" ")
             ));
         }
-        let short =
-            pass.kind == EvictionKind::Disk && disk_short(free_percent(home), EVICT_BELOW_PERCENT);
+        let short = pass.kind == EvictionKind::Disk
+            && disk_short(
+                pressure(home).and_then(|state| state.share),
+                EVICT_BELOW_PERCENT,
+            );
         if short && !stuck {
             announce(&format!(
-                "the disk is still short of room: no scratch is left that was unused for {} s, so writes to the agent's home may fail",
+                "the disk is still short of room: no cache is left that was unused for {} s, so writes to the agent's home may fail",
                 EVICT_AGES[EVICT_AGES.len() - 1]
             ));
         }
@@ -1251,7 +1274,7 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when a process holds a file open in it or sits in it (one of `held`), when it holds a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read. Each entry carries the age it was listed for, so the pass that reaches it can look at it again where it stands before it deletes it (still_evictable).
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that a pass may delete at `now` (ScratchEntry::disposable), in the order to evict them: by the first EVICT_AGES pass it is old enough for, then oldest first. An entry whose folder is no cache by specification is read for a mark first and skipped without a walk when it has none, so a pass spends nothing on the agent's own work. An entry is left out when it was used within `youngest` seconds, when a process holds a file open in it or sits in it (one of `held`), when it holds a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read. Each entry carries the age it was listed for, so the pass that reaches it can look at it again where it stands before it deletes it (still_evictable).
 fn scratch_entries(
     roots: &[ScratchRoot],
     locked: &HashSet<(u32, u32, u64)>,
@@ -1272,20 +1295,19 @@ fn scratch_entries(
                     root.shown.join(name.file_name()),
                     root.mount,
                     root.dev,
+                    root.declared,
                 )
             })
         })
-        .filter_map(|(path, shown, mount, dev)| {
+        .filter_map(|(path, shown, mount, dev, declared)| {
+            if !declared && !cache_tagged(&path) {
+                return None;
+            }
             let (used, bytes) = tree_use(&path, dev, mount, locked, held)?;
-            let leftover = path
-                .file_name()
-                .is_some_and(|name| name.to_string_lossy().contains(EVICTED_INFIX));
-            let used = if leftover { 0 } else { used };
             let pass = EVICT_AGES
                 .iter()
                 .take_while(|age| **age >= youngest)
                 .position(|age| used < now.saturating_sub(*age))?;
-            let rebuildable = leftover || cache_tagged(&path);
             Some((
                 pass,
                 ScratchEntry {
@@ -1293,8 +1315,7 @@ fn scratch_entries(
                     shown,
                     used,
                     bytes,
-                    rebuildable,
-                    leftover,
+                    declared,
                     age: EVICT_AGES[pass],
                     disk: dev,
                     mount,
@@ -1302,11 +1323,11 @@ fn scratch_entries(
             ))
         })
         .collect();
-    entries.sort_by_key(|(pass, entry)| (*pass, !entry.rebuildable, entry.used));
+    entries.sort_by_key(|(pass, entry)| (*pass, entry.used));
     entries.into_iter().map(|(_, entry)| entry).collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the newest time anything under `path` was written or used, and the bytes it holds, without following a symlink: its modification and change time, and a file's access time, which a read moves even when nothing is written, since the storage disk is mounted strictatime and lazytime: the kernel moves it in memory at every read and writes it with the next flush, so a file read a minute ago is young whatever its writes say. A directory's access time is not counted: every pass reads the directories it looks at, so counting it would keep whatever a pass once offered until the next pass came round. None when the tree cannot be evicted whole: it leaves the disk's device or the scratch folder's `mount` — a bind mount on the same disk has the device but not the mount, and what it shows is someone's work — holds a socket or fifo, a file in `locked`, or a file or directory a process holds or sits in (one of `held`, by device and inode, so the same file held through another name, another mount or another root names it too), or a directory in it cannot be read.
+// UNIT_BOUNDARY_DESCRIPTION: the newest time anything under `path` was written, and the bytes it holds, without following a symlink: its modification and change time, which every write and every rename moves. A read moves no clock this pass can see: the disk is mounted noatime, and the root's overlayfs keeps its own access-time gate over it, so a file read a minute ago keeps the time its last write left; a reader is caught by its descriptors instead (in_use), and a cache's own mark is what lets it go without one. None when the tree cannot be evicted whole: it leaves the disk's device or the scratch folder's `mount` — a bind mount on the same disk has the device but not the mount, and what it shows is someone's work — holds a socket or fifo, a file in `locked`, or a file or directory a process holds or sits in (one of `held`, by device and inode, so the same file held through another name, another mount or another root names it too), or a directory in it cannot be read.
 fn tree_use(
     path: &Path,
     disk: Option<u64>,
@@ -1325,14 +1346,7 @@ fn tree_use(
     {
         return None;
     }
-    let mut used = u64::try_from(info.stx_mtime.tv_sec.max(info.stx_ctime.tv_sec).max(
-        if kind == libc::S_IFDIR {
-            0
-        } else {
-            info.stx_atime.tv_sec
-        },
-    ))
-    .unwrap_or(0);
+    let mut used = u64::try_from(info.stx_mtime.tv_sec.max(info.stx_ctime.tv_sec)).unwrap_or(0);
     let mut bytes = info.stx_blocks * 512;
     if kind == libc::S_IFDIR {
         for child in fs::read_dir(path).ok()? {
@@ -1345,16 +1359,15 @@ fn tree_use(
     Some((used, bytes))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether an entry an earlier look listed may still go, looked at again where it stands: what processes hold is read anew before it, so a file a tool opened, locked or wrote since that look keeps the entry, however long the pass took to reach it. A tool that opens a file in the instant between this look and the rename still loses it, and only the tool's own lock can keep it: what a turn can lose here is the entry it is working in, whose writes have just moved it, which this look sees.
+// UNIT_BOUNDARY_DESCRIPTION: whether an entry an earlier look listed may still go, looked at again where it stands: what processes hold is read anew before it, so a file a tool opened, locked or wrote since that look keeps the entry, however long the pass took to reach it. A tool that opens a file in the instant between this look and the delete still loses it, and only the tool's own lock can keep it, which is why a pass deletes only what something other than the agent declared replaceable (ScratchEntry::disposable): the one window no check can close costs a cache, never the agent's work.
 fn still_evictable(
     entry: &ScratchEntry,
     locked: &HashSet<(u32, u32, u64)>,
     held: &HashSet<(u32, u32, u64)>,
     now: u64,
 ) -> bool {
-    let used = |used| if entry.leftover { 0 } else { used };
     tree_use(&entry.path, entry.disk, entry.mount, locked, held)
-        .is_some_and(|(now_used, _)| used(now_used) < now.saturating_sub(entry.age))
+        .is_some_and(|(now_used, _)| now_used < now.saturating_sub(entry.age))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what processes hold right now, as the identity the kernel gives each thing — its device's major and minor numbers and its inode — and not as a name: a turn reading a checkout holds its files open and takes no lock, and the same file held through another name, another mount or another root is that entry's file all the same, which a name this namespace can spell cannot say. Every file held open, from every thread of every process, since a thread may hold a table of its own, and every directory a process sits in or is rooted at. A descriptor that closed, or a process that exited, holds nothing and is passed over. One the kernel refuses to name, by a policy or a permission, is not evidence that nothing is held: the scan then says nothing at all, and eviction waits for the next pass rather than delete what it could not see.
@@ -1439,22 +1452,19 @@ fn locked_files(table: &str) -> HashSet<(u32, u32, u64)> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether `dir` carries the Cache Directory Tagging Specification's mark, read without moving the mark file's own access time: a pass reads it, and the entry it marked would otherwise never age out of what the same pass counts as use.
+// UNIT_BOUNDARY_DESCRIPTION: whether `dir` carries the Cache Directory Tagging Specification's mark: the signature alone, so a file of that name with other contents marks nothing. It is read where the entry stands, when a pass lists it and again before it is deleted, so a tool that dropped its mark between the two keeps its cache. A read of the mark moves no time this pass counts (tree_use).
 fn cache_tagged(dir: &Path) -> bool {
     let tag = dir.join(CACHEDIR_TAG);
     let mut head = [0; CACHEDIR_TAG_SIGNATURE.len()];
     fs::symlink_metadata(&tag).is_ok_and(|info| info.is_file())
-        && OpenOptions::new()
-            .read(true)
-            .custom_flags(libc::O_NOATIME)
-            .open(&tag)
+        && File::open(&tag)
             .and_then(|mut file| io::Read::read_exact(&mut file, &mut head))
             .is_ok()
         && head == CACHEDIR_TAG_SIGNATURE
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: deletes one scratch entry whole: it is renamed aside first, so no tool sees it half deleted, then deleted. An entry a process holds a BSD lock on is left, and false returned: that is how systemd-tmpfiles lets a tool keep its files from aging, and a tool written for it is kept here too. The lock is held through the delete, so the tool cannot take it in between.
-fn evict(path: &Path, stamp: u64) -> io::Result<bool> {
+// UNIT_BOUNDARY_DESCRIPTION: deletes one scratch entry where it stands, whole, with nothing of it renamed and no name of it left behind: a name a pass made up to rename to is a name the agent's own file could wear, and a rename onto a file already so named would delete that file instead of the entry. An entry a process holds a BSD lock on is left, and false returned: that is how systemd-tmpfiles lets a tool keep its files from aging, and a tool written for it is kept here too. The lock is held through the delete, so the tool cannot take it in between.
+fn evict(path: &Path) -> io::Result<bool> {
     let _lock = if fs::symlink_metadata(path)?.file_type().is_symlink() {
         None
     } else {
@@ -1473,18 +1483,7 @@ fn evict(path: &Path, stamp: u64) -> io::Result<bool> {
         }
         Some(file)
     };
-    let name = path
-        .file_name()
-        .map(OsStr::to_string_lossy)
-        .unwrap_or_default();
-    let aside = if name.contains(EVICTED_INFIX) {
-        path.to_path_buf()
-    } else {
-        let aside = with_suffix(path, &format!("{EVICTED_INFIX}{stamp}"));
-        fs::rename(path, &aside)?;
-        aside
-    };
-    remove_all(&aside)?;
+    remove_all(path)?;
     Ok(true)
 }
 
@@ -1504,7 +1503,7 @@ const GUEST_ROOM_REPEAT: std::time::Duration = std::time::Duration::from_secs(30
 static POOL_GUARD: std::sync::Mutex<Option<File>> = std::sync::Mutex::new(None);
 // UNIT_BOUNDARY_DESCRIPTION: the room the last look left the guest, and whether a grant held it, which is what eviction decides on (pool_guard::eviction_pass) and how platform-init tells whether the agent's writes fail. Without a grant the room is the disk itself, which is not what a guard file holds back, so nothing is left here: a stale room from an earlier grant would read as an agent out of room.
 static POOL_GUARD_KEEP: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-// UNIT_BOUNDARY_DESCRIPTION: what the guard file holds right now, which is the guard's and not the agent's: a guest no grant holds is told the disk's own room with those blocks back (free_percent), or a grant the runner stops sending leaves the disk reading as short for the backoff its guard waits out before it lets go of them.
+// UNIT_BOUNDARY_DESCRIPTION: what the guard file holds right now, which is the guard's and not the agent's: a guest no grant holds is told the disk's own room with those blocks back (pressure), or a grant the runner stops sending leaves the disk reading as short for the backoff its guard waits out before it lets go of them.
 static POOL_GUARD_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 static POOL_GUARD_GRANTED: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
@@ -1667,15 +1666,61 @@ fn statvfs(path: &Path) -> Option<libc::statvfs> {
     (rc == 0).then_some(stat)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes, of the disk as the guest sees it, with the guard's own blocks counted back as free while no grant holds the guest. A filesystem with a fixed inode count can run out of inodes with most of its space free under a home of many small files (dependency trees, checkouts), and a write then fails with "no space left on device" all the same; btrfs reports no inode count, and is judged by its blocks. It is read only for a guest no grant holds back: a granted guest's disk is the owner's whole claim and the guard keeps its free space down to the grant, so the share says nothing about its room, which the guard counts in bytes (pool_guard::eviction_pass).
-fn free_percent(path: &Path) -> Option<u64> {
-    free_share(
-        &statvfs(path)?,
-        POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed),
-        POOL_GUARD_GRANTED.load(std::sync::atomic::Ordering::Relaxed),
-    )
+// UNIT_BOUNDARY_DESCRIPTION: what the guard last published about the guest, read as one value: whether a grant holds it, the room its guard leaves it (POOL_GUARD_KEEP), and the blocks its guard holds (POOL_GUARD_HELD). A pass that took these one at a time could judge a disk by one moment's guard and another moment's grant, which is how a guest with a healthy 4 GiB grant of a 100 GiB claim came to be read as a disk with 4 % free and swept ten-minutes deep.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+struct GuestState {
+    granted: bool,
+    room: u64,
+    held: u64,
 }
 
+fn guest_state() -> GuestState {
+    GuestState {
+        granted: POOL_GUARD_GRANTED.load(std::sync::atomic::Ordering::Relaxed),
+        room: POOL_GUARD_KEEP.load(std::sync::atomic::Ordering::Relaxed),
+        held: POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed),
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a pass decides on: the guest's state, and the free share of its disk with the guard's blocks counted back as free while no grant holds it (free_share). The disk is read between two reads of the state, and the reading is taken only when the state did not move across it: a guard that grew while statvfs ran would otherwise be credited by the state that came before its blocks were held, and the disk would read as short while the guest has room. None when the state moved under the reading: the next look, a minute later, reads both again.
+struct Pressure {
+    state: GuestState,
+    share: Option<u64>,
+}
+
+fn pressure(path: &Path) -> Option<Pressure> {
+    let state = guest_state();
+    let stat = statvfs(path)?;
+    (guest_state() == state).then(|| Pressure {
+        share: free_share(&stat, state.held, state.granted),
+        state,
+    })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a pass may go on deleting: the shortage it was started for, read again from one state, still selects a pass of the same kind, and the bytes a request asked for are not yet free. A grant that comes back, or a claim the runner no longer calls short, ends the pass its absence started where it stands, so a decision made before the state changed cannot carry a ten-minute age floor over a guest that has its room again.
+fn pass_stands(
+    pass: &EvictionPass,
+    state: &Pressure,
+    request: Option<&ClaimRequest>,
+    served: Option<&str>,
+    swept_at: Option<u64>,
+    now: u64,
+    freed: u64,
+) -> bool {
+    pass.continues(state.share, freed)
+        && eviction_pass(
+            state.state.granted,
+            state.state.room,
+            state.share,
+            request,
+            served,
+            swept_at,
+            now,
+        )
+        .is_some_and(|again| again.kind == pass.kind)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes, with the guard's own blocks counted back as free while no grant holds the guest (pressure). A filesystem with a fixed inode count can run out of inodes with most of its space free under a home of many small files (dependency trees, checkouts), and a write then fails with "no space left on device" all the same; btrfs reports no inode count, and is judged by its blocks. The share says nothing about a granted guest's room: its disk is the owner's whole claim and the guard keeps the free space down to the grant, which the guard counts in bytes (pool_guard::eviction_pass).
 #[allow(clippy::unnecessary_cast)]
 fn free_share(stat: &libc::statvfs, held: u64, granted: bool) -> Option<u64> {
     let share = |free: u64, total: u64| (total > 0).then(|| free * 100 / total);
@@ -3832,14 +3877,16 @@ mod tests {
         assert!(!aside.exists());
     }
 
-    // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries. A leftover of a failed eviction goes first, then a cache its tool tagged as rebuildable, then the rest, so an agent's own file in /tmp is the last to go. A forged tag does not count, and an entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered at all, and a pass for the claim offers only what was unused for an hour. A change time cannot be set back, so a clock moved forward stands for entries long unused.
+    // TEST_SCENARIO: under pressure a scratch folder is evicted by whole entries, and only of what something other than the agent declared replaceable: an entry a tool tagged with the Cache Directory Tagging Specification's signature. An untagged entry of /tmp is the agent's work, offered by no pass however old it is — not when its name carries the substring a pass once recognized its own leftovers by, which nothing derives a deletion from any more, and not when it holds a tag file of forged contents. An entry holding a socket a process may still listen on, an entry used within the last pass, and an entry on another device are not offered either, and a pass for the claim offers only what was unused for an hour. A change time cannot be set back, so a clock moved forward stands for entries long unused.
     #[test]
-    fn scratch_is_offered_whole_and_rebuildable_caches_first() {
+    fn only_a_cache_a_tool_marked_is_offered_anywhere() {
         let scratch = TempDir::new("evict");
         let target = TempDir::new("evict-target");
         fs::write(target.path().join("kept"), b"x").unwrap();
         let s = scratch.path();
         fs::write(s.join("pr-body.md"), b"x").unwrap();
+        fs::create_dir_all(s.join("draft.evicted.notes")).unwrap();
+        fs::write(s.join("draft.evicted.notes/body"), b"a draft").unwrap();
         fs::create_dir_all(s.join("go-build/00")).unwrap();
         fs::write(s.join("go-build/00/blob"), vec![1u8; 8192]).unwrap();
         fs::write(
@@ -3847,20 +3894,23 @@ mod tests {
             [CACHEDIR_TAG_SIGNATURE, b"\n"].concat(),
         )
         .unwrap();
+        fs::create_dir_all(s.join("sccache/00")).unwrap();
+        fs::write(s.join("sccache/00/blob"), b"x").unwrap();
+        fs::write(s.join("sccache").join(CACHEDIR_TAG), CACHEDIR_TAG_SIGNATURE).unwrap();
         fs::create_dir(s.join("forged")).unwrap();
         fs::write(s.join("forged").join(CACHEDIR_TAG), b"Signature: nope").unwrap();
-        fs::create_dir(s.join("x.evicted.5")).unwrap();
         std::os::unix::fs::symlink(target.path(), s.join("link")).unwrap();
         fs::create_dir(s.join("live")).unwrap();
+        fs::write(s.join("live").join(CACHEDIR_TAG), CACHEDIR_TAG_SIGNATURE).unwrap();
         let socket = std::os::unix::net::UnixListener::bind(s.join("live/sock")).unwrap();
         let disk = fs::metadata(s).unwrap().dev();
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let dirs = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
+        let dirs = open_scratch_roots(&[(s.to_path_buf(), mount_of(s), false)]);
         let names = |now, dev| -> Vec<String> {
-            let mut roots = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
+            let mut roots = open_scratch_roots(&[(s.to_path_buf(), mount_of(s), false)]);
             roots.iter_mut().for_each(|root| root.dev = Some(dev));
             scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3])
                 .iter()
@@ -3875,42 +3925,102 @@ mod tests {
                 .collect()
         };
 
-        assert_eq!(
-            names(now, disk),
-            ["x.evicted.5"],
-            "what was just used stays"
+        assert!(
+            names(now, disk).is_empty(),
+            "what was just used stays, marked or not"
         );
-        let order = names(now + 2 * EVICT_AGES[3], disk);
-        assert_eq!(order[..2], ["x.evicted.5", "go-build"]);
-        let mut rest = order[2..].to_vec();
-        rest.sort();
-        assert_eq!(rest, ["forged", "link", "pr-body.md"]);
         assert_eq!(
-            scratch_entries(
-                &dirs,
-                &HashSet::new(),
-                &HashSet::new(),
-                now + 2 * EVICT_AGES[3],
-                crate::pool_guard::CLAIM_EVICT_AGE
-            )
-            .len(),
-            1,
-            "a claim pass keeps what was used within the hour"
+            names(now + 2 * EVICT_AGES[3], disk),
+            ["go-build", "sccache"],
+            "only what a tool marked replaceable is offered, however old the rest is"
         );
         assert!(scratch_entries(
             &dirs,
             &HashSet::new(),
             &HashSet::new(),
-            now + 2 * EVICT_AGES[3],
-            EVICT_AGES[3]
+            now + EVICT_AGES[3],
+            crate::pool_guard::CLAIM_EVICT_AGE
         )
-        .iter()
-        .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192));
+        .is_empty());
+        assert!(
+            scratch_entries(
+                &dirs,
+                &HashSet::new(),
+                &HashSet::new(),
+                now + 2 * EVICT_AGES[3],
+                EVICT_AGES[3]
+            )
+            .iter()
+            .any(|entry| entry.path.ends_with("go-build") && entry.bytes >= 8192),
+            "an entry is offered whole, with the bytes it holds"
+        );
         assert!(
             names(now + 2 * EVICT_AGES[3], disk + 1).is_empty(),
             "another device is not walked"
         );
+
+        for entry in scratch_entries(
+            &dirs,
+            &HashSet::new(),
+            &HashSet::new(),
+            now + 2 * EVICT_AGES[3],
+            EVICT_AGES[3],
+        ) {
+            assert!(entry.disposable(), "a pass deletes only what is offered");
+            assert!(evict(&entry.path).unwrap());
+        }
+        assert!(!s.join("go-build").exists());
+        assert!(!s.join("sccache").exists());
+        assert_eq!(
+            fs::read(s.join("draft.evicted.notes/body")).unwrap(),
+            b"a draft",
+            "a name that carries a pass's own old suffix is the agent's file, not a leftover"
+        );
+        assert_eq!(fs::read(s.join("pr-body.md")).unwrap(), b"x");
         drop(socket);
+    }
+
+    // TEST_SCENARIO: the home's XDG cache directory holds user-specific non-essential data and npm's folder holds its documented cache, so a pass deletes their entries without a mark of their own, while an untagged entry beside them in /tmp is the agent's work and goes on no pass at all.
+    #[test]
+    fn a_folder_a_specification_calls_a_cache_is_offered_without_a_mark() {
+        let home = TempDir::new("evict-declared");
+        let h = home.path();
+        fs::create_dir_all(h.join(".cache/huggingface/model")).unwrap();
+        fs::write(h.join(".cache/huggingface/model/weights"), b"w").unwrap();
+        fs::create_dir_all(h.join(".npm/_cacache/content")).unwrap();
+        fs::write(h.join(".npm/_cacache/content/blob"), b"c").unwrap();
+        fs::create_dir_all(h.join("tmp/checkout/src")).unwrap();
+        fs::write(h.join("tmp/checkout/src/main.rs"), b"fn main() {}").unwrap();
+        let later = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 2 * EVICT_AGES[0];
+        let roots = open_scratch_roots(&[
+            (h.join(".cache"), mount_of(h), true),
+            (h.join(".npm"), mount_of(h), true),
+            (h.join("tmp"), mount_of(h), false),
+        ]);
+        let offered = scratch_entries(
+            &roots,
+            &HashSet::new(),
+            &HashSet::new(),
+            later,
+            EVICT_AGES[3],
+        );
+        let mut shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
+        shown.sort();
+        assert_eq!(
+            shown,
+            [h.join(".cache/huggingface"), h.join(".npm/_cacache")]
+        );
+        for entry in &offered {
+            assert!(evict(&entry.path).unwrap());
+        }
+        assert!(
+            h.join("tmp/checkout/src/main.rs").is_file(),
+            "an untagged entry of a folder that is no cache keeps the agent's work"
+        );
     }
 
     // TEST_SCENARIO: a scratch folder that is itself a symlink to the agent's work, such as a ~/.cache pointed at a work directory, is not scratch: a pass offers nothing from it, and the work's long-unused file stays. A folder swapped for such a link after the pass opened it is still evicted from where it was opened, and the link's target keeps its file of the same name.
@@ -3930,8 +4040,8 @@ mod tests {
             + 2 * EVICT_AGES[0];
 
         let roots = open_scratch_roots(&[
-            (h.join(".cache"), mount_of(h)),
-            (h.join(".npm"), mount_of(h)),
+            (h.join(".cache"), mount_of(h), true),
+            (h.join(".npm"), mount_of(h), true),
         ]);
         let offered = scratch_entries(
             &roots,
@@ -3947,7 +4057,7 @@ mod tests {
         fs::rename(h.join(".npm"), h.join("npm-moved")).unwrap();
         std::os::unix::fs::symlink("work", h.join(".npm")).unwrap();
         for entry in &offered {
-            assert!(evict(&entry.path, 9).unwrap());
+            assert!(evict(&entry.path).unwrap());
         }
         assert_eq!(fs::read(h.join("work/main.rs")).unwrap(), b"fn main() {}");
         assert_eq!(fs::read_dir(h.join("npm-moved")).unwrap().count(), 0);
@@ -4021,8 +4131,8 @@ mod tests {
         fs::write(h.join(".cache/plain/old"), b"x").unwrap();
         fs::write(h.join(".cache/single"), b"").unwrap();
         let boot = [
-            (h.join(".cache"), mount_of(h)),
-            (h.join(".npm"), mount_of(h)),
+            (h.join(".cache"), mount_of(h), true),
+            (h.join(".npm"), mount_of(h), true),
         ];
         mount(&h.join("work"), &h.join(".cache/tool/inner"), libc::MS_BIND).unwrap();
         mount(
@@ -4049,7 +4159,7 @@ mod tests {
         let shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         assert_eq!(shown, [h.join(".cache/plain")]);
         for entry in &offered {
-            assert!(evict(&entry.path, 9).unwrap());
+            assert!(evict(&entry.path).unwrap());
         }
         assert!(remove_all(&h.join(".cache/tool")).is_err());
         assert!(remove_all(&h.join(".npm")).is_err());
@@ -4082,7 +4192,7 @@ mod tests {
         ] {
             fs::write(h.join(file), b"x").unwrap();
         }
-        let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(h))]);
+        let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(h), true)]);
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -4136,7 +4246,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a turn walking a checkout it made 75 minutes ago is reading it, not writing it: it holds the files open and takes no lock, so neither the entry's times nor the kernel's lock table say it is in use, and a pass that trusted them would delete what the turn is reading. What a process holds open in an entry, and the entry a process sits in, keep it out of the pass while an entry beside them goes.
+    // TEST_SCENARIO: a tool that rebuilds from a cache writes it, and one that only reads a cache holds its files open and takes no lock, so neither the entry's times nor the kernel's lock table say it is in use; a pass that trusted them would delete what the tool is reading. What a process holds open in an entry, and the entry a process sits in, keep it out of the pass while a tagged entry beside them goes.
     #[test]
     fn an_entry_a_process_has_open_is_not_offered() {
         let scratch = TempDir::new("evict-open");
@@ -4146,7 +4256,10 @@ mod tests {
         }
         fs::write(s.join("checkout/src/main.rs"), b"fn main() {}").unwrap();
         fs::write(s.join("idle/blob"), b"x").unwrap();
-        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s))]);
+        for entry in ["checkout", "idle"] {
+            fs::write(s.join(entry).join(CACHEDIR_TAG), CACHEDIR_TAG_SIGNATURE).unwrap();
+        }
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), false)]);
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -4189,7 +4302,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a pass lists its entries, then walks them, and a walk of a full disk takes time: a tool that opens a file in an entry after it was listed is using it all the same, and a pass that deleted it would take what the tool is reading. Each entry is looked at again where it stands before it goes, with what processes hold read anew, so the entry a tool just opened stays while the one beside it goes.
+    // TEST_SCENARIO: a pass lists its entries, then walks them, and a walk of a full disk takes time: a tool that opens a file in an entry after it was listed is using it all the same, and a pass that deleted it would take what the tool is reading. Each entry is looked at again where it stands before it goes, with what processes hold read anew, so the tagged entry a tool just opened stays while the one beside it goes.
     #[test]
     fn an_entry_a_tool_opens_after_the_pass_listed_it_is_kept() {
         let scratch = TempDir::new("evict-late-open");
@@ -4199,7 +4312,10 @@ mod tests {
         }
         fs::write(s.join("checkout/src/main.rs"), b"fn main() {}").unwrap();
         fs::write(s.join("idle/blob"), b"x").unwrap();
-        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s))]);
+        for entry in ["checkout", "idle"] {
+            fs::write(s.join(entry).join(CACHEDIR_TAG), CACHEDIR_TAG_SIGNATURE).unwrap();
+        }
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), false)]);
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -4246,6 +4362,125 @@ mod tests {
         ));
     }
 
+    // TEST_SCENARIO: the file a turn is working in is the one a pass cannot see in time: a reader that starts between the last look at a tree and the delete of it leaves no trace in anything a pass reads, and no snapshot, timestamp or lock closes that window. So the destructive path is not reached for the agent's work at all: an untagged entry is no candidate of any pass, whatever the reader does and however old the entry is, and only what a tool declared rebuildable can be lost to a reader that arrives inside the window.
+    #[test]
+    fn work_nothing_declared_replaceable_survives_a_reader_that_starts_during_validation() {
+        let scratch = TempDir::new("evict-unmarked");
+        let s = fs::canonicalize(scratch.path()).unwrap();
+        fs::create_dir_all(s.join("checkout/src")).unwrap();
+        fs::write(s.join("checkout/src/main.rs"), b"fn main() {}").unwrap();
+        fs::write(s.join("notes.md"), b"the turn's notes").unwrap();
+        let later = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
+            + 2 * EVICT_AGES[0];
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), false)]);
+        let listed = scratch_entries(
+            &roots,
+            &HashSet::new(),
+            &HashSet::new(),
+            later,
+            EVICT_AGES[3],
+        );
+        assert!(
+            listed.is_empty(),
+            "the agent's own work is never listed, so no check has to notice a reader in it"
+        );
+
+        // UNIT_BOUNDARY_DESCRIPTION: a thread that opens and reads the working file over and over, the way a turn does between two looks of a pass, while the pass lists and then deletes everything it listed.
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let running = stop.clone();
+        let file = s.join("checkout/src/main.rs");
+        let reader = std::thread::spawn(move || {
+            let mut reads = 0;
+            while !running.load(std::sync::atomic::Ordering::Relaxed) {
+                let mut head = Vec::new();
+                io::Read::read_to_end(&mut File::open(&file).unwrap(), &mut head).unwrap();
+                reads += 1;
+            }
+            reads
+        });
+        let pass = scratch_entries(
+            &roots,
+            &HashSet::new(),
+            &HashSet::new(),
+            later,
+            EVICT_AGES[3],
+        );
+        for entry in &pass {
+            assert!(entry.disposable());
+            assert!(evict(&entry.path).unwrap());
+        }
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        assert!(reader.join().unwrap() > 0, "the reader read through");
+        assert_eq!(
+            fs::read(s.join("checkout/src/main.rs")).unwrap(),
+            b"fn main() {}"
+        );
+        assert_eq!(fs::read(s.join("notes.md")).unwrap(), b"the turn's notes");
+    }
+
+    // TEST_SCENARIO: the levels a pass is judged by come from one state, and the shortage it was started for is read again before every entry it deletes. A grant that vanishes while its guard still holds the disk reads as a guest with a healthy share; when the grant comes back, the disk share says 4 % of a 100 GiB claim because the guard holds the rest, and a pass that kept a decision taken before the grant returned would delete the agent's scratch down to the ten-minute floor of a disk shortage that does not exist.
+    #[test]
+    fn a_grant_that_returns_ends_a_pass_its_absence_started() {
+        let gib = 1u64 << 30;
+        // SAFETY: statvfs is plain old data, and all-zero bytes are a valid value of it.
+        let mut stat: libc::statvfs = unsafe { std::mem::zeroed() };
+        (stat.f_frsize, stat.f_blocks) = (gib as _, 100);
+        (stat.f_bavail, stat.f_files, stat.f_favail) = (4, 100, 100);
+        let started = Pressure {
+            state: GuestState {
+                granted: false,
+                room: 0,
+                held: 0,
+            },
+            share: free_share(&stat, 0, false),
+        };
+        let pass = eviction_pass(
+            started.state.granted,
+            started.state.room,
+            started.share,
+            None,
+            None,
+            None,
+            0,
+        )
+        .unwrap();
+        assert_eq!(
+            (pass.kind, pass.youngest),
+            (EvictionKind::Disk, EVICT_AGES[3]),
+            "a disk read without the guard's blocks reads as short"
+        );
+
+        let returned = Pressure {
+            state: GuestState {
+                granted: true,
+                room: 4 * gib + gib / 2,
+                held: 86 * gib,
+            },
+            share: free_share(&stat, 86 * gib, true),
+        };
+        assert_eq!(returned.share, Some(4));
+        assert!(
+            !pass_stands(&pass, &returned, None, None, None, 0, 0),
+            "the grant that came back ends the disk pass its absence started"
+        );
+        assert!(
+            pass_stands(&pass, &started, None, None, None, 0, 0),
+            "while the shortage it was started for stands, the pass goes on"
+        );
+        let spent = EvictionPass {
+            kind: EvictionKind::Grant,
+            youngest: crate::pool_guard::CLAIM_EVICT_AGE,
+            bytes: None,
+        };
+        assert!(
+            !pass_stands(&spent, &returned, None, None, None, 0, 0),
+            "a spent grant that has its room again ends its pass too"
+        );
+    }
+
     // TEST_SCENARIO: a cache an agent's work has bound somewhere else is the same files under another name, and a tool reading it there holds the entry's own file: a scan that matched names would not see it, and the pass would delete the cache under the reader. Binding needs a mount namespace, so the test runs in one of its own (in_mount_namespace).
     #[test]
     fn an_entry_a_process_holds_through_another_mount_is_kept_whole() {
@@ -4262,7 +4497,7 @@ mod tests {
         fs::write(h.join(".cache/tool/input"), b"x").unwrap();
         fs::write(h.join(".cache/plain/old"), b"x").unwrap();
         mount(&h.join(".cache/tool"), &h.join("mnt"), libc::MS_BIND).unwrap();
-        let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(&h))]);
+        let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(&h), true)]);
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -4286,69 +4521,6 @@ mod tests {
         assert_eq!(
             unsafe { libc::umount2(cstring(h.join("mnt").as_os_str()).unwrap().as_ptr(), 0) },
             0
-        );
-    }
-
-    // TEST_SCENARIO: eviction keeps an entry a process has read, and only a mount that moves a file's access time at a read can say when it was last read: the storage disk is mounted strictatime, so a read leaves its time at the read, and a mount that keeps none leaves it where the write put it, which is the case an entry a turn is only reading looks old in and is deleted. The flags are the test's to set, and setting them needs a mount namespace (in_mount_namespace).
-    #[test]
-    fn a_read_moves_a_file_s_access_time_only_where_the_mount_keeps_it() {
-        if in_mount_namespace(
-            "boot::tests::a_read_moves_a_file_s_access_time_only_where_the_mount_keeps_it",
-        ) {
-            return;
-        }
-        let scratch = TempDir::new("evict-real-read");
-        let s = fs::canonicalize(scratch.path()).unwrap();
-        let file = s.join("input");
-        fs::write(&file, b"x").unwrap();
-        let old = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap()
-            .as_secs()
-            - EVICT_AGES[1];
-        let set_times = || {
-            let times = [
-                libc::timespec {
-                    tv_sec: old as libc::time_t,
-                    tv_nsec: 0,
-                },
-                libc::timespec {
-                    tv_sec: old as libc::time_t,
-                    tv_nsec: 0,
-                },
-            ];
-            let path = cstring(file.as_os_str()).unwrap();
-            // SAFETY: the path is NUL-terminated and outlives the call, and times holds the two values the call reads.
-            assert_eq!(
-                unsafe { libc::utimensat(libc::AT_FDCWD, path.as_ptr(), times.as_ptr(), 0) },
-                0
-            );
-        };
-        let read = || {
-            let mut head = Vec::new();
-            io::Read::read_to_end(&mut File::open(&file).unwrap(), &mut head).unwrap();
-            statx(libc::AT_FDCWD, &file).unwrap().stx_atime.tv_sec as u64
-        };
-
-        mount(&s, &s, libc::MS_BIND).unwrap();
-        mount(&s, &s, libc::MS_REMOUNT | libc::MS_BIND | libc::MS_NOATIME).unwrap();
-        set_times();
-        assert_eq!(
-            read(),
-            old,
-            "a read leaves the time where the mount keeps none, which is what an entry a turn is only reading looks old in"
-        );
-
-        mount(
-            &s,
-            &s,
-            libc::MS_REMOUNT | libc::MS_BIND | libc::MS_STRICTATIME | libc::MS_LAZYTIME,
-        )
-        .unwrap();
-        set_times();
-        assert!(
-            read() > old,
-            "a read moves the access time where the disk is mounted for it"
         );
     }
 
@@ -4401,26 +4573,30 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: a file read an hour ago and last written a day ago is being read, so a pass that judged it by its writes alone would take work a turn is walking through. A read moves a file's access time, and an entry holding one read within the age the pass spares stays. A directory's access time is not counted, because every pass reads the directories it looks at: counted, a pass would keep everything it had once offered.
+    // TEST_SCENARIO: a read is no clock for eviction: this guest mounts its disk noatime under a root whose overlayfs keeps its own access-time gate, so a file read a minute ago keeps the time its last write left and a pass that judged a cache by its access time would either delete what a tool is reading or keep everything it once offered. A tagged cache read through and closed is offered by the age its write left, and one whose descriptor is still open is not offered at all, which is the only read retention there is.
     #[test]
-    fn an_entry_a_process_has_read_is_not_offered() {
+    fn a_read_is_no_clock_and_a_closed_reader_leaves_only_the_mark() {
         let scratch = TempDir::new("evict-read");
         let s = fs::canonicalize(scratch.path()).unwrap();
-        for entry in ["read", "listed", "idle"] {
+        for entry in ["read", "held", "idle"] {
             fs::create_dir_all(s.join(entry)).unwrap();
         }
-        for file in ["read/input", "idle/blob"] {
+        for file in ["read/input", "held/input", "idle/blob"] {
             fs::write(s.join(file), b"x").unwrap();
+        }
+        for entry in ["read", "held", "idle"] {
+            fs::write(s.join(entry).join(CACHEDIR_TAG), CACHEDIR_TAG_SIGNATURE).unwrap();
         }
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
         let later = now + 2 * EVICT_AGES[0];
-        let times = |path: &Path, at: u64, modified: u64| {
+        let old = later - EVICT_AGES[1];
+        let times = |path: &Path, modified: u64| {
             let times = [
                 libc::timespec {
-                    tv_sec: at as libc::time_t,
+                    tv_sec: modified as libc::time_t,
                     tv_nsec: 0,
                 },
                 libc::timespec {
@@ -4435,22 +4611,20 @@ mod tests {
                 0
             );
         };
-        times(
-            &s.join("read/input"),
-            later - crate::pool_guard::CLAIM_EVICT_AGE / 2,
-            later - EVICT_AGES[1],
-        );
-        times(
-            &s.join("listed"),
-            later - crate::pool_guard::CLAIM_EVICT_AGE / 2,
-            later - EVICT_AGES[1],
-        );
+        for file in ["read/input", "held/input"] {
+            times(&s.join(file), old);
+        }
+        let mut head = Vec::new();
+        io::Read::read_to_end(&mut File::open(s.join("read/input")).unwrap(), &mut head).unwrap();
+        let reader = File::open(s.join("held/input")).unwrap();
+        let proc = TempDir::new("evict-read-proc");
+        let held = proc_holding(proc.path(), &[&s.join("held/input")]).unwrap();
 
-        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s))]);
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), false)]);
         let mut shown: Vec<_> = scratch_entries(
             &roots,
             &HashSet::new(),
-            &HashSet::new(),
+            &held,
             later,
             crate::pool_guard::CLAIM_EVICT_AGE,
         )
@@ -4460,9 +4634,10 @@ mod tests {
         shown.sort();
         assert_eq!(
             shown,
-            [s.join("idle"), s.join("listed")],
-            "a file read within the hour keeps its entry, and a directory read by a pass keeps nothing"
+            [s.join("idle"), s.join("read")],
+            "a read through and closed moves no time the pass counts, and a reader still holding keeps its cache"
         );
+        drop(reader);
     }
 
     // TEST_SCENARIO: the kernel's lock table names each locked file by device and inode, the device's numbers in hex, also on the lines of a process waiting for a lock.
@@ -4474,9 +4649,9 @@ mod tests {
         assert_eq!(locked, [(0, 0x1a, 77), (0xfd, 1, 1234)]);
     }
 
-    // TEST_SCENARIO: an evicted entry goes whole, and a link goes without its target. An entry a process holds a BSD lock on stays, the way systemd-tmpfiles leaves it, and goes once the lock is released. A leftover of a failed eviction is deleted where it is.
+    // TEST_SCENARIO: an evicted entry goes whole, where it stands, and a link goes without its target. An entry a process holds a BSD lock on stays, the way systemd-tmpfiles leaves it, and goes once the lock is released. Nothing of the entry is renamed or left behind: a name a pass made up would be one an agent's own file could wear.
     #[test]
-    fn an_entry_is_evicted_whole_unless_it_is_locked() {
+    fn an_entry_is_evicted_whole_where_it_stands_unless_it_is_locked() {
         let scratch = TempDir::new("evict-one");
         let target = TempDir::new("evict-one-target");
         fs::write(target.path().join("kept"), b"x").unwrap();
@@ -4485,18 +4660,16 @@ mod tests {
         fs::write(s.join("mise/installs/acp/package.json"), b"{}").unwrap();
         std::os::unix::fs::symlink(target.path(), s.join("link")).unwrap();
         fs::create_dir(s.join("held")).unwrap();
-        fs::create_dir(s.join("x.evicted.5")).unwrap();
 
-        assert!(evict(&s.join("mise"), 9).unwrap());
-        assert!(evict(&s.join("link"), 9).unwrap());
-        assert!(evict(&s.join("x.evicted.5"), 9).unwrap());
+        assert!(evict(&s.join("mise")).unwrap());
+        assert!(evict(&s.join("link")).unwrap());
         let lock = File::open(s.join("held")).unwrap();
         // SAFETY: the descriptor is open for the call and flock takes no pointer.
         assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
-        assert!(!evict(&s.join("held"), 9).unwrap());
+        assert!(!evict(&s.join("held")).unwrap());
         assert!(s.join("held").is_dir());
         drop(lock);
-        assert!(evict(&s.join("held"), 9).unwrap());
+        assert!(evict(&s.join("held")).unwrap());
 
         assert_eq!(
             fs::read_dir(s).unwrap().count(),
@@ -4875,7 +5048,7 @@ mod tests {
             std::os::unix::fs::symlink("file", merged.join("link")).unwrap();
             fs::create_dir(merged.join("cache")).unwrap();
             fs::write(merged.join("cache/blob"), b"y").unwrap();
-            let roots = open_scratch_roots(&[(merged.clone(), mount_of(&merged))]);
+            let roots = open_scratch_roots(&[(merged.clone(), mount_of(&merged), true)]);
             assert_eq!(
                 roots[0].dev, None,
                 "an overlay root is bounded by its mount alone"
