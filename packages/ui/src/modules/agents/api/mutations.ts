@@ -21,7 +21,7 @@ import { seedEmptySessionList } from "../../sessions/api/queries.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
-  invalidates: [agentsKeys.listWithChannels()],
+  invalidates: [agentsKeys.listWithChannels(), trpc.attention.pathKey()],
 };
 
 const invalidatesAgentsAndBudget = {

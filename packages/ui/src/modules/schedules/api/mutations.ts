@@ -7,7 +7,7 @@ import { trpc } from "../../../trpc.js";
 import { runNowErrorText } from "../lib/schedule-format.js";
 
 const invalidatesScheduleList = {
-  invalidates: [trpc.schedules.pathKey()],
+  invalidates: [trpc.schedules.pathKey(), trpc.attention.pathKey()],
 };
 
 interface CreateScheduleInput {
