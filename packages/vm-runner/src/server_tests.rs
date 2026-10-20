@@ -4446,9 +4446,16 @@ async fn a_replacement_does_not_read_the_record_of_the_incarnation_before_it() {
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
+    let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+    locked(&h.fake.vmm_start_times).insert("m1".into(), started);
     let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
     std::fs::create_dir_all(&exits).unwrap();
-    std::fs::write(exits.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+    // UNIT_BOUNDARY_DESCRIPTION: a whole record naming another incarnation, which is what the predecessor's looks like once the kernel hands the pid out again: a single-line record would only be an incomplete one and prove nothing about identity.
+    std::fs::write(
+        exits.join(pid.to_string()),
+        format!("{}\n{}", started + 1, libc::SIGSYS),
+    )
+    .unwrap();
 
     // TEST_SCENARIO: one tick while the replacement runs: the record can only be the predecessor's, since a live holder cannot have published one.
     h.server.reap_killed();
@@ -4572,9 +4579,16 @@ async fn a_claimed_record_from_before_this_vmm_is_not_its_death() {
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
+    let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+    locked(&h.fake.vmm_start_times).insert("m1".into(), started);
     let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&exits).unwrap();
-    fs::write(exits.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+    // UNIT_BOUNDARY_DESCRIPTION: a whole record naming another incarnation, which is what a predecessor's record is: an incomplete one would be refused for being incomplete and prove nothing about identity.
+    fs::write(
+        exits.join(pid.to_string()),
+        format!("{}\n{}", started + 1, libc::SIGSYS),
+    )
+    .unwrap();
     assert!(smolvm::process::is_alive(pid));
 
     // TEST_SCENARIO: the replacement dies inside the moment between the liveness check and the claim, and its own record has not been published.
@@ -5023,10 +5037,16 @@ async fn a_live_pid_does_not_read_the_record_of_the_incarnation_before_it() {
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
-    // TEST_SCENARIO: the record the loader leaves for a VMM it reaped, under a pid this one now holds.
+    let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+    locked(&h.fake.vmm_start_times).insert("m1".into(), started);
+    // TEST_SCENARIO: the record the loader leaves for a VMM it reaped, under a pid this one now holds, naming the incarnation before this one.
     let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
     std::fs::create_dir_all(&exits).unwrap();
-    std::fs::write(exits.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+    std::fs::write(
+        exits.join(pid.to_string()),
+        format!("{}\n{}", started + 1, libc::SIGSYS),
+    )
+    .unwrap();
 
     h.server.reap_killed();
     let status = h.server.status("m1");
@@ -5655,8 +5675,9 @@ async fn a_record_no_tick_names_yet_is_kept_until_it_is_old() {
     let h = Harness::new("record-kept");
     let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&records).unwrap();
+    // UNIT_BOUNDARY_DESCRIPTION: a whole record, so what the pruner is shown is a death rather than an incomplete file.
     let fresh = records.join("424242");
-    fs::write(&fresh, libc::SIGSYS.to_string()).unwrap();
+    fs::write(&fresh, format!("7\n{}", libc::SIGSYS)).unwrap();
     h.server.reap_killed();
     assert!(fresh.exists(), "a record nothing has read yet is kept");
 
