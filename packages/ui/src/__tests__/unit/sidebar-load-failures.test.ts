@@ -9,7 +9,9 @@ const list = vi.hoisted(() => ({
   failed: true,
   loading: false,
   retrying: false,
+  nextFailed: false,
 }));
+const agentState = vi.hoisted(() => ({ answerable: true }));
 const pin = vi.hoisted(() => ({
   result: {
     data: undefined as unknown,
@@ -32,7 +34,7 @@ vi.mock("../../store.js", async () => {
 });
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
-  useIsAgentAnswerableSoon: () => true,
+  useIsAgentAnswerableSoon: () => agentState.answerable,
   useIsAgentOperable: () => true,
 }));
 vi.mock("../../modules/approvals/api/queries.js", () => ({
@@ -49,9 +51,9 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     failed: list.failed,
     retrying: list.retrying,
     retry: vi.fn(),
-    hasNextPage: false,
+    hasNextPage: list.nextFailed,
     isFetchingNextPage: false,
-    fetchNextPageFailed: false,
+    fetchNextPageFailed: list.nextFailed,
     fetchNextPage: vi.fn(),
   }),
 }));
@@ -95,6 +97,8 @@ beforeEach(() => {
   list.failed = true;
   list.loading = false;
   list.retrying = false;
+  list.nextFailed = false;
+  agentState.answerable = true;
   pin.result = {
     data: undefined,
     errorUpdatedAt: 1,
@@ -209,4 +213,28 @@ it("keeps an old pin's retry row through a real pending retry", async () => {
     ),
   ).not.toContain("sidebar-pin-failed");
   off();
+});
+
+// TEST_SCENARIO: an old pin's lookup failed and then its Agent went to sleep, which turns the lookup off; a retry could only fail with a missing query function, so the row offers none and the pin shows again once the Agent wakes.
+it("offers no retry for a pin whose Agent cannot answer", () => {
+  agentState.answerable = false;
+  expect(
+    renderToStaticMarkup(
+      createElement(OffFeedPinnedRow, {
+        agent: { id: "a", name: "dam" } as never,
+        sessionId: "old",
+      }),
+    ),
+  ).toBe("");
+});
+
+// TEST_SCENARIO: a later page of an Agent's list failed; the list keeps its rows and offers a retry for the rest through the same retry control as the first load, which stays mounted while it runs.
+it("offers a retry for a failed later page", () => {
+  list.failed = false;
+  list.nextFailed = true;
+  const html = renderToStaticMarkup(
+    createElement(AgentSessionList, { agentId: "a" }),
+  );
+  expect(html).toContain('data-testid="sidebar-agent-sessions-more-failed"');
+  expect(html).toContain("Couldn&#x27;t load the rest. Retry");
 });

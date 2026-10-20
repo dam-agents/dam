@@ -97,7 +97,8 @@ export function useAgentSessionList(agentId: string) {
     loading,
     provisional,
     recordRead: lastKnown !== undefined,
-    failed: !provisional && failedLoad({ data, errorUpdatedAt }),
+    failed:
+      answerableSoon && !provisional && failedLoad({ data, errorUpdatedAt }),
     retrying: isFetching,
     retry: refetch,
     hasNextPage,

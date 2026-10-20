@@ -1,7 +1,4 @@
-import { useEffect, useRef } from "react";
-
-import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../../store.js";
 import { useAgentRunState } from "../../../agents/api/queries.js";
@@ -67,6 +64,7 @@ export function AgentSessionList({
     fetchNextPageFailed,
     fetchNextPage,
   } = list;
+  const [retryingNext, setRetryingNext] = useState(false);
   const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
   const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
 
@@ -114,18 +112,17 @@ export function AgentSessionList({
         />
       ))}
       {hasNextPage && <div ref={endRef} aria-hidden className="h-px" />}
-      {isFetchingNextPage && <SessionListSkeleton />}
-      {hasNextPage && fetchNextPageFailed && (
-        <button
-          type="button"
-          onClick={() => void fetchNextPage()}
-          className={cn(
-            "flex h-[30px] items-center rounded-lg pl-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-            FOCUS_RING,
-          )}
-        >
-          Couldn't load the rest. Retry
-        </button>
+      {isFetchingNextPage && !retryingNext && <SessionListSkeleton />}
+      {hasNextPage && (fetchNextPageFailed || retryingNext) && (
+        <RetryRow
+          label="Couldn't load the rest."
+          testId="sidebar-agent-sessions-more-failed"
+          retrying={retryingNext}
+          onRetry={() => {
+            setRetryingNext(true);
+            void fetchNextPage().finally(() => setRetryingNext(false));
+          }}
+        />
       )}
     </div>
   );

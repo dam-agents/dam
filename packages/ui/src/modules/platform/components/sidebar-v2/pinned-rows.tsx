@@ -76,7 +76,7 @@ export function OffFeedPinnedRow({
       s.sessionId === sessionId,
   );
   if (!session)
-    return failedLoad(lookup) ? (
+    return answerable && failedLoad(lookup) ? (
       <div data-pin-key={`${agent.id}:${sessionId}`}>
         <RetryRow
           label={`Couldn't load a pinned session of ${agent.name}.`}
