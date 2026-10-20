@@ -1,6 +1,6 @@
 // TEST_OVERVIEW: a runner release reaches an owner's live machines as a hand-off in place, unless the release declares a reboot key its pod does not run, which rolls the pod and reboots them. The vm lane carries one release, so nothing there has ever reached a machine as a second one. This spec gives the lane a second release — the lane's own runner image, declaring a key of its own — and rolls a live guest onto it with the chart's own upgrade, then back onto the install's release. Each roll must show the reboot the release declares, keep the guest's HOME as it was, and leave the agent ready.
 import { expect, test } from "@playwright/test";
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -29,6 +29,7 @@ import {
   RELEASE_NS,
 } from "../../lib/cluster.js";
 import { harnessName } from "../../lib/fixtures.js";
+import { keepAwake } from "../../lib/keep-awake.js";
 
 test.skip(laneBackend !== "vm", "only a machine boots a runner release");
 
@@ -61,14 +62,21 @@ let installImage = "";
 let installRepository = "";
 let secondImage = "";
 let installMoved = false;
-let stopKeepingAwake = () => {};
+let keeping: ReturnType<typeof keepAwake> | undefined;
 
-// UNIT_BOUNDARY_DESCRIPTION: the machine stays awake for as long as the spec runs. A vm Agent ignores its own hibernation timeout and takes the chart-wide `controller.agent.base.vmIdleTimeout` instead, which the lane leaves at 5m, and a roll of the runner pod takes about that long; a machine hibernated mid-roll never reports ready again, so the roll waits on a machine that will not come back. What decides idleness is the `agent-platform.ai/last-activity` stamp a wake writes, so this writes one well inside the timeout, and it runs from before the lane builds its second runner image until the spec ends. A wake of a machine that is already up changes nothing else: it is the same stamp a chat turn makes.
-function keepAwake(): () => void {
-  const beat = setInterval(() => {
-    void api.agents.wake.mutate({ id: agentId }).catch(() => {});
-  }, 30_000);
-  return () => clearInterval(beat);
+// UNIT_BOUNDARY_DESCRIPTION: the second runner image is built with an awaited child rather than a synchronous one, because the keep-awake timer runs on the spec's own event loop: a synchronous build blocks timer callbacks, token refresh and HTTP requests until it returns, so a build that outlasts the lane's 5m `vmIdleTimeout` would let the machine hibernate even though the timer exists. The build's own output stays on this process's stderr, where the lane's log already has it.
+async function buildSecondRelease(key: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      "mise",
+      ["run", "e2e:runner-release", "--", key],
+      { cwd: repo, maxBuffer: 16 * 1024 * 1024 },
+      (error, stdout) =>
+        error
+          ? reject(error)
+          : resolve((stdout.trim().split("\n").pop() ?? "").trim()),
+    ).stderr?.pipe(process.stderr);
+  });
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the upgrade an operator makes, on the values the install holds. A hop names the runner image it rolls onto; the hop back names none, so the install ends as `cluster:install` made it. The chart's post-upgrade hooks are its own: keycloak's realm import and postgres's roles run on every upgrade and have nothing to do with a runner release, and a hop that waited on them would cost the lane a minute for nothing.
@@ -349,7 +357,7 @@ test.beforeAll(async () => {
   await waitAgentState(api, agentId, "running", { timeoutMs: 600_000 });
   const pod = runnerPod(agentId);
   test.skip(pod === "", "the Mac's host runner runs outside the cluster");
-  stopKeepingAwake = keepAwake();
+  keeping = keepAwake(() => api.agents.wake.mutate({ id: agentId }));
   installImage = runnerImage();
   installRepository = installImage.split("@")[0].replace(/:[^/]*$/, "");
   owner = podField(pod, ".metadata.labels.agent-platform\\.ai/owner");
@@ -378,12 +386,7 @@ test.beforeAll(async () => {
   await expectHomeFile(token, agentId, markerPath, marker, {
     timeoutMs: 60_000,
   });
-  const printed = execFileSync(
-    "mise",
-    ["run", "e2e:runner-release", "--", secondKey],
-    { cwd: repo, encoding: "utf8", stdio: ["ignore", "pipe", "inherit"] },
-  );
-  secondImage = (printed.trim().split("\n").pop() ?? "").trim();
+  secondImage = await buildSecondRelease(secondKey);
   expect(
     secondImage,
     "e2e:runner-release did not load the lane's runner image under the second key",
@@ -399,7 +402,7 @@ test.afterAll(async () => {
       installMoved = false;
     }
   } finally {
-    stopKeepingAwake();
+    keeping?.stop();
     if (agentId) await api.agents.delete.mutate({ id: agentId });
   }
 });
