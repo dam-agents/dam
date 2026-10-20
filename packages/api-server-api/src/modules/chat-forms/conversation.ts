@@ -531,7 +531,7 @@ function structureErrors(surface: Draft): string[] {
   return [...new Set(errors)];
 }
 
-function functionCalls(value: unknown): FunctionCall[] {
+export function functionCalls(value: unknown): FunctionCall[] {
   if (Array.isArray(value)) return value.flatMap(functionCalls);
   if (!isRecord(value)) return [];
   const nested = Object.values(value).flatMap(functionCalls);
