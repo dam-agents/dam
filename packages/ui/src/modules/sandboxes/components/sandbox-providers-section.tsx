@@ -176,11 +176,22 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
             routed={routed}
             onConnectProviders={() => navigateToSettings("providers")}
             defaultPair={{
-              value: saved,
-              onChoose: (next) => rememberSessionPair(agentId, next),
+              value: pair,
+              onChoose: (next) => {
+                if (routed && next.model === null)
+                  return setDraftHarness(next.harness);
+                rememberSessionPair(agentId, next);
+                setDraftHarness(null);
+              },
             }}
           />
-          <DefaultModelNotice agentId={agentId} />
+          {pair !== saved ? (
+            <p role="status" className="pl-3 text-xs text-muted-foreground">
+              Pick a model to save this harness as the default.
+            </p>
+          ) : (
+            <DefaultModelNotice agentId={agentId} />
+          )}
         </div>
       </section>
     );

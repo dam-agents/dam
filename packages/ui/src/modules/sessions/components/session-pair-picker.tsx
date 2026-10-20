@@ -79,7 +79,7 @@ interface Props {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the harness, model and session settings a new
  * session starts on. With `defaultPair` it edits the agent's saved default
- * instead, saving each pick at once. In the new layout, and always as the
+ * instead, handing each pick to its `onChoose`. In the new layout, and always as the
  * default's editor, providers are not attached or disconnected here: a
  * Manage providers row, absent from the default's editor, leads to the
  * agent's Providers page.

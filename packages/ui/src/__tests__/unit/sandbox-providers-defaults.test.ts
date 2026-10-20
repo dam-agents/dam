@@ -228,4 +228,33 @@ describe("the new layout's default editor", () => {
     state.newLayout = false;
     state.routed = false;
   });
+
+  // TEST_SCENARIO: on a routed runtime the server refuses a default with no model, so a harness picked in the new layout's default editor waits for its model instead of being saved.
+  it("does not save a routed harness pick until its model is picked", () => {
+    state.newLayout = true;
+    state.routed = true;
+    state.remembered = {
+      harness: "codex",
+      provider: "oai",
+      model: "openai/gpt-5.5",
+    };
+    state.saved = [];
+    renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(SandboxProvidersSection, {
+          agentId: "agent",
+          header: () => null,
+        }),
+      ),
+    );
+    const defaultPair = state.picker!.defaultPair as {
+      onChoose: (pair: unknown) => void;
+    };
+    defaultPair.onChoose({ harness: "pi", provider: "oai", model: null });
+    expect(state.saved).toEqual([]);
+    state.newLayout = false;
+    state.routed = false;
+  });
 });
