@@ -96,6 +96,7 @@ import {
   readSkillInstallBootState,
   resolveDrivers,
   harnessConfigBindingOf,
+  configuredModeOf,
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
@@ -417,35 +418,44 @@ const {
   envReader: envStore,
   defaultHarness,
   harnesses: Object.fromEntries(
-    Object.entries(harnessManifests).map(([name, manifest]) => [
-      name,
-      {
-        sessionHistory: manifest.sessionHistory,
-        ...(manifest.terminalSessionPins && {
-          terminalSessionPins: expandHome(
-            manifest.terminalSessionPins,
-            homeDir,
-          ),
-        }),
-        sessionModel: sessionModelOf(manifest),
-        ...(manifest.modelRouter?.sessionModel && {
-          sessionModelFrame: {
-            configOption: manifest.modelRouter.sessionModel.configOption,
-            render: (model: string) =>
-              (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
-              renderSessionModel(model, manifest.modelRouter),
-          },
-        }),
-        ...(manifest.initializeCapabilities && {
-          initialize: manifest.initializeCapabilities as Record<
-            string,
-            unknown
-          >,
-        }),
-        sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
-        catalog: harnessConfigBindingOf(manifest)?.catalog,
-      },
-    ]),
+    Object.entries(harnessManifests).map(([name, manifest]) => {
+      const harnessConfig = harnessConfigBindingOf(manifest);
+      return [
+        name,
+        {
+          sessionHistory: manifest.sessionHistory,
+          ...(manifest.terminalSessionPins && {
+            terminalSessionPins: expandHome(
+              manifest.terminalSessionPins,
+              homeDir,
+            ),
+          }),
+          sessionModel: sessionModelOf(manifest),
+          ...(manifest.modelRouter?.sessionModel && {
+            sessionModelFrame: {
+              configOption: manifest.modelRouter.sessionModel.configOption,
+              render: (model: string) =>
+                (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
+                renderSessionModel(model, manifest.modelRouter),
+            },
+          }),
+          ...(manifest.initializeCapabilities && {
+            initialize: manifest.initializeCapabilities as Record<
+              string,
+              unknown
+            >,
+          }),
+          sessionSettings: harnessConfig?.sessionSettings,
+          catalog: harnessConfig?.catalog,
+          ...(harnessConfig?.sessionSettings?.mode !== undefined && {
+            configuredMode: () =>
+              configuredModeOf(harnessConfig, homeDir, (msg) =>
+                process.stderr.write(`[harness-config] ${msg}\n`),
+              ),
+          }),
+        },
+      ];
+    }),
   ),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,

@@ -12,6 +12,7 @@ export {
 } from "./manifest.js";
 
 export { createEnvPlugin } from "./drivers/env-plugin.js";
+export { configuredModeOf } from "./drivers/harness-config-plugin.js";
 export {
   createEnvStateStore,
   staleEnvReason,

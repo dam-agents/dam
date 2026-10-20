@@ -8,11 +8,9 @@ import {
   isPlatformSubagentSetting,
   platformSubagentSettingsError,
   sessionSettingsError,
-  type HarnessConfigCatalog,
   type SessionRepository,
   type SubAgentHarnessConfig,
 } from "agent-runtime-api";
-import type { SessionSettingBinding } from "../runtime-channel/manifest.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import {
   createExecHistoryProvider,
@@ -37,8 +35,12 @@ import {
   createAcpRuntime,
   sessionListAnswer,
   type ReportableTurn,
-  type SessionSettingFrame,
 } from "./services/acp-runtime/acp-runtime.js";
+import {
+  modeSettingIdOf,
+  sessionSettingFrames,
+  type SessionHarness,
+} from "./services/session-setting-frames.js";
 import { createOnceReporter } from "./services/once-reporter.js";
 import {
   createBackgroundWorkRegistry,
@@ -101,7 +103,7 @@ export interface ComposeAcpOptions {
   log: (msg: string) => void;
 }
 
-export interface HarnessRuntime {
+export interface HarnessRuntime extends SessionHarness {
   sessionHistory?: {
     module?: string;
     exportName?: string;
@@ -109,43 +111,7 @@ export interface HarnessRuntime {
   };
   terminalSessionPins?: string;
   sessionModel: boolean;
-  sessionModelFrame?: {
-    configOption: string;
-    render: (model: string) => string;
-  };
   initialize?: Record<string, unknown>;
-  sessionSettings?: Record<string, SessionSettingBinding>;
-  catalog?: HarnessConfigCatalog;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the name is rendered the way the harness sees
- * the catalog; a native process gets the harness's own name, the part after
- * the Connection's alias. Critical, so a refusal answers the session's
- * prompts rather than running them on a substitute.
- */
-function modelFrames(
-  harness: HarnessRuntime | undefined,
-  sessionId: string,
-  choice: { model: string | null },
-  native: boolean,
-): SessionSettingFrame[] {
-  const binding = harness?.sessionModelFrame;
-  if (!binding || choice.model === null) return [];
-  const value = native
-    ? (parseQualifiedModel(choice.model)?.upstreamId ?? choice.model)
-    : binding.render(choice.model);
-  return [
-    {
-      method: "session/set_config_option",
-      params: {
-        sessionId,
-        configId: binding.configOption,
-        value,
-      },
-      critical: true,
-    },
-  ];
 }
 
 const isModelSetting = (
@@ -394,37 +360,15 @@ export function composeAcp(opts: ComposeAcpOptions): {
         },
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
-        sessionSettingFrames: (sessionId) => [
-          ...modelFrames(
-            harness,
+        sessionSettingFrames: (sessionId) =>
+          sessionSettingFrames({
             sessionId,
-            runtime.sessionChoice(sessionId),
-            pair.native !== undefined,
-          ),
-          ...Object.entries(
-            sessionMetadata.get(sessionId)?.meta.settings ?? {},
-          ).flatMap(([id, value]): SessionSettingFrame[] => {
-            const binding = harness?.sessionSettings?.[id];
-            if (binding && "mode" in binding)
-              return [
-                {
-                  method: "session/set_mode",
-                  params: { sessionId, modeId: value },
-                },
-              ];
-            if (binding && "configOption" in binding)
-              return [
-                {
-                  method: "session/set_config_option",
-                  params: { sessionId, configId: binding.configOption, value },
-                },
-              ];
-            return [];
+            harness,
+            model: runtime.sessionChoice(sessionId).model,
+            native: pair.native !== undefined,
+            settings: sessionMetadata.get(sessionId)?.meta.settings ?? {},
           }),
-        ],
-        modeSettingId: Object.entries(harness?.sessionSettings ?? {}).find(
-          ([, binding]) => "mode" in binding,
-        )?.[0],
+        modeSettingId: modeSettingIdOf(harness),
         workingDir: opts.workingDir,
         sessionMetadata,
         isTerminalSessionActive: opts.isTerminalSessionActive,
