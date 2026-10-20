@@ -38,6 +38,26 @@ type RowState = Omit<
 
 export const TREE_ROW_CLASS = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 
+export function useDeleteTreeSession(agentId: string) {
+  const deleteSession = useStore((st) => st.deleteSession);
+  const showConfirm = useStore((st) => st.showConfirm);
+  const actWhenAwake = useActWhenAwake(agentId);
+  return async (s: SessionView) => {
+    const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
+    if (
+      await showConfirm(
+        "Its transcript is deleted and cannot be recovered.",
+        `Delete session ${label}?`,
+        { kind: "destructive", confirmLabel: "Delete session" },
+      )
+    )
+      actWhenAwake(`delete:${s.sessionId}`, async () => {
+        if (!(await deleteSession(s.sessionId, agentId))) return;
+        unpinSession(pinKey(agentId, s.sessionId));
+      });
+  };
+}
+
 export function togglePinKeepingFocus(key: string, agentId: string): void {
   const focused = document.activeElement;
   const hadFocus =
@@ -81,9 +101,8 @@ export function TreeSessionRow({
   prefix?: string;
   onNavigate?: () => void;
 }) {
-  const deleteSession = useStore((st) => st.deleteSession);
-  const showConfirm = useStore((st) => st.showConfirm);
   const actWhenAwake = useActWhenAwake(agentId);
+  const remove = useDeleteTreeSession(agentId);
   const openSession = useOpenSession();
   const [renaming, setRenaming] = useState(false);
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
@@ -99,21 +118,6 @@ export function TreeSessionRow({
     draft: state.draft,
   });
   const context = sessionContext(s, state.conversation);
-
-  const remove = async () => {
-    const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
-    if (
-      await showConfirm(
-        "Its transcript is deleted and cannot be recovered.",
-        `Delete session ${label}?`,
-        { kind: "destructive", confirmLabel: "Delete session" },
-      )
-    )
-      actWhenAwake(`delete:${s.sessionId}`, async () => {
-        if (!(await deleteSession(s.sessionId, agentId))) return;
-        unpinSession(key);
-      });
-  };
 
   return (
     <div className="relative" data-pin-key={key}>
@@ -145,7 +149,7 @@ export function TreeSessionRow({
         onRename={() =>
           actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(true))
         }
-        onDelete={() => void remove()}
+        onDelete={() => void remove(s)}
         {...(telemetry && {
           onExportTimeline: () =>
             void downloadTelemetryExport({

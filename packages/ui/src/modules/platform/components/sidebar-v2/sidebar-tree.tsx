@@ -64,10 +64,7 @@ import {
   draftKey,
   keysWithDraftContent,
 } from "../../../sessions/lib/draft-key.js";
-import {
-  unpinSession,
-  usePinnedSessions,
-} from "../../../sessions/lib/pinned-sessions.js";
+import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import {
   activityTone,
   agentsWithUnlistedPins,
@@ -82,7 +79,11 @@ import {
 import { ActivityDot, AgentCue } from "./activity-dot.js";
 import { AddRow, FOCUS_RING } from "./add-row.js";
 import { AgentPinnedRows, AgentSessionList } from "./agent-session-list.js";
-import { togglePinKeepingFocus, TREE_ROW_CLASS } from "./tree-session-row.js";
+import {
+  togglePinKeepingFocus,
+  TREE_ROW_CLASS,
+  useDeleteTreeSession,
+} from "./tree-session-row.js";
 const REVEAL =
   "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
 
@@ -410,8 +411,6 @@ function PinnedRow({
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  const deleteSession = useStore((s) => s.deleteSession);
-  const showConfirm = useStore((s) => s.showConfirm);
   const [renaming, setRenaming] = useState(false);
   const { agentId, sessionId, mode } = item.session;
   const active = useStore(
@@ -426,7 +425,7 @@ function PinnedRow({
   );
   const actWhenAwake = useActWhenAwake(agentId);
   const session = provisionalSessionView(item.session);
-  const label = session.title || sessionId.slice(0, 12);
+  const remove = useDeleteTreeSession(agentId);
   const backgroundWork = useSessionBackgroundWork(agentId, sessionId);
   const draft = useStore((s) =>
     keysWithDraftContent(s.drafts).includes(draftKey(agentId, sessionId)),
@@ -466,20 +465,7 @@ function PinnedRow({
         onRename={() =>
           actWhenAwake(`rename:${sessionId}`, () => setRenaming(true))
         }
-        onDelete={() =>
-          void showConfirm(
-            "Its transcript is deleted and cannot be recovered.",
-            `Delete session “${label}”?`,
-            { kind: "destructive", confirmLabel: "Delete session" },
-          ).then(
-            (ok) =>
-              ok &&
-              actWhenAwake(`delete:${sessionId}`, async () => {
-                if (!(await deleteSession(sessionId, agentId))) return;
-                unpinSession(item.id);
-              }),
-          )
-        }
+        onDelete={() => void remove(session)}
       />
       {renaming && (
         <RenameSessionDialog

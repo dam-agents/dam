@@ -1,4 +1,3 @@
-import { SESSION_CATEGORIES } from "api-server-api";
 import { useEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
@@ -11,7 +10,6 @@ import { SessionListSkeleton } from "../../../sessions/components/session-list-s
 import { useAgentSessionList } from "../../../sessions/hooks/use-agent-session-list.js";
 import {
   pinKey,
-  unpinSession,
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
@@ -120,7 +118,7 @@ export function AgentSessionList({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The pinned Sessions of one Agent that the owner's bounded attention feed does not hold, read from the Agent's own list for the Pinned section. It loads further pages until every such pin appears, and drops a pin whose Session the complete, unfiltered list no longer has.
+ * UNIT_BOUNDARY_DESCRIPTION: The pinned Sessions of one Agent that the owner's bounded attention feed does not hold, read from the Agent's own list for the Pinned section. It loads further pages until every such pin appears. A pin whose Session is gone shows nowhere and stays in storage: pins live only in this browser, so no failed or stale list may drop one.
  */
 export function AgentPinnedRows({
   agentId,
@@ -134,9 +132,6 @@ export function AgentPinnedRows({
   onNavigate?: () => void;
 }) {
   const { list, pins, pinned } = useAgentTreeRows(agentId);
-  const allCategories = useStore(
-    (s) => s.sessionFilter.length === SESSION_CATEGORIES.length,
-  );
   const loaded = new Set(
     list.sessions.map((s) => pinKey(agentId, s.sessionId)),
   );
@@ -150,24 +145,15 @@ export function AgentPinnedRows({
     fetchNextPageFailed,
     fetchNextPage,
   } = list;
-  const complete =
-    !list.loading && !list.provisional && !hasNextPage && allCategories;
-  const missingKey = missing.join(",");
+  const chase =
+    missing.length > 0 &&
+    hasNextPage &&
+    !isFetchingNextPage &&
+    !fetchNextPageFailed &&
+    !list.provisional;
   useEffect(() => {
-    if (!missingKey) return;
-    if (hasNextPage && !isFetchingNextPage && !fetchNextPageFailed) {
-      if (!list.provisional) void fetchNextPage();
-    } else if (complete)
-      for (const key of missingKey.split(",")) unpinSession(key);
-  }, [
-    missingKey,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPageFailed,
-    list.provisional,
-    complete,
-    fetchNextPage,
-  ]);
+    if (chase) void fetchNextPage();
+  }, [chase, fetchNextPage]);
 
   return pinned
     .filter(({ session }) => !inFeed.has(pinKey(agentId, session.sessionId)))

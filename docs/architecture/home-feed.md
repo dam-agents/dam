@@ -67,7 +67,7 @@ The tree's Agents header carries one session filter, by state and by Session typ
 The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list; pinning from the keyboard keeps focus on the moved row, or on its Agent's row when that Agent is closed.
 Pins are kept in the browser, so they do not follow the user to another device.
-The Pinned section reads a pinned Session from the record, and one the record does not hold from its Agent's own list, which loads further pages until it appears; a pin whose Session the complete, unfiltered list no longer has is dropped, as is the pin of a deleted Session.
+The Pinned section reads a pinned Session from the record, and one the record does not hold from its Agent's own list, which loads further pages until it appears; deleting a Session from the tree drops its pin, and a pin whose Session is gone otherwise shows nowhere but stays stored, since pins live only in the browser and no failed or stale list may count as proof that one is stale.
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
 An asleep Agent whose Sessions the record does not hold shows a note that its Sessions show when it wakes; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder.
