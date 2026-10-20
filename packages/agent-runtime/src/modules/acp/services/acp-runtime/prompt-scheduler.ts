@@ -41,6 +41,7 @@ export interface PromptSubmission {
   steerRefused?: boolean;
   steerNow?: boolean;
   queuedAt?: string;
+  origin?: "runtime" | "client";
 }
 
 /**
@@ -51,11 +52,20 @@ export interface PromptSubmission {
  * waits for both. A setting the harness refused is asked for again as one block,
  * ahead of the queue and in the order the runtime lists it, so what depends on
  * it never applies against the state it failed to reach.
+ * A submission says whether the runtime or a client asked for it, and only the
+ * ones the runtime sent tell a mode the harness reports apart from a mode the
+ * session took: work still queued behind a turn has not reached the harness, and
+ * a client's own request is the session's choice rather than the runtime's.
  */
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
   submitSetting(submission: PromptSubmission): PromptFate;
   submitSettings(submissions: PromptSubmission[], first?: boolean): void;
+  dropQueuedSettings(
+    sessionId: string,
+    predicate: (entry: PromptSubmission) => boolean,
+    reason: string,
+  ): PromptSubmission[];
   onSettingResponse(sessionId: string, outboundId: number): void;
   modeWorkOutstanding(sessionId: string): boolean;
   onPromptResponse(
@@ -572,10 +582,20 @@ export function createPromptScheduler(
       const affectsMode = deps.affectsMode;
       if (affectsMode === undefined) return false;
       for (const entry of settingsInFlight.get(sessionId)?.values() ?? [])
-        if (affectsMode(entry.frame)) return true;
-      return (pendingSettings.get(sessionId) ?? []).some((entry) =>
-        affectsMode(entry.frame),
-      );
+        if (entry.origin !== "client" && affectsMode(entry.frame)) return true;
+      return false;
+    },
+
+    dropQueuedSettings(sessionId, predicate, reason) {
+      const queued = pendingSettings.get(sessionId);
+      if (queued === undefined) return [];
+      const dropped = queued.filter(predicate);
+      if (dropped.length === 0) return [];
+      for (const entry of dropped) refuse(entry, reason);
+      const kept = queued.filter((entry) => !predicate(entry));
+      if (kept.length === 0) pendingSettings.delete(sessionId);
+      else pendingSettings.set(sessionId, kept);
+      return dropped;
     },
 
     onSettingResponse(sessionId, outboundId) {

@@ -73,7 +73,8 @@ The terminal launcher keeps its own fallback, which asks for no model, so a Haik
 A session that names no model runs on the model the file names, so that model's constraints are the ones applied.
 The derived mode is the runtime's, not the session's: it never replaces a mode the owner or the session picked, and a change of the session's model derives it again, since the new model may allow another mode than the old one.
 While a setting that can move the mode is still owed an answer — a mode of its own, or the model a mode is read against — a mode the harness reports is that work's doing: an echo of what the runtime sent, or the fallback a model change forced, so it is not saved as a mode the session picked.
-Once those settings are answered, a reported mode is the harness's own, as entering plan mode with a tool is, and is saved; a session the runtime derives a mode for then stops deriving, since the session holds a mode now.
+Only what the runtime has sent counts: a mode change still queued behind a running turn has not reached the harness and cannot have caused one, and a setting a client sent is the session's own choice, so the mode it brings is saved.
+Once those settings are answered, a reported mode is the harness's own, as entering plan mode with a tool is, and is saved; a session the runtime derives a mode for then stops deriving, since the session holds a mode now, and a derived mode still queued behind the turn is dropped rather than undoing it.
 A mode report that the runtime did not ask for and that arrives after its work settled is indistinguishable from a mode the harness changed on its own, and is saved as one.
 A refused model is asked for again ahead of the settings that wait on it, and a client's own setting request keeps its place in that queue and is answered as usual.
 A change made mid-turn waits for the turn to end, and the next prompt waits for the harness to answer the change.

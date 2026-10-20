@@ -705,6 +705,29 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return false;
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a mode the session took while the runtime still
+   * had a derived mode queued behind its turn makes that frame obsolete: it was
+   * derived before the session held a mode, and sending it would undo the mode
+   * once the turn ends. The queued model change stays, since the owner asked
+   * for it and the mode survives it. Only queued runtime frames are dropped,
+   * never what the harness already has; they are the runtime's own, so they are
+   * forgotten rather than answered.
+   */
+  function dropQueuedModeWork(sessionId: string): void {
+    const dropped = promptScheduler.dropQueuedSettings(
+      sessionId,
+      (entry) =>
+        entry.origin === "runtime" &&
+        (entry.frame as { method?: unknown }).method === "session/set_mode",
+      "the session moved to another mode before this setting was sent",
+    );
+    for (const entry of dropped)
+      appliedSettings
+        .get(sessionId)
+        ?.delete(settingKeyOf(entry.frame as SessionSettingFrame));
+  }
+
   function syncSettings(sessionId: string, first = false): void {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
@@ -735,6 +758,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         frame: { jsonrpc: "2.0", id: outboundId, method, params },
         promptId: null,
         unattended: true,
+        origin: "runtime",
       });
     }
     promptScheduler.submitSettings(block, first);
@@ -1732,11 +1756,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             entry &&
             !promptScheduler.modeWorkOutstanding(sessionId) &&
             entry.meta.settings?.[id] !== reportedMode
-          )
+          ) {
             deps.sessionMetadata?.set(sessionId, {
               ...entry.meta,
               settings: { ...entry.meta.settings, [id]: reportedMode },
             });
+            dropQueuedModeWork(sessionId);
+          }
         }
         const text = extractAgentTextChunk(frame);
         if (
@@ -2100,6 +2126,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           unattended:
             nonViewerChannels.has(channel) &&
             isMachineSession(settingSessionId),
+          origin: "client",
         });
         if (
           fate === "queued" &&
