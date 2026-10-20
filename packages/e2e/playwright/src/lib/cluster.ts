@@ -21,7 +21,7 @@ export function kubectl(...args: string[]): string {
   }).trim();
 }
 
-export function kubectlOrEmpty(...args: string[]): string {
+function kubectlOrEmpty(...args: string[]): string {
   try {
     return kubectl(...args);
   } catch {
