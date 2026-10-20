@@ -415,4 +415,48 @@ describe("tool approval reporter", () => {
     expect(report.outcome.outcome).toHaveLength(64);
     expect(report.outcome.optionId).toHaveLength(512);
   });
+
+  // TEST_SCENARIO: a request can offer two options of one kind, and the recording bound keeps only the first. The runtime holds the whole request, so an answer given with the second must still report its kind: a refusal recorded as an allow is the defect the report exists to prevent.
+  it("reports the kind of a duplicate-kind option the row dropped", async () => {
+    const { client, sent } = fakeClient();
+    const reporter = createToolApprovalReporter({ client, log: () => {} });
+    const allows = Array.from({ length: 16 }, (_, n) => ({
+      optionId: `allow-${n}`,
+      kind: "allow_once",
+    }));
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 16,
+      method: "session/request_permission",
+      params: {
+        sessionId: "s-1",
+        toolCall: { title: "Run" },
+        options: [
+          ...allows,
+          { optionId: "reject-once", kind: "reject_once" },
+          { optionId: "reject-and-stop", kind: "reject_once" },
+        ],
+      },
+    });
+
+    reporter.held(16, "s-1", frame);
+    reporter.waiting(16, "s-1", frame);
+    reporter.answered(16, "s-1", {
+      outcome: { outcome: "selected", optionId: "reject-and-stop" },
+    });
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+
+    const waiting = sent[0]![1] as { options: { optionId: string }[] };
+    expect(waiting.options).toHaveLength(16);
+    expect(waiting.options.map((o) => o.optionId)).toContain("reject-once");
+    expect(sent[1]?.[1]).toEqual({
+      sessionId: "s-1",
+      rpcId: 16,
+      outcome: {
+        outcome: "selected",
+        optionId: "reject-and-stop",
+        kind: "reject_once",
+      },
+    });
+  });
 });

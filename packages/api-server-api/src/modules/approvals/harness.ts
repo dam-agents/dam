@@ -1,6 +1,11 @@
 import { z } from "zod";
 
-const rpcIdSchema = z.union([z.string().min(1).max(512), z.number().int()]);
+import { RPC_ID_MAX } from "./format.js";
+
+const rpcIdSchema = z.union([
+  z.string().min(1).max(RPC_ID_MAX),
+  z.number().int(),
+]);
 
 const reportedSessionIdSchema = z.string().min(1).max(200);
 

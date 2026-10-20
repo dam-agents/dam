@@ -34,6 +34,7 @@ export function acpNativeRowId(
 export const TOOL_NAME_MAX = 4096;
 export const TOOL_CALL_ID_MAX = 512;
 export const PERMISSION_OPTIONS_MAX = 16;
+export const RPC_ID_MAX = 4096;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a permission request's tool call becomes in
@@ -65,13 +66,11 @@ const OPTION_KINDS = [
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a permission request's options become in a
- * recorded row: the choices a verdict can still be turned back into. Bounded
- * by keeping one option of each kind first, because a catalog that lost every
- * reject option cannot express a denial, and a denial that finds none left
- * must never answer the request with an allow.
+ * recorded row. An unrecordable option is dropped, never sent: the recording
+ * route rejects the whole list over one empty id.
  */
-export function recordedOptionsOf(raw: unknown): AcpPermissionOption[] {
-  const all = (Array.isArray(raw) ? raw : []).flatMap((option, index) => {
+export function permissionOptionsOf(raw: unknown): AcpPermissionOption[] {
+  return (Array.isArray(raw) ? raw : []).flatMap((option) => {
     if (typeof option !== "object" || option === null) return [];
     const { optionId, kind } = option as Record<string, unknown>;
     if (typeof optionId !== "string" || optionId === "") return [];
@@ -80,22 +79,25 @@ export function recordedOptionsOf(raw: unknown): AcpPermissionOption[] {
       {
         optionId: optionId.slice(0, TOOL_CALL_ID_MAX),
         ...(kept !== undefined && { kind: kept }),
-        index,
       },
     ];
   });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The same options inside the recording route's
+ * count bound, which keeps one option of each kind first: a catalog that lost
+ * every reject option cannot express a denial, and a denial that finds none
+ * left must never answer the request with an allow.
+ */
+export function recordedOptionsOf(raw: unknown): AcpPermissionOption[] {
+  const all = permissionOptionsOf(raw);
+  if (all.length <= PERMISSION_OPTIONS_MAX) return all;
   const firstOfEachKind = OPTION_KINDS.flatMap(
     (kind) => all.find((option) => option.kind === kind) ?? [],
   );
-  const kept = [...firstOfEachKind, ...all]
-    .filter(
-      (option, index, list) =>
-        list.findIndex((other) => other.index === option.index) === index,
-    )
+  return [...firstOfEachKind, ...all]
+    .filter((option, index, list) => list.indexOf(option) === index)
     .slice(0, PERMISSION_OPTIONS_MAX)
-    .sort((left, right) => left.index - right.index);
-  return kept.map(({ optionId, kind }) => ({
-    optionId,
-    ...(kind !== undefined && { kind }),
-  }));
+    .sort((left, right) => all.indexOf(left) - all.indexOf(right));
 }

@@ -1,4 +1,5 @@
 import {
+  permissionOptionsOf,
   recordedOptionsOf,
   recordedToolOf,
   TOOL_CALL_ID_MAX,
@@ -154,7 +155,7 @@ export function createToolApprovalReporter(opts: {
   }
 
   function optionsIn(line: string): AcpPermissionOption[] {
-    return recordedOptionsOf(permissionRequestIn(line)?.params?.options);
+    return permissionOptionsOf(permissionRequestIn(line)?.params?.options);
   }
 
   return {
@@ -163,7 +164,7 @@ export function createToolApprovalReporter(opts: {
       if (!frame) return;
       approvable.set(
         key(id, sessionId),
-        recordedOptionsOf(frame.params?.options),
+        permissionOptionsOf(frame.params?.options),
       );
     },
 
@@ -185,7 +186,7 @@ export function createToolApprovalReporter(opts: {
               toolName,
               ...(toolCallId !== undefined && { toolCallId }),
               args: frame.params?.toolCall?.rawInput,
-              options,
+              options: recordedOptionsOf(frame.params?.options),
             },
             { signal },
           ),
