@@ -2,9 +2,13 @@
 # Router on the pod's loopback. Copilot speaks one wire API per process, so it
 # runs on the providers that serve Chat Completions.
 # The app the image unpacked at build time, so no start unpacks it into $HOME.
-dist="$(dirname "$(readlink -f "$(command -v copilot)")")/dist"
-[ ! -d "$dist" ] || { COPILOT_CLI_DIST_DIR="$dist"; export COPILOT_CLI_DIST_DIR; }
-unset dist
+# copilot on PATH is aube's shim in node_modules/.bin, or npm's link to the
+# package's loader.
+bin="$(dirname "$(readlink -f "$(command -v copilot)")")"
+for dist in "$bin/../@github/copilot/dist" "$bin/dist"; do
+  [ -d "$dist" ] && { COPILOT_CLI_DIST_DIR="$(cd "$dist" && pwd)"; export COPILOT_CLI_DIST_DIR; break; }
+done
+unset bin dist
 COPILOT_PROVIDER_BASE_URL="${PLATFORM_MODEL_ROUTER_URL:-http://127.0.0.1:24180}/v1"
 COPILOT_PROVIDER_TYPE=openai
 COPILOT_PROVIDER_WIRE_API=completions
