@@ -71,8 +71,8 @@ export type ClassicDockToggle = "reveal" | "close" | "open";
  * UNIT_BOUNDARY_DESCRIPTION: a top-bar toggle of the classic chat (browser,
  * changes) reads what the slot shows. Its item shown in the slot is pressed and
  * closes; its item docked behind an app panel (Approvals, Get started), or
- * hidden on a phone, is not pressed and comes back to view; an item not docked
- * opens.
+ * hidden on a phone, is not pressed and comes back to view; an item not docked,
+ * or covered by another docked item, opens in front.
  */
 export function classicDockToggle({
   docked,
@@ -85,8 +85,8 @@ export function classicDockToggle({
   panel: ClassicPanel | null;
   hiddenOnPhone: boolean;
 }): { pressed: boolean; click: ClassicDockToggle } {
-  if (!docked) return { pressed: false, click: "open" };
-  const shown = front && panel === "dock" && !hiddenOnPhone;
+  if (!docked || !front) return { pressed: false, click: "open" };
+  const shown = panel === "dock" && !hiddenOnPhone;
   return shown
     ? { pressed: true, click: "close" }
     : { pressed: false, click: "reveal" };

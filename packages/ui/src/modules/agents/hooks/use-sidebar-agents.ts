@@ -1,7 +1,8 @@
+import type { AgentState } from "api-server-api";
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
-import type { AgentState, AgentView } from "../../../types.js";
+import type { AgentView } from "../../../types.js";
 import {
   type AgentActivitySession,
   useActivitySessions,

@@ -1310,18 +1310,14 @@ export function ChatView() {
                 if (browserToggle.click === "close") closeBrowser(null);
                 else if (browserToggle.click === "open")
                   void openBrowser(selectedAgent);
-                else if (dockedTab === "browser") revealDock();
-                else void openBrowser(selectedAgent);
+                else revealDock();
               }}
               onToggleChanges={() => {
                 if (!selectedAgent) return;
                 if (changesToggle.click === "close") void toggleChanges(null);
-                else if (
-                  changesToggle.click === "reveal" &&
-                  dockedTab === "changes"
-                )
-                  revealDock();
-                else void toggleChanges(selectedAgent);
+                else if (changesToggle.click === "open")
+                  void toggleChanges(selectedAgent);
+                else revealDock();
               }}
               onConfigure={handleConfigureSandbox}
             />

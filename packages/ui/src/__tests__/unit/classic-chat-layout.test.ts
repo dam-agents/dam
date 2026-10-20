@@ -138,10 +138,12 @@ describe("the top bar's browser and changes toggles", () => {
     ).toEqual({ pressed: false, click: "reveal" });
   });
 
-  it("TEST_SCENARIO: an item another docked item covers is not pressed; an item not docked opens", () => {
-    expect(classicDockToggle({ ...base, panel: "dock", front: false })).toEqual(
-      { pressed: false, click: "reveal" },
-    );
+  it("TEST_SCENARIO: an item another docked item covers is not pressed, and a click opens it in front; so does a click on an item not docked", () => {
+    for (const panel of ["dock", "approvals"] as const)
+      expect(classicDockToggle({ ...base, panel, front: false })).toEqual({
+        pressed: false,
+        click: "open",
+      });
     expect(
       classicDockToggle({ ...base, docked: false, panel: "dock" }),
     ).toEqual({ pressed: false, click: "open" });
