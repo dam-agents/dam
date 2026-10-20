@@ -192,6 +192,7 @@ export interface AcpRuntimeDeps {
   agentRequests: AgentRequestObserver;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
+  derivedModeOf?: (sessionId: string) => string | null;
   modeSettingId?: string;
 }
 
@@ -199,7 +200,6 @@ export interface SessionSettingFrame {
   method: string;
   params: Record<string, unknown>;
   critical?: boolean;
-  derived?: boolean;
 }
 
 export const SCHEDULE_SURFACE = "schedule";
@@ -678,9 +678,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (tried < 1) {
       criticalRetries.set(key, tried + 1);
       const timer = setTimeout(() => {
-        const applied = appliedSettings.get(sessionId);
-        for (const [k] of applied ?? [])
-          if (k.startsWith(mapping.method)) applied?.delete(k);
+        appliedSettings.delete(sessionId);
+        promptScheduler.forgetSettings(sessionId);
         syncSettings(sessionId);
         promptScheduler.onSettingResponse(sessionId, outboundId);
       }, CRITICAL_RETRY_MS);
@@ -705,23 +704,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   /**
-   * UNIT_BOUNDARY_DESCRIPTION: the modes the runtime derived for a session are
-   * kept with it, in the metadata store rather than this process, so a harness
-   * echoing one never makes it the session's own — not after a teardown, and
-   * not when the session's model moved on and a later answer still carries the
-   * mode derived for the model before. A harness that switches on its own to a
-   * mode the runtime once derived before is read as an echo; the session keeps
-   * naming none and derives again on the next model change.
+   * UNIT_BOUNDARY_DESCRIPTION: while the runtime derives a session's mode, the
+   * mode the harness reports is the runtime's own doing — an echo of the mode
+   * it sent, the fallback a model change forced on the mode it had, or the
+   * answer to a request about a model the session already left — so it is not
+   * saved as a mode the session picked, and the mode is derived again on the
+   * next model change. Reports for a session the runtime derives no mode for
+   * are the harness's own, and are saved as before.
    */
-  function recordDerivedMode(sessionId: string, modeId: unknown): void {
-    if (typeof modeId !== "string") return;
-    const entry = deps.sessionMetadata?.get(sessionId);
-    if (entry?.meta.derivedModes?.includes(modeId)) return;
-    if (entry === undefined) return;
-    deps.sessionMetadata?.set(sessionId, {
-      ...entry.meta,
-      derivedModes: [...(entry.meta.derivedModes ?? []), modeId],
-    });
+  function derivesMode(sessionId: string): boolean {
+    return (deps.derivedModeOf?.(sessionId) ?? null) !== null;
   }
 
   function syncSettings(sessionId: string): void {
@@ -734,7 +726,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const value = JSON.stringify(params);
       if (applied.get(key) === value) continue;
       applied.set(key, value);
-      if (frame.derived) recordDerivedMode(sessionId, params.modeId);
       const outboundId = nextOutboundId++;
       outboundIdToClient.set(outboundId, {
         channel: settingsChannel,
@@ -1748,7 +1739,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (
             id &&
             entry &&
-            !entry.meta.derivedModes?.includes(reportedMode) &&
+            !derivesMode(sessionId) &&
             entry.meta.settings?.[id] !== reportedMode
           )
             deps.sessionMetadata?.set(sessionId, {

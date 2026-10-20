@@ -6,12 +6,14 @@
  * mode: one with start modes of its own, such as Pi's thinking levels or Bob's
  * pinned persona, is left on them. A mode the session or the agent's file names
  * always wins, and a derived mode follows a model switch, since the new model
- * may not allow it. The mode is sent after the model's own answer, and neither
- * the harness echoing it back nor a late echo of the mode derived for the
- * earlier model turns it into a mode the session picked.
+ * may not allow it. The mode is sent after the model's own answer, on every
+ * path that sends it and after a model the harness refused is asked for again.
+ * While the runtime derives a session's mode, no mode the harness reports
+ * becomes one the session picked; once the session picks one, a report is a
+ * mode the harness chose and is saved.
  */
 import type { HarnessConfigCatalog } from "agent-runtime-api";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   derivedMode,
   modeSettingOf,
@@ -105,7 +107,6 @@ describe("session start mode", () => {
     expect(modeFrame(frames({}, "ibm/claude-opus-4-5"))).toEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "auto" },
-      derived: true,
     });
   });
 
@@ -116,7 +117,6 @@ describe("session start mode", () => {
     expect(modeFrame(frames({}, "ibm/claude-haiku-4-5"))).toEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "default" },
-      derived: true,
     });
   });
 
@@ -234,9 +234,12 @@ function runtimeWorld() {
     sessionMetadata: metadata.store,
     modeSettingId: "mode",
     sessionSettingFrames: (sessionId) => sessionSettingFrames(input(sessionId)),
+    derivedModeOf: (sessionId) => derivedMode(input(sessionId)),
   });
   return { world, metadata };
 }
+
+const CRITICAL_RETRY_MS = 2_000;
 
 const modesSent = (harness: Harness): unknown[] =>
   harness
@@ -258,6 +261,13 @@ const reportMode = (mode: string) => ({
     update: { sessionUpdate: "current_mode_update", currentModeId: mode },
   },
 });
+
+const modelFramesSent = (harness: Harness): number =>
+  harness
+    .received("session/set_config_option")
+    .filter(
+      (sent) => (sent.params as { configId?: string }).configId === "model",
+    ).length;
 
 const answerModelFrame = (harness: Harness): void => {
   const frame = harness
@@ -350,8 +360,6 @@ describe("session start mode on the wire", () => {
     world.harness().replyTo("session/new", { sessionId: "s" });
     const harness = world.harness();
     answerModelFrame(harness);
-    expect(metadata.store.get("s")?.meta.derivedModes).toEqual(["auto"]);
-
     harness.replyTo("session/set_mode", {});
     switchModel(metadata, world, harness);
     harness.replyTo("session/set_mode", {});
@@ -368,6 +376,108 @@ describe("session start mode on the wire", () => {
     world.runtime.syncSessionSettings("s");
     answerModelFrame(harness);
     expect(modesSent(harness)).toEqual(["auto", "default", "auto"]);
+  });
+
+  /** TEST_SCENARIO: Another client connects to the session and prompts before
+   * the model was answered, as a chat that reconnects does: the derived mode
+   * still waits for the model, so it is never read against the model the
+   * session is leaving. */
+  it("keeps the derived mode back when another client engages the session", () => {
+    const { world } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    const harness = world.harness();
+    harness.replyTo("session/new", { sessionId: "s" });
+
+    const other = world.connect();
+    other.send(wire.prompt(2, "s", "hello"));
+    expect(modesSent(harness)).toEqual([]);
+
+    answerModelFrame(harness);
+    expect(modesSent(harness)).toEqual(["auto"]);
+  });
+
+  /** TEST_SCENARIO: The harness refuses the model because it has not listed
+   * it, and the runtime asks again two seconds later: the retried model goes
+   * out first and the mode follows it, never the other way round. */
+  it("asks for a refused model again before the mode that depends on it", () => {
+    vi.useFakeTimers();
+    try {
+      const { world } = runtimeWorld();
+      const client = world.connect();
+      client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+      world.harness().replyTo("session/new", { sessionId: "s" });
+      const harness = world.harness();
+      harness.refuseTo("session/set_config_option", {
+        code: -32000,
+        message: "unknown model",
+      });
+      expect(modesSent(harness)).toEqual([]);
+
+      vi.advanceTimersByTime(CRITICAL_RETRY_MS);
+      expect(modelFramesSent(harness)).toBe(2);
+      expect(modesSent(harness)).toEqual([]);
+
+      answerModelFrame(harness);
+      expect(modesSent(harness)).toEqual(["auto"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** TEST_SCENARIO: The session moves to a model that cannot use auto, and the
+   * harness answers the move by falling back to a mode of its own before it
+   * confirms: that fallback is the runtime's doing, not the session's pick, so
+   * the mode the new model allows is what runs and what a later switch reads. */
+  it("keeps a fallback the harness made for the new model out of the session", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    const harness = world.harness();
+    answerModelFrame(harness);
+    harness.replyTo("session/set_mode", {});
+
+    switchModel(metadata, world, harness);
+    harness.emit(reportMode("acceptEdits"));
+    expect(metadata.store.get("s")?.meta.settings).toBeUndefined();
+
+    harness.replyTo("session/set_mode", {});
+    expect(modesSent(harness)).toEqual(["auto", "default"]);
+
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      model: "ibm/claude-opus-4-5",
+    });
+    world.runtime.syncSessionSettings("s");
+    answerModelFrame(harness);
+    expect(modesSent(harness)).toEqual(["auto", "default", "auto"]);
+  });
+
+  /** TEST_SCENARIO: The owner picks a mode, so the runtime stops deriving one,
+   * and the harness then reports the mode the session moved to on its own — the
+   * auto mode a plan exit lands in: that report is the session's and is saved,
+   * so the runtime does not push the mode the owner left back on the next
+   * prompt. */
+  it("keeps a mode the harness reports after the session picked one", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    const harness = world.harness();
+    answerModelFrame(harness);
+    harness.replyTo("session/set_mode", {});
+
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      settings: { mode: "plan" },
+    });
+    world.runtime.syncSessionSettings("s");
+    harness.replyTo("session/set_mode", {});
+    expect(modesSent(harness)).toEqual(["auto", "plan"]);
+
+    harness.emit(reportMode("auto"));
+    expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "auto" });
   });
 
   /** TEST_SCENARIO: A mode the session picked belongs to the session, so a

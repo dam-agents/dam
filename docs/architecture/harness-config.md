@@ -72,8 +72,9 @@ Claude Code opts in, and its catalog defaults to `auto`, so a chat session start
 The terminal launcher keeps its own fallback, which asks for no model, so a Haiku terminal session still passes `auto`.
 A session that names no model runs on the model the file names, so that model's constraints are the ones applied.
 The derived mode is the runtime's, not the session's: it never replaces a mode the owner or the session picked, and a change of the session's model derives it again, since the new model may allow another mode than the old one.
-The modes a runtime derived for a session are kept with it in the session metadata, so the harness echoing one back never makes it the session's own — not after a teardown, and not when a late echo still carries the mode derived for the model before.
-A mode the harness changes on its own, as plan mode handing over to implementation does, becomes the session's saved mode.
+While the runtime derives a session's mode, the mode the harness reports is the runtime's own doing — an echo of what it sent, the fallback a model change forced, or the answer to a request about a model the session left — so it is not saved as a mode the session picked, and the next model change derives again.
+A session the runtime derives no mode for keeps saving the mode the harness reports, as plan mode handing over to implementation does.
+A setting the harness refuses is dropped with the queue behind it and submitted again first, so the settings that depend on it never apply against the state it failed to reach.
 A change made mid-turn waits for the turn to end, and the next prompt waits for the harness to answer the change.
 A process-scoped one (`env`) is a value the harness reads only at start, such as Claude Code's prompt-cache TTL or Bob's approvals flag; it joins the Harness Lease key, so the session moves to a process started with it and the other sessions' process is left alone.
 Such a move is refused while the session's turn runs.

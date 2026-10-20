@@ -28,8 +28,10 @@ export function sessionSettingOptions(
  * UNIT_BOUNDARY_DESCRIPTION: the value each setting shows before the owner
  * picks one: the agent's configured value for the harness, else the option's
  * own. A mode with neither is the runtime's to choose, and it chooses by the
- * session's model, so the picker asks the same rule — a session on a model
- * that cannot use the option's default shows the mode it really starts in.
+ * model the session runs on — its own, or the one the agent's config file names
+ * where the session names none — so the picker asks the same rule, and a
+ * session on a model that cannot use the option's default shows the mode it
+ * really starts in.
  */
 export function settingDefaults(
   capability: HarnessCapability | undefined,
@@ -43,7 +45,11 @@ export function settingDefaults(
         const value =
           (o.id === "mode"
             ? (configured?.mode ??
-              startModeFor(capability?.harnessConfigCatalog, model, o.id))
+              startModeFor(
+                capability?.harnessConfigCatalog,
+                model ?? configured?.model ?? null,
+                o.id,
+              ))
             : configured?.configOptions[o.id]) ?? o.default;
         return value &&
           (o.choices.some((c) => c.value === value) || isModelOption(o))

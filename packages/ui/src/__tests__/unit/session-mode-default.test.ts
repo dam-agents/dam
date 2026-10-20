@@ -45,6 +45,16 @@ describe("session mode shown before the owner picks one", () => {
     ).toBe("default");
   });
 
+  it("shows the mode the model the agent's file names allows", () => {
+    expect(
+      settingDefaults(
+        capability,
+        { ...configured, model: "ibm/claude-haiku-4-5" },
+        null,
+      ).mode,
+    ).toBe("default");
+  });
+
   it("shows a mode the agent's config file names as it is", () => {
     expect(
       settingDefaults(

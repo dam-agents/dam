@@ -49,12 +49,10 @@ export function derivedMode(input: SessionSettingInput): string | null {
  * UNIT_BOUNDARY_DESCRIPTION: the frames that carry one session's settings
  * into its harness: the session's model, its mode, and every config option it
  * picked. A mode the session picked is the session's and is sent as it is. A
- * session that picked none gets the mode `derivedMode` picks, marked
- * `derived` so the runtime can tell the harness's echo of it from a mode the
- * session or the harness chose, and none where it picks none, since the
- * harness is on its own start mode already. The model comes first, and the
- * settings are sent one at a time, because a harness reads its mode against
- * the model it holds.
+ * session that picked none gets the mode `derivedMode` picks, and none where it
+ * picks none, since the harness is on its own start mode already. The model
+ * comes first, and the settings are sent one at a time, because a harness reads
+ * its mode against the model it holds.
  */
 export function sessionSettingFrames(
   input: SessionSettingInput,
@@ -67,13 +65,7 @@ export function sessionSettingFrames(
   return [
     ...modelFrames(harness, sessionId, model, native),
     ...(modeId !== undefined && mode !== undefined
-      ? [
-          {
-            method: "session/set_mode",
-            params: { sessionId, modeId: mode },
-            ...(chosen === undefined && { derived: true }),
-          },
-        ]
+      ? [{ method: "session/set_mode", params: { sessionId, modeId: mode } }]
       : []),
     ...Object.entries(settings).flatMap(
       ([id, value]): SessionSettingFrame[] => {

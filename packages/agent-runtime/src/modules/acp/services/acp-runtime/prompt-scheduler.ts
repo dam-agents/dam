@@ -48,12 +48,15 @@ export interface PromptSubmission {
  * wants them applied and sent one at a time, each after the harness answered
  * the one before, because a harness reads a setting against the state an
  * earlier one left — a mode against the model the session holds. A prompt
- * waits for both.
+ * waits for both. A setting the harness refused is dropped with the queue
+ * behind it and submitted again before them, so its dependents never apply
+ * against the state it failed to reach.
  */
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
   submitSetting(submission: PromptSubmission): PromptFate;
   onSettingResponse(sessionId: string, outboundId: number): void;
+  forgetSettings(sessionId: string): void;
   onPromptResponse(
     sessionId: string,
     outboundId: number,
@@ -239,6 +242,7 @@ export function createPromptScheduler(
 
   function flushSettings(sessionId: string): void {
     dropAbandonedSettings(sessionId);
+    if (settingsInFlight.has(sessionId)) return;
     const settings = pendingSettings.get(sessionId);
     const head = settings?.[0];
     if (settings === undefined || head === undefined) return;
@@ -547,6 +551,10 @@ export function createPromptScheduler(
         submission,
       ]);
       return "queued";
+    },
+
+    forgetSettings(sessionId) {
+      pendingSettings.delete(sessionId);
     },
 
     onSettingResponse(sessionId, outboundId) {
