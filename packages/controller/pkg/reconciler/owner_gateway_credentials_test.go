@@ -2,6 +2,8 @@ package reconciler
 
 import (
 	"context"
+	"slices"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -32,10 +34,12 @@ func TestOwnerCredentialSecret_HoldsOnlyWhatTheOwnersAgentsAreGranted(t *testing
 	agentA := filterByGrants("agent-a", all, nil, []string{"gh"})
 	agentB := append(filterByGrants("agent-b", all, nil, []string{"foreign"}), foreign)
 
-	got := buildOwnerCredentialSecret("owner-1", cfg, [][]corev1.Secret{agentA, agentB}, nil)
+	got := buildOwnerGatewaySecret("owner-1", cfg, ownerGatewayConfig{}, "", [][]corev1.Secret{agentA, agentB}, nil)
 	var keys []string
 	for k := range got.Data {
-		keys = append(keys, k)
+		if !slices.Contains(configFileKeys(got), k) {
+			keys = append(keys, k)
+		}
 	}
 	assert.ElementsMatch(t, []string{"platform-conn-gh." + sdsFileKeyForHost("api.github.com"), "platform-conn-gh.ca.pem", "platform-conn-gh.sds.yaml"}, keys)
 	assert.Equal(t, "owner-1", got.Labels[envoyOwnerLabel])
@@ -45,11 +49,33 @@ func TestOwnerCredentialSecret_HoldsOnlyWhatTheOwnersAgentsAreGranted(t *testing
 // TEST_SCENARIO: revoking a grant takes the Connection's keys out of the owner's Secret on the next render, and its content hash changes, which is what makes the controller write it.
 func TestOwnerCredentialSecret_RevokedGrantLeaves(t *testing.T) {
 	gh := grantedConnection("owner-1", "platform-conn-gh", "gh", "api.github.com")
-	before := buildOwnerCredentialSecret("owner-1", bootstrapTestCfg, [][]corev1.Secret{{gh}}, nil)
-	after := buildOwnerCredentialSecret("owner-1", bootstrapTestCfg, [][]corev1.Secret{{}}, nil)
-	require.NotEmpty(t, before.Data)
-	assert.Empty(t, after.Data)
+	before := buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil)
+	after := buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{}}, nil)
+	require.NotEmpty(t, credentialKeys(before))
+	assert.Empty(t, credentialKeys(after))
 	assert.NotEqual(t, before.Annotations[annOwnerCredentialsHash], after.Annotations[annOwnerCredentialsHash])
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the files of the gateway's own configuration, as opposed to the credentials its chains name.
+func configFileKeys(secret *corev1.Secret) []string {
+	var keys []string
+	for _, key := range []string{ownerGatewayBootstrap, ownerGatewayLDSKey, ownerGatewayCDSKey, ownerGatewayLeafSDSKey, machineDNSCorefileKey, envoyUpstreamCAKey} {
+		if _, ok := secret.Data[key]; ok {
+			keys = append(keys, key)
+		}
+	}
+	return keys
+}
+
+func credentialKeys(secret *corev1.Secret) []string {
+	var keys []string
+	config := configFileKeys(secret)
+	for key := range secret.Data {
+		if !slices.Contains(config, key) && !strings.HasSuffix(key, ".lua") {
+			keys = append(keys, key)
+		}
+	}
+	return keys
 }
 
 // TEST_SCENARIO: one leaf names every host any agent of the owner intercepts, once each, so a host added for one agent re-issues the owner's leaf and a host shared by two agents is named once.
@@ -69,14 +95,23 @@ func TestOwnerCredentialSecret_WrittenOnlyWhenItChanges(t *testing.T) {
 	client := fake.NewSimpleClientset()
 	r := NewAgentReconciler(client, nil, bootstrapTestCfg)
 	gh := grantedConnection("owner-1", "platform-conn-gh", "gh", "api.github.com")
-	wrote, err := r.applyOwnerCredentialSecret(context.Background(), buildOwnerCredentialSecret("owner-1", bootstrapTestCfg, [][]corev1.Secret{{gh}}, nil))
+	writes := func() int {
+		n := 0
+		for _, a := range client.Actions() {
+			if a.GetResource().Resource == "secrets" && (a.GetVerb() == "create" || a.GetVerb() == "update") {
+				n++
+			}
+		}
+		return n
+	}
+	err := r.applyOwnerGatewayFiles(context.Background(), buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil))
 	require.NoError(t, err)
-	assert.True(t, wrote)
-	wrote, err = r.applyOwnerCredentialSecret(context.Background(), buildOwnerCredentialSecret("owner-1", bootstrapTestCfg, [][]corev1.Secret{{gh}}, nil))
+	assert.Equal(t, 1, writes())
+	err = r.applyOwnerGatewayFiles(context.Background(), buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil))
 	require.NoError(t, err)
-	assert.False(t, wrote)
+	assert.Equal(t, 1, writes(), "an unchanged rendering writes nothing")
 	gh.Data[envoyCredentialKeySDS] = []byte("rotated")
-	wrote, err = r.applyOwnerCredentialSecret(context.Background(), buildOwnerCredentialSecret("owner-1", bootstrapTestCfg, [][]corev1.Secret{{gh}}, nil))
+	err = r.applyOwnerGatewayFiles(context.Background(), buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil))
 	require.NoError(t, err)
-	assert.True(t, wrote)
+	assert.Equal(t, 2, writes())
 }

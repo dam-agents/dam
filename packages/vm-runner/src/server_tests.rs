@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
-    STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
+    REASON_AWAITING_ALLOCATION, REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK,
+    REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -37,6 +37,9 @@ struct Fake {
     images: Mutex<HashMap<String, String>>,
     updated: Mutex<Vec<Updated>>,
     start_delay: Mutex<Duration>,
+    // UNIT_BOUNDARY_DESCRIPTION: the next start reports that it is inside the gate and then waits for the test to let it go, so a test can act while a boot is provably in flight rather than within a delay a loaded machine can outlast.
+    start_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    start_release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     stop_delay: Mutex<Duration>,
     delete_delay: Mutex<Duration>,
     fail_start_once: Mutex<Option<String>>,
@@ -66,6 +69,15 @@ impl Fake {
     // UNIT_BOUNDARY_DESCRIPTION: the process the runtime reports as a machine's VMM, which a test spawns so the runner reaps a real child it can kill.
     fn set_vmm(&self, id: &str, pid: i32) {
         locked(&self.vmm_pids).insert(id.to_string(), pid);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: holds the next start inside the gate until the returned sender is used, and answers a receiver that says when the start is in it, so the test orders its own steps against a boot that is still running instead of racing a delay.
+    fn hold_start(&self) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (held, held_at) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        *locked(&self.start_held) = Some(held);
+        *locked(&self.start_release) = Some(released);
+        (held_at, release)
     }
 
     fn last_update(&self) -> Updated {
@@ -144,6 +156,12 @@ impl Runtime for Fake {
         locked(&self.booted_mib).push(boot_mib);
         locked(&self.start_sizes).push(memory_mib);
         std::thread::sleep(*locked(&self.start_delay));
+        if let Some(held) = locked(&self.start_held).take() {
+            let _ = held.send(());
+            if let Some(release) = locked(&self.start_release).take() {
+                let _ = release.recv();
+            }
+        }
         if let Some(message) = locked(&self.fail_start_once).take() {
             anyhow::bail!(message);
         }
@@ -504,6 +522,7 @@ fn spec(running: bool) -> MachineSpec {
         migration: None,
         expect_seed: None,
         nested_virtualization: false,
+        admit_mib: 0,
     }
 }
 
@@ -1253,6 +1272,105 @@ async fn a_machine_is_refused_when_the_runner_has_no_room() {
     assert!(!h.fake.calls().iter().any(|c| c.ends_with("m2")));
 }
 
+// TEST_SCENARIO: the controller caps admission at the memory the pod was allocated, which is below the pod's own limit while an in-place resize waits for room, so a machine that fits the limit is refused until the node has granted the owner that much. The refusal names the node's allocation rather than the owner's pool, under its own reason, so the controller neither hibernates idle agents for room the node is about to grant nor tells the person their memory is full. The same machine starts once a later spec carries a ceiling that covers it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_is_refused_above_the_memory_the_node_granted() {
+    let h = Harness::with("allocation", |c| c.memory_mib = 8192);
+    let mut machine = spec(true);
+    machine.memory_mib = 4096;
+    machine.admit_mib = 3072;
+    let refused = h.server.put("m1", machine.clone()).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+    assert!(
+        refused
+            .message
+            .contains("3072 MiB the node has allocated this runner so far, less the 0 MiB the runner keeps for itself"),
+        "{refused:?}"
+    );
+    assert!(
+        h.fake.calls().is_empty(),
+        "nothing is created: {:?}",
+        h.fake.calls()
+    );
+
+    machine.admit_mib = 4096;
+    assert_eq!(h.server.put("m1", machine).unwrap().state, STATE_CREATING);
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine that is already running comes back under a ceiling sized from what it holds while idle, which is below the size it boots at: a revision roll, an image or env change, a CA rotation and a guest gone quiet all restart a running machine, and refusing those for good would park the agent and scale its gateway away. A machine that is not running is still capped, so the ceiling keeps gating every footprint the runner does not already hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_machine_restarts_under_a_ceiling_below_what_it_boots_at() {
+    let h = Harness::with("restart-ceiling", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    let restarted = h.server.put("m1", changed).unwrap();
+    assert_eq!(restarted.state, STATE_RESTARTING, "{restarted:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let mut second = spec(true);
+    second.admit_mib = 1536;
+    let refused = h.server.put("m2", second).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+}
+
+// TEST_SCENARIO: a restart the runner admitted holds its exemption for the whole action, because the worker stops the old VMM and boots its replacement in one: the controller's next ensure can land while the machine is down, and re-checking that already-admitted restart against the grant answered MachineAwaitingAllocation, which the controller acts on by stopping the machine the restart had just booted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_keeps_its_exemption_while_its_replacement_boots() {
+    let h = Harness::with("restart-in-flight", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    *locked(&h.fake.start_delay) = Duration::from_millis(400);
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    assert_eq!(
+        h.server.put("m1", changed.clone()).unwrap().state,
+        STATE_RESTARTING
+    );
+    h.wait_for_call("stop m1").await;
+    // TEST_SCENARIO: the restart's own boot is the second start the runtime is asked for, and it is still running here.
+    while h.fake.calls().iter().filter(|c| *c == "start m1").count() < 2 {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    let again = h.server.put("m1", changed).unwrap();
+    assert_ne!(
+        again.reason, REASON_AWAITING_ALLOCATION,
+        "an admitted restart was re-checked against the grant: {again:?}"
+    );
+    assert_eq!(again.state, STATE_RESTARTING, "{again:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine that does not fit the runner's own limit is refused as the owner's memory being full whether the ceiling is above the limit or below it: the ceiling never hides the real shortfall, which is the one the controller relieves by hibernating idle agents, and a machine the node cannot help never reads as waiting for the node.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_over_the_runner_limit_is_refused_as_out_of_capacity_under_a_ceiling() {
+    for admit_mib in [8192, 3072] {
+        let h = Harness::with("both-bounds", |c| c.memory_mib = 4096);
+        let mut machine = spec(true);
+        machine.memory_mib = 8192;
+        machine.admit_mib = admit_mib;
+        let refused = h.server.put("m1", machine).unwrap();
+        assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+        assert!(
+            refused
+                .message
+                .contains("the VM runner has 4096 MiB for machines"),
+            "admit_mib={admit_mib}: {refused:?}"
+        );
+    }
+}
+
 // TEST_SCENARIO: a boot that fails is reported under the reason the controller shows the person, and a later attempt that succeeds clears it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_failed_boot_is_reported_until_one_succeeds() {
@@ -1501,11 +1619,45 @@ async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let status = h.settle("m1").await;
     assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
     assert!(
-        status.message.contains("mise run image:stage-vm"),
-        "{status:?}"
+        status.message.contains("mise run image:stage-vm <image>"),
+        "the message names no staging command: {status:?}"
+    );
+    assert!(
+        !status
+            .message
+            .contains(&format!("VM_IMAGE_DIR={}", images.display())),
+        "the message offers the directory this runner reads as one to stage into, and inside a pod that is a mount no staging can write: {status:?}"
     );
     assert!(h.fake.calls().is_empty());
     assert_eq!(h.crane_calls(), 0);
+}
+
+// TEST_SCENARIO: a runner pod reads the install's cache directory through a mount, so the path it reads is no directory on the node. The hint names where the node directory is known and never offers the mount: a person who stages into the mount leaves the archive in place that refuses the image, and the next boot refuses it again.
+#[test]
+fn the_restage_hint_of_a_runner_pod_points_at_the_node_directory() {
+    assert_eq!(
+        restage_hint(Path::new("/var/lib/platform/images"), false),
+        "`mise run image:stage-vm <image>`, with `VM_IMAGE_DIR` set to the node directory this runner's pod mounts its image cache from"
+    );
+}
+
+// TEST_SCENARIO: a runner outside a cluster owns its image directory, so the hint has to select the host staging mode as well as the directory: a shell a person opens exports no `VM_HOST_RUNNER` and no `PLATFORM_VM_RUNNER_HOME`, and a staging without them stages on the node instead. The home comes from the directory this runner reads, customized or default, and it arrives as one shell word.
+#[test]
+fn the_restage_hint_of_a_host_runner_stages_on_the_mac_in_its_home() {
+    assert_eq!(
+        restage_hint(
+            Path::new("/Users/example/VM images/it's/platform-vm-runner/images"),
+            true
+        ),
+        r"`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME='/Users/example/VM images/it'\''s/platform-vm-runner' mise run image:stage-vm <image>`"
+    );
+    assert_eq!(
+        restage_hint(
+            Path::new("/Users/example/.local/state/platform-vm-runner/images"),
+            true
+        ),
+        "`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME='/Users/example/.local/state/platform-vm-runner' mise run image:stage-vm <image>`"
+    );
 }
 
 // TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), and the machine boots the tree in place. An archive left under the same name by an earlier install does not refuse the tree.
@@ -3455,6 +3607,31 @@ fn stand_in_vmm() -> std::process::Child {
         .expect("a process to stand in for a VMM")
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: waits, within `ACTION_DEADLINE`, for the child to end without taking its status, so the reaper's own read is the one that collects it. The wait blocks until the child ends, so it runs off this thread and the deadline bounds it here.
+fn wait_ended_without_reaping(pid: i32) {
+    let (ended, was_ended) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: waitid(2) writes only into `info`, and WNOWAIT leaves the status for the next reader.
+        let waited = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                u32::try_from(pid).unwrap(),
+                &raw mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        let _ = ended.send(waited);
+    });
+    assert_eq!(
+        was_ended
+            .recv_timeout(ACTION_DEADLINE)
+            .expect("the VMM was never ended"),
+        0,
+        "the VMM was never ended"
+    );
+}
+
 // TEST_SCENARIO: a machine's VMM killed by a signal is the one thing that tells a seccomp kill from a guest that flapped: nothing else on the host records it, since the runtime's own sweep discards the status and it drops the record's pid the moment it notices the death. The status says which kill it was, with a counter for the dashboards, and the machine reads stopped at once so the controller restarts it rather than trusting a machine that is up.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_whose_vmm_the_kernel_killed_says_which_kill_it_was() {
@@ -3659,7 +3836,10 @@ async fn a_kill_a_runtime_call_still_holds_is_not_reported_before_it_returns() {
     h.fake.set_vmm("m1", pid);
     let held = h.machine("m1", |e| e.calls.clone());
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
-    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let killed = unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert_eq!(killed, 0, "the VMM was not signalled");
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the death is waited for before the ticks: the ticks then prove what holds the kill, not whether it had landed.
+    wait_ended_without_reaping(pid);
     for _ in 0..5 {
         h.server.reap_killed();
         assert_ne!(
@@ -3768,32 +3948,40 @@ async fn a_sigkill_the_cgroup_did_not_count_is_not_a_memory_kill() {
 #[tokio::test(flavor = "multi_thread")]
 async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
     let h = Harness::new("kill-during-boot");
-    *locked(&h.fake.start_delay) = Duration::from_millis(400);
+    // UNIT_BOUNDARY_DESCRIPTION: the boot holds until this test lets it go, so a kill is provably read while the start call still runs, rather than within a delay a loaded machine can outlast.
+    let (held, release) = h.fake.hold_start();
     h.server.put("m1", spec(true)).unwrap();
     h.wait_for_call("start m1").await;
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot holds until this test lets it go");
 
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
-    smolvm::process::register_vm_child(pid);
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the death is waited for before the ticks: a read the test made later would otherwise decide whether the kill was ever collected.
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
-    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let killed = unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert_eq!(killed, 0, "the VMM was not signalled");
+    wait_ended_without_reaping(pid);
     // TEST_SCENARIO: the production tick, three times over: the reaper collects, the runtime's sweep of the same child reads nothing left, and the machine is still starting.
     for _ in 0..3 {
         h.server.reap_killed();
-        smolvm::process::reap_vm_children();
-        // TEST_SCENARIO: the sweep's own read, which erases the status on every host: smolvm's is Linux-only, so the test makes the same read itself.
+        // TEST_SCENARIO: the sweep's own read, which erases the status on every host: it must find nothing, because the reaper collected the status before it.
         let mut status = 0;
         // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
-        let _ = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
-        std::thread::sleep(Duration::from_millis(10));
+        let swept = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
+        assert_eq!(
+            swept, -1,
+            "the sweep found a status the reaper had not collected"
+        );
+        assert_ne!(
+            h.server.status("m1").reason,
+            REASON_OOM_KILLED,
+            "a kill was reported while the start it may belong to still ran"
+        );
     }
-    assert_ne!(
-        h.server.status("m1").reason,
-        REASON_OOM_KILLED,
-        "a kill was reported while the start it may belong to still ran"
-    );
 
+    release.send(()).expect("the boot returns");
     h.settle("m1").await;
     h.server.reap_killed();
     assert_eq!(

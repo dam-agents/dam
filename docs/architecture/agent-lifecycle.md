@@ -148,6 +148,7 @@ It does not wait out the two minutes for a start that cannot succeed: an over-bu
 Such a wake fails with that cause once it saw the refusal appear during its own poll, or once the refusal outlasted a ten-second grace, because its first polls can read the previous attempt's refusal.
 A vm start refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
 An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up; a node the cluster has lost is the opposite case, and no wait brings it back.
+So does a start waiting for the node to grant its runner the memory it needs ([vm-memory](vm-memory.md)): the Agent carries `AwaitingAllocation`, not `OverBudget`, and the next retry, seconds later, admits it or re-denies the wake.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
@@ -175,7 +176,7 @@ That lives on [sessions](sessions.md).
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
 On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
 A wake scales the gateway up before the agent side, because the gateway pod is the slower of the two to start.
-A `vm` Agent whose last start the runner refused for lack of room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
+A `vm` Agent whose last start the runner refused for lack of room, one waiting for the node to grant its runner that room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.

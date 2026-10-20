@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -87,6 +87,7 @@ Events are non-durable and advisory by contract — nothing may depend on one ar
 Their only consumers are sagas running in the emitting process: the audit trail, usage rollups, the public-profile projection and Slack worker registration, and two that reach across replicas by forwarding a *signal* over the shared Redis bus — never the event itself.
 One wakes egress-approval holds parked on other replicas; the other projects events into thin per-owner invalidation hints (a topic plus ids, never entity state) feeding each browser tab's single live-events subscription.
 A hint means "re-read this over the query path"; every (re)subscribed stream opens with a *sync* hint meaning "re-read everything", so reconnects heal by refetch rather than replay.
+A reconnect or a tab return re-reads the mutable families no stream carries, and a reconnect also marks every other query stale, so its next reader re-reads it; a Session Transcript is re-read by its chat over its own ACP path, not by a mounted query.
 State the platform cannot observe from a write site or the cluster API — the session list, the workspace directories a client has open, the file it has open, a provider's refreshed model list — is hinted by the pod that owns it instead, over the agent's own tRPC surface.
 A client-scoped watch exists only while a subscriber is attached: a tab viewing one agent watches that agent.
 Session lists are watched by one lease-elected watcher across every awake agent, which records what it reads for [home-feed](home-feed.md); browsers hold no session subscription of their own.

@@ -4,6 +4,15 @@ import type {
   ApprovalVerdict,
 } from "api-server-api";
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The frames a verdict becomes when it travels to
+ * the runtime, and the verdict a reported outcome becomes when it travels
+ * back. A verdict only ever answers in its own direction: a denial picks a
+ * reject option or cancels, because the row's catalog is bounded and the
+ * option it lost cannot be told apart from an allow. In the other direction
+ * the runtime holds the whole request, so the kind it reports states what an
+ * option the row dropped was.
+ */
 export function pickOptionId(
   options: readonly AcpPermissionOption[],
   verdict: ApprovalVerdict,
@@ -24,15 +33,20 @@ export function pickOptionId(
     return isAllow ? o.kind.startsWith("allow") : o.kind.startsWith("reject");
   });
   if (fallback) return fallback.optionId;
-  return options[0]?.optionId ?? null;
+  if (!isAllow) return null;
+  const first = options[0];
+  return first !== undefined && first.kind === undefined
+    ? first.optionId
+    : null;
 }
 
 export function verdictOfOutcome(
   options: readonly AcpPermissionOption[],
-  outcome: { outcome?: unknown; optionId?: unknown },
+  outcome: { outcome?: unknown; optionId?: unknown; kind?: unknown },
 ): ApprovalVerdict {
   if (outcome.outcome === "cancelled") return "deny_once";
-  const kind = options.find((o) => o.optionId === outcome.optionId)?.kind;
+  const recorded = options.find((o) => o.optionId === outcome.optionId)?.kind;
+  const kind = recorded ?? outcome.kind;
   return kind === "allow_always"
     ? "allow"
     : kind === "reject_once"

@@ -545,16 +545,17 @@ mod tests {
             .unwrap();
         let pid = i32::try_from(vmm.id()).unwrap();
         let proc_root = Path::new("/proc");
-        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so the first scan can miss a process that has just started.
+        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so a scan can miss a process that has just started; a Mac's own process-table read can also answer with nothing for a moment under load. So a scan that finds no process is repeated until the deadline, while one that names a process must name the stand-in alone at once: `kill_orphans` signals every pid a scan names.
         let deadline = Instant::now() + Duration::from_secs(5);
-        while orphan_pids(proc_root, &vm_dir)
-            .unwrap_or_default()
-            .is_empty()
-            && Instant::now() < deadline
-        {
+        let mut found = Vec::new();
+        while Instant::now() < deadline {
+            found = orphan_pids(proc_root, &vm_dir).unwrap_or_default();
+            if !found.is_empty() {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert_eq!(orphan_pids(proc_root, &vm_dir).unwrap(), vec![pid]);
+        assert_eq!(found, vec![pid], "the scan names the stand-in alone");
         assert!(orphan_pids(proc_root, &dir.path().join("m"))
             .unwrap()
             .is_empty());

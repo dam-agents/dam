@@ -42,6 +42,7 @@ import {
   sessionSettingFrames,
   type SessionHarness,
 } from "./services/session-setting-frames.js";
+import type { AgentRequestObserver } from "./services/acp-runtime/pending-agent-requests.js";
 import { createOnceReporter } from "./services/once-reporter.js";
 import {
   createBackgroundWorkRegistry,
@@ -91,6 +92,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  agentRequests: AgentRequestObserver;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
   providerAliases: () => string[];
@@ -285,6 +287,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
       sessionListAnswer(sessionMetadata, isRunning, terminalSessionPins?.()),
+    agentRequests: opts.agentRequests,
     ...(opts.leaseIdleMs !== undefined && { leaseIdleMs: opts.leaseIdleMs }),
     settingScope: (harness, id) => {
       const binding = opts.harnesses[harness]?.sessionSettings?.[id];
@@ -383,6 +386,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
+        agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),

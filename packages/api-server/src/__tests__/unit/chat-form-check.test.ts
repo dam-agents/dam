@@ -137,6 +137,58 @@ describe("check_chat_form", () => {
     );
   });
 
+  // TEST_SCENARIO: a regex check's pattern compiles the way the chat's renderer compiles it (no flags, at most 256 characters, no catastrophic backtracking), so a pattern the chat could not run is reported with its component, and an unescaped "-" at the end of a class is accepted.
+  it("reports a regex pattern the chat cannot run and accepts one it can", () => {
+    const withPattern = (pattern: string) =>
+      checkChatForm(
+        block([
+          {
+            version: "v1.0",
+            createSurface: {
+              surfaceId: "host",
+              catalogId: A2UI_PLATFORM_CATALOG_ID,
+              components: [
+                {
+                  id: "root",
+                  component: "TextField",
+                  label: "Hostname",
+                  value: { "@path": "/host" },
+                  checks: [
+                    {
+                      condition: {
+                        "@call": "regex",
+                        args: { value: { "@path": "/host" }, pattern },
+                      },
+                      message: "Letters, digits, dots and dashes only.",
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        ]),
+      );
+    for (const pattern of ["^[A-Za-z0-9.-]+$", "^[A-Za-z0-9.\\-]+$"])
+      expect(withPattern(pattern)).toMatchObject({ ok: true, problems: [] });
+    const invalid = withPattern("[a-");
+    expect(invalid.ok).toBe(false);
+    expect(invalid.problems).toEqual([
+      expect.objectContaining({
+        code: "VALIDATION_FAILED",
+        surfaceId: "host",
+        path: "/components/root",
+        message: expect.stringMatching(
+          /^Component "root" has a regex check whose pattern "\[a-" the chat cannot run: Invalid regular expression/,
+        ),
+      }),
+    ]);
+    const unsafe = withPattern("(a+)+");
+    expect(unsafe.ok).toBe(false);
+    expect(unsafe.problems.map((problem) => problem.message)).toEqual([
+      expect.stringContaining("catastrophic backtracking"),
+    ]);
+  });
+
   // TEST_SCENARIO: the third failed check tells the agent to ask in plain text, and a fourth attempt is refused.
   it("sends the agent to plain text after the third failed attempt", async () => {
     const mcp = await client();

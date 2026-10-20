@@ -457,6 +457,26 @@ creates, so it has to match the ServiceAccount vm-runner.yaml renders.
 {{- printf "%s-vm-runner" (include "platform.fullname" .) }}
 {{- end }}
 
+{{/*
+The PriorityClass this release renders for its own runner pods. Always rendered,
+whether or not the install names a class of its own: helm deletes what it stops
+rendering, and a runner Deployment keeps the class it was rolled with, so a
+switch to a named class would otherwise leave live templates pointing at a class
+that no longer exists, and their next pod refused at admission.
+*/}}
+{{- define "platform.vmRunner.ownPriorityClassName" -}}
+{{- printf "%s-vm-runner-priority-%d" (include "platform.fullname" .) (int .Values.virtualization.runner.priority) }}
+{{- end }}
+
+{{/*
+The PriorityClass every runner pod runs under: the one the install names, else
+this release's own, which the chart renders beside the runners. Cluster-scoped
+and named after the release, because several installs share a cluster's nodes.
+*/}}
+{{- define "platform.vmRunner.priorityClassName" -}}
+{{- .Values.virtualization.runner.priorityClassName | default (include "platform.vmRunner.ownPriorityClassName" .) }}
+{{- end }}
+
 {{/* The VM runner image: by digest when one is pinned, else by tag. */}}
 {{- define "platform.vmRunner.image" -}}
 {{- $i := .Values.virtualization.runner.image }}
