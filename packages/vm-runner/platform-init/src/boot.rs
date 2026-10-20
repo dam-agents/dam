@@ -3164,6 +3164,10 @@ mod tests {
             "the disk ended {} MiB under where it started",
             (base.saturating_sub(free())) >> 20
         );
+        // UNIT_BOUNDARY_DESCRIPTION: every descriptor into the disk is a reference that keeps the mount busy, and a mount in use cannot be unmounted: the guest's file, the guard's files and the directory the guard was made through all go before the unmount.
+        drop(fill);
+        drop(guard);
+        drop(dir);
         run("umount", &[top.as_os_str()]);
         fs::remove_dir_all(&root).unwrap();
     }
