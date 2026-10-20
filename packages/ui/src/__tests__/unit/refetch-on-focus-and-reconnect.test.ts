@@ -36,20 +36,27 @@ afterEach(() => {
   queryClient.unmount();
 });
 
-function watch(queryKey: QueryKey) {
+function watch(queryKey: QueryKey, staleTime?: number) {
   let calls = 0;
   unsubscribes.push(
     new QueryObserver(queryClient, {
       queryKey,
       queryFn: () => Promise.resolve(++calls),
+      ...(staleTime === undefined ? {} : { staleTime }),
     }).subscribe(() => {}),
   );
   return { calls: () => calls };
 }
 
-async function watchAll(families: Record<string, QueryKey>) {
+async function watchAll(
+  families: Record<string, QueryKey>,
+  staleTime?: number,
+) {
   const watched = Object.fromEntries(
-    Object.entries(families).map(([name, key]) => [name, watch(key)]),
+    Object.entries(families).map(([name, key]) => [
+      name,
+      watch(key, staleTime),
+    ]),
   );
   await vi.waitFor(() => {
     for (const [name, key] of Object.entries(families))
@@ -70,6 +77,10 @@ async function watchAll(families: Record<string, QueryKey>) {
         ),
       ),
   };
+}
+
+async function settle() {
+  await new Promise((resolve) => setTimeout(resolve, 20));
 }
 
 async function returnToTheTab() {
@@ -93,14 +104,19 @@ async function expectRefetchedOnReturnAndReconnect(
   await watched.expectCalls(3);
 }
 
-// TEST_SCENARIO: a tab comes back into view and the API reconnects a moment later, while a query the owner stream carries and an unrelated key sit on screen with the same age. The carried family heals through its own hint and the unrelated key keeps its data, which proves the two events are scoped rather than global.
-it("leaves a family the stream carries and an unrelated key alone", async () => {
-  const watched = await watchAll({
-    "owner-stream family": agentsKeys.listWithChannels(),
-    unrelated: ["unrelated"],
-  });
+// TEST_SCENARIO: a tab comes back into view and the API reconnects a moment later, while a query the owner stream carries and an unrelated key sit on screen both stale and therefore eligible for the ordinary focus refetch. The carried family heals through its own hint and the unrelated key keeps its data, which proves the two events are scoped rather than global.
+it("leaves a stale family the stream carries and a stale unrelated key alone", async () => {
+  const watched = await watchAll(
+    {
+      "owner-stream family": agentsKeys.listWithChannels(),
+      unrelated: ["unrelated"],
+    },
+    0,
+  );
 
   await returnToTheTab();
+  await settle();
+  await watched.expectCalls(1);
   await reconnectTheApi();
   await watched.expectCalls(1);
   expect(queryClient.getQueryState(["unrelated"])?.isInvalidated).toBe(true);
