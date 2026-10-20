@@ -11,6 +11,7 @@ import {
   pickOptionId,
   verdictOfOutcome,
 } from "../../modules/approvals/infrastructure/wrapper-response-frames.js";
+import { createApprovalsService } from "../../modules/approvals/services/approvals-service.js";
 import { createDeliverySweeper } from "../../modules/approvals/services/delivery-sweeper.js";
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
@@ -195,6 +196,39 @@ describe("tool approval option identity", () => {
     expect(pickOptionId(legacyCatalog, "allow")).toBe("always");
     expect(pickOptionId(legacyCatalog, "deny_once")).toBe("no");
   });
+
+  // TEST_SCENARIO: a current runtime drops a one-time choice whose id exceeded the bound, so the recorded row keeps only the persistent choice and a reject, with every retained id whole. A whole id says which option it is, not how far it reaches: Allow once must cancel rather than take the persistent permission, through Home and through delivery recovery alike.
+  it("never widens a one-time verdict to the persistent permission on a whole catalog", async () => {
+    const options = recordedOptionsOf([
+      { optionId: "o".repeat(TOOL_CALL_ID_MAX + 1), kind: "allow_once" },
+      { optionId: "always", kind: "allow_always" },
+      { optionId: "no", kind: "reject_once" },
+    ]);
+    expect(options).toEqual([
+      { optionId: "always", kind: "allow_always" },
+      { optionId: "no", kind: "reject_once" },
+    ]);
+
+    expect(pickOptionId(options, "allow_once", { idsWhole: true })).toBeNull();
+    expect(pickOptionId(options, "allow", { idsWhole: true })).toBe("always");
+    expect(pickOptionId(options, "deny_once", { idsWhole: true })).toBe("no");
+    expect(await deliver(options, "allow_once")).toEqual([
+      { outcome: "cancelled" },
+    ]);
+    expect(await sweep(options, "allow_once")).toEqual(["cancelled"]);
+  });
+
+  // TEST_SCENARIO: the same rule for the persistent verdict: it never answers a one-time choice, so Approve Always cannot quietly become a single approval.
+  it("never narrows the persistent verdict to a one-time choice", async () => {
+    const options = recordedOptionsOf([
+      { optionId: "yes", kind: "allow_once" },
+      { optionId: "no", kind: "reject_once" },
+    ]);
+
+    expect(pickOptionId(options, "allow", { idsWhole: true })).toBeNull();
+    expect(await deliver(options, "allow")).toEqual([{ outcome: "cancelled" }]);
+    expect(await sweep(options, "allow")).toEqual(["cancelled"]);
+  });
 });
 
 /**
@@ -219,4 +253,99 @@ function legacyRecordedOptionsOf(
     .filter((option, index, list) => list.indexOf(option) === index)
     .slice(0, 16)
     .sort((left, right) => all.indexOf(left) - all.indexOf(right));
+}
+
+interface SentFrame {
+  result: { outcome: { outcome: string; optionId?: string } };
+}
+
+function wholeRow(
+  options: AcpPermissionOption[],
+  verdict: "allow_once" | "allow",
+): PendingApprovalRow {
+  return {
+    id: `acpnative:a:s:${verdict}`,
+    type: "acp_native",
+    agentId: "a",
+    ownerSub: "owner-1",
+    sessionId: "s",
+    payload: {
+      kind: "acp_native",
+      toolName: "Run",
+      rpcId: 1,
+      options,
+      optionsWhole: true,
+    },
+    createdAt: new Date(),
+    expiresAt: new Date(Date.now() + 60_000),
+    resolvedAt: new Date(),
+    verdict,
+    decidedBy: "owner-1",
+    status: "resolved",
+    deliveredAt: null,
+  } as PendingApprovalRow;
+}
+
+function repoFor(row: PendingApprovalRow): ApprovalsRepository {
+  return {
+    getPending: async (id: string) =>
+      id === row.id ? { ...row, status: "pending", verdict: null } : null,
+    resolvePending: async (id: string) => id === row.id,
+    listResolvedUndelivered: async () => [row],
+    markDelivered: async () => {},
+    expireOverdue: async () => [],
+    insertSettled: async () => true,
+  } as Partial<ApprovalsRepository> as ApprovalsRepository;
+}
+
+async function deliver(
+  options: AcpPermissionOption[],
+  verdict: "allow_once" | "allow",
+): Promise<SentFrame["result"]["outcome"][]> {
+  const sent: string[] = [];
+  const service = createApprovalsService({
+    repo: repoFor(wholeRow(options, verdict)),
+    egressRuleWriter: {
+      insert: async (input) => ({
+        kind: "inserted",
+        row: { id: input.id, verdict: input.verdict, source: "inbox" },
+      }),
+    },
+    wrapperFrameSender: {
+      send: async (_agentId: string, frame: string) => {
+        sent.push(frame);
+      },
+    },
+    isAgentOwnedBy: async () => true,
+    ownerSub: "owner-1",
+    agentBinding: "*",
+  });
+
+  const outcome =
+    verdict === "allow_once" ? service.approveOnce : service.approvePermanent;
+  await outcome(wholeRow(options, verdict).id);
+  return sent.map((frame) => (JSON.parse(frame) as SentFrame).result.outcome);
+}
+
+async function sweep(
+  options: AcpPermissionOption[],
+  verdict: "allow_once" | "allow",
+): Promise<string[]> {
+  const sent: string[] = [];
+  const row = wholeRow(options, verdict);
+  const sweeper = createDeliverySweeper({
+    repo: repoFor(row),
+    wrapperFrameSender: {
+      send: async (_agentId: string, frame: string) => {
+        sent.push(frame);
+      },
+    },
+    staleMs: 0,
+    batchSize: 50,
+  });
+
+  await sweeper.tick();
+  return sent.map(
+    (frame) => (JSON.parse(frame) as SentFrame).result.outcome.outcome,
+  );
 }
