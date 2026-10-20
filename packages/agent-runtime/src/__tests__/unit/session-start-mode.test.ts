@@ -10,7 +10,8 @@
 import type { HarnessConfigCatalog } from "agent-runtime-api";
 import { describe, expect, it } from "vitest";
 import {
-  modeSettingIdOf,
+  derivedMode,
+  modeSettingOf,
   sessionSettingFrames,
   type SessionHarness,
 } from "../../modules/acp/services/session-setting-frames.js";
@@ -55,6 +56,26 @@ const harness = (
   configured: () => ({ mode: configuredMode, model: configuredModel }),
 });
 
+const bobHarness = (env: Record<string, string>): SessionHarness => ({
+  catalog: {
+    options: [
+      {
+        id: "mode",
+        name: "Mode",
+        category: "mode",
+        default: "agent",
+        choices: [
+          { value: "agent", name: "Agent" },
+          { value: "plan", name: "Plan" },
+        ],
+      },
+    ],
+  },
+  sessionSettings: { mode: { mode: true, startModeEnv: "BOB_CHAT_MODE" } },
+  configured: () => ({ mode: null, model: null }),
+  env,
+});
+
 const modeFrame = (frames: { method: string; params: unknown }[]) =>
   frames.find((frame) => frame.method === "session/set_mode");
 
@@ -79,7 +100,6 @@ describe("session start mode", () => {
     expect(modeFrame(frames({}, "ibm/claude-opus-4-5"))).toEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "auto" },
-      derived: true,
     });
   });
 
@@ -90,7 +110,6 @@ describe("session start mode", () => {
     expect(modeFrame(frames({}, "ibm/claude-haiku-4-5"))).toEqual({
       method: "session/set_mode",
       params: { sessionId: "s", modeId: "default" },
-      derived: true,
     });
   });
 
@@ -155,6 +174,7 @@ describe("session start mode", () => {
       harness: {
         catalog: CATALOG,
         sessionSettings: { effort: { configOption: "effortLevel" } },
+        configured: () => ({ mode: null, model: null }),
       },
     });
     expect(frames).toEqual([
@@ -166,24 +186,57 @@ describe("session start mode", () => {
   });
 
   it("names the setting the mode hangs on", () => {
-    expect(modeSettingIdOf(harness())).toBe("mode");
-    expect(modeSettingIdOf(undefined)).toBeUndefined();
+    expect(modeSettingOf(harness())).toEqual({ id: "mode" });
+    expect(modeSettingOf(undefined)).toBeUndefined();
+  });
+
+  /** TEST_SCENARIO: The harness reads a start mode from an env variable its
+   * manifest binds, as Bob reads a connection's pinned mode: the pinned mode
+   * is the session's start, so the runtime sends none and the pin stays. */
+  it("leaves a start mode the harness's env names to the harness", () => {
+    const input = {
+      sessionId: "s",
+      settings: {},
+      model: "ibm/claude-opus-4-5",
+      native: false,
+      harness: bobHarness({ BOB_CHAT_MODE: "plan" }),
+    };
+    expect(sessionSettingFrames(input)).toEqual([]);
+    expect(derivedMode(input)).toBe(null);
+  });
+
+  /** TEST_SCENARIO: The same variable is empty, as an agent with no pin has
+   * it: the harness starts on nothing it read, so the catalog's default
+   * applies. */
+  it("derives the catalog default where the env variable is empty", () => {
+    expect(
+      modeFrame(
+        sessionSettingFrames({
+          sessionId: "s",
+          settings: {},
+          model: null,
+          native: false,
+          harness: bobHarness({}),
+        }),
+      )?.params,
+    ).toEqual({ sessionId: "s", modeId: "agent" });
   });
 });
 
 function runtimeWorld() {
   const metadata = createSessionMetadata();
+  const input = (sessionId: string) => ({
+    sessionId,
+    settings: metadata.store.get(sessionId)?.meta.settings ?? {},
+    model: metadata.store.get(sessionId)?.meta.model ?? null,
+    native: false,
+    harness: harness(),
+  });
   const world = createWorld({
     sessionMetadata: metadata.store,
     modeSettingId: "mode",
-    sessionSettingFrames: (sessionId) =>
-      sessionSettingFrames({
-        sessionId,
-        settings: metadata.store.get(sessionId)?.meta.settings ?? {},
-        model: metadata.store.get(sessionId)?.meta.model ?? null,
-        native: false,
-        harness: harness(),
-      }),
+    sessionSettingFrames: (sessionId) => sessionSettingFrames(input(sessionId)),
+    derivedModeOf: (sessionId) => derivedMode(input(sessionId)),
   });
   return { world, metadata };
 }
@@ -230,6 +283,19 @@ describe("session start mode on the wire", () => {
     });
     world.runtime.syncSessionSettings("s");
     expect(modesSent(harness)).toEqual(["auto", "default"]);
+  });
+
+  /** TEST_SCENARIO: The session is torn down and its harness reports the
+   * derived mode: the runtime recomputes the mode it derives, so the report is
+   * still no pick of the session's and a model switch derives again. */
+  it("recognizes the derived mode after a teardown", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    world.runtime.resetSession("s");
+    world.harness().emit(reportMode("auto"));
+    expect(metadata.store.get("s")?.meta.settings).toBeUndefined();
   });
 
   /** TEST_SCENARIO: A mode the harness adopts on its own belongs to the

@@ -188,6 +188,7 @@ export interface AcpRuntimeDeps {
   onToolActivity?: (activity: ToolActivity) => void;
   onHarnessExited?: () => void;
   sessionSettingFrames?: (sessionId: string) => SessionSettingFrame[];
+  derivedModeOf?: (sessionId: string) => string | null;
   modeSettingId?: string;
 }
 
@@ -195,7 +196,6 @@ export interface SessionSettingFrame {
   method: string;
   params: Record<string, unknown>;
   critical?: boolean;
-  derived?: boolean;
 }
 
 export const SCHEDULE_SURFACE = "schedule";
@@ -482,7 +482,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   const idleReapTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const harnessColdSessions = new Set<string>();
   const appliedSettings = new Map<string, Map<string, string>>();
-  const derivedModes = new Map<string, string>();
   const settingsChannel: ClientChannel = {
     send() {},
     close() {},
@@ -704,12 +703,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
     appliedSettings.set(sessionId, applied);
-    derivedModes.delete(sessionId);
     for (const frame of deps.sessionSettingFrames?.(sessionId) ?? []) {
       const { method, params } = frame;
       const key = settingKeyOf(frame);
       const value = JSON.stringify(params);
-      if (frame.derived) derivedModes.set(sessionId, String(params.modeId));
       if (applied.get(key) === value) continue;
       applied.set(key, value);
       const outboundId = nextOutboundId++;
@@ -1430,7 +1427,6 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     }
     harnessColdSessions.delete(sessionId);
     appliedSettings.delete(sessionId);
-    derivedModes.delete(sessionId);
     rehydratingSessions.delete(sessionId);
     const rehydrateTimer = rehydrateTimers.get(sessionId);
     if (rehydrateTimer) clearTimeout(rehydrateTimer);
@@ -1726,7 +1722,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (
             id &&
             entry &&
-            derivedModes.get(sessionId) !== reportedMode &&
+            deps.derivedModeOf?.(sessionId) !== reportedMode &&
             entry.meta.settings?.[id] !== reportedMode
           )
             deps.sessionMetadata?.set(sessionId, {

@@ -37,7 +37,8 @@ import {
   type ReportableTurn,
 } from "./services/acp-runtime/acp-runtime.js";
 import {
-  modeSettingIdOf,
+  derivedMode,
+  modeSettingOf,
   sessionSettingFrames,
   type SessionHarness,
 } from "./services/session-setting-frames.js";
@@ -326,6 +327,19 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const harness = opts.harnesses[pair.harness];
       const ownHistory = historyProviders.get(pair.harness);
       const ownPins = harness?.terminalSessionPins;
+      const settingInput = (sessionId: string) => ({
+        sessionId,
+        harness: harness && {
+          ...harness,
+          env: opts.envReader.forLease({
+            harness: pair.harness,
+            provider: null,
+          }),
+        },
+        model: runtime.sessionChoice(sessionId).model,
+        native: pair.native !== undefined,
+        settings: sessionMetadata.get(sessionId)?.meta.settings ?? {},
+      });
       return createAcpRuntime({
         undeliveredPrompts,
         activeTurns,
@@ -361,14 +375,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
         sessionSettingFrames: (sessionId) =>
-          sessionSettingFrames({
-            sessionId,
-            harness,
-            model: runtime.sessionChoice(sessionId).model,
-            native: pair.native !== undefined,
-            settings: sessionMetadata.get(sessionId)?.meta.settings ?? {},
-          }),
-        modeSettingId: modeSettingIdOf(harness),
+          sessionSettingFrames(settingInput(sessionId)),
+        derivedModeOf: (sessionId) => derivedMode(settingInput(sessionId)),
+        modeSettingId: modeSettingOf(harness)?.id,
         workingDir: opts.workingDir,
         sessionMetadata,
         isTerminalSessionActive: opts.isTerminalSessionActive,

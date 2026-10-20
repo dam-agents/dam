@@ -61,7 +61,7 @@ drivers:
     # router reads the subagent model itself: Bob's subagent calls carry
     # X-Parent-Task-Id.
     sessionSettings:
-      mode: { mode: true }
+      mode: { mode: true, startModeEnv: BOB_CHAT_MODE }
       approvals: { env: [BOB_SESSION_APPROVALS] }
       subagentModel: { router: true }
     keys:

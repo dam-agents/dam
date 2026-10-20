@@ -72,7 +72,6 @@ import {
 } from "./modules/browser-display.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
-import { modeSettingIdOf } from "./modules/acp/services/session-setting-frames.js";
 import { prepareProcesses } from "./modules/processes/index.js";
 import { composeChanges } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
@@ -448,15 +447,12 @@ const {
           }),
           sessionSettings: harnessConfig?.sessionSettings,
           catalog: harnessConfig?.catalog,
-          ...(harnessConfig &&
-            modeSettingIdOf({
-              sessionSettings: harnessConfig.sessionSettings,
-            }) !== undefined && {
-              configured: () =>
-                readCurrentValues(harnessConfig, homeDir, (msg) =>
+          configured: () =>
+            harnessConfig
+              ? readCurrentValues(harnessConfig, homeDir, (msg) =>
                   process.stderr.write(`[harness-config] ${msg}\n`),
-                ),
-            }),
+                )
+              : { mode: null, model: null },
         },
       ];
     }),

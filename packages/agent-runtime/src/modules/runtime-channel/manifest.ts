@@ -51,10 +51,15 @@ export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
  * UNIT_BOUNDARY_DESCRIPTION: how a session setting reaches the harness. An
  * `env` setting is read at process start, so a session that picks one runs
  * in a process of its own; a `router` setting is never sent, the Model
- * Router reads the session's value itself on every call.
+ * Router reads the session's value itself on every call. A `mode` setting may
+ * name the env variable the harness reads its start mode from, which is what
+ * the runtime leaves the mode to where the harness's config file names none.
  */
 export const sessionSettingBinding = z.union([
-  z.object({ mode: z.literal(true) }),
+  z.object({
+    mode: z.literal(true),
+    startModeEnv: z.string().min(1).optional(),
+  }),
   z.object({ configOption: z.string().min(1) }),
   z.object({ env: z.array(z.string().min(1)).nonempty() }),
   z.object({ router: z.literal(true) }),
