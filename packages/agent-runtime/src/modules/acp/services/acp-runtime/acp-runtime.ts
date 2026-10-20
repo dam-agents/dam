@@ -708,21 +708,18 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: whether a mode the harness reports is the answer
-   * to mode work the runtime holds rather than the session taking a mode. A
-   * setting the runtime reconciles that is still in flight, or a mode it derives
-   * and has not sent yet, makes this report the runtime's own. A mode someone
-   * chose that is still queued is newer than the report, so the report is not
-   * saved over it either. A mode someone chose that has been sent, and work
-   * still queued behind a turn that the report cannot answer, leave the report
-   * the session's: the harness reported it on its own.
+   * to work the runtime still owes rather than the session taking a mode. Only
+   * sent work can have caused a report, and only work the runtime reconciles
+   * makes the report its own — a derived mode, or a model whose answer carries a
+   * reconciled mode. A mode someone chose and has not sent yet is newer than the
+   * report, so it is not saved over either. A frame that has not reached the
+   * harness cannot have caused anything: two settings that name the same mode
+   * are not the same event.
    */
-  function modeReportIsRuntimeWork(
-    sessionId: string,
-    reportedMode: string,
-  ): boolean {
+  function modeReportIsRuntimeWork(sessionId: string): boolean {
     return promptScheduler.modeWork(sessionId).some((work) => {
       if (work.sent) return work.role === "reconcile";
-      return work.role === "owner" || work.mode === reportedMode;
+      return work.role === "owner";
     });
   }
 
@@ -1787,7 +1784,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (
             id &&
             entry &&
-            !modeReportIsRuntimeWork(sessionId, reportedMode) &&
+            !modeReportIsRuntimeWork(sessionId) &&
             entry.meta.settings?.[id] !== reportedMode
           ) {
             deps.sessionMetadata?.set(sessionId, {

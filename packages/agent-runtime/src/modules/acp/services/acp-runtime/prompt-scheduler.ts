@@ -56,7 +56,6 @@ export type ModeRole = "reconcile" | "owner";
 export interface ModeWork {
   role: ModeRole;
   sent: boolean;
-  mode: string | undefined;
 }
 
 /**
@@ -275,13 +274,6 @@ export function createPromptScheduler(
     if (!sendSetting(head)) return;
     settings.shift();
     if (settings.length === 0) pendingSettings.delete(sessionId);
-  }
-
-  function modeValueOf(frame: unknown): string | undefined {
-    const params = (frame as { params?: { modeId?: unknown; value?: unknown } })
-      .params;
-    const value = params?.modeId ?? params?.value;
-    return typeof value === "string" ? value : undefined;
   }
 
   function sendSetting(entry: PromptSubmission): boolean {
@@ -604,13 +596,11 @@ export function createPromptScheduler(
       const work: ModeWork[] = [];
       for (const entry of settingsInFlight.get(sessionId)?.values() ?? []) {
         const role = roleOf(entry);
-        if (role !== null)
-          work.push({ role, sent: true, mode: modeValueOf(entry.frame) });
+        if (role !== null) work.push({ role, sent: true });
       }
       for (const entry of pendingSettings.get(sessionId) ?? []) {
         const role = roleOf(entry);
-        if (role !== null)
-          work.push({ role, sent: false, mode: modeValueOf(entry.frame) });
+        if (role !== null) work.push({ role, sent: false });
       }
       return work;
     },

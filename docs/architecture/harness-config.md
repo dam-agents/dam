@@ -76,6 +76,7 @@ A mode the harness reports is the runtime's own doing while the runtime still ow
 Such a report is not saved as a mode the session picked.
 What was chosen against what was worked out is the distinction: a mode someone chose — a client's own request, or the mode the owner saved, which the runtime sends for it — is the session's, and the harness's report of it confirms the choice.
 Work still queued behind a running turn has not reached the harness and cannot have caused a report; but a mode someone chose and that has not been sent yet is newer than a report arriving now, so the report is not saved over it.
+Two settings that name the same mode are not the same event: only the setting that reached the harness can have caused the report it answers.
 Once the runtime owes nothing, a reported mode is the harness's own, as entering plan mode with a tool is, and is saved; a session the runtime derives a mode for then stops deriving, since the session holds a mode now, and a derived mode still queued behind the turn is dropped rather than undoing it.
 A mode report that the runtime did not ask for and that arrives after its work settled is indistinguishable from a mode the harness changed on its own, and is saved as one.
 A refused model is asked for again ahead of the settings that wait on it, and a client's own setting request keeps its place in that queue and is answered as usual.

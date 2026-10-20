@@ -762,6 +762,43 @@ describe("session start mode on the wire", () => {
     expect(world.runtime.holdsSessions()).toBe(false);
   });
 
+  /** TEST_SCENARIO: A client picks Default while a derived Default waits behind
+   * it for a model the owner switched to: the frames name the same mode but the
+   * unsent one caused nothing, so the client's choice is saved, and a later
+   * model change does not bring the derived mode back. */
+  it("saves a client's choice that happens to match a queued derived mode", () => {
+    const { world, metadata } = runtimeWorld();
+    const client = world.connect();
+    client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+    world.harness().replyTo("session/new", { sessionId: "s" });
+    const harness = world.harness();
+    answerModelFrame(harness);
+    harness.replyTo("session/set_mode", {});
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 2,
+      method: "session/set_config_option",
+      params: { sessionId: "s", configId: "mode", value: "default" },
+    });
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      model: "ibm/claude-haiku-4-5",
+    });
+    world.runtime.syncSessionSettings("s");
+    harness.emit(reportMode("default"));
+    harness.replyTo("session/set_config_option", {});
+    expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "default" });
+
+    metadata.store.set("s", {
+      ...metadata.store.get("s")!.meta,
+      model: "ibm/claude-opus-4-5",
+    });
+    world.runtime.syncSessionSettings("s");
+    harness.replyTo("session/set_mode", {});
+    expect(modesSent(harness)).toEqual(["auto"]);
+  });
+
   /** TEST_SCENARIO: A mode the session picked belongs to the session, so a
    * later model switch leaves it alone. */
   it("keeps a mode the session picked when the model changes", () => {
