@@ -1,6 +1,6 @@
 # VM host runner
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
@@ -47,6 +47,10 @@ The Mac's default filesystem folds names that differ only in case into one file,
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
 The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.
 platform-init and the guest kernel are the runner image's, so the Mac's guests mount btrfs as the pods' do: the image build in the cluster's VM leaves its kernel wrapped for macOS, and `cluster:host-runner` compiles that into the release's libkrunfw.
+
+**Machines live under a short directory of their own.** smolvm keeps each machine's disks, record and sockets at a fixed depth under the runner's HOME, and a Mac holds a unix socket path to 103 bytes.
+The runner's own directory is too long for that, so the install starts the runner under a short directory in the user's home, and moves machines from before this layout there once.
+The runner refuses to start under a HOME whose machine sockets would not fit, naming the path and the limit: a boot under it fails only with the hypervisor rejecting its configuration.
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.
 Stopping it stops its machines, as a pod's termination does; the controller's sweep starts them again once the runner is back.
