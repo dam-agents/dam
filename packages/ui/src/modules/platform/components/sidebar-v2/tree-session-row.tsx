@@ -1,6 +1,7 @@
 import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import { type ComponentProps, useState } from "react";
 
+import { queryClient } from "../../../../query-client.js";
 import { useStore } from "../../../../store.js";
 import type { SessionView } from "../../../../types.js";
 import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
@@ -8,6 +9,7 @@ import {
   useFeatures,
   useInstallCapabilities,
 } from "../../../features/api/queries.js";
+import { acpSessionsKeys } from "../../../sessions/api/keys.js";
 import { prefetchSessionHistory } from "../../../sessions/api/queries.js";
 import { backgroundWorkLabel } from "../../../sessions/components/background-work-indicator.js";
 import { RenameSessionDialog } from "../../../sessions/components/rename-session-dialog.js";
@@ -18,6 +20,7 @@ import {
 import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import {
   pinKey,
+  readPinnedSessions,
   togglePinnedSession,
   unpinSession,
 } from "../../../sessions/lib/pinned-sessions.js";
@@ -58,20 +61,29 @@ export function useDeleteTreeSession(agentId: string) {
   };
 }
 
-export function togglePinKeepingFocus(key: string, agentId: string): void {
-  const focused = document.activeElement;
+export function togglePinKeepingFocus(
+  key: string,
+  agentId: string,
+  session?: SessionView,
+): void {
+  if (session && !readPinnedSessions().has(key))
+    queryClient.setQueryData(
+      acpSessionsKeys.session(agentId, session.sessionId),
+      session,
+    );
   const hadFocus =
-    focused?.closest("[data-pin-key]")?.getAttribute("data-pin-key") === key;
+    document.activeElement
+      ?.closest("[data-pin-key]")
+      ?.getAttribute("data-pin-key") === key;
   togglePinnedSession(key);
   if (!hadFocus) return;
   requestAnimationFrame(() => {
-    const tree = document.querySelector('[data-testid="sidebar-tree"]');
     (
-      tree?.querySelector<HTMLElement>(
-        `[data-pin-key="${CSS.escape(key)}"] [data-testid="session-pin-button"]`,
+      document.querySelector<HTMLElement>(
+        `[data-pin-key="${CSS.escape(key)}"] button[aria-pressed]`,
       ) ??
-      tree?.querySelector<HTMLElement>(
-        `[data-agent-id="${CSS.escape(agentId)}"] [data-testid="sidebar-agent-row"]`,
+      document.querySelector<HTMLElement>(
+        `[data-agent-id="${CSS.escape(agentId)}"] button[aria-expanded]`,
       )
     )?.focus();
   });
@@ -137,7 +149,7 @@ export function TreeSessionRow({
         indicators={false}
         className={TREE_ROW_CLASS}
         pinned={pinned}
-        onTogglePin={() => togglePinKeepingFocus(key, agentId)}
+        onTogglePin={() => togglePinKeepingFocus(key, agentId, s)}
         onResume={() => {
           openSession(agentId, s.sessionId, s.mode);
           onNavigate?.();

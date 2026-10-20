@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and an attention hint also refreshes the named agent's own session pages and single-Session lookups, and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
+// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and an attention hint also refreshes the named agent's own session pages and single-Session lookups (a sync, every cached agent's), and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
 import { type QueryKey, QueryObserver } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -83,4 +83,20 @@ it("refreshes the named agent's session pages and pin lookups on an attention hi
   await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
 
   expect([pagesA.calls(), pinA.calls(), pagesB.calls()]).toEqual([2, 2, 1]);
+});
+
+// TEST_SCENARIO: when the owner stream overflows, or a tab subscribes again, the server sends one sync instead of the named hints it dropped. Sync must then refetch every agent's session pages and single-Session lookups that are in the cache, and still leave session histories alone; otherwise a rename or delete lost in the overflow never reaches an open list or an old pin.
+it("refreshes cached session pages and pin lookups on sync, not histories", async () => {
+  const { acpSessionsKeys } =
+    await import("../../modules/sessions/api/keys.js");
+  const pagesA = counter();
+  const pinB = counter();
+  const historyA = counter();
+  await watch(acpSessionsKeys.pagesOf("A", ["chats"]), pagesA.fn);
+  await watch(acpSessionsKeys.session("B", "old"), pinB.fn);
+  await watch(acpSessionsKeys.history("A", "s1"), historyA.fn);
+
+  await invalidateForLiveEvent({ topic: "sync" });
+
+  expect([pagesA.calls(), pinB.calls(), historyA.calls()]).toEqual([2, 2, 1]);
 });

@@ -8,6 +8,9 @@ const seen = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const env = vi.hoisted(() => ({ telemetry: true, operable: true }));
 const cost = vi.hoisted(() => ({ sessionId: "s1", amounts: [] }));
 
+vi.mock("../../query-client.js", () => ({
+  queryClient: { setQueryData: vi.fn() },
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: unknown) => unknown) =>
     select({

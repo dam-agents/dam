@@ -15,6 +15,14 @@ const harnessConfigOf = (agentId?: string): QueryKey =>
     ? [...trpc.harnessConfig.pathKey(), { input: { agentId } }]
     : trpc.harnessConfig.pathKey();
 
+function cachedSessionAgents(): string[] {
+  const ids = queryClient
+    .getQueryCache()
+    .findAll({ queryKey: acpSessionsKeys.all })
+    .map((query) => query.queryKey[1]);
+  return [...new Set(ids)].filter((id): id is string => typeof id === "string");
+}
+
 const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
   {
     approvals: () => [approvalsKeys.all, egressRulesKeys.all],
@@ -30,12 +38,10 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
     artifacts: () => [trpc.artifactLibrary.pathKey()],
     attention: (agentId) => [
       trpc.attention.pathKey(),
-      ...(agentId
-        ? [
-            acpSessionsKeys.pages(agentId),
-            [...acpSessionsKeys.agent(agentId), "session"],
-          ]
-        : []),
+      ...(agentId ? [agentId] : cachedSessionAgents()).flatMap((id) => [
+        acpSessionsKeys.pages(id),
+        [...acpSessionsKeys.agent(id), "session"],
+      ]),
     ],
     gettingStarted: () => [trpc.gettingStarted.pathKey()],
   };
