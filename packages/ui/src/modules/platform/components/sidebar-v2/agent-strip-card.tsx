@@ -4,7 +4,6 @@ import { isStartRefusal } from "api-server-api";
 import { StatusBadge } from "@/components/status-indicator";
 import { RAIL_BADGE, railIndicator } from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
-import { clickableProps } from "@/lib/clickable";
 import { cn } from "@/lib/utils";
 
 import type { AgentView } from "../../../../types.js";
@@ -44,19 +43,22 @@ export function AgentStripCard({
   const display = useResolvedAgentDisplay(agent);
   return (
     <div
-      {...clickableProps(onSelect)}
-      aria-current={active ? "page" : undefined}
-      aria-label={badge > 0 ? `${agent.name}, ${badge} need you` : agent.name}
       data-testid="sidebar-strip-card"
       className={cn(
-        "group relative flex cursor-pointer flex-col gap-2 rounded-xl border px-2.5 pt-2.5 pb-2 text-left transition-colors select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+        "group relative flex flex-col gap-2 rounded-xl border px-2.5 pt-2.5 pb-2 transition-colors select-none",
         active
           ? "border-border-ui bg-muted"
           : "border-border bg-background hover:bg-muted/60",
       )}
     >
       <span aria-hidden className={railIndicator("left", active, current)} />
-      <div className="flex min-w-0 items-center gap-2.5">
+      <button
+        type="button"
+        onClick={onSelect}
+        aria-current={active ? "page" : undefined}
+        aria-label={badge > 0 ? `${agent.name}, ${badge} need you` : agent.name}
+        className="flex min-w-0 items-center gap-2.5 text-left after:absolute after:inset-0 after:rounded-xl focus-visible:outline-none focus-visible:after:ring-2 focus-visible:after:ring-ring"
+      >
         <AgentAvatar
           name={agent.name}
           avatar={agent.avatar}
@@ -82,8 +84,8 @@ export function AgentStripCard({
             className="mt-0.5 px-2 py-0 text-[11px]"
           />
         </div>
-      </div>
-      <div className="flex min-h-7 items-center gap-1">
+      </button>
+      <div className="pointer-events-none relative z-raised flex min-h-7 items-center gap-1 [&>*]:pointer-events-auto">
         <UpdateAvailableAction
           agent={agent}
           pending={updating}
@@ -100,7 +102,7 @@ export function AgentStripCard({
         </div>
       </div>
       {badge > 0 && (
-        <span className={cn(RAIL_BADGE, "bg-warning")}>
+        <span aria-hidden className={cn(RAIL_BADGE, "bg-warning")}>
           {badge > 9 ? "9+" : badge}
         </span>
       )}
@@ -122,10 +124,7 @@ function CardIcon({
       <button
         type="button"
         aria-label={label}
-        onClick={(e) => {
-          e.stopPropagation();
-          onClick();
-        }}
+        onClick={onClick}
         className="flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
       >
         {children}
