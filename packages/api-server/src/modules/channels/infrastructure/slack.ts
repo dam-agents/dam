@@ -3503,12 +3503,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (!gw) return;
     const { channel, threadTs, teamId, user } = event;
     for (const ts of event.streamingMessageTs) {
-      await gw.stopStream({ channel, ts, teamId }).catch((err) =>
-        getLogger().debug(
-          { channelId: channel, ts, err: formatError(err) },
-          "slack.stop.stream_stop_failed",
-        ),
-      );
+      await gw
+        .stopStream({ channel, ts, teamId })
+        .catch((err) =>
+          getLogger().debug(
+            { channelId: channel, ts, err: formatError(err) },
+            "slack.stop.stream_stop_failed",
+          ),
+        );
     }
     const running = [...(stoppableTurns.get(`${channel} ${threadTs}`) ?? [])];
     if (running.length === 0) {
@@ -3522,7 +3524,9 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         );
       return;
     }
-    const invoker = await identityLinks.resolve("slack", user).catch(() => null);
+    const invoker = await identityLinks
+      .resolve("slack", user)
+      .catch(() => null);
     const mayStop = async (turn: StoppableTurn) =>
       turn.startedBy(user) ||
       (invoker !== null &&
@@ -3572,7 +3576,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       for (const sid of turn.sessionIds)
         turnRecovery.dismiss(turn.instanceName, sid);
     }
-    await ephemeral(channel, user, threadTs, `Stopped \`${agentName}\`.`, teamId);
+    await ephemeral(
+      channel,
+      user,
+      threadTs,
+      `Stopped \`${agentName}\`.`,
+      teamId,
+    );
   }
 
   async function handleBotJoinedChannel(event: SlackBotJoinedChannelEvent) {
