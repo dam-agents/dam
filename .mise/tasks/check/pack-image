@@ -26,6 +26,13 @@ mkdir -p "$t/whiteouts/etc" "$t/root/app/dist" "$t/root/app/.hidden" "$t/root/ho
 touch "$t/whiteouts/etc/.wh.motd" "$t/root/app/dist/server.js" "$t/root/home/agent/.config/x" "$t/root/etc/mise/config.toml" "$t/root/etc/hosts"
 (cd "$t" && XDG_CACHE_HOME="$t/cache" "$pack" "$t/base" "$t/root" "$t/out" check:latest --layout --umask=022 --root-layer="$t/whiteouts" \
   --own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=absent --own-dir=65532:0=app >/dev/null)
+# The same base as a tar of its layout, which is how image:pull and the oci
+# tasks leave an image: the layers come out of the tar, and the image is the one
+# the layout packs.
+tar -C "$t/base" -cf "$t/base.tar" $(ls -A "$t/base")
+(cd "$t" && XDG_CACHE_HOME="$t/cache" "$pack" "$t/base.tar" "$t/root" "$t/out-tar" check:latest --layout --umask=022 --root-layer="$t/whiteouts" \
+  --own=65532:0=home/agent --own=65532:0=etc/mise --own=65532:0=absent --own-dir=65532:0=app >/dev/null)
+diff -r "$t/out" "$t/out-tar" || { echo "FAIL: a base read from a tar of it packs another image" >&2; exit 1; }
 
 m="$(jq -r '.manifests[0].digest | sub(":"; "/")' "$t/out/index.json")"
 layer="$(jq -r '.layers[-1].digest | sub(":"; "/")' "$t/out/blobs/$m")"

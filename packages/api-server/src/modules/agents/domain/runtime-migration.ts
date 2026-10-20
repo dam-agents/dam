@@ -1,16 +1,89 @@
 import type {
-  AbortRuntimeMigrationError,
   AgentSpec,
-  RetryRuntimeMigrationError,
   RuntimeMigration,
   RuntimeMigrationPhase,
-  RuntimeMigrationRefusal,
-  UnmovablePath,
 } from "api-server-api";
 import { match } from "ts-pattern";
 import { STORAGE_FULL_PERCENT } from "../../budgets/domain/vm-usage.js";
 
 export const AGENT_HOME = "/home/agent";
+
+export interface UnmovablePath {
+  path: string;
+  reason: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the reasons a move is refused, each one a decision this module makes and nothing else hears: the operator start of a move is the only caller now, so this is not part of the API contract.
+export type RuntimeMigrationRefusal =
+  | { type: "AgentNotFound" }
+  | { type: "AlreadyOnVm" }
+  | { type: "VirtualizationDisabled" }
+  | { type: "RuntimeMigrationInProgress" }
+  | { type: "StorageMigrationInProgress" }
+  | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] }
+  | { type: "HomeNotPersisted" }
+  | {
+      type: "VmStorageInsufficient";
+      neededBytes: number;
+      usedBytes: number;
+      usableBytes: number;
+    }
+  | { type: "VmMemoryInsufficient"; committedMiB: number; limitMiB: number }
+  | { type: "ConcurrentUpdate" };
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a refusal says the move cannot happen, as opposed to one that says it has not happened yet: a request that lost a race, an Agent that vanished under the write, and an Agent already mid-move all leave the request to a later tick. Only the first kind is worth withdrawing, since withdrawing a request that stands is what the controller reads as an abort.
+export function runtimeMigrationCannotHappen(
+  refusal: RuntimeMigrationRefusal,
+): boolean {
+  switch (refusal.type) {
+    case "AgentNotFound":
+    case "ConcurrentUpdate":
+    case "RuntimeMigrationInProgress":
+      return false;
+    default:
+      return true;
+  }
+}
+
+const gib = (bytes: number) => (bytes / 1024 ** 3).toFixed(1);
+
+// UNIT_BOUNDARY_DESCRIPTION: the words for a refused move, one sentence per reason, as an operator reading the api-server's log gets them.
+export function runtimeMigrationRefusalReasons(
+  refusal: RuntimeMigrationRefusal,
+): string[] {
+  switch (refusal.type) {
+    case "AgentNotFound":
+      return ["no such agent"];
+    case "AlreadyOnVm":
+      return ["this agent already runs on the new runtime"];
+    case "VirtualizationDisabled":
+      return [
+        "the new runtime is not enabled on this install (virtualization.enabled)",
+      ];
+    case "RuntimeMigrationInProgress":
+      return ["this agent is already moving to the new runtime"];
+    case "StorageMigrationInProgress":
+      return [
+        "this agent's storage is being migrated — try again once it finishes",
+      ];
+    case "PersistsUnmovablePaths":
+      return refusal.paths.map((p) => `${p.path} cannot be moved: ${p.reason}`);
+    case "HomeNotPersisted":
+      return [
+        "this agent does not keep its home directory, so there is nothing for the new runtime to carry over",
+      ];
+    case "VmStorageInsufficient":
+      return [
+        `moving this agent needs about ${gib(refusal.neededBytes)} GiB free on the owner's VM storage — twice its home directory, one copy while it moves and one on its new disk — and ${gib(refusal.usableBytes - refusal.usedBytes)} GiB of ${gib(refusal.usableBytes)} GiB is free`,
+      ];
+    case "VmMemoryInsufficient":
+      return [
+        `the owner's machines have committed ${gib(refusal.committedMiB * 1024 ** 2)} GiB of their ${gib(refusal.limitMiB * 1024 ** 2)} GiB of memory, leaving no room for another machine`,
+      ];
+    case "ConcurrentUpdate":
+      return ["this agent changed while the move was being requested — retry"];
+  }
+}
 
 export function isVmBackend(spec: AgentSpec): boolean {
   return spec.backend?.type === "vm";
@@ -39,7 +112,7 @@ const LEGACY_PHASES: Record<string, RuntimeMigrationPhase> = {
   booting: "booting",
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: the migration the browser is shown. With the request withdrawn but the condition still there, the controller is still removing the vm side of an abort, or finishing one whose Backend has switched. A phase this api-server does not know yet still means the migration is running, so it reads as "requested" rather than as no migration at all. A migration can be aborted until its machine has booted from the copy, and retried only once it has failed.
+// UNIT_BOUNDARY_DESCRIPTION: the migration the browser is shown. With the request withdrawn but the condition still there, the controller is still removing the vm side of an abort, or finishing one whose Backend has switched. A phase this api-server does not know yet still means the migration is running, so it reads as "requested" rather than as no migration at all. An operator can abort it until its machine has booted from the copy, and retry it once it has failed.
 export function runtimeMigrationOf(
   signals: RuntimeMigrationSignals,
 ): RuntimeMigration | undefined {
@@ -47,7 +120,10 @@ export function runtimeMigrationOf(
   if (!requested && !condition) return undefined;
   let phase: RuntimeMigrationPhase;
   let message = condition?.message || undefined;
-  if (!requested) phase = signals.vm ? "verified" : "aborting";
+  // UNIT_BOUNDARY_DESCRIPTION: a machine that booted from the copy is the Agent's runtime whatever the annotations say now, so a request withdrawn after that reads as verified and the switch still runs; tearing the machine down instead would destroy what the guest has written since.
+  if (!requested)
+    phase =
+      signals.vm || condition?.reason === "Verified" ? "verified" : "aborting";
   else if (condition)
     phase = CONDITION_PHASES[condition.reason ?? ""] ?? "requested";
   else {
@@ -59,13 +135,18 @@ export function runtimeMigrationOf(
     phase,
     ...(message ? { message } : {}),
     ...(attempts > 0 ? { attempts } : {}),
-    abortable:
-      !!requested &&
-      !signals.vm &&
-      phase !== "verified" &&
-      phase !== "aborting",
-    retryable: !!requested && phase === "failed",
   };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an Agent carries a request nobody has decided yet, which is the only shape the sweep promotes. A request the api-server decided names its target; one whose write the controller has begun reads as its phase; and one whose abort the controller is still cleaning up reads as `aborting`. Only a request with no target and no phase past its own is undecided, so a withdrawn request is never decided again from a list read that predates it.
+export function runtimeMigrationUndecided(agent: {
+  runtimeMigration?: RuntimeMigration;
+  runtimeMigrationTarget?: string;
+}): boolean {
+  return (
+    agent.runtimeMigration?.phase === "requested" &&
+    !agent.runtimeMigrationTarget
+  );
 }
 
 export type AgentMount = NonNullable<AgentSpec["mounts"]>[number];
@@ -220,38 +301,17 @@ export interface RuntimeMigrationTarget {
   storageSize?: string;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the fields the Backend switch changes, as they were when the migration was requested. An abort writes them back as the spec had them, so an Agent that named no mounts goes on inheriting the install's; the mounts the controller rendered from them are recorded beside, for an operator recovering an Agent by hand rather than reconstructing them.
-export interface RuntimeMigrationSnapshot {
-  backend: AgentSpec["backend"] | null;
-  mounts: Mounts | null;
-  effectiveMounts: Mounts;
-  storageSize: string | null;
-  runtimeClassName: string | null;
-  nodeSelector: Record<string, string> | null;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: what a migration request records. No spec is written: the Backend switches only once the controller reports the machine booted from the copy.
+// UNIT_BOUNDARY_DESCRIPTION: what a migration request records. No spec is written: the Backend switches only once the controller reports the machine booted from the copy, so there is nothing to put back if the move is called off and no snapshot of the spec to keep beside the request.
 export function runtimeMigrationRequest(
   spec: AgentSpec,
   defaultStorageSize: string,
   defaultMounts: readonly AgentMount[],
-): {
-  target: RuntimeMigrationTarget;
-  snapshot: RuntimeMigrationSnapshot;
-} {
+): { target: RuntimeMigrationTarget } {
   const mounts = effectiveMounts(spec, defaultMounts);
   const target: RuntimeMigrationTarget = {};
   const size = movedStorageSize(spec, mounts, defaultStorageSize);
   if (size) target.storageSize = size;
-  const snapshot: RuntimeMigrationSnapshot = {
-    backend: spec.backend ?? null,
-    mounts: spec.mounts ? [...spec.mounts] : null,
-    effectiveMounts: [...mounts],
-    storageSize: spec.storageSize ?? null,
-    runtimeClassName: spec.runtimeClassName ?? null,
-    nodeSelector: spec.nodeSelector ?? null,
-  };
-  return { target, snapshot };
+  return { target };
 }
 
 function parseRecord<T>(raw: string | undefined): T | null {
@@ -270,12 +330,6 @@ export function parseRuntimeMigrationTarget(
   return parseRecord<RuntimeMigrationTarget>(raw);
 }
 
-export function parseRuntimeMigrationSnapshot(
-  raw: string | undefined,
-): RuntimeMigrationSnapshot | null {
-  return parseRecord<RuntimeMigrationSnapshot>(raw);
-}
-
 // UNIT_BOUNDARY_DESCRIPTION: the spec half of the Backend switch, written once the machine has booted from the copy. The CRD rejects runtimeClassName and nodeSelector on the vm backend, so both are cleared in the same write.
 export function runtimeMigrationSwitchSpec(
   target: RuntimeMigrationTarget,
@@ -285,18 +339,6 @@ export function runtimeMigrationSwitchSpec(
     runtimeClassName: null,
     nodeSelector: null,
     ...(target.storageSize ? { storageSize: target.storageSize } : {}),
-  };
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the spec half of an abort: the fields the switch would change, put back as the snapshot recorded them. The Backend itself is left out, since nothing but the switch writes it and the switch has not happened.
-export function runtimeMigrationRestoreSpec(
-  snapshot: RuntimeMigrationSnapshot,
-): Record<string, unknown> {
-  return {
-    mounts: snapshot.mounts,
-    storageSize: snapshot.storageSize,
-    runtimeClassName: snapshot.runtimeClassName,
-    nodeSelector: snapshot.nodeSelector,
   };
 }
 
@@ -315,26 +357,6 @@ export function runtimeMigrationHold(
       containerStopped ? "failed" : "none",
     )
     .exhaustive();
-}
-
-export function abortRuntimeMigrationRefusal(agent: {
-  runtimeMigration?: RuntimeMigration;
-}): AbortRuntimeMigrationError | null {
-  const migration = agent.runtimeMigration;
-  if (!migration || migration.phase === "aborting")
-    return { type: "NoRuntimeMigration" };
-  if (!migration.abortable) return { type: "RuntimeMigrationVerified" };
-  return null;
-}
-
-export function retryRuntimeMigrationRefusal(agent: {
-  runtimeMigration?: RuntimeMigration;
-}): RetryRuntimeMigrationError | null {
-  const migration = agent.runtimeMigration;
-  if (!migration || migration.phase === "aborting")
-    return { type: "NoRuntimeMigration" };
-  if (!migration.retryable) return { type: "RuntimeMigrationNotFailed" };
-  return null;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the api-server should now switch the Backend: the controller reports the machine booted from the copy, and the request that asked for it still stands.

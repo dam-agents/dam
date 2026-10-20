@@ -10,6 +10,7 @@ import { aliasForProviderType, type HarnessCatalog } from "api-server-api";
 import type { SessionPairRepo } from "../infrastructure/session-pair-repo.js";
 import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.js";
 import { harnessFits } from "../../templates/index.js";
+import { NoDefaultModelError } from "../domain/no-default-model.js";
 import {
   legacyModelName,
   qualifiedPairModel,
@@ -73,8 +74,8 @@ export function createSessionChoicesValidator(deps: {
    * Router or a provider it runs natively (Bedrock), so a model-valued
    * setting (the subagent model) must be on the side of the model the fire
    * runs, resolved as the fire resolves it (the schedule's own, else the
-   * saved default while its provider is granted, else the default
-   * provider's first listed model, else the router's default). As in the
+   * saved default; with no default model the fire's side is unknown and the
+   * check passes, since the fire reports the missing default). As in the
    * runtime, a model is native only on a granted provider the harness runs
    * natively. A runtime that names no native templates splits nothing.
    */
@@ -83,10 +84,15 @@ export function createSessionChoicesValidator(deps: {
     carried: readonly HarnessCapability[],
     choices: SessionChoices,
   ): Promise<string | undefined> => {
-    const fire = await deps.firePair(agentId, {
-      ...(choices.harness !== undefined && { harness: choices.harness }),
-      ...(choices.model !== undefined && { model: choices.model }),
-    });
+    const fire = await deps
+      .firePair(agentId, {
+        ...(choices.harness !== undefined && { harness: choices.harness }),
+        ...(choices.model !== undefined && { model: choices.model }),
+      })
+      .catch((err: unknown) => {
+        if (err instanceof NoDefaultModelError) return undefined;
+        throw err;
+      });
     if (!fire) return undefined;
     const capability = carried.find((h) => h.name === fire.harness);
     const nativeTemplates = capability?.nativeTemplates ?? [];

@@ -16,6 +16,7 @@ Each lease is the unchanged ACP runtime this section describes, behind a **lease
 `session/new` names the session's harness and model; the runtime persists that choice in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease.
 Each lease is told about the client as the first was, and an agent's question is answered to the lease that asked.
 The session list draws on the metadata store too, so a harness not running still lists its sessions.
+A listed session's title is its explicit title (a rename, a schedule's session title, or the original's on a rewind) when it has one, else the harness's own or the one its first prompt gave it; the list also carries the explicit and the automatic title apart, so the rename dialog prefills only an explicit one and offers the automatic one as its placeholder.
 
 A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
 A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
@@ -140,6 +141,10 @@ A session on a removed provider or an unknown harness closes with the reason.
 Scrollback is tracked so that reattaching while the PTY lives replays it.
 A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace it is killed only once the harness has also gone quiet.
 Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up.
+Background work the session reports holds that reap back, as it holds a chat session's: a background command prints to its own output file, not to the screen, so a quiet screen does not mean the work is done.
+While the report is not empty the PTY is never reaped; once it is empty, the quiet clock applies again.
+Such a PTY makes the runtime busy only while its work is [kept](agent-processes.md#keeping-work), as a chat session does: unkept work holds the terminal open and dies at hibernation.
+When the PTY ends, the session's report goes with it, so a dead terminal cannot keep the agent busy.
 There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record.
 
 SSH sessions are unrelated to the session machinery above: they carry no session identity, no metadata entry, and no harness involvement — a per-connection in-pod OpenSSH the platform relays bytes to, with its own authentication and its own shell, several coexisting per agent.

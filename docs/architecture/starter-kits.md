@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -123,7 +123,7 @@ flowchart LR
   A new agent has it on by default, so a kit that names nothing gets that; `true` says so explicitly, and `false` turns it off for an agent whose tools need credentials added to requests that name no Connection.
   Agent settings show the same switch, so the owner can change it later.
 - **Install Command** — optional `install.command`: shell the agent-runtime runs once in the new agent's workspace, queued as a `workspace-command` event right after create and before anything else the apply queues, so a bootstrap has run by the time the initialization session opens.
-  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
+  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`, `copilot`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
   The command runs **inside the agent's own sandbox** — the same pod, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
   This is how the two wiki kits run their toolkit's bootstrap: from the checkout their `seed` brought in, pinned to the commit the catalog resolved, instead of fetching a script from the network at install.
 - **Knowledge Base Kit** — optional `knowledgeBase.shareRoots`: a kit may declare that what it creates publishes a [knowledge base](knowledge-bases.md), naming the workspace paths its shares expose.
@@ -138,7 +138,7 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  Every kit on an install with virtualization gets none of it and shows no size, since every agent created there is a machine unless the caller asks for a container: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
+  Every kit on an install with virtualization gets none of it and shows no size, since every agent created there is a machine: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
   Only an install that cannot run one, and so creates containers, shows a kit's size.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
@@ -234,6 +234,7 @@ The catalog is not consulted: one that pins the kit behind the branch head still
 
 **Starting an update** marks it pending on the Agent with the head it targets and queues a session on the initialization session's rail.
 The session runs on the harness, provider and model the owner saved as the agent's default, resolved the way a [schedule](schedules.md) fire resolves them; when no pair resolves, such as on an agent whose runtime has not yet reported its harnesses, it runs on the agent's default harness.
+An agent whose saved default has no model, or names a model no provider it holds serves, cannot start an update: the request is refused and says to set a default on the agent's Providers page.
 Its briefing is platform-composed like Kit Onboarding: the commit range, and the kit's **current catalog entry** against the Agent's live state.
 The user picks which upstream changes to take and decides every conflict; their own changes are **never committed or pushed**, and a declined change becomes one of them.
 What they decide for later updates is kept inside the checkout's git directory, outside history.

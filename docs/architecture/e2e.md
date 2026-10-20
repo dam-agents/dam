@@ -8,7 +8,7 @@ It is the only test that covers a change across the whole system — login throu
 ## Lanes
 
 A **lane** is a Backend for the Agents a spec creates.
-The **container lane** runs a plain install, where an Agent is a pod; the **vm lane** runs an install with virtualization on, where the Agents a spec creates are machines on their owner's VM runner — but the one the migration spec stages as an object, which boots as a container.
+The **container lane** runs a plain install, where an Agent is a pod; the **vm lane** runs an install with virtualization on, where the Agents a spec creates are machines on their owner's VM runner — except the ones a spec stages as an object with the container backend, which boot as containers.
 The lanes differ in nothing else, and both run on every pull request and in every full-suite run, each on its own runner, so a fault only one Backend has shows on the change that caused it.
 The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the vm backend on, and the suite reads it to pick the specs only one lane can run, and so the order the projects run in.
 
@@ -16,7 +16,8 @@ The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the
 
 The specs are grouped into Playwright **projects**, one per area, whose dependencies chain the state they share: the auth project stores the user's login, the agent project creates the suite's mock Agent and the Connection its chat turns need, and the chain project drives that Agent through messages, Sessions, Slack and egress.
 A spec that boots and drives an Agent of its own runs in a project after those, one at a time, because each of them competes for the same cluster's compute.
-Five specs run in the vm lane alone: the runtime migration needs an install with both Backends, the harness tools and browser tabs specs drive what only a machine has, the boot matrix breaks a machine's boot the ways a host failure does — it kills the machine's VMM at points of a boot and empties the disk's layout mark — and the storage trim spec measures the claim under an agent's machine.
+Six specs run in the vm lane alone: the runtime migration needs an install with both Backends, the harness tools and browser tabs specs drive what only a machine has, the boot matrix breaks a machine's boot the ways a host failure does — it kills the machine's VMM at points of a boot and empties the disk's layout mark — the storage trim spec measures the claim under an agent's machine, and the runner release spec rolls a live machine onto a second runner release and back, with the chart's own upgrade.
+The runner release spec runs after every project the run keeps, whatever the scope drops: a runner pod rolls every machine its owner has, so it waits for the suite, and it leaves the install on the values it found there.
 The boot matrix runs with the other specs that boot an Agent of their own, one at a time, for the compute they would otherwise share.
 Its cases that need room a CI node cannot spare, a disk with no block left and a claim with none, are opt-in through `E2E_DISK_FILL_GIB` and `E2E_CLAIM_FILL_GIB`: a machine's disk is a sparse file on its owner's claim, that claim is a directory of the node's disk, and a fill takes that room whenever its filesystem allocates the blocks instead of marking them.
 The storage trim spec's refusal cases need no host budget and run on every in-cluster vm lane run: the always-on one first writes and deletes 256 MiB of real bytes through a renewal and compares the guest's free space with the grant the runner published, then marks the guest's whole remaining room with one `fallocate`, so the guest is held at its share without the claim paying for it.

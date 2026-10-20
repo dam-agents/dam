@@ -93,8 +93,7 @@ jobs:
             mise-task-artifacts-${{ runner.os }}-
       # The Rust target is only compiled into when a vm-runner task misses the
       # task cache, which takes a change to its crate or its tools since the
-      # commit that cache was saved at. Cargo's downloads only, as in
-      # rust-release: it unpacks the sources and checks out the git ones again.
+      # commit that cache was saved at.
       - id: rust-needed
         env:
           MATCHED: ${{ steps.task-cache.outputs.cache-matched-key }}
@@ -106,19 +105,21 @@ jobs:
           else
             echo "needed=true" >> "$GITHUB_OUTPUT"
           fi
-      - id: rust-cache
+      # Cargo's downloads keep their own entry: mr boxington's objects payload
+      # carries compiled output alone, and its target payload carries these but
+      # restores no objects.
+      - id: cargo-cache
         if: steps.rust-needed.outputs.needed == 'true'
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: &rust-paths |
+          path: &cargo-paths |
             ~/.cargo/registry/index
             ~/.cargo/registry/cache
             ~/.cargo/git/db
-            packages/vm-runner/target
-          key: &rust-key rust-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch') }}
+          key: &cargo-key cargo-${{ runner.os }}-check-test-${{ hashFiles('mise.lock', 'packages/vm-runner/Cargo.toml', 'packages/vm-runner/platform-init/Cargo.toml', 'packages/vm-runner/Cargo.lock', 'packages/vm-runner/smolvm.pin', 'packages/vm-runner/smolvm.patch') }}
           restore-keys: |
-            rust-${{ runner.os }}-check-test-
-            rust-${{ runner.os }}-
+            cargo-${{ runner.os }}-check-test-
+            cargo-${{ runner.os }}-
       # build-images and e2e.yml's lanes restore the Go and pnpm caches too,
       # read-only.
       - id: go-cache
@@ -150,6 +151,22 @@ jobs:
           path: &pnpm-verified ~/.cache/pnpm/lockfile-verified.jsonl
           key: &pnpm-verified-key pnpm-lockfile-verified-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml', 'pnpm-workspace.yaml') }}
       - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+      # mr boxington keeps the vm-runner crates this job compiled as objects in
+      # its store, and the objects payload moves the ones the build used or
+      # produced: a push to main saves them, and every other run only restores,
+      # as the step it replaces did. Per-crate objects are what let a pull
+      # request restore the crates a change did not touch, which the archive the
+      # target payload carries cannot do. It must come after setup-mise, which
+      # installs the mbx the action reuses and the rustc its cache key follows;
+      # the wrapper in `.mise/config.toml` is what puts the build's `cargo`
+      # through it. Releases keep their own cache: a release must not read one
+      # it did not build (see rust-release, and e2e's lane).
+      - id: mbx
+        if: steps.rust-needed.outputs.needed == 'true'
+        uses: jdx/mr-boxington-action@47ce49b32025d93a7a2f4570815afaa2b7092240 # v1.7.2
+        with:
+          github-cache-mode: objects
+          working-directory: packages/vm-runner
       # Every artifact's atime goes back to the epoch, so the ones this run
       # reads stand out afterwards; see the prune below.
       - run: |
@@ -162,19 +179,18 @@ jobs:
       # platform-init's tests that need root (loop-mounted btrfs and ext4),
       # which the sandboxed, cached `test` cannot run. Only when the Rust cache
       # was needed: otherwise `test` replays, and this step alone would fill
-      # the target that the main push then saves as the Rust cache.
+      # the target that the main push then saves as the cache entry.
       - if: steps.rust-needed.outputs.needed == 'true'
         run: mise run //packages/vm-runner:test:root
-      # Main saves only what this run compiled or read. A Rust or Go cache
-      # saved after every task came from the task cache would hold an empty
-      # target under the new key, and the next miss would compile from scratch.
-      # The task cache otherwise keeps every artifact it ever held.
+      # Main saves only what this run compiled or read. A Go cache saved after
+      # every task came from the task cache would hold nothing under the new
+      # key, and the next miss would compile from scratch. The task cache
+      # otherwise keeps every artifact it ever held.
       - id: built
         if: ${{ inputs.main-push }}
         run: |
           set -o pipefail
           newer() { [ -n "$(find "$1" -newer "$RUNNER_TEMP/check-start" -type f -print -quit 2>/dev/null)" ]; }
-          newer packages/vm-runner/target && echo "rust=true" >> "$GITHUB_OUTPUT"
           newer ~/.cache/go-build && echo "go=true" >> "$GITHUB_OUTPUT"
           cd ~/.cache/mise/task-artifacts
           find . -type f -anewer "$RUNNER_TEMP/check-start" | sed 's|.*/||; s|\..*||' | sort -u > "$RUNNER_TEMP/used"
@@ -190,11 +206,11 @@ jobs:
         with:
           path: *go-paths
           key: *go-key
-      - if: ${{ inputs.main-push && steps.rust-cache.outputs.cache-hit != 'true' && steps.built.outputs.rust == 'true' }}
+      - if: ${{ inputs.main-push && steps.cargo-cache.outputs.cache-hit != 'true' && steps.rust-needed.outputs.needed == 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: *rust-paths
-          key: *rust-key
+          path: *cargo-paths
+          key: *cargo-key
       - if: ${{ inputs.main-push && steps.pnpm-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
@@ -284,6 +300,11 @@ jobs:
     if: ${{ needs.changes.outputs.images != '[]' }}
     runs-on: ${{ matrix.arch == 'arm64' && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
     timeout-minutes: 30
+    # This job keeps the release build's own cache, so it wants Cargo's plain
+    # `target/` and not mr boxington's managed one in its place (see the
+    # wrapper in `.mise/config.toml`).
+    env:
+      MBX_DISABLE: "1"
     strategy:
       matrix:
         arch: ${{ fromJSON(needs.changes.outputs.image_archs) }}

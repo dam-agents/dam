@@ -1,6 +1,9 @@
 import type { ArtifactKind } from "api-server-api";
 import { extensionOf } from "../domain/artifact-kind.js";
-import { ARTIFACT_BRIDGE_SHIM } from "./bridge-shim.js";
+import {
+  ARTIFACT_BRIDGE_SHIM,
+  ARTIFACT_SHARED_BRIDGE_SHIM,
+} from "./bridge-shim.js";
 import { escapeHtml } from "../../../core/escape-html.js";
 
 function jsStringLiteral(s: string): string {
@@ -85,8 +88,18 @@ export function renderWrapper(input: WrapperInput): string {
 </html>`;
 }
 
-export function renderHtmlInner(content: string, interactive = false): string {
-  const shim = interactive ? ARTIFACT_BRIDGE_SHIM : "";
+export type ArtifactBridge = "owner" | "shared";
+
+const BRIDGE_SHIMS: Record<ArtifactBridge, string> = {
+  owner: ARTIFACT_BRIDGE_SHIM,
+  shared: ARTIFACT_SHARED_BRIDGE_SHIM,
+};
+
+export function renderHtmlInner(
+  content: string,
+  bridge?: ArtifactBridge,
+): string {
+  const shim = bridge ? BRIDGE_SHIMS[bridge] : "";
   const base = /<base[\s>]/i.test(content) ? "" : `<base target="_blank">`;
   const prelude = `${shim}${base}`;
   if (!prelude) return content;
@@ -270,9 +283,9 @@ function renderCodeInner(
 export function renderTextKindInner(
   kind: Exclude<ArtifactKind, "binary">,
   source: string,
-  opts: { title: string; fileName: string; interactive?: boolean },
+  opts: { title: string; fileName: string; bridge?: ArtifactBridge },
 ): string {
-  if (kind === "html") return renderHtmlInner(source, opts.interactive);
+  if (kind === "html") return renderHtmlInner(source, opts.bridge);
   if (kind === "jsx") return renderJsxInner(source, opts.title);
   if (kind === "markdown") return renderMarkdownInner(source, opts.title);
   return renderCodeInner(source, opts.fileName, opts.title);

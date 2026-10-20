@@ -18,6 +18,7 @@ import type { AgentRequestObserver } from "./acp-runtime/pending-agent-requests.
 import {
   CONFIGURE_SESSION_METHOD,
   isPlatformSubagentSetting,
+  NO_MODEL_REASON,
   PIN_MODEL_METHOD,
   sessionSettingsSchema,
   type SessionSettings,
@@ -51,6 +52,7 @@ export interface LeaseRouterDeps {
   providerAliases: () => string[];
   aliasOfConnection: (connectionId: string) => string | null;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
+  modelRequired: (harness: string) => boolean;
   settingScope?: (harness: string, id: string) => "process" | "session" | null;
   settingsError?: (
     harness: string,
@@ -84,6 +86,7 @@ export interface LeaseRouter extends AcpRuntime {
   recycleHarness(harness: string): void;
   leases(): LeasePair[];
   sessionChoice(sessionId: string): SessionChoice;
+  modelMissing(sessionId: string): boolean;
 }
 
 interface Lease {
@@ -111,6 +114,7 @@ const DEFAULT_IDLE_CHECK_MS = 30_000;
 const DEFAULT_LEASE_IDLE_MS = 10 * 60_000;
 const SWALLOWED_ID_PREFIX = "platform-lease-";
 const ROUTED_ID = /^platform-lease-in-([0-9a-f]+)-(\d+)-(.+)$/s;
+const REWRITE_FROM_METHOD = "platform/rewriteFrom";
 
 const keyOf = (pair: LeasePair): string =>
   JSON.stringify([
@@ -137,7 +141,9 @@ export function canonicalModel(model: string): string {
  * Router routes on, not a fact of a process. There is no default lease: a
  * process starts on the first frame naming a session on its harness and goes
  * away once idle, so frames naming no session (`initialize`, `session/list`)
- * are answered here from the manifest and the session metadata. Each lease
+ * are answered here from the manifest and the session metadata; a
+ * `session/list` naming a harness in `_meta.platform` reaches that harness,
+ * which alone knows a terminal session's title. Each lease
  * is an unchanged ACP runtime behind a virtual channel per real client, with
  * agent-request ids kept apart across leases: a client sees each request
  * under an id that names this boot and the harness process that asked it, so
@@ -449,6 +455,24 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     };
   }
 
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a turn on a harness that reaches its models
+   * through the Model Router runs on the session's model; with none, the
+   * router or the harness would pick one the user never chose, so the turn
+   * is refused and the user picks.
+   */
+  function noModel(): object {
+    return {
+      code: -32001,
+      message:
+        "This session has no model. Pick one for it, or set the agent's default model on its Providers page.",
+      data: { platform: { reason: NO_MODEL_REASON } },
+    };
+  }
+
+  const missesModel = (choice: SessionChoice): boolean =>
+    choice.model === null && deps.modelRequired(choice.harness);
+
   function isSessionRunning(sessionId: string): boolean {
     return (
       leaseOfSession(sessionId)?.runtime.isSessionRunning(sessionId) ?? false
@@ -533,6 +557,10 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         refuse(real, frame.id, providerRemoved(revoked, revoked));
         return;
       }
+      if (missesModel(choice)) {
+        refuse(real, frame.id, noModel());
+        return;
+      }
       const v = channelOn(real, leaseFor(leasePairOf(choice)));
       v.used = true;
       v.deliver(JSON.stringify(withPlatformChoice(frame, choice)));
@@ -545,7 +573,17 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         : null;
     if (sessionId === null) {
       if (method === "session/list" && isRequest(frame)) {
-        reply(real, frame.id, deps.listSessions(isSessionRunning));
+        const harness = platformChoice(params).harness;
+        if (harness === undefined || !deps.harnessKnown(harness)) {
+          reply(real, frame.id, deps.listSessions(isSessionRunning));
+          return;
+        }
+        const v = channelOn(
+          real,
+          leaseFor(leasePairOf({ harness, model: null })),
+        );
+        v.used = true;
+        v.deliver(data);
         return;
       }
       /**
@@ -591,6 +629,15 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
           ? providerRemoved(revoked, revoked)
           : providerRemoved(choice.revoked!, null),
       );
+      return;
+    }
+    if (
+      (method === "session/prompt" || method === REWRITE_FROM_METHOD) &&
+      missesModel(choice)
+    ) {
+      if (isRequest(frame)) refuse(real, frame.id, noModel());
+      else
+        deps.log(`dropped a prompt for ${sessionId}: the session has no model`);
       return;
     }
     const lease = leaseFor(leasePairOf(choice));
@@ -773,6 +820,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     isSessionRunning,
 
     sessionChoice: (sessionId) => sessionChoice(sessionId, false),
+    modelMissing: (sessionId) => missesModel(sessionChoice(sessionId, false)),
 
     sessionFrames(sessionId) {
       return (

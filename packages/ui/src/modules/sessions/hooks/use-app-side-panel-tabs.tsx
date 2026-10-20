@@ -5,6 +5,7 @@ import {
   SmileRing,
 } from "../../getting-started/components/progress-ring.js";
 import { deriveChecklist } from "../../getting-started/lib/derive-checklist.js";
+import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
 import { useWaitingApprovals } from "../../home/hooks/use-waiting-approvals.js";
 import type { SidePanelTabProps } from "../components/side-panel-bar.js";
 
@@ -13,7 +14,8 @@ export function useAppSidePanelTabs(): Pick<
   "badges" | "icons"
 > & { gettingStarted: boolean } {
   const progress = useGettingStarted().data;
-  const waiting = useWaitingApprovals().length;
+  const waiting =
+    useWaitingApprovals().length + useDefaultModelNotices().waiting.length;
   const checklist = progress ? deriveChecklist(progress) : null;
   const unseen = progress?.unlocks.filter((u) => !u.seen).length ?? 0;
   const Ring = useNewLayout() ? SmileRing : ProgressRing;
@@ -39,7 +41,7 @@ export function useAppSidePanelTabs(): Pick<
       },
       approvals: {
         count: waiting,
-        label: `Approvals, ${String(waiting)} waiting`,
+        label: `Approvals, ${String(waiting)} need you`,
         tone: "warning",
       },
     },

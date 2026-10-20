@@ -10,6 +10,7 @@ interface Props {
   value: ArtifactVisibility;
   onChange: (value: ArtifactVisibility) => void;
   disabled: boolean;
+  unavailable?: Partial<Record<ArtifactVisibility, string>>;
 }
 
 export const VISIBILITY_OPTIONS: Record<
@@ -29,7 +30,12 @@ export const VISIBILITY_OPTIONS: Record<
   },
 };
 
-export function ShareVisibilityChoice({ value, onChange, disabled }: Props) {
+export function ShareVisibilityChoice({
+  value,
+  onChange,
+  disabled,
+  unavailable = {},
+}: Props) {
   return (
     <RadioGroup
       aria-label="Who can open this artifact"
@@ -42,6 +48,7 @@ export function ShareVisibilityChoice({ value, onChange, disabled }: Props) {
     >
       {artifactVisibilitySchema.options.map((visibility) => {
         const { label, description, Icon } = VISIBILITY_OPTIONS[visibility];
+        const unavailableReason = unavailable[visibility];
         return (
           <div key={visibility} className="flex flex-col gap-1">
             <RadioGroupItem
@@ -53,7 +60,8 @@ export function ShareVisibilityChoice({ value, onChange, disabled }: Props) {
                   className="ml-1.5 inline align-[-2px] text-muted-foreground"
                 />
               }
-              description={description}
+              description={unavailableReason ?? description}
+              disabled={unavailableReason !== undefined}
               testId={`share-visibility-${visibility}`}
               className="rounded-lg p-2 enabled:cursor-pointer enabled:hover:bg-muted/40"
             />

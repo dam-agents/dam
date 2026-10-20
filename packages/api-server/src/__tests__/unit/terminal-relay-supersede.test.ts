@@ -1,4 +1,4 @@
-import { describe, it, expect, afterEach } from "vitest";
+import { describe, it, expect, afterEach, vi } from "vitest";
 import { createServer, type Server } from "node:http";
 import { WebSocket, WebSocketServer } from "ws";
 import { createTerminalRelay } from "../../apps/api-server/agent-proxies/terminal-relay.js";
@@ -236,5 +236,24 @@ describe("terminal relay wake", () => {
     expect(asked).toEqual([{ waitOnly: true }, { waitOnly: false }]);
     agent.closeAllConnections();
     wss.close();
+  });
+});
+
+describe("terminal relay keepalive", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // TEST_SCENARIO: while the harness sits at its prompt, no frame crosses `dam chat`'s terminal socket, and networks that close quiet connections cut it after as little as 60 seconds. The relay pings the client 30 seconds after it attaches, also while the agent is still waking.
+  it("pings a quiet client while its agent wakes", async () => {
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    const a = await replica(fakeBus());
+    const ws = await a.attach("agent-1", "s1");
+
+    const ping = new Promise<void>((r) => ws.once("ping", () => r()));
+    vi.advanceTimersByTime(30_000);
+    await ping;
+
+    expect(ws.readyState).toBe(WebSocket.OPEN);
   });
 });

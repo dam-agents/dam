@@ -269,7 +269,7 @@ const (
 	// the seed. The migration can no longer be aborted.
 	ReasonRuntimeMigrationVerified = "Verified"
 	// ReasonRuntimeMigrationFailed: the copy attempts or the time budget ran
-	// out. Terminal until the user retries or aborts.
+	// out. Terminal until an operator retries or aborts.
 	ReasonRuntimeMigrationFailed = "Failed"
 )
 

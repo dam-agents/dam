@@ -44,6 +44,7 @@ import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  servesHarness,
   VENDORED_PRICE_TABLE,
 } from "./modules/model-catalog/index.js";
 import {
@@ -57,6 +58,8 @@ import {
   spawnSshd,
   type PreparedSshd,
 } from "./modules/ssh.js";
+import { terminalBusy } from "./modules/terminal-busy.js";
+import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
   agentBrowserCommand,
@@ -97,6 +100,7 @@ import {
   readSkillInstallBootState,
   resolveDrivers,
   harnessConfigBindingOf,
+  readCurrentValues,
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
@@ -264,6 +268,7 @@ const modelCallExporter = createModelCallExporter({
  */
 let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
 let isRuntimeSession: ((sessionId: string) => boolean) | null = null;
+let runningSessionsOf: ((harness: string) => string[]) | null = null;
 const TERMINAL_PIN_REFRESH_MS = 2_000;
 const terminalSessionOf = createTerminalSessionLookup(
   Object.values(harnessManifests).flatMap((m) =>
@@ -281,6 +286,7 @@ const modelRouter = composeModelRouter({
   },
   isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
   terminalSessionOf,
+  runningSessionsOf: (harness) => runningSessionsOf?.(harness) ?? [],
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -350,6 +356,28 @@ const nativeConnectionOf = (
   }
   const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
   return home ? native(home) : null;
+};
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models
+ * through the Model Router needs each session's model; one that runs on a
+ * native Connection, or an agent holding no provider whose API the harness
+ * speaks, keeps the harness's own model configuration. Before the pod's env
+ * arrives nothing is known, so a model is required.
+ */
+const modelRequired = (harness: string): boolean => {
+  const binding = harnessManifests[harness]?.modelRouter;
+  if (binding === undefined) return false;
+  if (!envStore.ready()) return true;
+  return (
+    nativeConnectionOf(harness, null) === null &&
+    envStore.state().providers.some((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      return (
+        alias !== null &&
+        servesHarness({ dialects: PROVIDER_DIALECTS[alias] }, harness, binding)
+      );
+    })
+  );
 };
 const nativeEnv = (connectionId: string): Record<string, string> =>
   envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
@@ -423,35 +451,44 @@ const {
   envReader: envStore,
   defaultHarness,
   harnesses: Object.fromEntries(
-    Object.entries(harnessManifests).map(([name, manifest]) => [
-      name,
-      {
-        sessionHistory: manifest.sessionHistory,
-        ...(manifest.terminalSessionPins && {
-          terminalSessionPins: expandHome(
-            manifest.terminalSessionPins,
-            homeDir,
-          ),
-        }),
-        sessionModel: sessionModelOf(manifest),
-        ...(manifest.modelRouter?.sessionModel && {
-          sessionModelFrame: {
-            configOption: manifest.modelRouter.sessionModel.configOption,
-            render: (model: string) =>
-              (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
-              renderSessionModel(model, manifest.modelRouter),
-          },
-        }),
-        ...(manifest.initializeCapabilities && {
-          initialize: manifest.initializeCapabilities as Record<
-            string,
-            unknown
-          >,
-        }),
-        sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
-        catalog: harnessConfigBindingOf(manifest)?.catalog,
-      },
-    ]),
+    Object.entries(harnessManifests).map(([name, manifest]) => {
+      const harnessConfig = harnessConfigBindingOf(manifest);
+      return [
+        name,
+        {
+          sessionHistory: manifest.sessionHistory,
+          ...(manifest.terminalSessionPins && {
+            terminalSessionPins: expandHome(
+              manifest.terminalSessionPins,
+              homeDir,
+            ),
+          }),
+          sessionModel: sessionModelOf(manifest),
+          ...(manifest.modelRouter?.sessionModel && {
+            sessionModelFrame: {
+              configOption: manifest.modelRouter.sessionModel.configOption,
+              render: (model: string) =>
+                (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
+                renderSessionModel(model, manifest.modelRouter),
+            },
+          }),
+          ...(manifest.initializeCapabilities && {
+            initialize: manifest.initializeCapabilities as Record<
+              string,
+              unknown
+            >,
+          }),
+          sessionSettings: harnessConfig?.sessionSettings,
+          catalog: harnessConfig?.catalog,
+          configured: () =>
+            harnessConfig
+              ? readCurrentValues(harnessConfig, homeDir, (msg) =>
+                  process.stderr.write(`[harness-config] ${msg}\n`),
+                )
+              : { mode: null, model: null },
+        },
+      ];
+    }),
   ),
   isTerminalSessionActive: isPtySessionActive,
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
@@ -473,6 +510,7 @@ const {
   unroutedProviderEnv,
   routerEnv: routerEnvOf,
   nativeConnectionOf,
+  modelRequired,
   nativeEnv,
   leaseIdleMs: config.LEASE_IDLE_MS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),
@@ -480,6 +518,14 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+runningSessionsOf = (harness) =>
+  Object.entries(sessionMetadata.all())
+    .filter(
+      ([sessionId, entry]) =>
+        (entry.meta.harness ?? defaultHarness) === harness &&
+        acpRuntime.isSessionRunning(sessionId),
+    )
+    .map(([sessionId]) => sessionId);
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
@@ -584,6 +630,7 @@ const trpcHandler = createHTTPHandler({
 
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
+const PTY_BACKGROUND_WORK_RECHECK_MS = 15_000;
 const PTY_ACTIVE_WINDOW_MS = 5_000;
 const PTY_INPUT_ECHO_MS = 500;
 
@@ -715,20 +762,41 @@ function killPtySlot(sessionId: string): void {
   } catch {}
   slot.headless.dispose();
   ptySlots.delete(sessionId);
+  backgroundWork.forget(sessionId);
   ptyLog(sessionId, "killed");
+}
+
+function anyPtyBusy(): boolean {
+  const kept = new Set(backgroundWork.held().map((h) => h.sessionId));
+  const now = Date.now();
+  return [...ptySlots.values()].some((slot) =>
+    terminalBusy({
+      attached: slot.client !== null,
+      sinceDetachMs: now - slot.detachedAt,
+      quietMs: now - slot.lastOutputAt,
+      detachGraceMs: PTY_DETACH_GRACE_MS,
+      idleReapMs: PTY_IDLE_REAP_MS,
+      keptBackgroundWork: kept.has(slot.sessionId),
+    }),
+  );
 }
 
 function reapPtySlotIfIdle(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot || slot.client || !slot.pty) return;
-  const quietMs = Date.now() - slot.lastOutputAt;
-  if (quietMs >= PTY_IDLE_REAP_MS) {
+  const reap = terminalReap({
+    quietMs: Date.now() - slot.lastOutputAt,
+    idleReapMs: PTY_IDLE_REAP_MS,
+    holdsBackgroundWork: backgroundWork.hasWork(sessionId),
+    recheckMs: PTY_BACKGROUND_WORK_RECHECK_MS,
+  });
+  if (reap.kind === "kill") {
     killPtySlot(sessionId);
     return;
   }
   slot.graceTimer = setTimeout(
     () => reapPtySlotIfIdle(slot.sessionId),
-    PTY_IDLE_REAP_MS - quietMs,
+    reap.ms,
   );
 }
 
@@ -749,6 +817,7 @@ function attachPty(
     slot.client = null;
     slot.detachedAt = Date.now();
     markTerminalSeen(slot.sessionId);
+    void sessionsService.adoptHarnessTitle(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -893,6 +962,7 @@ function attachPty(
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(slot.sessionId, `exited ${exitCode}`);
+        void sessionsService.adoptHarnessTitle(slot.sessionId);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
@@ -901,6 +971,7 @@ function attachPty(
         slot.pty = null;
         slot.headless.dispose();
         ptySlots.delete(slot.sessionId);
+        backgroundWork.forget(slot.sessionId);
       });
       return;
     }
@@ -956,7 +1027,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
+      idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
     };

@@ -141,7 +141,7 @@ export function describeWakeFailure(c: WakeFailureCause): string {
     case "migrating":
       return "the agent is moving to the new runtime";
     case "migration-failed":
-      return "the agent's move to the new runtime failed, and it stays asleep until its owner retries or aborts the move";
+      return "the agent's move to the new runtime failed, and it stays asleep until an operator finishes or undoes the move";
     case "hibernated-not-scaled":
       return "the platform didn't start it";
     case "agent-pod-failed":

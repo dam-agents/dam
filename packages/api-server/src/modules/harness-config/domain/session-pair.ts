@@ -71,12 +71,14 @@ export function sameModelName(listed: string | null, model: string): boolean {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the run stays on the harness asked for; its
- * provider is the remembered model's when still granted and accepted, else
- * the agent's default for that harness, and its model falls back to that
- * provider's first listed one. No fitting provider is a failed run, never a
- * jump to another harness; with nothing granted at all the run goes ahead
- * with no provider, for an agent that holds its model key some other way.
+ * UNIT_BOUNDARY_DESCRIPTION: the run stays on the harness asked for, on the
+ * model the person or the schedule chose and that model's provider, never a
+ * model or provider the platform picks in their place. A model that names no
+ * granted provider, or a saved default with no model, comes back with no
+ * model, which a run reports as the agent having no default model. No
+ * provider that fits the harness is a failed run, never a jump to another
+ * harness; with nothing granted at all the run goes ahead with no provider,
+ * for an agent that holds its model key some other way.
  */
 function resolveRoutedPair(input: SessionPairInputs): SessionPair | null {
   const remembered = input.remembered;
@@ -84,20 +86,8 @@ function resolveRoutedPair(input: SessionPairInputs): SessionPair | null {
   const forThisHarness = remembered?.harness === harness ? remembered : null;
   const accepts = (p: GrantedProvider): boolean =>
     input.fits(harness, p.type, p.templateId);
-  const wanted = qualifiedPairModel(forThisHarness?.model ?? null);
-  const wantedAlias = wanted?.slice(0, wanted.indexOf("/"));
-  const provider =
-    input.granted.find(
-      (p) => aliasForProviderType(p.type) === wantedAlias && accepts(p),
-    ) ??
-    resolveDefaultProvider({
-      harness,
-      saved: forThisHarness,
-      granted: input.granted,
-      accepts,
-    });
   const settings = forThisHarness?.settings;
-  if (!provider) {
+  if (!input.granted.some(accepts)) {
     if (input.granted.length > 0) return null;
     return {
       harness,
@@ -106,19 +96,19 @@ function resolveRoutedPair(input: SessionPairInputs): SessionPair | null {
       ...(settings && { settings }),
     };
   }
-  const alias = aliasForProviderType(provider.type);
-  const remembering = qualifiedPairModel(forThisHarness?.model ?? null);
-  const model =
-    remembering && remembering.startsWith(`${alias}/`)
-      ? remembering
-      : (input
-          .availableModels?.(harness)
-          ?.map(qualifiedPairModel)
-          .find((m) => m?.startsWith(`${alias}/`)) ?? null);
+  const wanted = qualifiedPairModel(forThisHarness?.model ?? null);
+  const wantedAlias = wanted?.slice(0, wanted.indexOf("/"));
+  const provider = wanted
+    ? input.granted.find(
+        (p) => aliasForProviderType(p.type) === wantedAlias && accepts(p),
+      )
+    : input.granted.find(
+        (p) => p.id === forThisHarness?.provider && accepts(p),
+      );
   return {
     harness,
-    provider: provider.id,
-    model,
+    provider: provider?.id ?? null,
+    model: provider && wanted ? wanted : null,
     ...(settings && { settings }),
   };
 }
