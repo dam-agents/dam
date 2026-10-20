@@ -65,7 +65,8 @@ export function AgentSessionList({
     fetchNextPage,
   } = list;
   const [retryingNext, setRetryingNext] = useState(false);
-  const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
+  const readableNext = hasNextPage && list.answerable;
+  const canFetch = readableNext && !isFetchingNextPage && !fetchNextPageFailed;
   const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
 
   return (
@@ -111,9 +112,9 @@ export function AgentSessionList({
           onNavigate={onNavigate}
         />
       ))}
-      {hasNextPage && <div ref={endRef} aria-hidden className="h-px" />}
+      {readableNext && <div ref={endRef} aria-hidden className="h-px" />}
       {isFetchingNextPage && !retryingNext && <SessionListSkeleton />}
-      {hasNextPage && (fetchNextPageFailed || retryingNext) && (
+      {readableNext && (fetchNextPageFailed || retryingNext) && (
         <RetryRow
           label="Couldn't load the rest."
           testId="sidebar-agent-sessions-more-failed"

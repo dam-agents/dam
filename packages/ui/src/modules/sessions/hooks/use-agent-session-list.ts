@@ -94,6 +94,7 @@ export function useAgentSessionList(agentId: string) {
     sessions: visible,
     rowState,
     operable,
+    answerable: answerableSoon,
     loading,
     provisional,
     recordRead: lastKnown !== undefined,

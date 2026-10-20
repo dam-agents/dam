@@ -218,3 +218,33 @@ it("refreshes session pages from the saved layout preference before flags load",
   await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
   expect(pagesA.calls()).toBe(2);
 });
+
+// TEST_SCENARIO: eight expanded lists of starting Agents hold every Session slot, each read waiting until the Agent list says its Agent is running. An agents hint must still refresh the Agent list at once, outside those slots, so the waits end and the held syncs settle without a focus or reconnect refresh.
+it("refreshes the agent list while session reads wait for it", async () => {
+  const { acpSessionsKeys } =
+    await import("../../modules/sessions/api/keys.js");
+  newLayout(true);
+  let agentReads = 0;
+  const waiting: (() => void)[] = [];
+  let holding = false;
+  const ready = () => !holding || agentReads >= 3;
+  await watch(agentsKeys.listWithChannels(), () => {
+    agentReads++;
+    if (ready()) waiting.splice(0).forEach((go) => go());
+    return Promise.resolve(agentReads);
+  });
+  for (let i = 0; i < 8; i++)
+    await watch(acpSessionsKeys.pagesOf(`agent-${i}`, ["chats"]), () =>
+      ready()
+        ? Promise.resolve(1)
+        : new Promise((resolve) => waiting.push(() => resolve(1))),
+    );
+  holding = true;
+
+  const sync = invalidateForLiveEvent({ topic: "sync" });
+  await vi.waitFor(() => expect(waiting).toHaveLength(8));
+  await invalidateForLiveEvent({ topic: "agents", agentId: "agent-0" });
+  await sync;
+
+  expect(agentReads).toBe(3);
+});

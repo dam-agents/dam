@@ -45,6 +45,7 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     sessions: [],
     rowState: () => ({}),
     operable: true,
+    answerable: agentState.answerable,
     loading: list.loading,
     provisional: false,
     recordRead: true,
@@ -237,4 +238,21 @@ it("offers a retry for a failed later page", () => {
   );
   expect(html).toContain('data-testid="sidebar-agent-sessions-more-failed"');
   expect(html).toContain("Couldn&#x27;t load the rest. Retry");
+});
+
+// TEST_SCENARIO: a later page failed and then the Agent went to sleep, which turns its list read off with the first page still cached; the list must neither offer the retry nor load the rest on scroll, since either could only fail with a missing query function, and must offer the retry again once the Agent wakes.
+it("offers no later-page retry while the Agent cannot answer", () => {
+  list.failed = false;
+  list.nextFailed = true;
+  agentState.answerable = false;
+  const asleep = renderToStaticMarkup(
+    createElement(AgentSessionList, { agentId: "a" }),
+  );
+  expect(asleep).not.toContain("sidebar-agent-sessions-more-failed");
+  expect(asleep).not.toContain('class="h-px"');
+
+  agentState.answerable = true;
+  expect(
+    renderToStaticMarkup(createElement(AgentSessionList, { agentId: "a" })),
+  ).toContain('data-testid="sidebar-agent-sessions-more-failed"');
 });

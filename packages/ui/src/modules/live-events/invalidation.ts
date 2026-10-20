@@ -69,8 +69,9 @@ interface Pass {
 
 const queued = new Map<string, Pass>();
 const running = new Set<string>();
+let sessionReads = 0;
 
-// UNIT_BOUNDARY_DESCRIPTION: one queue for every hint. A hint for a query family that is already queued joins that pass; one for a family that is refetching queues a single pass after it, so the data is as fresh as the last hint without a fetch per hint. At most eight families refetch at once across all hints, however many arrive together.
+// UNIT_BOUNDARY_DESCRIPTION: one queue for every hint. A hint for a query family that is already queued joins that pass; one for a family that is refetching queues a single pass after it, so the data is as fresh as the last hint without a fetch per hint. At most eight Session families refetch at once across all hints, however many arrive together; every other family refetches at once, because a Session read waiting for its Agent to start only ends when the Agent list refreshes.
 function refresh(queryKey: QueryKey): Promise<void> {
   const hash = hashKey(queryKey);
   return new Promise((resolve) => {
@@ -83,14 +84,17 @@ function refresh(queryKey: QueryKey): Promise<void> {
 
 function pump(): void {
   for (const [hash, pass] of queued) {
-    if (running.size >= REFRESH_CONCURRENCY) return;
     if (running.has(hash)) continue;
+    const bounded = acpSessionsKeys.agentIdOf(pass.queryKey) !== null;
+    if (bounded && sessionReads >= REFRESH_CONCURRENCY) continue;
     queued.delete(hash);
     running.add(hash);
+    if (bounded) sessionReads++;
     void queryClient
       .invalidateQueries({ queryKey: pass.queryKey })
       .finally(() => {
         running.delete(hash);
+        if (bounded) sessionReads--;
         for (const done of pass.done) done();
         pump();
       });
