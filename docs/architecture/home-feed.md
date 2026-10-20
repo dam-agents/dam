@@ -78,6 +78,8 @@ With Home selected, the list shows the record's rows for every Agent: the unread
 With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
 Both column headers carry one session filter, by state and by Session type, and share it: a filter set under Home also narrows an Agent's own list, and the control shows a mark while a filter is on.
 The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
+The strip has two fixed widths, and a short drag of its edge or an arrow key flips it to the other one; the choice is kept in the browser.
+Wide, each Agent is a card with its name, its state (Working or Idle while it runs, from its Sessions), its pending update, and buttons for a new Session and its configuration.
 A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
 Pins are kept in the browser, so they do not follow the user to another device.
 The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
