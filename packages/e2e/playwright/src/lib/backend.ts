@@ -442,7 +442,7 @@ export function runnerKilledVmms(
 const CLAIM_DIR = "/var/lib/platform/disks";
 const NODE_MOUNTS = ["/var/lib/platform/images", "/var/lib/platform/releases"];
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a claim is the node's own disk, from what the runner's own `stat` says of it: the device the kernel gives a filesystem, and its type, against the devices of the mounts the chart hands the runner from the node itself. A directory of the node's disk is on the node's filesystem, so it has that filesystem's device whatever provisioner named it, which the provisioner's name and the PersistentVolume's source cannot say: a CSI driver named for the node's disk and a CSI driver backed by a network both read as a driver name, and neither is where the blocks are. `null` is a claim nothing above proves either way — an unreadable read, a filesystem that is not one (an overlay, a tmpfs), or a node mount that could not be read — and a caller must treat it as no proof of a volume of its own. This is the whole decision, apart from the reading, so it can be checked without a cluster.
+// UNIT_BOUNDARY_DESCRIPTION: whether a claim is the node's own disk, from what the runner's own `stat` says of it: the device the kernel gives the claim's path, and its filesystem type, against the devices of the mounts the chart hands the runner from the node itself. A directory of the node's disk is on the node's filesystem, so it has that filesystem's device whatever provisioner named it, which the provisioner's name and the PersistentVolume's source cannot say: a CSI driver named for the node's disk and a CSI driver backed by a network both read as a driver name, and neither is where the blocks are. Every node mount must be readable and they must agree: one mount read and the other not is no evidence of what the node's filesystem is, so it proves nothing either way. `null` is a claim nothing above proves either way — an unreadable read, a filesystem that is not one (an overlay, a tmpfs), or node mounts that could not all be read or that disagree — and a caller must treat it as no proof of a volume of its own. Different devices from these two known mounts is the strongest answer this can give, so the caller's install must mount the node's disk at both paths; this does not enumerate every filesystem the node has. This is the whole decision, apart from the reading, so it can be checked without a cluster.
 export function claimOnNode(read: string): boolean | null {
   const lines = read
     .split("\n")
@@ -465,20 +465,28 @@ export function claimOnNode(read: string): boolean | null {
     .filter(
       (value): value is string => value !== undefined && /^\d+$/.test(value),
     );
-  if (nodeDevices.length === 0) return null;
-  return nodeDevices.includes(device);
+  if (nodeDevices.length !== NODE_MOUNTS.length) return null;
+  if (new Set(nodeDevices).size !== 1) return null;
+  return nodeDevices[0] === device;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reads from inside the runner what `claimOnNode` decides on: the claim's filesystem and the filesystems of the two mounts the chart hands the runner from the node itself. Both mounts are hostPaths of the node's disk, so their device is the node's own filesystem.
+// UNIT_BOUNDARY_DESCRIPTION: reads from inside the runner what `claimOnNode` decides on: the device of the claim's path and its filesystem's type, and the device of each mount the chart hands the runner from the node. The device is a property of the path's own inode, from `stat -c %d`; `stat -f -c %d` is the count of free inodes, which two directories on one filesystem need not share and which drifts as anything writes, so it cannot name a filesystem. The type is the kernel's own name for it, from the mount table entry whose mount point is the longest one that contains the claim — the claim itself need not be a mount point, and a mount nested under another wins over it — and not the name the local `stat` prints, which differs (`overlayfs` against `overlay`) and so would read differently on different images. Each node mount prints a line even when it cannot be read, so a mount that failed reaches the classifier as no usable device rather than as a missing line.
 export function runnerClaimRead(agentId: string): string {
   return onRunnerHost(
     agentId,
     [
-      `set -- $(stat -f -c '%d %T' ${CLAIM_DIR} 2>/dev/null)`,
-      'echo "claim $1 $2"',
+      `claim=${CLAIM_DIR}`,
+      'type=$(awk -v c="$claim" \'',
+      '  $5 == "/" || $5 == c || (index(c, $5) == 1 && substr(c, length($5) + 1, 1) == "/") {',
+      "    if (length($5) > best) {",
+      "      best = length($5)",
+      '      for (i = 7; i <= NF; i++) if ($i == "-") { kind = $(i + 1); break }',
+      "    }",
+      "  }",
+      "  END { print kind }' /proc/self/mountinfo)",
+      'echo "claim $(stat -c %d "$claim" 2>/dev/null) $type"',
       `for p in ${NODE_MOUNTS.join(" ")}; do`,
-      '  set -- $(stat -f -c "%d %T" "$p" 2>/dev/null)',
-      '  echo "node $1"',
+      '  echo "node $(stat -c %d "$p" 2>/dev/null)"',
       "done",
     ].join("\n"),
     { timeoutMs: 60_000 },
