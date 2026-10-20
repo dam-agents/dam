@@ -28,7 +28,7 @@ import {
 } from "./agent-card-fixtures.js";
 import { agents } from "./agents.js";
 
-const running = agents.find((a) => a.state === "running")!;
+const running = agents.find((a) => a.state === "running") ?? agents[0]!;
 
 function SectionHeader({ title }: { title: string }) {
   return (

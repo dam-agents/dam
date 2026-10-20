@@ -105,12 +105,9 @@ export const createAgentsSlice: StateCreator<
   },
 
   navigateToAgentLanding: (id) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "agent-landing", agentId: id }),
-    );
-    set({ selectedAgent: id, view: "agent-landing", agentId: id });
+    history.pushState(null, "", routeToPath({ view: "chat", agent: id }));
+    get().resetChatContext();
+    set({ selectedAgent: id, view: "chat", mobileScreen: "sessions" });
   },
 
   openKnowledgeBase: (id) => {

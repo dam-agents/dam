@@ -29,12 +29,15 @@ export function useNotifications(): Notifications {
   const agents = useAgentsList();
   const approvals = useApprovalsForOwner();
 
-  const runningAgents = useMemo(
-    () => agents.filter((agent) => agent.state === "running"),
-    [agents],
-  );
-
   const mockFn = (window as any).__mockListAgentSessions;
+
+  const runningAgents = useMemo(
+    () =>
+      mockFn
+        ? agents
+        : agents.filter((agent) => agent.state === "running"),
+    [agents, mockFn],
+  );
   const sessions = useQueries({
     queries: runningAgents.map((agent) => ({
       queryKey: notificationKeys.sessions(agent.id),

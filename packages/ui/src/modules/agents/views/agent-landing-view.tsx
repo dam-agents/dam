@@ -297,7 +297,8 @@ export function AgentLandingView() {
   };
 
   return (
-    <div className="mx-auto w-full max-w-[800px] px-4 py-6 pb-20 md:px-[5%]">
+    <div className="flex min-h-full flex-col items-center justify-center px-4 py-6 pb-20 md:px-[5%]">
+      <div className="w-full max-w-[640px]">
       <button
         type="button"
         onClick={goBack}
@@ -307,57 +308,52 @@ export function AgentLandingView() {
         Back
       </button>
 
-      <div className="flex items-start gap-5">
+      <div className="flex flex-col items-center text-center">
         <AgentAvatar
           agentId={agent.id}
           state={display.state}
-          className="size-14 shrink-0"
+          className="size-16 shrink-0"
         />
 
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-3">
-            <h1 className="min-w-0 truncate text-2xl font-bold text-foreground">
-              {agent.name}
-            </h1>
-            <AgentStateBadge state={display.state} />
-          </div>
-
-          {agent.description && (
-            <p className="mt-1 text-sm text-muted-foreground">
-              {agent.description}
-            </p>
-          )}
-
-          <div className="mt-3 flex flex-wrap items-center gap-2">
-            {computeLabel && (
-              <Badge variant="outline" className="gap-1">
-                {computeLabel}
-              </Badge>
-            )}
-            {slackChannels.length > 0 && (
-              <Badge variant="muted" className="gap-1.5">
-                <ConnectionIcon iconSlug="slack" alt="" size={16} />
-                {slackChannels
-                  .slice(0, 3)
-                  .map((ch) => ch.slackChannelId)
-                  .join(", ")}
-                {slackChannels.length > 3 && `, +${slackChannels.length - 3}`}
-              </Badge>
-            )}
-            {scheduleCount > 0 && (
-              <Badge variant="muted" className="gap-1.5">
-                <Time size={16} />
-                {scheduleCount} active schedule
-                {scheduleCount === 1 ? "" : "s"}
-              </Badge>
-            )}
-          </div>
+        <div className="mt-3 flex items-center justify-center gap-3">
+          <h1 className="text-2xl font-bold text-foreground">
+            {agent.name}
+          </h1>
+          <AgentStateBadge state={display.state} />
         </div>
 
-        <div className="shrink-0">
+        {agent.description && (
+          <p className="mt-1.5 text-sm text-muted-foreground">
+            {agent.description}
+          </p>
+        )}
+
+        <div className="mt-3 flex flex-wrap items-center justify-center gap-2">
+          {computeLabel && (
+            <Badge variant="outline" className="gap-1">
+              {computeLabel}
+            </Badge>
+          )}
+          {slackChannels.length > 0 && (
+            <Badge variant="muted" className="gap-1.5">
+              <ConnectionIcon iconSlug="slack" alt="" size={16} />
+              {slackChannels
+                .slice(0, 3)
+                .map((ch) => ch.slackChannelId)
+                .join(", ")}
+              {slackChannels.length > 3 && `, +${slackChannels.length - 3}`}
+            </Badge>
+          )}
+          {scheduleCount > 0 && (
+            <Badge variant="muted" className="gap-1.5">
+              <Time size={16} />
+              {scheduleCount} active schedule
+              {scheduleCount === 1 ? "" : "s"}
+            </Badge>
+          )}
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <Button variant="outline" size="icon" aria-label="Agent actions">
+              <Button variant="ghost" size="icon" className="size-7" aria-label="Agent actions">
                 <OverflowMenuVertical size={16} />
               </Button>
             </DropdownMenuTrigger>
@@ -453,6 +449,7 @@ export function AgentLandingView() {
             </div>
           )}
         </div>
+      </div>
       </div>
     </div>
   );

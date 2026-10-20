@@ -204,7 +204,8 @@ export function IconRail({
   useEffect(() => {
     setScopedAgentId(null);
     setExcludedAgentIds(new Set());
-    useStore.setState({ expandedSidebarAgents: new Set() });
+    if (!import.meta.env.VITE_MOCK)
+      useStore.setState({ expandedSidebarAgents: new Set() });
   }, [clickVariant]);
   useEffect(() => {
     const w = window as unknown as Record<string, unknown>;
@@ -560,6 +561,7 @@ export function IconRail({
                     const isFocused = focusing && agent.id === scopedAgentId;
                     const folded = focusing && !isFocused;
                     const isSelected =
+                      !import.meta.env.VITE_MOCK &&
                       !!activeSessionId &&
                       agentSessions.some(
                         (s) =>

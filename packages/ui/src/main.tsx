@@ -55,16 +55,15 @@ async function main() {
     const route = parseRoute(window.location.pathname);
     const urlSession =
       route.view === "chat" && "session" in route ? route.session : null;
-    const defaultSession = urlSession ?? MOCK_SESSION_IDS.kitCodeGuardian;
+    const defaultSession = urlSession ?? MOCK_SESSION_IDS.artifact;
     const packId = KIT_SESSION_TO_PACK[defaultSession] ?? null;
 
     history.replaceState(null, "", `/chat/${agents[0]!.id}`);
     useStore.setState({
       view: "chat",
       selectedAgent: agents[0]!.id,
-      pendingResumeSessionId: defaultSession,
-      starterKitMode: !!packId,
-      selectedStarterKitId: packId,
+      expandedSidebarAgents: new Set(agents.map((a) => a.id)),
+      sidebarExpanded: true,
     });
 
     const { default: App } = await import("./app.js");

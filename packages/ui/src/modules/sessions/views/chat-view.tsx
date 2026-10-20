@@ -567,12 +567,14 @@ export function ChatView() {
       />
     );
 
-  const statusDot = !isDemo && (
-    <span
-      aria-hidden
-      className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-    />
-  );
+  const statusDot = isMock
+    ? null
+    : !isDemo && (
+        <span
+          aria-hidden
+          className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+        />
+      );
 
   const { available: browserAvailable } = useBrowserAvailable();
   const canOpenBrowser = isMock || browserAvailable;
@@ -746,8 +748,6 @@ export function ChatView() {
                             appears here as soon as it&apos;s up.
                           </p>
                         </div>
-                      ) : isMock ? (
-                        <div className="flex flex-1 flex-col items-center justify-center" />
                       ) : (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
@@ -927,7 +927,7 @@ export function ChatView() {
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
-      ) : selectedAgent && !agentInaccessible && !agentOperable ? (
+      ) : !isMock && selectedAgent && !agentInaccessible && !agentOperable ? (
         <AgentUnavailableOverlay
           agent={agentView}
           display={agentDisplay}

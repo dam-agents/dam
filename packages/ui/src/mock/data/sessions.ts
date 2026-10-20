@@ -3,70 +3,6 @@ import { AGENT_IDS } from "./agents.js";
 const now = Date.now();
 const min = 60_000;
 const hr = 60 * min;
-const day = 24 * hr;
-
-const sessionTitles = [
-  "Design review for checkout flow redesign",
-  "User research synthesis — Q3 interviews",
-  "Sprint planning — mobile team",
-  "Competitive analysis of onboarding patterns",
-  "Finalize pricing page copy and layout",
-  "Accessibility audit for dashboard components",
-  "Write PRD for notifications feature",
-  "Prototype search and filter patterns",
-  "Customer journey map — enterprise tier",
-  "A/B test results for signup form variants",
-  "Update design system color tokens",
-  "Review analytics for feature adoption",
-  "Stakeholder presentation — Q4 roadmap",
-  "Persona update based on new survey data",
-  "Heuristic evaluation of settings flow",
-  "Draft release notes for v3.0 launch",
-  "Information architecture for help center",
-  "Usability test script — billing flow",
-  "Design QA for dark mode components",
-  "Weekly product sync — growth team",
-  "Map user flows for team onboarding",
-  "Prioritize backlog items for next sprint",
-  "Create wireframes for reporting dashboard",
-  "Review NPS feedback and tag themes",
-  "Define success metrics for new search",
-  "Update component library documentation",
-  "Analyze funnel drop-off in trial signup",
-  "Design handoff notes for profile page",
-  "Content strategy for empty states",
-  "Benchmark load times against competitors",
-  "Plan beta launch for collaboration features",
-  "Interview debrief — power user segment",
-  "Audit notification preferences UX",
-  "Spec out keyboard shortcuts for power users",
-  "Review support tickets for UX patterns",
-  "Design token migration to new naming scheme",
-  "Mockup variants for mobile navigation",
-  "Write acceptance criteria for file upload",
-  "Localization review for date formats",
-  "Gather feedback on new sidebar layout",
-  "Plan research sessions for Q4 features",
-  "Map integration touchpoints for Slack connect",
-  "Evaluate icon set for consistency",
-  "Draft microcopy for error messages",
-  "Analyze session recordings for friction points",
-  "Scope MVP for team permissions feature",
-  "Review brand guidelines for marketing pages",
-  "Prototype drag-and-drop reordering",
-  "Create storyboard for onboarding tutorial",
-  "Define edge cases for bulk actions flow",
-  "Compile insights from customer advisory board",
-  "Design system spacing scale proposal",
-  "Review competitor pricing and packaging",
-  "Test color contrast ratios for WCAG AA",
-  "Write user story for scheduled reports",
-  "Prepare demo for investor product review",
-  "Catalog reusable patterns across product",
-  "Plan migration path for legacy dashboard",
-  "Outline strategy for self-serve analytics",
-  "Compile feature requests from sales team",
-];
 
 const slackChannels = [
   "code-review",
@@ -78,64 +14,44 @@ const slackChannels = [
   "security",
 ];
 
-function generateSessions(
+function makeSession(
+  id: string,
   agentId: string,
-  count: number,
-  options?: {
-    runningCount?: number;
-    slackRatio?: number;
-    scheduleRatio?: number;
+  title: string,
+  ageMs: number,
+  opts?: {
+    unread?: boolean;
+    type?: "regular" | "channel_slack" | "schedule_cron";
+    slackChannel?: string;
   },
 ) {
-  const {
-    runningCount = 1,
-    slackRatio = 0.2,
-    scheduleRatio = 0.15,
-  } = options ?? {};
-  const sessions = [];
+  const { unread = false, type = "regular", slackChannel } = opts ?? {};
+  const createdAt = new Date(now - ageMs - 30 * min).toISOString();
+  const updatedAt = new Date(now - ageMs).toISOString();
+  const seenAt = unread
+    ? new Date(now - ageMs - hr).toISOString()
+    : new Date(now - ageMs + 10 * min).toISOString();
 
-  for (let i = 0; i < count; i++) {
-    const ageMs =
-      i < 3 ? i * 30 * min : (i - 2) * 4 * hr + Math.random() * 2 * hr;
-    const isRunning = i < runningCount;
-    const isSlack = !isRunning && Math.random() < slackRatio;
-    const isSchedule = !isRunning && !isSlack && Math.random() < scheduleRatio;
-    const isUnread = !isRunning && i < 6 && Math.random() < 0.5;
-
-    const createdAt = new Date(now - ageMs - 30 * min).toISOString();
-    const updatedAt = new Date(now - ageMs).toISOString();
-    const seenAt =
-      isRunning || isUnread
-        ? new Date(now - ageMs - hr).toISOString()
-        : new Date(now - ageMs + 10 * min).toISOString();
-
-    sessions.push({
-      sessionId: `sess-${agentId.slice(-4)}-${String(i).padStart(3, "0")}`,
-      agentId,
-      type: isSlack
-        ? ("channel_slack" as const)
-        : isSchedule
-          ? ("schedule_cron" as const)
-          : ("regular" as const),
-      mode: "chat" as const,
-      createdAt,
-      updatedAt,
-      title: sessionTitles[i % sessionTitles.length],
-      running: isRunning,
-      seenAt,
-      ...(isSlack
-        ? {
-            threadTs: `17258${String(i).padStart(5, "0")}.000${i}`,
-            slackChannel: slackChannels[i % slackChannels.length],
-          }
-        : {}),
-      ...(isSchedule
-        ? { scheduleId: `sched-${String(i).padStart(3, "0")}` }
-        : {}),
-    });
-  }
-
-  return sessions;
+  return {
+    sessionId: id,
+    agentId,
+    type,
+    mode: "chat" as const,
+    createdAt,
+    updatedAt,
+    title,
+    running: false,
+    seenAt,
+    ...(type === "channel_slack"
+      ? {
+          threadTs: `17258${id.slice(-5)}.000`,
+          slackChannel: slackChannel ?? slackChannels[0],
+        }
+      : {}),
+    ...(type === "schedule_cron"
+      ? { scheduleId: `sched-${id.slice(-3)}` }
+      : {}),
+  };
 }
 
 export const MOCK_SESSION_IDS = {
@@ -146,55 +62,149 @@ export const MOCK_SESSION_IDS = {
 
 export const KIT_SESSION_TO_PACK: Record<string, string> = {};
 
+const ciPipelineSessions = [
+  makeSession(
+    MOCK_SESSION_IDS.artifact,
+    AGENT_IDS.codexResearch,
+    "Fix flaky integration tests in auth module",
+    15 * min,
+    { unread: true },
+  ),
+  makeSession(
+    "sess-ci-002",
+    AGENT_IDS.codexResearch,
+    "Docker image build for staging deploy",
+    2 * hr,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.browser,
+    AGENT_IDS.codexResearch,
+    "Browser session",
+    3 * hr,
+  ),
+  makeSession(
+    "sess-ci-004",
+    AGENT_IDS.codexResearch,
+    "Migrate CI pipeline to GitHub Actions",
+    6 * hr,
+  ),
+  makeSession(
+    MOCK_SESSION_IDS.longChat,
+    AGENT_IDS.codexResearch,
+    "Long chat stream example",
+    8 * hr,
+  ),
+  makeSession(
+    "sess-ci-006",
+    AGENT_IDS.codexResearch,
+    "Set up parallel test runners",
+    12 * hr,
+  ),
+  makeSession(
+    "sess-ci-007",
+    AGENT_IDS.codexResearch,
+    "Debug OOM in build container",
+    18 * hr,
+    { type: "channel_slack", slackChannel: "deployments" },
+  ),
+  makeSession(
+    "sess-ci-008",
+    AGENT_IDS.codexResearch,
+    "Configure artifact caching",
+    24 * hr,
+  ),
+];
+
+const securityScannerSessions = [
+  makeSession(
+    "sess-sec-001",
+    AGENT_IDS.geminiPipeline,
+    "Scan repositories for CVE-2026-3891",
+    25 * min,
+    { unread: true },
+  ),
+  makeSession(
+    "sess-sec-002",
+    AGENT_IDS.geminiPipeline,
+    "Audit npm dependencies for known exploits",
+    3 * hr,
+  ),
+  makeSession(
+    "sess-sec-003",
+    AGENT_IDS.geminiPipeline,
+    "Secret leak detection in feature branches",
+    7 * hr,
+    { type: "channel_slack", slackChannel: "security" },
+  ),
+  makeSession(
+    "sess-sec-004",
+    AGENT_IDS.geminiPipeline,
+    "SAST scan for SQL injection patterns",
+    14 * hr,
+  ),
+  makeSession(
+    "sess-sec-005",
+    AGENT_IDS.geminiPipeline,
+    "Review container image vulnerabilities",
+    20 * hr,
+  ),
+  makeSession(
+    "sess-sec-006",
+    AGENT_IDS.geminiPipeline,
+    "License compliance check for new packages",
+    28 * hr,
+    { type: "schedule_cron" },
+  ),
+];
+
+const docsBuilderSessions = [
+  makeSession(
+    "sess-doc-001",
+    AGENT_IDS.knowledgeBase,
+    "Generate API docs for payments module",
+    4 * hr,
+  ),
+  makeSession(
+    "sess-doc-002",
+    AGENT_IDS.knowledgeBase,
+    "Update REST endpoint reference",
+    9 * hr,
+  ),
+  makeSession(
+    "sess-doc-003",
+    AGENT_IDS.knowledgeBase,
+    "Create onboarding guide for new contributors",
+    16 * hr,
+  ),
+  makeSession(
+    "sess-doc-004",
+    AGENT_IDS.knowledgeBase,
+    "Extract inline JSDoc into markdown pages",
+    22 * hr,
+    { type: "schedule_cron" },
+  ),
+  makeSession(
+    "sess-doc-005",
+    AGENT_IDS.knowledgeBase,
+    "Build changelog from merged PRs",
+    30 * hr,
+  ),
+  makeSession(
+    "sess-doc-006",
+    AGENT_IDS.knowledgeBase,
+    "Sync API schema with OpenAPI spec",
+    36 * hr,
+  ),
+  makeSession(
+    "sess-doc-007",
+    AGENT_IDS.knowledgeBase,
+    "Review and fix broken doc links",
+    42 * hr,
+  ),
+];
+
 export const mockSessions: Record<string, unknown[]> = {
-  [AGENT_IDS.codexResearch]: [
-    {
-      sessionId: MOCK_SESSION_IDS.artifact,
-      agentId: AGENT_IDS.codexResearch,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 2 * hr).toISOString(),
-      updatedAt: new Date(now - 45 * min).toISOString(),
-      title: "Artifact session example",
-      running: false,
-      seenAt: new Date(now - 30 * min).toISOString(),
-    },
-    {
-      sessionId: MOCK_SESSION_IDS.browser,
-      agentId: AGENT_IDS.codexResearch,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 3 * hr).toISOString(),
-      updatedAt: new Date(now - 1 * hr).toISOString(),
-      title: "Browser session",
-      running: false,
-      seenAt: new Date(now - 50 * min).toISOString(),
-    },
-    {
-      sessionId: MOCK_SESSION_IDS.longChat,
-      agentId: AGENT_IDS.codexResearch,
-      type: "regular" as const,
-      mode: "chat" as const,
-      createdAt: new Date(now - 5 * hr).toISOString(),
-      updatedAt: new Date(now - 1 * hr).toISOString(),
-      title: "Long chat stream example",
-      running: false,
-      seenAt: new Date(now - 50 * min).toISOString(),
-    },
-    ...generateSessions(AGENT_IDS.codexResearch, 8, {
-      runningCount: 1,
-      slackRatio: 0.15,
-      scheduleRatio: 0.1,
-    }),
-  ],
-  [AGENT_IDS.geminiPipeline]: generateSessions(AGENT_IDS.geminiPipeline, 6, {
-    runningCount: 0,
-    slackRatio: 0.3,
-    scheduleRatio: 0.2,
-  }),
-  [AGENT_IDS.knowledgeBase]: generateSessions(AGENT_IDS.knowledgeBase, 7, {
-    runningCount: 1,
-    slackRatio: 0.1,
-    scheduleRatio: 0.15,
-  }),
+  [AGENT_IDS.codexResearch]: ciPipelineSessions,
+  [AGENT_IDS.geminiPipeline]: securityScannerSessions,
+  [AGENT_IDS.knowledgeBase]: docsBuilderSessions,
 };
