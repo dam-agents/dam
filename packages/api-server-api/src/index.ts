@@ -709,6 +709,10 @@ export {
 export {
   platformTurnEndedParamsSchema,
   buildPlatformTurnEndedNotification,
+  platformRunEndedParamsSchema,
+  buildPlatformRunEndedNotification,
+  RUN_ENDED_CAPABILITY,
+  runEndedSupported,
   jsonRpcErrorDetails,
   platformPromptAcceptedParamsSchema,
   buildPlatformPromptAcceptedNotification,
@@ -747,6 +751,7 @@ export {
 } from "./modules/acp/types.js";
 export type {
   PlatformTurnEndedParams,
+  PlatformRunEndedParams,
   PlatformPromptAcceptedParams,
   PlatformPromptStartedParams,
   PlatformRunStartedParams,

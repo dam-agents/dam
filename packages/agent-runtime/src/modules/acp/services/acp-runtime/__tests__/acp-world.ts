@@ -351,6 +351,21 @@ export function memoryDocumentBackend(): DocumentStoreBackend {
   };
 }
 
+export function sharedDocumentBackend(): DocumentStoreBackend {
+  const documents = new Map<string, unknown>();
+  return {
+    open(name, opts) {
+      if (!documents.has(name)) documents.set(name, opts.initial());
+      return {
+        read: () => documents.get(name) as ReturnType<typeof opts.initial>,
+        write(next) {
+          documents.set(name, next);
+        },
+      };
+    },
+  };
+}
+
 export function createSessionMetadata(): SessionMetadata {
   let tick = 0;
   const store = createSessionMetadataStore(

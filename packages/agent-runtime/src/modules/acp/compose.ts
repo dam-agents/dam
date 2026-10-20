@@ -66,6 +66,10 @@ import {
   type RuntimeSessionsService,
 } from "./services/sessions-service.js";
 import {
+  claudeSessionState,
+  type HarnessStatePort,
+} from "./domain/harness-state.js";
+import {
   readTerminalSessionPins,
   type PlatformSessionOf,
 } from "./infrastructure/terminal-session-pins.js";
@@ -88,7 +92,6 @@ export interface ComposeAcpOptions {
   defaultHarness: string;
   harnesses: Readonly<Record<string, HarnessRuntime>>;
   isTerminalSessionActive: (sessionId: string) => boolean;
-  backgroundWorkHolds: boolean;
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
@@ -107,6 +110,12 @@ export interface ComposeAcpOptions {
   log: (msg: string) => void;
 }
 
+export type HarnessStateDialect = "claude-code";
+
+const HARNESS_STATE_PORTS: Record<HarnessStateDialect, HarnessStatePort> = {
+  "claude-code": claudeSessionState,
+};
+
 export interface HarnessRuntime {
   sessionHistory?: {
     module?: string;
@@ -120,6 +129,7 @@ export interface HarnessRuntime {
     render: (model: string) => string;
   };
   initialize?: Record<string, unknown>;
+  harnessState?: HarnessStateDialect;
   sessionSettings?: Record<string, SessionSettingBinding>;
   catalog?: HarnessConfigCatalog;
 }
@@ -275,7 +285,6 @@ export function composeAcp(opts: ComposeAcpOptions): {
     sessionChanges,
   );
   const backgroundWork = createBackgroundWorkRegistry({
-    enabled: opts.backgroundWorkHolds,
     keepPolicy: opts.keepPolicy,
     log: opts.log,
   });
@@ -435,6 +444,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
         )?.[0],
         workingDir: opts.workingDir,
         sessionMetadata,
+        ...(harness?.harnessState && {
+          harnessState: HARNESS_STATE_PORTS[harness.harnessState],
+        }),
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),

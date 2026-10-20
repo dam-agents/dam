@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { PendingRestart, PodSession } from "agent-runtime-api";
 import {
   buildPlatformQueueChangedNotification,
+  buildPlatformRunEndedNotification,
   buildPlatformRunStartedNotification,
   capInlineImages,
   buildPlatformTurnEndedNotification,
@@ -91,6 +92,8 @@ import {
   type AgentRequestObserver,
 } from "./pending-agent-requests.js";
 import { createAutonomousTurns } from "./autonomous-turns.js";
+import { createHarnessActivity } from "./harness-activity.js";
+import type { HarnessStatePort } from "../../domain/harness-state.js";
 import {
   createPromptScheduler,
   type PromptSubmission,
@@ -179,6 +182,8 @@ export interface AcpRuntimeDeps {
   sessionMetadata?: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   backgroundWorkRecheckMs?: number;
+  harnessState?: HarnessStatePort;
+  presumeIdleMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
   activeTurns: ActiveTurnStore;
@@ -280,8 +285,63 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       ),
   });
 
+  const heldRuns = new Map<
+    string,
+    { promptId: string | null; stopReason: string | null; cancelled: boolean }
+  >();
+
+  const harnessActivity = createHarnessActivity({
+    onBusy: (sessionId) => {
+      if (!promptScheduler.hasTurnInFlight(sessionId))
+        deps.activeTurns.record(sessionId);
+    },
+    onIdle: (sessionId) => {
+      finishHeldRun(sessionId);
+      if (!promptScheduler.hasTurnInFlight(sessionId))
+        deps.activeTurns.remove(sessionId);
+      maybeCloseIdleSession(sessionId);
+      checkPendingRestart();
+      lease.maybeRecycle();
+    },
+    mayPresumeIdle: (sessionId) =>
+      !promptScheduler.hasTurnInFlight(sessionId) &&
+      !pendingRequests.hasFor(sessionId) &&
+      !deps.backgroundWork.hasWork(sessionId),
+    ...(deps.presumeIdleMs !== undefined && {
+      presumeIdleMs: deps.presumeIdleMs,
+    }),
+    log: (msg) => deps.log?.(msg),
+  });
+
+  function finishHeldRun(sessionId: string): void {
+    const held = heldRuns.get(sessionId);
+    if (held === undefined) return;
+    heldRuns.delete(sessionId);
+    finishRun(
+      sessionId,
+      held.promptId,
+      held.cancelled ? "cancelled" : held.stopReason,
+    );
+  }
+
+  function sendToHarness(frame: unknown): boolean {
+    return lease.send(deps.harnessState?.request(frame) ?? frame);
+  }
+
+  function dropHarnessWork(sessionId: string): void {
+    const held = heldRuns.get(sessionId);
+    if (held) {
+      heldRuns.delete(sessionId);
+      recordRun(sessionId, held.promptId, null);
+    }
+    if (!harnessActivity.isBusy(sessionId)) return;
+    harnessActivity.forget(sessionId);
+    if (!promptScheduler.hasTurnInFlight(sessionId))
+      deps.activeTurns.remove(sessionId);
+  }
+
   const promptScheduler = createPromptScheduler({
-    sendToAgent: (frame) => lease.send(frame),
+    sendToAgent: (frame) => sendToHarness(frame),
     onTurnStarted: ({
       sessionId,
       unattended,
@@ -292,6 +352,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       frame,
     }) => {
       autonomousTurns.end(sessionId);
+      finishHeldRun(sessionId);
       generating.add(sessionId);
       const echoId = promptId ?? randomUUID();
       appendUserPromptToLog(
@@ -334,7 +395,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     onTurnEnded: (sessionId) => {
       if (shuttingDown) return;
       deps.sessionMetadata?.finishRun(sessionId);
-      deps.activeTurns.remove(sessionId);
+      if (!harnessActivity.isBusy(sessionId))
+        deps.activeTurns.remove(sessionId);
       checkPendingRestart();
     },
     onTurnInterrupted: (sessionId, turn) => {
@@ -344,15 +406,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       if (unstoredPrompt)
         deps.undeliveredPrompts.remember(sessionId, [unstoredPrompt]);
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
-      const buffer = runTextBuffers.get(sessionId);
-      runTextBuffers.delete(sessionId);
-      deps.runResults?.record(sessionId, {
-        promptId: turn.promptId,
-        stopReason: null,
-        finalText: buffer?.text ?? "",
-        truncated: buffer?.truncated ?? false,
-        endedAt: new Date().toISOString(),
-      });
+      recordRun(sessionId, turn.promptId, null);
     },
     canStart: ({ sessionId, unattended }) =>
       (unattended === true || hasEngagedChannel(sessionId)) &&
@@ -400,7 +454,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         : engagedChannelsFor(sessionId);
     },
     sendToAgent(frame) {
-      lease.send(frame);
+      sendToHarness(frame);
     },
     onExpired() {
       lease.maybeRecycle();
@@ -463,7 +517,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       return outboundId;
     },
     sendToAgent(frame) {
-      lease.send(frame);
+      sendToHarness(frame);
     },
     workingDir: deps.workingDir,
     loadTimeoutMs: harnessLoadTimeoutMs,
@@ -549,6 +603,41 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     });
   }
 
+  function recordRun(
+    sessionId: string,
+    promptId: string | null,
+    stopReason: string | null,
+  ): { text: string; truncated: boolean } | undefined {
+    const buffer = runTextBuffers.get(sessionId);
+    runTextBuffers.delete(sessionId);
+    deps.runResults?.record(sessionId, {
+      promptId,
+      stopReason,
+      finalText: buffer?.text ?? "",
+      truncated: buffer?.truncated ?? false,
+      endedAt: new Date().toISOString(),
+    });
+    return buffer;
+  }
+
+  function finishRun(
+    sessionId: string,
+    promptId: string | null,
+    stopReason: string | null,
+  ): void {
+    reportTurnEnd(sessionId, recordRun(sessionId, promptId, stopReason));
+    transcript.append(
+      sessionId,
+      JSON.stringify(
+        buildPlatformRunEndedNotification({
+          sessionId,
+          ...(promptId !== null && { promptId }),
+          ...(stopReason !== null && { stopReason }),
+        }),
+      ),
+    );
+  }
+
   function accumulateRunText(sessionId: string, text: string): void {
     const buffer = runTextBuffers.get(sessionId) ?? {
       text: "",
@@ -626,7 +715,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       platformMeta: null,
       rehydrate: true,
     });
-    lease.send(
+    sendToHarness(
       rewriteCwd(
         {
           jsonrpc: "2.0",
@@ -788,6 +877,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     rehydrateTimers.clear();
     rehydrateLoadIds.clear();
     orphanedHarnessLoads.clear();
+    if (!shuttingDown)
+      for (const sessionId of new Set([
+        ...heldRuns.keys(),
+        ...harnessActivity.busySessions(),
+      ]))
+        dropHarnessWork(sessionId);
+    heldRuns.clear();
+    harnessActivity.clear();
     promptScheduler.clear();
     autonomousTurns.clear();
     runTextBuffers.clear();
@@ -822,6 +919,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       `${promptScheduler.activeTurnCount()} turn(s), ` +
       `${pendingRequests.size()} pending request(s), ` +
       `${unansweredCalls().length} call(s) in flight, ` +
+      `${harnessActivity.busySessions().length} harness turn(s) after a prompt, ` +
       `${deps.backgroundWork.held().length} background hold(s)`
     );
   }
@@ -1026,7 +1124,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const outboundId = nextOutboundId++;
     ownRequests.set(outboundId, onReply);
     if (
-      lease.send(
+      sendToHarness(
         rewriteCwd(
           { jsonrpc: "2.0", id: outboundId, method, params },
           deps.workingDir,
@@ -1093,6 +1191,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     deps.undeliveredPrompts.forgetSession(sessionId);
     deps.activeTurns.remove(sessionId);
     deps.runResults?.forgetSession(sessionId);
+    heldRuns.delete(sessionId);
     supersededEchoes.delete(sessionId);
   }
 
@@ -1390,6 +1489,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   function runtimeBusy(): boolean {
     if (promptScheduler.anyWork() || pendingRequests.any()) return true;
+    if (harnessActivity.busySessions().length > 0) return true;
     return deps.backgroundWork.held().length > 0;
   }
 
@@ -1422,7 +1522,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
   function tearDownSession(sessionId: string): void {
     if (sessionCloseSupported && !harnessColdSessions.has(sessionId)) {
-      lease.send({
+      sendToHarness({
         jsonrpc: "2.0",
         id: nextOutboundId++,
         method: "session/close",
@@ -1441,6 +1541,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     openToolCalls.delete(sessionId);
     generating.delete(sessionId);
     supersededEchoes.delete(sessionId);
+    dropHarnessWork(sessionId);
     promptScheduler.forget(sessionId);
     runTextBuffers.delete(sessionId);
     pendingRequests.forget(sessionId);
@@ -1460,6 +1561,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (promptScheduler.hasWork(sessionId)) return;
     if (bootstrap.has(sessionId)) return;
     if (pendingRequests.hasFor(sessionId)) return;
+    if (harnessActivity.isBusy(sessionId)) return;
     if (deps.backgroundWork.hasWork(sessionId)) {
       idleReapTimers.set(
         sessionId,
@@ -1673,16 +1775,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             ),
           );
           if (turnEnded && (runPrompt || isRunSession(sid))) {
-            const buffer = runTextBuffers.get(sid);
-            runTextBuffers.delete(sid);
-            deps.runResults?.record(sid, {
-              promptId,
-              stopReason,
-              finalText: buffer?.text ?? "",
-              truncated: buffer?.truncated ?? false,
-              endedAt: new Date().toISOString(),
-            });
-            reportTurnEnd(sid, buffer);
+            if (harnessActivity.isBusy(sid))
+              heldRuns.set(sid, { promptId, stopReason, cancelled: false });
+            else finishRun(sid, promptId, stopReason);
           }
           maybeCloseIdleSession(sid);
         }
@@ -1693,6 +1788,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
 
     const sessionId = extractParamsSessionId(frame);
     if (sessionId) {
+      const state = deps.harnessState?.read(frame);
+      if (state) {
+        harnessActivity.report(state.sessionId, state.busy);
+        return;
+      }
       if (
         orphanedHarnessLoads.has(sessionId) ||
         rehydratingSessions.has(sessionId) ||
@@ -1729,10 +1829,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               settings: { ...entry.meta.settings, [id]: reportedMode },
             });
         }
+        harnessActivity.noteUpdate(sessionId, toolCallStateOf(frame));
         const text = extractAgentTextChunk(frame);
         if (
           text !== null &&
-          (promptScheduler.isRunTurn(sessionId) || isRunSession(sessionId))
+          (promptScheduler.isRunTurn(sessionId) ||
+            heldRuns.has(sessionId) ||
+            isRunSession(sessionId))
         )
           accumulateRunText(sessionId, text);
         const update = sessionUpdateKind(frame);
@@ -1874,7 +1977,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         const leftover = deps.activeTurns
           .leftovers()
           .find((marker) => marker.sessionId === paramsSid);
-        const response = promptScheduler.hasWork(paramsSid)
+        const response =
+          promptScheduler.hasWork(paramsSid) || heldRuns.has(paramsSid)
           ? { status: "pending" }
           : leftover !== undefined
             ? leftover.attempts >= MAX_RESUME_ATTEMPTS
@@ -2101,13 +2205,16 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         return;
       }
 
-      lease.send(rewritten);
+      sendToHarness(rewritten);
       return;
     }
 
     const notifSid = extractParamsSessionId(frame);
     if (notifSid) engage(channel, notifSid);
-    lease.send(rewriteCwd(frame, deps.workingDir));
+    const held = notifSid === null ? undefined : heldRuns.get(notifSid);
+    if (held && (frame as { method?: unknown }).method === "session/cancel")
+      held.cancelled = true;
+    sendToHarness(rewriteCwd(frame, deps.workingDir));
   }
 
   return {

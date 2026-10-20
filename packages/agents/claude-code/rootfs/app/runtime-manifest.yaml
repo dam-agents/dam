@@ -29,6 +29,11 @@ initializeCapabilities:
   authMethods: []
   agentInfo: {"name": "@agentclientprotocol/claude-agent-acp", "title": "Claude Agent"}
 
+# Claude Code reports whether it still works after it answered a prompt — a
+# follow-up turn that handles the reports of its background agents — so a run
+# ends, and its session closes, only once Claude Code is idle.
+harnessState: claude-code
+
 # Cold session/load fills the runtime's transcript from Claude Code's on-disk
 # session store without spawning the claude subprocess; the harness itself is
 # loaded lazily on the first prompt. The module is hosted in a persistent

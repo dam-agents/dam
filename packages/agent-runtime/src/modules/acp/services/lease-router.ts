@@ -23,7 +23,7 @@ import {
   sessionSettingsSchema,
   type SessionSettings,
 } from "agent-runtime-api";
-import { parseQualifiedModel } from "api-server-api";
+import { parseQualifiedModel, RUN_ENDED_CAPABILITY } from "api-server-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
 import type { KeepPolicy } from "../../processes/index.js";
 
@@ -510,6 +510,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
             agentCapabilities: {},
             authMethods: [],
           }),
+          _meta: { platform: { [RUN_ENDED_CAPABILITY]: true } },
         });
       return;
     }

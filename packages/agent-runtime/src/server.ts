@@ -475,13 +475,13 @@ const {
             unknown
           >,
         }),
+        ...(manifest.harnessState && { harnessState: manifest.harnessState }),
         sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
         catalog: harnessConfigBindingOf(manifest)?.catalog,
       },
     ]),
   ),
   isTerminalSessionActive: isPtySessionActive,
-  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   agentRequests: toolApprovalReporter,
@@ -518,7 +518,6 @@ runningSessionsOf = (harness) =>
     .map(([sessionId]) => sessionId);
 
 const { service: processesService, keepMarks } = processes.start({
-  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
