@@ -23,6 +23,7 @@ import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
+import { ProviderOutageBanner } from "./modules/provider-status/components/provider-outage-banner.js";
 import { SECTIONS } from "./modules/sandboxes/components/sandbox-section-nav.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { useAgentSession } from "./modules/sessions/api/queries.js";
@@ -232,6 +233,7 @@ function MainApp() {
                     : "max-w-[960px]",
               )}
             >
+              <ProviderOutageBanner className="mb-6" />
               {view === "sandbox-home" ? (
                 <SandboxHomeView />
               ) : view === "home" || view === "starter-kit" ? (

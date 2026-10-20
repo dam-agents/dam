@@ -40,6 +40,7 @@ Decisions that Petr made while this plan was discussed:
 | D10 | The card follows the mockup: a provider error shows the red card in the agent's column, also when nothing streamed. Copy text and Delete move into a "⋯" menu on the card.                                                         |
 | D11 | A proxy is unreachable only after its readiness check fails in two runs in a row; the outage starts at the first failed run. The count of failed runs lives in the Redis snapshot.                                                 |
 | D12 | A reply that holds only the harness's copy of a provider error (Claude Code) is the failure: the chat hides the copy and shows the card as "Send failed:" with Retry; the prompt stays, and Retry sends it again as a new message. |
+| D13 | The banner stacks its title over its body, built on `Callout` like the metering notice, with `text-pretty` on the body; `Notice` keeps its two tones.                                                                              |
 
 Decisions made alone while planning (open for review):
 
@@ -149,7 +150,7 @@ No module imports another module's internals.
 | 02  | ☑    | [Public status sources](./02-public-status-sources.md)            | Proxy readiness, Statuspage components, Bob status, status page links                                          | 01         |
 | 03  | ☑    | [The failed turn names the outage](./03-failed-turn-card.md)      | UI status query, provider error kind, card text and actions, refresh after a failed turn                       | 01         |
 | 04  | ☑    | [Status line and Providers badge](./04-status-line-and-badge.md)  | Status line above the message box, "Degraded" badge in Settings › Providers                                    | 03         |
-| 05  | ☐    | [Outage banner](./05-outage-banner.md)                            | `Notice` danger tone, banner at the top of the main area in both layouts, close per outage                     | 03         |
+| 05  | ☑    | [Outage banner](./05-outage-banner.md)                            | `Notice` danger tone, banner at the top of the main area in both layouts, close per outage                     | 03         |
 
 After 01, slice 02 and the UI slices 03–05 do not depend on each other; 04 and 05 reuse the status query of 03.
 

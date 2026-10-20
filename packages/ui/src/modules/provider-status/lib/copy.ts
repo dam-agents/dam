@@ -79,3 +79,39 @@ export function statusLineCopy({
     )
     .exhaustive();
 }
+
+export interface BannerCopy {
+  tone: "warning" | "danger";
+  lead: string;
+  body: string;
+}
+
+export function bannerCopy({
+  damSide,
+  names,
+  since,
+}: {
+  damSide: boolean;
+  names: readonly string[];
+  since: string;
+}): BannerCopy {
+  const brand = getBrand().name;
+  const time = clockLabel(since);
+  if (damSide)
+    return {
+      tone: "danger",
+      lead: `${brand} cannot reach model providers.`,
+      body: `Since ${time}, calls to every provider fail. The problem is on ${brand}'s side, not with your providers or your setup.`,
+    };
+  if (names.length === 1)
+    return {
+      tone: "warning",
+      lead: `${names[0]} is not responding.`,
+      body: `Since ${time}, most calls to it fail. Agents that use it can fail until it recovers. Your setup is not the cause.`,
+    };
+  return {
+    tone: "warning",
+    lead: `${names.length} of your providers have problems: ${names.join(", ")}.`,
+    body: `Since ${time}. Agents that use them can fail. Your setup is not the cause.`,
+  };
+}

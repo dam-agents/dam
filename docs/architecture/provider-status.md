@@ -108,3 +108,12 @@ The line also shows before a turn fails, so a user who waits on a turn that the 
 The session's provider is the one the session names, else the agent's default pair, else the agent's only provider Connection.
 
 **The Providers badge.** In Settings › Providers, the row of a connected provider says "Degraded" instead of "Connected" while that Connection's template has an outage, or while the fault is on the platform's side.
+
+**The banner.** At the top of the main area, on every page but the chat, a banner tells a user about outages of the providers that the user has a Connection to.
+The chat leaves it out, because the status line there covers the session's provider.
+One outage names its provider and since when most calls to it fail; several outages name each provider and the earliest start.
+While the fault is on the platform's side, a danger banner says that the platform cannot reach model providers, to every user with a provider Connection, and blames no provider.
+For a provider outage, its actions open Settings › Providers and each provider's own status page, where one exists; the banner on the platform's side has only its close button.
+Closing it hides each shown outage, by its template and its start time, in that browser only, so a new outage, or the fault on the platform's side, shows the banner again.
+The banner hides while the app has lost its connection to the server, because the status is then unknown.
+On a narrow screen it shows only its lead and the close button.
