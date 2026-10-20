@@ -87,9 +87,11 @@ export function togglePinKeepingFocus(
   if (!hadFocus) return;
   requestAnimationFrame(() => {
     (
-      document.querySelector<HTMLElement>(
-        `[data-pin-key="${CSS.escape(key)}"] button[aria-pressed]`,
-      ) ??
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          `[data-pin-key="${CSS.escape(key)}"] button[aria-pressed]`,
+        ),
+      ].find((button) => !button.closest("[inert]")) ??
       document.querySelector<HTMLElement>(
         `[data-agent-id="${CSS.escape(agentId)}"] button[aria-expanded]`,
       )

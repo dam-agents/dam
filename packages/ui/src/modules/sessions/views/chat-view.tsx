@@ -1156,6 +1156,7 @@ export function ChatView() {
                   open={pairPickerOpen}
                   onOpenChange={setPairPickerOpen}
                   onConnectProviders={() => setProvidersModal(true)}
+                  newLayout={newLayout}
                 />
               </ChatColumn>
             </div>

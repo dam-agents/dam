@@ -11,7 +11,9 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
 import {
   rememberSessionPair,
@@ -24,6 +26,7 @@ import {
 } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
+import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
 import {
   findModel,
   modelGroups,
@@ -125,6 +128,8 @@ export function SandboxProvidersSection({
 }
 
 function DefaultPairPicker({ agentId }: { agentId: string }) {
+  const newLayout = useNewLayout();
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data: status } = useHarnessConfigStatus(agentId);
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
@@ -159,6 +164,26 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     pair?.harness ?? null,
   );
   if (!pair || !routesSessionPairs(carried)) return null;
+  if (newLayout)
+    return (
+      <section className="mt-6">
+        <SectionLabel spaced>Default for new sessions</SectionLabel>
+        <div className="flex flex-col gap-2">
+          <SessionPairPicker
+            agentId={agentId}
+            carried={carried}
+            defaultHarness={status?.defaultHarness ?? pair.harness}
+            routed={routed}
+            onConnectProviders={() => navigateToSettings("providers")}
+            defaultPair={{
+              value: saved,
+              onChoose: (next) => rememberSessionPair(agentId, next),
+            }}
+          />
+          <DefaultModelNotice agentId={agentId} />
+        </div>
+      </section>
+    );
   const groups = modelGroups(catalogModels);
 
   const save = (next: SessionPair) => {

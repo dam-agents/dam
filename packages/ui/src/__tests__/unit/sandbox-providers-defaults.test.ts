@@ -13,6 +13,21 @@ const state = vi.hoisted(() => ({
   } | null,
   routed: false,
   saved: [] as unknown[],
+  newLayout: false,
+  picker: null as Record<string, unknown> | null,
+}));
+
+vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
+  useNewLayout: () => state.newLayout,
+}));
+vi.mock("../../modules/agents/components/default-model-notice.js", () => ({
+  DefaultModelNotice: () => null,
+}));
+vi.mock("../../modules/sessions/components/session-pair-picker.js", () => ({
+  SessionPairPicker: (props: Record<string, unknown>) => {
+    state.picker = props;
+    return null;
+  },
 }));
 
 vi.mock("../../store.js", () => ({
@@ -170,6 +185,47 @@ describe("agent default on a runtime that routes by model name", () => {
       /aria-label="Model"[^>]*><span[^>]*>gpt-5.5 · OpenAI</,
     );
     expect(html).not.toContain('aria-label="Provider"');
+    state.routed = false;
+  });
+});
+
+describe("the new layout's default editor", () => {
+  // TEST_SCENARIO: with the new layout on, the Providers page edits the saved default with the new session's picker, in its default mode: it shows the saved pair, and a pick saves the whole pair, session settings included.
+  it("hands the saved pair to the session picker, which saves each pick", () => {
+    state.newLayout = true;
+    state.routed = true;
+    state.remembered = {
+      harness: "codex",
+      provider: "oai",
+      model: "openai/gpt-5.5",
+    };
+    state.saved = [];
+    const html = renderToStaticMarkup(
+      createElement(
+        TooltipProvider,
+        null,
+        createElement(SandboxProvidersSection, {
+          agentId: "agent",
+          header: () => null,
+        }),
+      ),
+    );
+    expect(html).toContain("Default for new sessions");
+    expect(html).not.toContain('aria-label="Harness"');
+    const defaultPair = state.picker!.defaultPair as {
+      value: unknown;
+      onChoose: (pair: unknown) => void;
+    };
+    expect(defaultPair.value).toEqual(state.remembered);
+    const pick = {
+      harness: "codex",
+      provider: "oai",
+      model: "openai/gpt-5.5",
+      settings: { effort: "high" },
+    };
+    defaultPair.onChoose(pick);
+    expect(state.saved).toEqual([pick]);
+    state.newLayout = false;
     state.routed = false;
   });
 });
