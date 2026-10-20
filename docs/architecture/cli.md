@@ -144,15 +144,17 @@ The recurring patterns, stated once:
 
 ## Agent skill
 
-The CLI ships an agent skill ([`packages/cli/skills/`](../../packages/cli/skills/)) that teaches an agent on the user's own machine — any harness that loads skills — to drive a Platform deployment through the CLI.
+The repository ships agent skills for agents that run outside the platform ([`skills/`](../../skills/)).
+They sit at the top level, not inside a client package, because a skill is not owned by any one client.
+The `dam` skill teaches an agent on the user's own machine — any harness that loads skills — to drive a Platform deployment through the CLI.
 The user installs it from the repository with an open skills installer, pinned to the release tag of the CLI they run.
 The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
 
-The skill lives beside the CLI source so one check covers both.
-The CLI's test suite reads the skill and resolves every command it names against the CLI's command tree, every flag against the command it is given to, and its exit-code table against the exit-code registry.
+The CLI's test suite checks the `dam` skill against the CLI.
+It resolves every command the skill names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
 A CLI change that leaves the skill describing a command that no longer exists fails there, before it ships.
 
-The skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
+The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
 Sign-in stays the device flow the user approves in a browser, and the agent never reads the credential store or the bearer variable.
 Every command that stores a secret — a connection's credential, a rotated one, a new API key — is handed to the user to run in a terminal of their own, where the CLI's masked prompt takes it, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.

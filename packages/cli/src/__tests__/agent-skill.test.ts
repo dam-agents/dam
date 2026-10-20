@@ -8,8 +8,9 @@ import * as exitCodes from "../modules/shared/exit-codes.js";
 
 /**
  * TEST_OVERVIEW: The `dam` skill that users install into their own agent, so
- * that agent can drive DAM through this CLI. The skill lives next to the CLI
- * source and must not drift from it: every `dam …` command it names must
+ * that agent can drive DAM through this CLI. The skill lives in the
+ * repository's top-level skills folder and must not drift from the CLI it
+ * teaches: every `dam …` command it names must
  * resolve to a real command in the program that `compose()` builds, every flag
  * on such a command must belong to that command, every flag it mentions on its
  * own must exist somewhere in the CLI, and its exit-code table must list
@@ -18,7 +19,7 @@ import * as exitCodes from "../modules/shared/exit-codes.js";
 
 const SKILL_PATH = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  "../../skills/dam/SKILL.md",
+  "../../../../skills/dam/SKILL.md",
 );
 const skill = readFileSync(SKILL_PATH, "utf-8");
 const program = compose();

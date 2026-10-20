@@ -26,7 +26,7 @@ The CLI comes with a skill that teaches an agent on your machine — Claude Code
 The agent never sees a secret: whenever DAM needs one, it gives you a command to run in your own terminal.
 
 ```sh
-npx skills add 'dam-agents/dam/packages/cli/skills/dam#v0.2.24' -g
+npx skills add 'dam-agents/dam/skills/dam#v0.2.24' -g
 ```
 
 Replace `0.2.24` with the version `dam --version` prints, so the skill matches your CLI.
