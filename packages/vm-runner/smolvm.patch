@@ -287,7 +287,7 @@ index 9550f0d..03475e9 100644
  
      // Start DNS filter listener if configured
 diff --git i/src/process.rs w/src/process.rs
-index 7928c4c..bbf7bfb 100644
+index 7928c4c..a52f6fa 100644
 --- i/src/process.rs
 +++ w/src/process.rs
 @@ -2200,7 +2200,11 @@ pub fn register_vm_child(pid: i32) {
@@ -303,7 +303,7 @@ index 7928c4c..bbf7bfb 100644
          match ret {
              // >0 = reaped; drop from tracking.
              r if r > 0 => false,
-@@ -2212,6 +2216,47 @@ pub fn reap_vm_children() {
+@@ -2212,6 +2216,64 @@ pub fn reap_vm_children() {
      });
  }
  
@@ -313,7 +313,17 @@ index 7928c4c..bbf7bfb 100644
 +/// for it itself. A boot being monitored and the supervisor's sweep both reap
 +/// children the embedder also watches, so the signal has to survive here.
 +#[cfg(unix)]
-+static EXIT_SIGNALS: OnceLock<Mutex<std::collections::HashMap<Pid, i32>>> = OnceLock::new();
++static EXIT_SIGNALS: OnceLock<Mutex<std::collections::HashMap<Pid, (Instant, i32)>>> =
++    OnceLock::new();
++
++/// How long a noted signal is offered for.
++///
++/// A note bridges one reap to the reader waiting on the same child, which is
++/// milliseconds apart; a note nobody takes inside this window is one no reader
++/// is left for, and it is dropped rather than read later under a pid the kernel
++/// has since given to another process.
++#[cfg(unix)]
++const NOTE_KEPT: Duration = Duration::from_secs(60);
 +
 +/// Remember the signal in a wait status, for [`take_exit_signal`].
 +///
@@ -323,11 +333,10 @@ index 7928c4c..bbf7bfb 100644
 +#[cfg(unix)]
 +pub fn note_exit_signal(pid: Pid, status: libc::c_int) {
 +    if libc::WIFSIGNALED(status) {
-+        EXIT_SIGNALS
-+            .get_or_init(Default::default)
-+            .lock()
-+            .unwrap()
-+            .insert(pid, libc::WTERMSIG(status));
++        let now = Instant::now();
++        let mut notes = EXIT_SIGNALS.get_or_init(Default::default).lock().unwrap();
++        notes.retain(|_, (at, _)| now.saturating_duration_since(*at) < NOTE_KEPT);
++        notes.insert(pid, (now, libc::WTERMSIG(status)));
 +    }
 +}
 +
@@ -336,11 +345,19 @@ index 7928c4c..bbf7bfb 100644
 +/// reaped here, and one nothing noted.
 +#[cfg(unix)]
 +pub fn take_exit_signal(pid: Pid) -> Option<i32> {
-+    EXIT_SIGNALS
++    take_exit_signal_at(pid, Instant::now())
++}
++
++/// [`take_exit_signal`] read at a given instant, so a test can ask what a
++/// reader an hour later would get.
++#[cfg(unix)]
++fn take_exit_signal_at(pid: Pid, now: Instant) -> Option<i32> {
++    let (at, signal) = EXIT_SIGNALS
 +        .get_or_init(Default::default)
 +        .lock()
 +        .unwrap()
-+        .remove(&pid)
++        .remove(&pid)?;
++    (now.saturating_duration_since(at) < NOTE_KEPT).then_some(signal)
 +}
 +
 +#[cfg(not(unix))]
@@ -351,7 +368,7 @@ index 7928c4c..bbf7bfb 100644
  /// No-op on non-Linux: VM scope adoption + the serve supervisor reaper are
  /// Linux-only; nothing registers VM children here.
  #[cfg(not(target_os = "linux"))]
-@@ -2343,6 +2388,7 @@ pub fn try_wait(pid: Pid) -> Option<i32> {
+@@ -2343,6 +2405,7 @@ pub fn try_wait(pid: Pid) -> Option<i32> {
          let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
  
          if result == pid {
@@ -359,7 +376,7 @@ index 7928c4c..bbf7bfb 100644
              // Process exited
              let exit_code = if libc::WIFEXITED(status) {
                  libc::WEXITSTATUS(status)
-@@ -2392,6 +2438,7 @@ pub fn wait(pid: Pid) -> i32 {
+@@ -2392,6 +2455,7 @@ pub fn wait(pid: Pid) -> i32 {
              return -1;
          }
  
@@ -367,7 +384,7 @@ index 7928c4c..bbf7bfb 100644
          return if libc::WIFEXITED(status) {
              libc::WEXITSTATUS(status)
          } else if libc::WIFSIGNALED(status) {
-@@ -5332,4 +5379,24 @@ mod tests {
+@@ -5332,4 +5396,42 @@ mod tests {
          let _ = child.wait();
          assert!(!cmdline_contains(pid, &token), "a dead PID must not match");
      }
@@ -390,5 +407,23 @@ index 7928c4c..bbf7bfb 100644
 +        assert_eq!(wait(pid), 128 + libc::SIGKILL);
 +        assert_eq!(take_exit_signal(pid), Some(libc::SIGKILL));
 +        assert_eq!(take_exit_signal(pid), None, "a signal is offered once");
++    }
++
++    /// A note outlives the pid it names only until a reader can no longer be
++    /// waiting for it: after that the kernel may have given the pid to another
++    /// process, and a kill of that one would be read as this child's.
++    #[cfg(unix)]
++    #[test]
++    fn a_note_past_its_window_is_not_offered() {
++        let pid = 0x7fff_0000 as Pid;
++        note_exit_signal(pid, libc::SIGKILL);
++        assert_eq!(
++            take_exit_signal_at(pid, Instant::now() + NOTE_KEPT),
++            None,
++            "a note nobody took inside its window names no kill"
++        );
++        note_exit_signal(pid, libc::SIGKILL);
++        assert_eq!(take_exit_signal(pid), Some(libc::SIGKILL), "a fresh note is offered");
++        assert_eq!(take_exit_signal(pid), None, "and offered once");
 +    }
  }
