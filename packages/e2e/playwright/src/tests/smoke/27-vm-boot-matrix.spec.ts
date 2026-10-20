@@ -31,7 +31,8 @@ const diskAt = "/mnt/boot-matrix-disk";
 
 const markerPath = "e2e-boot-matrix-marker.txt";
 const syncedPath = "e2e-boot-matrix-synced.txt";
-const claimFillPath = "/var/lib/platform/disks/e2e-claim-fill";
+const claimDir = "/var/lib/platform/disks";
+const claimFillPath = `${claimDir}/e2e-claim-fill`;
 
 // UNIT_BOUNDARY_DESCRIPTION: the boot steps the matrix kills at, in the order a boot reaches them, each one a line platform-init writes to the machine's console: the disk mounted, the layout mark written, the platform's root laid over the image, and the agent's home mounted from the disk. A host reads the boot on that console and nowhere else, since the boot log is on the guest's disk, and each step's own writes follow its line. Only a boot that finds the disk unmarked writes the mark's line, so the kill there empties the mark first.
 const KILLS = [
@@ -490,7 +491,7 @@ test("boots on a disk whose layout mark came back empty", async () => {
   ).toBeGreaterThan(0);
 });
 
-// TEST_SCENARIO: an owner's claim with no room left refuses a machine's start rather than letting its guest write into a disk the claim has no block for, and the owner is told which storage is full. The filler is this spec's own file on the claim, so it comes back off with one command once the refusal is seen, and the agent boots with HOME intact; the file is removed again after the whole spec, retried there and never caught, so a case that timed out before its own removal cannot leave every later start of this owner refused, and a fill that cannot be removed fails the run rather than passing quietly. The claim must have a filesystem of its own to be filled at all: the lane's local-path provisioner hands out a directory of the node's disk, which this case refuses from the host side before writing anything, and E2E_CLAIM_FILL_GIB is how a run against an install whose claim is its own volume (a Ceph RBD, a loop device) opts in, with the most it may write onto the claim; unset, the case is skipped rather than run at the node's expense.
+// TEST_SCENARIO: an owner's claim with no room left refuses a machine's start rather than letting its guest write into a disk the claim has no block for, and the owner is told which storage is full. The filler is this spec's own file on the claim, so it comes back off with one command once the refusal is seen, and the agent boots with HOME intact; the file is removed again after the whole spec, retried there and never caught, so a case that timed out before its own removal cannot leave every later start of this owner refused, and a fill that cannot be removed fails the run rather than passing quietly. The claim must have a filesystem of its own to be filled at all: a claim provisioned from the node's own disk is that disk, and the case refuses one from the host side before writing anything, by the provisioner the claim names and by the device its path sits on, which is the runner's own root filesystem for a directory of the node, and E2E_CLAIM_FILL_GIB is how a run against an install whose claim is its own volume (a Ceph RBD, a loop device) opts in, with the most it may write onto the claim; unset, the case is skipped rather than run at the node's expense.
 test("refuses a start while the owner's claim is full", async () => {
   test.setTimeout(600_000);
   const capGiB = Number(process.env.E2E_CLAIM_FILL_GIB ?? "");
@@ -499,9 +500,17 @@ test("refuses a start while the owner's claim is full", async () => {
     "the lane's claim is a directory of the node's disk, so filling it would fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume",
   );
   const provisioner = runnerClaimProvisioner(agentId);
+  const devices = onRunnerHost(
+    agentId,
+    ["echo claim", `stat -c %d ${claimDir}`, "echo root", "stat -c %d /"].join(
+      "\n",
+    ),
+    { timeoutMs: 60_000 },
+  );
+  const onNode = after(devices, "claim") === after(devices, "root");
   test.skip(
-    provisioner === "" || provisioner.includes("local-path"),
-    `the owner's claim is a directory of the node's disk (its provisioner reads '${provisioner || "nothing"}'), so filling it would fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume`,
+    provisioner === "" || provisioner.includes("local-path") || onNode,
+    `the owner's claim is a directory of the node's disk (its provisioner reads '${provisioner || "nothing"}'${onNode ? ", and its path is on the filesystem the runner's own root is on" : ""}), so filling it would fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume`,
   );
   const filled = onRunnerHost(
     agentId,
