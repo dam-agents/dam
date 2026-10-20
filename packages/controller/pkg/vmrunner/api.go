@@ -56,6 +56,17 @@ type MachineSpec struct {
 	// UNIT_BOUNDARY_DESCRIPTION: the machine when it changes, since a guest
 	// UNIT_BOUNDARY_DESCRIPTION: reads its CPU's features only at boot.
 	NestedVirtualization bool `json:"nestedVirtualization,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: what admission may commit to this machine, at
+	// UNIT_BOUNDARY_DESCRIPTION: most, in MiB, as the controller reads it off
+	// UNIT_BOUNDARY_DESCRIPTION: the owner's runner pod: the memory the node
+	// UNIT_BOUNDARY_DESCRIPTION: reserved for that pod, which is below the limit
+	// UNIT_BOUNDARY_DESCRIPTION: the pod was given while an in-place resize
+	// UNIT_BOUNDARY_DESCRIPTION: waits for room. A runner admits no machine past
+	// UNIT_BOUNDARY_DESCRIPTION: it, so machines never grow past what the
+	// UNIT_BOUNDARY_DESCRIPTION: scheduler sees and no busy node evicts an
+	// UNIT_BOUNDARY_DESCRIPTION: owner's runner for memory the node never lent
+	// UNIT_BOUNDARY_DESCRIPTION: them. Zero admits against the runner's limit.
+	AdmitMiB int `json:"admitMiB,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a seed as the runner answers its upload: the
@@ -125,13 +136,15 @@ const (
 )
 
 const (
-	ReasonNotReady         = "MachineNotReady"
-	ReasonOutOfCapacity    = "MachineOutOfCapacity"
-	ReasonImageUnavailable = "MachineImageUnavailable"
-	ReasonBootFailed       = "MachineBootFailed"
-	ReasonSeedMissing      = "MachineSeedMissing"
-	ReasonStorageFull      = "MachineStorageFull"
-	ReasonHomeFull         = "MachineHomeFull"
+	ReasonNotReady      = "MachineNotReady"
+	ReasonOutOfCapacity = "MachineOutOfCapacity"
+	// UNIT_BOUNDARY_DESCRIPTION: a start the runner had room for but the node has not yet granted the runner pod: the controller asks the node for that memory with an in-place resize, so the agent is retried at once and no idle agent is hibernated for it.
+	ReasonAwaitingAllocation = "MachineAwaitingAllocation"
+	ReasonImageUnavailable   = "MachineImageUnavailable"
+	ReasonBootFailed         = "MachineBootFailed"
+	ReasonSeedMissing        = "MachineSeedMissing"
+	ReasonStorageFull        = "MachineStorageFull"
+	ReasonHomeFull           = "MachineHomeFull"
 	// UNIT_BOUNDARY_DESCRIPTION: a machine refused because its runner cannot reach the node's image cache service at all: the node's fault, not the image's. The api-server holds an image update on it rather than moving the Agent back, so an image that starts fine elsewhere is not convicted for one node's mount.
 	ReasonImageCacheUnreachable = "MachineImageCacheUnreachable"
 	// UNIT_BOUNDARY_DESCRIPTION: a first boot that copies a disk before the guest answers — a conversion to btrfs or a migration seed's restore. The runner holds such a boot for up to six hours, so it is a boot in progress, never a start failure.

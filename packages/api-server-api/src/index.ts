@@ -582,6 +582,8 @@ export type {
   AttentionItem,
   AttentionList,
   AttentionService,
+  DefaultModelNotice,
+  DefaultModelState,
   DismissedEntry,
 } from "./modules/attention/types.js";
 export { ATTENTION_FEED_LIMIT } from "./modules/attention/types.js";
@@ -661,7 +663,27 @@ export type {
   ApprovalDismissManyOutcome,
 } from "./modules/approvals/types.js";
 export { describeApprovalPayload } from "./modules/approvals/format.js";
-export { acpNativeRowId } from "./modules/approvals/format.js";
+export {
+  acpNativeRowId,
+  permissionOptionsOf,
+  recordedOptionsOf,
+  recordedToolOf,
+} from "./modules/approvals/format.js";
+export {
+  PERMISSION_OPTIONS_MAX,
+  RPC_ID_MAX,
+  TOOL_CALL_ID_MAX,
+  TOOL_NAME_MAX,
+} from "./modules/approvals/format.js";
+export {
+  toolApprovalEndedInputSchema,
+  toolApprovalWaitingInputSchema,
+} from "./modules/approvals/harness.js";
+export type {
+  ToolApprovalEndedInput,
+  ToolApprovalReports,
+  ToolApprovalWaitingInput,
+} from "./modules/approvals/harness.js";
 
 export type {
   RuleVerdict,

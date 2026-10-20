@@ -10,6 +10,7 @@ import type {
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
 import {
+  NoSessionModelError,
   SessionModelError,
   type TriggerSessionDriver,
 } from "../../acp/index.js";
@@ -92,6 +93,8 @@ export function createTriggerPlugin(deps: {
           mcpServers: payload.mcpServers,
           resumeSessionId: originSession,
           unattended: true,
+          model,
+          keepSessionModel: true,
         });
         return;
       }
@@ -165,7 +168,11 @@ export function createTriggerPlugin(deps: {
       await startSession(payload, task);
       return null;
     } catch (err) {
-      if (!(err instanceof SessionModelError)) throw err;
+      if (
+        !(err instanceof SessionModelError) &&
+        !(err instanceof NoSessionModelError)
+      )
+        throw err;
       deps.log(`[trigger] ${payload.scheduleId} not run: ${err.message}`);
       return err.message.slice(0, DETAIL_MAX);
     }

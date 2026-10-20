@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
-    STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
+    REASON_AWAITING_ALLOCATION, REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK,
+    REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -522,6 +522,7 @@ fn spec(running: bool) -> MachineSpec {
         migration: None,
         expect_seed: None,
         nested_virtualization: false,
+        admit_mib: 0,
     }
 }
 
@@ -1269,6 +1270,105 @@ async fn a_machine_is_refused_when_the_runner_has_no_room() {
     assert!(refused.message.contains("does not fit"), "{refused:?}");
     h.settle("m1").await;
     assert!(!h.fake.calls().iter().any(|c| c.ends_with("m2")));
+}
+
+// TEST_SCENARIO: the controller caps admission at the memory the pod was allocated, which is below the pod's own limit while an in-place resize waits for room, so a machine that fits the limit is refused until the node has granted the owner that much. The refusal names the node's allocation rather than the owner's pool, under its own reason, so the controller neither hibernates idle agents for room the node is about to grant nor tells the person their memory is full. The same machine starts once a later spec carries a ceiling that covers it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_is_refused_above_the_memory_the_node_granted() {
+    let h = Harness::with("allocation", |c| c.memory_mib = 8192);
+    let mut machine = spec(true);
+    machine.memory_mib = 4096;
+    machine.admit_mib = 3072;
+    let refused = h.server.put("m1", machine.clone()).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+    assert!(
+        refused
+            .message
+            .contains("3072 MiB the node has allocated this runner so far, less the 0 MiB the runner keeps for itself"),
+        "{refused:?}"
+    );
+    assert!(
+        h.fake.calls().is_empty(),
+        "nothing is created: {:?}",
+        h.fake.calls()
+    );
+
+    machine.admit_mib = 4096;
+    assert_eq!(h.server.put("m1", machine).unwrap().state, STATE_CREATING);
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine that is already running comes back under a ceiling sized from what it holds while idle, which is below the size it boots at: a revision roll, an image or env change, a CA rotation and a guest gone quiet all restart a running machine, and refusing those for good would park the agent and scale its gateway away. A machine that is not running is still capped, so the ceiling keeps gating every footprint the runner does not already hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_machine_restarts_under_a_ceiling_below_what_it_boots_at() {
+    let h = Harness::with("restart-ceiling", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    let restarted = h.server.put("m1", changed).unwrap();
+    assert_eq!(restarted.state, STATE_RESTARTING, "{restarted:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let mut second = spec(true);
+    second.admit_mib = 1536;
+    let refused = h.server.put("m2", second).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+}
+
+// TEST_SCENARIO: a restart the runner admitted holds its exemption for the whole action, because the worker stops the old VMM and boots its replacement in one: the controller's next ensure can land while the machine is down, and re-checking that already-admitted restart against the grant answered MachineAwaitingAllocation, which the controller acts on by stopping the machine the restart had just booted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_keeps_its_exemption_while_its_replacement_boots() {
+    let h = Harness::with("restart-in-flight", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    *locked(&h.fake.start_delay) = Duration::from_millis(400);
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    assert_eq!(
+        h.server.put("m1", changed.clone()).unwrap().state,
+        STATE_RESTARTING
+    );
+    h.wait_for_call("stop m1").await;
+    // TEST_SCENARIO: the restart's own boot is the second start the runtime is asked for, and it is still running here.
+    while h.fake.calls().iter().filter(|c| *c == "start m1").count() < 2 {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    let again = h.server.put("m1", changed).unwrap();
+    assert_ne!(
+        again.reason, REASON_AWAITING_ALLOCATION,
+        "an admitted restart was re-checked against the grant: {again:?}"
+    );
+    assert_eq!(again.state, STATE_RESTARTING, "{again:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine that does not fit the runner's own limit is refused as the owner's memory being full whether the ceiling is above the limit or below it: the ceiling never hides the real shortfall, which is the one the controller relieves by hibernating idle agents, and a machine the node cannot help never reads as waiting for the node.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_over_the_runner_limit_is_refused_as_out_of_capacity_under_a_ceiling() {
+    for admit_mib in [8192, 3072] {
+        let h = Harness::with("both-bounds", |c| c.memory_mib = 4096);
+        let mut machine = spec(true);
+        machine.memory_mib = 8192;
+        machine.admit_mib = admit_mib;
+        let refused = h.server.put("m1", machine).unwrap();
+        assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+        assert!(
+            refused
+                .message
+                .contains("the VM runner has 4096 MiB for machines"),
+            "admit_mib={admit_mib}: {refused:?}"
+        );
+    }
 }
 
 // TEST_SCENARIO: a boot that fails is reported under the reason the controller shows the person, and a later attempt that succeeds clears it.

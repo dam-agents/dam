@@ -11,6 +11,8 @@ const { invalidateForLiveEvent } =
   await import("../../modules/live-events/invalidation.js");
 const { approvalsKeys } =
   await import("../../modules/approvals/api/queries.js");
+const { egressRulesKeys } =
+  await import("../../modules/egress-rules/api/queries.js");
 
 const unsubscribes: (() => void)[] = [];
 afterEach(() => {
@@ -44,20 +46,48 @@ it("refreshes the list and only the named agent's harnessConfig", async () => {
   expect([list.calls(), statusA.calls(), statusB.calls()]).toEqual([2, 2, 1]);
 });
 
-// TEST_SCENARIO: the live-event stream drops and re-subscribes, and the server answers a new subscription with a sync hint. That hint must refresh every family the stream carries, which is how the screen catches up on the events it missed while the connection was down.
+// TEST_SCENARIO: the live-event stream drops and re-subscribes, and the server answers a new subscription with a sync hint. That hint must refresh every family the stream carries — the agent list, harness config, approvals, egress rules, schedules, budgets, starter-kit updates, knowledge-base shares, artifacts, attention and getting started — because that is how the screen catches up on the events it missed while the connection was down, and no other trigger covers a family the hint forgets.
 it("refreshes every live family on a sync hint", async () => {
-  const agents = counter();
-  const approvals = counter();
-  const schedules = counter();
-  await watch(agentsKeys.listWithChannels(), agents.fn);
-  await watch(approvalsKeys.forOwner(), approvals.fn);
-  await watch(trpc.schedules.list.queryKey({ agentId: "A" }), schedules.fn);
+  const families: Record<string, QueryKey> = {
+    "agent list": agentsKeys.listWithChannels(),
+    "harness config status": trpc.harnessConfig.status.queryKey({
+      agentId: "A",
+    }),
+    "harness config settled": trpc.harnessConfig.settled.queryKey({
+      agentId: "A",
+    }),
+    "owner approvals": approvalsKeys.forOwner(),
+    "agent approvals": approvalsKeys.forAgent("A"),
+    "egress rules": egressRulesKeys.forAgent("A"),
+    "egress preset": egressRulesKeys.currentPreset("A"),
+    "agent schedules": trpc.schedules.list.queryKey({ agentId: "A" }),
+    "owner schedules": trpc.schedules.listForOwner.queryKey(),
+    "reserved budget": trpc.budgets.reserved.queryKey(),
+    "starter-kit updates": trpc.starterKits.updates.queryKey(),
+    "knowledge-base share status": trpc.kbShares.status.queryKey({
+      agentId: "A",
+    }),
+    "knowledge-base shares": trpc.kbShares.list.queryKey(),
+    "artifact library": trpc.artifactLibrary.list.queryKey({ agentId: "A" }),
+    "artifact touches": trpc.artifactLibrary.touches.queryKey({
+      agentId: "A",
+    }),
+    "owner attention": trpc.attention.listForOwner.queryKey(),
+    "agent attention": trpc.attention.sessionsForAgent.queryKey({
+      agentId: "A",
+    }),
+    "getting started": trpc.gettingStarted.progress.queryKey(),
+  };
+  const counters = Object.fromEntries(
+    Object.keys(families).map((name) => [name, counter()]),
+  );
+  for (const [name, key] of Object.entries(families))
+    await watch(key, counters[name]!.fn);
 
   await invalidateForLiveEvent({ topic: "sync" });
 
-  expect([agents.calls(), approvals.calls(), schedules.calls()]).toEqual([
-    2, 2, 2,
-  ]);
+  for (const [name, c] of Object.entries(counters))
+    expect(c.calls(), `reads of ${name}`).toBeGreaterThanOrEqual(2);
 });
 
 // TEST_SCENARIO: an agent that wakes sends several hints back to back. While the first refetch is in flight, the rest must collapse into one more refetch, and the cache must end with what that last refetch read.

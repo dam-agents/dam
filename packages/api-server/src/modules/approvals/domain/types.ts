@@ -2,6 +2,7 @@ import type {
   ApprovalPayload,
   ApprovalStatus,
   ApprovalType,
+  ApprovalVerdict,
 } from "api-server-api";
 
 export interface PendingApprovalRow {
@@ -14,7 +15,7 @@ export interface PendingApprovalRow {
   createdAt: Date;
   expiresAt: Date;
   resolvedAt: Date | null;
-  verdict: "allow_once" | "allow" | "deny" | null;
+  verdict: ApprovalVerdict | null;
   decidedBy: string | null;
   status: ApprovalStatus;
   deliveredAt: Date | null;
