@@ -157,15 +157,18 @@ func (c *IdleChecker) check(ctx context.Context) {
 		"scanned", len(agents.Items), "hibernated", hibernated, "duration", time.Since(start))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready, so hibernating one of them leaves the roll waiting out its settle timeout and gives up on machines that were only idle. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout.
+// UNIT_BOUNDARY_DESCRIPTION: the machines a runner roll is waiting on, read from the runner Deployments' annotations. A hibernated machine never comes back ready, so hibernating one of them leaves the roll waiting out its settle timeout and gives up on machines that were only idle. The list is written when the roll starts and cleared in the same write that settles or gives up on it, so the pin lasts exactly as long as the wait. A roll marked stalled pins nothing: its own pod never became ready, so no machine of the owner's is what it waits on, and the mark outlives the settle timeout. An install without virtualization runs no runner, and its controller holds no grant on Deployments, so the read is skipped there rather than refused on every sweep. A read that fails on an install that does run them hibernates nothing this pass: the pin is what keeps a roll's machines up, and one sweep of waiting costs less than a roll that has to give up.
 func (c *IdleChecker) machinesAwaitingRoll(ctx context.Context) (map[string]bool, error) {
+	awaiting := map[string]bool{}
+	if !c.config.VM.Enabled {
+		return awaiting, nil
+	}
 	deps, err := c.client.AppsV1().Deployments(c.config.Namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: "app.kubernetes.io/component=" + vmRunnerComponent,
 	})
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("listing runners for the machines a roll awaits: %w", err)
 	}
-	awaiting := map[string]bool{}
 	for i := range deps.Items {
 		dep := &deps.Items[i]
 		if dep.Annotations[annRunnerRolledAt] == "" || dep.Annotations[annRunnerStalled] != "" {

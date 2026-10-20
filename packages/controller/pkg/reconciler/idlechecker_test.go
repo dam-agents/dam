@@ -8,10 +8,13 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
+	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
+	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
@@ -379,6 +382,7 @@ func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
 		annRunnerAwaiting: "rolled-agent,another-agent",
 	})
 	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runner)
+	checker.config.VM.Enabled = true
 	checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
 
 	checker.check(context.Background())
@@ -397,6 +401,7 @@ func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
 		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
 		ss := agentStatefulSet("rolled-agent", 1)
 		checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runnerDeployment(annotations))
+		checker.config.VM.Enabled = true
 		checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
 
 		checker.check(context.Background())
@@ -419,6 +424,25 @@ func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
 		annRunnerStalled:  time.Now().UTC().Format(time.RFC3339),
 	}
 	assert.Equal(t, int32(0), settle(t, stalled), "a roll whose own pod never started is waiting on nothing of the owner's")
+}
+
+// TEST_SCENARIO: An install without virtualization runs no runner and its controller holds no grant on Deployments, so the read that finds the machines a roll waits on must not be attempted there: a refused read on every sweep would leave every idle agent awake for good.
+func TestIdleChecker_SweepsOnAnInstallWithoutVirtualization(t *testing.T) {
+	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
+	agent := idleAgentCR("idle-agent", staleTime, nil)
+	checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("idle-agent", 1))
+	listed := false
+	checker.client.(*fake.Clientset).PrependReactor("list", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
+		listed = true
+		return true, nil, k8serrors.NewForbidden(schema.GroupResource{Resource: "deployments"}, "", nil)
+	})
+
+	checker.check(context.Background())
+
+	assert.False(t, listed, "the sweep must not ask for Deployments the controller holds no grant on")
+	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "the sweep hibernates without that read")
 }
 
 // TEST_SCENARIO: A vm agent reads the chart's vm idle timeout only when it carries no override of its own; one that carries an override honours it as a container agent does, "0s" included, so a starter kit's never-hibernate seed keeps a machine awake.
