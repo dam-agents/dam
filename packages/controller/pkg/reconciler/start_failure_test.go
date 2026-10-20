@@ -163,6 +163,22 @@ func TestVMStartFailureDoesNotCountABootCopyingADisk(t *testing.T) {
 	assert.Equal(t, apiv1.ReasonNeverReady, f.reason, "silence after the copy counts from when the copy ended")
 }
 
+// TEST_SCENARIO: a VMM the kernel or its seccomp filter killed is re-booted by the runner itself, and the runner reports the kill until the guest answers. That boot is the runner's own work, so it runs no not-ready bound of the controller's: an hour into it the Agent is not told its start failed, and the clock starts when the kill reason goes.
+func TestVMStartFailureDoesNotCountAKillReboot(t *testing.T) {
+	for _, reason := range []string{vmrunner.ReasonOOMKilled, vmrunner.ReasonSeccompKilled} {
+		killed := vmrunner.MachineStatus{State: vmrunner.StateRunning, Reason: reason}
+		clock, _ := vmStartFailure(vmStartClock{}, 3, killed, startNow)
+		clock, f := vmStartFailure(clock, 3, killed, startNow.Add(time.Hour))
+		assert.Empty(t, f.reason, "a re-boot an hour into a kill is not a failed start: %s", reason)
+
+		quiet := vmrunner.MachineStatus{State: vmrunner.StateRunning}
+		clock, f = vmStartFailure(clock, 3, quiet, startNow.Add(time.Hour))
+		assert.Empty(t, f.reason, reason)
+		_, f = vmStartFailure(clock, 3, quiet, startNow.Add(time.Hour+2*time.Minute))
+		assert.Equal(t, apiv1.ReasonNeverReady, f.reason, "silence after the kill reason goes counts from there: %s", reason)
+	}
+}
+
 // TEST_SCENARIO: the vm readiness publish keeps the machine's clock across reconciles of one generation, so a guest restarted three times since the generation was first seen is put on the Agent as StartFailed, and a status the runner did not answer leaves the clock and the condition as they were.
 func TestPublishVMReadinessReportsACrashLoopOnThisGeneration(t *testing.T) {
 	ctx := context.Background()

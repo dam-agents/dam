@@ -16,6 +16,7 @@ import {
   PROMPT_NOT_QUEUED_CODE,
   PROMPT_NOT_QUEUED_MESSAGE,
   promptBlockSchema,
+  REWRITE_BUSY_CODE,
   REWRITE_REFUSED_CODE,
   separateRendererBlocks,
   SessionType,
@@ -57,6 +58,7 @@ import {
 } from "../../domain/mappers.js";
 import {
   rewriteCutOf,
+  takeBackCutOf,
   withOriginalTimes,
   type RewriteCut,
 } from "../../domain/rewrite-cut.js";
@@ -120,6 +122,9 @@ const DEFAULT_BACKGROUND_WORK_RECHECK_MS = 15 * 1000;
 const RUN_TEXT_BYTES_CAP = 1024 * 1024;
 
 const TURN_ERROR_TEXT_CAP = 4 * 1024;
+
+const TAKE_BACK_HISTORY_ATTEMPTS = 8;
+const TAKE_BACK_HISTORY_RETRY_MS = 250;
 
 export interface AcpRuntimeStatus {
   idle: boolean;
@@ -494,12 +499,28 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     return meta?.type === SessionType.CliRun || meta?.reportTo !== undefined;
   }
 
+  const unconfirmedRefs = new Map<string, string>();
+
   function refFor(sessionId: string): string {
-    const current = deps.sessionMetadata?.get(sessionId)?.meta;
-    if (current?.ref) return current.ref;
-    const ref = randomUUID();
-    deps.sessionMetadata?.set(sessionId, { ...current, ref });
+    const entry = deps.sessionMetadata?.get(sessionId);
+    if (entry?.meta.ref) return entry.meta.ref;
+    if (entry) {
+      const ref = randomUUID();
+      deps.sessionMetadata?.set(sessionId, { ...entry.meta, ref });
+      return ref;
+    }
+    const ref = unconfirmedRefs.get(sessionId) ?? randomUUID();
+    unconfirmedRefs.set(sessionId, ref);
     return ref;
+  }
+
+  function settleUnconfirmedRef(sessionId: string, attached: boolean): void {
+    const ref = unconfirmedRefs.get(sessionId);
+    if (ref === undefined) return;
+    unconfirmedRefs.delete(sessionId);
+    if (!attached || !deps.sessionMetadata) return;
+    const current = deps.sessionMetadata.get(sessionId)?.meta;
+    deps.sessionMetadata.set(sessionId, { ...current, ref });
   }
 
   function mcpServersFor(sessionId: string): unknown[] {
@@ -1031,7 +1052,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     });
   }
 
-  function rewriteRefusal(sessionId: string): string | null {
+  function rewriteRefusal(
+    sessionId: string,
+  ): { message: string; code: string } | null {
     const entry = deps.sessionMetadata?.get(sessionId);
     const meta = entry?.meta;
     if (
@@ -1043,14 +1066,20 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       meta?.scheduleId !== undefined ||
       meta?.initialization === true
     )
-      return "only a chat session can be rewritten";
+      return {
+        message: "only a chat session can be rewritten",
+        code: REWRITE_REFUSED_CODE,
+      };
     if (
       rewritingSessions.has(sessionId) ||
       promptScheduler.hasWork(sessionId) ||
       pendingRequests.hasFor(sessionId) ||
       bootstrap.has(sessionId)
     )
-      return "the session is busy; wait until the agent is idle";
+      return {
+        message: "the session is busy; wait until the agent is idle",
+        code: REWRITE_BUSY_CODE,
+      };
     return null;
   }
 
@@ -1079,7 +1108,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     const oldId = params.sessionId;
     const refusal = rewriteRefusal(oldId);
     if (refusal !== null) {
-      fail(refusal, REWRITE_REFUSED_CODE);
+      fail(refusal.message, refusal.code);
       return;
     }
     rewritingSessions.add(oldId);
@@ -1088,9 +1117,19 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       fail(message, code);
     };
     void rewriteCutFor(oldId, params).then(({ cut, history }) => {
+      if (cut.kind === "absent") {
+        rewritingSessions.delete(oldId);
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id, result: { sessionId: oldId } }),
+        );
+        return;
+      }
       if (cut.kind === "missing") {
         failRewrite(
-          "this message is not in the agent's own history, so the conversation cannot be cut there",
+          params.prompt === undefined
+            ? "the agent already answered this message"
+            : "this message is not in the agent's own history, so the conversation cannot be cut there",
           REWRITE_REFUSED_CODE,
         );
         return;
@@ -1110,16 +1149,38 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionId: string,
     params: PlatformRewriteFromParams,
   ): Promise<{ cut: RewriteCut; history: string[] | null }> {
+    for (let attempt = 1; ; attempt++) {
+      const found = await resolveRewriteCut(sessionId, params);
+      if (
+        found.cut.kind !== "absent" ||
+        params.prompt !== undefined ||
+        attempt >= TAKE_BACK_HISTORY_ATTEMPTS
+      )
+        return found;
+      await new Promise((r) => setTimeout(r, TAKE_BACK_HISTORY_RETRY_MS));
+    }
+  }
+
+  async function resolveRewriteCut(
+    sessionId: string,
+    params: PlatformRewriteFromParams,
+  ): Promise<{ cut: RewriteCut; history: string[] | null }> {
     const history =
       (await deps.historyProvider?.fetch(sessionId).catch(() => null)) ?? null;
     const resolved =
       history === null
         ? null
-        : rewriteCutOf(
-            history,
-            transcript.lines(sessionId).frames,
-            params.messageId,
-          );
+        : params.prompt === undefined
+          ? takeBackCutOf(
+              history,
+              transcript.lines(sessionId).frames,
+              params.messageId,
+            )
+          : rewriteCutOf(
+              history,
+              transcript.lines(sessionId).frames,
+              params.messageId,
+            );
     if (resolved !== null) return { cut: resolved, history };
     if (params.upToMessageId === undefined)
       return { cut: { kind: "missing" }, history: null };
@@ -1136,7 +1197,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     channel: ClientChannel,
     id: unknown,
     params: PlatformRewriteFromParams,
-    cut: Exclude<RewriteCut, { kind: "missing" }>,
+    cut: Exclude<RewriteCut, { kind: "missing" } | { kind: "absent" }>,
     history: string[] | null,
     fail: (message: string, code?: string) => void,
   ): void {
@@ -1206,7 +1267,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
                 result: { sessionId: newId },
               }),
             );
-            submitRewrittenPrompt(channel, newId, params);
+            if (params.prompt !== undefined && params.promptId !== undefined)
+              submitRewrittenPrompt(
+                channel,
+                newId,
+                params.prompt,
+                params.promptId,
+              );
           },
           adjustLines,
         );
@@ -1217,7 +1284,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function submitRewrittenPrompt(
     channel: ClientChannel,
     sessionId: string,
-    { prompt, promptId }: PlatformRewriteFromParams,
+    prompt: PromptBlock[],
+    promptId: string,
   ): void {
     const outboundId = nextOutboundId++;
     const source = {
@@ -1514,6 +1582,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         }
 
         if (mapping.attachSessionId) {
+          settleUnconfirmedRef(
+            mapping.attachSessionId,
+            (frame as { error?: unknown }).error === undefined,
+          );
           if (mapping.rehydrate) {
             finishHarnessRehydrate(mapping.attachSessionId, frame);
           } else if (mapping.method === "session/load") {
@@ -1618,7 +1690,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (sessionId) {
       if (
         orphanedHarnessLoads.has(sessionId) ||
-        rehydratingSessions.has(sessionId)
+        rehydratingSessions.has(sessionId) ||
+        isNoResponseFiller(frame)
       ) {
         return;
       }
@@ -2414,6 +2487,28 @@ function extractReportedModel(frame: unknown): string | null {
   return typeof model === "string" && model !== "" && model !== "<synthetic>"
     ? model
     : null;
+}
+
+const NO_RESPONSE_FILLER = "No response requested.";
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The line Claude's SDK makes up, without a model
+ * call, when a session it resumes ends on a stopped turn.
+ */
+function isNoResponseFiller(frame: unknown): boolean {
+  if (!isNonNullObject(frame) || frame.method !== "session/update")
+    return false;
+  const params = frame.params;
+  if (!isNonNullObject(params) || !isNonNullObject(params.update)) return false;
+  const update = params.update;
+  const content = update.content;
+  return (
+    update.sessionUpdate === "agent_message_chunk" &&
+    isNonNullObject(update._meta) &&
+    update._meta[REPORTED_MODEL_META_KEY] === "<synthetic>" &&
+    isNonNullObject(content) &&
+    content.text === NO_RESPONSE_FILLER
+  );
 }
 
 const MODE_SETTING_KEY = "session/set_mode:";

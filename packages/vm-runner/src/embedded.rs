@@ -87,7 +87,7 @@ impl Smolvm {
             return Ok(());
         };
         let dir = vm_data_dir(id);
-        let vmms = orphan_pids(&self.proc_root, &dir);
+        let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
         if vmms.is_empty() {
             return Err(refused.into());
         }
@@ -166,7 +166,7 @@ impl Runtime for Smolvm {
                 && state_probe::resolve_state(id, &record) != RecordState::Running
             {
                 let dir = vm_data_dir(id);
-                let vmms = orphan_pids(&self.proc_root, &dir);
+                let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
                 let _ = self.runtime.stop_machine(id);
                 kill_orphans(&self.proc_root, &dir);
                 vmms_left(&self.proc_root, &dir, vmms, VMM_EXIT_WAIT);
@@ -233,7 +233,7 @@ impl Runtime for Smolvm {
     fn start(&self, id: &str, boot_mib: i32, _memory_mib: i32) -> anyhow::Result<()> {
         let dir = vm_data_dir(id);
         if dir.is_dir() {
-            let vmms = orphan_pids(&self.proc_root, &dir);
+            let vmms = orphan_pids(&self.proc_root, &dir).unwrap_or_default();
             let _ = self.runtime.stop_machine(id);
             clear_for_start(id, &self.proc_root, &dir, vmms, VMM_EXIT_WAIT)
                 .map_err(|e| anyhow::anyhow!("smolvm machine start: {e:#}"))?;
@@ -358,6 +358,11 @@ impl Runtime for Smolvm {
         resident_mib(&self.proc_root, record.pid?)
     }
 
+    fn holds_vmm(&self, id: &str) -> bool {
+        // UNIT_BOUNDARY_DESCRIPTION: a scan that could not look has not shown that no VMM holds the machine, so it answers as one that found a VMM: a machine whose record no longer decodes is then counted and keeps its storage share.
+        orphan_pids(&self.proc_root, &vm_data_dir(id)).map_or(true, |pids| !pids.is_empty())
+    }
+
     fn cpu_usec(&self, id: &str) -> Option<u64> {
         let record = self.record(id).ok()??;
         if !record.is_process_alive() {
@@ -368,6 +373,23 @@ impl Runtime for Smolvm {
 
     fn disk_used_bytes(&self, id: &str) -> Option<u64> {
         allocated_bytes(&vm_data_dir(id))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pid of the machine's VMM, given only while that pid still names the process the record was written for. A pid is reused after its process ends, and the reap reads the exit status of the pid it is given, so a record whose pid now belongs to some other process would report that process's death as this machine's: the start time the record kept tells the two apart, and a pid the kernel no longer lists is the record's own, dead child.
+    fn vmm_record_pid(&self, id: &str) -> Option<i32> {
+        self.record(id).ok()??.pid
+    }
+
+    fn vmm_pid(&self, id: &str) -> Option<i32> {
+        let record = self.record(id).ok()??;
+        let pid = record.pid?;
+        match (
+            record.pid_start_time,
+            smolvm::process::process_start_time(pid),
+        ) {
+            (Some(recorded), Some(now)) if recorded != now => None,
+            _ => Some(pid),
+        }
     }
 }
 

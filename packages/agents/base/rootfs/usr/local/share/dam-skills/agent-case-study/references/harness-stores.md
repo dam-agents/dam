@@ -25,7 +25,7 @@ Shape:
 
 All `meta` fields are optional.
 `tombstones` lists sessions the owner deleted — skip them.
-Classify: `type == "schedule_cron"` is a scheduled run, `threadTs` present is channel-driven, otherwise on-demand.
+Classify: `type == "schedule_cron"` is a scheduled run, `type == "invocation"` is a run a driver agent spawned, `threadTs` present is channel-driven, otherwise on-demand.
 Count the window like:
 
 ```sh

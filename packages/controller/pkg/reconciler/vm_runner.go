@@ -400,9 +400,11 @@ func imageBudgetBytes(spec config.VMRunnerSpec) (int64, error) {
 
 // UNIT_BOUNDARY_DESCRIPTION: a claim already bound is grown when its owner's pool rises, which is the same rule the machine disks on it already follow: a size that rises is applied in place, a size that falls is ignored because Kubernetes refuses to shrink a claim at all.
 // UNIT_BOUNDARY_DESCRIPTION: a class without volume expansion rejects that update, and a size the install mistyped cannot be worked out at all. Both are reported and reconciliation continues, because the runner serves every one of the owner's agents and works exactly as before at the size it has — a values typo costs a warning, not a fleet that no longer reconciles.
+// UNIT_BOUNDARY_DESCRIPTION: the claim is applied on the reconcile of every one of the owner's agents, so a refusal nobody can act on yet is said once per size the claim is asked for rather than once per reconcile: QA read the same line three times in one burst, which buries whatever the next reconcile says. The notice is held per owner and keeps the size that was refused, so a pool that falls and rises again says it again; a grow that succeeds clears it, and so does a size that no longer needs one.
 func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim *corev1.PersistentVolumeClaim, size resource.Quantity) {
 	current := claim.Spec.Resources.Requests[corev1.ResourceStorage]
 	if size.Cmp(current) <= 0 {
+		r.claimNotices.Delete(owner)
 		return
 	}
 	if claim.Spec.Resources.Requests == nil {
@@ -410,9 +412,13 @@ func (r *AgentReconciler) growRunnerPVC(ctx context.Context, owner string, claim
 	}
 	claim.Spec.Resources.Requests[corev1.ResourceStorage] = size
 	if _, err := r.client.CoreV1().PersistentVolumeClaims(claim.Namespace).Update(ctx, claim, metav1.UpdateOptions{}); err != nil {
-		slog.Warn("vm runner: the claim was not grown, the runner keeps the size it has", "owner", owner, "from", current.String(), "to", size.String(), "error", err)
+		if said, told := r.claimNotices.Load(owner); !told || said != size.String() {
+			r.claimNotices.Store(owner, size.String())
+			slog.Warn("vm runner: the claim was not grown, the runner keeps the size it has", "owner", owner, "from", current.String(), "to", size.String(), "error", err)
+		}
 		return
 	}
+	r.claimNotices.Delete(owner)
 	slog.Info("vm runner: grew the claim", "owner", owner, "from", current.String(), "to", size.String())
 }
 
@@ -570,6 +576,7 @@ const vmImageCacheSocket = vmRunnerImagesPath + "/.cache.sock"
 var vmRunnerEphemeralRequest = resource.MustParse("1Gi")
 
 // UNIT_BOUNDARY_DESCRIPTION: renders the owner's runner Deployment and hands it to the roll. Only an agent's reconcile may create one (create); the rollout sweep only offers an existing runner its turn, so a runner the orphan sweep has just removed is never brought back by it.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose UserBudget cannot be read keeps the runner pod it has. Its limits and its memory came from the pool, and what the install's default would render is another pod: the roll would cut the limit under the machines already running on it and reboot every one of them. Only building a runner waits for the read, so a cold controller creates no runner and the owner's next start is refused until the budget reads again.
 func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner string, refs []metav1.OwnerReference, create bool) error {
 	name, ns := r.runnerName(owner), r.config.Namespace
 	spec := r.config.VM.Runner
@@ -590,10 +597,24 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 	if resources.Limits == nil {
 		resources.Limits = corev1.ResourceList{}
 	}
-	if pool := r.vmPoolOf(ctx, owner).memory; pool != nil {
-		resources.Limits[corev1.ResourceMemory] = *pool
-		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool) > 0 {
-			resources.Requests[corev1.ResourceMemory] = *pool
+	pool, err := r.vmPoolOf(ctx, owner)
+	if err != nil {
+		_, getErr := r.runnerDeployment(ctx, name, create)
+		switch {
+		case getErr == nil:
+			slog.Warn("vm runner: the owner's UserBudget is unread, the runner keeps the pod it has", "owner", owner, "error", err)
+			return nil
+		case !k8serrors.IsNotFound(getErr):
+			return getErr
+		case !create:
+			return nil
+		}
+		return err
+	}
+	if pool.memory != nil {
+		resources.Limits[corev1.ResourceMemory] = *pool.memory
+		if req, ok := resources.Requests[corev1.ResourceMemory]; ok && req.Cmp(*pool.memory) > 0 {
+			resources.Requests[corev1.ResourceMemory] = *pool.memory
 		}
 	}
 	if _, ok := resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
@@ -827,12 +848,21 @@ func (r *AgentReconciler) deleteRunner(ctx context.Context, owner string, keepCl
 	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose runner cannot be scheduled waits forever, and the Deployment only reports zero ready replicas — the pod holds the one account of why, so the agent's status carries it rather than "still starting" until someone reads the cluster by hand. An unschedulable runner gets a reason of its own, which the api-server reads as a failed start rather than one still coming up, and so does a runner on a node the cluster has lost, which no wait outgrows; a node that only blips is not lost, so its owners keep waiting for a runner that comes back with it. The node is not named: the message reaches the owner, who can do nothing with a hostname, while the Warning Event on their agents and the shipped alert carry it for the operator. A pod that has finished is not that runner: an evicted one is what a lost node leaves behind, and it must not speak over the replacement that is waiting for its claim.
 func (r *AgentReconciler) runnerNotReady(ctx context.Context, owner string) (string, string) {
 	const starting = "the owner's VM runner is still starting"
 	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil || len(pods) == 0 {
 		return vmrunner.ReasonNotReady, starting
+	}
+	for i := range pods {
+		pod := &pods[i]
+		if pod.Status.Phase == corev1.PodSucceeded || pod.Status.Phase == corev1.PodFailed {
+			continue
+		}
+		if lost, _ := r.nodeLostFor(ctx, pod); lost {
+			return apiv1.ReasonMachineRunnerNodeLost, "the owner's VM runner is on a node the cluster has lost; its machines cannot start until that node comes back"
+		}
 	}
 	for i := range pods {
 		pod := &pods[i]
@@ -856,6 +886,9 @@ func awaitingVolume(pod *corev1.Pod, msg string) bool {
 }
 
 const runnerVolumeBindGrace = 3 * time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: runnerNodeLostGrace is the kubelet's default eviction toleration — a node that comes back inside it keeps its pods, and one that does not has begun evicting them — so that is where a not-ready node turns into a lost one, and a blip stays a blip.
+const runnerNodeLostGrace = 5 * time.Minute
 
 // UNIT_BOUNDARY_DESCRIPTION: when the kernel last OOM-killed the owner's runner, from its pods' container statuses; zero when it never did or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
 func (r *AgentReconciler) runnerOOMKilledAt(ctx context.Context, owner string) time.Time {

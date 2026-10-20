@@ -314,6 +314,81 @@ describe("ensureReady", () => {
     );
   });
 
+  // TEST_SCENARIO: the owner's runner is on a node the cluster has lost. No wait brings that node back, so the wake fails at once with the cause rather than at the two-minute timeout.
+  it("fail-fast: a runner on a lost node rejects the wake at once", async () => {
+    const NODE_LOST: Condition[] = [
+      { type: "Ready", status: "False", reason: "PodsNotReady" },
+      {
+        type: "AgentPodReady",
+        status: "False",
+        reason: "MachineRunnerNodeLost",
+        message:
+          "the owner's VM runner is on node kvm-2, which the cluster does not report ready",
+      },
+    ];
+    const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    store.set("a1", agentObj("a1", NODE_LOST));
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure).toEqual({
+        kind: "agent-pod-failed",
+        terminationReason: "MachineRunnerNodeLost",
+      });
+      expect(err.durationMs).toBeLessThan(10_000);
+      expect(err.message).toContain(
+        "the server running its owner's agents is down",
+      );
+    }
+    expect(lines.find((l) => l.msg === "agent.wake.rejected")?.cause).toBe(
+      "wake-timeout:agent-pod-failed:MachineRunnerNodeLost",
+    );
+  });
+
+  const CACHE_UNREACHABLE: Condition[] = [
+    { type: "Ready", status: "False", reason: "PodsNotReady" },
+    {
+      type: "AgentPodReady",
+      status: "False",
+      reason: "MachineImageCacheUnreachable",
+      message:
+        "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached (this runner mounts the node's /var/lib/platform/images as its image cache)",
+    },
+  ];
+
+  // TEST_SCENARIO: the runner cannot reach the node's image cache, so it boots only the trees its machines already hold and refuses every other image. This wake's own retry is not what brings the machine up — the controller's is — so the wake fails at once with the cause, not at the two-minute timeout.
+  it("fail-fast: a start refused for the image cache rejects the wake at once", async () => {
+    const { repo, store, lines } = harness([agentObj("a1", HIBERNATED)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(0);
+    store.set("a1", agentObj("a1", CACHE_UNREACHABLE));
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure).toEqual({
+        kind: "agent-pod-failed",
+        terminationReason: "MachineImageCacheUnreachable",
+      });
+      expect(err.durationMs).toBeLessThan(10_000);
+      expect(err.message).toContain("image cache");
+    }
+    expect(lines.find((l) => l.msg === "agent.wake.rejected")?.cause).toBe(
+      "wake-timeout:agent-pod-failed:MachineImageCacheUnreachable",
+    );
+  });
+
   // TEST_SCENARIO: an awake agent already in error with a refused start. The first polls may read the previous attempt's refusal, so the wake waits out the short grace, then fails well before its timeout.
   it("fail-fast: a standing start refusal outlasting the grace window rejects", async () => {
     const { repo } = harness([agentObj("a1", STORAGE_FULL)]);

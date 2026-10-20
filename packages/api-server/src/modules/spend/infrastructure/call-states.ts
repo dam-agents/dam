@@ -13,6 +13,7 @@ export interface CallMeta {
   readonly ownerSub: string;
   readonly connectionId: string | null;
   readonly providers: readonly string[];
+  readonly sessionId: string | null;
   readonly startedAt: Date;
 }
 
@@ -53,6 +54,8 @@ const ROW_FIELDS = [
   "ownerSub",
   "connectionId",
   "model",
+  "sessionId",
+  "callingAgentId",
   "provider",
   "unit",
 ] as const satisfies readonly (keyof SpendRow)[];
@@ -96,6 +99,7 @@ export function createRedisCallStates(redis: Redis): CallStates {
           m_owner: meta.ownerSub,
           m_conn: meta.connectionId ?? "",
           m_providers: meta.providers.join(","),
+          m_session: meta.sessionId ?? "",
           m_started: String(meta.startedAt.getTime()),
         })
         .expire(callKey(callId), CALL_TTL_SECONDS)
@@ -154,6 +158,7 @@ export function createRedisCallStates(redis: Redis): CallStates {
               ownerSub: hash.m_owner ?? "",
               connectionId: hash.m_conn || null,
               providers: (hash.m_providers ?? "").split(",").filter(Boolean),
+              sessionId: hash.m_session || null,
               startedAt: new Date(Number(hash.m_started)),
             }
           : null,
@@ -200,6 +205,8 @@ function rowFrom(value: (field: keyof SpendRow) => string): SpendRow {
     ownerSub: value("ownerSub"),
     connectionId: value("connectionId"),
     model: value("model"),
+    sessionId: value("sessionId"),
+    callingAgentId: value("callingAgentId"),
     provider: value("provider"),
     unit: value("unit") as SpendUnit,
   };

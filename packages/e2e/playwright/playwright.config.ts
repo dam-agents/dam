@@ -57,7 +57,7 @@ const suite: NamedProject[] = [
     name: "own-agents",
     testMatch:
       laneBackend === "vm"
-        ? /\/(17|18|20|22|23|25)-.*\.spec\.ts$/
+        ? /\/(17|18|20|22|23|25|27)-.*\.spec\.ts$/
         : /\/(17|18|19|25)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
@@ -127,7 +127,7 @@ const agentBackend: NamedProject = {
 const prSkip =
   process.env.E2E_SCOPE === "pr"
     ? new RegExp(
-        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|24|25|26" : "12|18|21|24"})-`,
+        `\\/(${laneBackend === "vm" ? "12|18|19|21|23|24|25|26|27" : "12|18|21|24"})-`,
       )
     : undefined;
 

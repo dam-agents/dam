@@ -82,7 +82,6 @@ export interface StarterKitsServiceDeps {
     ): Promise<void>;
   };
   virtualizationEnabled?: boolean;
-  prefersVm?: () => Promise<boolean>;
   chatFormPreferences?: (
     agentId: string,
   ) => Promise<ChatFormPreferences | null>;
@@ -318,11 +317,6 @@ export function createStarterKitsService(
           ? { kbShareRoots: kit.knowledgeBase.shareRoots }
           : {}),
         ...createInputFromSetup(kit),
-        ...(kit.backend === undefined &&
-        deps.virtualizationEnabled === true &&
-        (await deps.prefersVm?.()) === true
-          ? { vm: true }
-          : {}),
         ...(kit.egressPreset ? { egressPreset: kit.egressPreset } : {}),
         ...withSeedStamp(kit.seed),
         connectionIds: input.connectionIds,

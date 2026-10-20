@@ -617,6 +617,55 @@
       "when": 1792228899422,
       "tag": "0087_drop_sidebar_session_order",
       "breakpoints": true
+    },
+    {
+      "idx": 88,
+      "version": "7",
+      "when": 1792394775467,
+      "tag": "0088_spend_metering",
+      "breakpoints": true
+    },
+    {
+      "idx": 89,
+      "version": "7",
+      "when": 1792394779815,
+      "tag": "0089_spend_metering_start",
+      "breakpoints": true
+    },
+    {
+      "idx": 90,
+      "version": "7",
+      "when": 1792394786598,
+      "tag": "0090_spend_daily_sessions",
+      "breakpoints": true
+    },
+    {
+      "idx": 91,
+      "version": "7",
+      "when": 1792394787849,
+      "tag": "0091_spend_calls",
+      "breakpoints": true
+    },
+    {
+      "idx": 92,
+      "version": "7",
+      "when": 1792409278615,
+      "tag": "0092_fold_telegram_bindings_into_chats",
+      "breakpoints": true
+    },
+    {
+      "idx": 93,
+      "version": "7",
+      "when": 1792431662797,
+      "tag": "0093_drop_litellm_disable_experimental_betas",
+      "breakpoints": true
+    },
+    {
+      "idx": 94,
+      "version": "7",
+      "when": 1792442077009,
+      "tag": "0094_egress_rule_preset_source",
+      "breakpoints": true
     }
   ]
 }

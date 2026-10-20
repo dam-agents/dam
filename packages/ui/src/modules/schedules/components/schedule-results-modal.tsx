@@ -10,7 +10,8 @@ import { AgentSleepingCallout } from "../../agents/components/agent-sleeping-cal
 import { useOperableState } from "../../agents/hooks/use-operable-state.js";
 import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { useScheduleSessions } from "../api/queries.js";
-import { formatRunTime, lastRunStatus } from "../lib/schedule-format.js";
+import { runOutcomeLine } from "../lib/schedule-format.js";
+import { OutcomeLines } from "./outcome-lines.js";
 
 interface RowProps {
   session: SessionView;
@@ -35,15 +36,14 @@ function ResultRow({ session, onOpen }: RowProps) {
   );
 }
 
-function LastRunLine({ schedule }: { schedule: Schedule }) {
-  const lastRun = schedule.status?.lastRun;
-  if (!lastRun) return null;
-  const status = lastRunStatus(schedule.status?.lastResult);
+function OutcomeBlock({ schedule }: { schedule: Schedule }) {
+  const line = runOutcomeLine(schedule);
+  if (!line) return null;
   return (
-    <p className="px-5 pb-4 text-sm text-muted-foreground md:px-6">
-      Last run {formatRunTime(lastRun)}
-      {status && <span className={status.className}> — {status.label}</span>}
-    </p>
+    <OutcomeLines
+      line={line}
+      className="px-5 pt-4 pb-4 text-sm text-muted-foreground md:px-6"
+    />
   );
 }
 
@@ -87,18 +87,16 @@ export function ScheduleResultsModal({
         onClose={onClose}
       />
       <DialogBody flush className="min-h-[50vh]">
+        <OutcomeBlock schedule={schedule} />
         {stopped && (
-          <>
-            <div className="px-5 py-4 md:px-6">
-              <AgentSleepingCallout
-                comingUp={comingUp}
-                onStart={() => wakeAgent.wake(agentId)}
-              >
-                — Wake the agent to see runs.
-              </AgentSleepingCallout>
-            </div>
-            <LastRunLine schedule={schedule} />
-          </>
+          <div className="px-5 py-4 md:px-6">
+            <AgentSleepingCallout
+              comingUp={comingUp}
+              onStart={() => wakeAgent.wake(agentId)}
+            >
+              — Wake the agent to see runs.
+            </AgentSleepingCallout>
+          </div>
         )}
         {!stopped && sessionsQuery.isError && (
           <div className="flex flex-col items-center gap-3 px-5 py-6 md:px-6">

@@ -3,7 +3,9 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -12,6 +14,10 @@ import (
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/client-go/kubernetes/fake"
+	corelisters "k8s.io/client-go/listers/core/v1"
+	k8stesting "k8s.io/client-go/testing"
 	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -90,7 +96,7 @@ func TestThePoolPassSumsWhatThePoolsPromiseAgainstTheCluster(t *testing.T) {
 	node.usage.Memory.LimitMiB, node.usage.Memory.CommittedMiB = 12288, 3072
 	node.usage.Storage.UsableBytes, node.usage.Storage.UsedBytes = 100, 80
 
-	pool, _, _, ok := r.vmPool(context.Background())
+	pool, _, _, _, ok := r.vmPool(context.Background())
 	require.True(t, ok)
 	assert.Equal(t, int64(12<<30), pool.Committed["memory"])
 	assert.Equal(t, int64(9000), pool.Committed["cpu"])
@@ -109,7 +115,7 @@ func TestThePoolPassSumsWhatThePoolsPromiseAgainstTheCluster(t *testing.T) {
 		Capacity:         resource.NewQuantity(1<<40, resource.BinarySI),
 	}, metav1.CreateOptions{})
 	require.NoError(t, err)
-	pool, _, _, _ = r.vmPool(context.Background())
+	pool, _, _, _, _ = r.vmPool(context.Background())
 	assert.Equal(t, int64(1<<40), pool.Capacity["storage"])
 }
 
@@ -126,6 +132,126 @@ func TestACriticalPoolNamesItsUserOncePerCrossing(t *testing.T) {
 	node.usage.Storage.UsedBytes = 92
 	r.PoolPass(context.Background())
 	assert.Equal(t, 2, eventsWithReason(t, r, "VMPoolCritical"))
+}
+
+// TEST_SCENARIO: the node holding an owner's runner is not ready. Every machine of that owner is gone with it, and no replacement can take the claim while the node keeps it, so the pool pass counts the pods there once and names the owner once by a Warning Event on their vm Agents — a node that stays lost is not announced on every pass. The controller never deletes the pod: two VMMs on one claim cannot be recovered, so an operator fences the node and clears it out of service.
+func TestARunnerOnALostNodeIsCountedAndNamesItsUserOnce(t *testing.T) {
+	r, _, _ := poolPassReconciler(t)
+	runnerPodOnANotReadyNode(t, r)
+	ctx := context.Background()
+
+	pool, _, _, _, ok := r.vmPool(ctx)
+	require.True(t, ok)
+	assert.Equal(t, int64(1), pool.NodeLost)
+
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "a node that stays lost is not announced again")
+
+	setNodeReady(t, r, "kvm-2", true)
+	r.PoolPass(ctx)
+	pool, _, _, _, _ = r.vmPool(ctx)
+	assert.Equal(t, int64(0), pool.NodeLost, "a node that comes back holds its runner again")
+	_, kept := r.nodeLostNotices.Load(testOwner)
+	assert.False(t, kept, "a loss that healed is forgotten, not held forever")
+
+	setNodeReady(t, r, "kvm-2", false)
+	r.PoolPass(ctx)
+	assert.Equal(t, 2, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "a node lost again after healing is announced again")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the node keeps the transition time it had, so the assertion is not about this call: a node reported ready again has been ready since now, and one reported not ready again has been not ready past the grace.
+func setNodeReady(t *testing.T, r *AgentReconciler, name string, ready bool) {
+	t.Helper()
+	ctx := context.Background()
+	nodes := r.client.CoreV1().Nodes()
+	node, err := nodes.Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	status, since := corev1.ConditionFalse, time.Now().Add(-time.Hour)
+	if ready {
+		status, since = corev1.ConditionTrue, time.Now()
+	}
+	node.Status.Conditions = []corev1.NodeCondition{{Type: corev1.NodeReady, Status: status, LastTransitionTime: metav1.NewTime(since)}}
+	_, err = nodes.UpdateStatus(ctx, node, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: reading a node fails on a later pass. That says nothing about any node, so the pass keeps the last count rather than reporting zero and clearing the alert, and the owner is not announced again: the lost node is still the same one, and the loss is not announced a second time once the read returns.
+func TestAPassThatCannotReadTheNodesKeepsTheLastOne(t *testing.T) {
+	r, _, _ := poolPassReconciler(t)
+	runnerPodOnANotReadyNode(t, r)
+	ctx := context.Background()
+	r.PoolPass(ctx)
+	require.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost))
+
+	unreadable := true
+	r.client.(*fake.Clientset).PrependReactor("get", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !unreadable {
+			return false, nil, nil
+		}
+		return true, nil, errors.New("the node read is unavailable")
+	})
+
+	pool, _, _, lost, ok := r.vmPool(ctx)
+	require.True(t, ok)
+	assert.Equal(t, int64(1), pool.NodeLost, "a node that cannot be read is not a node that is ready")
+	assert.Nil(t, lost, "a pass that cannot read a node says nothing about any owner")
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "an unreadable node announced the loss again")
+	_, kept := r.nodeLostNotices.Load(testOwner)
+	assert.True(t, kept, "the lost node was forgotten while it could not be read")
+
+	unreadable = false
+	r.PoolPass(ctx)
+	assert.Equal(t, 1, eventsWithReason(t, r, apiv1.ReasonMachineRunnerNodeLost), "the same loss was announced again once the node was readable")
+}
+
+// TEST_SCENARIO: the controller asks about a node from the watch it was built with, not from the API server: a not-ready agent's reconcile asks on every retry, and on a lost node those retries run for every agent waiting there, so a live read would scale with the fleet. A watch that has not synced answers nothing — the node reads as one that cannot be read, never as one that is gone — so a cluster that cannot read nodes keeps reporting every other pool signal instead of counting its runners lost.
+func TestNodeStateComesFromTheWatch(t *testing.T) {
+	lost := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "runner-abc"}, Spec: corev1.PodSpec{NodeName: "kvm-1"}}
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{})
+	require.NoError(t, indexer.Add(&corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "kvm-1"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
+	}))
+	synced := false
+	r, _, _ := poolPassReconciler(t)
+	r.WithNodeCache(corelisters.NewNodeLister(indexer), func() bool { return synced })
+	r.client.(*fake.Clientset).PrependReactor("get", "nodes", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, errors.New("a reconcile must not read the nodes from the API server")
+	})
+	ctx := context.Background()
+
+	onLostNode, known := r.nodeLostFor(ctx, lost)
+	assert.False(t, known, "a watch that has not synced cannot say a node is lost")
+	assert.False(t, onLostNode)
+
+	synced = true
+	onLostNode, known = r.nodeLostFor(ctx, lost)
+	assert.True(t, known)
+	assert.True(t, onLostNode, "the watch says the node has been not ready past the grace")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's ready runner pod, moved onto a node the cluster has not reported ready for an hour — the pod a lost node leaves behind, with the node's Ready transition older than the grace.
+func runnerPodOnANotReadyNode(t *testing.T, r *AgentReconciler) {
+	t.Helper()
+	ctx := context.Background()
+	pods := r.client.CoreV1().Pods("test-agents")
+	pod, err := pods.Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Spec.NodeName = "kvm-2"
+	_, err = pods.Update(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Nodes().Create(ctx, &corev1.Node{
+		ObjectMeta: metav1.ObjectMeta{Name: "kvm-2"},
+		Status: corev1.NodeStatus{Conditions: []corev1.NodeCondition{{
+			Type: corev1.NodeReady, Status: corev1.ConditionFalse,
+			LastTransitionTime: metav1.NewTime(time.Now().Add(-time.Hour))}}},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
 }
 
 // TEST_SCENARIO: a controller that restarts while a pool stays critical does not name its user again, since the Event it wrote before the restart is still there; a pool critical for another resource still is.

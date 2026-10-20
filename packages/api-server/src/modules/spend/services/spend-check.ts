@@ -33,7 +33,13 @@ import type { DayCounters } from "../infrastructure/day-counters.js";
 import type { SpendLimits } from "../infrastructure/spend-limits.js";
 import type { SpendLedger } from "../infrastructure/spend-ledger.js";
 import type { SpendCeilings } from "../infrastructure/user-spend-ceilings.js";
-import type { AgentOwners, SpendIngest, StartedCall } from "./spend-ingest.js";
+import {
+  checkedSession,
+  type AgentOwners,
+  type SessionOwnership,
+  type SpendIngest,
+  type StartedCall,
+} from "./spend-ingest.js";
 
 export type CheckedCall = StartedCall & { readonly dialect: ApiDialect };
 
@@ -123,6 +129,7 @@ export function createSpendCheck(deps: {
   ledger: SpendLedger;
   ingest: SpendIngest;
   owners: AgentOwners;
+  sessions: SessionOwnership;
   connections: GrantedConnections;
   brandName: string;
 }): SpendCheck {
@@ -187,6 +194,12 @@ export function createSpendCheck(deps: {
           ownerSub: call.ownerSub,
           connectionId: call.connectionId ?? UNKNOWN_CONNECTION,
           model: UNKNOWN_MODEL,
+          sessionId: await checkedSession(
+            deps.sessions,
+            call.agentId,
+            call.sessionId,
+          ),
+          callingAgentId: call.agentId,
           provider,
           unit,
         })

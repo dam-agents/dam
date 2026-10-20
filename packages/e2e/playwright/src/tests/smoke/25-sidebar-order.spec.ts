@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The sidebar lists Agents in one manual order per user that the user sets by drag and drop, in a real browser against a real api-server, and lists the Sessions of each Agent by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent goes to the bottom of the list, and activity never moves an Agent. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of its Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
+// TEST_OVERVIEW: The sidebar lists Agents newest created first, in one manual order per user that the user changes by drag and drop, in a real browser against a real api-server, and lists the Sessions of each Agent by last activity, newest first. A drop on an Agent row puts the dragged Agent before or after it, by the half of the row the pointer is in. A new Agent goes to the top of the list, and a click or activity never moves an Agent: a click opens and closes the Agent's Sessions in place. Hibernated Agents show after See all. The Agent order survives a reload and is the same in another browser. A new Session, or a turn in an old one, puts that Session at the top of its Agent's list, and a Session row does not drag. The "⋯" button of a Session row takes a click anywhere on its visible area, also on a working row, where a hidden indicator sits in the same place. The spec creates its own Agents, so the Agents and Sessions of the other specs never move.
 import { expect, type Locator, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -18,11 +18,7 @@ import {
   createRefreshingApiClient,
 } from "../../lib/api-client.js";
 import { acceptTerms } from "../../lib/auth.js";
-import {
-  onLaneBackend,
-  refreshingToken,
-  waitAgentState,
-} from "../../lib/backend.js";
+import { refreshingToken, waitAgentState } from "../../lib/backend.js";
 import { harnessName } from "../../lib/fixtures.js";
 
 test.describe.configure({ mode: "serial" });
@@ -46,10 +42,21 @@ async function reload(page: Page): Promise<void> {
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
 }
 
+async function showHibernating(page: Page): Promise<void> {
+  const seeAll = page
+    .getByTestId("sidebar-agents-hibernating")
+    .filter({ hasText: "See all" });
+  if (await seeAll.isVisible()) await seeAll.click();
+}
+
 async function openSidebar(page: Page): Promise<void> {
   await page.goto(baseUrl);
   await expect(page.getByTestId("app-sidebar")).toBeVisible();
   await ensureSidebarExpanded(page);
+  await expect(
+    page.getByTestId("sidebar-agents").getByTestId("sidebar-agent-row").first(),
+  ).toBeVisible();
+  await showHibernating(page);
 }
 
 async function shownAgents(page: Page): Promise<string[]> {
@@ -77,9 +84,10 @@ async function shownSessions(page: Page): Promise<string[]> {
 }
 
 async function createSleeping(name: string): Promise<string> {
-  const { id } = await api.agents.create.mutate(
-    onLaneBackend({ name, templateId: harnessName }),
-  );
+  const { id } = await api.agents.create.mutate({
+    name,
+    templateId: harnessName,
+  });
   agentIds.set(name, id);
   await api.agents.sleep.mutate({ id });
   return id;
@@ -143,9 +151,10 @@ test.beforeAll(async () => {
       await createSleeping(name);
       continue;
     }
-    const { id } = await api.agents.create.mutate(
-      onLaneBackend({ name, templateId: harnessName }),
-    );
+    const { id } = await api.agents.create.mutate({
+      name,
+      templateId: harnessName,
+    });
     agentIds.set(name, id);
   }
   for (const [name, id] of agentIds)
@@ -162,8 +171,8 @@ test.afterAll(async () => {
   for (const id of agentIds.values()) await api.agents.delete.mutate({ id });
 });
 
-// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that goes to the bottom.
-test("drag reorders Agents, and a new Agent goes to the bottom", async ({
+// TEST_SCENARIO: a drag moves an Agent to any place in the list: after the row it is dropped on in its lower half, before it in its upper half. The order is the same after a reload and in a second browser, and an Agent created after that goes to the top. A click on an Agent opens and closes its Sessions and moves nothing.
+test("drag reorders Agents, and a new Agent goes to the top", async ({
   page,
   browser,
 }) => {
@@ -214,11 +223,25 @@ test("drag reorders Agents, and a new Agent goes to the bottom", async ({
     }
   });
 
-  await test.step("a new Agent goes to the bottom", async () => {
+  await test.step("a new Agent goes to the top", async () => {
     await createSleeping(LATE_AGENT);
     await expect
       .poll(() => shownAgents(page))
-      .toEqual([third, second, first, LATE_AGENT]);
+      .toEqual([LATE_AGENT, third, second, first]);
+  });
+
+  await test.step("a click opens and closes an Agent's Sessions in place", async () => {
+    const row = agentRow(page, AGENTS[0]);
+    const before = await shownAgents(page);
+    const expanded = await row.getAttribute("aria-expanded");
+    await row.click();
+    await expect(row).toHaveAttribute(
+      "aria-expanded",
+      expanded === "true" ? "false" : "true",
+    );
+    await row.click();
+    await expect(row).toHaveAttribute("aria-expanded", expanded ?? "false");
+    expect(await shownAgents(page)).toEqual(before);
   });
 });
 

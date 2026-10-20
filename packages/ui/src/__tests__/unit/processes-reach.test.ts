@@ -4,6 +4,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
+import { TooltipProvider } from "../../components/ui/tooltip.js";
 import type { AgentReach } from "../../modules/agents/api/queries.js";
 
 const agent = vi.hoisted(() => ({ reach: "operable" as AgentReach }));
@@ -19,7 +20,11 @@ vi.mock("../../modules/processes/components/process-list.js", () => ({
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
-    select({ setSidePanelTab: vi.fn(), setMobileScreen: vi.fn() }),
+    select({
+      setSidePanelTab: vi.fn(),
+      setProcessesSectionOpen: vi.fn(),
+      setMobileScreen: vi.fn(),
+    }),
 }));
 
 const lastList: ProcessList = {
@@ -49,12 +54,16 @@ const { ProcessesIndicator } =
 
 function panel() {
   return renderToStaticMarkup(
-    createElement(ProcessesPanel, {
-      agentId: "agent-a",
-      alwaysOn: false,
-      open: true,
-      onToggle: () => {},
-    }),
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(ProcessesPanel, {
+        agentId: "agent-a",
+        alwaysOn: false,
+        open: true,
+        onToggle: () => {},
+      }),
+    ),
   );
 }
 

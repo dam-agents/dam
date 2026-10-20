@@ -39,6 +39,21 @@ export function createPresetSeeder(deps: {
           source: "preset:trusted",
         })),
       );
+      await deps.repo.markPresetUnderConnections(
+        agentId,
+        deps.trustedHosts,
+        "preset:trusted",
+      );
     },
   };
+}
+
+export function markTrustedRowsTakenOver(deps: {
+  repo: Pick<EgressRulesRepository, "markSeededConnectionRows">;
+  trustedHosts: readonly string[];
+}): Promise<number> {
+  return deps.repo.markSeededConnectionRows(
+    deps.trustedHosts,
+    "preset:trusted",
+  );
 }

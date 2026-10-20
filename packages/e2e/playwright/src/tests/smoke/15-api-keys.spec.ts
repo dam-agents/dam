@@ -5,7 +5,6 @@ import type { AppRouter, Scope } from "api-server-api";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { getAccessToken } from "../../lib/auth.js";
-import { onLaneBackend } from "../../lib/backend.js";
 
 const KEY_PREFIX = "e2e-authz";
 const mintedKeyIds: string[] = [];
@@ -72,7 +71,7 @@ test("agent lifecycle across scoped keys — manage owns CRUD, operate runs it, 
   if (!template) throw new Error("no agent template available in the cluster");
 
   const name = `e2e-authz-crud-${Date.now()}`;
-  const createInput = onLaneBackend({ name, templateId: template.id });
+  const createInput = { name, templateId: template.id };
 
   await expectRejected(
     read.agents.create.mutate(createInput),

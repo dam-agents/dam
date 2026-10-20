@@ -229,6 +229,39 @@ func servedVMReconciler(t *testing.T) (*AgentReconciler, *fakeNode, *apiv1.Agent
 	return r, node, agent
 }
 
+// TEST_SCENARIO: the owner gateway mounts one credential Secret for all of the owner's agents, and the kubelet refreshes that mount only when it syncs the pod, as it does an agent's own gateway's. So its pod carries the Secret's content hash, and a new hash syncs it at once and asks one of its agents to come back for the second sync, which a kubelet whose copy of the Secret was still old needs. A pod that is going away is left alone.
+func TestOwnerGateway_ACredentialChangeSyncsItsPodTwice(t *testing.T) {
+	r, _, _ := servedVMReconciler(t)
+	ctx, ns := context.Background(), "test-agents"
+	requeued := &requeueLog{}
+	r.WithRequeue(t.Context(), requeued.add)
+	ownerPod := func() *corev1.Pod {
+		pod, err := r.client.CoreV1().Pods(ns).Get(ctx, "owner-gw-1", metav1.GetOptions{})
+		require.NoError(t, err)
+		return pod
+	}
+
+	creds, err := r.client.CoreV1().Secrets(ns).Get(ctx, ownerGatewayName("platform", testOwner)+"-credentials", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, creds.Annotations[annOwnerCredentialsHash], ownerPod().Annotations[annGatewayCredentialsRev], "the owner gateway pod carries the hash of the Secret it mounts")
+
+	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now)
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev])
+	assert.Equal(t, []time.Duration{gatewayCredentialsResyncWait}, requeued.all(), "one of its agents comes back for the second sync")
+
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "rotated", []string{"my-agent"}, now.Add(gatewayCredentialsResyncWait))
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsResync])
+
+	pod := ownerPod()
+	deleting := metav1.NewTime(now)
+	pod.DeletionTimestamp = &deleting
+	_, err = r.client.CoreV1().Pods(ns).Update(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.refreshOwnerGatewayCredentials(ctx, testOwner, "next", []string{"my-agent"}, now.Add(time.Minute))
+	assert.Equal(t, "rotated", ownerPod().Annotations[annGatewayCredentialsRev], "a pod going away is not synced")
+}
+
 // TEST_SCENARIO: an agent its owner gateway serves hibernates and wakes without its own gateway pod: the idle checker stops the machine and records the agent down on its Service, the agent still reads hibernated only once the machine stopped, and a wake records it up and starts the machine while its own gateway stays at zero. Its listener stays configured the whole time, so a wake needs no configuration change.
 func TestOwnerGateway_HibernateAndWakeLeaveTheOwnGatewayAtZero(t *testing.T) {
 	ctx := context.Background()
@@ -299,6 +332,29 @@ func TestOwnerGateway_TemplateChangesRollOneOwnerAtATime(t *testing.T) {
 	require.NoError(t, err)
 	r.rollOwnerGateways(ctx)
 	assert.Equal(t, "envoy:next", image(second))
+}
+
+// TEST_SCENARIO: an owner gateway rolls under the runner roll's width, so a share stated there widths the gateways too: with half of four owners as the width, two roll and two wait, where `maxConcurrent: 1` would move them one at a time.
+func TestOwnerGateway_TemplateChangesRollTheWidthOfTheShare(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupReconciler(t, agentCR())
+	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d"}
+	for _, owner := range owners {
+		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
+	}
+	r.config.EnvoyImage = "envoy:next"
+	r.rollOwnerGateways(ctx)
+
+	rolled := 0
+	for _, owner := range owners {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		if dep.Spec.Template.Spec.Containers[0].Image == "envoy:next" {
+			rolled++
+		}
+	}
+	assert.Equal(t, 2, rolled, "half of four owners roll at once under the share, and the rest wait")
 }
 
 // TEST_SCENARIO: when the owner gateway pod crash-loops, every agent it serves has no gateway, so each one's gateway readiness carries the pod's own reason, the account the UI shows as a failed gateway, rather than a stale listener.
@@ -430,4 +486,49 @@ func markGatewayPodReady(t *testing.T, r *AgentReconciler, agent string) {
 		Data:       map[string][]byte{"ca.crt": []byte("MITM-CA")},
 	}, metav1.CreateOptions{})
 	require.NoError(t, err, "a gateway pod starts only once its leaf is issued")
+}
+
+// TEST_SCENARIO: a share of a fleet that shrinks can be smaller than the number of gateways still mid-roll, so every broken gateway would wait on the others for a corrective template change that never comes. A gateway already mid-roll takes the change in the place it holds.
+func TestOwnerGateway_AMidRollGatewayTakesACorrectiveChangeWhenTheFleetShrinks(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupReconciler(t, agentCR())
+	r.config.VM = config.VMConfig{Enabled: true, Gateway: config.VMGateway{PerOwner: true}, Runner: config.VMRunnerSpec{Rollout: config.VMRunnerRollout{MaxConcurrent: 1, MaxConcurrentPercent: 50}}}
+	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d", "owner-e"}
+	for _, owner := range owners {
+		require.NoError(t, r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, nil)))
+	}
+	r.config.EnvoyImage = "envoy:next"
+	r.rollOwnerGateways(ctx)
+
+	var broken, idle []string
+	for _, owner := range owners {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		if dep.Spec.Template.Spec.Containers[0].Image == "envoy:next" {
+			broken = append(broken, owner)
+		} else {
+			idle = append(idle, owner)
+		}
+	}
+	require.Len(t, broken, 3, "half of five rounds up to three, and their pods never became ready")
+	for _, owner := range idle {
+		require.NoError(t, r.client.AppsV1().Deployments(r.config.Namespace).Delete(ctx, ownerGatewayName("platform", owner), metav1.DeleteOptions{}))
+	}
+	old := time.Now().Add(-time.Hour)
+	for _, owner := range broken {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		metav1.SetMetaDataAnnotation(&dep.ObjectMeta, annRunnerRolledAt, old.UTC().Format(time.RFC3339))
+		_, err = r.client.AppsV1().Deployments(r.config.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+
+	r.config.EnvoyImage = "envoy:next-again"
+	r.rollOwnerGateways(ctx)
+
+	for _, owner := range broken {
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, ownerGatewayName("platform", owner), metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Equal(t, "envoy:next-again", dep.Spec.Template.Spec.Containers[0].Image, "a gateway mid-roll takes the change in the place it holds, where a share of a shrunken fleet would hold all three back")
+	}
 }

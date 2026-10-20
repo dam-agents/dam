@@ -471,6 +471,49 @@ installs that share nodes would otherwise remove each other's.
 {{- define "platform.vmRunner.releaseDir" -}}
 {{- with .Values.virtualization.runner.releaseHostPath }}{{ printf "%s/%s" (trimSuffix "/" .) $.Values.agentNamespace }}{{ end }}
 {{- end }}
+{{/*
+The node directory this install caches images in: its own subdirectory of
+`imageCache.hostPath`, one segment each for the release namespace and the
+release name — the pair the cluster already keeps unique. Two segments, not a
+dash join: joined, namespace `a-b` with release `c` and namespace `a` with
+release `b-c` both name `a-b-c`. The service is the only writer of the
+directory it serves, so two installs on a shared node given one directory take
+turns unlinking each other's socket and serving each other's trees. Deriving
+it from the install's own name means no value can hand two installs one
+directory.
+*/}}
+{{- define "platform.vmImageCache.dir" -}}
+{{- with .Values.virtualization.imageCache | default dict }}{{ with .hostPath }}{{ printf "%s/%s/%s" (clean .) $.Release.Namespace $.Release.Name }}{{ end }}{{ end }}
+{{- end }}
+{{/*
+What unpacking an image faithfully costs, and nothing else: every capability
+the runtime would grant is dropped first. A rootfs carries the owners and modes
+its files were built with, so tar chowns each entry (CHOWN), sets a mode on a
+file it has just given away (FOWNER), keeps a setgid bit on a file whose group
+is not its own (FSETID), and keeps writing into directories that are read-only
+or no longer its own (DAC_OVERRIDE). There is no MKNOD: the unpack skips the
+image's /dev, and fails on a device node anywhere else. The runners this
+service serves only read, so they hold none of CHOWN, FOWNER and FSETID.
+On OpenShift the service runs as spc_t: the label the cache sets is set from
+inside the container, and container_t may not relabel a host directory any
+more than write it. spc_t is the type a privileged container gets, unconfined
+by SELinux, without this becoming a privileged container. `runner.scc` has to
+leave the type to the pod (seLinuxContext RunAsAny); under MustRunAs admission
+refuses this pod. The runners keep container_t.
+*/}}
+{{- define "platform.vmImageCache.securityContext" -}}
+runAsUser: 0
+capabilities:
+  drop: ["ALL"]
+  add: ["CHOWN", "FOWNER", "FSETID", "DAC_OVERRIDE"]
+appArmorProfile:
+  type: Unconfined
+{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
+seLinuxOptions:
+  type: spc_t
+  level: s0
+{{- end }}
+{{- end }}
 
 {{/* Platform-owned OTel collector for the ClickStack telemetry backend. */}}
 {{- define "platform.clickstack.collector.fullname" -}}
@@ -553,6 +596,12 @@ installs that share nodes would otherwise remove each other's.
 # (non-Anthropic ANTHROPIC_BASE_URL disables it by default); the gateway strips
 # traceparent/tracestate before any external upstream, so nothing leaks outward.
 - name: CLAUDE_CODE_PROPAGATE_TRACEPARENT
+  value: "1"
+# The image's model-gateway.sh then points the OTLP endpoint at the agent's
+# gateway, which forwards to the collector, so the export skips Claude Code's
+# one proxied socket. The controller serves that path whenever this chart sets
+# its collector host, which is when this rail renders.
+- name: PLATFORM_TELEMETRY_VIA_GATEWAY
   value: "1"
 - name: OTEL_METRICS_EXPORTER
   value: "otlp"

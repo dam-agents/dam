@@ -12,9 +12,9 @@ import {
   type BackgroundWorkItemView,
   ChannelType,
   SessionMode,
-  type SessionRuntime,
   SessionType,
   type SessionView,
+  type SpendSessionRow,
 } from "api-server-api";
 import {
   type ReactNode,
@@ -25,7 +25,6 @@ import {
   useState,
 } from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
@@ -38,11 +37,11 @@ import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
-  formatHarnessSpend,
-  formatTokens,
-  formatUsdCell,
-} from "../../metrics/lib/format.js";
+  amountsLabel,
+  sessionSpendTitle,
+} from "../../spend/lib/amounts-label.js";
 import { runTimeLabel } from "../lib/run-time.js";
+import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -52,10 +51,6 @@ const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
 
-export function sessionTitleLabel(s: SessionView): string {
-  return s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
-}
-
 interface Props {
   session: SessionView;
   active: boolean;
@@ -64,7 +59,7 @@ interface Props {
   unread?: boolean;
   draft?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
-  cost?: SessionRuntime;
+  cost?: SpendSessionRow;
   conversation?: string;
   leading?: ReactNode;
   pinned?: boolean;
@@ -154,6 +149,7 @@ export function SessionRow({
   const onboarding =
     s.initialization === true && agent ? onboardingBadge(agent) : null;
   const runTime = scheduled ? runTimeLabel(s) : null;
+  const costLabel = cost ? amountsLabel(cost.amounts) : null;
   const terminal = s.mode === SessionMode.Terminal;
   const messenger =
     s.type === SessionType.ChannelSlack
@@ -231,7 +227,7 @@ export function SessionRow({
               working={working}
               draft={draft}
               backgroundWork={backgroundWork}
-              harness={s.harness ?? null}
+              unread={unread}
             />
             <div
               className={cn(
@@ -313,19 +309,14 @@ export function SessionRow({
               {runTime}
             </span>
           )}
-          {cost && (
+          {costLabel && cost && (
             <span
               className="tabular-nums"
-              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · $${cost.costUsd.toFixed(4)}`}
+              data-testid="session-spend"
+              title={sessionSpendTitle(cost)}
             >
               {" · "}
-              {formatUsdCell(cost.costUsd)}
-            </span>
-          )}
-          {!cost && s.spend && (
-            <span className="tabular-nums" data-testid="session-spend">
-              {" · "}
-              {formatHarnessSpend(s.spend)}
+              {costLabel}
             </span>
           )}
         </span>
@@ -345,7 +336,7 @@ function SessionIndicators({
   working,
   draft,
   backgroundWork,
-  harness,
+  unread,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -354,7 +345,7 @@ function SessionIndicators({
   working: boolean;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
-  harness: string | null;
+  unread: boolean;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -365,7 +356,7 @@ function SessionIndicators({
     !working &&
     !hasBackgroundWork &&
     !draft &&
-    !harness
+    !unread
   )
     return null;
   return (
@@ -408,13 +399,15 @@ function SessionIndicators({
         >
           <Pen size={16} />
         </span>
-      ) : harness ? (
-        <span
-          data-testid="session-harness"
-          className="inline-flex shrink-0 text-muted-foreground"
-        >
-          <HarnessIcons harnesses={[harness]} size="xs" />
-        </span>
+      ) : unread ? (
+        <IndicatorBox>
+          <span
+            data-testid="session-unread-dot"
+            role="img"
+            aria-label="Unread"
+            className="size-2 rounded-full bg-accent"
+          />
+        </IndicatorBox>
       ) : null}
       {messenger && !working && (
         <ConnectionIcon

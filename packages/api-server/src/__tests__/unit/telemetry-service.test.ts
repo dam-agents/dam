@@ -119,7 +119,7 @@ describe("createTelemetryService", () => {
   it("builds a turn from log records alone when the harness emitted no spans", async () => {
     /**
      * TEST_SCENARIO: span export is intermittent, so a turn known only to the
-     * log table must still be listed, with its cost.
+     * log table must still be listed, with its calls.
      */
     const { reader } = spyReader({
       logRecords: async () => [
@@ -145,13 +145,13 @@ describe("createTelemetryService", () => {
       expect(result.turns).toHaveLength(1);
       expect(result.turns[0]?.spanCount).toBe(0);
       expect(result.turns[0]?.recordCount).toBe(2);
-      expect(result.turns[0]?.costUsd).toBeCloseTo(0.0125);
+      expect(result.turns[0]?.calls).toBe(1);
       expect(result.turns[0]?.models).toEqual(["opus"]);
     }
   });
 
-  it("prices a Pi turn from the call records its image exports", async () => {
-    // TEST_SCENARIO: Pi's records carry the same attributes under pi.* event names, and its turns must not read as free.
+  it("counts a Pi turn from the call records its image exports", async () => {
+    // TEST_SCENARIO: Pi's records carry the same attributes under pi.* event names, and its calls must count.
     const { reader } = spyReader({
       logRecords: async () => [
         log({ event: "pi.user_prompt", service: "pi" }),
@@ -171,7 +171,7 @@ describe("createTelemetryService", () => {
     const result = await service.turns(TURNS_QUERY);
 
     expect(result.available && result.turns).toMatchObject([
-      { calls: 1, costUsd: 0.0075, models: ["aws/claude-opus-4-8"] },
+      { calls: 1, models: ["aws/claude-opus-4-8"] },
     ]);
   });
 
@@ -359,7 +359,7 @@ describe("turns line up with the conversation", () => {
   it("keeps records that arrived before any prompt rather than dropping them", async () => {
     /**
      * TEST_SCENARIO: the first turn of a session emitted its records before any
-     * prompt event, and those records carry the cost.
+     * prompt event, and those records carry its calls.
      */
     const { reader } = spyReader({
       logRecords: async () => [
@@ -384,7 +384,7 @@ describe("turns line up with the conversation", () => {
     expect(result.available && result.turns).toHaveLength(2);
     if (result.available) {
       expect(result.turns[0]?.prompted).toBe(false);
-      expect(result.turns[0]?.costUsd).toBeCloseTo(0.005);
+      expect(result.turns[0]?.calls).toBe(1);
     }
   });
 
@@ -417,7 +417,7 @@ describe("turns line up with the conversation", () => {
     if (result.available) {
       expect(result.turns[0]?.spanCount).toBe(1);
       expect(result.turns[0]?.recordCount).toBe(1);
-      expect(result.turns[0]?.costUsd).toBeCloseTo(0.007);
+      expect(result.turns[0]?.calls).toBe(1);
     }
   });
 });
@@ -669,8 +669,7 @@ describe("turns are keyed by the harness prompt id", () => {
         "prompt-id",
       ]);
       expect(result.turns.map((t) => t.promptId)).toEqual([P1, P2]);
-      expect(result.turns[0]?.costUsd).toBeCloseTo(0.005);
-      expect(result.turns[1]?.costUsd).toBeCloseTo(0.007);
+      expect(result.turns.map((t) => t.calls)).toEqual([1, 1]);
     }
   });
 

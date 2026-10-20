@@ -17,6 +17,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/sets"
 	"k8s.io/client-go/dynamic"
 	"k8s.io/client-go/dynamic/dynamicinformer"
@@ -161,7 +162,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
 
 	var runnerFactory informers.SharedInformerFactory
-	var runnerInformer, runnerPodInformer cache.SharedIndexInformer
+	var runnerInformer, runnerPodInformer, nodeInformer cache.SharedIndexInformer
 	if cfg.VM.Enabled {
 		runnerFactory = informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second,
 			informers.WithNamespace(cfg.Namespace),
@@ -174,6 +175,22 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		runnerPods := runnerFactory.Core().V1().Pods()
 		runnerPodInformer = runnerPods.Informer()
 		agentReconciler.WithRunnerCaches(runnerInformer, runnerPods.Lister())
+		// UNIT_BOUNDARY_DESCRIPTION: nodes are cluster-scoped, so they take a factory of their own. A not-ready agent's reconcile asks about a node on every retry, and on a lost node those retries add up across the owner's agents. The watch keeps only the name and the Ready condition: the rest of a node object carries every image and attached volume of a shared cluster to answer one question.
+		nodes := informers.NewSharedInformerFactoryWithOptions(client, 30*time.Second, informers.WithTransform(func(obj interface{}) (interface{}, error) {
+			if node, ok := obj.(*corev1.Node); ok {
+				ready := make([]corev1.NodeCondition, 0, 1)
+				for _, c := range node.Status.Conditions {
+					if c.Type == corev1.NodeReady {
+						ready = append(ready, c)
+					}
+				}
+				node.ManagedFields, node.Labels, node.Annotations = nil, nil, nil
+				node.Status = corev1.NodeStatus{Conditions: ready}
+			}
+			return obj, nil
+		})).Core().V1().Nodes()
+		nodeInformer = nodes.Informer()
+		agentReconciler.WithNodeCache(nodes.Lister(), nodeInformer.HasSynced)
 	}
 
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
@@ -245,7 +262,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		},
 		DeleteFunc: func(obj interface{}) {
 			if u := unstructuredFrom(obj); u != nil {
-				deleteQueue.Add(deletedAgent{name: u.GetName(), owner: reconciler.AgentOwner(u.GetLabels())})
+				deleteQueue.Add(deletedAgent{name: u.GetName(), owner: reconciler.AgentOwner(u.GetLabels()), uid: u.GetUID()})
 			}
 		},
 	})
@@ -277,6 +294,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 			return
 		}
 		runnerFactory.Start(ctx.Done())
+		go nodeInformer.RunWithContext(ctx)
 	}
 
 	podInformer.TypedInformer().AddTypedEventHandler(cache.TypedResourceEventHandlerDetailedFuncs[*corev1.Pod]{
@@ -328,6 +346,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	if runnerInformer != nil {
 		synced = append(synced, runnerInformer.HasSynced, runnerPodInformer.HasSynced)
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: a cluster that cannot read nodes still runs every other backend, so the node watch is not waited for here — it reports nothing until it syncs, rather than holding every backend's reconcile behind a permission the node role alone grants.
 	if !cache.WaitForCacheSync(ctx.Done(), synced...) {
 		slog.Error("failed to sync informer caches")
 		return
@@ -585,9 +604,10 @@ func specOrAnnotationsChanged(oldAgent, newAgent *unstructured.Unstructured) boo
 
 type deletedAgent struct {
 	name, owner string
+	uid         types.UID
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how many times a deleted Agent's cleanup is retried. The backoff doubles from a second to five minutes, so this is about three quarters of an hour; past it the orphan sweep, which finds machines no Agent claims, collects what is left.
+// UNIT_BOUNDARY_DESCRIPTION: how many times a deleted Agent's cleanup is retried. The backoff doubles from a second to five minutes, so this is about three quarters of an hour; past it the orphan sweep, which finds machines no Agent claims, collects what is left. A cleanup is that old when it runs, so it reads the Agent live first: the name may belong to an Agent created again since, and its machine and home must stay.
 const maxDeleteRetries = 12
 
 // UNIT_BOUNDARY_DESCRIPTION: cleans up deleted Agents off the informer's goroutine. Removing a vm agent's machine is a call to its owner's runner, and a runner that is restarting would otherwise hold up every other event the informer delivers.
@@ -599,17 +619,17 @@ func runDeleteWorker(ctx context.Context, r *reconciler.AgentReconciler, queue w
 		}
 		func() {
 			defer queue.Done(item)
-			err := r.Delete(ctx, item.name, item.owner)
+			err := r.Delete(ctx, item.name, item.owner, item.uid)
 			if err == nil {
 				queue.Forget(item)
 				return
 			}
 			if queue.NumRequeues(item) >= maxDeleteRetries {
-				slog.ErrorContext(ctx, "deleted agent cleanup: giving up, the orphan sweep collects the rest", "agent", item.name, "owner", item.owner, "error", err)
+				slog.ErrorContext(ctx, "deleted agent cleanup: giving up, the orphan sweep collects the rest", "agent", item.name, "owner", item.owner, "uid", item.uid, "error", err)
 				queue.Forget(item)
 				return
 			}
-			slog.WarnContext(ctx, "deleted agent cleanup failed; retrying", "agent", item.name, "owner", item.owner, "error", err)
+			slog.WarnContext(ctx, "deleted agent cleanup failed; retrying", "agent", item.name, "owner", item.owner, "uid", item.uid, "error", err)
 			queue.AddRateLimited(item)
 		}()
 	}

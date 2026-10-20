@@ -1,13 +1,15 @@
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
-import { Message, type StateAdapter, type Lock } from "chat";
+import { Message } from "chat";
 import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { configureLogger } from "../../core/logger.js";
+import { createMemoryState } from "../helpers/chat-state.js";
 import {
   createTelegramChat,
   createTelegramMessageHandler,
   type TelegramInboundMessage,
 } from "../../modules/channels/infrastructure/telegram.js";
+import { TelegramConversationAdapter } from "../../modules/channels/infrastructure/telegram-conversation-adapter.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
 
@@ -20,76 +22,6 @@ const oauthConfig: KeycloakOAuthConfig = {
   keycloakClientId: "telegram",
   callbackUrl: "https://app.example/api/telegram/oauth/callback",
 };
-
-function createMemoryState(): StateAdapter {
-  const values = new Map<string, unknown>();
-  const lists = new Map<string, unknown[]>();
-  const locks = new Map<string, string>();
-  const subscribed = new Set<string>();
-  const queues = new Map<string, unknown[]>();
-  let token = 0;
-  return {
-    async acquireLock(threadId) {
-      if (locks.has(threadId)) return null;
-      const value = `t${(token += 1)}`;
-      locks.set(threadId, value);
-      return { threadId, token: value } as Lock;
-    },
-    async releaseLock(lock) {
-      if (locks.get(lock.threadId) === lock.token) locks.delete(lock.threadId);
-    },
-    async forceReleaseLock(threadId) {
-      locks.delete(threadId);
-    },
-    async extendLock() {
-      return true;
-    },
-    async appendToList(key, value) {
-      lists.set(key, [...(lists.get(key) ?? []), value]);
-    },
-    async getList<T>(key: string) {
-      return (lists.get(key) ?? []) as T[];
-    },
-    async get<T>(key: string) {
-      return (values.get(key) ?? null) as T | null;
-    },
-    async set(key, value) {
-      values.set(key, value);
-    },
-    async setIfNotExists(key, value) {
-      if (values.has(key)) return false;
-      values.set(key, value);
-      return true;
-    },
-    async delete(key) {
-      values.delete(key);
-    },
-    async isSubscribed(threadId) {
-      return subscribed.has(threadId);
-    },
-    async subscribe(threadId) {
-      subscribed.add(threadId);
-    },
-    async unsubscribe(threadId) {
-      subscribed.delete(threadId);
-    },
-    async enqueue(threadId, entry) {
-      const q = queues.get(threadId) ?? [];
-      q.push(entry);
-      queues.set(threadId, q);
-      return q.length;
-    },
-    async dequeue(threadId) {
-      const q = queues.get(threadId) ?? [];
-      return (q.shift() ?? null) as never;
-    },
-    async queueDepth(threadId) {
-      return (queues.get(threadId) ?? []).length;
-    },
-    async connect() {},
-    async disconnect() {},
-  };
-}
 
 function createFakeTelegramAdapter(posts: string[]) {
   return {
@@ -413,5 +345,95 @@ describe("telegram adapter update routing", () => {
     } finally {
       vi.unstubAllGlobals();
     }
+  });
+});
+
+describe("telegram conversation of a group message", () => {
+  const BOT = { id: 4242, is_bot: true, first_name: "Krodo" };
+  const GROUP = { id: -1001234567890, type: "supergroup", title: "Team" };
+  const JANE = { id: 7, is_bot: false, first_name: "Jane" };
+  const mention = (text: string) => ({
+    date: 0,
+    text: `@krodo_bot ${text}`,
+    entities: [{ offset: 0, length: 10, type: "mention" }],
+    from: JANE,
+  });
+
+  async function routedThreadIds(message: object): Promise<string[]> {
+    vi.stubGlobal(
+      "fetch",
+      async () =>
+        new Response(
+          JSON.stringify({
+            ok: true,
+            result: { ...BOT, username: "krodo_bot", message_id: 1 },
+          }),
+          { headers: { "content-type": "application/json" } },
+        ),
+    );
+    try {
+      const adapter = new TelegramConversationAdapter({
+        botToken: "4242:test",
+        mode: "webhook",
+        allowUnverifiedWebhooks: true,
+      });
+      const seen: string[] = [];
+      const chat = createTelegramChat({
+        adapter: adapter as never,
+        state: createMemoryState(),
+        handleMessage: async (thread) => {
+          seen.push(thread.id);
+        },
+      });
+      await chat.initialize();
+      await adapter.handleWebhook(
+        new Request("https://example.test/telegram", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ update_id: 1, message }),
+        }),
+      );
+      await new Promise((resolve) => setTimeout(resolve, 50));
+      return seen;
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  }
+
+  /**
+   * TEST_SCENARIO: The reported bug. In a supergroup Telegram puts a thread id
+   * on every reply, and the stock adapter made that reply a conversation of
+   * its own, which no binding knew. A reply belongs to its chat.
+   */
+  it("routes a reply in a supergroup to its chat", async () => {
+    const seen = await routedThreadIds({
+      ...mention("what about this?"),
+      message_id: 13,
+      message_thread_id: 12,
+      reply_to_message: {
+        message_id: 12,
+        date: 0,
+        text: "an earlier answer",
+        from: BOT,
+        chat: GROUP,
+      },
+      chat: GROUP,
+    });
+    expect(seen).toEqual([`telegram:${GROUP.id}`]);
+  });
+
+  /**
+   * TEST_SCENARIO: A forum topic is a conversation of its own: its messages
+   * keep the topic, so the agent's answer is posted back into that topic.
+   */
+  it("keeps a forum topic as its own conversation", async () => {
+    const seen = await routedThreadIds({
+      ...mention("in a topic"),
+      message_id: 15,
+      message_thread_id: 99,
+      is_topic_message: true,
+      chat: { ...GROUP, is_forum: true },
+    });
+    expect(seen).toEqual([`telegram:${GROUP.id}:99`]);
   });
 });

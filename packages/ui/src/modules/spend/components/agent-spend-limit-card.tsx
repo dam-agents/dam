@@ -1,151 +1,144 @@
 import type { SpendStatus, SpendUnit } from "api-server-api";
 
-import { Card } from "@/components/ui/card";
-import { TextSkeleton } from "@/components/ui/text-skeleton";
-
 import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../api/queries.js";
 import { agentLimitOf } from "../lib/agent-limit.js";
 import {
-  CEILING_NAME,
-  measuredSpendHelp,
-  OWN_LIMIT_NAME,
+  AGENT_LIMIT_HELP,
+  alsoSpent,
+  highEstimates,
+  nearerLimitLine,
+  usedToday,
 } from "../lib/copy.js";
-import { agentLimitCoverage } from "../lib/coverage.js";
 import {
-  bareSpend,
-  formatSpend,
-  localResetTime,
-  UNIT_EXPLANATIONS,
-} from "../lib/format.js";
+  type AgentLimitCoverage,
+  agentLimitCoverage,
+} from "../lib/coverage.js";
+import { unitTotals } from "../lib/measured-spend.js";
 import { nearerOwnerWideLimit } from "../lib/nearer-limit.js";
 import { AgentLimitCoverageNote } from "./agent-limit-coverage-note.js";
-import { HelpTip } from "./help-tip.js";
+import { DailyLimitCard, DailyLimitCardPending } from "./daily-limit-card.js";
+import { DailyLimitMeter } from "./daily-limit-meter.js";
 import { RootDriverSpendNote } from "./root-driver-spend-note.js";
-import { SpendLimitLine } from "./spend-limit-line.js";
+import { SpendLimitButton } from "./spend-limit-button.js";
 
-const NEARER_NAMES = {
-  owner: OWN_LIMIT_NAME,
-  ceiling: CEILING_NAME,
-} as const;
+export function AgentSpendLimitCard({ agentId }: { agentId: string }) {
+  const root = useRootDriver(agentId);
+  if (root === undefined) return <DailyLimitCardPending failed={false} />;
+  if (root) {
+    return (
+      <DailyLimitCard>
+        <RootDriverSpendNote root={root} />
+      </DailyLimitCard>
+    );
+  }
+  return <DriverSpendLimitCard agentId={agentId} />;
+}
 
-const PRIMARY_CAPTIONS: Readonly<Record<SpendUnit, string>> = {
-  usd: "Paid API spend today.",
-  usd_list: "Subscription value today.",
-  bobcoin: "Bobcoins today.",
-  free: "Paid API spend today.",
-};
+function DriverSpendLimitCard({ agentId }: { agentId: string }) {
+  const { data: status, isError } = useAgentSpendStatus(agentId);
+  const { granted, loaded, failed } = useProviderConnections(agentId);
+  if (!status || !(loaded || failed)) {
+    return <DailyLimitCardPending help={AGENT_LIMIT_HELP} failed={isError} />;
+  }
+  return (
+    <DriverSpendLimitBody
+      agentId={agentId}
+      status={status}
+      coverage={agentLimitCoverage(granted.map((p) => p.templateId))}
+      coverageKnown={loaded}
+    />
+  );
+}
 
-function spentCaption(status: SpendStatus, primary: SpendUnit): string {
-  const others = status.spent
-    .filter((total) => total.unit !== primary && total.costMicros > 0)
-    .map((total) => formatSpend(total.costMicros, total.unit));
+interface BodyProps {
+  agentId: string;
+  status: SpendStatus;
+  coverage: AgentLimitCoverage;
+  coverageKnown: boolean;
+}
+
+function DriverSpendLimitBody({
+  agentId,
+  status,
+  coverage,
+  coverageKnown,
+}: BodyProps) {
+  const agentName = useAgentDisplayName(agentId);
+  const limit = agentLimitOf(status, agentId);
+  const settable = coverage.paid || limit !== undefined;
+  const primary: SpendUnit = settable
+    ? "usd"
+    : (coverage.uncountedUnits[0] ?? "usd");
+  const totals = unitTotals(status.spent);
+  const nearer = coverage.paid ? nearerOwnerWideLimit(status, agentId) : null;
+
+  return (
+    <DailyLimitCard
+      help={AGENT_LIMIT_HELP}
+      resetsAt={status.resetsAt}
+      action={
+        settable && (
+          <SpendLimitButton
+            scope={{ kind: "agent", agentId }}
+            subject={agentName}
+            amountMicros={limit?.amountMicros ?? null}
+          />
+        )
+      }
+    >
+      {settable ? (
+        <DailyLimitMeter
+          spentMicros={totals.usd}
+          limit={limit}
+          resetsAt={status.resetsAt}
+          subject={agentName}
+        />
+      ) : (
+        <p className="text-sm text-foreground tabular-nums">
+          {usedToday(totals[primary], primary)}
+        </p>
+      )}
+      <OtherSpendLine status={status} primary={primary} />
+      {nearer && (
+        <p className="text-sm text-muted-foreground">
+          {nearerLimitLine(nearer.kind, nearer.leftMicros)}
+        </p>
+      )}
+      {coverageKnown && (
+        <AgentLimitCoverageNote
+          agentId={agentId}
+          coverage={coverage}
+          hasLimit={limit !== undefined}
+        />
+      )}
+    </DailyLimitCard>
+  );
+}
+
+function OtherSpendLine({
+  status,
+  primary,
+}: {
+  status: SpendStatus;
+  primary: SpendUnit;
+}) {
+  const others = status.spent.filter(
+    (total) => total.unit !== primary && total.costMicros > 0,
+  );
   const estimated = status.spent.reduce(
     (sum, total) => sum + total.estimatedCalls,
     0,
   );
-  return [
-    PRIMARY_CAPTIONS[primary],
-    others.length > 0 ? `Also ${others.join(" and ")}.` : null,
-    estimated > 0
-      ? `${String(estimated)} ${estimated === 1 ? "call is" : "calls are"} estimated.`
-      : null,
-    `Resets at ${localResetTime(status.resetsAt)} your time.`,
+  const text = [
+    others.length > 0 ? alsoSpent(others) : null,
+    estimated > 0 ? highEstimates(estimated) : null,
   ]
     .filter(Boolean)
     .join(" ");
-}
+  if (!text) return null;
 
-function spendHelp(status: SpendStatus | undefined): string {
-  const units = new Set(status?.spent.map((total) => total.unit) ?? []);
-  return [
-    measuredSpendHelp(),
-    ...[...units].flatMap((unit) => UNIT_EXPLANATIONS[unit] ?? []),
-  ].join(" ");
-}
-
-export function AgentSpendLimitCard({ agentId }: { agentId: string }) {
-  const root = useRootDriver(agentId);
-  const { data: status, isError } = useAgentSpendStatus(
-    root === null ? agentId : null,
-  );
-
-  return (
-    <Card className="mb-6 p-4">
-      <p className="mb-1.5 flex items-center gap-1.5 text-sm text-muted-foreground">
-        Spend today
-        <HelpTip content={spendHelp(status)} />
-      </p>
-      {root ? (
-        <RootDriverSpendNote root={root} />
-      ) : isError ? (
-        <p className="text-sm text-muted-foreground">
-          Couldn't load today's spend.
-        </p>
-      ) : status ? (
-        <AgentSpendLimitBody agentId={agentId} status={status} />
-      ) : (
-        <TextSkeleton width={96} />
-      )}
-    </Card>
-  );
-}
-
-function AgentSpendLimitBody({
-  agentId,
-  status,
-}: {
-  agentId: string;
-  status: SpendStatus;
-}) {
-  const { granted, loaded } = useProviderConnections(agentId);
-  const coverage = agentLimitCoverage(granted.map((p) => p.templateId));
-  const primary: SpendUnit =
-    coverage.paid || !loaded ? "usd" : (coverage.uncountedUnits[0] ?? "usd");
-  const primaryMicros =
-    status.spent.find((total) => total.unit === primary)?.costMicros ?? 0;
-  const limit = agentLimitOf(status, agentId);
-  const agentName = useAgentDisplayName(agentId);
-  const usdMicros =
-    status.spent.find((total) => total.unit === "usd")?.costMicros ?? 0;
-  const showField = coverage.paid || limit !== undefined;
-  const nearer = coverage.paid ? nearerOwnerWideLimit(status, agentId) : null;
-
-  return (
-    <>
-      <p className="font-mono text-2xl font-semibold leading-none tracking-[-0.02em] tabular-nums text-foreground">
-        {bareSpend(primaryMicros, primary)}
-      </p>
-      <p className="mt-1.5 text-sm text-muted-foreground">
-        {spentCaption(status, primary)}
-      </p>
-      <div className="mt-4 flex flex-col gap-3 border-t border-border pt-4">
-        {showField && (
-          <SpendLimitLine
-            scope={{ kind: "agent", agentId }}
-            unit="usd"
-            spentMicros={usdMicros}
-            limit={limit}
-            subject={agentName}
-          />
-        )}
-        {loaded && (
-          <AgentLimitCoverageNote
-            agentId={agentId}
-            coverage={coverage}
-            hasLimit={limit !== undefined}
-          />
-        )}
-        {nearer && (
-          <p className="text-sm text-muted-foreground">
-            {NEARER_NAMES[nearer.kind]} has only{" "}
-            {formatSpend(nearer.leftMicros, "usd")} left today, so it stops this
-            agent first.
-          </p>
-        )}
-      </div>
-    </>
-  );
+  return <p className="text-sm text-muted-foreground">{text}</p>;
 }

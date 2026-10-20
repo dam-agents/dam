@@ -1,8 +1,8 @@
 # VM runtime migration
 
-Last verified: 2026-10-18
+Last verified: 2026-10-19
 
-A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it only to users who opted into the new runtime.
+A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it to the owner of any container Agent on an install that can run a machine, which is the only install where one could move.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
 An Agent whose mounts persist any other path — outside `HOME`, or a volume of its own inside it — is refused with each such path named, rather than moved without it; a mount that is not persisted, such as `/tmp`, is carried by nothing and refuses nothing.
 The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved or still clearing up an earlier move, and one mid-way through a storage migration; the UI offers the move from that same refusal.
@@ -33,7 +33,7 @@ A failed migration keeps a container it had stopped stopped and one it never sto
 A **retry** starts over from the preflight with a fresh machine, since a boot that failed may have seeded part of its disk.
 An **abort** is valid in every phase before verified: the api-server withdraws the request and writes the snapshot's fields back, and the controller deletes the copy Job and the machine with its seed and removes the condition; the old volumes never lost their labels, so the container resumes on them as they were.
 An abort does not wait on a runner that cannot be reached, since that is when a user most needs the container back: the controller marks the machine it could not delete as left on the Agent (`agent-platform.ai/runtime-migration-machine-left`) and removes the condition anyway.
-Such an Agent no longer claims a machine of its name, so the [orphan sweep](vm-runner.md#runner-lifecycle) deletes it once the runner answers and drops the mark; a new migration of the Agent deletes it first, so its machine starts on a fresh disk.
+Such an Agent no longer claims a machine of its name, so the [orphan sweep](vm-runner.md#runner-lifecycle) deletes it once the runner answers and no sweep has found an Agent for it in half an hour, and then drops the mark; a new migration of the Agent deletes it first, so its machine starts on a fresh disk.
 Both writes carry the version they were decided from — the api-server's abort against the controller's status, the controller's verified mark against the request — so exactly one of an abort and a verified boot wins.
 The copy Job waits for the runner to accept its connection before it uploads, because a policy engine admits a new pod to the runner's ingress rule only after the pod exists.
 

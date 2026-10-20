@@ -82,7 +82,7 @@ jobs:
     name: mise e2e (container)
     # The container lane: the smoke suite on an install without
     # virtualization, so every agent is a pod. e2e-vm is the vm lane, the same
-    # suite with every agent on the vm Backend; the two run side by side on
+    # suite with its agents on the vm Backend; the two run side by side on
     # every run but a push and a docs-only change, each on its own runner, and
     # the Playwright config picks each lane's specs from E2E_VIRTUALIZATION
     # (see packages/e2e/playwright/src/lib/lane.ts).
@@ -173,7 +173,8 @@ jobs:
         id: controller-changed
         if: inputs.verify
         run: |
-          if git diff --quiet "$DIFF_BASE" HEAD -- $(.mise/tasks/image/resolve paths controller); then
+          read -r -a paths <<< "$(.mise/tasks/image/resolve paths controller)"
+          if git diff --quiet "$DIFF_BASE" HEAD -- "${paths[@]}"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
             echo "changed=true" >> "$GITHUB_OUTPUT"
@@ -321,10 +322,14 @@ jobs:
         name: Timing summary
         if: ${{ !cancelled() }}
         run: |
+          set -o pipefail
           for mark in "k3s provisioned:/tmp/k3s-provision.status" "platform images ready:/tmp/ci-images-platform.status" "images ready:/tmp/ci-images.status"; do
             [ ! -s "${mark#*:}" ] || printf '%s\t%s\n' "$(stat -c %Y "${mark#*:}")" "${mark%%:*}" >> "$E2E_TIMINGS"
           done
-          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY"
+          # The task never fails the job by design: a summary that did not print
+          # is a warning, not a red lane.
+          .mise/tasks/e2e/timings | tee -a "$GITHUB_STEP_SUMMARY" ||
+            echo "::warning::the e2e timing summary did not print"
 
       - name: Upload Playwright report
         if: ${{ !cancelled() }}
@@ -340,15 +345,18 @@ jobs:
   e2e-vm:
     name: mise e2e (vm)
     # The vm lane: the same smoke suite on an install with virtualization
-    # enabled, where every agent the suite creates is a vm Agent. The KVM
-    # device plugin comes from cluster:install, the node image cache directory
-    # and the staged mock image from values-local.yaml once e2e:install sees
-    # E2E_VIRTUALIZATION, and the vm-runner image is built or fetched with the
-    # rest by e2e:ci-images. The same variable makes the suite's global setup
-    # opt the e2e user into the vm-sandboxes experiment, so the UI creates vm
-    # agents, and the spec helpers create vm agents through the API. It also
-    # adds the runtime migration spec, which needs both Backends on one
-    # install, and runs it and the backend spec after the rest of the suite:
+    # enabled, where the agents the suite creates are vm Agents bar the one
+    # container Agent the migration spec applies itself. The KVM
+    # device plugin comes from cluster:install, the staged mock image from
+    # values-local.yaml once e2e:install sees E2E_VIRTUALIZATION, and the
+    # vm-runner image is built or fetched with the rest by e2e:ci-images. The
+    # lane installs a node image cache root of its own, so a staging that did
+    # not follow the install's values would strand the trees it stages. Every
+    # create the suite makes lands on a machine there, the UI's and the API's
+    # alike, unless it asks for a container. It
+    # also adds the runtime migration spec, which needs
+    # both Backends on one install, and runs it and the backend spec after the
+    # rest of the suite:
     # the backend spec deletes the user's VM runner, which runs every one of
     # the user's machines. It runs whenever the container lane does, so a
     # vm-only failure shows on the PR that caused it.
@@ -447,8 +455,9 @@ jobs:
       - *e2e-playwright-version
       - *e2e-playwright-cache
       # Twice the container lane's budget: the vm-runner build above on a PR,
-      # the node staging of the mock image, every agent's boots, each a machine
-      # start under nested virtualization, and the backend and runtime
+      # the node staging of the mock image, each agent's boots, each a machine
+      # start under nested virtualization or, for the migration spec's legacy
+      # Agent, a container start, and the backend and runtime
       # migration specs, which run after the rest of the suite.
       - run: *e2e-run
         timeout-minutes: 70
@@ -467,6 +476,7 @@ jobs:
       - name: Kernel log and VMM seccomp records
         if: ${{ !cancelled() }}
         run: |
+          set -o pipefail
           python3 - <<'EOF' || echo "::warning::the seccomp canary did not run"
           import ctypes, os
           libc = ctypes.CDLL(None, use_errno=True)
@@ -483,9 +493,11 @@ jobs:
           EOF
           sleep 2
           mkdir -p /tmp/kernel-log
-          sudo journalctl -k -b --no-pager -o short-precise > /tmp/kernel-log/kernel.log ||
-            sudo dmesg -T > /tmp/kernel-log/kernel.log
-          [ ! -e /var/log/audit/audit.log ] || sudo cat /var/log/audit/audit.log > /tmp/kernel-log/audit.log
+          # tee, not a redirect on sudo: the file is the runner's, and a failed
+          # journalctl must not leave its partial output in front of dmesg's.
+          sudo journalctl -k -b --no-pager -o short-precise | tee /tmp/kernel-log/kernel.log > /dev/null ||
+            sudo dmesg -T | tee /tmp/kernel-log/kernel.log > /dev/null
+          [ ! -e /var/log/audit/audit.log ] || { sudo cat /var/log/audit/audit.log; } > /tmp/kernel-log/audit.log
           grep -hs 'type=1326\|type=SECCOMP' /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log | grep -v 'comm="seccomp-canary"' > /tmp/seccomp.log || true
           canary="$(cat /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log 2>/dev/null | grep -c 'comm="seccomp-canary"' || true)"
           killed="$(grep -c ' sig=31 ' /tmp/seccomp.log || true)"

@@ -354,8 +354,12 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	err = concurrently(
 		func() error { return r.applyConfigMap(ctx, cm) },
 		func() error {
-			_, err := r.applyOwnerCredentialSecret(ctx, buildOwnerCredentialSecret(owner, r.config, granted, refs))
-			return err
+			creds := buildOwnerCredentialSecret(owner, r.config, granted, refs)
+			if _, err := r.applyOwnerCredentialSecret(ctx, creds); err != nil {
+				return err
+			}
+			r.refreshOwnerGatewayCredentials(ctx, owner, creds.Annotations[annOwnerCredentialsHash], names, time.Now())
+			return nil
 		},
 		func() error {
 			return r.applyCertificate(ctx, buildOwnerLeafCertificate(owner, r.config, leafAgents, refs))
@@ -381,6 +385,29 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		r.cutOverToOwnerGateway(ctx, owner, members)
 	}
 	return members, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner gateway's credential Secret reaches its pods' mounted files the same way an agent's own gateway's does, so each of its pods is synced twice per content hash of that Secret, as an agent's own gateway pod is per revision. The second sync is due a few seconds after the first, so one of the agents it renders comes back for it, since its reconcile renders the owner gateway again. A failure only logs: the periodic sync still delivers the value.
+func (r *AgentReconciler) refreshOwnerGatewayCredentials(ctx context.Context, owner, hash string, members []string, now time.Time) {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent + "," + envoyOwnerLabel + "=" + owner})
+	if err != nil {
+		slog.Warn("owner gateway: listing its pods to refresh credentials failed; the periodic refresh still applies", "owner", owner, "error", err)
+		return
+	}
+	var recheck time.Duration
+	for i := range pods.Items {
+		if pods.Items[i].DeletionTimestamp != nil {
+			continue
+		}
+		wait, err := r.nudgeCredentialSync(ctx, &pods.Items[i], hash, now)
+		if err != nil {
+			slog.Warn("owner gateway: asking the kubelet to refresh credentials failed; the periodic refresh still applies", "owner", owner, "pod", pods.Items[i].Name, "error", err)
+		}
+		recheck = max(recheck, wait)
+	}
+	if recheck > 0 && len(members) > 0 && r.requeue != nil {
+		r.requeue(members[0], recheck)
+	}
 }
 
 func (r *AgentReconciler) recordOwnerGatewaySlot(ctx context.Context, svcName string, slot int) error {
@@ -413,7 +440,7 @@ func (r *AgentReconciler) ensureOwnerGatewayServiceAccount(ctx context.Context, 
 	return err
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a template change of an owner gateway (its Envoy or resolver image, the install's trust settings) restarts egress for every running agent of the owner, and one controller release would restart every owner at the same moment. The surge keeps the old pod serving until the new one is ready, so each roll costs the owner its open connections only; and a changed template waits for a place in the same roll budget runner rolls use, `rollout.maxConcurrent` owner gateways mid-roll at once, under the same lock. A gateway is mid-roll from its update until its Deployment has rolled out. Listener, resolver, credential and leaf changes never touch the template, so they never roll. A Deployment never deadlocks on a pod stuck on a superseded template the way a StatefulSet does, so it needs no forced eviction: the old pod keeps serving and the stuck new one is replaced by the next template change.
+// UNIT_BOUNDARY_DESCRIPTION: a template change of an owner gateway (its Envoy or resolver image, the install's trust settings) restarts egress for every running agent of the owner, and one controller release would restart every owner at the same moment. The surge keeps the old pod serving until the new one is ready, so each roll costs the owner its open connections only; and a changed template waits for a place in the same roll budget runner rolls use — the roll's width (`rollout.maxConcurrent`, or `rollout.maxConcurrentPercent` of the install's gateways) mid-roll at once — under the same lock. A gateway is mid-roll from its update until its Deployment has rolled out. Listener, resolver, credential and leaf changes never touch the template, so they never roll. A Deployment never deadlocks on a pod stuck on a superseded template the way a StatefulSet does, so it needs no forced eviction: the old pod keeps serving and the stuck new one is replaced by the next template change.
 func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desired *appsv1.Deployment) error {
 	cli := r.client.AppsV1().Deployments(desired.Namespace)
 	return retry.RetryOnConflict(retry.DefaultRetry, func() error {
@@ -435,12 +462,14 @@ func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desir
 		}
 		r.runnerRollMu.Lock()
 		defer r.runnerRollMu.Unlock()
-		rolling, err := r.ownerGatewaysMidRoll(ctx)
+		rolling, total, err := r.ownerGatewaysMidRoll(ctx)
 		if err != nil {
 			return err
 		}
-		limit, _ := runnerRolloutLimits(r.config.VM.Runner)
-		if others := slices.DeleteFunc(rolling, func(n string) bool { return n == existing.Name }); len(others) >= limit {
+		limit := runnerRollWidth(r.config.VM.Runner, total)
+		// UNIT_BOUNDARY_DESCRIPTION: a gateway already mid-roll takes a corrective template change in the place it holds: a share of a shrunken fleet can be smaller than the number of gateways on it, and counting those would leave each of them stuck behind the others.
+		midRoll := slices.Contains(rolling, existing.Name)
+		if others := slices.DeleteFunc(rolling, func(n string) bool { return n == existing.Name }); !midRoll && len(others) >= limit {
 			slog.Info("owner gateway: the template changed, waiting for other owner gateways to finish rolling", "deployment", existing.Name, "rolling", others)
 			return nil
 		}
@@ -454,18 +483,17 @@ func (r *AgentReconciler) applyOwnerGatewayDeployment(ctx context.Context, desir
 	})
 }
 
-func (r *AgentReconciler) ownerGatewaysMidRoll(ctx context.Context) ([]string, error) {
+func (r *AgentReconciler) ownerGatewaysMidRoll(ctx context.Context) (rolling []string, total int, err error) {
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
 	if err != nil {
-		return nil, err
+		return nil, 0, err
 	}
-	var out []string
 	for _, dep := range list.Items {
 		if dep.Annotations[annRunnerRolledAt] != "" && !runnerPodRolledOut(&dep) {
-			out = append(out, dep.Name)
+			rolling = append(rolling, dep.Name)
 		}
 	}
-	return out, nil
+	return rolling, len(list.Items), nil
 }
 
 func (r *AgentReconciler) settleOwnerGatewayRoll(ctx context.Context, dep *appsv1.Deployment) error {

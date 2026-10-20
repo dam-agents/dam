@@ -104,7 +104,7 @@ func runnerClaim(t *testing.T, r *AgentReconciler) string {
 	return pvc.Spec.Resources.Requests.Storage().String()
 }
 
-// TEST_SCENARIO: the runner admits machines against its memory limit while the scheduler sees only the request. A machine that wakes must raise the request in the reconcile that starts it, by the machine's memory on top of the runner's reserve, and a stop must hand that memory back — so a busy node does not OOM-kill the runner and every machine of this owner with it.
+// TEST_SCENARIO: the runner admits machines against its memory limit while the scheduler sees only the request. A machine that wakes must raise the request in the reconcile that starts it, by the machine's memory on top of the runner's reserve, and a stop must hand that memory back — so a busy node does not OOM-kill a machine of this owner.
 func TestTheRunnerRequestFollowsTheMachinesThatShouldRun(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -466,4 +466,41 @@ func TestARunnerPodRequestsEphemeralStorageSoDiskPressureEvictsItLast(t *testing
 		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi"), corev1.ResourceEphemeralStorage: resource.MustParse("512Mi")},
 	})
 	assert.Equal(t, "512Mi", got.String(), "a request above the install's limit is refused at admission")
+}
+
+// TEST_SCENARIO: a claim whose class refuses to expand is applied on the reconcile of every one of the owner's agents, so QA read the same refusal three times in one burst. It names what an operator has to fix and nothing changes between the attempts, so it is said once per size the claim is asked for, and said again only when the pool asks for another one.
+func TestAClaimThatCannotGrowIsSaidOnce(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := setupVMReconciler(t, vmAgentCR())
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	r.config.VM.Runner.Storage = "200Gi"
+	r.client.(*fake.Clientset).PrependReactor("update", "persistentvolumeclaims", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, nil, fmt.Errorf("persistentvolumeclaims %q is forbidden: only dynamically provisioned pvc can be resized and the storageclass that provisions the pvc must support resize", r.runnerName(testOwner))
+	})
+	const notGrown = "vm runner: the claim was not grown, the runner keeps the size it has"
+	said := func(messages []string) int {
+		n := 0
+		for _, m := range messages {
+			if m == notGrown {
+				n++
+			}
+		}
+		return n
+	}
+	warnings := captureWarnings(t)
+
+	for i := 0; i < 3; i++ {
+		require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	}
+	assert.Equal(t, 1, said(warningMessages(*warnings)), "one burst says it once")
+
+	r.config.VM.Runner.Storage = "300Gi"
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	assert.Equal(t, 2, said(warningMessages(*warnings)), "a size nobody has been told about yet is said once")
+
+	r.config.VM.Runner.Storage = "50Gi"
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	r.config.VM.Runner.Storage = "300Gi"
+	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
+	assert.Equal(t, 3, said(warningMessages(*warnings)), "a pool that fell and rose again says it again")
 }

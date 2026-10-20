@@ -42,7 +42,7 @@ export function installBrowserHistory(): () => void {
       }
       window.history.replaceState({}, "", "/");
     }
-    const route = parseRoute(window.location.pathname);
+    const route = parseRoute(window.location.pathname, window.location.search);
     const wasChat = isChatView(useStore.getState().view);
 
     if (isChatRoute(route)) {

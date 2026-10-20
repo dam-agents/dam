@@ -68,7 +68,6 @@ type AgentsServiceDeps = Parameters<typeof createAgentsService>[0];
 
 export interface AgentsInstallSettings {
   virtualizationEnabled: boolean;
-  vmForced: boolean;
   defaultHarness: string;
   telemetry: boolean;
   agentDefaultStorageSize: string;
@@ -117,7 +116,6 @@ export function composeAgentsModule(deps: {
       agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
       agentDefaultMounts: deps.install.agentDefaultMounts,
       virtualizationEnabled: deps.install.virtualizationEnabled,
-      vmForced: deps.install.vmForced,
       defaultHarness: deps.install.defaultHarness,
       telemetry: deps.install.telemetry,
       runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,

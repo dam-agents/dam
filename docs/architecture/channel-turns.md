@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -55,6 +55,7 @@ A few observations the diagram glosses over:
   That holds where the harness offers a way to say no; where it offers only ways to say yes the sole honest answer left is to cancel, which ends the whole turn rather than the one call in it.
   The relay never picks an approval to keep a turn alive; the one approval it ever picks is the allow-once below.
   What an Agent may do on a channel turn is therefore exactly what its session's permission mode lets it do *without* asking, which makes that mode the dial over channel behavior.
+  The turn contract hands the Agent that explanation, because the platform does not tell the sender: a call the permission check refused is the mode's doing, never a platform setting, and only the owner can change the mode.
   Codex has no such dial: its image runs it never asking, so it raises no prompt to refuse ([harness-config](harness-config.md)).
   The platform's own tool surface is kept outside that dial: asked about one of the two MCP servers the platform injects, the relay answers allow-once, so disposing of a turn, reporting an invocation result and reading a knowledge base survive a mode that asks — wherever the prompt offers allowing once at all, since that is the only approval the relay will pick.
   Reach on those tools is the platform's to enforce (per-Agent endpoint, mesh identity, the binding), never the harness's, so approving them widens nothing.
@@ -75,7 +76,8 @@ A few observations the diagram glosses over:
   The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so the agent replies into the right thread without tracking ids.
   It also situates the turn: the bot's identity, when the message was sent, which kind of conversation it is, and a permalink where Slack resolves one.
   A mention or DM turn is marked addressed, and the contract names the ways people reach an agent — the bot's tag, the agent's signed name, and (only where plain messages reach it) the bot name with no tag.
-- **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from Slack, answered where it arrived, reaching Slack on request ([platform-topology](platform-topology.md), §ui).
+- **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from that messenger, answered where it arrived, reaching the messenger on request ([platform-topology](platform-topology.md), §ui).
+  So both messengers send it with every turn, a resumed one included: a relayed message without it would read as one from elsewhere, and its answer would never be posted.
 - **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn *presenter* drives Slack's assistant-status surface — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
   Thought and tool notifications feed it; assistant text is ignored.
   The status degrades to nothing where the workspace can't show it.
@@ -106,6 +108,7 @@ A few observations the diagram glosses over:
   The one place several top-level messages still merge is a 1:1 DM, where no tag is needed and a thought really does arrive in pieces — there the queue is per sender, and a turn carrying several of them gives each its own reply target, so a reply naming none is refused.
   On Telegram the conversation is the chat.
 - **A session key is adapter-specific.** Slack pairs the conversation with the thread; Telegram uses the conversation (chat plus optional forum topic).
+  A reply in a supergroup is not a conversation of its own: Telegram marks it with a thread id too, which the worker drops on arrival, so the reply lands in its chat's session and is answered in the chat.
   Slack's pairing is what isolates an Agent's bindings from each other — a thread id is unique only inside its conversation, so a bare one would cross channels.
   Nothing in a store guards the key: Slack serializes turns per (Agent, session key) across the session match and the prompt, so concurrent first messages cannot mint duplicate sessions.
   Outside a 1:1 DM the addressed queue is keyed the same way, so an addressed turn and a read-along one landing in the same thread arrive through separate queues: the per-key serialization still runs them one at a time, but nothing fixes which goes first.
@@ -124,6 +127,10 @@ A few observations the diagram glosses over:
   Because a workspace's one bot posts for every Agent, a bot message's Slack user id cannot tell Agents apart — so the worker takes the Agent id from each message's [Agent Footer](#the-agent-footer): the reading Agent's own posts are marked as its own, another Agent's are named, and humans keep their Slack id.
   Names are resolved from those ids rather than read off the footer, so a renamed Agent's older posts carry its **current** name.
   A footer-less bot post is named as the bot itself — unattributable, so never the reader's own.
+  Another app's or an incoming webhook's post is named by the app's name, as a live post from it is.
+- **An app's post is read from where the app put it (Slack).** Apps and webhooks often leave a post's `text` empty or a short fallback, and put the content in legacy `attachments[]` or in `blocks`.
+  The gateway joins that content to `text`, drops what only repeats it, and caps what it adds, the same for history lines, `read_thread` and the live turn.
+  `rich_text` and `markdown` blocks count only when `text` is empty, because they are the copy of `text` that a person's post and an Agent's post carry; Slack's link previews and the Agent Footer never count.
 - **Ambient routing: one session per thread, plus one per channel.** On an ambient binding, a thread reply relays into that thread's own session — the same key a mention there would resume.
   Top-level messages share a single rolling **ambient session** per channel, so the agent follows the channel rather than starting cold per message.
   **All** ambient traffic is serialized per session and coalesced under the same rule as addressed traffic (above).
@@ -244,7 +251,7 @@ What the agent sees:
   Membership is verified at send time; a bound conversation short-circuits every check, since the binding is the channel's consent.
   Every outbound post is made by the bot and footed with an [Agent Footer](#the-agent-footer).
   The binding governs who may drive the Agent inbound; the owner's membership governs where it may go outbound.
-  Telegram has no analogue: its outbound targets stay the conversations bound to the Agent.
+  Telegram has no analogue: its outbound targets stay the chats bound to the Agent, any forum topic in them included.
 - **Tools are always registered.** Calls are rejected at invocation time when no channel is connected for the Agent — no dynamic tool list, no per-session toggle.
   `describe_channel_users`, `describe_message_reactions` and `fetch_message_attachment` stay registered too, and report the scope their workspace withheld (see [Slack scopes: required vs. optional](channels.md#slack-scopes-required-vs-optional)).
   Workspaces grant differently, so a tool list that is per-Agent cannot answer for all of them: the strategy is picked by whether a partial answer is possible, and across workspaces one always is.
@@ -261,7 +268,8 @@ Its owner picks that conversation up in the UI, where only they may open it ([pl
 
 The footer has two separable parts and **only one is a contract**.
 The **URL is the wire format**: parsing the Agent id back out is how the api-server recovers the author when a post later surfaces in another Agent's injected history (see [Inbound](#inbound--channel-message-to-acp-session)), parsing the session back out is how a deleted post's notice finds the session that made it, and a mark on a reply made in an ambient round keeps that round's readers from being handed it twice.
-The **link label is presentation**: nothing parses it, so product rewords it freely — today the posting Agent's name and the brand, which is what tells two Agents in one conversation apart.
+The **link label is presentation**: nothing parses it, so product rewords it freely — today "Sent by" and the posting Agent's name, after the same emoji the Agent's avatar uses, which is what tells two Agents in one conversation apart.
+It carries no brand: a team that ships its own product as an Agent is not credited to the platform under every post.
 
 Keeping those apart is an **invariant**, not tidiness.
 Attribution used to read the Agent's name out of the label, so rewording it into a brand line silently unnamed every Agent in injected history — a copy change breaking a runtime feature, with nothing failing anywhere.
@@ -291,4 +299,4 @@ The two messengers diverge slightly on what a top-level post means:
   A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
   An Agent-initiated DM lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
-  The worker posts to the chat id; if the agent's prompt was triggered by a previous message in the same chat, that chat is still the conversation.
+  The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

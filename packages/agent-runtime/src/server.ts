@@ -41,10 +41,7 @@ import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
-import {
-  createPodServiceSupervisor,
-  createProviderEnvSnapshot,
-} from "./modules/pod-service.js";
+import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
   VENDORED_PRICE_TABLE,
@@ -78,7 +75,10 @@ import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
 import { composeChanges } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
-import { sessionDirectoryEntries } from "./modules/acp/index.js";
+import {
+  createTerminalSessionLookup,
+  sessionDirectoryEntries,
+} from "./modules/acp/index.js";
 import { createWebSocketChannel } from "./modules/acp/infrastructure/create-websocket-channel.js";
 import {
   composeRuntimeChannel,
@@ -223,10 +223,6 @@ const artifactTouchReporter = createArtifactTouchReporter({
 
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
-const providerEnvSnapshot = createProviderEnvSnapshot({
-  stateBackend,
-  envReader: envStore,
-});
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
       command: podServicePath,
@@ -234,10 +230,6 @@ const podService = existsSync(podServicePath)
       log: podLog,
     })
   : null;
-const refreshPodEnv = (): void => {
-  providerEnvSnapshot.write();
-  podService?.refreshEnv();
-};
 
 const modelCatalog = createModelCatalog({
   envState: () => envStore.state(),
@@ -261,17 +253,28 @@ const modelCallExporter = createModelCallExporter({
   log: modelRouterLog,
 });
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the lease router is composed after the Model
- * Router, so its session lookup is bound once it exists.
+ * UNIT_BOUNDARY_DESCRIPTION: the lease router and the Session metadata are
+ * composed after the Model Router, so their lookups are bound once they exist.
  */
 let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
+let isRuntimeSession: ((sessionId: string) => boolean) | null = null;
+const TERMINAL_PIN_REFRESH_MS = 2_000;
+const terminalSessionOf = createTerminalSessionLookup(
+  Object.values(harnessManifests).flatMap((m) =>
+    m.terminalSessionPins ? [expandHome(m.terminalSessionPins, homeDir)] : [],
+  ),
+  TERMINAL_PIN_REFRESH_MS,
+);
 const modelRouter = composeModelRouter({
   sessionModelOf: (sessionId) => {
     const choice = sessionChoiceOf?.(sessionId);
     const subagentModel = choice?.settings?.subagentModel ?? null;
-    if (!choice?.model && !subagentModel) return null;
-    return { model: choice?.model ?? null, subagentModel };
+    const subagentEffort = choice?.settings?.subagentEffort ?? null;
+    if (!choice?.model && !subagentModel && !subagentEffort) return null;
+    return { model: choice?.model ?? null, subagentModel, subagentEffort };
   },
+  isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
+  terminalSessionOf,
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -418,7 +421,6 @@ const {
       name,
       {
         sessionHistory: manifest.sessionHistory,
-        sessionSpend: manifest.sessionSpend,
         ...(manifest.terminalSessionPins && {
           terminalSessionPins: expandHome(
             manifest.terminalSessionPins,
@@ -470,6 +472,7 @@ const {
 });
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
+isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
@@ -526,7 +529,7 @@ const runtimeChannel = await composeRuntimeChannel({
       store: envStore,
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
-        refreshPodEnv();
+        podService?.refreshEnv();
         void modelCatalog.refresh();
         scheduleRecovery();
       },
@@ -537,10 +540,8 @@ const runtimeChannel = await composeRuntimeChannel({
     }),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
-  onSnapshotProcessed: (contributions) => {
-    reconcileOnState?.(contributions);
-    setupGitCredentialHelper(contributions);
-  },
+  onContributionsApplied: setupGitCredentialHelper,
+  ...(reconcileOnState && { onSnapshotProcessed: reconcileOnState }),
 });
 
 const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
@@ -1177,7 +1178,7 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) refreshPodEnv();
+  if (envStore.ready()) podService?.refreshEnv();
 
   modelCatalog.onChange(() =>
     acpRuntime.applyEnvChange({

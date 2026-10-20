@@ -5,6 +5,7 @@ export {
   type SpendSystem,
 } from "./compose.js";
 export type { SpendIngest } from "./services/spend-ingest.js";
+export type { AgentSpendReader } from "./services/agent-spend.js";
 export type {
   SpendCheck,
   SpendHold,

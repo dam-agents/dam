@@ -8,12 +8,14 @@ import (
 
 	corev1 "k8s.io/api/core/v1"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
 const (
@@ -28,17 +30,32 @@ type runnerDemand struct {
 	vCPUs     int
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before it takes the runner, and every sibling, over the limit. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
-func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, spec *apiv1.AgentSpec) int {
-	if limit := r.runnerLimitMiB(ctx, owner); limit > 0 && r.config.VM.Runner.HostAddress == "" {
-		return max((limit-r.config.VM.Runner.ReserveMiB)/2, 1)
+// UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
+func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, spec *apiv1.AgentSpec) (int, error) {
+	var err error
+	limit := 0
+	if r.config.VM.Runner.HostAddress == "" {
+		limit, err = r.runnerLimitMiB(ctx, owner)
+	}
+	if err == nil && limit > 0 {
+		return max((limit-r.config.VM.Runner.ReserveMiB)/2, 1), nil
 	}
 	_, mem := r.limitsOf(spec)
-	return max(int(mem.Value()>>20), 1)
+	return max(int(mem.Value()>>20), 1), err
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it.
+// UNIT_BOUNDARY_DESCRIPTION: the demand that sizes a start: the machine being started counts whatever a refusal from an attempt before says, since the room it needs is what its count is for.
 func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
+	return r.runnerDemand(ctx, owner, self, selfRunning, true)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the demand the memory pass judges pressure from: what the owner's runner holds or is about to hold, without the machines it refused for room or storage, the start the pass counts from included, since a machine that holds nothing must not hibernate the ones the runner did admit.
+func (r *AgentReconciler) heldRunnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning bool) (runnerDemand, error) {
+	return r.runnerDemand(ctx, owner, self, selfRunning, false)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the controller knows an agent should run before its machine does, so demand is read from the Agents rather than from the runner — a request raised from the runner's own count would always arrive one machine late, after the runner had admitted it. The agent being reconciled is counted by the decision just made for it; its peers by their gateway, which is scaled up exactly when their machine should run. Only the reconcile that made that decision records it for the peers' later reads: a caller that merely sizes, like the memory pass, passes its own read and leaves the record alone, so it cannot put back a decision a reconcile has since changed. An agent whose disk size cannot be read is left out, because its own reconcile already refuses it. A machine the runner refused for room or for storage holds nothing until a retry gets it running, so it is left out with `ownStart` unset, and counted under it only as the start its count is for.
+func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *apiv1.Agent, selfRunning, ownStart bool) (runnerDemand, error) {
 	items, err := r.ownerAgents(ctx, owner)
 	if err != nil {
 		return runnerDemand{}, err
@@ -64,7 +81,7 @@ func (r *AgentReconciler) ownerRunnerDemand(ctx context.Context, owner string, s
 				return runnerDemand{}, err
 			}
 		}
-		if running {
+		if running && (ownStart && a.Name == self.Name || !r.refusedWithoutMachine(a)) {
 			d.memoryMiB += r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
 			d.vCPUs += max(r.config.VM.Runner.MachineCPUs, r.liveMachine(a.Name).CPUs, 1)
 		}
@@ -101,7 +118,45 @@ func (r *AgentReconciler) peerShouldRun(ctx context.Context, name string) (bool,
 	return r.agentDesiredUp(ctx, name, true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills the runner with every machine of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
+// UNIT_BOUNDARY_DESCRIPTION: a machine the runner refused for room is parked — the Agent reads OverBudget — and one it refused for storage leaves the Agent awake with no machine. Either holds nothing until a retry gets it running, so it counts toward nothing. The runner's own answer governs: it is recorded where the runner gave it, under the owner's lock, so a refusal counts before the Agent's status carries it, and a machine the runner admitted counts while it boots, before it is a live machine. The status is read only when no answer is recorded, for a refusal this controller did not see. A machine that runs anyway counts as any other, whatever a refusal from an attempt before says.
+func (r *AgentReconciler) refusedWithoutMachine(a *apiv1.Agent) bool {
+	if r.liveMachine(a.Name).State == vmrunner.StateRunning {
+		return false
+	}
+	if answer, recorded := r.vmAnswers.Load(a.Name); recorded {
+		refused, _ := answer.(bool)
+		return refused
+	}
+	ready := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionReady)
+	if ready != nil && ready.Reason == apiv1.ReasonOverBudget {
+		return true
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the status carries the runner's reason, except that a full home is published as HomeVolumeFull, since the page and the UI name a volume rather than the runner's word for it.
+	podReady := apimeta.FindStatusCondition(a.Status.Conditions, apiv1.ConditionAgentPodReady)
+	return podReady != nil && (refusedReason(podReady.Reason) || podReady.Reason == apiv1.ReasonHomeVolumeFull)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner answers a start it will not run with a reason, and leaves the reason of a start that failed on the machine afterwards — a full home, an image it cannot fetch, a missing seed, a boot that failed — until an action succeeds. Both leave the machine holding nothing, so both count toward nothing.
+func refusedReason(reason string) bool {
+	switch reason {
+	case vmrunner.ReasonOutOfCapacity, vmrunner.ReasonStorageFull, vmrunner.ReasonHomeFull,
+		vmrunner.ReasonImageUnavailable, vmrunner.ReasonImageCacheUnreachable,
+		vmrunner.ReasonSeedMissing, vmrunner.ReasonBootFailed:
+		return true
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner keeps a refusal's reason after it admits the retry — it clears it only when that action completes — so the reason alone does not say the machine holds nothing. A refusal with nothing running or in flight does: the machine holds its memory while it boots, restarts or stops, and while it runs, whatever a refusal from an attempt before says.
+func refusedAnswer(st vmrunner.MachineStatus) bool {
+	switch st.State {
+	case "", vmrunner.StateAbsent, vmrunner.StateStopped:
+		return refusedReason(st.Reason)
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner admits machines against its memory limit, and the scheduler places pods by requests — so with a request below the limit, the node lends out memory the runner's guests are already using, and a busy node OOM-kills machines of that owner. The request follows the memory of the machines that should be running plus the runner's own reserve. It rises at once, but falls only once that has dropped a quarter step below the step under the current request, so a guest whose use sits on a step boundary does not resize the pod at every pass. It never drops below what the install asked for, which is the request Kubernetes gives the pod when the install asked for none, and never rises above the limit, which the API refuses.
 func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resource.Quantity) resource.Quantity {
 	needMiB := demandMiB + reserveMiB
 	wantMiB := roundedMiB(needMiB)
@@ -130,7 +185,7 @@ func runnerCPULimit(vCPUs, machineCPUs int, request resource.Quantity, ceiling *
 	return want
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner's pool can be lowered below what their running machines are counted at, and lowering the runner's memory limit under them would have the kernel kill the runner with every machine. So a limit that falls stops at the machines' count plus the reserve, rounded up to the request step, and comes down further only as they stop; the runner admits no new machine meanwhile, because its limit is already taken. A limit that rises goes to the pool at once.
+// UNIT_BOUNDARY_DESCRIPTION: an owner's pool can be lowered below what their running machines are counted at, and lowering the runner's memory limit under them would have the kernel kill a machine of them. So a limit that falls stops at the machines' count plus the reserve, rounded up to the request step, and comes down further only as they stop; the runner admits no new machine meanwhile, because its limit is already taken. A limit that rises goes to the pool at once.
 func runnerMemoryLimit(poolMiB, demandMiB, reserveMiB int, current resource.Quantity) resource.Quantity {
 	pool := *resource.NewQuantity(int64(poolMiB)<<20, resource.BinarySI)
 	if pool.Cmp(current) >= 0 {
@@ -167,7 +222,15 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 	if !ok || current.IsZero() {
 		return runnerPodWant{}, false
 	}
-	limit := runnerMemoryLimit(r.runnerLimitMiB(ctx, owner), demand.memoryMiB, r.config.VM.Runner.ReserveMiB, current)
+	poolMiB, err := r.runnerLimitMiB(ctx, owner)
+	if err != nil {
+		return runnerPodWant{}, false
+	}
+	ceiling, err := r.runnerCPUCeiling(ctx, owner)
+	if err != nil {
+		return runnerPodWant{}, false
+	}
+	limit := runnerMemoryLimit(poolMiB, demand.memoryMiB, r.config.VM.Runner.ReserveMiB, current)
 	floor := limit
 	if cfg := r.config.VM.Runner.Resources; cfg != nil {
 		if q, ok := cfg.Requests[corev1.ResourceMemory]; ok && q.Cmp(limit) < 0 {
@@ -181,7 +244,7 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 		res:            res,
 		memoryLimit:    limit,
 		memoryRequest:  runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit),
-		cpu:            runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, r.runnerCPUCeiling(ctx, owner)),
+		cpu:            runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, ceiling),
 		hasCPURequest:  hasCPURequest,
 		currentLimit:   current,
 		currentRequest: currentRequest,

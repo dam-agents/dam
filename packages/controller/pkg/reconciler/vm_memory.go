@@ -28,8 +28,14 @@ const (
 // UNIT_BOUNDARY_DESCRIPTION: last reported it: what its VMM holds, and the
 // UNIT_BOUNDARY_DESCRIPTION: size it booted with, which a new size reaches
 // UNIT_BOUNDARY_DESCRIPTION: only at its next start. A machine that is not
-// UNIT_BOUNDARY_DESCRIPTION: running holds nothing to remember.
+// UNIT_BOUNDARY_DESCRIPTION: running holds nothing to remember. An unknown
+// UNIT_BOUNDARY_DESCRIPTION: state is not a machine that stopped, so it
+// UNIT_BOUNDARY_DESCRIPTION: forgets nothing: what the runner last reported
+// UNIT_BOUNDARY_DESCRIPTION: stands until it reads the machine again.
 func (r *AgentReconciler) noteMachineUse(name string, machine vmrunner.MachineStatus) {
+	if machine.State == vmrunner.StateUnknown {
+		return
+	}
 	if machine.State == vmrunner.StateRunning {
 		r.vmLive.Store(name, machine)
 		return
@@ -53,7 +59,8 @@ func (r *AgentReconciler) liveMachine(name string) vmrunner.MachineStatus {
 // UNIT_BOUNDARY_DESCRIPTION: it booted with and the one its next start takes.
 func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name string, spec *apiv1.AgentSpec) int {
 	live := r.liveMachine(name)
-	size := max(r.machineMemoryMiB(ctx, owner, spec), live.MemoryMiB)
+	machineMiB, _ := r.machineMemoryMiB(ctx, owner, spec)
+	size := max(machineMiB, live.MemoryMiB)
 	floor := size
 	if boot := r.config.VM.Runner.BootMiB; boot > 0 {
 		floor = min(size, boot)
@@ -71,10 +78,12 @@ func (r *AgentReconciler) accountedMemoryMiB(ctx context.Context, owner, name st
 // UNIT_BOUNDARY_DESCRIPTION: how much more memory the owner's machines are
 // UNIT_BOUNDARY_DESCRIPTION: counted at, with the reserve, than `percent` of
 // UNIT_BOUNDARY_DESCRIPTION: the runner's limit; zero or less when they fit,
-// UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit.
+// UNIT_BOUNDARY_DESCRIPTION: and always zero for an install with no limit,
+// UNIT_BOUNDARY_DESCRIPTION: and for a pool that cannot be read, which says
+// UNIT_BOUNDARY_DESCRIPTION: nothing about how much memory the machines may hold.
 func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, demandMiB, percent int) int {
-	limit := r.runnerLimitMiB(ctx, owner)
-	if limit == 0 {
+	limit, err := r.runnerLimitMiB(ctx, owner)
+	if err != nil || limit == 0 {
 		return 0
 	}
 	return demandMiB + r.config.VM.Runner.ReserveMiB - limit*percent/100
@@ -89,7 +98,7 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: hibernated for room that would still not suffice.
 // UNIT_BOUNDARY_DESCRIPTION: A `partial` reclaim, on the runner's own pressure
 // UNIT_BOUNDARY_DESCRIPTION: signal, hibernates what it can instead: near an
-// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes every machine of the owner,
+// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes a machine of the owner,
 // UNIT_BOUNDARY_DESCRIPTION: freeing some memory beats freeing none. When no
 // UNIT_BOUNDARY_DESCRIPTION: agent says it is idle, it hibernates the agents
 // UNIT_BOUNDARY_DESCRIPTION: that did not answer as a last resort, as the kill
@@ -132,7 +141,7 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 		if left <= 0 {
 			break
 		}
-		if c.vmMiB == 0 || c.booting && !partial {
+		if c.vmMiB == 0 || c.refused || c.booting && !partial {
 			continue
 		}
 		idle, answered := r.podStatus(ctx, c.name)
@@ -166,12 +175,12 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 // UNIT_BOUNDARY_DESCRIPTION: a running machine's use is learned only when its
 // UNIT_BOUNDARY_DESCRIPTION: agent reconciles, which a settled agent does every
 // UNIT_BOUNDARY_DESCRIPTION: few minutes, while guests grow within seconds. So
-// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner about their
-// UNIT_BOUNDARY_DESCRIPTION: running machines, hibernates idle agents of an
-// UNIT_BOUNDARY_DESCRIPTION: owner under pressure, and returns one agent of each
-// UNIT_BOUNDARY_DESCRIPTION: owner whose runner pod's request differs from what
-// UNIT_BOUNDARY_DESCRIPTION: their counts call for, for the caller to reconcile
-// UNIT_BOUNDARY_DESCRIPTION: so the request follows them.
+// UNIT_BOUNDARY_DESCRIPTION: every pass asks each owner's runner, in one read,
+// UNIT_BOUNDARY_DESCRIPTION: about their running machines, hibernates idle
+// UNIT_BOUNDARY_DESCRIPTION: agents of an owner under pressure, and returns one
+// UNIT_BOUNDARY_DESCRIPTION: agent of each owner whose runner pod's request
+// UNIT_BOUNDARY_DESCRIPTION: differs from what their counts call for, for the
+// UNIT_BOUNDARY_DESCRIPTION: caller to reconcile so the request follows them.
 func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 	if r.agentCache == nil || !r.config.VM.Enabled {
 		return nil
@@ -208,6 +217,12 @@ func (r *AgentReconciler) MemoryPass(ctx context.Context) []string {
 // UNIT_BOUNDARY_DESCRIPTION: waited for: the kernel's view is what kills the
 // UNIT_BOUNDARY_DESCRIPTION: runner, so the need is the larger of the counted
 // UNIT_BOUNDARY_DESCRIPTION: and the measured overshoot of the target.
+// UNIT_BOUNDARY_DESCRIPTION: The agent the pass counts and reconciles from is
+// UNIT_BOUNDARY_DESCRIPTION: one the runner has not refused: the pass asks for
+// UNIT_BOUNDARY_DESCRIPTION: that agent's reconcile to size the pod, and a
+// UNIT_BOUNDARY_DESCRIPTION: reconcile counts its own pending start, so a
+// UNIT_BOUNDARY_DESCRIPTION: refused anchor would ask for a resize to a machine
+// UNIT_BOUNDARY_DESCRIPTION: the runner will not start.
 func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, agents []*apiv1.Agent, pressure *vmrunner.RunnerPressure) (string, bool) {
 	if !r.beginMemoryPass(owner) {
 		return "", false
@@ -219,36 +234,59 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 	}
 	r.refreshVMPool(ctx, owner)
 	var first *apiv1.Agent
+	var up []string
+	lock := r.ownerLock(owner)
 	for _, a := range agents {
 		running, err := r.peerShouldRun(ctx, a.Name)
 		if err != nil || !running {
 			continue
 		}
-		if first == nil {
+		up = append(up, a.Name)
+		if first == nil && !r.refusedWithoutMachine(a) {
 			first = a
 		}
-		status, err := runner.Status(ctx, a.Name)
-		if err != nil {
-			continue
-		}
-		r.noteMachineUse(a.Name, status)
 	}
 	if first == nil {
 		return "", false
 	}
-	demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
+	// UNIT_BOUNDARY_DESCRIPTION: one usage read answers for every machine of the owner, where a status read each was a round trip per running agent every half minute. A machine the read does not list is one the runner does not hold, and its last measurement is forgotten as a status read of it would forget it. A runner that does not mark its machines with the memory figures is older than them — a runner release the controller has not rolled yet — and is asked about each machine in turn, as it was before, since its zeroes would count a warming machine at its measured use and forget the size a machine still runs at. A failed read leaves the last measurements in place, as a failed status read of one machine did, and does not end the pass: a measured machine counts at its last use and one never measured at its warm-up floor, or its size when that is smaller, as it does on any pass, and under the runner's pressure signal the need comes from the kernel's working set, which needs no measurement at all. Every sample is kept under the owner's lock, the one a reconcile records the runner's answer under, so the two cannot cross: a sample read before a refusal is kept before it, and the answer that follows drops it.
+	lock.Lock()
+	usage, err := runner.Usage(ctx)
+	switch {
+	case err != nil:
+		slog.WarnContext(ctx, "vm memory: reading the runner's usage", "owner", owner, "error", err)
+	case usage.MachineFigures:
+		held := make(map[string]vmrunner.MachineUsage, len(usage.Machines))
+		for _, m := range usage.Machines {
+			held[m.ID] = m
+		}
+		for _, name := range up {
+			m := held[name]
+			r.noteMachineUse(name, vmrunner.MachineStatus{State: m.State, CPUs: m.CPUs, MemoryMiB: m.MemoryMiB, UsedMiB: m.UsedMiB, Warming: m.Warming})
+		}
+	default:
+		for _, name := range up {
+			status, err := runner.Status(ctx, name)
+			if err != nil {
+				continue
+			}
+			r.noteMachineUse(name, status)
+		}
+	}
+	lock.Unlock()
+	demand, err := r.heldRunnerDemand(ctx, owner, first, true)
 	if err != nil {
 		return "", false
 	}
 	_, err = r.reclaimRunnerMemory(ctx, owner, "", func() (int, error) {
-		demand, err := r.ownerRunnerDemand(ctx, owner, first, true)
+		demand, err := r.heldRunnerDemand(ctx, owner, first, true)
 		if err != nil {
 			return 0, err
 		}
 		switch {
 		case pressure != nil && !r.freedUnderPressureSince(owner, time.Now().Add(-pressureReclaimCooldown)):
 			limit := pressure.LimitMiB
-			if pool := r.runnerLimitMiB(ctx, owner); pool > 0 {
+			if pool, err := r.runnerLimitMiB(ctx, owner); err == nil && pool > 0 {
 				limit = min(limit, pool)
 			}
 			return max(r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-limit*memoryTargetPercent/100), nil
@@ -310,12 +348,14 @@ func (r *AgentReconciler) vmMemoryFullMessage(ctx context.Context, agent *apiv1.
 	if r.config.VM.Runner.HostAddress != "" {
 		return "Your VM agents' memory is full, so this agent can't start yet. " + next
 	}
-	pool := r.runnerLimitMiB(ctx, owner)
+	pool, err := r.runnerLimitMiB(ctx, owner)
 	limit := pool - r.config.VM.Runner.ReserveMiB
-	demand, err := r.ownerRunnerDemand(ctx, owner, agent, false)
-	var with runnerDemand
-	if err == nil {
-		with, err = r.ownerRunnerDemand(ctx, owner, agent, true)
+	var demand, with runnerDemand
+	if limit > 0 {
+		demand, err = r.ownerRunnerDemand(ctx, owner, agent, false)
+		if err == nil {
+			with, err = r.ownerRunnerDemand(ctx, owner, agent, true)
+		}
 	}
 	if err != nil {
 		slog.Warn("reading the owner's VM memory for a refused start's message failed; the message goes without figures", "agent", agent.Name, "error", err)
