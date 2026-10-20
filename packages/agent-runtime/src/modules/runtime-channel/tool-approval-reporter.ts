@@ -1,12 +1,16 @@
-import { PERMISSION_OPTIONS_MAX, recordedToolOf } from "api-server-api";
+import { recordedOptionsOf, recordedToolOf } from "api-server-api";
+import type {
+  AcpPermissionOption,
+  AcpPermissionOptionKind,
+} from "api-server-api";
 
 import type { HarnessClient } from "./harness-client.js";
 import type { AgentRequestObserver } from "../acp/index.js";
 
-const ATTEMPTS = 3;
+const END_ATTEMPTS = 3;
 const ATTEMPT_TIMEOUT_MS = 5_000;
 const RETRY_DELAY_MS = 2_000;
-const OPTION_ID_MAX = 512;
+const RETRY_DELAY_MAX_MS = 30_000;
 
 interface PermissionRequestFrame {
   method?: unknown;
@@ -27,25 +31,36 @@ function permissionRequestIn(line: string): PermissionRequestFrame | null {
 
 function outcomeOf(
   result: unknown,
-): { outcome: string; optionId?: string } | null {
+  options: readonly AcpPermissionOption[],
+): {
+  outcome: string;
+  optionId?: string;
+  kind?: AcpPermissionOptionKind;
+} | null {
   const outcome = (result as { outcome?: unknown } | null)?.outcome as
     { outcome?: unknown; optionId?: unknown } | undefined;
   if (typeof outcome?.outcome !== "string") return null;
+  const kind =
+    typeof outcome.optionId === "string"
+      ? options.find((o) => o.optionId === outcome.optionId)?.kind
+      : undefined;
   return {
     outcome: outcome.outcome,
     ...(typeof outcome.optionId === "string" && {
       optionId: outcome.optionId,
     }),
+    ...(kind !== undefined && { kind }),
   };
 }
 
-function bounded(sent: Promise<unknown>): Promise<unknown> {
+function bounded(send: (signal: AbortSignal) => Promise<unknown>) {
+  const abort = new AbortController();
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(
-      () => reject(new Error("report timed out")),
-      ATTEMPT_TIMEOUT_MS,
-    );
-    sent.then(
+    const timer = setTimeout(() => {
+      abort.abort();
+      reject(new Error("report timed out"));
+    }, ATTEMPT_TIMEOUT_MS);
+    send(abort.signal).then(
       (value) => {
         clearTimeout(timer);
         resolve(value);
@@ -66,32 +81,54 @@ function bounded(sent: Promise<unknown>): Promise<unknown> {
  * in an unwatched session shows nowhere until it expires. The end is reported
  * for every permission request the runtime held, watched or not: the runtime
  * accepts the answer the harness got, so its report is what the platform's
- * record settles on.
- * Each attempt is bounded, and one request's reports wait only on that
- * request, so a stalled call cannot hold another request's decision window.
- * A request's own reports stay in order, so its end never overtakes it.
+ * record settles on, and the option it accepted states the choice's kind even
+ * where the recorded catalog dropped that option.
+ * A waiting report is retried until the request ends: the api-server may be
+ * restarting, and a request that stayed invisible for its whole window is the
+ * defect this report exists to fix. End reports are retried briefly, since a
+ * row left pending by a lost end is worse than a late one.
+ * Each attempt is bounded and aborted at its deadline, and one request's
+ * reports wait only on that request, so a stalled call cannot hold another
+ * request's decision window.
+ * The first attempt of a report always goes out, and its retries stop once
+ * the request is over, so a request's reports stay in order and its end
+ * never overtakes it.
  */
 export function createToolApprovalReporter(opts: {
   client: HarnessClient;
   log: (msg: string) => void;
 }): AgentRequestObserver {
   const chains = new Map<string, Promise<void>>();
-  const approvable = new Set<string>();
+  const approvable = new Map<string, AcpPermissionOption[]>();
   const key = (id: unknown, sessionId: string) =>
     JSON.stringify([sessionId, id]);
 
-  async function attempt(what: string, send: () => Promise<unknown>) {
-    for (let n = 1; n <= ATTEMPTS; n++) {
+  async function attempt(
+    what: string,
+    send: (signal: AbortSignal) => Promise<unknown>,
+    stillWanted: () => boolean,
+    attempts: number,
+  ) {
+    for (let n = 1; ; n++) {
+      if (n > 1 && !stillWanted()) {
+        opts.log(`dropping ${what}: the request is over`);
+        return;
+      }
       try {
-        await bounded(send());
+        await bounded(send);
         return;
       } catch (err) {
-        if (n === ATTEMPTS) {
-          const reason = err instanceof Error ? err.message : String(err);
+        const reason = err instanceof Error ? err.message : String(err);
+        if (n >= attempts || !stillWanted()) {
           opts.log(`giving up on ${what}: ${reason}`);
           return;
         }
-        await new Promise((resolve) => setTimeout(resolve, RETRY_DELAY_MS));
+        await new Promise((resolve) =>
+          setTimeout(
+            resolve,
+            Math.min(RETRY_DELAY_MS * 2 ** (n - 1), RETRY_DELAY_MAX_MS),
+          ),
+        );
       }
     }
   }
@@ -99,10 +136,12 @@ export function createToolApprovalReporter(opts: {
   function enqueue(
     key: string,
     what: string,
-    send: () => Promise<unknown>,
+    send: (signal: AbortSignal) => Promise<unknown>,
+    stillWanted: () => boolean = () => true,
+    attempts: number = END_ATTEMPTS,
   ): void {
     const chain = (chains.get(key) ?? Promise.resolve()).then(() =>
-      attempt(what, send),
+      attempt(what, send, stillWanted, attempts),
     );
     chains.set(key, chain);
     void chain.then(() => {
@@ -110,54 +149,67 @@ export function createToolApprovalReporter(opts: {
     });
   }
 
+  function optionsIn(line: string): AcpPermissionOption[] {
+    return recordedOptionsOf(permissionRequestIn(line)?.params?.options);
+  }
+
   return {
     held(id, sessionId, line) {
-      if (permissionRequestIn(line)) approvable.add(key(id, sessionId));
+      const frame = permissionRequestIn(line);
+      if (!frame) return;
+      approvable.set(
+        key(id, sessionId),
+        recordedOptionsOf(frame.params?.options),
+      );
     },
 
     waiting(id, sessionId, line) {
       const frame = permissionRequestIn(line);
       if (!frame) return;
-      approvable.add(key(id, sessionId));
-      const rawOptions: unknown = frame.params?.options;
-      const options = (Array.isArray(rawOptions) ? rawOptions : [])
-        .filter(
-          (o): o is { optionId: string; kind?: unknown } =>
-            typeof (o as { optionId?: unknown } | null)?.optionId === "string",
-        )
-        .slice(0, PERMISSION_OPTIONS_MAX);
+      const k = key(id, sessionId);
+      const options = optionsIn(line);
+      approvable.set(k, options);
       const { toolName, toolCallId } = recordedToolOf(frame.params?.toolCall);
-      enqueue(key(id, sessionId), `approval ${String(id)}`, () =>
-        opts.client.approvals.v1.waiting.mutate({
-          sessionId,
-          rpcId: id,
-          toolName,
-          ...(toolCallId !== undefined && { toolCallId }),
-          args: frame.params?.toolCall?.rawInput,
-          options: options.map((o) => ({
-            optionId: o.optionId.slice(0, OPTION_ID_MAX),
-            kind: o.kind as never,
-          })),
-        }),
+      enqueue(
+        k,
+        `approval ${String(id)}`,
+        (signal) =>
+          opts.client.approvals.v1.waiting.mutate(
+            {
+              sessionId,
+              rpcId: id,
+              toolName,
+              ...(toolCallId !== undefined && { toolCallId }),
+              args: frame.params?.toolCall?.rawInput,
+              options,
+            },
+            { signal },
+          ),
+        () => approvable.has(k),
+        Infinity,
       );
     },
 
     answered(id, sessionId, result) {
-      if (!approvable.delete(key(id, sessionId))) return;
-      const outcome = outcomeOf(result);
-      enqueue(key(id, sessionId), `approval ${String(id)} answer`, () =>
-        opts.client.approvals.v1.ended.mutate({
-          sessionId,
-          rpcId: id,
-          ...(outcome && { outcome }),
-        }),
+      const options = approvable.get(key(id, sessionId));
+      if (options === undefined) return;
+      approvable.delete(key(id, sessionId));
+      const outcome = outcomeOf(result, options);
+      enqueue(key(id, sessionId), `approval ${String(id)} answer`, (signal) =>
+        opts.client.approvals.v1.ended.mutate(
+          { sessionId, rpcId: id, ...(outcome && { outcome }) },
+          { signal },
+        ),
       );
     },
 
     abandoned(id, sessionId) {
       if (!approvable.delete(key(id, sessionId))) return;
-      enqueue(key(id, sessionId), `approval ${String(id)} end`, () =>
-        opts.client.approvals.v1.ended.mutate({ sessionId, rpcId: id }),
+      enqueue(key(id, sessionId), `approval ${String(id)} end`, (signal) =>
+        opts.client.approvals.v1.ended.mutate(
+          { sessionId, rpcId: id },
+          { signal },
+        ),
       );
     },
   };

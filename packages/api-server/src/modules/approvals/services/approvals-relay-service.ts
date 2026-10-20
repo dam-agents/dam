@@ -1,4 +1,4 @@
-import type { AcpPermissionOption } from "api-server-api";
+import type { AcpPermissionOption, ApprovalVerdict } from "api-server-api";
 import type { ApprovalsRepository } from "../infrastructure/approvals-repository.js";
 import type { PendingApprovalRow } from "../domain/types.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
@@ -31,14 +31,23 @@ export interface ApprovalsRelayService {
   ): Promise<string | null>;
   resolveAcpNativeFromInSession(
     rowId: string,
-    outcome: { outcome?: unknown; optionId?: unknown },
+    outcome: { outcome?: unknown; optionId?: unknown; kind?: unknown },
     opts?: { authoritative?: boolean },
-  ): Promise<void>;
-  expireAcpNative(rowId: string): Promise<void>;
+  ): Promise<"settled" | "absent">;
+  expireAcpNative(rowId: string): Promise<"settled" | "absent">;
+  settleAbsentAcpNative(input: SettleAbsentInput): Promise<void>;
   subscribeFrameInjects(
     agentId: string,
     listener: (frame: string) => void,
   ): () => void;
+}
+
+interface SettleAbsentInput {
+  agentId: string;
+  sessionId: string;
+  rpcId: number | string;
+  ownerSub: string;
+  verdict?: ApprovalVerdict;
 }
 
 interface CreateApprovalsRelayServiceDeps {
@@ -141,7 +150,8 @@ export function createApprovalsRelayService(
 
     async resolveAcpNativeFromInSession(rowId, outcome, opts) {
       const row = await deps.repo.getPending(rowId);
-      if (!row || row.payload.kind !== "acp_native") return;
+      if (!row) return "absent";
+      if (row.payload.kind !== "acp_native") return "settled";
       const verdict = verdictOfOutcome(row.payload.options ?? [], outcome);
       const casWon =
         row.status === "pending" &&
@@ -152,7 +162,7 @@ export function createApprovalsRelayService(
         !casWon &&
         opts?.authoritative === true &&
         (await deps.repo.correctResolvedVerdict(row.id, verdict));
-      if (!casWon && !corrected) return;
+      if (!casWon && !corrected) return "settled";
       emit({
         type: EventType.ApprovalResolved,
         approvalId: row.id,
@@ -160,12 +170,14 @@ export function createApprovalsRelayService(
         ownerSub: row.ownerSub,
         resolution: verdict,
       });
+      return "settled";
     },
 
     async expireAcpNative(rowId) {
       const row = await deps.repo.getPending(rowId);
-      if (!row || row.payload.kind !== "acp_native") return;
-      if (!(await deps.repo.expirePending(row.id))) return;
+      if (!row) return "absent";
+      if (row.payload.kind !== "acp_native") return "settled";
+      if (!(await deps.repo.expirePending(row.id))) return "settled";
       emit({
         type: EventType.ApprovalResolved,
         approvalId: row.id,
@@ -173,6 +185,38 @@ export function createApprovalsRelayService(
         ownerSub: row.ownerSub,
         resolution: "expired",
       });
+      return "settled";
+    },
+
+    async settleAbsentAcpNative(input) {
+      const rowId = acpNativeRowId(input.agentId, input.sessionId, input.rpcId);
+      const written = await deps.repo.insertSettled(
+        {
+          id: rowId,
+          type: "acp_native",
+          agentId: input.agentId,
+          ownerSub: input.ownerSub,
+          sessionId: input.sessionId,
+          payload: {
+            kind: "acp_native",
+            toolName: "tool call",
+            rpcId: input.rpcId,
+            options: [],
+          },
+          expiresAt: new Date(Date.now() + ACP_NATIVE_TTL_MS),
+        },
+        input.verdict === undefined
+          ? { status: "expired" }
+          : { status: "resolved", verdict: input.verdict },
+      );
+      if (written) return;
+      const held = await deps.repo.getPending(rowId);
+      if (held?.status !== "pending") return;
+      if (input.verdict === undefined) await deps.repo.expirePending(rowId);
+      else
+        await deps.repo.resolvePending(rowId, input.verdict, "in-session", {
+          markDelivered: true,
+        });
     },
 
     subscribeFrameInjects(agentId, listener) {

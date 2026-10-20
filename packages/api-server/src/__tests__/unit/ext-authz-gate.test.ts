@@ -30,6 +30,7 @@ function makeFakeRepo(): FakeRepo {
   let inserts = 0;
   const repo: ApprovalsRepository = {
     insertIfAbsent: async () => true,
+    insertSettled: async () => true,
     insertPending: async (input) => {
       inserts++;
       rows.push({

@@ -1,6 +1,6 @@
 // TEST_OVERVIEW: one pending tool approval can meet two verdicts at once, from Home and from the chat. The tool runs on exactly one answer: a verdict that loses the row decision must not reach the harness, and the row must record the answer the runtime accepted, not the one that lost. The harness stand-in here accepts the first answer to arrive and drops every later one, as the runtime does.
 import { describe, expect, it } from "vitest";
-import type { ApprovalVerdict } from "api-server-api";
+import type { AcpPermissionOption, ApprovalVerdict } from "api-server-api";
 
 import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
 import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
@@ -118,7 +118,7 @@ function setup() {
     ownerSub: "owner-1",
     agentBinding: "*",
   });
-  const asked = () =>
+  const asked = (options: AcpPermissionOption[] = OPTIONS) =>
     relay.recordAcpNativePending({
       agentId: AGENT,
       sessionId: SESSION,
@@ -127,7 +127,7 @@ function setup() {
       toolName: "Bash rm -rf build",
       toolCallId: "tc-11",
       args: { command: "rm -rf build" },
-      options: OPTIONS,
+      options,
     });
   return { rows, harness, reports, service, asked, holdNextCas };
 }
@@ -180,5 +180,32 @@ describe("tool approval race", () => {
       status: "resolved",
       verdict: "deny_once",
     });
+  });
+
+  // TEST_SCENARIO: the row keeps a bounded catalog, so a request can hold a reject option the row did not keep, and the owner's Dismiss reaches the harness through whatever option the row still holds. A denial must choose a reject option or cancel: answering with an allow would run the tool the owner refused.
+  it("never answers a denial with an allow option", async () => {
+    const catalogs = [
+      Array.from({ length: 16 }, (_, n) => ({
+        optionId: `allow-${n}`,
+        kind: "allow_once" as const,
+      })),
+      [
+        { optionId: "allow", kind: "allow_once" as const },
+        { optionId: "maybe" },
+      ],
+      [{ optionId: "allow" }],
+      [],
+    ];
+
+    for (const options of catalogs) {
+      const { harness, service, asked } = setup();
+      await asked(options);
+
+      const outcome = await service.dismiss(ROW);
+
+      expect(outcome.outcome).toBe("applied");
+      expect(harness.frames).toEqual([{ optionId: undefined }]);
+      expect(harness.accepted()).toEqual({});
+    }
   });
 });

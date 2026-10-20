@@ -30,6 +30,10 @@ export const toolApprovalEndedInputSchema = z.object({
     .object({
       outcome: z.string().min(1).max(64),
       optionId: z.string().min(1).max(512).optional(),
+      kind: z
+        .enum(["allow_once", "allow_always", "reject_once", "reject_always"])
+        .optional()
+        .catch(undefined),
     })
     .optional(),
 });

@@ -17,6 +17,8 @@ A tool approval — the harness asking to run a tool — is written by two paths
 The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.
 Both use the same row id, so a client that engages later joins the row and it keeps the time the agent asked.
 The runtime reports the end of every permission request it held, watched or not: an answer settles the row on the verdict the harness actually got — the runtime accepts one answer, so it, not the path that wrote the row, decides what the record says — and a request it dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.
+The end can arrive before the row: the relay forwards a prompt before it records it, so a session that resets in between leaves an end with nothing to settle.
+Such an end settles the request's row all the same, which keeps a late write from turning a request that is over into a decision Home still offers.
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 

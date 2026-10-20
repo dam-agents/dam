@@ -34,6 +34,11 @@ export async function deletePendingSpendQuestions(
 export interface ApprovalsRepository {
   insertPending(row: NewPendingApproval): Promise<boolean>;
   insertIfAbsent(row: NewPendingApproval): Promise<boolean>;
+  insertSettled(
+    row: NewPendingApproval,
+    settlement:
+      { status: "expired" } | { status: "resolved"; verdict: ApprovalVerdict },
+  ): Promise<boolean>;
   getPending(id: string): Promise<PendingApprovalRow | null>;
   findActivePendingExtAuthz(input: {
     agentId: string;
@@ -181,6 +186,29 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
           sessionId: row.sessionId,
           payload: row.payload,
           expiresAt: row.expiresAt,
+        })
+        .onConflictDoNothing({ target: pendingApprovals.id })
+        .returning({ id: pendingApprovals.id });
+      return written.length > 0;
+    },
+
+    async insertSettled(row, settlement) {
+      const now = new Date();
+      const written = await db
+        .insert(pendingApprovals)
+        .values({
+          id: row.id,
+          type: row.type,
+          agentId: row.agentId,
+          ownerSub: row.ownerSub,
+          sessionId: row.sessionId,
+          payload: row.payload,
+          expiresAt: row.expiresAt,
+          status: settlement.status,
+          verdict: settlement.status === "resolved" ? settlement.verdict : null,
+          decidedBy: "in-session",
+          resolvedAt: now,
+          deliveredAt: now,
         })
         .onConflictDoNothing({ target: pendingApprovals.id })
         .returning({ id: pendingApprovals.id });

@@ -66,6 +66,19 @@ function makeRepo() {
       });
       return true;
     },
+    insertSettled: async (row, settlement) => {
+      if (rows.some((r) => r.id === row.id)) return false;
+      rows.push({
+        ...row,
+        createdAt: new Date(),
+        resolvedAt: new Date(),
+        decidedBy: "in-session",
+        status: settlement.status,
+        verdict: settlement.status === "resolved" ? settlement.verdict : null,
+        deliveredAt: new Date(),
+      });
+      return true;
+    },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     listPendingForInstance: async () => [],
     resolvePending: async (id, verdict, decidedBy, opts) => {
@@ -314,5 +327,62 @@ describe("tool approval reports", () => {
       status: "resolved",
       verdict: "deny_once",
     });
+  });
+
+  // TEST_SCENARIO: the row keeps a bounded catalog, but the client that answers later replays the whole request. An option the row dropped must still record the verdict the harness acted on, or a refusal is recorded as an allow.
+  it("records the kind of an option the recorded catalog dropped", async () => {
+    const allows = Array.from({ length: 16 }, (_, n) => ({
+      optionId: `allow-${n}`,
+      kind: "allow_once" as const,
+    }));
+    const { rows, reports } = setup();
+    await reports.waiting(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      toolName: "Write /tmp/a",
+      args: { path: "/tmp/a" },
+      options: allows,
+    });
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: {
+        outcome: "selected",
+        optionId: "reject-17",
+        kind: "reject_once",
+      },
+    });
+
+    expect(rows[0]).toMatchObject({ status: "resolved", verdict: "deny_once" });
+  });
+
+  // TEST_SCENARIO: the ACP relay forwards the prompt, then records it, so the session can reset before that write lands: the end arrives first. The request is over, and the delayed write must not turn it into a decision Home still offers.
+  it("settles a request whose end arrives before anything recorded it", async () => {
+    const { rows, reports, waiting } = setup();
+
+    await reports.ended(AGENT, { sessionId: SESSION, rpcId: RPC });
+    await waiting();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("expired");
+  });
+
+  // TEST_SCENARIO: the same ordering for an answer: the runtime accepted it before any row existed. Dropping it would leave the request as a pending approval whose answer reaches nothing.
+  it("records the answer of a request whose end arrived first", async () => {
+    const { rows, reports } = setup();
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: {
+        outcome: "selected",
+        optionId: "reject-17",
+        kind: "reject_once",
+      },
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "resolved", verdict: "deny_once" });
   });
 });

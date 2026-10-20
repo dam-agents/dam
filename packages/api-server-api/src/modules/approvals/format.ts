@@ -1,5 +1,5 @@
 import { formatSpendAmount } from "../spend/format.js";
-import type { ApprovalPayload } from "./types.js";
+import type { AcpPermissionOption, ApprovalPayload } from "./types.js";
 
 export function describeApprovalPayload(payload: ApprovalPayload): {
   title: string;
@@ -54,4 +54,48 @@ export function recordedToolOf(
     toolName: (title === "" ? "tool call" : title).slice(0, TOOL_NAME_MAX),
     ...(toolCallId !== undefined && { toolCallId }),
   };
+}
+
+const OPTION_KINDS = [
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+] as const;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a permission request's options become in a
+ * recorded row: the choices a verdict can still be turned back into. Bounded
+ * by keeping one option of each kind first, because a catalog that lost every
+ * reject option cannot express a denial, and a denial that finds none left
+ * must never answer the request with an allow.
+ */
+export function recordedOptionsOf(raw: unknown): AcpPermissionOption[] {
+  const all = (Array.isArray(raw) ? raw : []).flatMap((option, index) => {
+    if (typeof option !== "object" || option === null) return [];
+    const { optionId, kind } = option as Record<string, unknown>;
+    if (typeof optionId !== "string" || optionId === "") return [];
+    const kept = OPTION_KINDS.find((candidate) => candidate === kind);
+    return [
+      {
+        optionId: optionId.slice(0, TOOL_CALL_ID_MAX),
+        ...(kept !== undefined && { kind: kept }),
+        index,
+      },
+    ];
+  });
+  const firstOfEachKind = OPTION_KINDS.flatMap(
+    (kind) => all.find((option) => option.kind === kind) ?? [],
+  );
+  const kept = [...firstOfEachKind, ...all]
+    .filter(
+      (option, index, list) =>
+        list.findIndex((other) => other.index === option.index) === index,
+    )
+    .slice(0, PERMISSION_OPTIONS_MAX)
+    .sort((left, right) => left.index - right.index);
+  return kept.map(({ optionId, kind }) => ({
+    optionId,
+    ...(kind !== undefined && { kind }),
+  }));
 }

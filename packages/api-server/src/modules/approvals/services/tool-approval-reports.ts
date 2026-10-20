@@ -1,6 +1,7 @@
 import type { ToolApprovalReports } from "api-server-api";
 import { acpNativeRowId } from "api-server-api";
 import type { ApprovalsRelayService } from "./approvals-relay-service.js";
+import { verdictOfOutcome } from "../infrastructure/wrapper-response-frames.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The agent-runtime reports a tool approval that
@@ -12,6 +13,11 @@ import type { ApprovalsRelayService } from "./approvals-relay-service.js";
  * its verdict settles the row even when another path recorded a different
  * one, so the record never claims a decision the tool did not act on. A
  * request it dropped unanswered expires the row.
+ * The end may arrive before anything recorded the request: the ACP relay's
+ * insert is queued behind the frame it already forwarded, and a report's own
+ * attempt may commit after its deadline. Such an end leaves a settled row
+ * under the same id, so the request can never become actionable after it is
+ * over.
  */
 export function createToolApprovalReports(deps: {
   relay: ApprovalsRelayService;
@@ -33,11 +39,21 @@ export function createToolApprovalReports(deps: {
 
     async ended(agentId, input) {
       const rowId = acpNativeRowId(agentId, input.sessionId, input.rpcId);
-      if (input.outcome)
-        await deps.relay.resolveAcpNativeFromInSession(rowId, input.outcome, {
-          authoritative: true,
-        });
-      else await deps.relay.expireAcpNative(rowId);
+      const settled = input.outcome
+        ? await deps.relay.resolveAcpNativeFromInSession(rowId, input.outcome, {
+            authoritative: true,
+          })
+        : await deps.relay.expireAcpNative(rowId);
+      if (settled !== "absent") return;
+      await deps.relay.settleAbsentAcpNative({
+        agentId,
+        sessionId: input.sessionId,
+        rpcId: input.rpcId,
+        ownerSub: deps.ownerSub,
+        ...(input.outcome !== undefined && {
+          verdict: verdictOfOutcome([], input.outcome),
+        }),
+      });
     },
   };
 }
