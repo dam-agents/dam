@@ -48,6 +48,7 @@ A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` 
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
 A setting always holds a value: the picker starts on the agent's configured value for the harness, or the manifest's `default` for the option where nothing is configured, and offers no unset choice, so a change always names a value the harness applies.
 A session that names no mode starts on the mode the agent's config file names, which the harness reads itself; where that file names none, the runtime derives one from the catalog: the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow.
+A session that names no model runs on the model the file names, so that model's constraints are the ones applied.
 Claude Code's catalog defaults to `auto`, so a chat session starts in auto as its terminal does, and a session on a model that cannot use auto, such as Haiku, starts asking instead.
 The terminal launcher keeps its own fallback, which asks for no model, so a Haiku terminal session still passes `auto`.
 The derived mode is the runtime's, not the session's: it never replaces a mode the owner or the session picked, and a change of the session's model derives it again, since the new model may allow another mode than the old one.

@@ -46,10 +46,13 @@ const CATALOG: HarnessConfigCatalog = {
   },
 };
 
-const harness = (configuredMode: string | null = null): SessionHarness => ({
+const harness = (
+  configuredMode: string | null = null,
+  configuredModel: string | null = null,
+): SessionHarness => ({
   catalog: CATALOG,
   sessionSettings: { mode: { mode: true } },
-  configuredMode: () => configuredMode,
+  configured: () => ({ mode: configuredMode, model: configuredModel }),
 });
 
 const modeFrame = (frames: { method: string; params: unknown }[]) =>
@@ -58,14 +61,14 @@ const modeFrame = (frames: { method: string; params: unknown }[]) =>
 const frames = (
   settings: Record<string, string>,
   model: string | null,
-  configured: string | null = null,
+  forHarness: SessionHarness = harness(),
 ) =>
   sessionSettingFrames({
     sessionId: "s",
     settings,
     model,
     native: false,
-    harness: harness(configured),
+    harness: forHarness,
   });
 
 describe("session start mode", () => {
@@ -91,6 +94,18 @@ describe("session start mode", () => {
     });
   });
 
+  /** TEST_SCENARIO: The session names no model, so it runs on the model the
+   * agent's config file names: a file naming a model the catalog refuses auto
+   * for gives the session a mode that model allows, not auto. */
+  it("derives from the model the agent's file names when the session names none", () => {
+    expect(modeFrame(frames({}, null, harness(null, "haiku")))?.params).toEqual(
+      {
+        sessionId: "s",
+        modeId: "default",
+      },
+    );
+  });
+
   /** TEST_SCENARIO: A mode the session picked is the session's, whatever the
    * model: it is sent as it is and never marked derived, so a model switch
    * leaves it alone. */
@@ -106,7 +121,7 @@ describe("session start mode", () => {
    * "acceptEdits" is not replaced by the catalog's default. */
   it("leaves a mode the agent's file names to the harness", () => {
     expect(
-      modeFrame(frames({}, "ibm/claude-opus-4-5", "acceptEdits")),
+      modeFrame(frames({}, "ibm/claude-opus-4-5", harness("acceptEdits"))),
     ).toBeUndefined();
   });
 

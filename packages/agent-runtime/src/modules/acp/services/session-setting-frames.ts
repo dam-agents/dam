@@ -10,7 +10,7 @@ export interface SessionHarness {
     configOption: string;
     render: (model: string) => string;
   };
-  configuredMode?: () => string | null;
+  configured?: () => { mode: string | null; model: string | null };
 }
 
 /**
@@ -19,9 +19,10 @@ export interface SessionHarness {
  * picked. A mode the session picked is the session's and is sent as it is. A
  * session that picked none starts on the mode the harness's own config file
  * names, which the harness reads itself, and only where that file names none
- * is the mode derived from the catalog and the session's model — marked
- * `derived`, so a model switch derives it again instead of keeping a value
- * the new model may not allow.
+ * is the mode derived from the catalog and the session's model — the model the
+ * file names where the session names none, since that is the one it runs on.
+ * The derived mode is marked `derived`, so a model switch derives it again
+ * instead of keeping a value the new model may not allow.
  */
 export function sessionSettingFrames(input: {
   sessionId: string;
@@ -33,13 +34,18 @@ export function sessionSettingFrames(input: {
   const { sessionId, settings, model, native, harness } = input;
   const modeId = modeSettingIdOf(harness);
   const chosen = modeId === undefined ? undefined : settings[modeId];
+  const configured = harness?.configured?.();
   const mode =
     modeId === undefined
       ? null
       : (chosen ??
-        (harness?.configuredMode?.()
+        (configured?.mode
           ? null
-          : startModeFor(harness?.catalog, model, modeId)));
+          : startModeFor(
+              harness?.catalog,
+              model ?? configured?.model ?? null,
+              modeId,
+            )));
   return [
     ...modelFrames(harness, sessionId, model, native),
     ...(modeId !== undefined && mode !== null

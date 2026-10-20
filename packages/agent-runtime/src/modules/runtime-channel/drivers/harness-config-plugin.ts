@@ -261,20 +261,14 @@ export function createHarnessConfigPlugin(deps: {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the mode the harness's own config file names,
+ * UNIT_BOUNDARY_DESCRIPTION: the values the harness's own config file names,
  * read where a session's settings are synced. A session that picked no mode
- * starts on this one, because the harness reads it at start, so only a file
- * that names none leaves the mode to the catalog and the session's model.
+ * starts on the mode the file names, because the harness reads it at start,
+ * and one that picked no model runs on the model it names, so only a file that
+ * names neither leaves the mode to the catalog and the model. A file that
+ * cannot be read names nothing, which leaves both to the runtime.
  */
-export function configuredModeOf(
-  binding: HarnessConfigBinding,
-  agentHome: string,
-  log: (msg: string) => void,
-): string | null {
-  return readCurrentValues(binding, agentHome, log).mode;
-}
-
-function readCurrentValues(
+export function readCurrentValues(
   binding: HarnessConfigBinding,
   agentHome: string,
   log: (msg: string) => void,

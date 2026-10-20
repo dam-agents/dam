@@ -72,6 +72,7 @@ import {
 } from "./modules/browser-display.js";
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
+import { modeSettingIdOf } from "./modules/acp/services/session-setting-frames.js";
 import { prepareProcesses } from "./modules/processes/index.js";
 import { composeChanges } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
@@ -96,7 +97,7 @@ import {
   readSkillInstallBootState,
   resolveDrivers,
   harnessConfigBindingOf,
-  configuredModeOf,
+  readCurrentValues,
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
@@ -447,12 +448,15 @@ const {
           }),
           sessionSettings: harnessConfig?.sessionSettings,
           catalog: harnessConfig?.catalog,
-          ...(harnessConfig?.sessionSettings?.mode !== undefined && {
-            configuredMode: () =>
-              configuredModeOf(harnessConfig, homeDir, (msg) =>
-                process.stderr.write(`[harness-config] ${msg}\n`),
-              ),
-          }),
+          ...(harnessConfig &&
+            modeSettingIdOf({
+              sessionSettings: harnessConfig.sessionSettings,
+            }) !== undefined && {
+              configured: () =>
+                readCurrentValues(harnessConfig, homeDir, (msg) =>
+                  process.stderr.write(`[harness-config] ${msg}\n`),
+                ),
+            }),
         },
       ];
     }),
