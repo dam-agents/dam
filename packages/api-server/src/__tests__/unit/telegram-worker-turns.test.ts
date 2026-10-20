@@ -171,4 +171,33 @@ describe("telegram group turns", () => {
     expect(h.prompts[0]!.prompt).toContain("you are reading along");
     expect(h.prompts[0]!.prompt).toContain("Message: lunch at noon?");
   });
+
+  /**
+   * TEST_SCENARIO: A read-along turn posts nothing when it fails. A mention
+   * steered into one would lose its failure notice, so a mention that
+   * arrives while a read-along turn runs waits and gets an addressed turn of
+   * its own.
+   */
+  it("gives a mention its own turn instead of steering it into a read-along turn", async () => {
+    const first = held();
+    const steer = vi.fn(async () => "injected" as const);
+    const h = await started(
+      telegramWorkerHarness({ ambient: true, turn: first.turn, steer }),
+    );
+    try {
+      h.sendGroup(OMAR, "lunch at noon?");
+      await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+
+      h.sendGroup(JANE, "@krodo_bot what is on the agenda?");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(steer).not.toHaveBeenCalled();
+
+      first.release();
+      await vi.waitFor(() => expect(h.prompts).toHaveLength(2));
+      expect(h.prompts[1]!.prompt).toContain("mentions you or replies to you");
+      expect(h.prompts[1]!.prompt).toContain("what is on the agenda?");
+    } finally {
+      first.release();
+    }
+  });
 });

@@ -111,7 +111,8 @@ A few observations the diagram glosses over:
   A reply in a supergroup is not a conversation of its own: Telegram marks it with a thread id too, which the worker drops on arrival, so the reply lands in its chat's session and is answered in the chat.
   Slack's pairing is what isolates an Agent's bindings from each other — a thread id is unique only inside its conversation, so a bare one would cross channels.
   Nothing in a store guards the key: Slack serializes turns per (Agent, session key) across the session match and the prompt, so concurrent first messages cannot mint duplicate sessions.
-  Outside a 1:1 DM the addressed queue is keyed the same way, so an addressed turn and a read-along one landing in the same thread arrive through separate queues: the per-key serialization still runs them one at a time, but nothing fixes which goes first.
+  On Slack, outside a 1:1 DM the addressed queue is keyed the same way, so an addressed turn and a read-along one landing in the same thread arrive through separate queues: the per-key serialization still runs them one at a time, but nothing fixes which goes first.
+  On Telegram one queue per conversation carries both, in arrival order, and a message addressed to the Agent is never steered into a running read-along turn: such a turn stays silent when it fails, so the message waits for an addressed turn of its own.
 - **Injected history says what it is, and it does not say the same thing twice.** Every message the turn itself carries is left out of it, the whole batch where a burst is answered at once, so nothing the Agent is being asked to answer is also quoted back as background.
   A thread's history and a direct message's are one conversation, framed as the context for the answer.
   **A thread's history is its end**, read the way `read_thread` reads it, in one read: the message that opened the thread, then the newest replies that fit.
@@ -131,11 +132,12 @@ A few observations the diagram glosses over:
 - **An app's post is read from where the app put it (Slack).** Apps and webhooks often leave a post's `text` empty or a short fallback, and put the content in legacy `attachments[]` or in `blocks`.
   The gateway joins that content to `text`, drops what only repeats it, and caps what it adds, the same for history lines, `read_thread` and the live turn.
   `rich_text` and `markdown` blocks count only when `text` is empty, because they are the copy of `text` that a person's post and an Agent's post carry; Slack's link previews and the Agent Footer never count.
-- **Ambient routing: one session per thread, plus one per channel.** On an ambient binding, a thread reply relays into that thread's own session — the same key a mention there would resume.
+- **Ambient routing on Slack: one session per thread, plus one per channel.** On an ambient binding, a thread reply relays into that thread's own session — the same key a mention there would resume.
   Top-level messages share a single rolling **ambient session** per channel, so the agent follows the channel rather than starting cold per message.
   **All** ambient traffic is serialized per session and coalesced under the same rule as addressed traffic (above).
   A coalesced prompt tags each message with its own ts: a thread batch still answers into its one thread, but a top-level batch has no single triggering message — each batched message registers as its own reply target, and a reply naming none is refused rather than threaded under the newest.
   When the agent chimes in, the reply threads under the message it answers; the follow-up conversation runs as an ordinary thread session, with history injection carrying context across.
+  On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
   A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.

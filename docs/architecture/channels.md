@@ -64,11 +64,12 @@ A Telegram binding has the same switch, with its own command and gate (see the T
 It is a property of the **binding**, not the conversation, so one Agent can read along where another only answers mentions — answering a question it can answer, picking up a task someone described, flagging a clear mistake — staying silent otherwise.
 Mentions keep the addressed-turn treatment unchanged; ambient only adds a second, quieter inbound path.
 
-Ambient is **mutable** and **off by default** on every connect path — the in-chat `/platform bind`, the UI form, and the CLI flag all leave it off, and the binding owner opts a channel in explicitly.
+On Slack, ambient is **mutable** and **off by default** on every connect path — the in-chat `/platform bind`, the UI form, and the CLI flag all leave it off, and the binding owner opts a channel in explicitly.
 Ambient has the agent read every message in the channel, so keeping that broader exposure a deliberate opt-in is the safe default.
 It can be flipped later — a re-connect updates it in place, and an in-chat ambient command (allowed for the binder or the agent's owner, the unbind authorization) is the in-channel dial.
 Every enable/disable is recorded in the security log, and that audit record is authoritative.
-The change is deliberately **not** announced in the channel — not on a connect, a re-connect, or the in-chat dial: whoever made it sees it confirmed on their own surface (the UI, the CLI, or the ephemeral slash-command reply for the in-chat command), and the channel's members get no ambient status post.
+On Slack the change is deliberately **not** announced in the channel — not on a connect, a re-connect, or the in-chat dial: whoever made it sees it confirmed on their own surface (the UI, the CLI, or the ephemeral slash-command reply for the in-chat command), and the channel's members get no ambient status post.
+On Telegram every `/bind` leaves it off, and `/ambient on|off` from a chat admin is the only dial; Telegram has no private reply, so that confirmation posts in the chat.
 
 Where several Agents read along in one channel, they take each message **one at a time**, each starting only once the one before it finished.
 Running them concurrently would have them talk over each other; in sequence, a later Agent is handed what the ones before it said — it has no other way to know — so it builds on that or stays silent rather than repeating it.

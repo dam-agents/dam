@@ -448,7 +448,7 @@ export function createTelegramMessageHandler(deps: {
     }
 
     const ambient = !addressed && !thread.isDM;
-    if (ambient && text === "") return;
+    if (text === "") return;
 
     const binding = await deps.conversations.findAgentByConversation(
       telegramChatOf(thread.id),
@@ -762,12 +762,25 @@ export function createTelegramWorker(deps: {
     agentId: string,
     threadId: string,
   ): ConversationQueue<TelegramPendingMessage> {
+    let ambientTurnRunning = false;
     return createConversationQueue<TelegramPendingMessage>({
       settleMs: deps.settleMs ?? 0,
       canSteer: (message) => !message.ambient,
-      runTurn: (batch, onSession) =>
-        relayToInstance(agentId, batch.at(-1)!.thread, batch, onSession),
+      runTurn: async (batch, onSession) => {
+        ambientTurnRunning = batch.every((m) => m.ambient);
+        try {
+          await relayToInstance(
+            agentId,
+            batch.at(-1)!.thread,
+            batch,
+            onSession,
+          );
+        } finally {
+          ambientTurnRunning = false;
+        }
+      },
       steer: async (sessionId, batch) => {
+        if (ambientTurnRunning) return "refused";
         const outcome = await makeAcpClient(agentId).steer(
           sessionId,
           steerFrame(batch),
