@@ -159,7 +159,7 @@ function PinnedSessionRow({
       }}
       operable={operable}
       pinned
-      prefix={agent.name}
+      pinnedAgent={agent}
       onNavigate={onNavigate}
     />
   );

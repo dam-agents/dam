@@ -78,7 +78,7 @@ export function AgentSessionList({
     >
       {asleep ? (
         <p
-          className="py-1.5 pl-2 text-xs text-muted-foreground"
+          className="py-1.5 pl-[42px] text-xs text-muted-foreground"
           data-testid="sidebar-agent-asleep"
         >
           Its sessions show when it wakes.
@@ -95,7 +95,7 @@ export function AgentSessionList({
         />
       )}
       {!list.loading && !list.failed && rows.length === 0 && !hasNextPage && (
-        <p className="py-1.5 pl-2 text-xs text-muted-foreground">
+        <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
           {isFiltered(filters)
             ? "No sessions match the filter."
             : "No sessions yet."}

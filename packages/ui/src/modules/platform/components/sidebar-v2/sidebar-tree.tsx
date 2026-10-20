@@ -54,7 +54,7 @@ import {
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
 import { AgentCue } from "./activity-dot.js";
-import { AddRow } from "./add-row.js";
+import { AddRow, TREE_LEADING } from "./add-row.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { FeedPinnedRow, OffFeedPinnedRow } from "./pinned-rows.js";
 
@@ -292,18 +292,18 @@ function AgentNode({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-[34px] min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none",
+            "flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none",
             FOCUS_RING,
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"
               : "text-foreground",
           )}
         >
-          <span className="relative flex size-5 shrink-0 items-center justify-center">
+          <span className={cn(TREE_LEADING, "relative h-6 items-center")}>
             <AgentAvatar
               name={agent.name}
               avatar={agent.avatar}
-              size={20}
+              size={24}
               mood={mood}
               className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
             />
@@ -369,7 +369,7 @@ function AgentNode({
         <OrderDropIndicator at={drag.indicator} />
       </div>
       {expanded && (
-        <div className="pt-px pl-2" id={listId}>
+        <div className="pt-px" id={listId}>
           <AgentSessionList agentId={agent.id} onNavigate={onNavigate} />
           <AddRow
             icon={AddComment}
@@ -442,7 +442,10 @@ function SettingsFooter({ onNavigate }: { onNavigate?: () => void }) {
             : "text-muted-foreground hover:bg-muted hover:text-foreground",
         )}
       >
-        <Settings size={16} /> Settings
+        <span className={TREE_LEADING}>
+          <Settings size={16} />
+        </span>
+        Settings
       </button>
     </div>
   );

@@ -13,9 +13,11 @@ const DOT: Record<"approval" | "unread" | "idle", string> = {
 export function ActivityDot({
   tone,
   label = ACTIVITY_LABEL[tone],
+  className,
 }: {
   tone: ActivityTone;
   label?: string;
+  className?: string;
 }) {
   return (
     <span
@@ -24,7 +26,10 @@ export function ActivityDot({
       title={label}
       data-testid="session-activity-dot"
       data-tone={tone}
-      className="relative mt-0.5 flex size-4 shrink-0 items-center justify-center self-start"
+      className={cn(
+        "relative flex size-4 shrink-0 items-center justify-center",
+        className,
+      )}
     >
       {tone === "working" ? (
         <>

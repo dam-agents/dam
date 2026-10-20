@@ -62,7 +62,8 @@ interface Props {
   cost?: SpendSessionRow;
   conversation?: string;
   leading?: ReactNode;
-  indicators?: boolean;
+  titleIcon?: ReactNode;
+  activityIndicators?: boolean;
   pinned?: boolean;
   onTogglePin?: () => void;
   onResume: () => void;
@@ -84,7 +85,8 @@ export function SessionRow({
   cost,
   conversation,
   leading,
-  indicators = true,
+  titleIcon,
+  activityIndicators = true,
   pinned = false,
   onTogglePin,
   onResume,
@@ -195,6 +197,11 @@ export function SessionRow({
             aria-describedby={metaId}
             className="flex min-w-0 items-center gap-1.5 text-left outline-none"
           >
+            {titleIcon && (
+              <span aria-hidden className="flex shrink-0">
+                {titleIcon}
+              </span>
+            )}
             <span className={`text-sm min-w-0 truncate ${titleClass}`}>
               {titleLabel}
             </span>
@@ -224,18 +231,18 @@ export function SessionRow({
               pinned ? "ml-1" : "ml-auto",
             )}
           >
-            {indicators && (
-              <SessionIndicators
-                scheduled={scheduled}
-                terminal={terminal}
-                messenger={messenger}
-                needsApproval={needsApproval}
-                working={working}
-                draft={draft}
-                backgroundWork={backgroundWork}
-                unread={unread}
-              />
-            )}
+            <SessionIndicators
+              scheduled={scheduled}
+              terminal={terminal}
+              messenger={messenger}
+              {...(activityIndicators && {
+                needsApproval,
+                working,
+                draft,
+                backgroundWork,
+                unread,
+              })}
+            />
             <div
               data-row-actions
               className={cn(
@@ -340,20 +347,20 @@ function SessionIndicators({
   scheduled,
   terminal,
   messenger,
-  needsApproval,
-  working,
-  draft,
-  backgroundWork,
-  unread,
+  needsApproval = false,
+  working = false,
+  draft = false,
+  backgroundWork = NO_WORK,
+  unread = false,
 }: {
   scheduled: boolean;
   terminal: boolean;
   messenger: ChannelType | null;
-  needsApproval: boolean;
-  working: boolean;
-  draft: boolean;
-  backgroundWork: readonly BackgroundWorkItemView[];
-  unread: boolean;
+  needsApproval?: boolean;
+  working?: boolean;
+  draft?: boolean;
+  backgroundWork?: readonly BackgroundWorkItemView[];
+  unread?: boolean;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (

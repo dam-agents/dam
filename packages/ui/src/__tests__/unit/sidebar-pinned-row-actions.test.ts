@@ -84,7 +84,7 @@ function renderFeedPin() {
         at: "2026-10-20T00:00:00Z",
         working: false,
         unread: false,
-        agent: { id: "a", name: "dam" },
+        agent: { id: "a", name: "dam", state: "running", avatar: null },
         session: {
           agentId: "a",
           sessionId: "s1",
@@ -127,4 +127,16 @@ it("gates export and prefetch the same way as the Agent's list", () => {
   expect(props.onExportTimeline).toBeUndefined();
   expect(props.onPrefetch).toBeUndefined();
   expect(props.cost).toBe(cost);
+});
+
+// TEST_SCENARIO: the Pinned section mixes Sessions of many Agents, so a pinned row leads with its Agent's avatar and the Session's activity dot over it, keeps the harness icon before its title, and keeps the Session's kind icons while its own dot replaces the activity ones.
+it("leads a pinned row with its Agent's avatar under the activity dot", () => {
+  const props = renderFeedPin();
+  const leading = renderToStaticMarkup(props.leading as never);
+  expect(leading).toContain("<svg");
+  expect(leading).toMatch(
+    /<svg[\s\S]*data-testid="session-activity-dot" data-tone="idle"/,
+  );
+  expect(props.titleIcon).toBeTruthy();
+  expect(props.activityIndicators).toBe(false);
 });
