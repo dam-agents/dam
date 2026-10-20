@@ -200,6 +200,7 @@ beforeAll(async () => {
       listedAt: null,
       entries: [
         entry(cb, "rits/zai-org/glm-5-3"),
+        entry(cb, "rits/claude-haiku-4-5"),
         entry(cb, "gpt-5.5"),
         entry(cb, "rits/NVIDIA-Big"),
       ],
@@ -212,6 +213,9 @@ beforeAll(async () => {
       entries: [
         entry(ibm, "aws/claude-opus-4-8"),
         entry(ibm, "aws/claude-sonnet-5"),
+        entry(ibm, "aws/claude-sonnet-4-6"),
+        entry(ibm, "eu/claude-sonnet-4-6"),
+        entry(ibm, "aws/claude-haiku-4-5"),
         entry(ibm, "gpt-5.5"),
         entry(ibm, "only-here"),
       ],
@@ -603,6 +607,29 @@ describe("bare names", () => {
     );
     expect(other.status).toBe(404);
     expect(other.text).toContain("lists model 'claude-sonnet-5-5'");
+  });
+
+  /** TEST_SCENARIO: The fallback refuses instead of guessing when a bare name
+   * has more than one candidate: one provider's two deployments of the same
+   * model are named with their prefixes, and a name two providers serve under
+   * their own prefixes names both, so the call goes to neither. */
+  it("refuses a bare name with several prefixed candidates", async () => {
+    const one = await call(
+      "/v1/messages",
+      { model: "claude-sonnet-4-6", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(one.status).toBe(400);
+    expect(one.text).toContain("ibm/aws/claude-sonnet-4-6");
+    expect(one.text).toContain("ibm/eu/claude-sonnet-4-6");
+    const two = await call(
+      "/v1/messages",
+      { model: "claude-haiku-4-5", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(two.status).toBe(400);
+    expect(two.text).toContain("ibm/aws/claude-haiku-4-5");
+    expect(two.text).toContain("cb/rits/claude-haiku-4-5");
   });
 });
 

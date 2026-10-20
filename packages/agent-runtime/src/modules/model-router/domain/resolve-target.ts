@@ -31,19 +31,18 @@ const serves = (
   harness: ModelRouterBinding | undefined,
 ) => harness !== undefined && servesHarness(p, harnessName ?? "", harness);
 
-const listsBare = (
-  p: CatalogProvider,
-  bare: string,
-): CatalogEntry | undefined =>
-  p.entries.find((e) => e.upstreamId === bare) ??
-  p.entries.find((e) => e.upstreamId.toLowerCase() === bare.toLowerCase());
+const listsBare = (p: CatalogProvider, bare: string): CatalogEntry[] => {
+  const exact = p.entries.filter((e) => e.upstreamId === bare);
+  return exact.length
+    ? exact
+    : p.entries.filter(
+        (e) => e.upstreamId.toLowerCase() === bare.toLowerCase(),
+      );
+};
 
-const listsDeployment = (
-  p: CatalogProvider,
-  bare: string,
-): CatalogEntry | undefined => {
+const listsDeployment = (p: CatalogProvider, bare: string): CatalogEntry[] => {
   const wanted = bare.toLowerCase();
-  return p.entries.find(
+  return p.entries.filter(
     (e) =>
       (e.upstreamId.split("/").at(-1) ?? e.upstreamId).toLowerCase() === wanted,
   );
@@ -55,7 +54,7 @@ function resolveQualified(
 ): CatalogEntry | null {
   const provider = providers.find((p) => p.alias === parsed.alias);
   if (!provider) return null;
-  return listsBare(provider, parsed.upstreamId) ?? null;
+  return listsBare(provider, parsed.upstreamId)[0] ?? null;
 }
 
 /**
@@ -66,9 +65,10 @@ function resolveQualified(
  * refused by name, so no call is billed to a provider the user did not pick.
  * A bare name no provider lists itself falls back to the id whose last path
  * segment is that name, since a provider fronting a cloud account serves an
- * exact model under the deployment prefix it hosts it on (`aws/<id>`), and a
- * harness names a tier by a bare id of its own. The entry must serve the
- * request's dialect: the router never translates.
+ * exact model under the deployment prefix it hosts it on (`aws/<id>`) and a
+ * harness names a tier by a bare id of its own; a provider's several matching
+ * ids are refused by name too, so no deployment of a model is guessed between.
+ * The entry must serve the request's dialect: the router never translates.
  */
 export function resolveTarget(input: ResolveInput): ResolveOutcome {
   const { model, dialect, harness, providers, sessionModel } = input;
@@ -101,34 +101,40 @@ export function resolveTarget(input: ResolveInput): ResolveOutcome {
         aliasOrder(a.alias, input.harnessName) -
         aliasOrder(b.alias, input.harnessName),
     )[0];
-    const pick = (
-      lists: (p: CatalogProvider, id: string) => CatalogEntry | undefined,
-    ) => {
-      const listing = eligible.filter((p) => lists(p, bare) !== undefined);
-      return {
-        listing,
-        found:
-          (onSession && lists(onSession, bare)) ??
-          (byDefault && lists(byDefault, bare)) ??
-          (listing.length === 1 ? lists(listing[0]!, bare) : undefined) ??
-          null,
-      };
-    };
-    const exact = pick(listsBare);
-    const { found, listing } = exact.found ? exact : pick(listsDeployment);
-    entry = found;
+    const candidates = (
+      lists: (p: CatalogProvider, id: string) => CatalogEntry[],
+    ) =>
+      eligible.flatMap((p) => {
+        const entries = lists(p, bare);
+        return entries.length > 0 ? [{ provider: p, entries }] : [];
+      });
+    const exact = candidates(listsBare);
+    const matches = exact.length > 0 ? exact : candidates(listsDeployment);
+    const chosen =
+      matches.find((m) => m.provider === onSession) ??
+      (byDefault && matches.find((m) => m.provider === byDefault)) ??
+      (matches.length === 1 ? matches[0] : undefined);
+    if (chosen?.entries.length === 1) entry = chosen.entries[0]!;
     if (!entry) {
-      return listing.length > 1
+      const ids = (m: { provider: CatalogProvider; entries: CatalogEntry[] }) =>
+        m.entries.map((e) => `${m.provider.alias}/${e.upstreamId}`).join(", ");
+      return chosen
         ? {
             ok: false,
             status: 400,
-            reason: `model '${bare}' is served by several providers (${listing.map((p) => p.alias).join(", ")}); name one with its provider`,
+            reason: `model '${bare}' is served by several ids on '${chosen.provider.alias}' (${ids(chosen)}); name one of them`,
           }
-        : {
-            ok: false,
-            status: 404,
-            reason: `no granted provider lists model '${bare}' for this harness (granted: ${known})`,
-          };
+        : matches.length > 1
+          ? {
+              ok: false,
+              status: 400,
+              reason: `model '${bare}' is served by several providers (${matches.map(ids).join(", ")}); name one of them`,
+            }
+          : {
+              ok: false,
+              status: 404,
+              reason: `no granted provider lists model '${bare}' for this harness (granted: ${known})`,
+            };
     }
   }
   if (!entry.dialects.includes(dialect))
