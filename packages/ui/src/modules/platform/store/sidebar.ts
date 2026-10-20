@@ -25,6 +25,10 @@ export interface SidebarSlice {
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
   sidebarGroupBy: SidebarGroupBy;
   setSidebarGroupBy: (groupBy: SidebarGroupBy) => void;
+  sidebarTreeToggled: ReadonlyMap<string, boolean>;
+  setSidebarTreeToggled: (toggled: ReadonlyMap<string, boolean>) => void;
+  sidebarTreeOpenAgent: string | null;
+  setSidebarTreeOpenAgent: (agentId: string | null) => void;
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgentOpen: Readonly<Record<string, boolean>>;
@@ -60,6 +64,12 @@ export const createSidebarSlice: StateCreator<
   },
   sidebarGroupBy: "agents",
   setSidebarGroupBy: (groupBy) => set({ sidebarGroupBy: groupBy }),
+  sidebarTreeToggled: new Map(),
+  setSidebarTreeToggled: (toggled) => set({ sidebarTreeToggled: toggled }),
+  sidebarTreeOpenAgent: null,
+  setSidebarTreeOpenAgent: (agentId) => {
+    if (agentId) set({ sidebarTreeOpenAgent: agentId });
+  },
   sidebarShowHibernating: readPersistedFlag(
     SIDEBAR_HIBERNATING_STORAGE_KEY,
     false,

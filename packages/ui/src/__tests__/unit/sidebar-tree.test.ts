@@ -226,6 +226,23 @@ describe("sidebar tree add rows", () => {
     expect(html).toContain(">New session</span>");
   });
 
+  // TEST_SCENARIO: on an Agent's new-session page, its New session row is the current page, drawn selected; anywhere else it is not.
+  it("marks the New session row as the current page", () => {
+    const row = (current: boolean) =>
+      renderToStaticMarkup(
+        createElement(AddRow, {
+          icon: Add,
+          label: "New session",
+          testId: "sidebar-new-session-row",
+          current,
+          onClick: () => {},
+        }),
+      );
+    expect(row(true)).toContain('aria-current="page"');
+    expect(row(true)).toContain("aria-[current=page]:bg-muted");
+    expect(row(false)).not.toContain("aria-current");
+  });
+
   // TEST_SCENARIO: while a new Agent cannot be created yet, its row is disabled rather than silently doing nothing.
   it("disables the row when creating is not ready", () => {
     const html = renderToStaticMarkup(

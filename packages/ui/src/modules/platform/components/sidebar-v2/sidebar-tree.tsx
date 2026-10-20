@@ -10,7 +10,7 @@ import {
   TrashCan,
 } from "@carbon/icons-react";
 import { useQueries } from "@tanstack/react-query";
-import { type ReactNode, useId, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 
 import {
   DropdownMenu,
@@ -74,8 +74,10 @@ const REVEAL =
  * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar as one tree: the pinned
  * Sessions of every Agent in a Pinned section at the top, then every Agent,
  * each opening to its own Sessions. The Agent that is open in the page opens
- * in the tree too until its row closes it; any other Agent opens and closes
- * from its row. An Agent's attention hint refreshes that Agent's own list,
+ * in the tree too until its row closes it, and stays open on a page with no
+ * Agent, such as Home; any other Agent opens and closes from its row. The
+ * open state lives in the store, so a page change that remounts the tree
+ * keeps it. An Agent's attention hint refreshes that Agent's own list,
  * so an open list stays live without its chat.
  */
 export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
@@ -86,9 +88,15 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const filters = useStore((s) => s.sidebarActivityFilters);
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const allAgents = useAgentsList();
-  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(
-    new Map(),
+  const toggled = useStore((s) => s.sidebarTreeToggled);
+  const setToggled = useStore((s) => s.setSidebarTreeToggled);
+  const lastOpenAgentId = useStore((s) => s.sidebarTreeOpenAgent);
+  const rememberOpenAgent = useStore((s) => s.setSidebarTreeOpenAgent);
+  useEffect(
+    () => rememberOpenAgent(openAgentId),
+    [openAgentId, rememberOpenAgent],
   );
+  const expandAgentId = openAgentId ?? lastOpenAgentId;
   const approvals = useApprovalsForOwner().data;
 
   const groupBy = useStore((s) => s.sidebarGroupBy);
@@ -265,7 +273,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                 <AgentNode
                   key={agent.id}
                   agent={agent}
-                  expanded={isExpanded(toggled, agent.id, openAgentId)}
+                  expanded={isExpanded(toggled, agent.id, expandAgentId)}
                   current={agent.id === openAgentId && !sessionOpen}
                   cue={
                     awaitsApproval(approvals ?? [], agent.id)
@@ -275,9 +283,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                         : null
                   }
                   onToggle={() =>
-                    setToggled((prev) =>
-                      toggleExpanded(prev, agent.id, openAgentId),
-                    )
+                    setToggled(toggleExpanded(toggled, agent.id, expandAgentId))
                   }
                   order={orderActions}
                   shownIds={shownIds}
@@ -383,6 +389,9 @@ function AgentNode({
   shownIds: readonly string[];
   onNavigate?: () => void;
 }) {
+  const newSessionOpen = useStore(
+    (s) => current && expanded && s.view === "chat",
+  );
   const startSession = useStartSession();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setView = useStore((s) => s.setView);
@@ -413,7 +422,7 @@ function AgentNode({
         {...drag.dragProps}
         className={cn(
           "group/agent relative flex items-center rounded-lg transition-colors",
-          current ? "bg-muted" : "hover:bg-muted",
+          current && !newSessionOpen ? "bg-muted" : "hover:bg-muted",
         )}
       >
         <button
@@ -421,7 +430,7 @@ function AgentNode({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={expanded ? listId : undefined}
-          aria-current={current ? "page" : undefined}
+          aria-current={current && !newSessionOpen ? "page" : undefined}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
@@ -509,6 +518,7 @@ function AgentNode({
             label="New session"
             ariaLabel={`New session with ${agent.name}`}
             testId="sidebar-new-session-row"
+            current={newSessionOpen}
             onClick={go(() => startSession(agent.id))}
           />
         </div>
