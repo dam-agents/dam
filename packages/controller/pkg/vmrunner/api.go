@@ -132,6 +132,8 @@ const (
 	ReasonSeedMissing      = "MachineSeedMissing"
 	ReasonStorageFull      = "MachineStorageFull"
 	ReasonHomeFull         = "MachineHomeFull"
+	// UNIT_BOUNDARY_DESCRIPTION: a machine refused because its runner cannot reach the node's image cache service at all: the node's fault, not the image's. The api-server holds an image update on it rather than moving the Agent back, so an image that starts fine elsewhere is not convicted for one node's mount.
+	ReasonImageCacheUnreachable = "MachineImageCacheUnreachable"
 	// UNIT_BOUNDARY_DESCRIPTION: a first boot that copies a disk before the guest answers — a conversion to btrfs or a migration seed's restore. The runner holds such a boot for up to six hours, so it is a boot in progress, never a start failure.
 	ReasonCopyingDisk = "MachineCopyingDisk"
 	// UNIT_BOUNDARY_DESCRIPTION: a machine whose VMM the kernel killed for memory, which the runner reports from the VMM's exit signal until the guest answers again. Every machine of an owner shares the runner's cgroup, so what grows past it costs one machine a restart, not the owner every machine.
@@ -184,6 +186,12 @@ type MachineUsage struct {
 	UsedMiB   int    `json:"usedMiB,omitempty"`
 	Warming   bool   `json:"warming"`
 	DiskGiB   int    `json:"diskGiB,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a runner can reach the node's image cache service right now, as its own connect reports it: the socket inside the runner's read-only mount of the node directory, and, when nothing serves it, the error a machine of that runner would be refused with. An empty error is a cache the runner reached.
+type RunnerImageCache struct {
+	Socket string `json:"socket"`
+	Error  string `json:"error,omitempty"`
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Unstaged passes once the node's stager copies the release; the other three never pass in that pod, so only a new pod takes the release. Runtime means the release's runner does not load in this pod; the name is older than that meaning. Reboot means the release declares that the machines booted before it must reboot onto it, which only its own pod does.

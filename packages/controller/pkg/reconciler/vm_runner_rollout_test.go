@@ -3,9 +3,11 @@ package reconciler
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"sort"
+	"strconv"
 	"testing"
 	"time"
 
@@ -184,6 +186,11 @@ func TestARunnerRollWaitsForItsAgentsToBeIdle(t *testing.T) {
 
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "its agent is busy")
+	heldEvents := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, heldEvents, 1, "the wait is announced once, not on every pass")
+	assert.Equal(t, reasonRollHeldForIdle, heldEvents[0].Reason)
+	assert.Equal(t, corev1.EventTypeNormal, heldEvents[0].Type)
+	assert.Contains(t, heldEvents[0].Message, "busy-owner-a")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "a waiting runner holds no place in the roll")
 	settleRunnerPod(t, r, "owner-b")
@@ -208,6 +215,299 @@ func TestARunnerRollWaitsForItsAgentsToBeIdle(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-c", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-c"), "the idle wait is over")
+	cEvents := eventsOn(t, r, r.runnerName("owner-c"))
+	require.Len(t, cEvents, 2, "the wait and its end are each announced once")
+	assert.Equal(t, reasonRollHeldForIdle, cEvents[0].Reason)
+	assert.Equal(t, reasonRollIdleWaitOver, cEvents[1].Reason)
+	assert.Equal(t, corev1.EventTypeWarning, cEvents[1].Type)
+	assert.Contains(t, cEvents[1].Message, "stayed busy for 24h1m0s")
+}
+
+// TEST_SCENARIO: a runner that cannot reach the node's image cache boots only the trees its machines already hold, so every image its owner has not booted yet is refused. Waiting out a busy agent would cost the owner every image move for the whole idle wait to protect one turn, so once the refusal has lasted the grace such a runner rolls without the idle wait, and says so with one Event naming the node directory it mounts and the refusal it gave. The wait itself is untouched for every other runner: the second owner's cache answers, so its busy agent still holds it back.
+func TestARunnerThatCannotReachItsImageCacheRollsWithoutWaitingForIdle(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		nodes[owner].specs["busy"+owner] = vmrunner.MachineSpec{Running: true}
+		nodes[owner].set("busy"+owner, vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	}
+	r.busyProbe = func(_ context.Context, _ string) bool { return true }
+	changeRunnerPod(r)
+	r.config.VM.Runner.Rollout.MaxConcurrent = 2
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "one refused connect is also a cache service restarting")
+
+	backdateRunnerAnnotation(t, r, "owner-a", annRunnerCacheDown, defaultRunnerCacheDownGrace+time.Minute)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "a runner whose cache stayed out of reach does not wait for a turn to end")
+
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 2, "the hold and the roll that skips the wait are each announced once")
+	assert.Equal(t, reasonRollHeldForCache, events[0].Reason)
+	assert.Equal(t, corev1.EventTypeNormal, events[0].Type)
+	assert.Equal(t, reasonRollImageCacheUnreachable, events[1].Reason)
+	assert.Equal(t, corev1.EventTypeWarning, events[1].Type)
+	assert.Contains(t, events[1].Message, r.config.VM.Runner.ImageCacheHostPath, "the Event does not name the node directory the runner mounts")
+	assert.Contains(t, events[1].Message, "cannot be reached", "the Event does not carry the runner's own refusal")
+	assert.Contains(t, events[1].Message, "without waiting", "the Event does not say the idle wait was skipped")
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "a runner whose cache answers still waits for its agent")
+}
+
+// TEST_SCENARIO: a cache service restarted, or a socket rebound under it, refuses one connect and answers the next. The owner's busy runner must keep the idle wait through that: one refused probe is not the fault the wait is skipped for, and a blip that comes back starts the grace over rather than counting toward it.
+func TestASingleRefusedConnectDoesNotSkipTheIdleWait(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "a refused connect alone does not roll a busy runner")
+	dep := runnerDeploymentOf(t, r, "owner-a")
+	assert.NotEmpty(t, dep.Annotations[annRunnerCacheDown], "the pass that saw the refusal did not record when")
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock"}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "its agent is busy")
+	assert.Empty(t, runnerDeploymentOf(t, r, "owner-a").Annotations[annRunnerCacheDown], "a cache that answers clears the stamp")
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the grace started over with the second outage")
+
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 3, "the two outages and the turn the middle pass found are each announced once")
+	assert.Equal(t, reasonRollHeldForCache, events[0].Reason)
+	assert.Equal(t, reasonRollHeldForIdle, events[1].Reason, "the cache answered, so the wait for the agent is what holds it")
+	assert.Equal(t, reasonRollHeldForCache, events[2].Reason)
+	for _, event := range events {
+		assert.NotEqual(t, reasonRollImageCacheUnreachable, event.Reason, "no pass skipped the idle wait")
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a fake API server that numbers every write and refuses one carrying an older number, which is what the real one does and what the default fake client does not: a pass that writes an annotation and then submits the roll from the object it read before that write is refused, and the retry reads the version its own write left.
+func enforceResourceVersions(t *testing.T, r *AgentReconciler) {
+	t.Helper()
+	cs := r.client.(*fake.Clientset)
+	version := 1000
+	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
+		stored, err := cs.Tracker().Get(action.GetResource(), dep.Namespace, dep.Name)
+		if err != nil {
+			return false, nil, nil
+		}
+		if current := stored.(*appsv1.Deployment).ResourceVersion; dep.ResourceVersion != current {
+			return true, nil, k8serrors.NewConflict(appsv1.Resource("deployments"), dep.Name, errors.New("the object has been modified"))
+		}
+		version++
+		dep.ResourceVersion = strconv.Itoa(version)
+		return false, nil, nil
+	})
+}
+
+// TEST_SCENARIO: the grace has expired and the cache is still out of reach, so this pass rolls the busy runner. Every stamp it would clear first is cleared by the roll's own write; a pass that wrote one first would submit the roll from the version it read before that write, the API server would refuse it, and the retry — reading a runner with no stamp — would record a fresh outage and hold again, so the runner would never roll while the cache stayed down.
+func TestAnExpiredGraceRollsTheRunnerInOnePass(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	backdateRunnerAnnotation(t, r, "owner-a", annRunnerCacheDown, defaultRunnerCacheDownGrace+time.Minute)
+	enforceResourceVersions(t, r)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true), "the pass wrote before the roll and lost the roll's write to a conflict")
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "an expired grace must roll the runner, not start it over")
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "the roll's own write clears the stamp")
+}
+
+// TEST_SCENARIO: a pod change undone before the roll leaves a stamp from the pass that recorded the outage. The stamp is what the grace is measured from, so one left behind makes the next refusal pass the minute at once and roll a runner with busy agents; the pass that finds nothing to roll clears it.
+func TestARollThatStopsBeingNeededClearsTheCacheStamp(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	boot := r.config.VM.Runner.BootMiB
+	changeRunnerPod(r)
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "the refusal was not recorded")
+
+	r.config.VM.Runner.Image, r.config.VM.Runner.BootMiB = runnerV1, boot
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "a roll nobody needs any more keeps a stamp from the outage it was waiting out")
+}
+
+// TEST_SCENARIO: a cache that recovers while every place in the roll is taken is never seen to recover, so the minute counts only over what a pass watched. A stamp from before that recovery would let the next outage pass it at once and end the turns of busy agents.
+func TestAnOutageNoPassCouldWatchDoesNotCountTowardTheGrace(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(_ context.Context, id string) bool { return id == "busy" }
+	r.config.VM.Runner.Rollout.MaxConcurrent = 1
+	changeRunnerPod(r)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "the only place in the roll is taken")
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	backdateRunnerAnnotation(t, r, "owner-a", annRunnerCacheDown, defaultRunnerCacheDownGrace+time.Minute)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the pass had no place to roll in")
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "a stamp from an outage no pass watched outlived the place it waited for")
+
+	settleRunnerPod(t, r, "owner-b")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the minute starts over with the outage the pass can watch")
+	for _, event := range eventsOn(t, r, r.runnerName("owner-a")) {
+		assert.NotEqual(t, reasonRollImageCacheUnreachable, event.Reason, "no pass skipped the idle wait on an outage it did not watch")
+	}
+}
+
+// TEST_SCENARIO: a runner that cannot be asked about its image cache is not a runner whose cache is out of reach: it may have a working one, so its busy agents keep the idle wait, and no pass spends the grace on a read that failed.
+func TestARunnerThatCannotBeAskedKeepsTheIdleWait(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+	nodes["owner-a"].imageCacheFails = true
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "an unanswered runner waits for its agent")
+	dep := runnerDeploymentOf(t, r, "owner-a")
+	assert.Empty(t, dep.Annotations[annRunnerCacheDown], "a read that failed is not an outage to measure")
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 1, "the wait is what holds it, and it says so once")
+	assert.Equal(t, reasonRollHeldForIdle, events[0].Reason)
+}
+
+// TEST_SCENARIO: a roll that says it passes the idle wait says so once it wrote the Deployment. A write that fails leaves the roll for the next pass, and the next pass is the one that announces it.
+func TestTheWaitOverEventFollowsTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+	backdateRunnerAnnotation(t, r, "owner-a", annRunnerBusy, defaultRunnerIdleWait+time.Minute)
+
+	cs := r.client.(*fake.Clientset)
+	refused := true
+	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
+		if !refused || dep.Annotations[annRunnerRolledAt] == "" {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewConflict(appsv1.Resource("deployments"), dep.Name, errors.New("the informer's copy is older"))
+	})
+
+	assert.Error(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true), "the roll's write was refused")
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the roll did not land")
+	assert.Empty(t, eventsOn(t, r, r.runnerName("owner-a")), "a roll that did not happen is not announced")
+
+	refused = false
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 1, "the pass that rolled says it once")
+	assert.Equal(t, reasonRollIdleWaitOver, events[0].Reason)
+}
+
+// TEST_SCENARIO: the pass that would hold a roll writes the stamp the next pass reads. When that write fails — an informer copy from before the write, which the API server refuses as a conflict — the pass reports nothing: a hold said twice for one wait is the noise the Events exist to remove, and the next pass says it when it lands.
+func TestARollWhoseWaitCannotBeRecordedSaysNothing(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+
+	cs := r.client.(*fake.Clientset)
+	conflicts := true
+	cs.PrependReactor("update", "deployments", func(k8stesting.Action) (bool, runtime.Object, error) {
+		if !conflicts {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewConflict(appsv1.Resource("deployments"), r.runnerName("owner-a"), errors.New("the informer's copy is older"))
+	})
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"))
+	assert.Empty(t, eventsOn(t, r, r.runnerName("owner-a")), "a wait that was not recorded is not announced")
+
+	conflicts = false
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 1, "the transition is announced on the pass that records it")
+	assert.Equal(t, reasonRollHeldForIdle, events[0].Reason)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner Deployment of one owner, read back from the API server rather than from the reconciler's copy.
+func runnerDeploymentOf(t *testing.T, r *AgentReconciler, owner string) *appsv1.Deployment {
+	t.Helper()
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(context.Background(), r.runnerName(owner), metav1.GetOptions{})
+	require.NoError(t, err)
+	return dep
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an annotation moved back in time on the runner Deployment, which is how a test reaches a wait that has lasted: the pass reads the stamp, so a hold older than its grace is one written before it.
+func backdateRunnerAnnotation(t *testing.T, r *AgentReconciler, owner, key string, age time.Duration) {
+	t.Helper()
+	dep := runnerDeploymentOf(t, r, owner)
+	if dep.Annotations == nil {
+		dep.Annotations = map[string]string{}
+	}
+	dep.Annotations[key] = time.Now().Add(-age).UTC().Format(time.RFC3339)
+	_, err := r.client.AppsV1().Deployments("test-agents").Update(context.Background(), dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: a roll held back for a busy agent is one Event when the wait starts and one when it passes the idle wait, never the same line on every pass, and the Deployment records the wait so a controller restart does not start it over. The second pass of a held roll writes no second Event.
+func TestARollHeldForIdleSaysSoOnce(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"))
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 1, "a held roll is reported once, not on every pass")
+	assert.Equal(t, reasonRollHeldForIdle, events[0].Reason)
+	assert.Contains(t, events[0].Message, "busy")
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName("owner-a"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, dep.Annotations[annRunnerBusy])
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the Events written on one runner, in name order, which is the order they were written: the name is the runner's and a nanosecond, so a test reads them back as a person reads `kubectl get events`. The fake client applies no field selector, so the object is matched here instead.
+func eventsOn(t *testing.T, r *AgentReconciler, name string) []corev1.Event {
+	t.Helper()
+	list, err := r.client.CoreV1().Events("test-agents").List(context.Background(), metav1.ListOptions{})
+	require.NoError(t, err)
+	var events []corev1.Event
+	for _, event := range list.Items {
+		if event.InvolvedObject.Name == name {
+			events = append(events, event)
+		}
+	}
+	sort.Slice(events, func(i, j int) bool { return events[i].Name < events[j].Name })
+	return events
 }
 
 // TEST_SCENARIO: a machine that was ready before the roll never comes back — its agent was hibernated mid-roll, say. The runner stops holding its place once the settle timeout has passed, so one owner cannot stall every other owner's upgrade.

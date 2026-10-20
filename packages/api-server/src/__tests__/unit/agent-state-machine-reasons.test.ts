@@ -28,6 +28,12 @@ describe("computeAgentState with a machine reason", () => {
     );
   });
 
+  it("reads a runner that cannot reach its node's image cache as an error", () => {
+    expect(computeAgentState(notReady("MachineImageCacheUnreachable"))).toBe(
+      "error",
+    );
+  });
+
   it("reads a runner no node can place as an error", () => {
     expect(computeAgentState(notReady("MachineRunnerUnschedulable"))).toBe(
       "error",

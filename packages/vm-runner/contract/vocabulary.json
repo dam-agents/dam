@@ -4,6 +4,7 @@
     "MachineNotReady",
     "MachineOutOfCapacity",
     "MachineImageUnavailable",
+    "MachineImageCacheUnreachable",
     "MachineBootFailed",
     "MachineSeedMissing",
     "MachineStorageFull",

@@ -10,10 +10,10 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_OOM_KILLED, REASON_OUT_OF_CAPACITY, REASON_SECCOMP_KILLED, REASON_STORAGE_FULL,
-    STATE_RUNNING,
+    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerImageCache,
+    RunnerPressure, RunnerUsage, SeedResult, State, StorageUsage, REASON_BOOT_FAILED,
+    REASON_COPYING_DISK, REASON_HOME_FULL, REASON_OOM_KILLED, REASON_OUT_OF_CAPACITY,
+    REASON_SECCOMP_KILLED, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
@@ -799,6 +799,14 @@ impl Server {
             .collect())
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node image cache service now, asked by the controller before it holds a changed runner pod back for a busy agent. A runner with no service configured needs no one and answers reachable, since it boots only the trees staged on its node.
+    pub fn image_cache(&self) -> RunnerImageCache {
+        match &self.config.images {
+            Some(images) => images.reach(),
+            None => RunnerImageCache::default(),
+        }
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it. While a seed is being uploaded the spec is stored and no worker is started, because a guest booted then would read half a seed; the controller's next ensure after the upload starts it.
     pub fn put(
         self: &Arc<Self>,
@@ -1411,7 +1419,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as the cache's fault or the image's, whichever it is, and never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
     fn resolve(
         &self,
         id: &str,

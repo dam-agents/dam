@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -22,6 +22,15 @@ A changed runner also waits for its owner's agents to be idle, since a roll ends
 Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, all at once, and an agent that does not answer counts as idle.
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
 The install's idle wait, a day by default so that a multi-hour kept job finishes, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
+**A runner that cannot reach its node's image cache does not wait out the idle wait.** Such a runner boots only the trees its own machines already hold, so every image its owner has not booted yet is refused ([vm-image-cache](vm-image-cache.md)), and the image update job holds each upgrade rather than moving an Agent back.
+Waiting would protect one turn and cost the owner every image move for the whole idle wait, so a runner whose cache stays out of reach rolls with the agent busy.
+It takes a minute of the runner saying so first: a cache service restarted, or a socket rebound under it, refuses a connect for seconds, and one refused probe is not worth the turns of a healthy, busy runner.
+The first pass that reads the refusal records when it read it on the runner's Deployment, so the wait is judged across passes and a controller restart does not start it over, and a cache that answers in between clears the record and starts the minute again.
+The minute therefore counts only the time a pass watched the refusal: a pass that finds no place in the roll asks nothing and forgets the record, since a cache that recovered while every place was taken is never seen to recover.
+The wait is otherwise what it was: a runner whose cache answers waits, and so does one that cannot be asked at all, since a runner that answers nothing may still have a working cache.
+**A held roll is reported once per transition, not once per pass.** The controller writes a Kubernetes Event on the runner's Deployment when the wait starts, when the cache goes out of reach, when it passes the idle wait, and when a cache that stayed out of reach takes the roll past that wait, naming whichever of the busy agents, the node directory that runner mounts as its cache, and the runner's own refusal explains that transition, and only once the write that records the transition has landed.
+A roll held right now is one series in `platform.vm_runner.roll_held_for_idle`, the age of the roll held longest, observed rather than recorded: it reads zero when the last hold ends, and drops a hold no pass reported for half an hour, well past the drift pass and the ten-minute sweep that refresh a live one, so a queue delay never reads as a deletion; it names no owner, since a runner is per owner and no exported series names a person ([observability](observability.md)), and the Events on the runner are what say which roll is held.
+An operator therefore reads one line per change in `kubectl get events`, and one series per roll held now, rather than one log line per reconcile.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn so owners whose agents all sleep still roll, as many turns at once as the roll is wide, handed out in name order; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
 That read takes only what the runners' Deployments record, and calls no runner, since every owner's decision waits on it.
 Whether a runner's machines came back is asked on its own owner's turn, an agent of theirs reconciling or the sweep reaching them, and so is the owner's own list of ready machines before it takes a place.

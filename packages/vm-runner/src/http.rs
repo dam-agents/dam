@@ -25,6 +25,7 @@ pub fn router(server: Arc<Server>, token: Arc<Token>) -> Router {
         .route("/release", get(release).post(name_release))
         .route("/machines", get(list))
         .route("/usage", get(usage))
+        .route("/image-cache", get(image_cache))
         .route("/pressure", get(pressure))
         .route("/machines/{id}", get(status).put(ensure).delete(remove))
         .route(
@@ -310,6 +311,11 @@ async fn list(State(server): State<Arc<Server>>) -> Response {
         Err(e) => plain(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e:#}")),
     })
     .await
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one connect to the node image cache service, answered at once: the controller asks before it holds this runner's changed pod back for a busy agent of the owner's.
+async fn image_cache(State(server): State<Arc<Server>>) -> Response {
+    blocking(move || Json(server.image_cache()).into_response()).await
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a status read that names `wait`, in seconds, and the `since` version the caller last saw waits until the machine's status version differs from it, or until the wait ends. Without `wait` it answers at once.

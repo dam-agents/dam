@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE,
-    REASON_OOM_KILLED, REASON_SECCOMP_KILLED, REASON_SEED_MISSING, REASON_STORAGE_FULL,
-    STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING, STATE_STARTING, STATE_STOPPED,
-    STATE_STOPPING, STATE_UNKNOWN,
+    REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK, REASON_HOME_FULL,
+    REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED, REASON_SEED_MISSING,
+    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
+    STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -2262,7 +2262,7 @@ async fn a_stopped_machine_holds_nothing_and_fetches_its_tree_again_on_start() {
     assert_eq!(h.crane_log("export"), 2, "the start fetched the tree again");
 }
 
-// TEST_SCENARIO: with the node's service down, a new image cannot be resolved, checked or fetched, so a machine of it is refused as an image problem that says why, and nothing is booted straight from the registry. A machine of an image another of this runner's machines already boots still starts, from the tree that machine holds, which is only read.
+// TEST_SCENARIO: with the node's service down, a new image cannot be resolved, checked or fetched, so a machine of it is refused under the cache's own reason, which says which mount was looked at and that the fault is the node's rather than the image's, and nothing is booted straight from the registry. A machine of an image another of this runner's machines already boots still starts, from the tree that machine holds, which is only read.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() {
     let h = Harness::with("node-cache-down", on_node_cache);
@@ -2286,8 +2286,16 @@ async fn a_node_cache_that_cannot_be_reached_boots_only_what_the_runner_holds() 
     other.image = "quay.io/x/other:1".into();
     h.server.put("m3", other).unwrap();
     let refused = h.settle("m3").await;
-    assert_eq!(refused.reason, REASON_IMAGE_UNAVAILABLE, "{refused:?}");
+    assert_eq!(refused.reason, REASON_CACHE_UNREACHABLE, "{refused:?}");
     assert!(refused.message.contains("cannot be reached"), "{refused:?}");
+    assert!(
+        refused.message.contains(".cache.sock"),
+        "the refusal does not name the socket inside the mount the runner looked at: {refused:?}"
+    );
+    assert!(
+        refused.message.contains("read-only"),
+        "the refusal does not say the mount is the runner's own read-only one: {refused:?}"
+    );
     assert!(!locked(&h.fake.created).contains_key("m3"));
 }
 
