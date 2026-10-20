@@ -384,10 +384,10 @@ export function onRunnerHost(
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the deaths of this machine's VMMs that the agent's own runner reported, in the order it reported them, each with the number the kernel gives a signal — 9 is SIGKILL — and the pid the report names when it names one. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns is the reaper's, which says the signal and the pid beside the machine. A kill lands on either side of that moment depending on how fast the machine boots, so both reports are read.
+// UNIT_BOUNDARY_DESCRIPTION: the deaths of this machine's VMMs that the agent's own runner reported, in the order it reported them, each with the number the kernel gives a signal where the report names one — 9 is SIGKILL — and the pid where it names one. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns, the reaper names the signal, or the runner's stop of a machine that went away names the pid alone. A kill lands on either side of that moment depending on how fast the machine boots, so every report is read and each is held to what it names.
 export function runnerKilledVmms(
   agentId: string,
-): { signal: number; pid: number | null }[] {
+): { signal: number | null; pid: number | null }[] {
   const logs = kubectlWithin(
     LOOKUP_TIMEOUT_MS,
     "-n",
@@ -397,34 +397,42 @@ export function runnerKilledVmms(
     hostSelector(agentId, "vm"),
     "--tail=-1",
   );
-  return logs.split("\n").flatMap((line) => {
-    try {
-      const { fields } = JSON.parse(line) as {
-        fields?: Record<string, unknown>;
-      };
-      if (fields?.machine !== agentId) return [];
-      if (
-        fields.message === "machine action failed" &&
-        fields.op === "starting" &&
-        typeof fields.error === "string"
-      )
-        return fields.error.includes("killed by SIGKILL")
-          ? [{ signal: 9, pid: null }]
-          : [];
-      return typeof fields.signal === "number" &&
-        typeof fields.message === "string" &&
-        fields.message.startsWith("vm runner: a machine's VMM was killed")
-        ? [
+  return logs
+    .split("\n")
+    .flatMap<{ signal: number | null; pid: number | null }>((line) => {
+      try {
+        const { fields } = JSON.parse(line) as {
+          fields?: Record<string, unknown>;
+        };
+        if (fields?.machine !== agentId) return [];
+        if (
+          fields.message === "machine action failed" &&
+          fields.op === "starting" &&
+          typeof fields.error === "string"
+        )
+          return fields.error.includes("killed by SIGKILL")
+            ? [{ signal: 9, pid: null }]
+            : [];
+        if (
+          typeof fields.signal === "number" &&
+          typeof fields.message === "string" &&
+          fields.message.startsWith("vm runner: a machine's VMM was killed")
+        )
+          return [
             {
               signal: fields.signal,
               pid: typeof fields.pid === "number" ? fields.pid : null,
             },
-          ]
-        : [];
-    } catch {
-      return [];
-    }
-  });
+          ];
+        return typeof fields.pid === "number" &&
+          typeof fields.message === "string" &&
+          fields.message.startsWith("VM exited without shutdown acknowledgment")
+          ? [{ signal: null, pid: fields.pid }]
+          : [];
+      } catch {
+        return [];
+      }
+    });
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what provisions the claim the agent's runner keeps its machines' disks on, which is the owner's storage: the provisioner of the claim's StorageClass, the cluster's default class when the claim names none. A provisioner that hands out a directory of the node makes the claim part of the node's own disk, which nothing may fill.
