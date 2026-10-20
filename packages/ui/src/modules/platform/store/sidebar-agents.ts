@@ -9,10 +9,12 @@ export interface SidebarAgentsSlice {
   expandedSidebarAgents: Set<string>;
   sidebarSessionLimits: Map<string, number>;
   sidebarActiveSessionId: string | null;
+  sidebarAgentOrder: string[];
   toggleSidebarAgent: (id: string) => void;
   expandSidebarAgent: (id: string) => void;
   showMoreSidebarSessions: (id: string) => void;
   setSidebarActiveSession: (sessionId: string | null) => void;
+  reorderSidebarAgents: (order: string[]) => void;
 }
 
 export const createSidebarAgentsSlice: StateCreator<
@@ -24,6 +26,7 @@ export const createSidebarAgentsSlice: StateCreator<
   expandedSidebarAgents: new Set(),
   sidebarSessionLimits: new Map(),
   sidebarActiveSessionId: null,
+  sidebarAgentOrder: [],
   toggleSidebarAgent: (id) =>
     set((s) => {
       const next = new Set(s.expandedSidebarAgents);
@@ -53,4 +56,5 @@ export const createSidebarAgentsSlice: StateCreator<
     }),
   setSidebarActiveSession: (sessionId) =>
     set({ sidebarActiveSessionId: sessionId }),
+  reorderSidebarAgents: (order) => set({ sidebarAgentOrder: order }),
 });

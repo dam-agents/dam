@@ -58,13 +58,25 @@ export interface VerdictPart {
   allowed: boolean;
 }
 
+export interface FormPart {
+  kind: "form";
+  formId: string;
+  formKind: "connect" | "select" | "toggle-list" | "input" | "confirm";
+  label: string;
+  options?: Array<{ id: string; label: string; defaultOn?: boolean }>;
+  summary?: string;
+  locksComposer?: boolean;
+  answered?: boolean;
+}
+
 export type MessagePart =
   | TextPart
   | ThoughtPart
   | ImagePart
   | FilePart
   | ToolChip
-  | VerdictPart;
+  | VerdictPart
+  | FormPart;
 
 export interface Message {
   id: string;

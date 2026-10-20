@@ -179,6 +179,12 @@ function generateSessions(
   return sessions;
 }
 
+export const MOCK_SESSION_IDS = {
+  artifact: "sess-artifact-example",
+  browser: "sess-browser-example",
+  longChat: "sess-long-chat-example",
+};
+
 export const mockSessions: Record<string, unknown[]> = {
   [AGENT_IDS.codexResearch]: generateSessions(AGENT_IDS.codexResearch, 55, {
     runningCount: 2,

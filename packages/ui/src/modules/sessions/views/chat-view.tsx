@@ -36,11 +36,9 @@ import { ResizeHandle } from "../../../components/resize-handle.js";
 import { isMobile } from "../../../lib/breakpoints.js";
 import {
   type AgentChrome,
-  LayoutVariantPicker,
+  LeftDockedPanel,
+  type LeftPanelKind,
   WorkspaceChatHeader,
-  WorkspaceComposerLinks,
-  WorkspaceEdgeDock,
-  type WorkspaceHeaderMode,
 } from "../../../mock/chat-workspace-variants.js";
 import { queryClient } from "../../../query-client.js";
 import type { SessionError } from "../../../store.js";
@@ -54,7 +52,6 @@ import {
   useIsAgentInaccessible,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
-import { AgentAvatar } from "../../agents/components/char-avatar.js";
 import { AgentInaccessibleOverlay } from "../../agents/components/agent-inaccessible-overlay.js";
 import { AgentUnavailableOverlay } from "../../agents/components/agent-unavailable-overlay.js";
 import { ContributionFailuresBadge } from "../../agents/components/contribution-failures-badge.js";
@@ -68,7 +65,6 @@ import {
 } from "../../agents/hooks/use-restart-agent.js";
 import { isExperimentSandbox } from "../../agents/utils/agent-kind.js";
 import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { ChatArtifactsPanel } from "../../artifacts/components/chat-artifacts-panel.js";
 import { DockedArtifactPanel } from "../../artifacts/components/docked-artifact-panel.js";
 import { useAgentExperimentsLive } from "../../experiments/api/queries.js";
 import { ExperimentDockPanel } from "../../experiments/components/experiment-dock-panel.js";
@@ -76,18 +72,15 @@ import { ExperimentPromptChips } from "../../experiments/components/experiment-p
 import { useDockedExperiment } from "../../experiments/hooks/use-docked-experiment.js";
 import { useExperimentGreeting } from "../../experiments/hooks/use-experiment-greeting.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
-import { FilesPanel } from "../../files/components/files-panel.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
 import { useKnowledgeBaseGreeting } from "../../knowledge-bases/hooks/use-knowledge-base-greeting.js";
 import { confirmDeleteKnowledgeBase } from "../../knowledge-bases/lib/confirm-delete.js";
 import {
-  DEMO_HEADER_CLASS,
   DEMO_HEADER_TEXT_OVERRIDES,
   DemoHeaderActions,
-  DemoHeaderTag,
 } from "../../packs/components/demo-treatments.js";
-import { getSuggestedPrompt } from "../../packs/data/pack-demo-fixtures.js";
+import { getDemoFixtures } from "../../packs/data/pack-demo-fixtures.js";
 import {
   useDemoPackId,
   useIsDemoAgent,
@@ -102,7 +95,6 @@ import {
   getDefaultExamples,
   useRotatingPlaceholder,
 } from "../../schedules/components/schedule-chat-discovery.js";
-import { ScheduleIndicator } from "../../schedules/components/schedule-indicator.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import {
   acpSessionsKeys,
@@ -116,22 +108,12 @@ import { ChatMessage } from "../components/chat-message.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
-import { SkillsIndicator } from "../components/skills-indicator.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
 import { useSessionUrlSync } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
-
-const HEADER_MODES: Record<number, WorkspaceHeaderMode> = {
-  1: "pills",
-  2: "agentMenu",
-  3: "search",
-  4: "title",
-  5: "icons",
-  6: "title",
-};
 
 const ConfigureAgentModal = lazy(() =>
   import("../../sandboxes/components/configure-agent-modal.js").then((m) => ({
@@ -204,16 +186,13 @@ export function ChatView() {
       agentExperiments.find((e) => e.dashboardArtifactId === openArtifactId) ??
       null)
     : null;
-  const artifactsSectionOpen = useStore((s) => s.artifactsSectionOpen);
-  const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
   const goBack = useStore((s) => s.goBack);
+  const selectAgent = useStore((s) => s.selectAgent);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
   );
   const setView = useStore((s) => s.setView);
-  const filesSectionOpen = useStore((s) => s.filesSectionOpen);
-  const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const hasPendingPermission = useHasPendingPermission();
   const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
@@ -223,25 +202,17 @@ export function ChatView() {
   const [configureSection, setConfigureSection] =
     useState<SandboxSection | null>(null);
 
-  const [leftW, setLeftW] = useState(
-    () => Number(localStorage.getItem("platform-left-w")) || 220,
-  );
+  const isMock = import.meta.env.VITE_MOCK === "true";
+
+  const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
+
   const [rightW, setRightW] = useState<number | null>(
     () => Number(localStorage.getItem("platform-file-w")) || null,
   );
   const filePanelRef = useRef<HTMLDivElement>(null);
-  const sectionTransition = "transition-[flex] duration-200";
-  const sectionFlex = (open: boolean, fixedPx?: number): CSSProperties => ({
-    flex: !open
-      ? "0 0 44px"
-      : fixedPx !== undefined
-        ? `0 0 ${fixedPx}px`
-        : "1 1 0%",
-  });
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const [layoutVariant, setLayoutVariant] = useState(0);
 
   const {
     resetSession,
@@ -276,17 +247,14 @@ export function ChatView() {
 
   const defaultPlaceholder = useRotatingPlaceholder(getDefaultExamples());
 
-  const createdFromPack = useStore((s) => s.createdFromPack);
-  const packPlaceholder = useMemo(() => {
-    const packId =
-      demoPackId ?? (selectedAgent ? createdFromPack.get(selectedAgent) : null);
-    if (!packId) return null;
-    const prompt = getSuggestedPrompt(packId);
-    if (!prompt) return null;
-    return { text: prompt, fading: false };
-  }, [demoPackId, selectedAgent, createdFromPack]);
+  const demoPlaceholder = useMemo(() => {
+    if (!demoPackId) return null;
+    const fixtures = getDemoFixtures(demoPackId);
+    if (!fixtures?.suggestedPrompt) return null;
+    return { text: fixtures.suggestedPrompt, fading: false };
+  }, [demoPackId]);
 
-  const rotatingPlaceholder = packPlaceholder ?? defaultPlaceholder;
+  const rotatingPlaceholder = demoPlaceholder ?? defaultPlaceholder;
 
   const launchPaneActive = Boolean(
     pendingLaunch?.focused && pendingLaunch.agentId === selectedAgent,
@@ -297,6 +265,7 @@ export function ChatView() {
 
   const stickRef = useRef(true);
   const [showJump, setShowJump] = useState(false);
+  const [scrolledFromTop, setScrolledFromTop] = useState(false);
 
   const scrollToBottom = useCallback(() => {
     const el = messagesRef.current;
@@ -355,6 +324,7 @@ export function ChatView() {
       const near = nearBottom();
       stickRef.current = near;
       setShowJump(!near);
+      setScrolledFromTop(el.scrollTop > 8);
     };
 
     const ro = new ResizeObserver(() => {
@@ -502,7 +472,33 @@ export function ChatView() {
     </Button>
   );
 
-  const agentDropdown = null;
+  const agentDropdown = !isDemo ? (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon-xs"
+          aria-label={surfaceCopy.actionsAria}
+        >
+          <OverflowMenuVertical size={16} />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem onSelect={handleConfigureSandbox}>
+          {surfaceCopy.configure}
+        </DropdownMenuItem>
+        <DropdownMenuItem onSelect={handleRestartSandbox}>
+          Restart
+        </DropdownMenuItem>
+        <DropdownMenuItem
+          className="text-destructive focus:text-destructive"
+          onSelect={handleDeleteSandbox}
+        >
+          {surfaceCopy.delete}
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
+  ) : null;
 
   const headerStatus =
     isDemo && demoActions ? (
@@ -517,25 +513,15 @@ export function ChatView() {
       />
     );
 
-  const agentAvatarEl =
-    !isDemo && selectedAgent && agentDisplay ? (
-      <AgentAvatar
-        agentId={selectedAgent}
-        state={agentDisplay.state}
-        className="!size-6"
-      />
-    ) : null;
-
-  const statusDot = agentAvatarEl ?? (
-    !isDemo ? (
-      <span
-        aria-hidden
-        className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
-      />
-    ) : null
+  const statusDot = !isDemo && (
+    <span
+      aria-hidden
+      className={cn("h-2 w-2 rounded-full shrink-0", dotColor)}
+    />
   );
 
-  const v = layoutVariant;
+  const rightDockOpen = !!(openFilePath || openArtifactId || dockedExperiment);
+
   const chrome: AgentChrome = {
     agentId: selectedAgent,
     name: selectedAgentName ?? "",
@@ -544,90 +530,54 @@ export function ChatView() {
     status: headerStatus,
     backButton,
     onOpenFile: openFileHandler,
+    onConfigure: () => setConfigureSection("setup"),
   };
-
-  const sidebarAgentHeader = (
-    <div
-      className={cn(
-        "shrink-0 p-3",
-        isDemo && DEMO_HEADER_CLASS,
-      )}
-    >
-      <div className="flex items-center gap-2 min-w-0">
-        {backButton}
-        {agentAvatarEl}
-        <h1
-          className={cn(
-            "text-sm font-semibold truncate flex-1 min-w-0",
-            isDemo ? DEMO_HEADER_TEXT_OVERRIDES.name : "text-foreground",
-          )}
-        >
-          {selectedAgentName}
-        </h1>
-        {isDemo && <DemoHeaderTag />}
-        <div className="ml-auto shrink-0">{agentDropdown}</div>
-      </div>
-      <div className="mt-2 flex items-center gap-2">{headerStatus}</div>
-    </div>
-  );
 
   return (
     <div className="flex flex-col h-full bg-background relative overflow-hidden">
       <div className="flex flex-1 min-h-0">
-        {v === 0 && (
-          <>
-            <div
-              style={{ width: leftW }}
-              className={cn(
-                "shrink-0 flex flex-col border-r border-border overflow-hidden relative z-content",
-                mobileScreen === "chat" ? "hidden md:flex" : "flex",
-                mobileScreen === "sessions" && "max-md:!w-full",
-              )}
-            >
-              {sidebarAgentHeader}
-              {runtimeOutdated && (
-                <RuntimeOutdatedNotice agentId={selectedAgent} />
-              )}
-              <FilesPanel
-                open={filesSectionOpen}
-                onToggle={() => setFilesSectionOpen(!filesSectionOpen)}
-                className={sectionTransition}
-                style={sectionFlex(filesSectionOpen)}
-                onOpenFile={openFileHandler}
-              />
-              <ChatArtifactsPanel
-                agentId={selectedAgent}
-                open={true}
-                onToggle={() => setArtifactsSectionOpen(!artifactsSectionOpen)}
-                className={sectionTransition}
-                style={sectionFlex(true)}
-              />
-            </div>
-            <ResizeHandle
-              side="left"
-              onResize={(d) =>
-                setLeftW((w) => {
-                  const next = Math.max(140, Math.min(400, w + d));
-                  localStorage.setItem("platform-left-w", String(next));
-                  return next;
-                })
-              }
-            />
-          </>
+        {isMock && (
+          <LeftDockedPanel
+            openPanels={openPanels}
+            chrome={chrome}
+            onClosePanel={(panel) =>
+              setOpenPanels((prev) => {
+                const next = new Set(prev);
+                next.delete(panel);
+                return next;
+              })
+            }
+          />
         )}
         <div
           className={cn(
             "relative flex flex-1 flex-col min-w-0",
-            v === 0 && mobileScreen === "sessions" ? "hidden md:flex" : "flex",
+            mobileScreen === "sessions" ? "hidden md:flex" : "flex",
           )}
         >
-          {v >= 1 && (
-            <WorkspaceChatHeader chrome={chrome} mode={HEADER_MODES[v]!} />
-          )}
-          {v >= 1 && runtimeOutdated && (
-            <RuntimeOutdatedNotice agentId={selectedAgent} />
-          )}
-          {v === 6 && <WorkspaceEdgeDock chrome={chrome} />}
+          <WorkspaceChatHeader
+            chrome={chrome}
+            openPanels={isMock ? openPanels : undefined}
+            onTogglePanel={
+              isMock
+                ? (panel: LeftPanelKind) =>
+                    setOpenPanels((prev) => {
+                      const next = new Set(prev);
+                      if (next.has(panel)) next.delete(panel);
+                      else next.add(panel);
+                      return next;
+                    })
+                : undefined
+            }
+            onNewChat={
+              isMock
+                ? () => {
+                    if (selectedAgent) selectAgent(selectedAgent);
+                  }
+                : undefined
+            }
+          />
+          {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
           {sessionMode === SessionMode.Terminal &&
           selectedAgent &&
           sessionId ? (
@@ -657,6 +607,12 @@ export function ChatView() {
           ) : (
             <>
               <div className="relative flex flex-1 flex-col min-h-0">
+                {scrolledFromTop && (
+                  <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-8 bg-gradient-to-b from-background to-transparent" />
+                )}
+                {showJump && (
+                  <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-8 bg-gradient-to-t from-background to-transparent" />
+                )}
                 <div ref={messagesRef} className="flex-1 overflow-y-auto">
                   <ChatColumn className="px-4 md:px-8 py-8 flex flex-col gap-8 min-h-full">
                     {loadingSession && (
@@ -692,6 +648,8 @@ export function ChatView() {
                             appears here as soon as it&apos;s up.
                           </p>
                         </div>
+                      ) : isMock ? (
+                        <div className="flex flex-1 flex-col items-center justify-center" />
                       ) : (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
@@ -769,66 +727,54 @@ export function ChatView() {
                             }
                           />
                         )}
-                        {selectedAgent && (
-                          <>
-                            <span className="text-border">·</span>
-                            <ScheduleIndicator
-                              agentId={selectedAgent}
-                              onManage={() => setConfigureSection("schedules")}
-                            />
-                            <span className="text-border">·</span>
-                            <SkillsIndicator
-                              agentId={selectedAgent}
-                              onManage={() => setConfigureSection("skills")}
-                            />
-                            {v === 4 && (
-                              <WorkspaceComposerLinks chrome={chrome} />
-                            )}
-                          </>
-                        )}
                       </div>
                     </ChatColumn>
                   </div>
                 )}
               </div>
-
             </>
           )}
         </div>
 
-
-        {/* Docked file/artifact viewer (opens on click) */}
-        {(openFilePath || openArtifactId || dockedExperiment) && (
-          <>
-            <div className="hidden md:flex">
-              <ResizeHandle
-                side="right"
-                onResize={(d) =>
-                  setRightW((w) => {
-                    const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
-                    const max = Math.min(960, window.innerWidth - 500);
-                    const v = Math.max(240, Math.min(max, base + d));
-                    localStorage.setItem("platform-file-w", String(v));
-                    return v;
-                  })
-                }
-              />
-            </div>
-            <div
-              ref={filePanelRef}
-              style={
-                rightW !== null
-                  ? ({ "--file-w": `${rightW}px` } as CSSProperties)
-                  : undefined
+        {rightDockOpen && (
+          <div className="hidden md:flex">
+            <ResizeHandle
+              side="right"
+              onResize={(d) =>
+                setRightW((w) => {
+                  const base = w ?? filePanelRef.current?.offsetWidth ?? 0;
+                  const max = Math.min(960, window.innerWidth - 500);
+                  const v = Math.max(240, Math.min(max, base + d));
+                  localStorage.setItem("platform-file-w", String(v));
+                  return v;
+                })
               }
-              className={cn(
-                "flex flex-col overflow-hidden bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-                rightW !== null
-                  ? "md:shrink-0 md:w-[var(--file-w)]"
-                  : "md:flex-1 md:basis-0 md:min-w-0",
-                "md:border-l md:border-border",
-              )}
-            >
+            />
+          </div>
+        )}
+        <div
+          ref={filePanelRef}
+          style={
+            rightW !== null && rightDockOpen
+              ? ({ "--file-w": `${rightW}px` } as CSSProperties)
+              : undefined
+          }
+          className={cn(
+            "flex flex-col overflow-hidden bg-background relative z-content",
+            "transition-[flex-grow,width,border-color] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+            rightDockOpen
+              ? cn(
+                  "max-md:fixed max-md:inset-0 max-md:z-overlay",
+                  rightW !== null
+                    ? "md:shrink-0 md:w-[var(--file-w)]"
+                    : "md:grow md:shrink md:basis-0 md:min-w-0",
+                  "md:border-l md:border-border",
+                )
+              : "md:grow-0 md:shrink-0 md:basis-0 md:w-0 md:border-l md:border-transparent",
+          )}
+        >
+          {rightDockOpen && (
+            <div className="anim-in flex h-full min-h-0 flex-col">
               {openFilePath ? (
                 <DockedFilePanel onOpenFile={openFileHandler} />
               ) : dashboardExperiment ? (
@@ -846,10 +792,9 @@ export function ChatView() {
                 />
               ) : null}
             </div>
-          </>
-        )}
+          )}
+        </div>
       </div>
-
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />
@@ -947,7 +892,6 @@ function SessionErrorCard({
           <p className="text-sm text-muted-foreground break-words">{body}</p>
         </div>
       </div>
-      {}
       {(error.kind === "connection" || error.kind === "orphaned") && (
         <div className="flex items-center gap-2 flex-wrap">
           {error.kind === "connection" ? (

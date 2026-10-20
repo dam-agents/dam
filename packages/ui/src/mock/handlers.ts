@@ -469,7 +469,37 @@ export const handlers = [
         console.info(`[MSW] Mock mutation: ${proc}`);
         if (proc === "agents.create") {
           mockEmpty = false;
-          return { result: { data: agents[0] } };
+          const entry = body?.[String(idx)];
+          const input = entry?.json ?? entry ?? body?.json ?? body;
+          const newAgent = {
+            id: `mock-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+            spawnedBy: null,
+            name: (input?.name as string) || `agent-${agents.length + 1}`,
+            templateId: (input?.templateId as string) || "claude-code",
+            templateUpdate: null,
+            image: "ghcr.io/anthropics/claude-code:latest",
+            description: "",
+            hibernationTimeoutMin: 30,
+            grantedSecretIds: [],
+            grantedConnectionIds: [],
+            state: "running" as const,
+            error: undefined,
+            stopRequested: false,
+            overBudget: false,
+            overBudgetMessage: undefined,
+            size: { cpu: "2000m", memory: "2Gi" },
+            podTerminationReason: undefined,
+            contributionFailures: [],
+            channels: [],
+            kind: undefined,
+            kbTemplateId: null,
+            features: { liveUpdates: true },
+          };
+          agents.push(newAgent as any);
+          void queryClient.invalidateQueries({
+            queryKey: agentsKeys.root,
+          });
+          return { result: { data: newAgent } };
         }
         if (proc === "agents.wake") {
           const entry = body?.[String(idx)];

@@ -1,32 +1,29 @@
 import {
   Add,
-  ChevronDown,
-  Cube,
+  Close,
+  Diagram,
   Document,
   DocumentAdd,
   Folder,
   FolderAdd,
   Folders,
-  Layers,
   Search,
   Upload,
 } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useMemo, useState } from "react";
 
+import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import {
-  Popover,
-  PopoverContent,
-  PopoverTrigger,
-} from "@/components/ui/popover";
+import {} from "@/components/ui/popover";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { AgentAvatar } from "../modules/agents/components/char-avatar.js";
 import { useArtifacts } from "../modules/artifacts/api/queries.js";
 import { ArtifactKindBadge } from "../modules/artifacts/components/artifact-badges.js";
 import { useDirSnapshot } from "../modules/files/api/queries.js";
@@ -38,18 +35,6 @@ import {
 import { InlineNameRow } from "../modules/files/components/inline-name-row.js";
 import { useStore } from "../store.js";
 
-export const WORKSPACE_VARIANTS = [
-  { label: "Current", note: "Existing panel, for comparison" },
-  { label: "Header pills", note: "Files and Artifacts pills open popovers" },
-  { label: "Agent menu", note: "Click the agent name to see its workspace" },
-  { label: "Quick find", note: "One search field for files and artifacts (⌘K)" },
-  { label: "Composer row", note: "Files and artifacts next to model and skills" },
-  { label: "Icon buttons", note: "Two quiet icons with tooltips by the name" },
-  { label: "Edge dock", note: "Small floating dock on the chat's left edge" },
-];
-
-export type WorkspaceHeaderMode = "pills" | "agentMenu" | "search" | "icons" | "title";
-
 export interface AgentChrome {
   agentId: string | null;
   name: string;
@@ -58,13 +43,13 @@ export interface AgentChrome {
   status: ReactNode;
   backButton: ReactNode;
   onOpenFile: (path: string, opts?: { edit?: boolean }) => void;
+  onConfigure?: () => void;
 }
 
 const ROUNDED_ROWS =
   "[&_.group]:mx-1.5 [&_.group]:rounded-lg [&_.group]:transition-colors";
-const POPOVER_BODY = "w-[320px] max-h-[60vh] overflow-y-auto rounded-2xl p-2";
 
-function WorkspaceFileTree({
+export function WorkspaceFileTree({
   onOpenFile,
 }: {
   onOpenFile: AgentChrome["onOpenFile"];
@@ -157,7 +142,7 @@ function useAgentArtifacts(agentId: string | null) {
   return { artifacts: data, isPending };
 }
 
-function WorkspaceArtifactList({
+export function WorkspaceArtifactList({
   agentId,
   filter,
   onPicked,
@@ -176,7 +161,11 @@ function WorkspaceArtifactList({
   if (shown.length === 0) {
     return (
       <p className="px-3 py-2 text-sm text-muted-foreground">
-        {isPending ? "Loading…" : q ? "No matching artifacts" : "No artifacts yet"}
+        {isPending
+          ? "Loading…"
+          : q
+            ? "No matching artifacts"
+            : "No artifacts yet"}
       </p>
     );
   }
@@ -204,204 +193,28 @@ function WorkspaceArtifactList({
   );
 }
 
-function Segmented<T extends string>({
-  value,
-  options,
-  onChange,
-}: {
-  value: T;
-  options: { value: T; label: string }[];
-  onChange: (v: T) => void;
-}) {
-  return (
-    <div className="flex rounded-full bg-muted p-1">
-      {options.map((o) => (
-        <button
-          key={o.value}
-          type="button"
-          onClick={() => onChange(o.value)}
-          className={cn(
-            "h-7 flex-1 rounded-full px-3 text-sm font-medium transition-colors",
-            value === o.value
-              ? "bg-background text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground",
-          )}
-        >
-          {o.label}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-function WorkspaceTabs({
-  chrome,
-  onPicked,
-}: {
-  chrome: AgentChrome;
-  onPicked?: () => void;
-}) {
-  const [tab, setTab] = useState<"files" | "artifacts">("files");
-  const { artifacts } = useAgentArtifacts(chrome.agentId);
-  return (
-    <div className="flex flex-col gap-2">
-      <Segmented
-        value={tab}
-        onChange={setTab}
-        options={[
-          { value: "files", label: "Files" },
-          {
-            value: "artifacts",
-            label: artifacts.length
-              ? `Artifacts ${artifacts.length}`
-              : "Artifacts",
-          },
-        ]}
-      />
-      {tab === "files" ? (
-        <WorkspaceFileTree onOpenFile={chrome.onOpenFile} />
-      ) : (
-        <WorkspaceArtifactList agentId={chrome.agentId} onPicked={onPicked} />
-      )}
-    </div>
-  );
-}
-
-function AgentTitle({ chrome }: { chrome: AgentChrome }) {
+function AgentMenuTrigger({ chrome }: { chrome: AgentChrome }) {
   return (
     <div className="flex min-w-0 items-center gap-2">
       {chrome.backButton}
-      {chrome.statusDot}
-      <h1 className="min-w-0 truncate text-sm font-semibold text-foreground">
-        {chrome.name}
-      </h1>
-      <div className="shrink-0">{chrome.menu}</div>
-    </div>
-  );
-}
-
-function Pill({
-  icon,
-  label,
-  count,
-  ...props
-}: {
-  icon: ReactNode;
-  label: string;
-  count?: number;
-} & React.ComponentProps<"button">) {
-  return (
-    <button
-      type="button"
-      {...props}
-      className="inline-flex h-8 items-center gap-1.5 rounded-full bg-muted px-3 text-sm font-medium text-foreground transition-colors hover:bg-muted/70 data-[state=open]:bg-foreground data-[state=open]:text-background"
-    >
-      {icon}
-      {label}
-      {count !== undefined && count > 0 && (
-        <span className="opacity-60">{count}</span>
-      )}
-    </button>
-  );
-}
-
-function IconButton({
-  label,
-  children,
-  ...props
-}: {
-  label: string;
-  children: ReactNode;
-} & React.ComponentProps<"button">) {
-  return (
-    <Tooltip content={label} className="text-sm">
       <button
         type="button"
-        aria-label={label}
-        {...props}
-        className="relative flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground"
+        onClick={chrome.onConfigure}
+        data-pointer-target="header-agent-name"
+        className="group flex min-w-0 items-center gap-2 rounded-lg py-1 pl-1 pr-3 transition-colors hover:bg-muted"
       >
-        {children}
+        {chrome.agentId && (
+          <AgentAvatar
+            agentId={chrome.agentId}
+            state="running"
+            className="!size-6"
+          />
+        )}
+        <span className="min-w-0 truncate text-sm font-semibold text-foreground">
+          {chrome.name}
+        </span>
+        {chrome.statusDot}
       </button>
-    </Tooltip>
-  );
-}
-
-function FilesPopover({
-  chrome,
-  trigger,
-  side = "bottom",
-  align = "start",
-}: {
-  chrome: AgentChrome;
-  trigger: ReactNode;
-  side?: "top" | "bottom" | "right";
-  align?: "start" | "center";
-}) {
-  return (
-    <Popover>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent side={side} align={align} className={POPOVER_BODY}>
-        <WorkspaceFileTree onOpenFile={chrome.onOpenFile} />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function ArtifactsPopover({
-  chrome,
-  trigger,
-  side = "bottom",
-  align = "start",
-}: {
-  chrome: AgentChrome;
-  trigger: ReactNode;
-  side?: "top" | "bottom" | "right";
-  align?: "start" | "center";
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger asChild>{trigger}</PopoverTrigger>
-      <PopoverContent side={side} align={align} className={POPOVER_BODY}>
-        <WorkspaceArtifactList
-          agentId={chrome.agentId}
-          onPicked={() => setOpen(false)}
-        />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function AgentMenuTrigger({ chrome }: { chrome: AgentChrome }) {
-  const [open, setOpen] = useState(false);
-  return (
-    <div className="flex min-w-0 items-center gap-2">
-      {chrome.backButton}
-      <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            className="flex min-w-0 items-center gap-2 rounded-full py-1 pr-2.5 pl-3 transition-colors hover:bg-muted data-[state=open]:bg-muted"
-          >
-            {chrome.statusDot}
-            <span className="min-w-0 truncate text-sm font-semibold text-foreground">
-              {chrome.name}
-            </span>
-            <ChevronDown size={16} className="shrink-0 text-muted-foreground" />
-          </button>
-        </PopoverTrigger>
-        <PopoverContent align="start" className={cn(POPOVER_BODY, "p-3")}>
-          <div className="mb-3 flex items-center gap-2 px-1">
-            {chrome.statusDot}
-            <span className="min-w-0 flex-1 truncate text-sm font-semibold text-foreground">
-              {chrome.name}
-            </span>
-            {chrome.menu}
-          </div>
-          <WorkspaceTabs chrome={chrome} onPicked={() => setOpen(false)} />
-        </PopoverContent>
-      </Popover>
     </div>
   );
 }
@@ -430,7 +243,9 @@ function QuickFind({ chrome }: { chrome: AgentChrome }) {
         <span className="flex-1 text-left">Find files and artifacts</span>
         <kbd className="font-sans text-sm opacity-70">⌘K</kbd>
       </button>
-      {open && <QuickFindDialog chrome={chrome} onClose={() => setOpen(false)} />}
+      {open && (
+        <QuickFindDialog chrome={chrome} onClose={() => setOpen(false)} />
+      )}
     </>
   );
 }
@@ -453,7 +268,10 @@ function QuickFindDialog({
   }, [root, query]);
 
   return (
-    <div className="fixed inset-0 z-overlay flex items-start justify-center bg-black/20 pt-[14vh]" onClick={onClose}>
+    <div
+      className="fixed inset-0 z-overlay flex items-start justify-center bg-black/20 pt-[14vh]"
+      onClick={onClose}
+    >
       <div
         className="flex max-h-[60vh] w-[560px] flex-col overflow-hidden rounded-2xl bg-background shadow-[0_16px_48px_rgba(0,0,0,0.18)] anim-in"
         onClick={(e) => e.stopPropagation()}
@@ -512,193 +330,132 @@ function QuickFindDialog({
   );
 }
 
-/** Borderless title row at the top of the chat column. */
-export function WorkspaceChatHeader({
-  chrome,
-  mode,
+export type LeftPanelKind = "files" | "artifacts";
+
+function PanelToggleButton({
+  icon,
+  label,
+  active,
+  onClick,
 }: {
-  chrome: AgentChrome;
-  mode: WorkspaceHeaderMode;
+  icon: ReactNode;
+  label: string;
+  active: boolean;
+  onClick: () => void;
 }) {
-  const { artifacts } = useAgentArtifacts(chrome.agentId);
   return (
-    <div className="flex h-14 shrink-0 items-center gap-3 pr-16 pl-6">
-      {mode === "agentMenu" ? (
-        <AgentMenuTrigger chrome={chrome} />
-      ) : (
-        <AgentTitle chrome={chrome} />
-      )}
-      {mode === "pills" && (
-        <div className="flex items-center gap-2">
-          <FilesPopover
-            chrome={chrome}
-            trigger={<Pill icon={<Folder size={16} />} label="Files" />}
-          />
-          <ArtifactsPopover
-            chrome={chrome}
-            trigger={
-              <Pill
-                icon={<Cube size={16} />}
-                label="Artifacts"
-                count={artifacts.length}
-              />
-            }
-          />
-        </div>
-      )}
-      {mode === "icons" && (
-        <div className="flex items-center gap-0.5">
-          <FilesPopover
-            chrome={chrome}
-            trigger={
-              <IconButton label="Files">
-                <Folder size={16} />
-              </IconButton>
-            }
-          />
-          <ArtifactsPopover
-            chrome={chrome}
-            trigger={
-              <IconButton
-                label={`Artifacts (${artifacts.length})`}
-              >
-                <Cube size={16} />
-              </IconButton>
-            }
-          />
-        </div>
-      )}
-      {mode === "search" && (
-        <div className="flex flex-1 justify-center">
-          <QuickFind chrome={chrome} />
-        </div>
-      )}
-      <div className="ml-auto flex items-center gap-2">{chrome.status}</div>
-    </div>
-  );
-}
-
-/** Links that sit in the row under the composer, beside model and skills. */
-export function WorkspaceComposerLinks({ chrome }: { chrome: AgentChrome }) {
-  const { artifacts } = useAgentArtifacts(chrome.agentId);
-  const link =
-    "flex items-center gap-1 text-sm text-muted-foreground transition-colors hover:text-foreground data-[state=open]:text-foreground";
-  return (
-    <>
-      <span className="text-border">·</span>
-      <FilesPopover
-        chrome={chrome}
-        side="top"
-        trigger={
-          <button type="button" className={link}>
-            <Folder size={16} /> Files
-          </button>
-        }
-      />
-      <span className="text-border">·</span>
-      <ArtifactsPopover
-        chrome={chrome}
-        side="top"
-        trigger={
-          <button type="button" className={link}>
-            <Cube size={16} />
-            {artifacts.length} artifact{artifacts.length === 1 ? "" : "s"}
-          </button>
-        }
-      />
-    </>
-  );
-}
-
-/** Floating vertical dock pinned to the chat column's left edge. */
-export function WorkspaceEdgeDock({ chrome }: { chrome: AgentChrome }) {
-  const { artifacts } = useAgentArtifacts(chrome.agentId);
-  return (
-    <div className="absolute top-1/2 left-3 z-raised hidden -translate-y-1/2 flex-col gap-1 rounded-full bg-background p-1 shadow-[0_2px_12px_rgba(0,0,0,0.08)] ring-1 ring-black/5 md:flex">
-      <FilesPopover
-        chrome={chrome}
-        side="right"
-        trigger={
-          <IconButton label="Files">
-            <Folder size={16} />
-          </IconButton>
-        }
-      />
-      <ArtifactsPopover
-        chrome={chrome}
-        side="right"
-        trigger={
-          <IconButton
-            label={`Artifacts (${artifacts.length})`}
-          >
-            <Cube size={16} />
-          </IconButton>
-        }
-      />
-    </div>
-  );
-}
-
-export function LayoutVariantPicker(props: {
-  current: number;
-  onChange: (v: number) => void;
-}) {
-  if (window.self !== window.top) return null;
-  return <LayoutVariantPickerPanel {...props} />;
-}
-
-function LayoutVariantPickerPanel({
-  current,
-  onChange,
-}: {
-  current: number;
-  onChange: (v: number) => void;
-}) {
-  const [open, setOpen] = useState(false);
-  return (
-    <>
+    <Tooltip content={label}>
       <button
         type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="fixed right-4 bottom-4 z-[9999] flex h-9 items-center gap-2 rounded-full bg-foreground px-4 text-sm font-medium text-background shadow-md"
+        onClick={onClick}
+        className={cn(
+          "flex h-8 w-8 items-center justify-center rounded-lg transition-colors",
+          active
+            ? "bg-muted text-foreground"
+            : "text-muted-foreground hover:bg-muted hover:text-foreground",
+        )}
       >
-        <Layers size={16} />
-        {current}. {WORKSPACE_VARIANTS[current]?.label}
+        {icon}
       </button>
-      {open && (
-        <>
-          <div
-            className="fixed inset-0 z-[9998]"
-            onClick={() => setOpen(false)}
-          />
-          <div className="fixed right-4 bottom-15 z-[9999] flex w-[300px] flex-col gap-0.5 rounded-2xl bg-background p-2 shadow-lg ring-1 ring-black/5">
-            <p className="px-3 py-1.5 text-sm font-semibold text-foreground">
-              Chat workspace options
-            </p>
-            {WORKSPACE_VARIANTS.map((v, i) => (
-              <button
-                key={v.label}
-                type="button"
-                onClick={() => {
-                  onChange(i);
-                  setOpen(false);
-                }}
-                className={cn(
-                  "flex flex-col gap-0.5 rounded-xl px-3 py-2 text-left transition-colors",
-                  i === current
-                    ? "bg-muted text-foreground"
-                    : "text-muted-foreground hover:bg-muted hover:text-foreground",
-                )}
-              >
-                <span className="text-sm font-medium">
-                  {i}. {v.label}
-                </span>
-                <span className="text-sm opacity-80">{v.note}</span>
-              </button>
-            ))}
-          </div>
-        </>
+    </Tooltip>
+  );
+}
+
+export function LeftDockedPanel({
+  openPanels,
+  chrome,
+  onClosePanel,
+}: {
+  openPanels: ReadonlySet<LeftPanelKind>;
+  chrome: AgentChrome;
+  onClosePanel: (panel: LeftPanelKind) => void;
+}) {
+  const panels = (["files", "artifacts"] as const).filter((k) =>
+    openPanels.has(k),
+  );
+  const isOpen = panels.length > 0;
+  return (
+    <div
+      className={cn(
+        "shrink-0 overflow-hidden bg-background transition-[width,border-color] duration-200 ease-[cubic-bezier(0.32,0.72,0,1)]",
+        isOpen
+          ? "w-[280px] border-r border-border"
+          : "w-0 border-r border-transparent",
       )}
-    </>
+    >
+      <div className="flex h-full w-[280px] flex-col">
+        {panels.map((kind, i) => (
+          <div
+            key={kind}
+            className={cn(
+              "flex flex-col overflow-hidden anim-in",
+              panels.length > 1 ? "flex-1 min-h-0" : "flex-1",
+              i > 0 && "border-t border-border",
+            )}
+          >
+            <div className="flex h-10 shrink-0 items-center justify-between border-b border-border px-3">
+              <span className="text-sm font-semibold text-foreground">
+                {kind === "files" ? "Files" : "Artifacts"}
+              </span>
+              <button
+                type="button"
+                onClick={() => onClosePanel(kind)}
+                className="flex h-7 w-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+              >
+                <Close size={16} />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto py-1">
+              {kind === "files" ? (
+                <WorkspaceFileTree onOpenFile={chrome.onOpenFile} />
+              ) : (
+                <WorkspaceArtifactList agentId={chrome.agentId} />
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+export function WorkspaceChatHeader({
+  chrome,
+  openPanels,
+  onTogglePanel,
+  onNewChat,
+}: {
+  chrome: AgentChrome;
+  openPanels?: ReadonlySet<LeftPanelKind>;
+  onTogglePanel?: (panel: LeftPanelKind) => void;
+  onNewChat?: () => void;
+}) {
+  return (
+    <div className="flex h-14 shrink-0 items-center gap-2 pr-6 pl-6">
+      <AgentMenuTrigger chrome={chrome} />
+      <PanelToggleButton
+        icon={<Folder size={16} />}
+        label="Files"
+        active={openPanels?.has("files") ?? false}
+        onClick={() => onTogglePanel?.("files")}
+      />
+      <PanelToggleButton
+        icon={<Diagram size={16} />}
+        label="Artifacts"
+        active={openPanels?.has("artifacts") ?? false}
+        onClick={() => onTogglePanel?.("artifacts")}
+      />
+      <div className="flex flex-1 items-center justify-center min-w-0">
+        <div className="flex w-full max-w-[813px] items-center justify-end px-4">
+          {chrome.status}
+          {onNewChat && (
+            <Button variant="outline" size="sm" onClick={onNewChat}>
+              <Add size={16} />
+              New chat
+            </Button>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
