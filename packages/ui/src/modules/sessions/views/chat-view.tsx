@@ -1,7 +1,6 @@
 import {
   ArrowDown,
   ArrowLeft,
-  Notification,
   OverflowMenuVertical,
   Renew,
   TrashCan,
@@ -264,7 +263,6 @@ export function ChatView() {
   }, []);
 
   const [openPanels, setOpenPanels] = useState<Set<LeftPanelKind>>(new Set());
-  const toggleNotifications = useStore((s) => s.toggleNotifications);
 
   const [rightW, setRightW] = useState<number | null>(
     () => Number(localStorage.getItem("platform-file-w")) || null,
@@ -613,25 +611,8 @@ export function ChatView() {
           <PointerMarkerOverlay />
         </Suspense>
       )}
-      {isMock && (
-        <div
-          className={cn(
-            "flex shrink-0 items-center justify-end border-b px-6 h-10 transition-colors duration-200",
-            openPanels.size > 0 || rightDockOpen
-              ? "border-border"
-              : "border-transparent",
-          )}
-        >
-          <button
-            type="button"
-            onClick={toggleNotifications}
-            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-            aria-label="Activity"
-            title="Activity"
-          >
-            <Notification size={16} />
-          </button>
-        </div>
+      {isMock && (openPanels.size > 0 || rightDockOpen) && (
+        <div className="flex shrink-0 items-center justify-end border-b border-border px-6 h-10" />
       )}
       <div className="flex flex-1 min-h-0">
         {isMock && !browserFullscreen && (

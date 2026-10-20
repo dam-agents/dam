@@ -1,10 +1,8 @@
 import {
   ChevronLeft,
   ChevronRight,
-  Document,
   ListBoxes,
   Renew,
-  TextFont,
   Warning,
 } from "@carbon/icons-react";
 import { useRef, useState } from "react";
@@ -121,23 +119,9 @@ function StepControls() {
 }
 
 function MockStateBarPanel() {
-  const view = useStore((s) => s.view);
-  const setView = useStore((s) => s.setView);
   const openApprovals = useStore((s) => s.openApprovals);
   return (
     <>
-      <button
-        type="button"
-        onClick={() => setView("placeholder-texts")}
-        className={cn(
-          "fixed bottom-4 left-[72px] z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
-          view === "placeholder-texts" && "bg-muted",
-        )}
-        aria-label="Placeholder texts"
-      >
-        <TextFont size={16} className="text-foreground" />
-      </button>
-
       <button
         type="button"
         onClick={() => {
@@ -158,24 +142,6 @@ function MockStateBarPanel() {
       </button>
 
       <StepControls />
-
-      <button
-        type="button"
-        onClick={() => {
-          if (view === "handoff-sheet") {
-            useStore.setState({ view: "chat" });
-          } else {
-            setView("handoff-sheet");
-          }
-        }}
-        className={cn(
-          "fixed bottom-4 right-4 z-[9999] flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card shadow-lg transition-colors hover:bg-muted",
-          view === "handoff-sheet" && "bg-muted",
-        )}
-        aria-label="Handoff sheet"
-      >
-        <Document size={16} className="text-foreground" />
-      </button>
     </>
   );
 }

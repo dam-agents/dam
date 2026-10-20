@@ -1,5 +1,6 @@
+import { ArrowRight } from "@carbon/icons-react";
+
 import { Button } from "@/components/ui/button";
-import { Callout } from "@/components/ui/callout";
 
 import { useStore } from "../../../store.js";
 import { useInstantStart } from "../context.js";
@@ -10,13 +11,12 @@ export function BudgetExhaustedNotice() {
   if (!ctx?.budgetExhausted) return null;
 
   return (
-    <Callout tone="danger">
-      <p className="text-sm font-medium text-foreground">
-        Free budget used up
+    <div className="rounded-lg border border-border bg-card p-4 shadow-sm">
+      <p className="text-sm font-semibold text-foreground">
+        Your free budget is used up
       </p>
       <p className="mt-1 text-sm text-muted-foreground">
-        Your free starter budget has been fully used. Connect your own LLM
-        provider to keep chatting with this agent.
+        Connect your own LLM provider to keep chatting with this agent.
       </p>
       <Button
         variant="outline"
@@ -25,7 +25,8 @@ export function BudgetExhaustedNotice() {
         onClick={() => navigateToSettings("providers")}
       >
         Connect a provider
+        <ArrowRight size={16} className="ml-1.5" />
       </Button>
-    </Callout>
+    </div>
   );
 }

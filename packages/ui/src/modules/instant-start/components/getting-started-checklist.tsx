@@ -1,169 +1,97 @@
-import { CheckmarkFilled, ChevronDown } from "@carbon/icons-react";
-import { useState } from "react";
-
-import { Button } from "@/components/ui/button";
-import { cn } from "@/lib/utils";
+import { useEffect, useRef, useState } from "react";
 
 import { useStore } from "../../../store.js";
-
-type TaskId =
-  | "create-agent"
-  | "send-message"
-  | "create-connection"
-  | "add-skill"
-  | "apply-starter-kit"
-  | "create-schedule"
-  | "create-artifact"
-  | "connect-slack";
-
-interface TaskDef {
-  id: TaskId;
-  title: string;
-  done: boolean;
-}
-
-const TASKS: TaskDef[] = [
-  { id: "create-agent", title: "Create your first agent", done: true },
-  { id: "send-message", title: "Send your agent a message", done: false },
-  { id: "create-connection", title: "Create a connection", done: false },
-  { id: "add-skill", title: "Add a skill", done: false },
-  { id: "apply-starter-kit", title: "Try a starter kit", done: false },
-  { id: "create-schedule", title: "Schedule a recurring task", done: false },
-  { id: "create-artifact", title: "Create an artifact", done: false },
-  { id: "connect-slack", title: "Use your agent in Slack", done: false },
-];
+import { CatchStyles } from "../../agents/components/catch-styles.js";
+import {
+  CHAR_NAMES,
+  CharAvatar,
+  type CharName,
+} from "../../agents/components/char-avatar.js";
+import {
+  CHARACTER_QUESTS,
+  completeQuest,
+  endCelebration,
+  FIRST_AGENT_QUEST_ID,
+  useCharacterUnlocks,
+} from "../../agents/lib/character-unlocks.js";
+import {
+  CatchCelebration,
+  ChecklistPanel,
+  ChecklistPill,
+  type CatchVariant,
+  type CrewSlotData,
+  type QuestRowData,
+} from "../../avatar-sheet/getting-started-checklist.js";
 
 export function GettingStartedChecklist() {
-  const [dismissed, setDismissed] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const setView = useStore((s) => s.setView);
+  const { caught, rewards, working, celebrating, collected } =
+    useCharacterUnlocks();
+  const [expanded, setExpanded] = useState(true);
+  const bootRef = useRef(false);
 
-  if (dismissed) return null;
+  useEffect(() => {
+    if (bootRef.current) return;
+    bootRef.current = true;
+    completeQuest(FIRST_AGENT_QUEST_ID);
+  }, []);
 
-  const done = TASKS.filter((t) => t.done).length;
-  const total = TASKS.length;
+  const inFlight = celebrating?.name ?? null;
+  const settledQuest = (id: string) =>
+    rewards.has(id) && celebrating?.questId !== id;
+  const total = CHARACTER_QUESTS.length;
+  const done = CHARACTER_QUESTS.filter((q) => settledQuest(q.id)).length;
+  const variant: CatchVariant =
+    celebrating?.questId === FIRST_AGENT_QUEST_ID
+      ? "first"
+      : rewards.size === total
+        ? "last"
+        : "new";
 
-  const handleTaskClick = (task: TaskDef) => {
-    if (task.id === "apply-starter-kit") {
-      setView("packs");
-    }
-  };
+  if (done === total && !celebrating) return null;
 
-  if (collapsed) {
-    return (
-      <button
-        type="button"
-        onClick={() => setCollapsed(false)}
-        className="flex items-center gap-2 rounded-lg border border-border bg-card px-3 py-2 shadow-md transition-colors hover:bg-muted/40"
-      >
-        <ProgressIndicator done={done} total={total} />
-        <span className="text-sm font-medium text-foreground">Get started</span>
-        <span className="text-sm text-muted-foreground">
-          {done}/{total}
-        </span>
-      </button>
-    );
-  }
-
-  return (
-    <section
-      aria-label="Get started"
-      className="fixed bottom-16 right-4 z-40 flex w-[min(340px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl"
-    >
-      <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
-        <ProgressIndicator done={done} total={total} />
-        <div className="min-w-0 flex-1">
-          <p className="text-sm font-semibold text-foreground">Get started</p>
-          <p className="text-sm text-muted-foreground">
-            {done} of {total} done
-          </p>
-        </div>
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Collapse checklist"
-          onClick={() => setCollapsed(true)}
-        >
-          <ChevronDown size={16} />
-        </Button>
-      </div>
-
-      <ul className="min-h-0 overflow-y-auto border-t border-border py-1.5">
-        {TASKS.map((task) => (
-          <li key={task.id} className="list-none">
-            <button
-              type="button"
-              onClick={() => handleTaskClick(task)}
-              className="flex w-full items-center gap-3 px-4 py-1.5 text-left transition-colors hover:bg-muted/40"
-            >
-              <span className="flex size-4 shrink-0 items-center justify-center">
-                {task.done ? (
-                  <CheckmarkFilled size={16} className="text-success" />
-                ) : (
-                  <span className="size-4 rounded-full border-2 border-border" />
-                )}
-              </span>
-              <span
-                className={cn(
-                  "min-w-0 flex-1 truncate text-sm",
-                  task.done ? "text-muted-foreground" : "text-foreground",
-                )}
-              >
-                {task.title}
-              </span>
-            </button>
-          </li>
-        ))}
-      </ul>
-
-      <div className="flex justify-end border-t border-border px-4 py-2">
-        <button
-          type="button"
-          className="text-sm text-muted-foreground transition-colors hover:text-foreground"
-          onClick={() => setDismissed(true)}
-        >
-          Dismiss
-        </button>
-      </div>
-    </section>
-  );
-}
-
-function ProgressIndicator({
-  done,
-  total,
-}: {
-  done: number;
-  total: number;
-}) {
-  const pct = total > 0 ? (done / total) * 100 : 0;
-  const r = 8;
-  const c = 2 * Math.PI * r;
-  const offset = c - (pct / 100) * c;
+  const rows: QuestRowData[] = CHARACTER_QUESTS.map((q) => ({
+    ...q,
+    reward: rewards.get(q.id) ?? null,
+    state: settledQuest(q.id) ? "done" : working === q.id ? "working" : "todo",
+  }));
+  const settledCaught = caught.filter((n) => n !== inFlight);
+  const crew: CrewSlotData[] = CHAR_NAMES.map((_, i) => ({
+    name: settledCaught[i] ?? null,
+    justCaught:
+      settledCaught[i] !== undefined && settledCaught[i] === collected,
+  }));
 
   return (
-    <svg width={22} height={22} className="shrink-0 -rotate-90">
-      <circle
-        cx={11}
-        cy={11}
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2.5}
-        className="text-border"
-      />
-      <circle
-        cx={11}
-        cy={11}
-        r={r}
-        fill="none"
-        stroke="currentColor"
-        strokeWidth={2.5}
-        strokeDasharray={c}
-        strokeDashoffset={offset}
-        strokeLinecap="round"
-        className="text-success"
-      />
-    </svg>
+    <div className="fixed bottom-4 right-[4.5rem] z-[60] flex flex-col items-end gap-3">
+      <CatchStyles />
+      {celebrating && (
+        <CatchCelebration
+          key={celebrating.name}
+          name={celebrating.name}
+          variant={variant}
+          onFinished={endCelebration}
+        />
+      )}
+
+      {expanded ? (
+        <ChecklistPanel
+          done={done}
+          total={total}
+          crew={crew}
+          rows={rows}
+          showAvatars={done > 0}
+          revealAvatars={done === 1 && collected !== null}
+          onCollapse={() => setExpanded(false)}
+        />
+      ) : (
+        <ChecklistPill
+          key={collected ?? "none"}
+          done={done}
+          total={total}
+          pulse={collected !== null}
+          onExpand={() => setExpanded(true)}
+        />
+      )}
+    </div>
   );
 }

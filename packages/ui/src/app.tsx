@@ -9,9 +9,7 @@ import { InstantStartProvider } from "./modules/instant-start/context.js";
 import { InstantStartGate } from "./modules/instant-start/components/instant-start-gate.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
-import { HandoffSheet } from "./mock/handoff-sheet.js";
 import { FlowScreen, NavFlows } from "./mock/nav-flows.js";
-import { PlaceholderTexts } from "./mock/placeholder-texts.js";
 import { SidebarSpecs } from "./mock/sidebar-specs.js";
 import { MockStateBar } from "./mock/state-bar.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
@@ -63,15 +61,7 @@ export default function App() {
   if (view === "telegram-bind") return <TelegramBindView />;
   if (view === "slack-bind") return <SlackBindView />;
   if (view === "nav-flows") return <NavFlows />;
-  if (view === "placeholder-texts") return <PlaceholderTexts />;
-  if (view === "flow-screen") return <FlowScreen />;
-  if (view === "handoff-sheet")
-    return (
-      <>
-        <HandoffSheet />
-        {isMock && <MockStateBar />}
-      </>
-    );
+if (view === "flow-screen") return <FlowScreen />;
   return (
     <InstantStartProvider>
       <MainApp />
