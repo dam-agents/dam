@@ -381,8 +381,8 @@ export function onRunnerHost(
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the start failures the agent's own runner reported, as the error of each: a machine action the runner could not finish says so in its log, which outlives the Agent status a recovery clears. A boot the owner's start began and a signal cut short is named here, with the signal that ended the VMM.
-export function runnerStartFailures(agentId: string): string[] {
+// UNIT_BOUNDARY_DESCRIPTION: the signals that killed this machine's VMMs, one per death the agent's own runner reported, in the order it reported them: the runner's reaper is what notices a VMM that died and says in its log which machine it held and the signal that ended it. A start call cannot say it, because it returns once the VMM is up, before the guest's boot reaches the steps a host waits for.
+export function runnerKilledVmms(agentId: string): number[] {
   const logs = kubectl(
     "-n",
     AGENT_NS,
@@ -397,10 +397,10 @@ export function runnerStartFailures(agentId: string): string[] {
         fields?: Record<string, unknown>;
       };
       return fields?.machine === agentId &&
-        fields.message === "machine action failed" &&
-        fields.op === "starting" &&
-        typeof fields.error === "string"
-        ? [fields.error]
+        typeof fields.signal === "number" &&
+        typeof fields.message === "string" &&
+        fields.message.startsWith("vm runner: a machine's VMM was killed")
+        ? [fields.signal]
         : [];
     } catch {
       return [];

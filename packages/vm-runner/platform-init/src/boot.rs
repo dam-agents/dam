@@ -1669,7 +1669,7 @@ fn persist_home(root: &Path, seeded_before: bool, expected: Option<&SeedDigest>)
     if let Err(e) = mount(&store, path, libc::MS_BIND) {
         fatal!("mounting {} from the disk: {e}", path.display());
     }
-    logf!("persisting {}", path.display());
+    announce(&format!("the home is on the disk at {}", path.display()));
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the home's mountpoint as a directory of the root. An image may ship the home as a link, to /root for example, and a bind onto a link lands wherever the link points. The link is replaced, so the disk is mounted at the home and nowhere else.

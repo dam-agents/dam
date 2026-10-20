@@ -16,7 +16,7 @@ import {
   refreshingToken,
   requireBackend,
   runnerClaimProvisioner,
-  runnerStartFailures,
+  runnerKilledVmms,
   waitAgentState,
   writeHomeFile,
 } from "../../lib/backend.js";
@@ -33,7 +33,7 @@ const markerPath = "e2e-boot-matrix-marker.txt";
 const syncedPath = "e2e-boot-matrix-synced.txt";
 const claimFillPath = "/var/lib/platform/disks/e2e-claim-fill";
 
-// UNIT_BOUNDARY_DESCRIPTION: the boot steps the matrix kills at, in the order a boot reaches them, each one a line platform-init writes to the machine's console: the disk mounted, the layout mark written, and the platform's root laid over the image. A host reads the boot on that console and nowhere else, since the boot log is on the guest's disk, and each step's own writes follow its line. Only a boot that finds the disk unmarked writes the mark's line, so the kill there empties the mark first.
+// UNIT_BOUNDARY_DESCRIPTION: the boot steps the matrix kills at, in the order a boot reaches them, each one a line platform-init writes to the machine's console: the disk mounted, the layout mark written, the platform's root laid over the image, and the agent's home mounted from the disk. A host reads the boot on that console and nowhere else, since the boot log is on the guest's disk, and each step's own writes follow its line. Only a boot that finds the disk unmarked writes the mark's line, so the kill there empties the mark first.
 const KILLS = [
   {
     tag: "disk",
@@ -51,6 +51,11 @@ const KILLS = [
       "platform-init: booting on a fresh root",
       "platform-init: keeping the root of the last boot",
     ],
+    clearsMark: false,
+  },
+  {
+    tag: "home",
+    lines: ["platform-init: the home is on the disk at"],
     clearsMark: false,
   },
 ] as const;
@@ -106,7 +111,7 @@ function emptyLayoutMark(): string {
   return emptied;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that waits for one of the given lines on this machine's console, then SIGKILLs the VMM holding the machine's disk, and writes one line for the test: the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console keeps the boot before until the next start empties it, and a VMM writes its first lines before the kernel's, so the watcher removes that record before it is ready: a line it then reads belongs to the boot this start makes. The call answers only once the watcher is watching, so the wake that follows cannot write that line before it does. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
+// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that waits for one of the given lines on this machine's console, then SIGKILLs the VMM holding the machine's disk, and writes one line for the test: the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console keeps the boot before until the next start empties it, and a VMM writes its first lines before the kernel's, so the watcher removes that record before it is ready: a line it then reads belongs to the boot this start makes. The call answers only once the watcher is watching, so the wake that follows cannot write that line before it does. The lines reach a fixed-string grep in a shell script, so none of them may hold a single quote. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
 function watchForKill(id: string, tag: string, lines: readonly string[]): void {
   const out = `/tmp/boot-matrix-kill-${tag}`;
   const script = `/tmp/boot-matrix-watch-${tag}.sh`;
@@ -173,6 +178,28 @@ function killReport(id: string, tag: string): string {
   ).trim();
 }
 
+const SIGKILL = 9;
+
+// UNIT_BOUNDARY_DESCRIPTION: waits for the runner to report one more of this machine's VMMs dead by a signal than it had reported before the kill, and asserts the signal is the one the watcher sent, so a kill that missed the boot fails the case instead of showing up as an agent that came back. A start call cannot say it: it returns once the VMM is up, before the guest's boot reaches the step the watcher waits for.
+async function expectKillReported(
+  id: string,
+  before: number,
+  at: string,
+): Promise<void> {
+  let signals: number[] = [];
+  await expect
+    .poll(() => (signals = runnerKilledVmms(id).slice(before)).length, {
+      timeout: 120_000,
+      intervals: [1_000],
+      message: `the runner never reported a VMM of ${id} dead by a signal after the kill at '${at}'`,
+    })
+    .toBeGreaterThan(0);
+  expect(
+    signals,
+    `the VMM that died at '${at}' did not die by SIGKILL: ${signals.join(", ")}`,
+  ).toContain(SIGKILL);
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: counts what this machine's console says of the boot it runs now. The console is the VMM's own log on the host, emptied at every start, so a line found there belongs to that boot and to no earlier one.
 function consoleLines(id: string, needle: string): number {
   const count = onRunnerHost(
@@ -215,13 +242,13 @@ test.afterAll(async () => {
   }
 });
 
-// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. The runner must report each start as failed by that signal, which is how the owner learns the machine did not start, and the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
+// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. The runner must report the machine's VMM dead by the signal the watcher sent, which is how the owner learns the machine did not start, and the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
 test("comes back from its VMM killed at points across a boot", async () => {
   test.setTimeout(1_200_000);
   for (const kill of KILLS) {
     if (kill.clearsMark) emptyLayoutMark();
     await hibernate();
-    const reported = runnerStartFailures(agentId).length;
+    const reported = runnerKilledVmms(agentId).length;
     watchForKill(agentId, kill.tag, kill.lines);
     await api.agents.wake.mutate({ id: agentId });
     const report = killReport(agentId, kill.tag);
@@ -230,21 +257,7 @@ test("comes back from its VMM killed at points across a boot", async () => {
       report,
       `no VMM of ${agentId} was killed at the boot step '${kill.lines[0]}': ${report}`,
     ).toMatch(/^killed \d+ /);
-    let failures: string[] = [];
-    await expect
-      .poll(
-        () => (failures = runnerStartFailures(agentId).slice(reported)).length,
-        {
-          timeout: 120_000,
-          intervals: [1_000],
-          message: `the runner never reported the start at '${kill.lines[0]}' as failed`,
-        },
-      )
-      .toBeGreaterThan(0);
-    expect(
-      failures.join("\n"),
-      `the start at '${kill.lines[0]}' did not fail by the kill: ${failures.join("\n")}`,
-    ).toContain("killed by SIGKILL");
+    await expectKillReported(agentId, reported, kill.lines[0]);
     await waitAgentState(api, agentId, "running", {
       timeoutMs: 600_000,
       failOnError: false,
@@ -270,12 +283,14 @@ test("comes back with the writes a running guest synced", async () => {
   expect(after(wrote, "wrote"), `the write did not read back: ${wrote}`).toBe(
     synced,
   );
+  const reported = runnerKilledVmms(agentId).length;
   watchForKill(agentId, "running", []);
   const report = killReport(agentId, "running");
   console.log(`[e2e] the kill of a running guest: ${report}`);
   expect(report, `no VMM of ${agentId} was killed: ${report}`).toMatch(
     /^killed \d+ /,
   );
+  await expectKillReported(agentId, reported, "a running guest");
   await expect
     .poll(async () => (await api.agents.get.query({ id: agentId })).state, {
       timeout: 120_000,
