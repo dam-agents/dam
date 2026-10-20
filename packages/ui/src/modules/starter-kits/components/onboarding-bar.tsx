@@ -1,4 +1,4 @@
-import { Box } from "@carbon/icons-react";
+import { Gift } from "@carbon/icons-react";
 
 import {
   HoverCard,
@@ -29,7 +29,7 @@ export function OnboardingBar({ agentId }: { agentId: string | null }) {
       <ChatColumn>
         <div className="mb-3 flex items-center justify-between gap-3 rounded-xl border border-kit-line bg-kit-surface px-4 py-2">
           <span className="flex min-w-0 items-center gap-2 text-sm font-medium text-kit">
-            <Box size={16} className="shrink-0" />
+            <Gift size={16} className="shrink-0" />
             <span className="truncate">{kitName}</span>
           </span>
           <HoverCard openDelay={150} closeDelay={300}>

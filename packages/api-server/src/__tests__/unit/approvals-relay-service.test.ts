@@ -35,6 +35,19 @@ function makeRepo() {
       });
       return true;
     },
+    insertIfAbsent: async (row) => {
+      if (rows.some((r) => r.id === row.id)) return false;
+      rows.push({
+        ...row,
+        createdAt: new Date(),
+        resolvedAt: null,
+        verdict: null,
+        decidedBy: null,
+        status: "pending",
+        deliveredAt: null,
+      });
+      return true;
+    },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     listPendingForInstance: async (agentId, opts) =>
       rows.filter(

@@ -20,7 +20,7 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
     case "migration-failed":
       return (
         "This agent's move to the new runtime failed, and it stays asleep " +
-        "until its owner retries or aborts the move. Contact its owner."
+        "until an operator finishes or undoes the move."
       );
     case "agent-pod-failed":
       switch (c.terminationReason) {
@@ -46,6 +46,12 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: its image isn't available. " +
             "Check the agent's page or contact its owner."
           );
+        case "MachineImageCacheUnreachable":
+          return (
+            "This agent failed to start: the server that runs its owner's " +
+            "agents can't reach its image cache. Ask an admin to check the " +
+            "server's image cache."
+          );
         case "MachineBootFailed":
           return (
             "This agent failed to start: its VM didn't boot. " +
@@ -65,6 +71,12 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           return (
             "This agent can't start right now: the server running its owner's " +
             "agents is down. Tell an admin."
+          );
+        case "MachineAllocationUnreadable":
+          return (
+            "This agent can't start right now: the server running its owner's " +
+            "agents has not reported how much memory it gave them. Tell an " +
+            "admin."
           );
         case "RunnerOutOfMemory":
           return (

@@ -6,17 +6,11 @@ import type {
   RuntimeMigrationView,
 } from "../../../types.js";
 
-export interface VmRuntimeAnswer {
-  answered: boolean;
-  vm: boolean;
-}
-
-export type RuntimeBadge =
-  | { kind: "new"; label: string; title: string }
+export type RuntimeMigrationBadge =
   | { kind: "migrating"; label: string; title: string }
   | { kind: "failed"; label: string; title: string };
 
-// UNIT_BOUNDARY_DESCRIPTION: what each phase of a migration is called where the user sees it, short enough for a badge and a button.
+// UNIT_BOUNDARY_DESCRIPTION: what each phase of a migration is called where the owner watches one an operator started, short enough for a badge.
 export function migrationPhaseLabel(phase: RuntimeMigrationPhase): string {
   return match(phase)
     .with("requested", () => "Preparing")
@@ -60,129 +54,21 @@ export function migrationTitle(migration: RuntimeMigrationView): string {
   return migration.message ?? migrationPhaseDescription(migration);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows. A migration under way is badged with its phase, and a failed one distinctly, whatever the experiment says, since the user started it and has something to decide. Otherwise, with the vm-sandboxes experiment off the new runtime is the rare case and is the one badged; with it on the new runtime is the default and nothing is badged, since an agent still on the old container runtime already shows its Migrate action. Nothing is badged until both answers behind the experiment have arrived, so a row does not flip from one badge to the other on load.
-export function runtimeBadge(
-  agent: Pick<AgentView, "vm" | "runtimeMigration">,
-  vmRuntime: VmRuntimeAnswer,
-): RuntimeBadge | null {
-  if (!vmRuntime.answered) return null;
+// UNIT_BOUNDARY_DESCRIPTION: which runtime badge an agent row shows. Only a move that is under way, or one that failed, is badged: the new runtime is the default, and an agent still on the old container runtime has nothing to decide here, since the move is not the owner's to start.
+export function runtimeMigrationBadge(
+  agent: Pick<AgentView, "runtimeMigration">,
+): RuntimeMigrationBadge | null {
   const migration = agent.runtimeMigration;
-  if (migration)
-    return migration.phase === "failed"
-      ? {
-          kind: "failed",
-          label: "Migration failed",
-          title: migrationTitle(migration),
-        }
-      : {
-          kind: "migrating",
-          label: `Migrating: ${migrationPhaseLabel(migration.phase).toLowerCase()}`,
-          title: migrationTitle(migration),
-        };
-  return !vmRuntime.vm && agent.vm
-    ? {
-        kind: "new",
-        label: "New runtime",
-        title: "Runs on the new sandbox runtime",
-      }
-    : null;
-}
-
-export type MigrateAction =
-  | { kind: "offer" }
-  | { kind: "refused" }
-  | { kind: "requesting" }
-  | {
-      kind: "migrating";
-      label: string;
-      title: string;
-      abortable: boolean;
-    }
-  | {
-      kind: "failed";
-      title: string;
-      abortable: boolean;
-      retryable: boolean;
-    };
-
-// UNIT_BOUNDARY_DESCRIPTION: what an agent row offers for the runtime migration. A migration under way shows its phase and, until the agent has started on the new runtime, the way back; a failed one shows its reason with Retry and Abort. The migration's own state is read regardless of the experiment, since a user who turned it off mid-way still has to be able to finish or undo the move. A container agent the api-server would refuse still shows the action, disabled, so the user can find out why instead of wondering where the button went.
-export function migrateAction(
-  agent: Pick<AgentView, "vm" | "runtimeMigratable" | "runtimeMigration">,
-  vmRuntime: VmRuntimeAnswer,
-  pending: boolean,
-): MigrateAction | null {
-  if (!vmRuntime.answered) return null;
-  const migration = agent.runtimeMigration;
-  if (migration) return inProgress(migration);
-  if (!vmRuntime.vm || agent.vm) return null;
-  if (!agent.runtimeMigratable) return { kind: "refused" };
-  return pending ? { kind: "requesting" } : { kind: "offer" };
-}
-
-function inProgress(migration: RuntimeMigrationView): MigrateAction {
+  if (!migration) return null;
   if (migration.phase === "failed")
     return {
       kind: "failed",
+      label: "Migration failed",
       title: migrationTitle(migration),
-      abortable: migration.abortable,
-      retryable: migration.retryable,
     };
   return {
     kind: "migrating",
-    label: `${migrationPhaseLabel(migration.phase)}…`,
+    label: `Migrating: ${migrationPhaseLabel(migration.phase).toLowerCase()}`,
     title: migrationTitle(migration),
-    abortable: migration.abortable,
   };
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: how many requests are in flight for each agent. A count rather than a set, so an abort and a retry of the same agent both have to settle before its buttons come back.
-export type InFlightIds = ReadonlyMap<string, number>;
-
-type InFlightUpdate = (next: (ids: InFlightIds) => InFlightIds) => void;
-
-function counted(ids: InFlightIds, id: string, by: number): InFlightIds {
-  const next = new Map(ids);
-  const n = (next.get(id) ?? 0) + by;
-  if (n > 0) next.set(id, n);
-  else next.delete(id);
-  return next;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: runs one request for one agent and keeps it counted as in flight until that request itself settles. A mutation's variables name only its latest call, so they cannot say which of several rows is still waiting. A failure is already toasted by the mutation, so it is swallowed here.
-export async function whileInFlight(
-  id: string,
-  update: InFlightUpdate,
-  run: () => Promise<unknown>,
-): Promise<void> {
-  update((ids) => counted(ids, id, 1));
-  try {
-    await run();
-  } catch {
-    return;
-  } finally {
-    update((ids) => counted(ids, id, -1));
-  }
-}
-
-const WINDOW_UNITS: readonly { unit: string; ms: number }[] = [
-  { unit: "day", ms: 24 * 3600_000 },
-  { unit: "hour", ms: 3600_000 },
-  { unit: "minute", ms: 60_000 },
-  { unit: "second", ms: 1000 },
-];
-
-function windowText(ms: number): string {
-  const exact = WINDOW_UNITS.find((u) => ms % u.ms === 0);
-  const unit = exact ?? { unit: "second", ms: 1000 };
-  const n = exact ? ms / unit.ms : Math.ceil(ms / unit.ms);
-  return `${n} ${unit.unit}${n === 1 ? "" : "s"}`;
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: what the confirm dialog says about the old volumes. The window is an install setting the plan passes through: null means the api-server could not read it, which is said as such rather than guessed; zero means the volumes are not kept at all; any other window is said in the largest unit it is a whole number of, so a week reads as 7 days and half an hour as 30 minutes.
-export function retentionSentence(ms: number | null): string {
-  if (ms === null)
-    return "The old volumes are kept for a while after the move, so an admin can recover anything missing.";
-  if (ms <= 0)
-    return "The old volumes are not kept: they are deleted once the move has finished.";
-  return `The old volumes are kept for ${windowText(ms)} after the move, so an admin can recover anything missing.`;
 }

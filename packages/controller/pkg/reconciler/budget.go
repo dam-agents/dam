@@ -303,10 +303,15 @@ func (r *AgentReconciler) ownerLock(owner string) *sync.Mutex {
 }
 
 func (r *AgentReconciler) publishOverBudget(ctx context.Context, agent *apiv1.Agent, msg string) error {
+	return r.publishParked(ctx, agent, apiv1.ReasonOverBudget, msg)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a parked agent is not ready for a reason of the caller's, and a start waiting for the node reads as a start in progress rather than as a refusal: its own reasons keep a wake waiting for it, where OverBudget fails the wake at once, and leave the budget surfaces that key on OverBudget alone.
+func (r *AgentReconciler) publishParked(ctx context.Context, agent *apiv1.Agent, reason, msg string) error {
 	gen := agent.Generation
 	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
-		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonOverBudget, msg, gen)
-		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonOverBudget, msg, gen)
+		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", reason, msg, gen)
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, gen)
 		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
 		s.ObservedGeneration = gen
 	})

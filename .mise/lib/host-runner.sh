@@ -1,8 +1,14 @@
 # Sourced by cluster:install, cluster:host-runner, cluster:stop, cluster:delete
-# and image:stage-vm: where the macOS host VM runner lives. smolvm keeps each
-# VMM's control socket under HOME, and a unix socket path is capped at 104
-# bytes, so the directory must stay short.
+# and image:stage-vm: where the macOS host VM runner lives.
 export HOST_RUNNER_DIR="${PLATFORM_VM_RUNNER_HOME:-$HOME/.local/state/platform-vm-runner}"
+# The HOME the runner runs under, where smolvm keeps every machine: its disks,
+# its record and its sockets, at Library/Caches/smolvm/vms/<16 hex>/<name>.
+# macOS holds a unix socket path to 103 bytes and the longest socket name is
+# 12 (control.sock), so this directory may take at most 47: HOST_RUNNER_DIR is
+# 48 for a 9-letter user name, which is why the machines do not live under it.
+# The default fits a user name of up to 27 letters; the runner refuses to start
+# under a HOME that does not fit, naming the path and the limit.
+export HOST_RUNNER_VM_HOME="${PLATFORM_VM_RUNNER_VM_HOME:-$HOME/.platform-vm}"
 # The address pods reach this host at: lima's user-mode network relays it to
 # the host's loopback, which is all the runner listens on.
 export HOST_RUNNER_ADDRESS=192.168.5.2

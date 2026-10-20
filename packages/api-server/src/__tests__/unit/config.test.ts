@@ -128,7 +128,6 @@ mmkBNIQHEZyNseqNrUDmwQIgTMRmxAc+KqNdi/HNDz1fCYGZvkoVYMgLYZM0W/aS
 describe("agentsInstallSettings — what every agents module is built with", () => {
   const managed = [
     ...Object.keys(REQUIRED_ENV),
-    "RUNTIME_MIGRATION_RETENTION",
     "AGENT_DEFAULT_STORAGE_SIZE",
     "VIRTUALIZATION_ENABLED",
     "FEATURE_MODES",
@@ -157,14 +156,12 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     }
   });
 
-  // TEST_SCENARIO: the chart sets the retention window on the api-server as a Go duration. Every composition root takes the agents module's install facts from this one reading, so the migration plan the UI gets names the install's window, disk default and default mounts rather than none.
-  it("carries the chart's retention window, disk default and default mounts", () => {
-    process.env.RUNTIME_MIGRATION_RETENTION = "72h";
+  // TEST_SCENARIO: the chart sets the disk default and default mounts on the api-server. Every composition root takes the agents module's install facts from this one reading, so the migration decision names the install's disk default and default mounts rather than none.
+  it("carries the chart's disk default and default mounts", () => {
     process.env.AGENT_DEFAULT_STORAGE_SIZE = "20Gi";
     process.env.VIRTUALIZATION_ENABLED = "true";
     expect(agentsInstallSettings(loadConfig())).toEqual({
       virtualizationEnabled: true,
-      vmForced: false,
       defaultHarness: "claude-code",
       telemetry: false,
       agentDefaultStorageSize: "20Gi",
@@ -172,33 +169,20 @@ describe("agentsInstallSettings — what every agents module is built with", () 
         { path: "/home/agent", persist: true },
         { path: "/tmp", persist: false },
       ],
-      runtimeMigrationRetentionMs: 72 * 3600_000,
     });
-  });
-
-  // TEST_SCENARIO: an operator who pins the new sandbox runtime on makes every create a microVM, whichever path it comes from; the pin means nothing on an install that cannot run one.
-  it("forces the vm backend only when the runtime is pinned on and virtualization is enabled", () => {
-    process.env.FEATURE_MODES = JSON.stringify({ "vm-sandboxes": "on" });
-    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(false);
-    process.env.VIRTUALIZATION_ENABLED = "true";
-    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(true);
-    process.env.FEATURE_MODES = JSON.stringify({
-      "vm-sandboxes": "experimental",
-    });
-    expect(agentsInstallSettings(loadConfig()).vmForced).toBe(false);
   });
 
   // TEST_SCENARIO: an operator sets the install's default mode off and pins one feature on. Every feature the chart does not name takes the default; without a default each unnamed feature stays experimental.
   it("reads every feature the chart does not name as the default mode", () => {
-    expect(loadConfig().featureModes["vm-sandboxes"]).toBe("experimental");
+    expect(loadConfig().featureModes["agent-telemetry"]).toBe("experimental");
     process.env.FEATURE_DEFAULT_MODE = "off";
-    process.env.FEATURE_MODES = JSON.stringify({ "vm-sandboxes": "on" });
+    process.env.FEATURE_MODES = JSON.stringify({ "agent-telemetry": "on" });
     expect(loadConfig().featureModes).toMatchObject({
-      "vm-sandboxes": "on",
-      "agent-telemetry": "off",
+      "agent-telemetry": "on",
       "custom-avatars": "off",
     });
   });
+
   // TEST_SCENARIO: the built-in provider is offered only where the operator named a model server and its key; without a base URL or without a key the feature is off even when the chart pins it on, a configured base URL loses its trailing slash, and a plain-HTTP one leaves the feature off without failing the boot.
   it("turns the platform provider off without a base URL or key", () => {
     process.env.FEATURE_MODES = JSON.stringify({ "platform-provider": "on" });
@@ -282,20 +266,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       defaultHarness: "codex",
       telemetry: true,
     });
-  });
-
-  it("defaults the retention window to a week", () => {
-    expect(
-      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
-    ).toBe(7 * 24 * 3600_000);
-  });
-
-  // TEST_SCENARIO: the controller keeps a volume whose window it cannot read, so the api-server must not invent one either.
-  it("reads a retention window it cannot parse as unknown", () => {
-    process.env.RUNTIME_MIGRATION_RETENTION = "7d";
-    expect(
-      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
-    ).toBeNull();
   });
 });
 

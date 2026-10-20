@@ -23,6 +23,15 @@ export interface EgressRulesRepository {
   hasUserOwnedRuleForHost(agentId: string, host: string): Promise<boolean>;
   listConnectionDerivedForAgent(agentId: string): Promise<EgressRuleRow[]>;
   revokePresetRowsForAgent(agentId: string): Promise<void>;
+  markPresetUnderConnections(
+    agentId: string,
+    hosts: readonly string[],
+    source: EgressRuleSource,
+  ): Promise<void>;
+  markSeededConnectionRows(
+    hosts: readonly string[],
+    source: EgressRuleSource,
+  ): Promise<number>;
   getPresetForAgent(agentId: string): Promise<EgressPreset>;
   getById(id: string): Promise<EgressRuleRow | null>;
   getActiveByTuple(
@@ -42,6 +51,7 @@ export interface EgressRulesRepository {
     fromSources: string[],
     toSource: EgressRuleSource,
   ): Promise<void>;
+  restorePresetSource(id: string): Promise<void>;
   revoke(id: string): Promise<void>;
   deleteForAgent(agentId: string): Promise<void>;
   listDistinctAgentIds(): Promise<string[]>;
@@ -90,6 +100,7 @@ type RawRule = {
   decidedAt: Date | string;
   status: string;
   source: string;
+  presetSource?: string | null;
 } & Record<string, unknown>;
 
 function toRow(r: RawRule): EgressRuleRow {
@@ -106,6 +117,9 @@ function toRow(r: RawRule): EgressRuleRow {
       r.decidedAt instanceof Date ? r.decidedAt : new Date(r.decidedAt),
     status: r.status as "active" | "revoked",
     source: r.source as EgressRuleSource,
+    ...(r.presetSource
+      ? { presetSource: r.presetSource as EgressRuleSource }
+      : {}),
   };
 }
 
@@ -182,7 +196,8 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
     async listConnectionDerivedForAgent(agentId) {
       const rows = await db.execute<RawRule>(sql`
         SELECT id, agent_id AS "agentId", host, port, method, path_pattern AS "pathPattern",
-               verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source
+               verdict, decided_by AS "decidedBy", decided_at AS "decidedAt", status, source,
+               preset_source AS "presetSource"
         FROM ${egressRules}
         WHERE agent_id = ${agentId}
           AND status = 'active'
@@ -194,11 +209,71 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
     async revokePresetRowsForAgent(agentId) {
       await db.execute(sql`
         UPDATE ${egressRules}
+        SET preset_source = NULL
+        WHERE agent_id = ${agentId}
+          AND status = 'active'
+          AND preset_source IS NOT NULL
+      `);
+      await db.execute(sql`
+        UPDATE ${egressRules}
         SET status = 'revoked'
         WHERE agent_id = ${agentId}
           AND status = 'active'
           AND source LIKE 'preset:%'
       `);
+    },
+
+    async markPresetUnderConnections(agentId, hosts, source) {
+      if (hosts.length === 0) return;
+      const canonical = sql.join(
+        hosts.map((h) => sql`${canonicalEgressHost(h)}`),
+        sql`, `,
+      );
+      await db.execute(sql`
+        UPDATE ${egressRules}
+        SET preset_source = ${source}
+        WHERE agent_id = ${agentId}
+          AND status = 'active'
+          AND source LIKE 'connection:%'
+          AND lower(host) IN (${canonical})
+          AND port IS NULL
+          AND method = '*'
+          AND path_pattern = '*'
+      `);
+    },
+
+    async markSeededConnectionRows(hosts, source) {
+      if (hosts.length === 0) return 0;
+      const canonical = sql.join(
+        hosts.map((h) => sql`${canonicalEgressHost(h)}`),
+        sql`, `,
+      );
+      const marked = await db.execute<{ id: string }>(sql`
+        UPDATE ${egressRules} AS taken
+        SET preset_source = ${source}
+        WHERE taken.status = 'active'
+          AND taken.source LIKE 'connection:%'
+          AND taken.preset_source IS NULL
+          AND lower(taken.host) IN (${canonical})
+          AND taken.port IS NULL
+          AND taken.method = '*'
+          AND taken.path_pattern = '*'
+          AND EXISTS (
+            SELECT 1 FROM ${egressRules} AS seeded
+            WHERE seeded.agent_id = taken.agent_id
+              AND seeded.source = ${source}
+              AND seeded.decided_at BETWEEN taken.decided_at - interval '5 seconds'
+                                        AND taken.decided_at + interval '5 seconds'
+          )
+          AND EXISTS (
+            SELECT 1 FROM ${egressRules} AS current
+            WHERE current.agent_id = taken.agent_id
+              AND current.status = 'active'
+              AND current.source = ${source}
+          )
+        RETURNING taken.id
+      `);
+      return (marked as unknown as Array<unknown>).length;
     },
 
     async getPresetForAgent(agentId) {
@@ -286,7 +361,8 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
       if (inserted.length) return toRow(inserted[0] as RawRule);
       const promoted = await db.execute<RawRule>(sql`
         UPDATE ${egressRules}
-        SET source = ${row.source}, decided_by = ${row.decidedBy}
+        SET preset_source = CASE WHEN ${row.source} LIKE 'connection:%' THEN source END,
+            source = ${row.source}, decided_by = ${row.decidedBy}
         WHERE agent_id = ${row.agentId}
           AND host = ${row.host}
           AND port IS NOT DISTINCT FROM ${row.port ?? null}
@@ -320,6 +396,7 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
           verdict: input.verdict,
           decidedBy: input.decidedBy,
           source: input.source,
+          presetSource: null,
         })
         .where(
           and(eq(egressRules.id, input.id), eq(egressRules.status, "active")),
@@ -376,6 +453,16 @@ export function createEgressRulesRepository(db: Db): EgressRulesRepository {
             inArray(egressRules.source, fromSources),
           ),
         );
+    },
+
+    async restorePresetSource(id) {
+      await db.execute(sql`
+        UPDATE ${egressRules}
+        SET source = preset_source, preset_source = NULL
+        WHERE id = ${id}
+          AND status = 'active'
+          AND preset_source IS NOT NULL
+      `);
     },
 
     async revoke(id) {

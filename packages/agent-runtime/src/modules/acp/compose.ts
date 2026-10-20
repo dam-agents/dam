@@ -8,11 +8,9 @@ import {
   isPlatformSubagentSetting,
   platformSubagentSettingsError,
   sessionSettingsError,
-  type HarnessConfigCatalog,
   type SessionRepository,
   type SubAgentHarnessConfig,
 } from "agent-runtime-api";
-import type { SessionSettingBinding } from "../runtime-channel/manifest.js";
 import { createChildAgentProcess } from "./infrastructure/create-child-agent-process.js";
 import {
   createExecHistoryProvider,
@@ -37,8 +35,13 @@ import {
   createAcpRuntime,
   sessionListAnswer,
   type ReportableTurn,
-  type SessionSettingFrame,
 } from "./services/acp-runtime/acp-runtime.js";
+import {
+  modeSettingOf,
+  sessionSettingFrames,
+  type SessionHarness,
+} from "./services/session-setting-frames.js";
+import type { AgentRequestObserver } from "./services/acp-runtime/pending-agent-requests.js";
 import { createOnceReporter } from "./services/once-reporter.js";
 import {
   createBackgroundWorkRegistry,
@@ -60,7 +63,10 @@ import {
   type SessionChanges,
 } from "./services/session-changes.js";
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
-import { createSessionsService } from "./services/sessions-service.js";
+import {
+  createSessionsService,
+  type RuntimeSessionsService,
+} from "./services/sessions-service.js";
 import {
   readTerminalSessionPins,
   type PlatformSessionOf,
@@ -88,6 +94,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  agentRequests: AgentRequestObserver;
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   onPrompt: () => void;
   providerAliases: () => string[];
@@ -95,13 +102,14 @@ export interface ComposeAcpOptions {
   unroutedProviderEnv?: (harness: string) => Record<string, string>;
   routerEnv?: (harness: string) => Record<string, string>;
   nativeConnectionOf?: (harness: string, model: string | null) => string | null;
+  modelRequired: (harness: string) => boolean;
   nativeEnv?: (connectionId: string) => Record<string, string>;
   leaseIdleMs?: number;
   beforeSpawn?: () => Promise<void>;
   log: (msg: string) => void;
 }
 
-export interface HarnessRuntime {
+export interface HarnessRuntime extends SessionHarness {
   sessionHistory?: {
     module?: string;
     exportName?: string;
@@ -109,43 +117,7 @@ export interface HarnessRuntime {
   };
   terminalSessionPins?: string;
   sessionModel: boolean;
-  sessionModelFrame?: {
-    configOption: string;
-    render: (model: string) => string;
-  };
   initialize?: Record<string, unknown>;
-  sessionSettings?: Record<string, SessionSettingBinding>;
-  catalog?: HarnessConfigCatalog;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the name is rendered the way the harness sees
- * the catalog; a native process gets the harness's own name, the part after
- * the Connection's alias. Critical, so a refusal answers the session's
- * prompts rather than running them on a substitute.
- */
-function modelFrames(
-  harness: HarnessRuntime | undefined,
-  sessionId: string,
-  choice: { model: string | null },
-  native: boolean,
-): SessionSettingFrame[] {
-  const binding = harness?.sessionModelFrame;
-  if (!binding || choice.model === null) return [];
-  const value = native
-    ? (parseQualifiedModel(choice.model)?.upstreamId ?? choice.model)
-    : binding.render(choice.model);
-  return [
-    {
-      method: "session/set_config_option",
-      params: {
-        sessionId,
-        configId: binding.configOption,
-        value,
-      },
-      critical: true,
-    },
-  ];
 }
 
 const isModelSetting = (
@@ -254,7 +226,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   harnessWork: HarnessWork;
-  sessions: SessionsService;
+  sessions: RuntimeSessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
   subAgentSessions: SubAgentSessionStore;
@@ -315,9 +287,11 @@ export function composeAcp(opts: ComposeAcpOptions): {
     ...(opts.nativeConnectionOf && {
       nativeConnectionOf: opts.nativeConnectionOf,
     }),
+    modelRequired: opts.modelRequired,
     initializeFor: (harness) => opts.harnesses[harness]?.initialize ?? null,
     listSessions: (isRunning) =>
       sessionListAnswer(sessionMetadata, isRunning, terminalSessionPins?.()),
+    agentRequests: opts.agentRequests,
     ...(opts.leaseIdleMs !== undefined && { leaseIdleMs: opts.leaseIdleMs }),
     settingScope: (harness, id) => {
       const binding = opts.harnesses[harness]?.sessionSettings?.[id];
@@ -360,6 +334,13 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const harness = opts.harnesses[pair.harness];
       const ownHistory = historyProviders.get(pair.harness);
       const ownPins = harness?.terminalSessionPins;
+      const settingInput = (sessionId: string) => ({
+        sessionId,
+        harness,
+        model: runtime.sessionChoice(sessionId).model,
+        native: pair.native !== undefined,
+        settings: sessionMetadata.get(sessionId)?.meta.settings ?? {},
+      });
       return createAcpRuntime({
         undeliveredPrompts,
         activeTurns,
@@ -394,42 +375,16 @@ export function composeAcp(opts: ComposeAcpOptions): {
         },
         backgroundWork: scoped.backgroundWork,
         onHarnessExited: scoped.onHarnessExited,
-        sessionSettingFrames: (sessionId) => [
-          ...modelFrames(
-            harness,
-            sessionId,
-            runtime.sessionChoice(sessionId),
-            pair.native !== undefined,
-          ),
-          ...Object.entries(
-            sessionMetadata.get(sessionId)?.meta.settings ?? {},
-          ).flatMap(([id, value]): SessionSettingFrame[] => {
-            const binding = harness?.sessionSettings?.[id];
-            if (binding && "mode" in binding)
-              return [
-                {
-                  method: "session/set_mode",
-                  params: { sessionId, modeId: value },
-                },
-              ];
-            if (binding && "configOption" in binding)
-              return [
-                {
-                  method: "session/set_config_option",
-                  params: { sessionId, configId: binding.configOption, value },
-                },
-              ];
-            return [];
-          }),
-        ],
-        modeSettingId: Object.entries(harness?.sessionSettings ?? {}).find(
-          ([, binding]) => "mode" in binding,
-        )?.[0],
+        sessionSettingFrames: (sessionId) =>
+          sessionSettingFrames(settingInput(sessionId)),
+        modelSettingConfig: harness?.sessionModelFrame?.configOption,
+        modeSettingId: modeSettingOf(harness)?.id,
         workingDir: opts.workingDir,
         sessionMetadata,
         isTerminalSessionActive: opts.isTerminalSessionActive,
         onArtifactTouch: opts.onArtifactTouch,
         ...(opts.onToolActivity && { onToolActivity: opts.onToolActivity }),
+        agentRequests: scoped.agentRequests,
         onPrompt: opts.onPrompt,
         onSubAgentSpawn: ({ sessionId, subAgentIds }) =>
           subAgentSessions.record(sessionId, subAgentIds),
@@ -446,13 +401,19 @@ export function composeAcp(opts: ComposeAcpOptions): {
       });
     },
   });
-  const triggerDriver = createTriggerSessionDriver({ acpRuntime: runtime });
+  const triggerDriver = createTriggerSessionDriver({
+    acpRuntime: runtime,
+    modelRequired: (harness) =>
+      opts.modelRequired(harness ?? opts.defaultHarness),
+    modelMissing: (sessionId) => runtime.modelMissing(sessionId),
+  });
   reportTurn = createOnceReporter({
     driver: triggerDriver,
     findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
     log: (msg) => opts.log?.(msg),
   });
   const sessions = createSessionsService({
+    defaultHarness: opts.defaultHarness,
     subAgentContextOf: (meta) => {
       const harness = meta.harness ?? opts.defaultHarness;
       return {

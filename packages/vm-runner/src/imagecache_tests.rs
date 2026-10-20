@@ -1,5 +1,5 @@
 use super::*;
-use crate::api::REASON_IMAGE_UNAVAILABLE;
+use crate::api::{REASON_CACHE_UNREACHABLE, REASON_IMAGE_UNAVAILABLE};
 use crate::cacheapi::{self, CacheClient};
 use crate::fetch::failure_reason;
 
@@ -248,7 +248,7 @@ fn a_hold_cannot_drop_what_another_holds() {
     assert!(cache.digest_entry(&held).exists());
 }
 
-// TEST_SCENARIO: any runner on a node may hold over the shared socket, so what a hold makes the service remember is bounded: a digest with no entry on disk is not held at all, and a call naming more digests than any runner's machines could boot is refused whole.
+// TEST_SCENARIO: any runner of the install on a node may hold over that install's socket, so what a hold makes the service remember is bounded: a digest with no entry on disk is not held at all, and a call naming more digests than any runner's machines could boot is refused whole.
 #[test]
 fn a_hold_is_bounded_by_what_the_cache_holds() {
     let f = Fixture::new("hold-bounded", PUBLIC_CRANE);
@@ -366,7 +366,7 @@ fn a_preload_pass_fetches_what_is_missing_and_pins_it() {
     assert_eq!(f.calls("export"), exports, "a warm cache was fetched again");
 }
 
-// TEST_SCENARIO: every owner's runner on a node shares the cache, so an image one owner fetched with credentials is not another's to boot by naming it. A caller with no credential, or one the registry refuses, is refused the cached entry as an image problem; one whose credential reads the manifest boots the tree already there without fetching it again. What is known about an entry is kept in memory, so after a restart the check is made again and still fails closed.
+// TEST_SCENARIO: every owner's runner of the install on a node shares the cache, so an image one owner fetched with credentials is not another's to boot by naming it. A caller with no credential, or one the registry refuses, is refused the cached entry as an image problem; one whose credential reads the manifest boots the tree already there without fetching it again. What is known about an entry is kept in memory, so after a restart the check is made again and still fails closed.
 #[test]
 fn a_private_entry_is_served_only_to_credentials_that_read_it() {
     let f = Fixture::new("private", PRIVATE_CRANE);
@@ -410,7 +410,7 @@ fn a_public_entry_boots_for_anyone_without_asking_the_registry() {
     assert!(cache.resolve(IMAGE, &[]).resolved.is_ok());
 }
 
-// TEST_SCENARIO: a runner reaches the node service over a Unix socket in the cache directory. A resolve comes back with the digest and launch the service unpacked, a hold is accepted, and a refusal keeps its reason across the socket, so the controller still tells the person to fix the image. A client with no service behind the socket says it was unreachable, as an image problem. The service is ready when it accepts a connection, not when its socket file appears: the file exists from the bind, one syscall before the listen, and a machine under load runs the serving task out of that gap long enough to refuse the client.
+// TEST_SCENARIO: a runner reaches the node service over a Unix socket in the cache directory. A resolve comes back with the digest and launch the service unpacked, a hold is accepted, and a refusal keeps its reason across the socket, so the controller still tells the person to fix the image. A client with no service behind the socket says it was unreachable, under the cache's own reason rather than the image's, and reports a service it could not reach, so the controller can hold a roll back instead of convicting an image. The service is ready when it accepts a connection, not when its socket file appears: the file exists from the bind, one syscall before the listen, and a machine under load runs the serving task out of that gap long enough to refuse the client.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_runner_reaches_the_service_over_its_socket() {
     let f = Fixture::new("socket", PRIVATE_CRANE);
@@ -429,16 +429,21 @@ async fn a_runner_reaches_the_service_over_its_socket() {
     }
     let client = CacheClient::new(socket.clone());
     let answer = tokio::task::spawn_blocking(move || {
+        let reach = client.reach();
         let ok = client.resolve(IMAGE, &[CREDENTIAL.to_string()]);
         let refused = client.resolve(IMAGE, &[]);
         let held = client.hold(&[format!("sha256:{}", "f".repeat(64))].into());
-        (ok, refused, held)
+        (ok, refused, held, reach)
     })
     .await
     .unwrap();
 
-    let (ok, refused, held) = answer;
+    let (ok, refused, held, reach) = answer;
     assert!(ok.fetched.is_some_and(|f| f.ok));
+    assert_eq!(
+        reach.error, "",
+        "a runner with the service up reported it unreachable: {reach:?}"
+    );
     let ok = ok.resolved.unwrap();
     assert_eq!(ok.launch.cmd, ["serve"]);
     assert!(cache.digest_entry(&ok.digest).join(ROOTFS_DIR).exists());
@@ -453,13 +458,20 @@ async fn a_runner_reaches_the_service_over_its_socket() {
     stop.cancel();
     serving.await.unwrap().unwrap();
     let gone = CacheClient::new(f.dir.path().join("no-such.sock"));
-    let lookup = tokio::task::spawn_blocking(move || gone.resolve(IMAGE, &[]))
-        .await
-        .unwrap();
+    let (lookup, reach) = tokio::task::spawn_blocking(move || {
+        let reach = gone.reach();
+        (gone.resolve(IMAGE, &[]), reach)
+    })
+    .await
+    .unwrap();
     assert!(lookup.unreachable);
+    assert!(
+        reach.error.contains("read-only"),
+        "the report does not say which mount the runner looked at: {reach:?}"
+    );
     assert_eq!(
         failure_reason(&lookup.resolved.unwrap_err()),
-        REASON_IMAGE_UNAVAILABLE
+        REASON_CACHE_UNREACHABLE
     );
 }
 
@@ -628,7 +640,7 @@ fn fetches_under_way_count_against_the_ceiling() {
     assert_eq!(locked(&cache.memory).in_flight, 0);
 }
 
-// TEST_SCENARIO: a hold is how eviction knows a tree is in use, and every runner on the node can make the service resolve any digest. A resolve that fails leaves nothing on disk and so holds nothing, or naming digests that do not exist would grow what the service remembers without bound.
+// TEST_SCENARIO: a hold is how eviction knows a tree is in use, and every runner of the install on the node can make the service resolve any digest. A resolve that fails leaves nothing on disk and so holds nothing, or naming digests that do not exist would grow what the service remembers without bound.
 #[test]
 fn a_resolve_that_fails_holds_nothing() {
     let f = Fixture::new("hold-failed", PUBLIC_CRANE);

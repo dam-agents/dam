@@ -55,6 +55,28 @@ const GUEST_DNS_SINK: std::net::Ipv4Addr = std::net::Ipv4Addr::LOCALHOST;
 // UNIT_BOUNDARY_DESCRIPTION: the label smolvm stores on every machine this runner creates. smolvm never reads it; it is how an operator listing smolvm's machines tells the runner's own from anything else in the same database.
 const MANAGED_BY: (&str, &str) = ("app.kubernetes.io/managed-by", "vm-runner");
 
+// UNIT_BOUNDARY_DESCRIPTION: the longest name smolvm binds a unix socket under in a machine's directory: the VMM's control socket, which grow speaks to. Every other socket there (agent.sock, agent.ready, egress.sock, ports.sock) is shorter.
+pub const LONGEST_MACHINE_SOCKET: &str = "control.sock";
+
+// UNIT_BOUNDARY_DESCRIPTION: the bytes a unix socket path may hold, NUL included: sockaddr_un's sun_path, 104 on macOS and 108 on Linux. libkrun refuses a longer path as it starts the VM, so a machine whose directory does not leave room for it never boots.
+#[cfg(target_os = "macos")]
+const SUN_PATH_LEN: usize = 104;
+#[cfg(not(target_os = "macos"))]
+const SUN_PATH_LEN: usize = 108;
+
+// UNIT_BOUNDARY_DESCRIPTION: refuses a machine directory whose sockets would not fit a unix socket path. smolvm puts every machine at one fixed depth under HOME, so one check at start, on the directory a machine of any name would get, covers them all, and the refusal names the path and the limit, where a boot under it says only that libkrun rejected its configuration.
+pub fn machine_sockets_fit(machine_dir: &Path) -> anyhow::Result<()> {
+    let longest = machine_dir.join(LONGEST_MACHINE_SOCKET);
+    let len = longest.as_os_str().len();
+    anyhow::ensure!(
+        len < SUN_PATH_LEN,
+        "a machine's sockets would not fit a unix socket path: {} is {len} bytes and this host allows {}; run the runner under a shorter HOME",
+        longest.display(),
+        SUN_PATH_LEN - 1
+    );
+    Ok(())
+}
+
 impl Smolvm {
     pub fn open(allow_nesting: bool, btrfs: PathBuf) -> anyhow::Result<Self> {
         let nested = allow_nesting && host_nests(Path::new("/sys"));
@@ -373,6 +395,23 @@ impl Runtime for Smolvm {
 
     fn disk_used_bytes(&self, id: &str) -> Option<u64> {
         allocated_bytes(&vm_data_dir(id))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pid of the machine's VMM, given only while that pid still names the process the record was written for. A pid is reused after its process ends, and the reap reads the exit status of the pid it is given, so a record whose pid now belongs to some other process would report that process's death as this machine's: the start time the record kept tells the two apart, and a pid the kernel no longer lists is the record's own, dead child.
+    fn vmm_record_pid(&self, id: &str) -> Option<i32> {
+        self.record(id).ok()??.pid
+    }
+
+    fn vmm_pid(&self, id: &str) -> Option<i32> {
+        let record = self.record(id).ok()??;
+        let pid = record.pid?;
+        match (
+            record.pid_start_time,
+            smolvm::process::process_start_time(pid),
+        ) {
+            (Some(recorded), Some(now)) if recorded != now => None,
+            _ => Some(pid),
+        }
     }
 }
 
@@ -788,6 +827,21 @@ mod tests {
                 _lock: lock,
             }
         }
+    }
+
+    // TEST_SCENARIO: smolvm binds a machine's sockets at a fixed depth under HOME, and a unix socket path holds a bounded number of bytes, so a long HOME makes every boot fail with libkrun's EINVAL. The runner refuses such a directory at start, naming the path and the limit, and takes one with room.
+    #[test]
+    fn a_machine_directory_whose_sockets_cannot_fit_is_refused() {
+        let room = SUN_PATH_LEN - 1 - LONGEST_MACHINE_SOCKET.len() - 1;
+        let fits = PathBuf::from(format!("/{}", "d".repeat(room - 1)));
+        machine_sockets_fit(&fits).unwrap();
+        let over = PathBuf::from(format!("/{}", "d".repeat(room)));
+        let err = machine_sockets_fit(&over).unwrap_err().to_string();
+        assert!(err.contains(&format!("{SUN_PATH_LEN} bytes")), "{err}");
+        assert!(
+            err.contains(&format!("allows {}", SUN_PATH_LEN - 1)),
+            "{err}"
+        );
     }
 
     fn spec() -> MachineSpec {

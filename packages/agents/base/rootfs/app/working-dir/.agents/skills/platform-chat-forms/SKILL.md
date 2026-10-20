@@ -139,6 +139,8 @@ Every component also takes `weight` (share of space in a `Row`/`Column`) and `ac
 **Checks** validate inputs: `"checks": [{"condition": {"@call": "required", "args": {"value": {"@path": "/team"}}}, "message": "Enter the team name"}]`.
 An input shows its messages once the user edits it.
 A `Button` with checks is disabled while any check fails — put the form's rules on the submit button.
+A `regex` `pattern` is a JavaScript pattern with no flags and no implicit anchors (write `^…$` yourself), at most 256 characters, without nested quantifiers such as `(a+)+`; in JSON, double each backslash (`"^\\d+$"`).
+`check_chat_form` reports a pattern the chat cannot run.
 
 **Actions**: `{"event": {"name": "save", "userMessage": "Saved the settings", "context": {"team": {"@path": "/team"}}}}` sends the event to you; `{"functionCall": {"@call": "openUrl", "args": {"url": "https://…"}}}` runs in the chat.
 `userMessage` is what the user sees in their message.

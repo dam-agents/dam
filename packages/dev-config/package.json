@@ -8,7 +8,7 @@
     "./tsconfig": "./tsconfig.base.json"
   },
   "dependencies": {
-    "eslint-plugin-unicorn": "^77.0.0",
-    "typescript-eslint": "^8.71.1"
+    "eslint-plugin-unicorn": "^78.0.0",
+    "typescript-eslint": "^8.71.2"
   }
 }

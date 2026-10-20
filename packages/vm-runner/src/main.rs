@@ -212,6 +212,30 @@ fn guest_exec(id: &str, command: Vec<String>) -> anyhow::Result<()> {
     std::process::exit(code)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the OOM score a VMM asks for: the highest the kernel lets a process set for itself, which needs no capability, so that a machine that grows past the runner's memory is killed by itself rather than the runner or the loader beside it, which each hold every machine of the owner. It decides the victim only where the node's kubelet leaves the pod's memory.oom.group at 0, which is its default: with the group set, one process's memory kills the whole pod whatever the scores say, and the runner reports that on a gauge of its own.
+const OOM_SCORE_ADJ: &str = "1000";
+
+// UNIT_BOUNDARY_DESCRIPTION: outranks the runner and the loader in the kernel's choice of victim, for this process alone. A failure is said on the console rather than fatal: a machine that cannot raise its score still boots.
+fn raise_oom_score_adj(path: &Path) {
+    if let Err(e) = std::fs::write(path, OOM_SCORE_ADJ) {
+        eprintln!(
+            "vm-runner: could not raise this VMM's OOM score at {}: {e}; the kernel may kill the runner instead of a machine",
+            path.display()
+        );
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes lower their own scores instead: -1000 where the kernel allows it, else 0, which no process whose memory is smaller can outrank. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself.
+fn lower_own_oom_score_adj() {
+    const PATH: &str = "/proc/self/oom_score_adj";
+    if std::fs::write(PATH, "-1000").is_ok() {
+        return;
+    }
+    if let Err(e) = std::fs::write(PATH, "0") {
+        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it against its machines");
+    }
+}
+
 fn main() -> anyhow::Result<()> {
     smolvm::internal_boot::GUEST_AGENT.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some((id, command)) = exec_args(std::env::args_os()) {
@@ -220,6 +244,9 @@ fn main() -> anyhow::Result<()> {
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
+        if cfg!(target_os = "linux") {
+            raise_oom_score_adj(Path::new("/proc/self/oom_score_adj"));
+        }
         if let Some(port) = gateway_host_port(&config)? {
             smolvm::network::launch::configure_guest_host_service(port, port)
                 .map_err(|e| anyhow::anyhow!("mapping the gateway host port: {e}"))?;
@@ -228,6 +255,9 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     tracing_subscriber::fmt().json().init();
+    if cfg!(target_os = "linux") {
+        lower_own_oom_score_adj();
+    }
     let args = Args::parse();
     anyhow::ensure!(
         args.memory_mib > 0,
@@ -274,9 +304,10 @@ fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. The image directory is the node cache's, mounted read-only because its service is its only writer, so a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. A HOME under which a machine's sockets would not fit a unix socket path is refused first, with the path and the limit, since no machine under it would boot. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. The image directory is the node cache's, mounted read-only because its service is its only writer, so a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
+    vm_runner::embedded::machine_sockets_fit(&smolvm::agent::vm_data_dir("any"))?;
     if let Err(e) = std::fs::set_permissions("/dev/kvm", std::fs::Permissions::from_mode(0o666)) {
         tracing::warn!(path = "/dev/kvm", error = %e, "device not writable for machine uids");
     }
@@ -358,11 +389,13 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             .await;
         }
     });
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick: it says which signal killed the machine, which the sweep below discards.
+    let reaping = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
         loop {
             tick.tick().await;
+            reaping.reap_killed();
             smolvm::process::reap_vm_children();
         }
     });
@@ -538,6 +571,35 @@ mod tests {
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
+    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner lowers its own score, which is the write the kernel permits without a capability: -1000 where it is allowed, else 0, and in either case below the VMM's.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn the_runner_asks_for_the_lowest_score_the_kernel_allows_it() {
+        lower_own_oom_score_adj();
+        let score: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            score == -1000 || score == 0,
+            "the runner's own score is {score}, which a VMM at 1000 only ties"
+        );
+        assert!(score < OOM_SCORE_ADJ.parse::<i32>().unwrap());
+    }
+
+    // TEST_SCENARIO: the OOM killer picks the process with the highest score in the cgroup, and the runner and the loader hold every machine of the owner between them. A VMM asks for the kernel's maximum, and a VMM that cannot write its score — a host runner with no /proc — still boots.
+    #[test]
+    fn a_vmm_outranks_the_runner_in_the_kernels_choice_of_victim() {
+        let dir = std::env::temp_dir().join(format!("vm-runner-oom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let score = dir.join("oom_score_adj");
+        raise_oom_score_adj(&score);
+        assert_eq!(std::fs::read_to_string(&score).unwrap(), "1000");
+        raise_oom_score_adj(&dir.join("absent").join("oom_score_adj"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn a_bare_port_binds_every_interface() {

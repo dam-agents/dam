@@ -32,7 +32,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one, reversibly until the machine has booted from the copy. The api-server is the one spec writer, so a request writes no spec: it records the target shape and a snapshot of what the switch changes, and switches the Backend itself once this reports the boot verified. Until then the container spec is the Agent's spec and the vm side is built beside it. `Requested` makes the owner's runner and the machine, stopped, while the container keeps running — the preflight; `Stopping` takes the container down and records which volume holds HOME; `Copying` streams it to the runner as the machine's seed; `Booting` lets the machine start from it; `Verified` waits for the switch. The phase, its reason and the copy attempts are the RuntimeMigrating status condition, and every step is derived from it and from cluster state, so a restart resumes where it left off. The old volumes keep their labels until after the switch, so an abort before it leaves the container exactly where it was.
+// UNIT_BOUNDARY_DESCRIPTION: moving an Agent from the container Backend to the vm one, reversibly until the machine has booted from the copy. The api-server is the one spec writer, so a request writes no spec: it records the target shape and switches the Backend itself once this reports the boot verified. Until then the container spec is the Agent's spec and the vm side is built beside it. `Requested` makes the owner's runner and the machine, stopped, while the container keeps running — the preflight; `Stopping` takes the container down and records which volume holds HOME; `Copying` streams it to the runner as the machine's seed; `Booting` lets the machine start from it; `Verified` waits for the switch. The phase, its reason and the copy attempts are the RuntimeMigrating status condition, and every step is derived from it and from cluster state, so a restart resumes where it left off. The old volumes keep their labels until after the switch, so an abort before it leaves the container exactly where it was.
 const (
 	annRuntimeMigration         = "agent-platform.ai/runtime-migration"
 	annRuntimeMigrationTarget   = "agent-platform.ai/runtime-migration-target"
@@ -49,7 +49,7 @@ const (
 	runtimeMigrationCopying   = "copying"
 	runtimeMigrationBooting   = "booting"
 
-	// UNIT_BOUNDARY_DESCRIPTION: the bounds that make a migration end. Three copy attempts, each a Job of one pod, and a wall-clock budget from the request that covers one copy running into its own four-hour deadline with time left to boot; a migration past either is Failed, with the reason, until the user retries or aborts.
+	// UNIT_BOUNDARY_DESCRIPTION: the bounds that make a migration end. Three copy attempts, each a Job of one pod, and a wall-clock budget from the request that covers one copy running into its own four-hour deadline with time left to boot; a migration past either is Failed, with the reason, until an operator retries or aborts it.
 	runtimeMigrationMaxAttempts = 3
 	runtimeMigrationBudget      = 6 * time.Hour
 
@@ -69,6 +69,7 @@ const (
 // UNIT_BOUNDARY_DESCRIPTION: a migration as the controller reads it: whether the api-server's request stands, and the phase the RuntimeMigrating condition records. A request from before the condition existed carries its phase in the request annotation instead, which is read as the same phase so a migration the previous controller started resumes. `recorded` says whether the condition exists; `since` is when it last turned true, which is where the time budget starts; `source` says the old volumes were recorded, which happens only once the container is being stopped.
 type runtimeMigration struct {
 	requested bool
+	target    bool
 	recorded  bool
 	phase     string
 	message   string
@@ -84,6 +85,7 @@ type runtimeMigration struct {
 func runtimeMigrationOf(annotations map[string]string, status apiv1.AgentStatus) runtimeMigration {
 	m := runtimeMigration{
 		requested: annotations[annRuntimeMigration] != "",
+		target:    annotations[annRuntimeMigrationTarget] != "",
 		source:    annotations[annRuntimeMigrationSource] != "",
 		empty:     annotations[annRuntimeMigrationEmpty] == "true",
 		attempts:  status.RuntimeMigrationAttempts,
@@ -123,7 +125,22 @@ func runtimeMigrationOfObject(u *unstructured.Unstructured) runtimeMigration {
 
 func (m runtimeMigration) active() bool { return m.requested || m.phase != "" }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether nothing of the Agent may run — neither the container, nor the machine, nor the gateway. That holds from the moment the container is stopped until the copy has landed: the old pod would keep writing to a volume being copied, and a machine that booted would seed its disk from the image and never look at the copy again. A boot is let through only with the seed it must come from recorded, since that is what the runner and platform-init hold the boot to. A migration that failed after the container was stopped keeps it stopped until the user retries or aborts; one that failed in preflight never stopped it.
+// UNIT_BOUNDARY_DESCRIPTION: whether a standing request landed in the middle of an undo. The api-server decides a request by writing its target in the same patch, so a request without one has not been decided; with a move's condition on the Agent at a phase an undo is owed from — past the preflight and before the verified boot — it arrived while that undo was not done, and the undo is finished first. Once the condition is gone the same request reads as a fresh one and starts.
+func (m runtimeMigration) midUndoRequest(annotations map[string]string) bool {
+	return annotations[annRuntimeMigration] != "" && !m.target && m.recorded && m.undoOwed()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an interrupted move owes an undo. A request the api-server has not decided has nothing to undo, and a verified move is not undon: its machine booted from the copy and its disk is where the Agent's data is.
+func (m runtimeMigration) undoOwed() bool {
+	switch m.phase {
+	case apiv1.ReasonRuntimeMigrationStopping, apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting, apiv1.ReasonRuntimeMigrationFailed:
+		return true
+	default:
+		return false
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether nothing of the Agent may run — neither the container, nor the machine, nor the gateway. That holds from the moment the container is stopped until the copy has landed: the old pod would keep writing to a volume being copied, and a machine that booted would seed its disk from the image and never look at the copy again. A boot is let through only with the seed it must come from recorded, since that is what the runner and platform-init hold the boot to. A migration that failed after the container was stopped keeps it stopped until an operator retries or aborts it; one that failed in preflight never stopped it.
 func (m runtimeMigration) holdsDown() bool {
 	switch m.phase {
 	case apiv1.ReasonRuntimeMigrationStopping, apiv1.ReasonRuntimeMigrationCopying:
@@ -267,10 +284,19 @@ func (r *AgentReconciler) runtimeMigrationPhase(ctx context.Context, agent *apiv
 	if m.recorded && phase == m.phase && message == m.message {
 		return nil
 	}
-	if err := updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
+	// UNIT_BOUNDARY_DESCRIPTION: the phase this reconcile read can be older than the Cluster's own — the informer does not see this controller's own writes at once — so the write applies only while the live Agent still stands at the phase and request it was decided from. A move that verified, finished, or was re-requested in between keeps what it has; this turn's note is dropped and the next turn reads the phase that is there.
+	applied, err := updateAgentStatusWhile(ctx, r.dynamic, r.config.Namespace, agent.Name, func(obj *unstructured.Unstructured) bool {
+		live := runtimeMigrationOfObject(obj)
+		return live.phase == m.phase && live.requested == m.requested
+	}, func(s *apiv1.AgentStatus) {
 		setRuntimeMigrating(s, phase, message, agent.Generation)
-	}); err != nil {
+	})
+	if err != nil {
 		return err
+	}
+	if !applied {
+		slog.Info("runtime migration: the move advanced under this turn, so its note is dropped", "agent", agent.Name, "read", m.phase, "wrote", phase)
+		return nil
 	}
 	if phase != m.phase {
 		slog.Info("runtime migration: phase", "agent", agent.Name, "from", m.phase, "to", phase)
@@ -387,8 +413,15 @@ func (r *AgentReconciler) continueRuntimeMigration(ctx context.Context, agent *a
 			apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionRuntimeMigrating)
 			s.RuntimeMigrationAttempts = 0
 		})
-	case !m.requested:
+	case !m.requested && m.phase == apiv1.ReasonRuntimeMigrationVerified && !agent.Spec.IsVM():
+		// UNIT_BOUNDARY_DESCRIPTION: the machine booted from the copy, so its disk is where the Agent's data is now and the runtime writes to it; withdrawing the request that late an undo is not, and tearing the machine down here would destroy what the guest has written since. The api-server switches the spec, which is the only way out.
+		slog.Info("runtime migration: the request was withdrawn after the verified boot, so the machine stands and the Backend switch decides it", "agent", agent.Name)
+		return nil
+	case !m.requested || m.midUndoRequest(agent.Annotations):
 		return r.clearRuntimeMigration(ctx, agent, false)
+	case !m.target:
+		// UNIT_BOUNDARY_DESCRIPTION: the api-server decides a request by writing its target, so nothing is made on the vm side until it does.
+		return nil
 	case m.phase == apiv1.ReasonRuntimeMigrationFailed:
 		if !m.retry.After(m.since) {
 			return nil
@@ -513,8 +546,28 @@ func (r *AgentReconciler) runtimeMigrationWithNothingToCopy(ctx context.Context,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: removes what the vm side made — the copy Job, the machine with its disk and its seed, and the record of which volumes were copied — and then the condition, so a crash anywhere in between is finished by the next reconcile. The old volumes are not touched: they never lost their labels, so the container resumes on them. For an abort the condition goes; for a retry the migration starts over from the preflight with a fresh machine, because a machine whose boot failed may have seeded part of its disk. An abort does not wait on a runner that cannot be reached, since that is when a user most needs the container back: the machine it could not delete is marked as left on the Agent, and the orphan sweep removes it once the runner answers.
+// UNIT_BOUNDARY_DESCRIPTION: tearing the vm side down destroys the disk the guest holds, so a live read decides it again immediately before: a stale phase cannot authorize the delete, and a move that verified or finished, or was switched, leaves its machine standing and the next turn reads that.
+func (r *AgentReconciler) runtimeMigrationTeardownAllowed(ctx context.Context, name string) (bool, error) {
+	live, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err != nil {
+		return false, fmt.Errorf("reading the agent before removing the vm side: %w", err)
+	}
+	standing, err := FromCacheObject[apiv1.Agent](live)
+	if err != nil {
+		return false, err
+	}
+	if phase := runtimeMigrationOf(standing.Annotations, standing.Status); phase.phase == apiv1.ReasonRuntimeMigrationVerified || standing.Spec.IsVM() {
+		slog.Info("runtime migration: the live Agent no longer owes the vm side torn down, so its machine stands", "agent", name, "phase", phase.phase)
+		return false, nil
+	}
+	return true, nil
+}
+
 func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv1.Agent, retry bool) error {
 	name := agent.Name
+	if allowed, err := r.runtimeMigrationTeardownAllowed(ctx, name); err != nil || !allowed {
+		return err
+	}
 	prop := metav1.DeletePropagationBackground
 	if err := r.client.BatchV1().Jobs(r.config.Namespace).Delete(ctx, runtimeMigrationJobName(name), metav1.DeleteOptions{PropagationPolicy: &prop}); err != nil && !k8serrors.IsNotFound(err) {
 		return fmt.Errorf("deleting the home copy job: %w", err)
@@ -533,6 +586,11 @@ func (r *AgentReconciler) clearRuntimeMigration(ctx context.Context, agent *apiv
 		annRuntimeMigrationSeed:    nil,
 		annRuntimeMigrationEmpty:   nil,
 		annRuntimeMigrationMessage: nil,
+	}
+	if !retry {
+		// UNIT_BOUNDARY_DESCRIPTION: an abort leaves nothing of the move behind, so a request the operator writes next is undecided and the api-server decides it, instead of reading as one that already names a target from the move that was undone.
+		cleared[annRuntimeMigrationTarget] = nil
+		cleared[annRuntimeMigrationRetry] = nil
 	}
 	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
 		if retry {
@@ -1075,6 +1133,9 @@ func (r *AgentReconciler) copyJobSeed(ctx context.Context, job *batchv1.Job) (vm
 // UNIT_BOUNDARY_DESCRIPTION: a boot that cannot prove it came from the copy — the seed was not recorded, the runner lost it, or the guest answered with a home from anything else — is not a verified migration. The old volumes still carry their labels, since only the switch releases them, so going back to `Copying` is safe. The machine is deleted first, so the new copy lands on a fresh disk that platform-init restores instead of keeping the home already there; the next reconcile creates the machine stopped again. The new copy is one more attempt, so a boot that keeps failing the match ends the migration as Failed like a copy that keeps failing.
 func (r *AgentReconciler) copyRuntimeMigrationAgain(ctx context.Context, agent *apiv1.Agent, m *runtimeMigration, why string) error {
 	name := agent.Name
+	if allowed, err := r.runtimeMigrationTeardownAllowed(ctx, name); err != nil || !allowed {
+		return err
+	}
 	if err := r.deleteMachine(ctx, name, agent.Labels[envoyOwnerLabel]); err != nil {
 		return fmt.Errorf("deleting the machine to copy its home again: %w", err)
 	}
@@ -1311,7 +1372,7 @@ func vmSideProblem(machine vmrunner.MachineStatus, runnerReached bool, vmErr err
 		}
 		return msg
 	}
-	if machine.Reason == "" || machine.Reason == vmrunner.ReasonNotReady || machine.Reason == vmrunner.ReasonCopyingDisk {
+	if machine.Reason == "" || machine.Reason == vmrunner.ReasonNotReady || machine.Reason == vmrunner.ReasonCopyingDisk || machine.Reason == vmrunner.ReasonOOMKilled || machine.Reason == vmrunner.ReasonSeccompKilled {
 		return ""
 	}
 	msg := machine.Message

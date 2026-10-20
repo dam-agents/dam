@@ -3,23 +3,39 @@
 Last verified: 2026-10-19
 
 A machine may reach only its gateway, so its image is fetched for it and unpacked into a tree every machine of that image mounts read-only.
-That tree is never on the runner's claim: it lives in a **node cache**, the host directory `imageCache.hostPath` names, which every runner scheduled on the node shares, so the same few harness images are fetched once per node rather than once per owner.
-The install must name it once the `vm` Backend is on, and the chart refuses one that does not; its default is the directory the OpenShift node configuration creates.
+That tree is never on the runner's claim: it lives in a **node cache**, a host directory the install's runners scheduled on the node share, so the same few harness images are fetched once per node rather than once per owner.
+The install names a root once the `vm` Backend is on — `imageCache.hostPath` — and the chart keeps this install's cache in its own subdirectory of it, `<release namespace>/<release name>`: nodes are shared, and an install given another install's cache directory is a second writer of it, so the directory is named after the pair the cluster already keeps unique rather than left to whoever sets the value.
+It refuses a root that is not a path on the node, and one whose subdirectory lands inside the release directory, which the stager prunes.
 It is a host directory, not a `ReadWriteMany` claim, the costliest class, which buys only cross-node dedup.
 On OpenShift the runners need an SCC that admits a host directory, which the chart's own does not — and one that leaves the SELinux type to the pod: SELinux confines every container to a type that may neither write nor read a directory the kubelet creates on the host, so the image cache service runs there as the unconfined container type at the plain level and labels the directory for containers as it opens the cache.
 Every tree it unpacks inherits that label, which is what lets the runners, still confined, boot from it; the label is set from the chart's OpenShift signal, and a service that cannot set it says so and exits rather than serve trees no runner could read.
-The node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create and label the directory themselves.
+The node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/) has the nodes create and label the parent directory: the kubelet creates this install's own subdirectory under it for the cache pod's volume, and the service labels that subdirectory for containers as it opens it.
 
 **The cache has exactly one writer**, a per-node **image cache service**: runners mount the directory read-only and ask the service, over a socket inside it, for each image a machine boots.
 The service resolves the reference, fetches and unpacks it on a miss with the pull secrets the runner forwards for that machine ([security-and-credentials](security-and-credentials.md#image-pull-credentials)), and answers with the tree and what the image says to run.
 A runner that could write a shared directory would let a guest that escapes into it rewrite a tree another owner's machines boot; one writer also means a fetch and an eviction never have to agree across processes, so what the writer knows about the cache is kept in its memory — all but where each tree came from, which is written beside the tree because a later caller's access is checked against it.
-The service is therefore in the boot path: with it down, a runner boots only an image one of its own machines already holds, and refuses any other as unavailable rather than booting it straight from the registry.
+The service is therefore in the boot path: with it down, a runner boots only an image one of its own machines already holds, and refuses any other rather than booting it straight from the registry ([vm-runner-upgrades](vm-runner-upgrades.md)).
+That refusal is the node's, not the image's, when the socket is what failed: a machine refused because no service serves the socket carries a reason of its own, distinct from an unavailable image, so the api-server holds an image update instead of convicting an image that starts fine elsewhere.
+A service that took the request and then failed — no answer, a closed connection, an answer nothing can read — is refused as an image the cache cannot serve instead, because a fetch of one image is what can wedge or kill the service, and the image update job then bounds it and moves the Agent back rather than holding forever.
+The refusal names the socket inside the runner's read-only mount and says what such a mount means — no service serving this node, or a service writing another node directory than the one this runner mounts — since one message covers both and only an operator can tell them apart; the Agent's own failure adds the node directory its runner mounts, which is the fact an operator compares with the one the cache service writes.
+The same sentence reaches the controller as the runner's own answer about whether it can reach the service, which is what keeps a broken runner from waiting out the idle wait before it rolls, once the runner has said so for a minute ([vm-runner-upgrades](vm-runner-upgrades.md)).
 The runner fetches nothing itself, so it holds none of the capabilities an unpack takes, and it resolves no name: its egress policy admits no resolver ([vm-runner](vm-runner.md)).
-The service resolves the registries itself, through the node's resolver, or through the cluster's where `imageCache.dnsPolicy` says the registry is a Service inside the cluster.
+The service resolves the registries itself, through the cluster DNS pods unless `imageCache.dnsPolicy` says the node's resolver.
+It is the one pod of the install that fetches, so its own egress policy is the gate on what a compromise of it reaches: the public internet minus every range the cluster owns — private, loopback, link-local, CGNAT and this-network, which hold the platform's own datastores, the node and the cloud metadata endpoints — the cluster DNS pods on their ports, the pods and ports an in-cluster registry names in `imageCache.peers`, and the range an install names in `imageCache.egressCidrs` for a mirror outside the cluster on a private address.
+An in-cluster registry is reached by pod rather than by range: policy is applied after a Service's address is translated to a pod, and that pod's address is in a range the policy closes.
+Nothing dials it: the runners reach it over the Unix socket in the directory they share with it, which no policy sees.
 The service unpacks with every capability dropped but the few that restoring an image's owners and modes takes, and skips the image's `/dev`, so no tree carries a device node.
 No entry lands outside the tree: tar strips a leading `/` and refuses a member that names `..` or a path through a symlink, and the fetch fails on either.
 A tree keeps the setuid binaries its image carries, because a guest boots it as root on its own kernel and its `sudo` or `su` has to work there.
 The host never runs them: a hostPath takes no `nosuid` mount option, so the node directory is closed to every host uid but root, and a runner reads it as root through its idmapped mount, under no-new-privileges.
+
+**Moving that directory is a two-deploy change.**
+An upgrade that moves it reaches the runners that roll, and the rollout holds a runner back while its owner has a busy agent — up to `runner.rollout.idleWait`, a day by default — so for that long a runner still mounts the directory the release before gave it and dials the socket inside it.
+That socket is gone once the service serves the new directory, and a runner that dials it boots only the trees its own machines already hold.
+So the first deploy sets `imageCache.legacyPath` to the directory the previous release served, which runs a second cache service over it: the runner the roll has not reached keeps booting from it, and a tree it needs and does not hold is still fetched.
+That service pins nothing, so the window costs a second service over the old trees rather than a second copy of every harness image.
+The second deploy, once every runner has rolled, removes the key.
+The legacy directory may hold neither the install's new directory nor sit inside one: a service over a directory that holds the other's trees evicts them as its own least recently written.
 
 **A node short of disk neither refuses the service nor evicts it first.**
 kubelet admits a critical pod while a node is under disk pressure and turns away every other one, so the class, `system-node-critical`, is what lets a replacement pod start at all while the pressure lasts.
@@ -72,10 +88,13 @@ A grant is remembered per digest and credential, and a failed anonymous read per
 A remembered failed read only moves the anonymous read after the caller's credentials, and never refuses a boot by itself, since a read that timed out looks the same as one refused.
 The check gates a boot, not a read.
 
-**What a runner may read on a node cache is not gated.** Its mount is the whole directory, so any runner on the node — and any guest that escapes into one — reads every cached tree, other owners' private images included.
+**What a runner may read on a node cache is not gated.** Its mount is the whole directory, so any runner of the install on the node — and any guest that escapes into one — reads every cached tree, other owners' private images included.
 The per-machine access check decides only what the service resolves and fetches for a caller.
 The socket cannot tell one runner from another either, since the service checks no peer credentials on it, so what a caller can make the service do is bounded instead of attributed: a hold names only trees on disk, at most a thousand per call, and once holds keep the cache past half again its budget, it refuses every fetch, as a capacity problem, and logs an error for the operator.
 
 **An install with no registry stages trees beside the cache's.** Local development has no registry for its own images, so the install stages each one as a tree with its launch record in the same node directory, named after the image reference (`image:stage-vm`), and a runner boots a staged tree before it asks the service.
+The install hands the staging the directory its own values derived, so an overlay or a `--set` that moves the root moves the staged trees with it.
+A staging run on its own has no such values: it renders the chart without them, so an operator who restages by hand names that same directory (`VM_IMAGE_DIR`).
+The runner's refusal of an archive left in its directory states which: on a Mac, the host staging mode and the home (`VM_HOST_RUNNER`, `PLATFORM_VM_RUNNER_HOME`); in a runner pod, that the directory to name is the pod's image-cache hostPath, since the path the pod reads is a mount of its own.
 A staged name never looks like a cache entry's, which is named by digest, so eviction never takes one and a reference that would turn into an entry's name is refused.
 The service still runs there; it preloads nothing it can reach, and backs off.

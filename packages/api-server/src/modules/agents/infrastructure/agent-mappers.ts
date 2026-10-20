@@ -7,6 +7,7 @@ import {
 
 import {
   GATEWAY_FAILURE_REASONS,
+  NODE_FAULT_REASONS,
   POD_FAILURE_REASONS,
 } from "../domain/wake-failure.js";
 import { type RuntimeFeatures } from "agent-runtime-api";
@@ -48,7 +49,6 @@ import {
   RUNTIME_MIGRATING_CONDITION,
   RUNTIME_MIGRATION_KEY,
   RUNTIME_MIGRATION_MESSAGE_KEY,
-  RUNTIME_MIGRATION_SNAPSHOT_KEY,
   RUNTIME_MIGRATION_SOURCE_KEY,
   RUNTIME_MIGRATION_TARGET_KEY,
   DISABLED_KEY,
@@ -70,9 +70,7 @@ import {
 import {
   runtimeMigrationHold,
   runtimeMigrationOf,
-  runtimeMigrationRefusal,
   type RuntimeMigrationHold,
-  type RuntimeMigrationContext,
 } from "../domain/runtime-migration.js";
 
 const SPEC_VERSION = `${GROUP}/${VERSION}`;
@@ -142,7 +140,6 @@ export interface InfraAgent {
   runtimeMigration?: RuntimeMigration;
   runtimeMigrationHold?: RuntimeMigrationHold;
   runtimeMigrationTarget?: string;
-  runtimeMigrationSnapshot?: string;
   storageMigrating?: boolean;
   overBudget: boolean;
   overBudgetMessage?: string;
@@ -161,6 +158,7 @@ export interface InfraAgent {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the start failures only a new image causes: it cannot be pulled or unpacked, or the machine cannot boot it. A full home volume, memory and runner placement fail on any image. A container exit on AgentPodReady is left out: that condition does not say which pod exited, and the pod a roll replaces exits on SIGTERM at the new generation. The controller's StartFailed condition says it of the current pod or machine instead.
+// UNIT_BOUNDARY_DESCRIPTION: besides those, a machine's start is also a failed start when the node it runs on cannot serve it, which NODE_FAULT_REASONS names. That case is still a failed start of this spec, so the Agent reads as one, but the image is not what failed: the image update job holds the upgrade on it instead of moving the Agent back.
 const IMAGE_START_FAILURES = new Set([
   "ImagePullFailure",
   "InvalidImageName",
@@ -291,7 +289,8 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
             startFailed.observedGeneration === generation) ||
           (agentPod?.status === "False" &&
             agentPod.observedGeneration === generation &&
-            IMAGE_START_FAILURES.has(agentPod.reason ?? ""))
+            (IMAGE_START_FAILURES.has(agentPod.reason ?? "") ||
+              NODE_FAULT_REASONS.has(agentPod.reason ?? "")))
         ? "failed"
         : ready?.status === "True" && ready.observedGeneration === generation
           ? "ready"
@@ -363,11 +362,6 @@ export function parseInfraAgent(obj: KubeObject): InfraAgent {
     ...(annotations[RUNTIME_MIGRATION_TARGET_KEY]
       ? { runtimeMigrationTarget: annotations[RUNTIME_MIGRATION_TARGET_KEY] }
       : {}),
-    ...(annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY]
-      ? {
-          runtimeMigrationSnapshot: annotations[RUNTIME_MIGRATION_SNAPSHOT_KEY],
-        }
-      : {}),
     storageMigrating: !!annotations[STORAGE_MIGRATION_KEY],
     overBudget:
       ready?.status === "False" && ready.reason === READY_REASON_OVER_BUDGET,
@@ -428,7 +422,6 @@ export function assembleAgent(
   features: RuntimeFeatures,
   unsupportedContributionKinds: ContributionKind[],
   workspaceFailures: WorkspaceFailure[],
-  runtimeMigrationContext: RuntimeMigrationContext,
   onboardingSteps?: OnboardingStep[],
 ): Agent {
   return {
@@ -440,8 +433,6 @@ export function assembleAgent(
     ...(infra.runtimeMigration
       ? { runtimeMigration: infra.runtimeMigration }
       : {}),
-    runtimeMigratable:
-      runtimeMigrationRefusal(infra, runtimeMigrationContext) === null,
     spec: infra.spec,
     state: computeAgentState(infra, preparingWorkspace),
     effectiveHibernationTimeoutMin: resolveEffectiveHibernationTimeoutMin(

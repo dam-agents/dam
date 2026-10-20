@@ -19,16 +19,18 @@ export const CHANNEL_TYPE_LABELS: Record<ChannelType, string> = {
   terminal: "Terminal",
 };
 
-export type StateFilter = "any" | "in-progress" | "unread";
+export type StateFilter = "any" | "needs-attention" | "in-progress" | "unread";
 
 export const STATE_FILTERS: readonly StateFilter[] = [
   "any",
+  "needs-attention",
   "in-progress",
   "unread",
 ];
 
 export const STATE_FILTER_LABELS: Record<StateFilter, string> = {
   any: "All",
+  "needs-attention": "Needs attention",
   "in-progress": "In progress",
   unread: "Unread",
 };

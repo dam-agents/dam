@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so it runs twice for every change, once per lane.
@@ -8,15 +8,17 @@ It is the only test that covers a change across the whole system — login throu
 ## Lanes
 
 A **lane** is a Backend for the Agents a spec creates.
-The **container lane** runs a plain install, where an Agent is a pod; the **vm lane** runs an install with virtualization on, where an Agent is a machine on its owner's VM runner.
+The **container lane** runs a plain install, where an Agent is a pod; the **vm lane** runs an install with virtualization on, where the Agents a spec creates are machines on their owner's VM runner — except the ones a spec stages as an object with the container backend, which boot as containers.
 The lanes differ in nothing else, and both run on every pull request and in every full-suite run, each on its own runner, so a fault only one Backend has shows on the change that caused it.
-The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the vm backend on, and the suite reads it to pick the specs only one lane can run, the experimental flag the UI's Agent creation needs on, and so the order the projects run in.
+The lane is one variable, `E2E_VIRTUALIZATION`: the install reads it to turn the vm backend on, and the suite reads it to pick the specs only one lane can run, and so the order the projects run in.
 
 ## Projects and the order between them
 
 The specs are grouped into Playwright **projects**, one per area, whose dependencies chain the state they share: the auth project stores the user's login, the agent project creates the suite's mock Agent and the Connection its chat turns need, and the chain project drives that Agent through messages, Sessions, Slack and egress.
 A spec that boots and drives an Agent of its own runs in a project after those, one at a time, because each of them competes for the same cluster's compute.
 Four specs run in the vm lane alone: the runtime migration needs an install with both Backends, the harness tools and browser tabs specs drive what only a machine has, and the boot matrix breaks a machine's boot the ways a host failure does — it kills the machine's VMM at points of a boot and empties the disk's layout mark.
+A fifth, the runner release spec, rolls a live machine onto a second runner release and back, with the chart's own upgrade.
+The runner release spec runs after every project the run keeps, whatever the scope drops: a runner pod rolls every machine its owner has, so it waits for the suite, and it leaves the install on the values it found there.
 The boot matrix runs with the other specs that boot an Agent of their own, one at a time, for the compute they would otherwise share.
 Its cases that need room a CI node cannot spare, a disk with no block left and a claim with none, are opt-in through `E2E_DISK_FILL_GIB` and `E2E_CLAIM_FILL_GIB`: a machine's disk is a sparse file on its owner's claim, that claim is a directory of the node's disk, and a fill takes that room whenever its filesystem allocates the blocks instead of marking them.
 The agent backend spec runs on both lanes, in each lane's own-agents project: on the container lane after the agent project, whose provider connection its chat input needs, and one at a time with the other specs that boot an Agent of their own, and on the vm lane after the rest of the suite, since the VM runner it deletes runs every other machine of that user.

@@ -4,27 +4,17 @@ import type { AgentState } from "api-server-api";
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
-import { AGENT_NS, kubectl } from "./cluster.js";
+import { deleteAgentIfPresent } from "./agents.js";
+import {
+  AGENT_NS,
+  type AgentCr,
+  applyAgentCr,
+  kubectl,
+  readAgentCr,
+} from "./cluster.js";
 import { type Backend, laneBackend } from "./lane.js";
 
 export { type Backend, laneBackend };
-
-export function onLaneBackend<T extends object>(input: T): T & { vm?: true } {
-  return laneBackend === "vm" ? { ...input, vm: true } : input;
-}
-
-export async function setVmSandboxes(
-  api: ApiClient,
-  enabled: boolean,
-): Promise<void> {
-  const flags = await api.features.setFlag.mutate({
-    feature: "vm-sandboxes",
-    enabled,
-  });
-  expect(flags["vm-sandboxes"], "the vm-sandboxes experiment flag").toBe(
-    enabled,
-  );
-}
 
 const tokenMaxAgeMs = 120_000;
 
@@ -47,12 +37,13 @@ export async function requireBackend(
   api: ApiClient,
   backend: Backend,
 ): Promise<void> {
-  if (backend !== "vm") return;
   const install = await api.features.install.query();
   expect(
     install.virtualization,
-    "a vm project runs only against an install with virtualization.enabled; reinstall with E2E_VIRTUALIZATION=1",
-  ).toBe(true);
+    backend === "vm"
+      ? "a vm project runs only against an install with virtualization.enabled; reinstall with E2E_VIRTUALIZATION=1"
+      : "a container project runs only against an install without virtualization.enabled; reinstall without E2E_VIRTUALIZATION=1",
+  ).toBe(backend === "vm");
 }
 
 export async function createAgentOn(
@@ -65,13 +56,70 @@ export async function createAgentOn(
   const created = await api.agents.create.mutate({
     name,
     templateId,
-    ...(backend === "vm" ? { vm: true } : {}),
+    ...(backend === "container" ? { vm: false } : {}),
     ...(neverIdle ? { hibernationTimeoutMin: 0 } : {}),
   });
   expect(created.vm, `agent ${name} landed on the wrong backend`).toBe(
     backend === "vm",
   );
   return created.id;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an install that can virtualize refuses every container create, so a spec that needs a container Agent gets one the way an operator does: the api-server assembles the spec for a throwaway Agent, and that spec is applied as an Agent object with the container backend under the name the spec asked for. The throwaway is deleted at once, so its machine and home leave nothing behind. Its spec was assembled for the vm backend, which drops the template's storageSize, runtimeClassName and nodeSelector, so a case that needs those passes them in `legacy`; the api-server's template view publishes none of them. What the create does beside the spec — connections, credentials, env — is not staged either.
+export async function applyLegacyContainerAgent(
+  api: ApiClient,
+  id: string,
+  name: string,
+  templateId: string,
+  legacy: {
+    storageSize?: string;
+    runtimeClassName?: string;
+    nodeSelector?: Record<string, string>;
+  } = {},
+): Promise<void> {
+  await deleteAgentIfPresent(api, `${name}-spec`);
+  const source = await api.agents.create.mutate({
+    name: `${name}-spec`,
+    templateId,
+    hibernationTimeoutMin: 0,
+  });
+  let cr: AgentCr;
+  try {
+    cr = readAgentCr(source.id);
+  } finally {
+    await api.agents.delete.mutate({ id: source.id });
+  }
+  const metadata = Object.fromEntries(
+    Object.entries(cr.metadata).filter(
+      ([key]) =>
+        ![
+          "resourceVersion",
+          "uid",
+          "creationTimestamp",
+          "deletionTimestamp",
+          "deletionGracePeriodSeconds",
+          "generation",
+          "managedFields",
+          "ownerReferences",
+          "finalizers",
+        ].includes(key),
+    ),
+  );
+  applyAgentCr({
+    apiVersion: cr.apiVersion,
+    kind: cr.kind,
+    metadata: { ...metadata, name: id },
+    spec: {
+      ...cr.spec,
+      name,
+      backend: { type: "container" },
+      ...(legacy.storageSize ? { storageSize: legacy.storageSize } : {}),
+      ...(legacy.runtimeClassName
+        ? { runtimeClassName: legacy.runtimeClassName }
+        : {}),
+      ...(legacy.nodeSelector ? { nodeSelector: legacy.nodeSelector } : {}),
+    },
+  });
 }
 
 export async function waitAgentState(
@@ -298,7 +346,7 @@ export function runnerGrows(
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from.
-function runnerPod(agentId: string): string {
+export function runnerPod(agentId: string): string {
   return kubectl(
     "-n",
     AGENT_NS,
@@ -307,8 +355,8 @@ function runnerPod(agentId: string): string {
     "-l",
     hostSelector(agentId, "vm"),
     "-o",
-    "jsonpath={.items[0].metadata.name}",
-  );
+    "jsonpath={.items[*].metadata.name}",
+  ).split(" ")[0];
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root on the agent's VM runner, as an operator with the pod would: the owner's claim is $HOME, and a machine's VMM is a `_boot-vm` child of the runner.

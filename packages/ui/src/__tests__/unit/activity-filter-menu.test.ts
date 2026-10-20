@@ -19,7 +19,7 @@ import {
   toggleChannelType,
 } from "../../modules/home/lib/activity-filter.js";
 
-// TEST_OVERVIEW: the session filter's Types section can narrow to one type in one click ("Only") and widen back to every type ("Show all"). The rules are pure helpers in activity-filter.ts, and the menu renders both actions as menu items with accessible names, so arrow keys reach them like every other row.
+// TEST_OVERVIEW: the session filter's Type section can narrow to one type in one click ("Only") and widen back to every type ("Show all"). The rules are pure helpers in activity-filter.ts, and the menu renders both actions as menu items with accessible names, so arrow keys reach them like every other row.
 
 vi.mock("@radix-ui/react-dropdown-menu", async (importOriginal) => {
   const actual = await importOriginal<typeof DropdownMenuPrimitive>();

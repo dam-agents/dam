@@ -108,6 +108,16 @@ func (c *Client) List(ctx context.Context) ([]string, error) {
 	return ids, json.Unmarshal(raw, &ids)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node's image cache service now. One connect on the runner's side, answered at once; the roll's gate asks it before it holds a changed pod back for a busy agent, since a runner without its cache boots only the trees its own machines already hold.
+func (c *Client) ImageCache(ctx context.Context) (RunnerImageCache, error) {
+	var cache RunnerImageCache
+	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/image-cache", nil)
+	if err != nil {
+		return cache, fmt.Errorf("VM runner: image cache: %w", err)
+	}
+	return cache, json.Unmarshal(raw, &cache)
+}
+
 func (c *Client) Release(ctx context.Context) (RunnerRelease, error) {
 	var release RunnerRelease
 	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/release", nil)

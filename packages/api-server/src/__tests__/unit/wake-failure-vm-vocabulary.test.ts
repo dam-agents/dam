@@ -25,6 +25,7 @@ const vocabulary = JSON.parse(
 const controllerOnlyReasons = new Set([
   "MachineRunnerUnschedulable",
   "MachineRunnerNodeLost",
+  "MachineAllocationUnreadable",
 ]);
 
 const machineReasons = [...POD_FAILURE_REASONS].filter((r) =>

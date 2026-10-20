@@ -210,27 +210,33 @@ url = "https://nodejs.org/dist/v26.11.1/node-v26.11.1-linux-x64.tar.gz"
 
 [[tools."npm:@agentclientprotocol/claude-agent-acp"]]
 version = "0.88.0"
-aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.88.0", digest = "sha256:605d6e60acbf531ee22ebb229cec9f218c74c22fc4d05a9952e624b7dbab97a9" }
+aube = { path = ".mise/locks/npm-agentclientprotocol-claude-agent-acp/0.88.0", digest = "sha256:1e083ddc7ff5e181b0a3eaa9eee29594606e568199cfedd2ec18ee48167ef2ae" }
 backend = "npm:@agentclientprotocol/claude-agent-acp"
 specifiers = ["0.88.0"]
 
 [[tools."npm:@agentclientprotocol/codex-acp"]]
 version = "2.1.1"
-aube = { path = ".mise/locks/npm-agentclientprotocol-codex-acp/2.1.1", digest = "sha256:d58066fa8a141f879694c4d6a50e193bdc32fc08a7d34baeb15f5d42c6d27a16" }
+aube = { path = ".mise/locks/npm-agentclientprotocol-codex-acp/2.1.1", digest = "sha256:cacb313208130e5aacc3cc1b2eff051920e0e1b709d4decbe0ac20a7a2dceff5" }
 backend = "npm:@agentclientprotocol/codex-acp"
 specifiers = ["2.1.1"]
 
 [[tools."npm:@agentclientprotocol/sdk"]]
 version = "1.7.0"
-aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.7.0", digest = "sha256:0bb7f4f7ebab0ae89b41fa5991f29669360b2ccdcf815319721420ef584edc61" }
+aube = { path = ".mise/locks/npm-agentclientprotocol-sdk/1.7.0", digest = "sha256:f0416f25d62fdaeae4dda43e78a8317a710b32299a3387f99b82e26566440b51" }
 backend = "npm:@agentclientprotocol/sdk"
 specifiers = ["1.7.0"]
 
 [[tools."npm:@earendil-works/pi-coding-agent"]]
 version = "1.1.0"
-aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.1.0", digest = "sha256:9e30a03f85f1fa93028d66db668ee35d5427f89820b8e73f8cd3fa2c54eeff97" }
+aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.1.0", digest = "sha256:8bd0c682a06f8b05c935302451a2241375074ca70a628cc711afb1364f6f1660" }
 backend = "npm:@earendil-works/pi-coding-agent"
 specifiers = ["1.1.0"]
+
+[[tools."npm:@github/copilot"]]
+version = "1.0.96"
+aube = { path = ".mise/locks/npm-github-copilot/1.0.96", digest = "sha256:fd1d7f241b68a58e936150897a39b7de590e71b804b3d111c8a94d188849bc05" }
+backend = "npm:@github/copilot"
+specifiers = ["1.0.96"]
 
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"
@@ -248,10 +254,10 @@ specifiers = ["1.0.2"]
 allow_low_downloads = "true"
 
 [[tools."npm:agent-browser"]]
-version = "0.38.2"
-aube = { path = ".mise/locks/npm-agent-browser/0.38.2", digest = "sha256:0b2ff7be211127e1a450d28cd323eab41c1d4851892d73b95d77e4fdd3e4e1b8" }
+version = "0.39.0"
+aube = { path = ".mise/locks/npm-agent-browser/0.39.0", digest = "sha256:a608b1dc1cbdc4509280789f3d1f7305aed7a7fcc4fb784274f62211f7e5a2b2" }
 backend = "npm:agent-browser"
-specifiers = ["0.38.2"]
+specifiers = ["0.39.0"]
 
 [[tools."npm:pi-acp"]]
 version = "0.0.34"
@@ -274,7 +280,7 @@ specifiers = ["v0.5.0"]
 version = "0.4.0"
 backend = "pipx:openevolve"
 specifiers = ["0.4.0"]
-uv = { path = ".mise/locks/pipx-openevolve/0.4.0", digest = "sha256:1ff79cf0b62df53d5b1a56d878029442079e3cdc6d6e92a732c6474f0adacacf" }
+uv = { path = ".mise/locks/pipx-openevolve/0.4.0", digest = "sha256:02c9016b156809eb24f8b1126629a7d56549e700c4732f9cd65db81009b2b0a1" }
 
 [[tools.python]]
 version = "3.12.14"
@@ -307,18 +313,18 @@ url = "https://github.com/BurntSushi/ripgrep/releases/download/15.2.0/ripgrep-15
 url_api = "https://api.github.com/repos/BurntSushi/ripgrep/releases/assets/478120097"
 
 [[tools.uv]]
-version = "0.12.24"
+version = "0.13.0"
 backend = "aqua:astral-sh/uv"
 specifiers = ["latest"]
 
 [tools.uv."platforms.linux-arm64"]
-checksum = "sha256:5231be65f496304623895dacdbf1de8504fec90303684bdf05805aa34414dd21"
-url = "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-aarch64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/622872824"
+checksum = "sha256:3ccfb6af6e242433eb552f7d9676abd5412c6595c497e990d9c8cb7b5bd4d2c3"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-aarch64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003012"
 provenance = "github-attestations"
 
 [tools.uv."platforms.linux-x64"]
-checksum = "sha256:b4dfaef47d491a7296981f8374a4595f55dbf84e8937c8ecd2983574d8bb3da6"
-url = "https://github.com/astral-sh/uv/releases/download/0.12.24/uv-x86_64-unknown-linux-gnu.tar.gz"
-url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/622873043"
+checksum = "sha256:1468ebd5a5541121837c5a2817b9972ba6090fa6caa3d142620850a47fb75154"
+url = "https://github.com/astral-sh/uv/releases/download/0.13.0/uv-x86_64-unknown-linux-gnu.tar.gz"
+url_api = "https://api.github.com/repos/astral-sh/uv/releases/assets/626003332"
 provenance = "github-attestations"

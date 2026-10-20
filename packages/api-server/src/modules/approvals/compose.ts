@@ -1,5 +1,9 @@
 import type { Db } from "db";
-import type { ApprovalsService, SpendLimitPayload } from "api-server-api";
+import type {
+  ApprovalsService,
+  SpendLimitPayload,
+  ToolApprovalReports,
+} from "api-server-api";
 import {
   createApprovalsRepository,
   deletePendingSpendQuestions,
@@ -18,6 +22,7 @@ import {
   createExtAuthzGate,
   type EgressAttendance,
   type EgressRuleMatcher,
+  type ProviderScopes,
   type ExtAuthzDecision,
   type ExtAuthzGate,
   type AgentIdentityResolver,
@@ -32,6 +37,7 @@ import {
   type DeliverySweeper,
 } from "./services/delivery-sweeper.js";
 import { startWakeHeldCallsSaga } from "./sagas/wake-held-calls.js";
+import { createToolApprovalReports } from "./services/tool-approval-reports.js";
 import type { Subscription } from "rxjs";
 import type { RedisBus } from "../../core/redis-bus.js";
 
@@ -64,6 +70,7 @@ interface ComposeApprovalsSystemDeps {
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
+  providerScopes: ProviderScopes;
   attendance: EgressAttendance;
   spend: SpendCheck;
   wrapperFrameSender: WrapperFrameSender;
@@ -85,6 +92,7 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     bus: deps.bus,
     identityResolver: deps.identityResolver,
     ruleMatcher: deps.ruleMatcher,
+    providerScopes: deps.providerScopes,
     attendance: deps.attendance,
     spend: deps.spend,
     questions: createSpendLimitQuestions({ repo }),
@@ -98,6 +106,13 @@ export function composeApprovalsSystem(deps: ComposeApprovalsSystemDeps): {
     batchSize: 50,
   });
   return { relay, gate, sweeper, wakeSaga };
+}
+
+export function composeToolApprovalReports(
+  relay: ApprovalsRelayService,
+  ownerSub: string,
+): ToolApprovalReports {
+  return createToolApprovalReports({ relay, ownerSub });
 }
 
 export function createApprovalsCleanupHook(

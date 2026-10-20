@@ -247,10 +247,6 @@ const configSchema = z.object({
   vmPoolMemory: z.string().default(""),
   featureModes: featureModesSchema,
   platformProvider: platformProviderSchema,
-  runtimeMigrationRetentionMs: z
-    .string()
-    .default("168h")
-    .transform(goDurationMs),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -397,16 +393,12 @@ const validatedConfigSchema = configSchema
 export function agentsInstallSettings(config: Config) {
   return {
     virtualizationEnabled: config.virtualizationEnabled,
-    vmForced:
-      config.virtualizationEnabled &&
-      config.featureModes["vm-sandboxes"] === "on",
     defaultHarness: config.harnesses.default,
     telemetry: Object.values(config.harnesses.catalog).some(
       (h) => h.telemetryEnv.length > 0,
     ),
     agentDefaultStorageSize: config.agentDefaultStorageSize,
     agentDefaultMounts: config.agentDefaultMounts,
-    runtimeMigrationRetentionMs: config.runtimeMigrationRetentionMs,
   };
 }
 
@@ -455,7 +447,6 @@ export function loadConfig(): Config {
       apiKey: process.env.PLATFORM_PROVIDER_API_KEY,
       caFile: process.env.PLATFORM_PROVIDER_CA_FILE,
     },
-    runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,

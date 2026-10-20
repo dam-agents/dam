@@ -25,7 +25,6 @@ import {
   useState,
 } from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
@@ -42,6 +41,7 @@ import {
   sessionSpendTitle,
 } from "../../spend/lib/amounts-label.js";
 import { runTimeLabel } from "../lib/run-time.js";
+import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -50,10 +50,6 @@ const LONG_PRESS_MS = 400;
 const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
-
-export function sessionTitleLabel(s: SessionView): string {
-  return s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
-}
 
 interface Props {
   session: SessionView;
@@ -66,6 +62,8 @@ interface Props {
   cost?: SpendSessionRow;
   conversation?: string;
   leading?: ReactNode;
+  titleIcon?: ReactNode;
+  activityIndicators?: boolean;
   pinned?: boolean;
   onTogglePin?: () => void;
   onResume: () => void;
@@ -87,6 +85,8 @@ export function SessionRow({
   cost,
   conversation,
   leading,
+  titleIcon,
+  activityIndicators = true,
   pinned = false,
   onTogglePin,
   onResume,
@@ -197,6 +197,11 @@ export function SessionRow({
             aria-describedby={metaId}
             className="flex min-w-0 items-center gap-1.5 text-left outline-none"
           >
+            {titleIcon && (
+              <span aria-hidden className="flex shrink-0">
+                {titleIcon}
+              </span>
+            )}
             <span className={`text-sm min-w-0 truncate ${titleClass}`}>
               {titleLabel}
             </span>
@@ -214,7 +219,10 @@ export function SessionRow({
             <PinFilled
               size={12}
               aria-label="Pinned"
-              className="ml-auto shrink-0 text-muted-foreground"
+              className={cn(
+                "ml-auto shrink-0 text-muted-foreground group-has-[[data-row-actions]_:focus-visible]:hidden group-has-[[data-row-actions]_[data-state=open]]:hidden hover-capable:group-hover:hidden",
+                onTogglePin && "[@media(hover:none)]:hidden",
+              )}
             />
           )}
           <div
@@ -227,13 +235,16 @@ export function SessionRow({
               scheduled={scheduled}
               terminal={terminal}
               messenger={messenger}
-              needsApproval={needsApproval}
-              working={working}
-              draft={draft}
-              backgroundWork={backgroundWork}
-              harness={s.harness ?? null}
+              {...(activityIndicators && {
+                needsApproval,
+                working,
+                draft,
+                backgroundWork,
+                unread,
+              })}
             />
             <div
+              data-row-actions
               className={cn(
                 "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
                 HOVER_ACTION,
@@ -336,20 +347,20 @@ function SessionIndicators({
   scheduled,
   terminal,
   messenger,
-  needsApproval,
-  working,
-  draft,
-  backgroundWork,
-  harness,
+  needsApproval = false,
+  working = false,
+  draft = false,
+  backgroundWork = NO_WORK,
+  unread = false,
 }: {
   scheduled: boolean;
   terminal: boolean;
   messenger: ChannelType | null;
-  needsApproval: boolean;
-  working: boolean;
-  draft: boolean;
-  backgroundWork: readonly BackgroundWorkItemView[];
-  harness: string | null;
+  needsApproval?: boolean;
+  working?: boolean;
+  draft?: boolean;
+  backgroundWork?: readonly BackgroundWorkItemView[];
+  unread?: boolean;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -360,7 +371,7 @@ function SessionIndicators({
     !working &&
     !hasBackgroundWork &&
     !draft &&
-    !harness
+    !unread
   )
     return null;
   return (
@@ -403,13 +414,15 @@ function SessionIndicators({
         >
           <Pen size={16} />
         </span>
-      ) : harness ? (
-        <span
-          data-testid="session-harness"
-          className="inline-flex shrink-0 text-muted-foreground"
-        >
-          <HarnessIcons harnesses={[harness]} size="xs" />
-        </span>
+      ) : unread ? (
+        <IndicatorBox>
+          <span
+            data-testid="session-unread-dot"
+            role="img"
+            aria-label="Unread"
+            className="size-2 rounded-full bg-accent"
+          />
+        </IndicatorBox>
       ) : null}
       {messenger && !working && (
         <ConnectionIcon

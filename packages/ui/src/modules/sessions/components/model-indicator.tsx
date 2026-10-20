@@ -75,6 +75,7 @@ export function ModelIndicator({
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
+    model,
   );
   const { granted, owned, loaded } = useProviderConnections(agentId);
   const { grant, pending } = useGrantProvider(agentId);
@@ -117,7 +118,7 @@ export function ModelIndicator({
           ?.choices ?? [])
       : (data?.availableModels ?? []);
   const modelName = routed
-    ? (modelIndicatorLabel(groups, model) ?? "Default model")
+    ? (modelIndicatorLabel(groups, model) ?? "Choose a model")
     : (models.find((m) => m.value === model)?.name ?? model);
   const unlisted =
     !routed &&
@@ -272,7 +273,7 @@ export function ModelIndicator({
             />
           </div>
         )}
-        <div className="flex justify-end border-t border-border pt-2 text-xs text-muted-foreground">
+        <div className="flex justify-end border-t border-border pt-2 text-xs text-muted-foreground empty:hidden">
           <SetAsDefault
             agentId={agentId}
             pair={{

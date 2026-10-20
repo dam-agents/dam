@@ -1,5 +1,5 @@
 import { formatSpendAmount } from "../spend/format.js";
-import type { ApprovalPayload } from "./types.js";
+import type { AcpPermissionOption, ApprovalPayload } from "./types.js";
 
 export function describeApprovalPayload(payload: ApprovalPayload): {
   title: string;
@@ -29,4 +29,75 @@ export function acpNativeRowId(
   rpcId: number | string,
 ): string {
   return `acpnative:${agentId}:${sessionId}:${rpcId}`;
+}
+
+export const TOOL_NAME_MAX = 4096;
+export const TOOL_CALL_ID_MAX = 512;
+export const PERMISSION_OPTIONS_MAX = 16;
+export const RPC_ID_MAX = 4096;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a permission request's tool call becomes in
+ * a recorded row. The chat relay and the agent-runtime both write that row, so
+ * they must agree: one mapping, applied on both sides, is what lets the second
+ * writer join the first instead of shadowing it, and it keeps every field
+ * inside the bounds the recording route accepts.
+ */
+export function recordedToolOf(
+  toolCall: { title?: unknown; toolCallId?: unknown } | undefined,
+): { toolName: string; toolCallId?: string } {
+  const title = typeof toolCall?.title === "string" ? toolCall.title : "";
+  const toolCallId =
+    typeof toolCall?.toolCallId === "string" && toolCall.toolCallId !== ""
+      ? toolCall.toolCallId.slice(0, TOOL_CALL_ID_MAX)
+      : undefined;
+  return {
+    toolName: (title === "" ? "tool call" : title).slice(0, TOOL_NAME_MAX),
+    ...(toolCallId !== undefined && { toolCallId }),
+  };
+}
+
+const OPTION_KINDS = [
+  "allow_once",
+  "allow_always",
+  "reject_once",
+  "reject_always",
+] as const;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a permission request's options become in a
+ * recorded row. An unrecordable option is dropped, never sent: the recording
+ * route rejects the whole list over one empty id.
+ */
+export function permissionOptionsOf(raw: unknown): AcpPermissionOption[] {
+  return (Array.isArray(raw) ? raw : []).flatMap((option) => {
+    if (typeof option !== "object" || option === null) return [];
+    const { optionId, kind } = option as Record<string, unknown>;
+    if (typeof optionId !== "string" || optionId === "") return [];
+    const kept = OPTION_KINDS.find((candidate) => candidate === kind);
+    return [
+      {
+        optionId: optionId.slice(0, TOOL_CALL_ID_MAX),
+        ...(kept !== undefined && { kind: kept }),
+      },
+    ];
+  });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The same options inside the recording route's
+ * count bound, which keeps one option of each kind first: a catalog that lost
+ * every reject option cannot express a denial, and a denial that finds none
+ * left must never answer the request with an allow.
+ */
+export function recordedOptionsOf(raw: unknown): AcpPermissionOption[] {
+  const all = permissionOptionsOf(raw);
+  if (all.length <= PERMISSION_OPTIONS_MAX) return all;
+  const firstOfEachKind = OPTION_KINDS.flatMap(
+    (kind) => all.find((option) => option.kind === kind) ?? [],
+  );
+  return [...firstOfEachKind, ...all]
+    .filter((option, index, list) => list.indexOf(option) === index)
+    .slice(0, PERMISSION_OPTIONS_MAX)
+    .sort((left, right) => all.indexOf(left) - all.indexOf(right));
 }

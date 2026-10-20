@@ -25,6 +25,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
 
   return useCallback(
     async (task) => {
@@ -52,6 +53,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
         .with("create-schedule", () => openChat(SCHEDULE_PREFILL))
         .with("create-artifact", async () => {
           setSidePanelTab("artifacts");
+          setArtifactsSectionOpen(true);
           setMobileScreen("files");
         })
         .with("connect-slack", () => openAgentSection("channels"))
@@ -68,6 +70,7 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
       navigateToSandboxHome,
       setKitBrowserOpen,
       setSidePanelTab,
+      setArtifactsSectionOpen,
     ],
   );
 }

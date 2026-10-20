@@ -12,6 +12,10 @@ Claude Code can list the other Claude sessions on its host and message them with
 `SendMessage` stays for the session's own subagents.
 [`managed-settings.json`](rootfs/etc/claude-code/managed-settings.json) also sets `crossSessionInbound: refuse`, so a session turns away a peer message that gets through anyway.
 
+Files a user attaches to a message, and files a channel brings in, land under `~/.uploads/`, outside the session's working directory.
+`managed-settings.json` allows `Read(~/.uploads/**)`, so a session in "Ask for approvals" reads them without asking.
+The rule covers every session's attachments: the sessions of one agent share its home, so it reaches no file the agent could not already read.
+
 ## Model Router
 
 Every provider but Bedrock (the LiteLLM proxies, the Anthropic key and subscription) reaches Claude Code through the agent-runtime [Model Router](../../../docs/architecture/harness-config.md#the-model-router): [`model-gateway.sh`](rootfs/usr/local/lib/model-gateway.sh), sourced by `harness-chat`, `harness-terminal` and the login profile, repoints `ANTHROPIC_BASE_URL` at the router, names the harness with `ANTHROPIC_CUSTOM_HEADERS`, turns on gateway model discovery and drops a provider's `ANTHROPIC_MODEL` pin, since the session's model is a per-turn choice the runtime sends over ACP.

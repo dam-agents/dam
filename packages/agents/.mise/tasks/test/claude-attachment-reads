@@ -1,0 +1,27 @@
+#!/usr/bin/env node
+//MISE description="Test that Claude Code reads message attachments without asking, wherever the platform puts them"
+//MISE sources=["claude-code/rootfs/etc/claude-code/managed-settings.json", "../ui/src/modules/files/lib/upload-path.ts", "../api-server/src/modules/channels/inbound-file.ts", ".mise/tasks/test/claude-attachment-reads"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
+
+const read = (path) => readFileSync(new URL(`../../../${path}`, import.meta.url), "utf8");
+
+const settings = JSON.parse(read("claude-code/rootfs/etc/claude-code/managed-settings.json"));
+
+// TEST_SCENARIO: a user attaches a file and asks about it in "Ask for approvals". The read must not need an approval, so the managed settings allow reads under the folder attachments go to.
+assert.ok(
+  settings.permissions.allow.includes("Read(~/.uploads/**)"),
+  "managed-settings.json must allow Read(~/.uploads/**)",
+);
+
+// TEST_SCENARIO: the web UI writes message attachments and the api-server writes files a channel brings in. Both must still write under the folder the rule allows, so a renamed folder fails here instead of bringing the approval prompt back.
+const roots = [
+  ["web UI attachments", read("../ui/src/modules/files/lib/upload-path.ts"), /MESSAGE_UPLOAD_ROOT = "([^"]+)"/],
+  ["channel files", read("../api-server/src/modules/channels/inbound-file.ts"), /INBOUND_FILE_ROOT = "([^"]+)"/],
+];
+for (const [what, source, pattern] of roots) {
+  assert.equal(source.match(pattern)?.[1], ".uploads", `${what} must go under ~/.uploads`);
+}
+
+console.log("claude-attachment-reads: ok");

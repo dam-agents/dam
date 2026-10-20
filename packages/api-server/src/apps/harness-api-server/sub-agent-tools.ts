@@ -111,7 +111,7 @@ const spawnInput = {
     .min(1)
     .optional()
     .describe(
-      "Model the sub-agent runs, provider-qualified (ibm/gpt-5.5, claude/ibm/aws/claude-sonnet-5-5 on claude-code). Ignored when the user set a model for this session's platform sub-agents. It must be a model this agent's providers list for the target harness; the refusal names the listed ones. Unset, this session's model on your own harness, else the harness's default model.",
+      "Model the sub-agent runs, provider-qualified (ibm/gpt-5.5, claude/ibm/aws/claude-sonnet-5-5 on claude-code). Ignored when the user set a model for this session's platform sub-agents. It must be a model this agent's providers list for the target harness; the refusal names the listed ones. Unset, this session's model on your own harness; on another harness the spawn is refused, so pass one.",
     ),
   mode: z
     .string()
@@ -269,7 +269,8 @@ export type ResolvedSubAgent =
  * another harness is refused, a spawn naming none gets the set one, and a
  * set model, mode or config option outranks the spawn's. Below them the
  * spawn's own choice, then, on the session's own harness, the session's
- * model and settings, then the harness defaults. The session's settings
+ * model and settings, then the harness defaults; with no model at all the
+ * spawn route refuses the spawn. The session's settings
  * follow only its model: they may not hold for another one (Haiku takes no
  * effort). A spawn on an image alone keeps its own choices.
  */

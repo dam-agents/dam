@@ -18,6 +18,7 @@ import {
   type ActivityFilters,
   CHANNEL_TYPE_LABELS,
   CHANNEL_TYPES,
+  defaultActivityFilters,
   isFiltered,
   onlyChannelType,
   showAllChannelTypes,
@@ -61,7 +62,7 @@ export function ActivityFilterMenu({
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>Show</DropdownMenuLabel>
+        <DropdownMenuLabel>Status</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={filters.state}
           onValueChange={(value) => {
@@ -81,7 +82,7 @@ export function ActivityFilterMenu({
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
         <div className="flex items-center justify-between gap-2">
-          <DropdownMenuLabel>Types</DropdownMenuLabel>
+          <DropdownMenuLabel>Type</DropdownMenuLabel>
           {!allTypes && (
             <DropdownMenuItem
               aria-label="Show all types"
@@ -120,6 +121,16 @@ export function ActivityFilterMenu({
             </DropdownMenuItem>
           </div>
         ))}
+        {filtered && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onChange(defaultActivityFilters())}
+            >
+              Reset to default
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

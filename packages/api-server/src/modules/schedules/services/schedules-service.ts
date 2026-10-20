@@ -30,6 +30,10 @@ const RUN_NOW_REFUSAL: Record<Exclude<RunNowResult, "started">, string> = {
     "the agent reached its spend limit for today. Continue the limit, or wait until midnight UTC",
   "spend-ceiling":
     "the agent's owner reached the spend ceiling for today. The platform operator can raise it; otherwise wait until midnight UTC",
+  "no-default-model":
+    "the agent has no default model. Set one on its Providers page, or pick a model for this schedule",
+  "default-pending":
+    "the agent is moving to a new image and setting up its default model. Try again in a minute",
 };
 
 export interface AgentOnceLimits {
