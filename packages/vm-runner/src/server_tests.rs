@@ -3465,6 +3465,31 @@ fn stand_in_vmm() -> std::process::Child {
         .expect("a process to stand in for a VMM")
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: waits, within `ACTION_DEADLINE`, for the child to end without taking its status, so the reaper's own read is the one that collects it. The wait blocks until the child ends, so it runs off this thread and the deadline bounds it here.
+fn wait_ended_without_reaping(pid: i32) {
+    let (ended, was_ended) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: waitid(2) writes only into `info`, and WNOWAIT leaves the status for the next reader.
+        let waited = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                u32::try_from(pid).unwrap(),
+                &raw mut info,
+                libc::WEXITED | libc::WNOWAIT,
+            )
+        };
+        let _ = ended.send(waited);
+    });
+    assert_eq!(
+        was_ended
+            .recv_timeout(ACTION_DEADLINE)
+            .expect("the VMM was never ended"),
+        0,
+        "the VMM was never ended"
+    );
+}
+
 // TEST_SCENARIO: a machine's VMM killed by a signal is the one thing that tells a seccomp kill from a guest that flapped: nothing else on the host records it, since the runtime's own sweep discards the status and it drops the record's pid the moment it notices the death. The status says which kill it was, with a counter for the dashboards, and the machine reads stopped at once so the controller restarts it rather than trusting a machine that is up.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_machine_whose_vmm_the_kernel_killed_says_which_kill_it_was() {
@@ -3669,7 +3694,10 @@ async fn a_kill_a_runtime_call_still_holds_is_not_reported_before_it_returns() {
     h.fake.set_vmm("m1", pid);
     let held = h.machine("m1", |e| e.calls.clone());
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
-    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let killed = unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert_eq!(killed, 0, "the VMM was not signalled");
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the death is waited for before the ticks: the ticks then prove what holds the kill, not whether it had landed.
+    wait_ended_without_reaping(pid);
     for _ in 0..5 {
         h.server.reap_killed();
         assert_ne!(
@@ -3788,20 +3816,11 @@ async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
+    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the death is waited for before the ticks: a read the test made later would otherwise decide whether the kill was ever collected.
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
-    unsafe { libc::kill(pid, libc::SIGKILL) };
-    // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the child is waited on without its status being taken: the reaper's own read is then the one that collects it, rather than a read the test raced it for.
-    let mut ended: libc::siginfo_t = unsafe { std::mem::zeroed() };
-    // SAFETY: waitid(2) writes only into `ended`, and WNOWAIT leaves the status for the next reader.
-    let waited = unsafe {
-        libc::waitid(
-            libc::P_PID,
-            u32::try_from(pid).unwrap(),
-            &raw mut ended,
-            libc::WEXITED | libc::WNOWAIT,
-        )
-    };
-    assert_eq!(waited, 0, "the VMM did not end");
+    let killed = unsafe { libc::kill(pid, libc::SIGKILL) };
+    assert_eq!(killed, 0, "the VMM was not signalled");
+    wait_ended_without_reaping(pid);
     // TEST_SCENARIO: the production tick, three times over: the reaper collects, the runtime's sweep of the same child reads nothing left, and the machine is still starting.
     for _ in 0..3 {
         h.server.reap_killed();
