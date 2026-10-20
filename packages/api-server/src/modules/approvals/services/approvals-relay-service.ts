@@ -112,7 +112,9 @@ export function createApprovalsRelayService(
       const row = await deps.repo.getPending(rowId);
       if (!row) return "absent";
       if (row.payload.kind !== "acp_native") return "settled";
-      const verdict = verdictOfOutcome(row.payload.options ?? [], outcome);
+      const verdict = verdictOfOutcome(row.payload.options ?? [], outcome, {
+        reportedByRuntime: opts?.authoritative === true,
+      });
       const casWon =
         row.status === "pending" &&
         (await deps.repo.resolvePending(row.id, verdict, "in-session", {
@@ -207,7 +209,7 @@ export function createApprovalsRelayService(
       const verdict =
         input.outcome === undefined
           ? undefined
-          : verdictOfOutcome([], input.outcome);
+          : verdictOfOutcome([], input.outcome, { reportedByRuntime: true });
       const written = await deps.repo.insertSettled(
         {
           id: rowId,

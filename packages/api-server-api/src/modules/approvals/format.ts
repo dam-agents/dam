@@ -100,7 +100,7 @@ export function permissionOptionKindsOf(
  * a shortened id is another option's id, and a denial that sent it would
  * answer the request with an allow.
  */
-export function permissionOptionsOf(raw: unknown): AcpPermissionOption[] {
+function permissionOptionsOf(raw: unknown): AcpPermissionOption[] {
   return optionsWithGivenIds(raw).filter(
     ({ optionId }) => optionId.length <= TOOL_CALL_ID_MAX,
   );

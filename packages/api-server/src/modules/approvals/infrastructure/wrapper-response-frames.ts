@@ -11,7 +11,8 @@ import type {
  * reject option or cancels, because the row's catalog is bounded and the
  * option it lost cannot be told apart from an allow. In the other direction
  * the runtime holds the whole request, so the kind it reports states what an
- * option the row dropped was.
+ * option the row dropped was. That kind decides the verdict only when the
+ * runtime reports it: the chat client's own answer travels unvalidated.
  */
 export function pickOptionId(
   options: readonly AcpPermissionOption[],
@@ -43,10 +44,12 @@ export function pickOptionId(
 export function verdictOfOutcome(
   options: readonly AcpPermissionOption[],
   outcome: { outcome?: unknown; optionId?: unknown; kind?: unknown },
+  opts?: { reportedByRuntime?: boolean },
 ): ApprovalVerdict {
   if (outcome.outcome === "cancelled") return "deny_once";
   const recorded = options.find((o) => o.optionId === outcome.optionId)?.kind;
-  const kind = outcome.kind ?? recorded;
+  const kind =
+    (opts?.reportedByRuntime === true ? outcome.kind : undefined) ?? recorded;
   return kind === "allow_always"
     ? "allow"
     : kind === "reject_once"

@@ -34,11 +34,22 @@ describe("tool approval option identity", () => {
   // TEST_SCENARIO: the wire copy of an answer's id can match a recorded allow, because the route bounds it. The runtime states the kind it accepted, so the record follows the runtime, not the shortened id.
   it("records the kind the runtime reported over a recorded id it matches", () => {
     expect(
-      verdictOfOutcome([{ optionId: shared, kind: "allow_once" }], {
-        outcome: "selected",
-        optionId: shared,
-        kind: "reject_once",
-      }),
+      verdictOfOutcome(
+        [{ optionId: shared, kind: "allow_once" }],
+        { outcome: "selected", optionId: shared, kind: "reject_once" },
+        { reportedByRuntime: true },
+      ),
     ).toBe("deny_once");
+  });
+
+  // TEST_SCENARIO: a chat client's answer reaches the api-server over the relay's websocket, where nothing validates its fields. A kind it writes must not decide the record, or a client could claim a refusal for an allow the harness ran.
+  it("ignores a kind the chat client wrote into its own answer", () => {
+    expect(
+      verdictOfOutcome(
+        [{ optionId: shared, kind: "allow_once" }],
+        { outcome: "selected", optionId: shared, kind: "reject_once" },
+        { reportedByRuntime: false },
+      ),
+    ).toBe("allow_once");
   });
 });
