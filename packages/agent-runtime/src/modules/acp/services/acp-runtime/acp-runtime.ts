@@ -346,8 +346,10 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const unstoredPrompt = processExiting
         ? undefined
         : deps.activeTurns.promptOf(sessionId);
-      if (unstoredPrompt)
+      if (unstoredPrompt) {
         deps.undeliveredPrompts.remember(sessionId, [unstoredPrompt]);
+        deps.continuedFrom.markUnsent(sessionId);
+      }
       if (!turn.runPrompt && !isRunSession(sessionId)) return;
       const buffer = runTextBuffers.get(sessionId);
       runTextBuffers.delete(sessionId);
@@ -365,6 +367,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     sessionLoaded: (sessionId) => !harnessColdSessions.has(sessionId),
     onQueueDropped(sessionId, dropped, cause) {
       const recordedAt = new Date().toISOString();
+      if (dropped.some((entry) => carriesContinuedFrom(entry.frame)))
+        deps.continuedFrom.markUnsent(sessionId);
       deps.undeliveredPrompts.remember(
         sessionId,
         dropped.map((entry) =>
@@ -1332,12 +1336,13 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       platformMeta: null,
     });
     deps.sessionMetadata?.recordActivity(sessionId);
+    const frame = promptFrameFor(source, sessionId, outboundId);
     const fate = promptScheduler.submit({
       sessionId,
       channel,
       outboundId,
       originalId: null,
-      frame: promptFrameFor(source, sessionId, outboundId),
+      frame,
       promptId,
       source,
       typed: prompt,
@@ -1347,6 +1352,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     });
     if (fate === "refused") {
       outboundIdToClient.delete(outboundId);
+      if (carriesContinuedFrom(frame)) deps.continuedFrom.markUnsent(sessionId);
       return;
     }
     if (
@@ -2107,6 +2113,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         });
         if (fate === "refused") {
           outboundIdToClient.delete(outboundId);
+          if (carriesContinuedFrom(rewritten))
+            deps.continuedFrom.markUnsent(promptSessionId);
           return;
         }
         if (

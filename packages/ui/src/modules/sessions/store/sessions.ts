@@ -92,6 +92,8 @@ export interface SessionsSlice {
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
   continueInNewSessionDraft: (agentId: string, invocationId: string) => void;
+  dropDraftContinuation: (agentId: string) => void;
+  clearDraftContent: (key: string) => void;
   clearDraft: (key: string) => void;
   migrateDraft: (fromKey: string, toKey: string) => void;
   consumeDroppedAttachments: (key: string) => void;
@@ -254,6 +256,16 @@ export const createSessionsSlice: StateCreator<
         };
         return true;
       }),
+    dropDraftContinuation: (agentId) =>
+      get().setDraft(draftKey(agentId, null), {
+        continuesInvocation: undefined,
+      }),
+    clearDraftContent: (key) =>
+      get().setDraft(key, {
+        text: "",
+        attachments: [],
+        droppedAttachmentNames: undefined,
+      }),
     clearDraft: (key) =>
       updateDrafts((drafts) => {
         if (!(key in drafts)) return false;
@@ -385,9 +397,14 @@ export const createSessionsSlice: StateCreator<
     discardSessionToDraft: async (sessionId, text) => {
       const agentId = get().selectedAgent;
       if (!agentId) return;
+      const continuation =
+        get().sessionId === sessionId
+          ? get().continuedFrom?.invocationId
+          : undefined;
       await deleteAgentSession(agentId, sessionId);
       await forgetSession(agentId, sessionId);
       get().appendNewSessionDraft(agentId, text);
+      if (continuation) get().continueInNewSessionDraft(agentId, continuation);
     },
   };
 };

@@ -72,7 +72,7 @@ A **follow-up chat** is a regular chat Session that starts from a finished sub-a
 A client asks for one on `session/new` with the copy in `_meta.platform.continuedFrom`; the runtime refuses a copy over its size bound rather than cut it.
 The runtime keeps the copy in its own byte-capped document under `.platform/`, apart from the log and the session metadata, because a session-history provider rebuilds the log from the harness's own store.
 The harness gets the copy once: the runtime puts it in a `<continued-from>` block before the first prompt it frames for the Session.
-The block then travels with that prompt wherever it goes — to the harness, into a dropped queue, into an undelivered record — and editing a queued prompt that carries it keeps it.
+Editing a queued prompt that carries the block keeps it; a prompt refused, dropped from the queue or recorded undelivered loses it, and the next prompt carries it again.
 The echo and the title use the typed text only, and a client hides the block wherever the first prompt shows.
 Every `session/load` returns the copy in `_meta.platform.continuedFrom`, so a client draws it above the conversation however the log was filled.
 

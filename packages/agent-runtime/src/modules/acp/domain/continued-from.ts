@@ -6,11 +6,15 @@ const TAG = "continued-from";
 const BLOCK = new RegExp(`<${TAG}(?:\\s[^>]*)?>[\\s\\S]*?</${TAG}>\\s*`, "g");
 
 function escapeAttribute(value: string): string {
-  return value.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  return value
+    .replace(/&/g, "&amp;")
+    .replace(/"/g, "&quot;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
 }
 
 function guardClose(text: string): string {
-  return text.replaceAll(`</${TAG}>`, `</${TAG}​>`);
+  return text.replaceAll(`</${TAG}>`, `</${TAG}\u200b>`);
 }
 
 export function continuedFromBlock(seed: PlatformContinuedFrom): string {
@@ -47,17 +51,21 @@ export function frameContinuedFrom(
   };
 }
 
+function isBlock(block: unknown): boolean {
+  return (
+    isNonNullObject(block) &&
+    block.type === "text" &&
+    typeof block.text === "string" &&
+    block.text.startsWith(`<${TAG}`)
+  );
+}
+
+export function withoutContinuedFrom(prompt: readonly unknown[]): unknown[] {
+  return prompt.filter((block) => !isBlock(block));
+}
+
 export function carriesContinuedFrom(frame: unknown): boolean {
   if (!isNonNullObject(frame) || !isNonNullObject(frame.params)) return false;
   const prompt = frame.params.prompt;
-  return (
-    Array.isArray(prompt) &&
-    prompt.some(
-      (block) =>
-        isNonNullObject(block) &&
-        block.type === "text" &&
-        typeof block.text === "string" &&
-        block.text.startsWith(`<${TAG}`),
-    )
-  );
+  return Array.isArray(prompt) && prompt.some(isBlock);
 }

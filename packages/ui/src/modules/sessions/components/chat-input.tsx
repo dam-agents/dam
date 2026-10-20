@@ -36,11 +36,7 @@ export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
   loadingSession: boolean;
-  onSend: (
-    text: string,
-    attachments?: Attachment[],
-    opts?: { continuesInvocation?: string },
-  ) => void;
+  onSend: (text: string, attachments?: Attachment[]) => void;
   onStop: () => void;
   onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
@@ -58,7 +54,7 @@ export function ChatInput({
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
   const setDraft = useStore((s) => s.setDraft);
-  const clearDraft = useStore((s) => s.clearDraft);
+  const clearDraftContent = useStore((s) => s.clearDraftContent);
   const key = agentId ? draftKey(agentId, sessionId) : null;
   const draft = useStore((s) =>
     key ? (s.drafts[key] ?? EMPTY_DRAFT) : EMPTY_DRAFT,
@@ -200,15 +196,9 @@ export function ChatInput({
       current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
     promptHistory.reset();
-    clearDraft(key);
-    onSend(
-      text,
-      files,
-      current.continuesInvocation !== undefined
-        ? { continuesInvocation: current.continuesInvocation }
-        : undefined,
-    );
-  }, [key, loadingSession, clearDraft, onSend, promptHistory]);
+    clearDraftContent(key);
+    onSend(text, files);
+  }, [key, loadingSession, clearDraftContent, onSend, promptHistory]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile() && promptHistory.navigate(e)) {

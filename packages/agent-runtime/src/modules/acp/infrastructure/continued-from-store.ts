@@ -32,6 +32,7 @@ export interface ContinuedFromStore {
   readFor(sessionId: string): PlatformContinuedFrom | null;
   save(sessionId: string, seed: PlatformContinuedFrom): void;
   takeUnsent(sessionId: string): PlatformContinuedFrom | null;
+  markUnsent(sessionId: string): void;
   copy(fromSessionId: string, toSessionId: string, sent: boolean): void;
   forgetSession(sessionId: string): void;
 }
@@ -62,8 +63,9 @@ function withinCap(
  * can be large, and this document is written only when a follow-up chat
  * starts, when its first prompt goes out, and when it is rewound, forked or
  * deleted. `sent` turns true when the copy is
- * framed into a prompt; the framed prompt carries it from then on, wherever it
- * goes — the harness, a dropped queue, an undelivered record. The document is
+ * framed into a prompt, and back to false when that prompt is dropped or
+ * recorded undelivered, which never keeps the copy, so the next prompt carries
+ * it again. The document is
  * byte-capped: whole sessions evict, oldest first, never the one being
  * written.
  */
@@ -99,6 +101,13 @@ export function createContinuedFromStore(
       if (entry === undefined || entry.sent) return null;
       write({ ...sessions, [sessionId]: { ...entry, sent: true } }, sessionId);
       return entry.seed;
+    },
+
+    markUnsent(sessionId) {
+      const { sessions } = store.read();
+      const entry = sessions[sessionId];
+      if (entry === undefined || !entry.sent) return;
+      write({ ...sessions, [sessionId]: { ...entry, sent: false } }, sessionId);
     },
 
     copy(fromSessionId, toSessionId, sent) {

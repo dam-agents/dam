@@ -1,6 +1,7 @@
 import type { ClientConnection } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
+  type PlatformContinuedFrom,
   platformContinuedFromSchema,
   platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
@@ -89,7 +90,7 @@ export interface StartedSession {
 interface UseAcpConnectionResult {
   state: ConnectionState;
   ensureLive: () => Promise<LiveSession | null>;
-  beginSession: (continuesInvocation?: string) => Promise<StartedSession>;
+  beginSession: () => Promise<StartedSession>;
   loadSessionHistory: (
     sid: string,
     replayBefore?: string,
@@ -179,6 +180,7 @@ export function useAcpConnection(
       ws: WebSocket,
       agentId: string,
       startedSessionId: string,
+      continuedFrom: PlatformContinuedFrom | null,
     ) => {
       connectionRef.current?.ws.close();
       attachCloseHandler(ws);
@@ -193,18 +195,19 @@ export function useAcpConnection(
         draftKey(agentId, null),
         draftKey(agentId, startedSessionId),
       );
+      store.setContinuedFrom(continuedFrom);
       store.setSessionId(startedSessionId);
     },
     [attachCloseHandler, bindEngagement],
   );
 
   const startSession = useCallback(
-    async (
-      holders: { count: number },
-      continuesInvocation?: string,
-    ): Promise<StartedSession> => {
+    async (holders: { count: number }): Promise<StartedSession> => {
       if (!selectedAgent) throw new Error("No agent selected");
       const agentId = selectedAgent;
+      const continuesInvocation =
+        useStore.getState().drafts[draftKey(agentId, null)]
+          ?.continuesInvocation;
       const continuedFrom =
         continuesInvocation === undefined
           ? null
@@ -240,7 +243,6 @@ export function useAcpConnection(
           },
         });
         startedSessionId = session.sessionId;
-        useStore.getState().setContinuedFrom(continuedFrom);
         useStore.getState().setHarnessForks(forksSessions);
         useStore.getState().setHarnessSteers(steers);
         seedStartedSession(agentId, startedSessionId, next?.pair ?? null);
@@ -259,12 +261,13 @@ export function useAcpConnection(
           if (settled) return kept;
           settled = true;
           releaseStartSlot(holders);
+          if (continuedFrom) useStore.getState().dropDraftContinuation(agentId);
           kept = keep && ws.readyState === WebSocket.OPEN;
           if (!kept) {
             listening = false;
             return false;
           }
-          keepAsLive(connection, ws, agentId, startedSessionId);
+          keepAsLive(connection, ws, agentId, startedSessionId, continuedFrom);
           return true;
         },
         finish: () => {
@@ -281,21 +284,18 @@ export function useAcpConnection(
     [selectedAgent, makeUpdateHandler, delivery, keepAsLive, releaseStartSlot],
   );
 
-  const beginSession = useCallback(
-    (continuesInvocation?: string): Promise<StartedSession> => {
-      const pending = startInFlightRef.current;
-      if (pending) {
-        pending.holders.count += 1;
-        return pending.promise;
-      }
-      const holders = { count: 1 };
-      const promise = startSession(holders, continuesInvocation);
-      startInFlightRef.current = { holders, promise };
-      promise.catch(() => releaseStartSlot(holders));
-      return promise;
-    },
-    [startSession, releaseStartSlot],
-  );
+  const beginSession = useCallback((): Promise<StartedSession> => {
+    const pending = startInFlightRef.current;
+    if (pending) {
+      pending.holders.count += 1;
+      return pending.promise;
+    }
+    const holders = { count: 1 };
+    const promise = startSession(holders);
+    startInFlightRef.current = { holders, promise };
+    promise.catch(() => releaseStartSlot(holders));
+    return promise;
+  }, [startSession, releaseStartSlot]);
 
   const collectorRef = useRef<{
     sid: string;
