@@ -1,6 +1,6 @@
 # Slack: what is guaranteed, what is the agent's call, what depends on setup
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 Companion to [channels](channels.md) and [channel-turns](channel-turns.md).
 Those pages own the mechanics; this one states, for each thing an agent does in Slack, whether the outcome is guaranteed, the agent's judgement, or dependent on setup.
@@ -210,15 +210,16 @@ flowchart TD
   Q2 -->|no| S[Stays silent. Nothing more happens]
 ```
 
-| Behavior                                                                                                                             | Decided by                             | Caveat                                                                                                                                  |
-| ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| Only tool calls reach Slack; answered means `reply`, `react`, `no_reply_needed`, hand-off, or a top-level post into the same channel | Platform                               | Prose is lost unless the reminder rescues it. A post via the owner's Connection doesn't count; close such a turn with `no_reply_needed` |
-| Answer, react, stay silent or hand off; thread vs. top-level; `alsoSendToChannel`; names not raw ids                                 | **Agent**, prompted                    | A `no_reply_needed` is final. A top-level answer counts, just noisier                                                                   |
-| Standard Markdown rendering for agent posts, with compact Slack-style code fences moved onto their own lines                         | Platform                               | A fence pair inside one line of prose stays as it is; tools ask for separate fence lines                                                |
-| One reminder after a silent addressed turn                                                                                           | Platform                               | Never on ambient. A reply whose attachment failed still counts; the agent is told which file                                            |
-| With two turns running, each reply, reaction, silence or hand-off names its thread; the platform never guesses                       | Platform                               |                                                                                                                                         |
-| A reply after the api-server lost the agent mid-turn: accepted for 60 min                                                            | Platform                               | Later, one that names its thread still lands; one that doesn't is refused                                                               |
-| Hand-off: same conversation, once, receiver's owner accepted the terms                                                               | Platform constrains, **Agent** chooses |                                                                                                                                         |
+| Behavior                                                                                                                                       | Decided by                             | Caveat                                                                                                                                  |
+| ---------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| Only tool calls reach Slack; answered means `reply`, `react`, `no_reply_needed`, hand-off, or a top-level post into the same channel           | Platform                               | Prose is lost unless the reminder rescues it. A post via the owner's Connection doesn't count; close such a turn with `no_reply_needed` |
+| Answer, react, stay silent or hand off; thread vs. top-level; `alsoSendToChannel`; names not raw ids                                           | **Agent**, prompted                    | A `no_reply_needed` is final. A top-level answer counts, just noisier                                                                   |
+| Standard Markdown rendering for agent posts, with compact Slack-style code fences moved onto their own lines                                   | Platform                               | A fence pair inside one line of prose stays as it is; tools ask for separate fence lines                                                |
+| Stop on the working status cancels the running turn, for the person who started it or the Agent's owner; anyone else gets an ephemeral refusal | Platform                               | Needs the `agent_session_stopped` subscription (**Setup**). A stopped turn gets no reminder. Ambient turns show no status, so no Stop   |
+| One reminder after a silent addressed turn                                                                                                     | Platform                               | Never on ambient. A reply whose attachment failed still counts; the agent is told which file                                            |
+| With two turns running, each reply, reaction, silence or hand-off names its thread; the platform never guesses                                 | Platform                               |                                                                                                                                         |
+| A reply after the api-server lost the agent mid-turn: accepted for 60 min                                                                      | Platform                               | Later, one that names its thread still lands; one that doesn't is refused                                                               |
+| Hand-off: same conversation, once, receiver's owner accepted the terms                                                                         | Platform constrains, **Agent** chooses |                                                                                                                                         |
 
 ### Tools and reach
 

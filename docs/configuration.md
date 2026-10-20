@@ -161,6 +161,7 @@ The footer under every agent post opens with the same emoji, then "Sent by" and 
 **Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing.
 Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and re-run the install flow when Slack asks.
 The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
+The Stop button on an agent's working status needs the `agent_session_stopped` subscription the same way; without it Slack answers a press with "Stop isn't available for this agent".
 
 ### Connecting a workspace
 
