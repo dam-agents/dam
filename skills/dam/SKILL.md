@@ -44,6 +44,7 @@ npm install -g @dam-agents/cli
 
 `pnpm add -g @dam-agents/cli` and `yarn global add @dam-agents/cli` work too.
 To update, install `@dam-agents/cli@latest` the same way.
+Then reinstall this skill at the new version, so it keeps matching the CLI: `npx skills add 'dam-agents/dam/skills/dam#v<version>' -g`, with the version `dam --version` prints.
 
 ### Point it at the server
 
