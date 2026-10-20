@@ -4,6 +4,9 @@
     "allow": [
       "mcp__platform-outbound",
       "mcp__knowledge-bases"
+    ],
+    "deny": [
+      "EnterPlanMode"
     ]
   },
   "crossSessionInbound": "refuse",
