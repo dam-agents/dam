@@ -23,6 +23,7 @@ Each agent's gateway verifies the upstream before it injects a credential.
 If something on the cluster's egress path intercepts TLS with its own CA (a corporate inspecting proxy, or the platform's own gateway when the platform runs inside one of its agents), every injected connection fails its handshake and the agent reports a 503.
 Name that CA with `controller.gatewayUpstreamExtraCAs`: `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
 Gateways then trust it on top of the public roots, and agents trust it beside their gateway's CA, since the proxy also intercepts the hosts a gateway passes through untouched.
+The api-server trusts it too, for its own outbound calls on the same path: Slack's Socket Mode and Web API, GitHub, and OAuth token exchanges.
 A connection that carries its upstream's own CA still validates against that CA alone.
 `mise run cluster:install` sets the value by itself when it runs inside one of the platform's vm agents.
 
