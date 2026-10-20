@@ -201,6 +201,9 @@ beforeAll(async () => {
       entries: [
         entry(cb, "rits/zai-org/glm-5-3"),
         entry(cb, "rits/claude-haiku-4-5"),
+        entry(cb, "CLAUDE-SONNET-4-7"),
+        entry(cb, "Claude-Sonnet-4-7"),
+        entry(cb, "claude-opus-4-9"),
         entry(cb, "gpt-5.5"),
         entry(cb, "rits/NVIDIA-Big"),
       ],
@@ -213,9 +216,12 @@ beforeAll(async () => {
       entries: [
         entry(ibm, "aws/claude-opus-4-8"),
         entry(ibm, "aws/claude-sonnet-5"),
+        entry(ibm, "aws/claude-sonnet-5-5"),
         entry(ibm, "aws/claude-sonnet-4-6"),
         entry(ibm, "eu/claude-sonnet-4-6"),
         entry(ibm, "aws/claude-haiku-4-5"),
+        entry(ibm, "aws/claude-opus-4-7"),
+        entry(ibm, "aws/claude-opus-5-5"),
         entry(ibm, "gpt-5.5"),
         entry(ibm, "only-here"),
       ],
@@ -225,7 +231,11 @@ beforeAll(async () => {
       displayName: "Anthropic",
       status: "listed",
       listedAt: null,
-      entries: [entry(anthropic, "claude-opus-4-8")],
+      entries: [
+        entry(anthropic, "claude-opus-4-8"),
+        entry(anthropic, "beta/claude-opus-4-9"),
+        entry(anthropic, "beta/claude-opus-4-7"),
+      ],
     },
     {
       ...platform,
@@ -586,9 +596,10 @@ describe("bare names", () => {
   /** TEST_SCENARIO: Claude Code names a tier by the bare id its client ties to
    * it (`claude-sonnet-5`), while IBM serves that exact model only under its
    * `aws/` deployment prefix; the call goes to IBM with the prefixed id, and
-   * the response names it back to the harness. A bare id no provider serves,
-   * even one differing by a trailing segment (`claude-sonnet-5-5`), stays a
-   * 404 rather than matching a longer id. */
+   * the response names it back to the harness. The fallback compares the whole
+   * last segment: `aws/claude-sonnet-5-5` listed beside it neither wins nor
+   * refuses, and a bare `claude-opus-5` whose only longer cousin is
+   * `aws/claude-opus-5-5` stays a 404. */
   it("falls back to the deployment prefix of the bare name", async () => {
     seen.length = 0;
     const r = await call(
@@ -600,13 +611,77 @@ describe("bare names", () => {
     expect(seen[0]!.path).toBe("/ibm/v1/messages");
     expect(seen[0]!.body.model).toBe("aws/claude-sonnet-5");
     expect(r.json?.model).toBe("claude/ibm/aws/claude-sonnet-5");
-    const other = await call(
+    const longer = await call(
       "/v1/messages",
       { model: "claude-sonnet-5-5", messages: [] },
       { [HARNESS_HEADER]: "claude-code" },
     );
-    expect(other.status).toBe(404);
-    expect(other.text).toContain("lists model 'claude-sonnet-5-5'");
+    expect(longer.status).toBe(200);
+    expect(seen.at(-1)?.body.model).toBe("aws/claude-sonnet-5-5");
+    const missing = await call(
+      "/v1/messages",
+      { model: "claude-opus-5", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(missing.status).toBe(404);
+    expect(missing.text).toContain("lists model 'claude-opus-5'");
+  });
+
+  /** TEST_SCENARIO: A provider that spells one id in two cases answered the
+   * lowercase bare name before the fallback existed, and still does: the
+   * first id that matches without case answers, rather than the two of them
+   * refusing the call. */
+  it("answers a bare id that two entries spell in other cases", async () => {
+    seen.length = 0;
+    const r = await call(
+      "/v1/messages",
+      { model: "claude-sonnet-4-7", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(r.status).toBe(200);
+    expect(seen[0]!.path).toBe("/cb/v1/messages");
+    expect(seen[0]!.body.model).toBe("CLAUDE-SONNET-4-7");
+    expect(r.json?.model).toBe("claude/cb/claude-sonnet-4-7");
+  });
+
+  /** TEST_SCENARIO: An exact listing outranks a deployment match on the
+   * harness's default provider: the exact copy is on Curve Bender, the
+   * prefixed one on Anthropic, and Curve Bender answers even though provider
+   * precedence would pick Anthropic. */
+  it("keeps an exact listing over a deployment on the default provider", async () => {
+    seen.length = 0;
+    const r = await call(
+      "/v1/messages",
+      { model: "claude-opus-4-9", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(r.status).toBe(200);
+    expect(seen[0]!.path).toBe("/cb/v1/messages");
+    expect(seen[0]!.body.model).toBe("claude-opus-4-9");
+  });
+
+  /** TEST_SCENARIO: Among deployment matches, the session's provider answers
+   * before the default one: a Curve Bender session takes IBM's `aws/` cousin
+   * and Curve Bender's own `rits/` one. With no session, the default provider,
+   * Anthropic, takes its `beta/` cousin over IBM's `aws/` one. */
+  it("prefers the session's provider, then the default one, among deployments", async () => {
+    seen.length = 0;
+    const session = await call(
+      "/v1/messages",
+      { model: "claude-haiku-4-5", messages: [] },
+      { [HARNESS_HEADER]: "claude-code", "x-test-session": "s-cb" },
+    );
+    expect(session.status).toBe(200);
+    expect(seen[0]!.path).toBe("/cb/v1/messages");
+    expect(seen[0]!.body.model).toBe("rits/claude-haiku-4-5");
+    const fallback = await call(
+      "/v1/messages",
+      { model: "claude-opus-4-7", messages: [] },
+      { [HARNESS_HEADER]: "claude-code" },
+    );
+    expect(fallback.status).toBe(200);
+    expect(seen.at(-1)?.path).toBe("/ant/v1/messages");
+    expect(seen.at(-1)?.body.model).toBe("beta/claude-opus-4-7");
   });
 
   /** TEST_SCENARIO: The fallback refuses instead of guessing when a bare name

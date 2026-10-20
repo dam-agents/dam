@@ -32,12 +32,10 @@ const serves = (
 ) => harness !== undefined && servesHarness(p, harnessName ?? "", harness);
 
 const listsBare = (p: CatalogProvider, bare: string): CatalogEntry[] => {
-  const exact = p.entries.filter((e) => e.upstreamId === bare);
-  return exact.length
-    ? exact
-    : p.entries.filter(
-        (e) => e.upstreamId.toLowerCase() === bare.toLowerCase(),
-      );
+  const hit =
+    p.entries.find((e) => e.upstreamId === bare) ??
+    p.entries.find((e) => e.upstreamId.toLowerCase() === bare.toLowerCase());
+  return hit ? [hit] : [];
 };
 
 const listsDeployment = (p: CatalogProvider, bare: string): CatalogEntry[] => {
@@ -63,11 +61,14 @@ function resolveQualified(
  * name is looked for on the session's provider, then the harness's default
  * provider, then the single provider that lists it; several candidates are
  * refused by name, so no call is billed to a provider the user did not pick.
- * A bare name no provider lists itself falls back to the id whose last path
- * segment is that name, since a provider fronting a cloud account serves an
- * exact model under the deployment prefix it hosts it on (`aws/<id>`) and a
- * harness names a tier by a bare id of its own; a provider's several matching
- * ids are refused by name too, so no deployment of a model is guessed between.
+ * A bare name no provider lists falls back to the id whose last path segment
+ * is that name, compared without case, since a provider fronting a cloud
+ * account serves an exact model under the deployment prefix it hosts it on
+ * (`aws/<id>`) and a harness names a tier by a bare id of its own; two such
+ * ids on one provider are refused by name, so no deployment is guessed
+ * between. An id one provider already answers to, in either case, stays a
+ * single answer: the first pass keeps the first match, so a catalog with two
+ * spellings of one id responds as it did before the fallback existed.
  * The entry must serve the request's dialect: the router never translates.
  */
 export function resolveTarget(input: ResolveInput): ResolveOutcome {
