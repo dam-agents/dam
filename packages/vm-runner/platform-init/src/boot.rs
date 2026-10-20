@@ -2886,30 +2886,25 @@ mod tests {
     // UNIT_BOUNDARY_DESCRIPTION: the guard tests share one process-wide slot, and the mutex protects each look at it, not a test's setup and assertions, so the standard runner's concurrent tests would have one test's stop release another test's guard.
     static GUARD_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    // TEST_SCENARIO: a guard that held room when the guest stopped is detached from its slot and released first, so the stop's sync frees its blocks and the next boot does not find them still taken; the guard thread then finds nothing and ends.
+    // TEST_SCENARIO: a guard that held room when the guest stopped is detached from its slot before it is released, so the running guard cannot regrow it and the filesystem frees its blocks once the last descriptor closes; the stop's sync then has nothing left to wait for. That the room is room the guest can write again is measured in `a_smaller_guard_gives_its_room_back`: this test's own filesystem is shared with the rest of the suite's tests, so their writes move its free space. The guard thread then finds nothing and ends.
     #[test]
     fn a_clean_stop_empties_the_storage_guard() {
         let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let disk = TempDir::new("guard-stop");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
-        let free = || {
-            flush_filesystem(disk.path()).unwrap();
-            let stat = statvfs(disk.path()).expect("the disk's free space");
-            #[allow(clippy::unnecessary_cast)]
-            let (size, avail) = (stat.f_frsize as u64, stat.f_bavail as u64);
-            size * avail
-        };
-        let base = free();
         let file = pool_guard(&dir).expect("an unnamed file on the disk");
         preallocate(&file, 64 << 20).unwrap();
         let probe = file.try_clone().unwrap();
         *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(Guard { files: vec![file] });
         let mut released = take_pool_guard(|| {}).expect("the guard the stop takes");
-        assert!(POOL_GUARD
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_none());
+        assert!(
+            POOL_GUARD
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .is_none(),
+            "the stop left the guard in the slot, where the next look would regrow it"
+        );
         assert_eq!(
             probe.metadata().unwrap().nlink(),
             0,
@@ -2917,11 +2912,6 @@ mod tests {
         );
         released.release();
         drop(probe);
-        assert!(
-            free() + (8 << 20) >= base,
-            "the released guard kept {} MiB of the disk",
-            base.saturating_sub(free()) >> 20
-        );
     }
 
     // TEST_SCENARIO: the guard's files have no names, so no older platform-init, image or agent can find them, and the filesystem frees them once the guest stops; a disk where they cannot be made boots without a guard.
@@ -2941,36 +2931,40 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly released while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The guard is a set of whole files and a shrink drops them, so preallocating 128 MiB takes 128 MiB, sizing back to 32 MiB gives 96 MiB back, and a run of sizes there and back loses nothing to the moves: the filesystem's free space ends where it started.
+    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly released while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The room is measured by writing into it, since that is what the guest does and what the other tests running on this filesystem in parallel cannot take away: a guard of 128 MiB leaves a 96 MiB write unwritable, and once it is sized to 32 MiB the same write lands. A run of sizes there and back loses nothing to the moves.
     #[test]
     fn a_smaller_guard_gives_its_room_back() {
+        let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let disk = TempDir::new("guard-resize");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
         let mut guard = Guard {
             files: vec![pool_guard(&dir).expect("an unnamed file on the disk")],
         };
-        let free = || {
-            flush_filesystem(disk.path()).unwrap();
-            let stat = statvfs(disk.path()).expect("the disk's free space");
-            #[allow(clippy::unnecessary_cast)]
-            let (size, avail) = (stat.f_frsize as u64, stat.f_bavail as u64);
-            size * avail
+        let guest = disk.path().join("guest");
+        // UNIT_BOUNDARY_DESCRIPTION: what the guest can write now, by writing it: `fallocate` asks the filesystem for the room the way a write does but leaves the file empty, and a filesystem that kept the released extent refused it.
+        let writable = |size: u64| {
+            let Ok(file) = File::create(&guest) else {
+                return false;
+            };
+            let ok = preallocate(&file, size).is_ok();
+            drop(file);
+            let _ = fs::remove_file(&guest);
+            ok
         };
-        let base = free();
         guard.size(&dir, 128 << 20).unwrap();
-        let held = free();
         assert!(
-            base.saturating_sub(held) >= 120 << 20,
-            "128 MiB of blocks took {} MiB",
-            base.saturating_sub(held) >> 20
+            !writable(96 << 20),
+            "a 128 MiB guard left a 96 MiB write room"
         );
         guard.size(&dir, 32 << 20).unwrap();
-        let after = free();
         assert!(
-            after.saturating_sub(held) >= 88 << 20,
-            "a guard shrunk by 96 MiB gave back {} MiB",
-            after.saturating_sub(held) >> 20
+            writable(96 << 20),
+            "a guard shrunk by 96 MiB gave back no room a 96 MiB write could take"
+        );
+        assert!(
+            !writable(160 << 20),
+            "the guard of 32 MiB held nothing back"
         );
         for round in 1..=4 {
             guard.size(&dir, 128 << 20).unwrap();
@@ -2982,9 +2976,8 @@ mod tests {
                 blocks >> 20
             );
             assert!(
-                free().saturating_sub(after) <= 8 << 20,
-                "round {round} took {} MiB off the disk's free space",
-                free().saturating_sub(after) >> 20
+                writable(96 << 20),
+                "round {round} took the room a 96 MiB write needed"
             );
         }
     }
