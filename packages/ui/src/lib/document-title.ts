@@ -32,6 +32,10 @@ export function documentTitle(
     switch (route.view) {
       case "home":
         return ["Home"];
+      case "artifacts":
+        return ["Artifacts"];
+      case "starter-kits":
+        return ["Starter kits"];
       case "chat":
         return [names.session, names.agent];
       case "settings":

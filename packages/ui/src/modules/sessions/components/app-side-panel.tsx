@@ -31,6 +31,7 @@ export function AppSidePanelButtons() {
       tabs={appSidePanelTabs(
         hiddenSidePanelTabs({
           agent: false,
+          artifacts: false,
           canOpenBrowser: false,
           processesEnabled: false,
           gettingStarted,
@@ -46,24 +47,33 @@ export function AppSidePanelButtons() {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The side panel on every page outside an Agent's
- * chat. With no Agent in view, only the tabs that belong to no Agent exist:
- * Artifacts, Get started and Approvals. Artifacts lists the whole library and
- * docks the artifact it opens, without the interactive bridge, because no chat
- * is open to receive a prompt.
+ * chat: Get started and Approvals, and on an Agent's configuration page also
+ * Artifacts, scoped to that Agent with a switch to the whole library. Other
+ * pages leave Artifacts to the Artifacts page, whose opened artifact docks
+ * here without the interactive bridge, because no chat is open to receive a
+ * prompt.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {
   const openArtifactId = useStore((s) => s.openArtifactId);
   const artifactDirty = useStore((s) => s.openArtifactDirty);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const view = useStore((s) => s.view);
+  const agentId = useStore((s) => s.agentId);
   const { gettingStarted, ...tabs } = useAppSidePanelTabs();
   const hidden = hiddenSidePanelTabs({
     agent: false,
+    artifacts: view === "sandbox-home",
     canOpenBrowser: false,
     processesEnabled: false,
     gettingStarted,
   });
-  const activeTab = visibleSidePanelTab(sidePanelTab, NOTHING_DOCKED, hidden);
+  const activeTab =
+    view === "artifacts" &&
+    openArtifactId !== null &&
+    sidePanelTab === "artifacts"
+      ? "artifacts"
+      : visibleSidePanelTab(sidePanelTab, NOTHING_DOCKED, hidden);
   const dockedShown = openArtifactId !== null && activeTab === "artifacts";
 
   return (
@@ -84,9 +94,10 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
       mobileTitle={SIDE_PANEL_TABS.find((t) => t.tab === activeTab)?.label}
       mobileBackLabel="Close side panel"
       panel={
-        activeTab === "artifacts" && (
+        activeTab === "artifacts" &&
+        !hidden.has("artifacts") && (
           <ChatArtifactsPanel
-            agentId={null}
+            agentId={agentId}
             open
             className={cn("flex-1", dockedShown && "hidden")}
           />

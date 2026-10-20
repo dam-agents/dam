@@ -92,16 +92,16 @@ describe("browser history with an unsaved artifact edit", () => {
   });
 });
 
-describe("the retired /artifacts path", () => {
-  // TEST_SCENARIO: opening /artifacts lands on Home with the Artifacts tab open.
-  it("opens the Artifacts tab", () => {
+describe("the /artifacts path", () => {
+  // TEST_SCENARIO: opening /artifacts lands on the Artifacts page, not on Home with a side panel.
+  it("opens the Artifacts page", () => {
     env.location.pathname = "/artifacts";
     env.location.search = "";
     useStore.setState({ sidePanelTab: null });
     const uninstall = installBrowserHistory();
-    expect(env.location.pathname).toBe("/");
-    expect(useStore.getState().view).toBe("home");
-    expect(useStore.getState().sidePanelTab).toBe("artifacts");
+    expect(env.location.pathname).toBe("/artifacts");
+    expect(useStore.getState().view).toBe("artifacts");
+    expect(useStore.getState().sidePanelTab).toBeNull();
     uninstall();
   });
 });
