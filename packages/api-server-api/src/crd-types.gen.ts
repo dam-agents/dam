@@ -78,7 +78,7 @@ export interface AgentSpecCR {
    */
   harness?: string;
   /**
-   * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. A vm Agent ignores it and always takes the chart-wide vm idle timeout. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
+   * HibernationTimeout overrides the chart-wide idle timeout for this Agent: "0s" never hibernates, omitted inherits the default. A vm Agent reads the chart-wide vm idle timeout instead of the container one when it carries no override. The UI writes it (presented in minutes); the controller and api-server resolve the effective value.
    */
   hibernationTimeout?: string;
   /**

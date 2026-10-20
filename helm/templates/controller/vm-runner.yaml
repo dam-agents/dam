@@ -68,7 +68,7 @@ description: "The VM runner of one owner: every machine that owner has runs as a
 ---
 {{- /*
 The chart's own SCC grants what a runner adds: run as uid 0 and add
-DAC_OVERRIDE, with no privileged container. Custom SCCs get no auto-generated
+DAC_OVERRIDE and SYS_RESOURCE, with no privileged container. Custom SCCs get no auto-generated
 ClusterRole, so this binds the one agent-scc.yaml renders. It refuses the
 hostPath of the node image cache mounts, so every runner also needs
 `runner.scc`, which the chart requires on OpenShift; admission picks the SCC

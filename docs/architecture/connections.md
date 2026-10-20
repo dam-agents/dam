@@ -180,6 +180,7 @@ When an Agent holds two or more, the platform stops contributing `GH_TOKEN` for 
 The Agent switches with `gh auth switch`, and `git` follows the active account through gh's credential helper, so both identities work from one shell.
 The account active on delivery is the grant the user marked **preferred** on the Agent — chosen from the Agent's connections panel, at most one per group: a GitHub host is one group, and an Agent's storage Connections form another (below) — or, absent a choice, the earliest grant, which is the account the Agent already acted as.
 Every state push re-asserts that default, so a switch the Agent made itself lasts until the next push.
+Ordering, the default and the account names are one rule for every kind of Connection with a default account; a kind says only how its Connections group and how a name is spelled for its tool, and the connections panel offers every group's choice in one callout.
 The commit identity git uses follows that default too: the active account's name and email when it has one — an account that signed in with a token or as an App has none — and switching with gh changes which account authenticates, not whom the commits name.
 Because the env is gone, the platform states gh's availability explicitly in that case, and the runtime's own GitHub client reads the active token from the same file.
 The Agent learns all of this from a skill every agent image ships, `platform-github`: how to list its accounts, how to switch or act as one for a single command, and what the gateway's refusal means.

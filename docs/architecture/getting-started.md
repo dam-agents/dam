@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-19
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -36,7 +36,7 @@ On a phone the X is hidden, the ring sits in the top bar and the panel fills the
 The phone's Back gesture closes that full-screen panel and returns to the page under it, or first closes a dialog open above the panel.
 The panel opens only when the user asks for it.
 An unlock the user has not seen puts a count on the ring instead of opening the panel.
-Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab, or in an Agent's chat with the new layout off, the Artifacts section beside the conversation.
+Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the Artifacts page, or in an Agent's chat the side panel's Artifacts tab, or with the new layout off the Artifacts section beside the conversation.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); the panel plays a short celebration at its top for each unlock the user has not seen, one at a time, while it is open, then records it as seen.
 
 In an Agent's chat with the new layout off, the chat has no icon bar: the ring sits in the chat's top bar beside the bell and opens the panel in the slot beside the conversation.

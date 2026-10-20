@@ -1,18 +1,22 @@
 import type { TemplateSpec } from "api-server-api";
-import { durationToMinutes } from "../../../duration.js";
+import { goDurationToMinutes } from "../../../duration.js";
 
 export interface IdleTimeoutMinutes {
   container: number;
   vm: number;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the idle window an Agent hibernates after, in minutes: its own override, else the chart-wide default, which is a separate value for vm Agents. The controller reads the override as a Go duration, so this does too: a positive duration under a minute projects to one rather than to zero, which the platform reads as never-hibernate, and a value the controller cannot read inherits the default. A vm Agent is not offered the setting, so it reads the vm default; one that carries an override anyway — a Template or starter kit seed, or one whose Backend moved — honours it, as a container Agent does.
 export function resolveEffectiveHibernationTimeoutMin(
   override: string | undefined,
   vm: boolean,
   idle: IdleTimeoutMinutes,
 ): number {
-  if (vm) return idle.vm;
-  return override != null ? durationToMinutes(override) : idle.container;
+  if (override != null) {
+    const own = goDurationToMinutes(override);
+    if (own != null) return own;
+  }
+  return vm ? idle.vm : idle.container;
 }
 
 export interface DefaultResourceLimits {

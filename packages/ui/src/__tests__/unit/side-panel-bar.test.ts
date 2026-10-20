@@ -113,7 +113,7 @@ it("orders the tabs Artifacts, Files, Changes, Browser", () => {
   expect(order[0]).toBeGreaterThan(-1);
 });
 
-// TEST_SCENARIO: Home and every other page share the chat's icon bar, with Artifacts at the top beside Get started and Approvals at the bottom, and none of the Agent's tabs.
+// TEST_SCENARIO: Home and every other page outside an Agent share the chat's icon bar with only Get started and Approvals: no Agent tab, and no Artifacts, which has its own page.
 it("offers only the tabs that belong to no Agent outside a chat", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -123,6 +123,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
         active: null,
         hidden: hiddenSidePanelTabs({
           agent: false,
+          artifacts: false,
           canOpenBrowser: true,
           processesEnabled: true,
           gettingStarted: true,
@@ -134,7 +135,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
   const tabs = [
     ...html.matchAll(/data-testid="side-panel-tab-([a-z-]+)"/g),
   ].map((m) => m[1]);
-  expect(tabs).toEqual(["artifacts", "getting-started", "approvals"]);
+  expect(tabs).toEqual(["getting-started", "approvals"]);
 });
 
 // TEST_SCENARIO: The rail reads like an activity bar: 48 px square buttons with 24 px icons, and only the open tab carries the bar on its inner edge.

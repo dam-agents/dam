@@ -3,9 +3,11 @@ import {
   acpNativeRowId,
   platformPromptAcceptedParamsSchema,
   platformPromptStartedParamsSchema,
+  platformRunEndedParamsSchema,
   platformRunResultResponseSchema,
   platformTurnEndedParamsSchema,
   PROMPT_QUEUE_FULL_CODE,
+  runEndedSupported,
   SessionMode,
   SessionType,
   type PlatformRunResult,
@@ -83,7 +85,13 @@ type RunEvent =
   | { kind: "prompt-started" }
   | { kind: "prompt-queued" }
   | { kind: "turn-ended"; promptId: string | null; stopReason: string | null }
+  | { kind: "run-ended"; promptId: string | null; stopReason: string | null }
   | { kind: "prompt-response"; outcome: RpcOutcome };
+
+interface RunLink {
+  conn: RunConnection;
+  runEnded: boolean;
+}
 
 interface Waiter {
   push(event: RunEvent): void;
@@ -174,6 +182,11 @@ function matchesPrompt(result: PlatformRunResult, promptId: string): boolean {
   return result.promptId === promptId || result.promptId === null;
 }
 
+function stopReasonOf(result: unknown): string | null {
+  const stopReason = (result as { stopReason?: unknown } | null)?.stopReason;
+  return typeof stopReason === "string" ? stopReason : null;
+}
+
 function resultSessionId(result: unknown): string | null {
   if (typeof result !== "object" || result === null) return null;
   const sid = (result as { sessionId?: unknown }).sessionId;
@@ -183,7 +196,12 @@ function resultSessionId(result: unknown): string | null {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Drives a headless run over an agent's ACP relay:
  * open a Session tagged `cli_run`, submit one prompt, stream the assistant's
- * text, and map the prompt response's stopReason to the outcome. It never
+ * text, and map the run's stopReason to the outcome. The run ends at
+ * `platform/runEnded`, which the runtime sends once the harness is idle, not
+ * at the prompt response: Claude Code answers the prompt and then works on in
+ * a follow-up turn of its own when its background agents report. A runtime
+ * that does not announce the `runEnded` capability in its initialize answer
+ * sends no such signal, and the run ends at the prompt response. It never
  * answers permission requests — those are mirrored into the approvals queue,
  * and it prints where to act on them — and it survives a dropped socket: the
  * turn keeps running agent-side, so it reconnects with backoff, re-loads the
@@ -201,7 +219,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
     sessionFilter: () => string | null,
     onText: (text: string) => void,
     onPromptStarted?: () => void,
-  ): Promise<RunConnection | null> {
+  ): Promise<RunLink | null> {
     let conn: RunConnection;
     const stalls = new Set<string>();
     try {
@@ -235,6 +253,17 @@ export function createRunService(deps: RunServiceDeps): RunService {
               waiter.push({ kind: "prompt-queued" });
             return;
           }
+          if (method === "platform/runEnded") {
+            const parsed = platformRunEndedParamsSchema.safeParse(params);
+            waiter.push({
+              kind: "run-ended",
+              promptId: parsed.success ? (parsed.data.promptId ?? null) : null,
+              stopReason: parsed.success
+                ? (parsed.data.stopReason ?? null)
+                : null,
+            });
+            return;
+          }
           if (method === "platform/turnEnded") {
             const parsed = platformTurnEndedParamsSchema.safeParse(params);
             waiter.push({
@@ -259,7 +288,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
       conn.close();
       return null;
     }
-    return conn;
+    return { conn, runEnded: runEndedSupported(init.result) };
   }
 
   async function unreachable(ctx: BootstrapContext, sessionId?: string) {
@@ -352,13 +381,14 @@ export function createRunService(deps: RunServiceDeps): RunService {
       await new Promise((resolve) => setTimeout(resolve, delay));
 
       const waiter = createWaiter();
-      const conn = await connect(
+      const link = await connect(
         ctx,
         waiter,
         () => sessionId,
         () => {},
       );
-      if (conn === null) continue;
+      if (link === null) continue;
+      const { conn } = link;
       deps.errOut("reconnected; waiting for the turn to finish");
 
       try {
@@ -379,12 +409,14 @@ export function createRunService(deps: RunServiceDeps): RunService {
           if (event === "timed-out")
             return ok({ kind: "timed-out" as const, sessionId });
           if (event === "closed") break;
-          if (event.kind !== "turn-ended") continue;
+          if (event.kind !== "turn-ended" && event.kind !== "run-ended")
+            continue;
           if (event.promptId !== null && event.promptId !== promptId) continue;
           const after = await fetchRunResult(conn, sessionId);
           if (after?.status === "done" && matchesPrompt(after.result, promptId))
             return finish(after.result);
-          if (event.promptId === promptId) {
+          const ended = event.kind === "run-ended" || !link.runEnded;
+          if (ended && event.promptId === promptId) {
             deps.errOut(
               "note: the turn ended but no run record was found; output may be incomplete",
             );
@@ -413,7 +445,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
       let printedChars = 0;
 
       const waiter = createWaiter();
-      const conn = await connect(
+      const link = await connect(
         ctx.value,
         waiter,
         () => sessionId,
@@ -426,7 +458,9 @@ export function createRunService(deps: RunServiceDeps): RunService {
           started = true;
         },
       );
-      if (conn === null) return unreachable(ctx.value);
+      if (link === null) return unreachable(ctx.value);
+      const { conn } = link;
+      let answered = false;
 
       let releaseInterrupt = (): void => {};
       try {
@@ -477,7 +511,9 @@ export function createRunService(deps: RunServiceDeps): RunService {
             return ok({ kind: "timed-out" as const, sessionId: sid });
           if (event === "closed") {
             deps.errOut(
-              `connection lost mid-turn; the run continues on the agent (session ${sid})`,
+              answered
+                ? `connection lost while the agent works on; the run continues on the agent (session ${sid})`
+                : `connection lost mid-turn; the run continues on the agent (session ${sid})`,
             );
             return reconnectAndFinish({
               ctx: ctx.value,
@@ -488,18 +524,25 @@ export function createRunService(deps: RunServiceDeps): RunService {
             });
           }
 
+          if (
+            event.kind === "run-ended" &&
+            (event.promptId === null || event.promptId === promptId)
+          )
+            return ok({
+              kind: "completed" as const,
+              sessionId: sid,
+              stopReason: event.stopReason,
+            });
+
           if (event.kind === "prompt-response") {
             const outcome = event.outcome;
             if (outcome.ok) {
-              const stopReason =
-                typeof (outcome.result as { stopReason?: unknown })
-                  ?.stopReason === "string"
-                  ? (outcome.result as { stopReason: string }).stopReason
-                  : null;
+              answered = true;
+              if (link.runEnded) continue;
               return ok({
                 kind: "completed" as const,
                 sessionId: sid,
-                stopReason,
+                stopReason: stopReasonOf(outcome.result),
               });
             }
             if (outcome.error.message === "connection closed") {
@@ -558,16 +601,17 @@ export function createRunService(deps: RunServiceDeps): RunService {
         firstAttempt = false;
 
         const waiter = createWaiter();
-        const conn = await connect(
+        const link = await connect(
           ctx.value,
           waiter,
           () => sessionId,
           () => {},
         );
-        if (conn === null) {
+        if (link === null) {
           if (input.wait) continue;
           return unreachable(ctx.value, sessionId);
         }
+        const { conn } = link;
 
         try {
           const record = await fetchRunResult(conn, sessionId);
@@ -593,7 +637,8 @@ export function createRunService(deps: RunServiceDeps): RunService {
             if (event === "timed-out")
               return ok({ kind: "timed-out" as const, sessionId });
             if (event === "closed") break;
-            if (event.kind !== "turn-ended") continue;
+            if (event.kind !== "turn-ended" && event.kind !== "run-ended")
+              continue;
             const after = await fetchRunResult(conn, sessionId);
             if (after?.status === "done")
               return ok({ kind: "done" as const, result: after.result });
@@ -608,13 +653,14 @@ export function createRunService(deps: RunServiceDeps): RunService {
       const ctx = await deps.bootstrap(input.agentRef, input.serverFlag);
       if (!ctx.ok) return ctx;
       const sessionId = input.sessionId;
-      const conn = await connect(
+      const link = await connect(
         ctx.value,
         createWaiter(),
         () => sessionId,
         () => {},
       );
-      if (conn === null) return unreachable(ctx.value, sessionId);
+      if (link === null) return unreachable(ctx.value, sessionId);
+      const { conn } = link;
       try {
         const record = await fetchRunResult(conn, sessionId);
         if (record === null)

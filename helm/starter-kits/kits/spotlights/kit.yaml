@@ -24,15 +24,20 @@ resources:
 install:
   # uv puts the CLIs in ~/.local/bin, which is not on the image's PATH;
   # ~/.local/share/aube/bin is, and it is in the home, so the wrappers last.
-  # The wrappers put a claude shim first on PATH: the engine drops
-  # ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN, which point claude at the
-  # Model Router, and fails a call whose result event is not the last
-  # stream-json line, which some claude versions follow with a status line.
+  # The wrappers put a shim directory first on PATH, which does for the two
+  # CLIs what the image does for a harness process of its own:
+  # - claude: the engine drops ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN,
+  #   which point it at the Model Router, and fails a call whose result event
+  #   is not the last stream-json line, which some versions follow with a
+  #   status line.
+  # - codex: /etc/codex/config.toml already names the router as its provider,
+  #   and the key that config reads is the only thing it lacks, since this
+  #   agent's harness is claude-code and so no codex layer sets it.
   command: |
     set -eu
     uv tool install --force "git+https://github.com/AI-native-Systems-Research/spotlights.git@v0.1.1"
     shim="$HOME/.local/share/spotlights/shim"
-    mkdir -p "$shim" "$HOME/.local/share/aube/bin"
+    mkdir -p "$shim" "$HOME/.local/share/aube/bin" "$HOME/.config/spotlights"
     cat > "$shim/claude" <<'SHIM'
     #!/bin/bash
     if [ -n "${PLATFORM_MODEL_ROUTER_SERVES:-}" ]; then
@@ -45,34 +50,95 @@ install:
     *) exec claude "$@" ;;
     esac
     SHIM
-    chmod +x "$shim/claude"
+    cat > "$shim/codex" <<'SHIM'
+    #!/bin/bash
+    if [ -n "${PLATFORM_MODEL_ROUTER_SERVES:-}" ]; then
+      export OPENAI_API_KEY="${OPENAI_API_KEY:-platform:conn:router}"
+    fi
+    PATH="${PATH//"$(dirname "$0")":/}"
+    exec codex "$@"
+    SHIM
+    chmod +x "$shim/claude" "$shim/codex"
+    cat > "$HOME/.config/spotlights/models.yaml" <<'MODELS'
+    claude: claude/ibm/aws/claude-opus-5
+    codex: ibm/azure/gpt-5.5
+    MODELS
+    cat > "$HOME/.config/spotlights/refresh-rates.sh" <<'RATES'
+    #!/bin/bash
+    # Build a Spotlights rate table from the platform model router's LiteLLM prices.
+    # Bundled rows are kept; gateway rows (keyed by the full model id the CLIs report) are added.
+    set -euo pipefail
+    ROUTER="${PLATFORM_MODEL_ROUTER_URL:-http://127.0.0.1:24180}"
+    OUT="${1:-$HOME/.config/spotlights/rates.json}"
+    today=$(date -u +%F)
+    mkdir -p "$(dirname "$OUT")"
+    # The engine's own python, from the shebang uv wrote: the bundled table
+    # sits in that install, under a path naming both the python version and
+    # the home, so neither can be spelled here.
+    ENGINE_PYTHON="$(sed -n '1s/^#!//p' "$HOME/.local/bin/spotlights-engine")"
+    BUNDLED="$("$ENGINE_PYTHON" -c 'import importlib.resources as r; print(r.files("spotlights_engine") / "costing" / "rates.json")')"
+    # A Codex stream reports no model id. The engine then bills the model it
+    # was handed, and every call here gets the pinned one, so this row is
+    # reached only by an unpinned call; it follows the kit's GPT model.
+    GPT="$(sed -n 's/^codex:[[:space:]]*//p' "$HOME/.config/spotlights/models.yaml")"
+
+    rows() { # $1 harness, $2 provider prefix
+      curl -sf -m 30 -H "X-Platform-Harness: $1" "$ROUTER/v1/model/info" | jq --arg p "$2" --arg d "$today" '
+        [.data[] | select(.model_info.input_cost_per_token != null) |
+          {key: ($p + ":" + .model_name), value: {
+            input: .model_info.input_cost_per_token,
+            output: .model_info.output_cost_per_token,
+            cache_read: (.model_info.cache_read_input_token_cost // 0),
+            cache_create: (.model_info.cache_creation_input_token_cost // 0),
+            unit: "per_token",
+            note: ("From platform router /v1/model/info on " + $d)}}] | from_entries'
+    }
+
+    claude=$(rows claude-code anthropic)
+    codex=$(rows codex openai)
+    jq -n --slurpfile b "$BUNDLED" --argjson c "$claude" --argjson x "$codex" --arg d "$today" --arg gpt "$GPT" '
+      $b[0] + $c + $x
+      + (if $gpt != "" and $x["openai:" + $gpt] then {"openai:codex": ($x["openai:" + $gpt] + {note: ("CLI-family fallback = " + $gpt + " gateway rate")})} else {} end)
+      | ._note = ("Bundled rates plus platform-router LiteLLM prices fetched " + $d + " by ~/.config/spotlights/refresh-rates.sh")' > "$OUT.tmp"
+    mv "$OUT.tmp" "$OUT"
+    echo "wrote $OUT ($(jq 'keys|length' "$OUT") keys)"
+    RATES
+    chmod +x "$HOME/.config/spotlights/refresh-rates.sh"
+    # The engine reads neither file from its own defaults: the models file is
+    # unnamed unless SPOTLIGHTS_MODELS_FILE says so, and a rate table named by
+    # SPOTLIGHTS_RATES_FILE must exist, so the variable goes unset until it does.
     for bin in spotlights-engine signal-pipeline spotlights-objectives spotlights-validation; do
       if [ -x "$HOME/.local/bin/$bin" ]; then
         rm -f "$HOME/.local/share/aube/bin/$bin"
-        printf '#!/bin/sh\nPATH="%s:$PATH" exec "%s" "$@"\n' "$shim" "$HOME/.local/bin/$bin" > "$HOME/.local/share/aube/bin/$bin"
+        printf '#!/bin/sh\nrates="$HOME/.config/spotlights/rates.json"\n[ -f "$rates" ] || rates=\nPATH="%s:$PATH" SPOTLIGHTS_MODELS_FILE="$HOME/.config/spotlights/models.yaml" SPOTLIGHTS_RATES_FILE="$rates" exec "%s" "$@"\n' "$shim" "$HOME/.local/bin/$bin" > "$HOME/.local/share/aube/bin/$bin"
         chmod +x "$HOME/.local/share/aube/bin/$bin"
       fi
     done
+    # Best effort: a router still listing its catalog leaves this for the
+    # onboarding turn, which runs it again before `spotlights-engine doctor`.
+    "$HOME/.config/spotlights/refresh-rates.sh" || echo "spotlights: no rate table yet; rerun ~/.config/spotlights/refresh-rates.sh" >&2
     spotlights-engine init
 onboarding:
   prompt: >-
     The Spotlights engine (`spotlights-engine`) is installed, and
     `spotlights-engine init` has added its slash commands to the work
-    directory. Run `spotlights-engine doctor` and fix anything it reports
-    before you go on. Then ask the user for the target repository and the
-    optimization objective. If they are unsure about the objective, run
+    directory. Run `~/.config/spotlights/refresh-rates.sh`, then run
+    `spotlights-engine doctor` and fix anything it reports before you go on.
+    Then ask the user for the target repository and the optimization
+    objective. If they are unsure about the objective, run
     `/spotlights-objective-setting` with them. Clone the repository under the
     work directory and confirm with the user which modules to include.
     `--include` takes the extractor's qualified names: paths relative to the
     source root it picks (the repository root, or a directory like `src/`),
     with every level kept (`pkg/sub`, not `sub`); a run whose names match nothing
-    logs the available ones and stops after extraction. Pin the models with
-    `--claude-model "$ANTHROPIC_DEFAULT_OPUS_MODEL" --codex-model
-    "$OPENAI_MODEL"`. A run resumes from its `--artifacts-dir`, and refuses
-    to resume once any option has changed, so pass a fresh `--artifacts-dir`
-    whenever you change one. Tell the user that one module takes about 20-45
-    minutes and $15-20 in model cost before you start a run, and start it
-    with `platform-keep` so it finishes after your turn ends.
+    logs the available ones and stops after extraction. The models are pinned
+    in `~/.config/spotlights/models.yaml` for every step, so pass no
+    `--claude-model` and no `--codex-model`: either flag overrides the file. A
+    run resumes from its `--artifacts-dir`, and refuses to resume once any
+    option has changed, so pass a fresh `--artifacts-dir` whenever you change
+    one. Tell the user that one module takes about 20-45 minutes and $15-20 in
+    model cost before you start a run, and start it with `platform-keep` so it
+    finishes after your turn ends.
 connections:
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories.

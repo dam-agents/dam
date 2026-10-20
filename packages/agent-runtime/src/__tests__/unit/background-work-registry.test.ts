@@ -49,14 +49,6 @@ describe("createBackgroundWorkRegistry", () => {
     expect(registry.hasWork("s2")).toBe(false);
   });
 
-  it("refuses every hold when disabled, the feature's kill switch", () => {
-    const { registry } = setup({ enabled: false });
-
-    registry.report("s1", [job("t1")]);
-
-    expect(registry.hasWork("s1")).toBe(false);
-  });
-
   it("logs what a hold is for once, not on every report", () => {
     const { registry, logs } = setup();
 

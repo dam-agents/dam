@@ -97,8 +97,8 @@ describe("githubAccountGroups", () => {
       github("conn-b", "Personal", { grantedAt: "2026-09-02T00:00:00Z" }),
       github("conn-a", "Work", { grantedAt: "2026-09-01T00:00:00Z" }),
     ]);
-    expect(group?.host).toBe("github.com");
-    expect(group?.accounts.map((a) => [a.account, a.active])).toEqual([
+    expect(group?.scope).toBe("github.com");
+    expect(group?.accounts.map((a) => [a.name, a.active])).toEqual([
       ["work", true],
       ["personal", false],
     ]);
@@ -144,7 +144,7 @@ describe("githubAccountGroups", () => {
       github("conn-a", "GitHub (PAT)"),
       github("conn-b", "GitHub (PAT)"),
     ]);
-    expect(group?.accounts.map((a) => a.account)).toEqual([
+    expect(group?.accounts.map((a) => a.name)).toEqual([
       "github-pat",
       "github-pat-conn-b",
     ]);

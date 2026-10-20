@@ -2,7 +2,7 @@ import {
   Add,
   type CarbonIconType,
   ChevronRight,
-  DataEnrichmentAdd,
+  Gift,
   Home,
   ListTree,
   Settings,
@@ -577,7 +577,7 @@ function CreateAgentMenu({
           <Add size={14} /> New agent
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setKitBrowserOpen(true)}>
-          <DataEnrichmentAdd size={14} /> Use a starter kit
+          <Gift size={14} /> Use a starter kit
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
