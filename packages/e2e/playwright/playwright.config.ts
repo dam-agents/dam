@@ -57,7 +57,7 @@ const suite: NamedProject[] = [
     name: "own-agents",
     testMatch:
       laneBackend === "vm"
-        ? /\/(17|18|20|22|23|25|27|28)-.*\.spec\.ts$/
+        ? /\/(17|18|20|22|23|25|27|29)-.*\.spec\.ts$/
         : /\/(17|18|19|25)-.*\.spec\.ts$/,
     dependencies: ["agent"],
     workers: 1,
