@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"io"
 	"log/slog"
@@ -35,7 +36,9 @@ const (
 	ownerGatewayPortBase     = 20000
 	ownerGatewaySlots        = 512
 	annOwnerGatewaySlot      = "agent-platform.ai/owner-gateway-slot"
+	annOwnerRegenerated      = "agent-platform.ai/owner-gateway-regenerated"
 	ownerGatewayFilesVolume  = "gateway-files"
+	ownerGatewayDNSVolume    = "gateway-dns"
 	ownerGatewayConfigBudget = 1 << 20
 	// UNIT_BOUNDARY_DESCRIPTION: an owner gateway that stops cuts every agent's model streams at once. Envoy exits at once on SIGTERM, so the old pod first sleeps in preStop, out of its Services' endpoints and still serving what it holds, while the surged new pod takes every new connection; a stream that ends within the sleep is not cut. The cost is only how long a roll takes, and a stream longer than that is still reset.
 	ownerGatewayTerminationGrace int64 = 30
@@ -119,7 +122,7 @@ func buildOwnerGatewayDeployment(owner string, cfg *config.Config, ownerRefs []m
 	dns := machineDNSContainer(cfg, "")
 	dns.Env = nil
 	dns.Ports = nil
-	dns.VolumeMounts = []corev1.VolumeMount{{Name: ownerGatewayFilesVolume, MountPath: envoyBootstrapMount, ReadOnly: true}}
+	dns.VolumeMounts = []corev1.VolumeMount{{Name: ownerGatewayDNSVolume, MountPath: envoyBootstrapMount, ReadOnly: true}}
 	falseVal := false
 	grace := ownerGatewayTerminationGrace
 	one := int32(1)
@@ -146,6 +149,7 @@ func buildOwnerGatewayDeployment(owner string, cfg *config.Config, ownerRefs []m
 					Containers:                    []corev1.Container{envoy, dns},
 					Volumes: []corev1.Volume{
 						{Name: ownerGatewayFilesVolume, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name}}},
+						{Name: ownerGatewayDNSVolume, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name, Items: []corev1.KeyToPath{{Key: machineDNSCorefileKey, Path: machineDNSCorefileKey}}}}},
 						{Name: envoyLeafTLSVolume, VolumeSource: corev1.VolumeSource{Secret: &corev1.SecretVolumeSource{SecretName: name + ownerGatewayLeafSuffix}}},
 					},
 				},
@@ -155,7 +159,7 @@ func buildOwnerGatewayDeployment(owner string, cfg *config.Config, ownerRefs []m
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything an owner gateway reads from its files, in one Secret mounted as one volume: the bootstrap, the listener, cluster and leaf-SDS files, the Lua bodies, the resolver's Corefile, and the signing credentials and upstream CAs of the connections its agents' chains name. One volume is the point: the kubelet flips a projected volume once, all its keys together, so a file that names a credential and the credential itself become visible at the same moment. Across two volumes Envoy can read the file that names a credential while the other volume still lacks it, and a credentials provider built then never reads its file again, which is the failure this shape removes.
-func buildOwnerGatewaySecret(owner string, cfg *config.Config, rendered ownerGatewayConfig, corefile string, granted [][]corev1.Secret, ownerRefs []metav1.OwnerReference) *corev1.Secret {
+func buildOwnerGatewaySecret(owner string, cfg *config.Config, rendered ownerGatewayConfig, corefile string, granted [][]corev1.Secret, ownerRefs []metav1.OwnerReference) (*corev1.Secret, []string) {
 	data := map[string][]byte{
 		ownerGatewayBootstrap:  []byte(rendered.Bootstrap),
 		ownerGatewayLDSKey:     []byte(rendered.LDS),
@@ -180,13 +184,16 @@ func buildOwnerGatewaySecret(owner string, cfg *config.Config, rendered ownerGat
 	}
 	names := slices.Sorted(maps.Keys(byName))
 	h := sha256.New()
+	var keys []string
 	for _, name := range names {
 		for _, k := range ownerGatewayDataKeys(byName[name]) {
 			key := name + "." + k
 			data[key] = byName[name].Data[k]
+			keys = append(keys, key)
 			fmt.Fprintf(h, "%s\n%x\n", key, sha256.Sum256(byName[name].Data[k]))
 		}
 	}
+	slices.Sort(keys)
 	return &corev1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            ownerGatewayName(cfg.ReleaseName, owner),
@@ -197,7 +204,7 @@ func buildOwnerGatewaySecret(owner string, cfg *config.Config, rendered ownerGat
 		},
 		Type: corev1.SecretTypeOpaque,
 		Data: data,
-	}
+	}, keys
 }
 
 func secretSize(secret *corev1.Secret) int {
@@ -328,9 +335,11 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	var (
 		rendered   ownerGatewayConfig
 		files      *corev1.Secret
+		keys       []string
 		granted    [][]corev1.Secret
 		leafAgents []ownerLeafAgent
 	)
+	r.seedOwnerGatewayOffers(ctx, owner)
 	plan := r.ownerGatewayRepairPlan(owner, names, r.clockNow())
 	render := func(names []string) error {
 		var agents []ownerGatewayAgent
@@ -348,10 +357,12 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			leafAgents = append(leafAgents, ownerLeafAgent{Secrets: m.secrets, L7Hosts: m.agent.Spec.L7Hosts})
 		}
 		var err error
-		if rendered, err = renderOwnerGateway(agents, r.config, plan.xdsVersion()); err != nil {
+		if rendered, err = renderOwnerGateway(agents, r.config, plan); err != nil {
 			return err
 		}
-		files = buildOwnerGatewaySecret(owner, r.config, rendered, ownerResolverCorefile(blocks), granted, refs)
+		files, keys = buildOwnerGatewaySecret(owner, r.config, rendered, ownerResolverCorefile(blocks), granted, refs)
+		plan.observeCredentials(keys)
+		files.Annotations[annOwnerRegenerated] = plan.regenerated()
 		return nil
 	}
 	if err := render(names); err != nil {
@@ -387,9 +398,9 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			if err := r.applyOwnerGatewayFiles(ctx, files); err != nil {
 				return err
 			}
+			plan.committed()
 			r.refreshOwnerGatewayCredentials(ctx, owner, files.Annotations[annOwnerCredentialsHash], names, r.clockNow())
-			r.deleteLegacyOwnerGatewayFiles(ctx, files.Name)
-			return nil
+			return r.settleLegacyOwnerGatewayFiles(ctx, plan, owner, files, keys)
 		},
 		func() error {
 			return r.applyCertificate(ctx, buildOwnerLeafCertificate(owner, r.config, leafAgents, refs))
@@ -554,7 +565,7 @@ func (r *AgentReconciler) ownerGatewayFailure(ctx context.Context, owner string)
 	return "", "", false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the layout before one volume kept an owner gateway's files in a ConfigMap of its name and its credentials in a Secret beside it, both folded into the files Secret since. A fresh owner never has them; an install that upgrades keeps the credentials Secret, which holds signing keys nothing refreshes afterwards. Every write of the files therefore removes them, which costs two not-found deletes a render and heals an object put back by hand, and so does the teardown of an owner that never rendered one.
+// UNIT_BOUNDARY_DESCRIPTION: the layout before one volume kept an owner gateway's files in a ConfigMap of its name and its credentials in a Secret beside it, and the pod of that layout mounts both, so they are destroyed with it.
 func (r *AgentReconciler) deleteLegacyOwnerGatewayFiles(ctx context.Context, name string) {
 	ns, opts := r.config.Namespace, metav1.DeleteOptions{}
 	for _, del := range []func() error{
@@ -564,6 +575,84 @@ func (r *AgentReconciler) deleteLegacyOwnerGatewayFiles(ctx context.Context, nam
 		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
 			slog.Warn("owner gateway: removing the files its previous layout kept apart", "gateway", name, "error", err)
 		}
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an upgraded owner keeps the two objects its old-layout pod mounts until nothing of that layout is left: the Deployment holds that template while a roll waits for its place in the roll budget, and its pod keeps serving until the new pod is ready, so deleting them then leaves a pod that cannot be replaced and a rotation that never reaches it. So while either still names them they are written with this render's content, and once neither does they are removed. The check is one read of the Deployment and one of its pods, and it stops once the objects are gone: they only come back if an operator puts them back.
+func (r *AgentReconciler) settleLegacyOwnerGatewayFiles(ctx context.Context, plan *ownerGatewayRepairPlan, owner string, files *corev1.Secret, keys []string) error {
+	if plan.legacyDone() {
+		return nil
+	}
+	if !r.legacyOwnerGatewayInUse(ctx, owner, files.Name) {
+		r.deleteLegacyOwnerGatewayFiles(ctx, files.Name)
+		plan.legacyGone()
+		return nil
+	}
+	configMap, credentials := ownerGatewayLegacyObjects(files, keys)
+	if err := r.applyConfigMap(ctx, configMap); err != nil {
+		return err
+	}
+	return r.applyOwnerGatewayFiles(ctx, credentials)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a pod or a Deployment of this owner still mounts the two objects the previous layout used.
+func (r *AgentReconciler) legacyOwnerGatewayInUse(ctx context.Context, owner, name string) bool {
+	dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, name, metav1.GetOptions{})
+	if err == nil && mountsLegacyOwnerGatewayFiles(dep.Spec.Template.Spec, name) {
+		return true
+	}
+	if err != nil && !k8serrors.IsNotFound(err) {
+		return true
+	}
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent + "," + envoyOwnerLabel + "=" + owner})
+	if err != nil {
+		return true
+	}
+	for i := range pods.Items {
+		if mountsLegacyOwnerGatewayFiles(pods.Items[i].Spec, name) {
+			return true
+		}
+	}
+	return false
+}
+
+func mountsLegacyOwnerGatewayFiles(spec corev1.PodSpec, name string) bool {
+	for _, v := range spec.Volumes {
+		if v.ConfigMap != nil && v.ConfigMap.Name == name {
+			return true
+		}
+		if v.Secret != nil && v.Secret.SecretName == name+"-credentials" {
+			return true
+		}
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the two objects of the previous layout, carrying the same files and credentials this render wrote, so a rotation or a revocation reaches a pod of that layout while it still serves.
+func ownerGatewayLegacyObjects(files *corev1.Secret, keys []string) (*corev1.ConfigMap, *corev1.Secret) {
+	credentials := map[string][]byte{}
+	for _, k := range keys {
+		credentials[k] = files.Data[k]
+	}
+	configMap := &corev1.ConfigMap{
+		ObjectMeta: metav1.ObjectMeta{Name: files.Name, Namespace: files.Namespace, Labels: files.Labels, OwnerReferences: files.OwnerReferences},
+		Data:       map[string]string{},
+	}
+	for k, v := range files.Data {
+		if _, isCredential := credentials[k]; !isCredential {
+			configMap.Data[k] = string(v)
+		}
+	}
+	return configMap, &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            files.Name + "-credentials",
+			Namespace:       files.Namespace,
+			Labels:          files.Labels,
+			Annotations:     map[string]string{annOwnerCredentialsHash: files.Annotations[annOwnerCredentialsHash]},
+			OwnerReferences: files.OwnerReferences,
+		},
+		Type: corev1.SecretTypeOpaque,
+		Data: credentials,
 	}
 }
 
@@ -701,29 +790,73 @@ type ownerGatewayOffer struct {
 	warned    bool
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one owner's offers and the write clock they share.
+// UNIT_BOUNDARY_DESCRIPTION: one owner's offers, its listener generations and the write clock they share. `arrivals` counts the times this owner's set of credential files grew: a file the pod has never been written can reach a listener one flip before the kubelet publishes its own pathname, so each arrival is answered by one internal-listener generation per agent, spent once that agent has answered a render that carried it. `renders` is the arrival count each agent's listener was last rendered for, and it is written onto the Secret so a controller restart resumes where the last render left off instead of repeating every generation.
 type ownerGatewayOffers struct {
-	owner  string
-	mu     sync.Mutex
-	next   time.Time
-	writes int
-	offers map[string]*ownerGatewayOffer
+	owner    string
+	mu       sync.Mutex
+	next     time.Time
+	writes   int
+	offers   map[string]*ownerGatewayOffer
+	arrivals int
+	known    bool
+	seen     []string
+	renders  map[string]int
+	legacy   bool
+	loaded   bool
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one render's decision. `version` is what the files carry: the template's revision plus one count per write this owner has made, so a write always changes the files the pod reads, and a render that owes nothing is byte-identical to the one before it. `due` holds the agents whose next offer is still ahead, and when.
+// UNIT_BOUNDARY_DESCRIPTION: the arrivals and generations an owner's Secret carries, so a restarted controller knows which credential files are already published and which agents have already had their listener recreated for them.
+type ownerGatewayGenerations struct {
+	Arrivals int            `json:"arrivals"`
+	Renders  map[string]int `json:"renders,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one render's decision. `version` is what the files carry: the template's revision plus one count per write this owner has made, so a write always changes the files the pod reads, and a render that owes nothing is byte-identical to the one before it. `due` holds the agents whose next offer is still ahead, and when. `generations` is what each agent's internal listener carries this render.
 type ownerGatewayRepairPlan struct {
-	now     time.Time
-	version string
-	due     map[string]time.Duration
+	now         time.Time
+	version     string
+	due         map[string]time.Duration
+	generations map[string]int
+	arrivals    int
+	wrote       bool
+	set         *ownerGatewayOffers
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner owes the agents it serves, decided before any of them is rendered, because the version the files carry is theirs together. An agent with no rendering stored yet is owed nothing: nothing has been written for it to read.
-func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, now time.Time) *ownerGatewayRepairPlan {
-	v, _ := r.ownerGatewayOffers.LoadOrStore(owner, &ownerGatewayOffers{owner: owner, offers: map[string]*ownerGatewayOffer{}})
-	set := v.(*ownerGatewayOffers)
+// UNIT_BOUNDARY_DESCRIPTION: an owner's state, one per owner for the controller's life.
+func (r *AgentReconciler) ownerGatewayOffersFor(owner string) *ownerGatewayOffers {
+	v, _ := r.ownerGatewayOffers.LoadOrStore(owner, &ownerGatewayOffers{owner: owner, offers: map[string]*ownerGatewayOffer{}, renders: map[string]int{}})
+	return v.(*ownerGatewayOffers)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: seeds an owner's state once per controller run from the Secret it wrote last, so a restart resumes the arrival count and the generations already spent instead of repeating them. An owner with no Secret yet, or one written before this state was recorded, starts empty, and its first write records the credential files it already has as its baseline.
+func (r *AgentReconciler) seedOwnerGatewayOffers(ctx context.Context, owner string) {
+	set := r.ownerGatewayOffersFor(owner)
 	set.mu.Lock()
 	defer set.mu.Unlock()
-	p := &ownerGatewayRepairPlan{now: now, due: map[string]time.Duration{}}
+	if set.loaded {
+		return
+	}
+	set.loaded = true
+	secret, err := r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, ownerGatewayName(r.config.ReleaseName, owner), metav1.GetOptions{})
+	if err != nil {
+		return
+	}
+	var state ownerGatewayGenerations
+	if json.Unmarshal([]byte(secret.Annotations[annOwnerRegenerated]), &state) != nil {
+		return
+	}
+	set.arrivals, set.known = state.Arrivals, true
+	for name, n := range state.Renders {
+		set.renders[name] = n
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what an owner owes the agents it serves, decided before any of them is rendered, because the version the files carry is theirs together. An agent with no rendering stored yet is owed nothing: nothing has been written for it to read. An agent the pod has not answered the rendering of is owed the files again on a doubling wait until it does, which is the only evidence that a read it refused is offered again; an agent that answered is owed them once more, so a resource Envoy refused behind a listener it accepted is offered again with its files on disk. An agent that has answered and whose listener was rendered before a credential file arrived is owed a listener generation too, which is the only way a provider built on a file that was not there yet is built again.
+func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, now time.Time) *ownerGatewayRepairPlan {
+	set := r.ownerGatewayOffersFor(owner)
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	p := &ownerGatewayRepairPlan{now: now, due: map[string]time.Duration{}, generations: map[string]int{}, set: set}
 	var owed []string
 	served := make(map[string]bool, len(names))
 	for _, name := range names {
@@ -733,16 +866,24 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, n
 		if revision == "" {
 			continue
 		}
-		_, stale := r.ownerStaleListeners.Load(name)
+		answer, _ := r.ownerGatewayAnswered.Load(name)
+		answered, _ := answer.(string)
 		offer := set.offers[name]
 		if offer == nil || offer.revision != revision {
 			offer = &ownerGatewayOffer{revision: revision, next: now}
 			set.offers[name] = offer
 		}
+		p.generations[name] = set.renders[name]
+		regenerate := answered == revision && set.arrivals > set.renders[name]
+		if regenerate {
+			p.generations[name] = set.arrivals
+		}
 		switch {
-		case stale && offer.tries < ownerGatewayOfferTries && !now.Before(offer.next):
+		case answered != revision && offer.tries < ownerGatewayOfferTries && !now.Before(offer.next):
 			owed = append(owed, name)
-		case !stale && !offer.reoffered:
+		case answered == revision && !offer.reoffered:
+			owed = append(owed, name)
+		case regenerate:
 			owed = append(owed, name)
 		}
 	}
@@ -753,6 +894,7 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, n
 	}
 	if len(owed) == 0 {
 		p.version = ownerGatewayVersion(set.writes)
+		p.arrivals = set.arrivals
 		return p
 	}
 	if now.Before(set.next) {
@@ -760,13 +902,16 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, n
 			p.due[name] = set.next.Sub(now)
 		}
 		p.version = ownerGatewayVersion(set.writes)
+		p.arrivals = set.arrivals
 		return p
 	}
 	set.next = now.Add(ownerGatewayWritePace)
 	set.writes++
+	p.wrote = true
 	for _, name := range owed {
 		offer := set.offers[name]
-		if _, stale := r.ownerStaleListeners.Load(name); stale {
+		answer, _ := r.ownerGatewayAnswered.Load(name)
+		if answered, _ := answer.(string); answered != offer.revision {
 			offer.tries++
 			offer.next = now.Add(ownerGatewayOfferWait << (offer.tries - 1))
 			if offer.tries < ownerGatewayOfferTries {
@@ -782,7 +927,72 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, n
 		offer.reoffered = true
 	}
 	p.version = ownerGatewayVersion(set.writes)
+	p.arrivals = set.arrivals
 	return p
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a credential file the pod has never been written is the one case a single flip cannot make whole: the kubelet moves the volume's data before it publishes the new file at the path a listener names, so a provider built during that flip reads a path that is not there yet and never reads again. Every arrival is therefore counted, and the agents that answer the render carrying it are each given one internal-listener generation, spent after that answer, by which time the pathname exists.
+func (p *ownerGatewayRepairPlan) observeCredentials(keys []string) {
+	if p == nil || p.set == nil {
+		return
+	}
+	p.set.mu.Lock()
+	defer p.set.mu.Unlock()
+	if !p.set.known {
+		p.set.known, p.set.seen = true, keys
+	} else if !slices.Equal(p.set.seen, keys) {
+		p.set.arrivals, p.set.seen = p.set.arrivals+1, keys
+	}
+	p.arrivals = p.set.arrivals
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the arrivals and generations the Secret records, as this render leaves them: an agent owed a generation carries the arrival it was regenerated for, so a controller that restarts between this write and its answer neither repeats nor loses it.
+func (p *ownerGatewayRepairPlan) regenerated() string {
+	if p == nil {
+		return ""
+	}
+	raw, _ := json.Marshal(ownerGatewayGenerations{Arrivals: p.arrivals, Renders: p.generations})
+	return string(raw)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: records what this write leaves the pod with, once the Secret is written: the arrival count, and for each agent rendered the generation its listener carries.
+func (p *ownerGatewayRepairPlan) committed() {
+	if p == nil || p.set == nil || !p.wrote {
+		return
+	}
+	p.set.mu.Lock()
+	defer p.set.mu.Unlock()
+	p.set.arrivals = p.arrivals
+	for name, generation := range p.generations {
+		p.set.renders[name] = generation
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an owner's files still have the two objects its previous layout kept apart, and the note that they are gone, so a render stops reading for them.
+func (p *ownerGatewayRepairPlan) legacyDone() bool {
+	if p == nil || p.set == nil {
+		return true
+	}
+	p.set.mu.Lock()
+	defer p.set.mu.Unlock()
+	return p.set.legacy
+}
+
+func (p *ownerGatewayRepairPlan) legacyGone() {
+	if p == nil || p.set == nil {
+		return
+	}
+	p.set.mu.Lock()
+	defer p.set.mu.Unlock()
+	p.set.legacy = true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the generation an agent's internal listener carries this render, 0 for the template's.
+func (p *ownerGatewayRepairPlan) generation(name string) int {
+	if p == nil {
+		return 0
+	}
+	return p.generations[name]
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the version the owner's files carry: the template's revision, and a count of the writes this owner has made, so every write is a file the pod has not read and a render that owes nothing repeats the last one byte for byte.
@@ -815,8 +1025,10 @@ func (r *AgentReconciler) ownerListenerCurrent(ctx context.Context, agent, host 
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
 	if resp.StatusCode != http.StatusOK || string(body) != want.(string) {
+		r.ownerGatewayAnswered.Delete(agent)
 		return false, fmt.Sprintf("the owner gateway still serves an older listener for this agent (has %q, want %q)", body, want)
 	}
+	r.ownerGatewayAnswered.Store(agent, want.(string))
 	return true, ""
 }
 
@@ -906,7 +1118,7 @@ func (r *AgentReconciler) servedDesiredUp(ctx context.Context, name string) (up,
 	return up, ok, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner whose agents all sleep has no reconcile to carry a new owner gateway template, so the rollout sweep offers every existing owner gateway its turn, in name order, under its owner's lock. It only updates a gateway that exists, so it never brings back one the orphan sweep removed. With the flag off it renders the gateway for the agents still on it instead, which removes a gateway none is left on, such as one whose last agent was deleted before it moved back.
+// UNIT_BOUNDARY_DESCRIPTION: an owner whose agents all sleep has no reconcile to carry a new owner gateway template, so the rollout sweep offers every existing owner gateway its turn, in name order, under its owner's lock. It only updates a gateway that exists, so it never brings back one the orphan sweep removed. It renders the gateway rather than only its Deployment: a template that mounts a files Secret the old layout never wrote would leave the new pod waiting for one, and an owner whose combined files are past the limit must be refused here too, so its old pod keeps the objects it mounts while its agents move back. With the flag off the same render removes a gateway none is left on, such as one whose last agent was deleted before it moved back.
 func (r *AgentReconciler) rollOwnerGateways(ctx context.Context) {
 	list, err := r.client.AppsV1().Deployments(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent})
 	if err != nil {
@@ -914,7 +1126,6 @@ func (r *AgentReconciler) rollOwnerGateways(ctx context.Context) {
 		return
 	}
 	slices.SortFunc(list.Items, func(a, b appsv1.Deployment) int { return strings.Compare(a.Name, b.Name) })
-	refs := r.runnerOwnerRef(ctx)
 	for _, dep := range list.Items {
 		owner := dep.Labels[envoyOwnerLabel]
 		if owner == "" || dep.DeletionTimestamp != nil {
@@ -923,11 +1134,7 @@ func (r *AgentReconciler) rollOwnerGateways(ctx context.Context) {
 		lock := r.ownerLock(owner)
 		lock.Lock()
 		var err error
-		if r.config.VM.Gateway.PerOwner {
-			err = r.applyOwnerGatewayDeployment(ctx, buildOwnerGatewayDeployment(owner, r.config, refs))
-		} else {
-			_, err = r.ensureOwnerGateway(ctx, owner)
-		}
+		_, err = r.ensureOwnerGateway(ctx, owner)
 		lock.Unlock()
 		if err != nil {
 			slog.Warn("owner gateway rollout: applying an owner gateway failed", "owner", owner, "error", err)

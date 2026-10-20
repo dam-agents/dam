@@ -41,13 +41,13 @@ type ownerGatewayConfig struct {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the Envoy configuration of an owner gateway, which serves every vm Agent of one owner. The bootstrap holds only what the agents share: the internal-listener extension, the stats sink and the clusters to the harness, the object store, the dynamic forward proxies and the collector. Each agent's listeners and clusters are files Envoy watches, every name suffixed with the agent, so one agent's change replaces only its own listener and drains only its own connections. Identity is the listener's port, which only the agent's own Service maps to. The mesh no longer tells an owner's agents apart at the harness, so each agent's harness route ends in a guard listener that admits only that agent's own path and stamps the agent on the request; every other route strips that header, and the agent's harness policy requires it. The listener answers its health path with a revision of what was rendered for it, so a readiness probe tells a stale listener from a current one. Size: about 11 KB shared plus 4 KB per credentialed host before spend metering; one Secret holds at most 1 MiB, and an owner past that needs an xDS server in the controller instead of files.
-// UNIT_BOUNDARY_DESCRIPTION: `version` is the xDS version the files carry, empty for the template's. Envoy reads a projected file again when its volume moves, and deduplicates the listeners whose content it already accepted, so a file offered again under a new version re-offers everything the pod refused without replacing anything it took.
-func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, version string) (ownerGatewayConfig, error) {
+// UNIT_BOUNDARY_DESCRIPTION: `repair` is the render's decision: the xDS version the files carry, empty for the template's, and, for an agent whose credential files moved under a listener it had already loaded, the generation its internal listener carries. Envoy reads a projected file again when its volume moves, and deduplicates the listeners whose content it already accepted, so a file offered again under a new version re-offers everything the pod refused without replacing anything it took; a moved generation is the one thing that does replace a listener, and only the internal one, whose chains are where a credentials provider is built.
+func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, repair *ownerGatewayRepairPlan) (ownerGatewayConfig, error) {
 	var listeners, clusters []any
 	revisions := map[string]string{}
 	var shared bootstrapParams
 	for i, a := range agents {
-		p := ownerAgentParams(a, cfg)
+		p := ownerAgentParams(a, cfg, repair.generation(a.Name))
 		if i == 0 {
 			shared = p
 		}
@@ -83,13 +83,13 @@ func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, version 
 	if out.Bootstrap, err = marshalYAML(bootstrap); err != nil {
 		return out, err
 	}
-	if out.LDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.listener.v3.Listener", version, listeners)); err != nil {
+	if out.LDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.listener.v3.Listener", repair.xdsVersion(), listeners)); err != nil {
 		return out, err
 	}
-	if out.CDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.cluster.v3.Cluster", version, clusters)); err != nil {
+	if out.CDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.cluster.v3.Cluster", repair.xdsVersion(), clusters)); err != nil {
 		return out, err
 	}
-	out.LeafSDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", version, []any{ev{
+	out.LeafSDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", repair.xdsVersion(), []any{ev{
 		"name": envoyLeafSDSName,
 		"tls_certificate": ev{
 			"certificate_chain": ev{"filename": envoyLeafTLSMount + "/tls.crt"},
@@ -100,7 +100,7 @@ func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, version 
 	return out, err
 }
 
-func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config) bootstrapParams {
+func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation int) bootstrapParams {
 	suffix := "_" + a.Name
 	chains := make([]envoyHostChain, len(a.Chains))
 	for i, c := range a.Chains {
@@ -120,6 +120,7 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config) bootstrapParams {
 	p.CredentialsRoot = ownerGatewayCredentialRoot
 	p.LeafSDSPath = envoyBootstrapMount + "/" + ownerGatewayLeafSDSKey
 	p.LuaDir = envoyBootstrapMount
+	p.RepairGeneration = generation
 	return p
 }
 
