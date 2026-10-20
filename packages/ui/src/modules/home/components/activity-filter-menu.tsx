@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -81,7 +82,10 @@ export function ActivityFilterMenu({
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <div className="flex items-center justify-between gap-2">
+        <div
+          role="presentation"
+          className="flex items-center justify-between gap-2"
+        >
           <DropdownMenuLabel>Type</DropdownMenuLabel>
           {!allTypes && (
             <DropdownMenuItem
@@ -97,7 +101,11 @@ export function ActivityFilterMenu({
           )}
         </div>
         {CHANNEL_TYPES.map((type) => (
-          <div key={type} className="group/type flex items-center gap-1">
+          <div
+            key={type}
+            role="presentation"
+            className="group flex items-center gap-1"
+          >
             <DropdownMenuCheckboxItem
               className="flex-1"
               checked={filters.channelTypes.has(type)}
@@ -110,7 +118,8 @@ export function ActivityFilterMenu({
               aria-label={`Show only ${CHANNEL_TYPE_LABELS[type]}`}
               className={cn(
                 inlineActionClassName,
-                "opacity-0 group-hover/type:opacity-100 group-focus-within/type:opacity-100",
+                HOVER_ACTION,
+                "group-focus-within:opacity-100",
               )}
               onSelect={(event) => {
                 event.preventDefault();
