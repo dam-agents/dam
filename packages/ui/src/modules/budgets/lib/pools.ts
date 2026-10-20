@@ -130,7 +130,7 @@ export interface StorageRow {
   homeFull: boolean;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the copies of homes that runtime migrations still hold, and the runner's own logs and records as what is left. A part that takes nothing is left out.
+// UNIT_BOUNDARY_DESCRIPTION: what fills the owner's shared storage, largest first: each agent's disk, the copies of homes that runtime migrations still hold, and the runner's own logs and records as what is left. A part that takes nothing is left out, but a row whose own storage is full stays even at zero bytes: a disk the runner could not read reports none, and the mark is why the owner is looking.
 export function storageRows(
   usage: BudgetVmUsage,
   agents: readonly AgentView[],
@@ -156,7 +156,7 @@ export function storageRows(
       bytes: usage.storage.usedBytes - counted,
     },
   ]
-    .filter((row) => row.bytes > 0)
+    .filter((row) => row.bytes > 0 || row.homeFull)
     .sort((a, b) => b.bytes - a.bytes);
 }
 

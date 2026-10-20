@@ -122,6 +122,26 @@ describe("pool bars", () => {
     expect(rows.filter((r) => r.homeFull).map((r) => r.label)).toEqual(["b"]);
   });
 
+  it("keeps a full home's row when the runner could not read its disk, since that mark is why the breakdown opens", () => {
+    const rows = storageRows(
+      {
+        ...usage,
+        agents: usage.agents.map((share) =>
+          share.id === "b"
+            ? { ...share, storageUsedBytes: 0, homeFull: true }
+            : share,
+        ),
+      },
+      agents,
+    );
+    expect(rows.find((r) => r.label === "b")).toEqual({
+      agent: expect.objectContaining({ id: "b" }),
+      label: "b",
+      bytes: 0,
+      homeFull: true,
+    });
+  });
+
   it("fills the CPU bar with the server's congestion fill", () => {
     const bar = cpuBar({
       limitMilli: 4000,
