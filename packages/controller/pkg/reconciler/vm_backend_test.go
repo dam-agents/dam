@@ -1216,8 +1216,31 @@ func TestAnUnreadableGrantDoesNotStopARunningMachine(t *testing.T) {
 		"a machine that runs was reported as waiting for the node")
 }
 
-// TEST_SCENARIO: the waiver the controller makes for a machine that holds memory is only true at the moment it is read, and the runner is what knows whether it still is: the state travels with the zero cap, so the runner refuses the ensure rather than boot a cold start on a read two requests old. A cap waived for any other reason names no state, since there is nothing left to confirm.
-func TestAStartWaivedOnAMachineThatHoldsMemorySaysWhichStateItRead(t *testing.T) {
+// TEST_SCENARIO: a machine that holds memory is admitted while the node's grant cannot be read, and the figure that bounds it is the last one the node reported. Zero would be no ceiling at all: the machine can stop between this read and the ensure, and the runner would then boot a cold start against the whole pool. A positive ceiling is what every runner enforces, so the bound holds while a controller and its runners are rolled out at different times.
+func TestAMachineThatHoldsMemoryIsAdmittedAgainstTheLastGrantTheNodeReported(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "9Gi", "16Gi")
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, MemoryMiB: 3072})
+
+	// TEST_SCENARIO: the node reports what it granted, and then stops reporting it.
+	grant, err := r.runnerAdmitMiB(ctx, testOwner)
+	require.NoError(t, err)
+	require.Equal(t, 9216, grant)
+	runnerPodForgetsItsGrant(t, r)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	held := node.spec("my-agent")
+	assert.True(t, held.Running, "an unreadable grant stopped a machine that was running")
+	assert.Equal(t, 9216, held.AdmitMiB, "the ensure carried no ceiling, so a machine that stopped before it landed would have been booted against the whole pool")
+}
+
+// TEST_SCENARIO: a node that has never reported a grant leaves no figure to fall back on, and the same zero the cluster without in-place resize sends is what a machine that holds memory is admitted with: there is nothing to bound a cold start with but the pool the runner enforces itself.
+func TestAMachineThatHoldsMemoryOnANodeThatNeverReportedIsAdmittedWithoutACeiling(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -1229,26 +1252,8 @@ func TestAStartWaivedOnAMachineThatHoldsMemorySaysWhichStateItRead(t *testing.T)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
-	waived := node.spec("my-agent")
-	assert.Zero(t, waived.AdmitMiB, "a machine that holds memory was admitted against a ceiling")
-	assert.Equal(t, vmrunner.StateRunning, waived.ObservedState, "the waiver reached the runner without the state it was decided on")
-}
-
-// TEST_SCENARIO: a cluster that cannot resize the runner pod never reads a grant at all, so the zero cap it sends is not a waiver of anything and carries no state to confirm.
-func TestACapWaivedForTheClusterNamesNoState(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
-	clusterResizesPods(r, false)
-	runnerPod(t, r, "1Gi", "16Gi")
-	runnerPodForgetsItsGrant(t, r)
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
-
-	require.NoError(t, r.Reconcile(ctx, agent))
-
-	assert.Zero(t, node.spec("my-agent").ObservedState, "a cluster without in-place resize named a state for a waiver it never made")
-	assert.True(t, node.spec("my-agent").Running)
+	assert.True(t, node.spec("my-agent").Running, "an unreadable grant stopped a machine that was running")
+	assert.Zero(t, node.spec("my-agent").AdmitMiB, "a figure the node never reported was invented for the ceiling")
 }
 
 // TEST_SCENARIO: a restart boots its replacement, so while the node's grant is unreadable the machine reads restarting and holds the memory its boot takes again. Halting it stops the restart the ceiling left exempt.

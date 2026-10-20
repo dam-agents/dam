@@ -41,9 +41,6 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: what admission may commit to this machine, at most, in MiB, as the controller reads it off the runner pod's allocation: the memory the node reserved for the pod, which is below the limit the pod was given while an in-place resize waits for room. It says nothing about the machine's shape, so it moves no status version and restarts nothing: zero admits against the runner's limit alone.
     #[serde(rename = "admitMiB", skip_serializing_if = "is_zero")]
     pub admit_mib: i32,
-    // UNIT_BOUNDARY_DESCRIPTION: the state the controller read from this machine when it decided to waive the admission cap because the machine already holds memory, which it sends with a zero cap and only then. Reaching the runner is what makes the waiver a fact about the operation rather than about an earlier read: a machine that stopped between that read and this ensure is a cold start, and the runner refuses it rather than boot it uncapped. Empty waives nothing.
-    #[serde(rename = "observedState", skip_serializing_if = "String::is_empty")]
-    pub observed_state: String,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runtime migration in progress on a machine. It carries nothing yet; its presence is the mark.
@@ -352,7 +349,6 @@ mod tests {
                 }),
                 nested_virtualization: true,
                 admit_mib: 3072,
-                observed_state: "running".into(),
             },
         );
         matches_the_contract(

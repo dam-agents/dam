@@ -2028,19 +2028,9 @@ impl Server {
     fn room_for(&self, id: &str, spec: &MachineSpec) -> Result<(), (&'static str, anyhow::Error)> {
         let mut capacity = self.capacity();
         let limit = capacity.limit_mib;
-        // UNIT_BOUNDARY_DESCRIPTION: a restart of a machine already running replaces its own footprint, and boots at the warm-up floor, which is above the idle use the controller's request was sized from: capping it at that request refuses a roll, an image or env change, a CA rotation and a guest gone quiet for good, since the machine's use cannot shrink further to make the request grow. The exemption lasts as long as the restart does, because the worker stops the old VMM and boots its replacement in one action: an ensure that lands between the two reads the runtime as stopped, and refusing that already-admitted restart would have the controller stop the machine behind it.
-        let restarting = self.known_running(id) || self.restart_in_flight(id);
-        // UNIT_BOUNDARY_DESCRIPTION: a zero cap with an observed state is the controller saying it waives the cap because this machine already holds memory, and that reading is only true at the moment it was made: the same ensure reaches the runner after an exit it never saw, and the runner is the one that knows. Deciding the waiver here, on the state this ensure finds, is what keeps a cold start from booting uncapped on the strength of a read two requests old.
-        if !restarting && spec.admit_mib <= 0 && !spec.observed_state.is_empty() {
-            return Err((
-                REASON_AWAITING_ALLOCATION,
-                anyhow::anyhow!(
-                    "the controller waived this machine's admission cap on the state it last read ({}), and this machine is not running now: it is admitted again once the controller reads what the runner reports",
-                    spec.observed_state
-                ),
-            ));
-        }
-        let capped = !restarting && spec.admit_mib > 0 && (limit == 0 || spec.admit_mib < limit);
+        // UNIT_BOUNDARY_DESCRIPTION: a restart of a machine already running replaces its own footprint, and boots at the warm-up floor, which is above the idle use the controller's request was sized from: capping it at that request refuses a roll, an image or env change, a CA rotation and a guest gone quiet for good, since the machine's use cannot shrink further to make the request grow. The same holds for a boot already running: both were admitted when they started, and a second verdict on the same operation can only end it, which the controller reads as a start that will not fit and answers by stopping the machine behind it. The exemption therefore lasts as long as the operation does, so an ensure that lands mid-boot, or between the stop and the boot of a restart, is not refused.
+        let admitted = self.known_running(id) || self.boot_admitted(id);
+        let capped = !admitted && spec.admit_mib > 0 && (limit == 0 || spec.admit_mib < limit);
         let committing = self.committing();
         let running = |other: &str| self.known_running(other);
         let resident = |other: &str| self.resident(other);
@@ -2316,11 +2306,14 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state cannot be read counts as running only when something says a VMM may hold it — this runner measured it, or a VMM process holds its directory — because a record that no longer decodes would otherwise hold the whole handout on a stopped machine and refuse every start for its owner.
-    // UNIT_BOUNDARY_DESCRIPTION: whether a restart of a machine that should run is the action in flight, which admission exempts from the ceiling the same way it exempts the boot of a machine the runner still counts as running: the machine holds its footprint across the stop and the boot the worker runs as one action.
-    fn restart_in_flight(&self, id: &str) -> bool {
+    // UNIT_BOUNDARY_DESCRIPTION: whether an admission this runner already made is still carrying out: the boot of a machine that was stopped, or the restart of one that was running, which the worker runs as one action across a stop. Both hold the machine's own memory rather than asking for new room, and both were admitted when they began, so neither is admitted again while it runs.
+    fn boot_admitted(&self, id: &str) -> bool {
         locked(&self.machines).entries.get(id).is_some_and(|e| {
             e.converging
-                && matches!(e.action, Some(Action::Restart { .. }))
+                && matches!(
+                    e.action,
+                    Some(Action::Create | Action::Start | Action::Restart { .. })
+                )
                 && e.desired.as_ref().is_some_and(|d| d.running)
         })
     }

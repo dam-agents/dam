@@ -244,6 +244,16 @@ func TestAResizeRejectedForAnotherReasonKeepsTheHold(t *testing.T) {
 			field.Forbidden(field.NewPath("spec", "containers").Index(0).Child("resources", "requests").Key(string(corev1.ResourceMemory)),
 				"the requested increase exceeds its allowed quota"),
 		}),
+		"a webhook's quota on the whole spec": k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
+			field.Forbidden(field.NewPath("spec"), "the requested increase exceeds its allowed quota"),
+		}),
+		"a policy that names its own support for resize": k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
+			field.Forbidden(field.NewPath("spec", "containers").Index(0).Child("resources", "requests").Key(string(corev1.ResourceMemory)),
+				"this policy does not support resize requests above 1 GiB"),
+		}),
+		"the API's own immutable-field refusal on the spec": k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
+			field.Forbidden(field.NewPath("spec"), "only cpu and memory resources are mutable"),
+		}),
 		"the API refusing to shrink the limit in place": k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
 			field.Forbidden(field.NewPath("spec", "containers").Index(0).Child("resources", "limits").Key(string(corev1.ResourceMemory)),
 				"memory limit cannot be decreased without setting the resize policy to RestartContainer"),

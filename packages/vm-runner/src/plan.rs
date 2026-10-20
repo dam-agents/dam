@@ -781,7 +781,6 @@ mod tests {
             expect_seed: None,
             nested_virtualization: false,
             admit_mib: 0,
-            observed_state: String::new(),
         }
     }
 

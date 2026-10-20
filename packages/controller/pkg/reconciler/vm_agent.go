@@ -182,7 +182,6 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the machine: %w", err)
 	}
 	admitMiB, err := r.runnerAdmitMiB(ctx, owner)
-	var observedState string
 	if err != nil && running && !errors.Is(err, errGrantUnknown) {
 		return vmrunner.MachineStatus{}, false, err
 	}
@@ -194,8 +193,8 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			// UNIT_BOUNDARY_DESCRIPTION: a failed read is no evidence either way, and acting on it is how a restart in flight becomes a stop: the answer returns without parking, so the Agent keeps its gateway and the restart the runner already performs, and the reconcile is retried.
 			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading the state of %s to admit it against a node that has not reported its grant: %w", name, statusErr)
 		case holdsMemory(live.State):
-			// UNIT_BOUNDARY_DESCRIPTION: the waiver travels with the state it was decided on, so the runner refuses it for a machine that stopped between this read and that ensure: an exemption the controller cannot confirm at the moment the runner acts on it is one a cold start could be booted under, against the whole pool.
-			admitMiB, observedState = 0, live.State
+			// UNIT_BOUNDARY_DESCRIPTION: the machine holds memory, so this ensure asks for no new footprint and the ceiling must not hold it back — but a machine the runner finds stopped when the ensure lands is a cold start, and no ceiling at all is the whole pool. The last figure the node reported bounds that, and a runner from before this change enforces a positive ceiling as this one does, so the bound holds whichever versions meet.
+			admitMiB = r.lastRunnerGrantMiB(owner)
 			r.grantHolds.Delete(name)
 		case live.State == vmrunner.StateUnknown:
 			// UNIT_BOUNDARY_DESCRIPTION: the runner says it cannot read the machine's own record, which is a machine that may still hold its memory: absence of an active state is not proof of a stop, so this is retried rather than held, parked or admitted.
@@ -223,7 +222,6 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 
 		NestedVirtualization: wantsNesting(agent, r.config.AgentTemplateDefaults) && r.config.VM.Runner.NestedVirtualization,
 		AdmitMiB:             admitMiB,
-		ObservedState:        observedState,
 	}
 	if runtimeMigrationOf(agent.Annotations, agent.Status).seedable() {
 		machine.Migration = &vmrunner.MachineMigration{}

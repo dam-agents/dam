@@ -343,6 +343,7 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 		if grant, ok := runnerPodGrantMiB(pod); ok {
 			// UNIT_BOUNDARY_DESCRIPTION: a node that reports again is not the node that refused the resize, so the mark lapses rather than outliving the fault.
 			r.noNodeResize.Delete(owner)
+			r.grantLast.Store(owner, grant)
 			return grant, nil
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: one node's answer says nothing about another's, and says nothing about a pod that replaced the one it described: a runner whose node cannot carry a resize is admitted against its limit, as every start is on a cluster without the subresource, where every other owner — and every replacement pod of this one — is read again and keeps the ceiling a node that does report grants gives it.
@@ -352,6 +353,14 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 		return 0, fmt.Errorf("%w: %s", errGrantUnknown, pod.Name)
 	}
 	return 0, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the last figure the node reported granting this owner's runner pod, for the one decision that has no current figure: a machine that holds memory is admitted while the grant cannot be read, and the alternative to a figure the node once reported is no ceiling at all, which admits a cold start against the whole pool. A version that does not know a field of this one still enforces a positive ceiling, so the fallback closes the gap while a controller and its runners are being rolled out at different times. Zero is a node that has never reported, the same answer as a cluster that cannot resize.
+func (r *AgentReconciler) lastRunnerGrantMiB(owner string) int {
+	if last, ok := r.grantLast.Load(owner); ok {
+		return last.(int)
+	}
+	return 0
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a running runner pod's container status reports the node holding, or false where it reports neither field: what the node allocated the container, else the requests that status names. Both are the node's own reading, where the pod's spec is the controller's ask.
@@ -513,7 +522,7 @@ func (r *AgentReconciler) podResizeSupport(ctx context.Context) (available, know
 	return false, true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a resize was refused because the node cannot carry one, which Kubernetes reports as an invalid carrying a forbidden cause about the node's support for resizing. Every forbidden cause is not that answer: an admission webhook's quota on the resize field, and the API's own refusals to shrink a limit or to drop one, are forbidden causes on the same field and say nothing about the node, so each of them keeps the hold. The cause counts when it names the node's support, or when it is filed against the whole spec, which is where the API server files the node's answer.
+// UNIT_BOUNDARY_DESCRIPTION: whether a resize was refused because the node cannot carry one, which Kubernetes answers with a forbidden cause on the spec that says the pod runs on a node without support for resizing. The field alone is no evidence — the API files its own immutable-field refusals against the same spec, and a webhook's quota is a forbidden cause on the resize field — so the cause counts only when both name that answer: the spec for its field, and the node's support for resizing for its message. Everything else is a refusal of the ask, and an ask the platform can correct is not a node that never reports, so it keeps the hold.
 func resizeNodeUnsupported(err error) bool {
 	if !k8serrors.IsInvalid(err) {
 		return false
@@ -523,14 +532,11 @@ func resizeNodeUnsupported(err error) bool {
 		return false
 	}
 	return slices.ContainsFunc(status.Status().Details.Causes, func(c metav1.StatusCause) bool {
-		if c.Type != metav1.CauseTypeForbidden {
+		if c.Type != metav1.CauseTypeForbidden || c.Field != "spec" {
 			return false
 		}
-		if c.Field == "spec" {
-			return true
-		}
 		message := strings.ToLower(c.Message)
-		return strings.Contains(message, "support") && strings.Contains(message, "resize")
+		return strings.Contains(message, "without support for resize") || strings.Contains(message, "not supported by the node")
 	})
 }
 
