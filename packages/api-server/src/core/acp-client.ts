@@ -225,6 +225,7 @@ export type SendPromptOpts = (
   onImagesDropped?: () => Promise<void> | void;
   onUpdate?: (update: PromptUpdate) => void;
   onSession?: (sessionId: string) => void;
+  signal?: AbortSignal;
 };
 
 export type TriggerSessionOpts = {
@@ -639,17 +640,31 @@ export function createAcpClient(opts: {
             await sendOpts.onImagesDropped?.();
           }
 
+          const { signal } = sendOpts;
+          signal?.throwIfAborted();
           live = true;
           const send = () =>
             connection.agent.request("session/prompt", {
               sessionId,
               prompt: finalBlocks,
             });
-          await ("resumeSessionId" in sendOpts
-            ? promptPinningDefault(connection, sessionId, send, () =>
-                resolvePair(opts.firePair, agentId),
-              )
-            : send());
+          const cancel = () => {
+            connection.agent
+              .notify("session/cancel", { sessionId })
+              .catch((err) =>
+                getLogger().debug({ err, sessionId }, "acp cancel failed"),
+              );
+          };
+          signal?.addEventListener("abort", cancel, { once: true });
+          try {
+            await ("resumeSessionId" in sendOpts
+              ? promptPinningDefault(connection, sessionId, send, () =>
+                  resolvePair(opts.firePair, agentId),
+                )
+              : send());
+          } finally {
+            signal?.removeEventListener("abort", cancel);
+          }
         },
       );
 

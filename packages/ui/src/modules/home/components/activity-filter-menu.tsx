@@ -11,6 +11,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { HOVER_ACTION } from "@/components/ui/hover-action";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -20,9 +21,15 @@ import {
   CHANNEL_TYPES,
   defaultActivityFilters,
   isFiltered,
+  onlyChannelType,
+  showAllChannelTypes,
   STATE_FILTER_LABELS,
   STATE_FILTERS,
+  toggleChannelType,
 } from "../lib/activity-filter.js";
+
+const inlineActionClassName =
+  "h-6 w-auto shrink-0 px-2 text-xs text-muted-foreground";
 
 export function ActivityFilterMenu({
   filters,
@@ -33,13 +40,7 @@ export function ActivityFilterMenu({
 }) {
   const filtered = isFiltered(filters);
   const label = filtered ? "Filter sessions (filtered)" : "Filter sessions";
-
-  const toggleChannel = (type: (typeof CHANNEL_TYPES)[number]) => {
-    const next = new Set(filters.channelTypes);
-    if (next.has(type)) next.delete(type);
-    else next.add(type);
-    onChange({ ...filters, channelTypes: next });
-  };
+  const allTypes = filters.channelTypes.size === CHANNEL_TYPES.length;
 
   return (
     <DropdownMenu>
@@ -81,16 +82,53 @@ export function ActivityFilterMenu({
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Type</DropdownMenuLabel>
+        <div
+          role="presentation"
+          className="flex items-center justify-between gap-2"
+        >
+          <DropdownMenuLabel>Type</DropdownMenuLabel>
+          {!allTypes && (
+            <DropdownMenuItem
+              aria-label="Show all types"
+              className={cn(inlineActionClassName, "mt-1")}
+              onSelect={(event) => {
+                event.preventDefault();
+                onChange(showAllChannelTypes(filters));
+              }}
+            >
+              Show all
+            </DropdownMenuItem>
+          )}
+        </div>
         {CHANNEL_TYPES.map((type) => (
-          <DropdownMenuCheckboxItem
+          <div
             key={type}
-            checked={filters.channelTypes.has(type)}
-            onCheckedChange={() => toggleChannel(type)}
-            onSelect={(event) => event.preventDefault()}
+            role="presentation"
+            className="group flex items-center gap-1"
           >
-            {CHANNEL_TYPE_LABELS[type]}
-          </DropdownMenuCheckboxItem>
+            <DropdownMenuCheckboxItem
+              className="flex-1"
+              checked={filters.channelTypes.has(type)}
+              onCheckedChange={() => onChange(toggleChannelType(filters, type))}
+              onSelect={(event) => event.preventDefault()}
+            >
+              {CHANNEL_TYPE_LABELS[type]}
+            </DropdownMenuCheckboxItem>
+            <DropdownMenuItem
+              aria-label={`Show only ${CHANNEL_TYPE_LABELS[type]}`}
+              className={cn(
+                inlineActionClassName,
+                HOVER_ACTION,
+                "group-focus-within:opacity-100",
+              )}
+              onSelect={(event) => {
+                event.preventDefault();
+                onChange(onlyChannelType(filters, type));
+              }}
+            >
+              Only
+            </DropdownMenuItem>
+          </div>
         ))}
         {filtered && (
           <>

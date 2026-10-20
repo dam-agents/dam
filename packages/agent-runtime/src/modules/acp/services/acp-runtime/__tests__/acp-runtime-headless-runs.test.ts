@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createRunResultStore } from "../../../infrastructure/run-result-store.js";
 import { MAX_RESUME_ATTEMPTS } from "../../interrupted-turn-recovery.js";
@@ -9,6 +8,7 @@ import {
   createWorld,
   frames,
   IDLE_REAP_DELAY_MS,
+  sharedDocumentBackend,
   type Client,
   type World,
 } from "./acp-world.js";
@@ -26,21 +26,6 @@ import {
  */
 
 const SESSION = "sess-run";
-
-function inMemoryBackend(): DocumentStoreBackend {
-  const documents = new Map<string, unknown>();
-  return {
-    open(name, opts) {
-      if (!documents.has(name)) documents.set(name, opts.initial());
-      return {
-        read: () => documents.get(name) as ReturnType<typeof opts.initial>,
-        write(next) {
-          documents.set(name, next);
-        },
-      };
-    },
-  };
-}
 
 function newRunSession(id: number): object {
   return {
@@ -87,7 +72,7 @@ describe("acp-runtime: headless runs", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
-    runResults = createRunResultStore(inMemoryBackend());
+    runResults = createRunResultStore(sharedDocumentBackend());
     world = createWorld({
       sessionMetadata: createSessionMetadata().store,
       runResults,
@@ -158,7 +143,7 @@ describe("acp-runtime: headless runs", () => {
    * many it has spent: boot recovery is about to resume that turn.
    */
   it("should answer interrupted for a leftover turn recovery gave up on", () => {
-    const disk = inMemoryBackend();
+    const disk = sharedDocumentBackend();
     const previousBoot = createActiveTurnStore(disk);
     previousBoot.record("sess-dead");
     previousBoot.record("sess-retrying");
@@ -169,7 +154,7 @@ describe("acp-runtime: headless runs", () => {
     previousBoot.record("sess-fresh");
     const seeded = createWorld({
       sessionMetadata: createSessionMetadata().store,
-      runResults: createRunResultStore(inMemoryBackend()),
+      runResults: createRunResultStore(sharedDocumentBackend()),
       activeTurns: createActiveTurnStore(disk),
     });
     const client = seeded.connect();

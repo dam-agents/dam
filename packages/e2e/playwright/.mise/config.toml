@@ -13,3 +13,11 @@ sources = ["{src/**/*,playwright.config}.ts", "{{vars.repo_root}}/.prettierrc", 
 [tasks."fix:format"]
 extends = "ts:fix:format"
 run = "pnpm exec prettier --write 'src/**/*.ts' 'playwright.config.ts'"
+
+[tasks."check:keep-awake"]
+description = "The keep-awake timer ticks while the loop runs, stops on stop, and counts a failed wake"
+run = "node src/lib/keep-awake.ts"
+sources = ["src/lib/keep-awake.ts"]
+outputs = []
+deny_net = true
+deny_write = true

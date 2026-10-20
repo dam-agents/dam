@@ -240,6 +240,8 @@ describe("the one-time default conversion", () => {
             model: opts.setting === undefined ? "opus[1m]" : opts.setting,
           }) as never,
         merge: async () => {},
+        locked: (async (_agentId: string, work: (tx: never) => unknown) =>
+          work({} as never)) as never,
       },
       catalog: CATALOG,
       getCapabilities: async () => opts.capabilities ?? ROUTED,
@@ -409,6 +411,8 @@ describe("a schedule model on a runtime that takes none per session", () => {
       snapshotRepo: {
         read: async () => ({ model: own }) as never,
         merge: async () => {},
+        locked: (async (_agentId: string, work: (tx: never) => unknown) =>
+          work({} as never)) as never,
       },
     });
 
