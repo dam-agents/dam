@@ -384,3 +384,18 @@ nodes_verbs=$(helm template platform . "${COMMON[@]}" --set virtualization.enabl
     | .rules[] | select(.resources == ["nodes"]) | .verbs[]]')
 jq -e 'index("list") != null and index("watch") != null' <<<"$nodes_verbs" >/dev/null \
   || { echo "the controller's node ClusterRole does not let it watch nodes: $nodes_verbs" >&2; exit 1; }
+
+# A PriorityClass's value is immutable, so a chart that rendered the same class
+# name under a different `runner.priority` would fail every upgrade that
+# changes it, and every rollback between two such releases.
+runner_class() {
+  helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+    --set virtualization.runner.resources.limits.memory=8Gi \
+    --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+    --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases \
+    --set virtualization.runner.priority="$1" \
+    --show-only templates/controller/vm-runner.yaml |
+    yq -r 'select(.kind == "PriorityClass") | .metadata.name'
+}
+[ "$(runner_class 1000)" != "$(runner_class 0)" ] \
+  || { echo "a changed runner priority renders the same PriorityClass name, whose value Kubernetes will not update" >&2; exit 1; }

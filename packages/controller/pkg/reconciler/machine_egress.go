@@ -49,7 +49,7 @@ type ownerResolverBlock struct {
 	ClusterIP string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the owner gateway's resolver, one CoreDNS for every vm Agent of the owner. Each agent's resolver port is a server block of its own that answers every public name with that agent's own gateway address as a literal, by the same rules as a per-agent resolver. With no agent, one block refuses everything, since CoreDNS with an empty file serves its default whoami on port 53. CoreDNS reads the file again when the ConfigMap changes it, so adding or removing an agent never restarts the container and never touches another agent's block.
+// UNIT_BOUNDARY_DESCRIPTION: the owner gateway's resolver, one CoreDNS for every vm Agent of the owner. Each agent's resolver port is a server block of its own that answers every public name with that agent's own gateway address as a literal, by the same rules as a per-agent resolver. With no agent, one block refuses everything, since CoreDNS with an empty file serves its default whoami on port 53. CoreDNS reads the file again when the volume changes it, so adding or removing an agent never restarts the container and never touches another agent's block.
 func ownerResolverCorefile(blocks []ownerResolverBlock) string {
 	sorted := slices.Clone(blocks)
 	slices.SortFunc(sorted, func(a, b ownerResolverBlock) int { return a.Port - b.Port })

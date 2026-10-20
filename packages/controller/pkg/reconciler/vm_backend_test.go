@@ -47,15 +47,16 @@ import (
 )
 
 type fakeNode struct {
-	mu       sync.Mutex
-	specs    map[string]vmrunner.MachineSpec
-	statuses map[string]vmrunner.MachineStatus
-	deleted  []string
-	seedGone []string
-	puts     []vmrunner.MachineSpec
-	version  uint64
-	waits    int
-	release  vmrunner.RunnerRelease
+	mu          sync.Mutex
+	specs       map[string]vmrunner.MachineSpec
+	statuses    map[string]vmrunner.MachineStatus
+	deleted     []string
+	seedGone    []string
+	puts        []vmrunner.MachineSpec
+	version     uint64
+	waits       int
+	statusFails bool
+	release     vmrunner.RunnerRelease
 	// UNIT_BOUNDARY_DESCRIPTION: every release the controller named over the machine API, in order. A named release becomes the reported target, as the loader reports it once it reads the name.
 	named  []string
 	onName func()
@@ -206,6 +207,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodGet:
+			// UNIT_BOUNDARY_DESCRIPTION: every short status read fails while the runner is handing off, and answers once it recovers; the watch's own long poll is untouched.
+			if n.statusFails && !r.URL.Query().Has("wait") {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
 			if !r.URL.Query().Has("wait") {
 				n.statusReads++
 			}
@@ -262,6 +268,20 @@ func (n *fakeNode) forgetReads() {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: stores a machine's status under a new version, as the runner moves the version on every change it reports.
+// UNIT_BOUNDARY_DESCRIPTION: the short status reads fail while the runner hands off, and answer again once it is back.
+func (n *fakeNode) failStatusReads(failing bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.statusFails = failing
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every ensure the controller sent, as the runner received it.
+func (n *fakeNode) ensures() []vmrunner.MachineSpec {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]vmrunner.MachineSpec(nil), n.puts...)
+}
+
 func (n *fakeNode) set(id string, st vmrunner.MachineStatus) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -1101,6 +1121,140 @@ func TestARetryAfterARefusedStartKeepsTheGatewayDown(t *testing.T) {
 	assert.Equal(t, 3072, demand.memoryMiB, "the admitted machine still holds its boot floor, though its answer repeats the refusal's reason")
 }
 
+// TEST_SCENARIO: a restart the runner is running holds its exemption from the ceiling, but a runner built before that still answers the wait when the controller's ensure lands between the stop and the boot. Acting on that answer by parking would stop the machine behind the restart the runner already performs, and the owner's machines would be left down for a ceiling nothing asked for.
+func TestAStartWaitingForTheNodeDoesNotStopARestartInFlight(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateRestarting, Reason: vmrunner.ReasonAwaitingAllocation}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.True(t, node.spec("my-agent").Running, "the restart was stopped for an answer about an operation already in flight")
+	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason,
+		"an Agent whose machine is restarting reads as starting, not as waiting for the node")
+}
+
+// TEST_SCENARIO: the controller's own reading is kept from the last time a machine ran, so a guest that has exited since still reads as running there. Admitting on that reading turns a genuine cold start into one with no ceiling, which is the overcommit the ceiling exists to prevent. What a machine holds is only ever the runner's current answer.
+func TestACachedRunningMachineThatStoppedIsHeldLikeAColdStart(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	r.noteMachineUse("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	for _, spec := range node.ensures() {
+		assert.False(t, spec.Running && spec.AdmitMiB == 0,
+			"a cold start was admitted against the whole pool because the controller still held the machine's last running reading")
+	}
+	assert.False(t, node.spec("my-agent").Running, "a start with no grant to admit against went ahead")
+}
+
+// TEST_SCENARIO: a revision restart is admitted and blocked between stopping the old VMM and booting its replacement, and the state read fails transiently before the runner answers again. Acting on the failed read with no state parks the Agent, and the halt that follows is stored behind the restart: the replacement is stopped once it boots. A failed read is no evidence, so the reconcile is retried and nothing is stopped.
+func TestAFailedStateReadKeepsARestartFromBeingStopped(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRestarting})
+	node.failStatusReads(true)
+
+	require.Error(t, r.Reconcile(ctx, agent), "a state the runner could not report was acted on instead of retried")
+	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason,
+		"an Agent whose machine is restarting was parked for an answer nothing gave")
+
+	node.failStatusReads(false)
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	for _, spec := range node.ensures() {
+		assert.True(t, spec.Running, "a failed state read stopped a machine whose restart the runner is performing")
+	}
+}
+
+// TEST_SCENARIO: the runner says it cannot read the machine's own launch record, which is a machine that may still hold the memory of a VMM it cannot account for. Absence of an active spelling is not proof of a stop, so the reconcile is retried rather than held, parked or admitted.
+func TestAnUnreadableMachineRecordIsNotTreatedAsStopped(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateUnknown})
+
+	require.Error(t, r.Reconcile(ctx, agent), "an unreadable machine record was decided on instead of retried")
+
+	for _, spec := range node.ensures() {
+		assert.True(t, spec.Running, "an unreadable machine record stopped the machine")
+	}
+}
+
+// TEST_SCENARIO: a node that reports nothing it holds for the owner's runner leaves the grant unreadable, and what that means has to come from the runner: a machine it reports running holds memory, so admitting it against the limit alone asks for no footprint the node has not already granted, and a start held here would stop a healthy machine rather than a boot. The controller's own last reading cannot tell: it is kept only while a machine runs, so a restart in flight reads as a stop there.
+func TestAnUnreadableGrantDoesNotStopARunningMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, MemoryMiB: 3072})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.True(t, node.spec("my-agent").Running, "an unreadable grant stopped a machine that was running")
+	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason,
+		"a machine that runs was reported as waiting for the node")
+}
+
+// TEST_SCENARIO: a restart boots its replacement, so while the node's grant is unreadable the machine reads restarting and holds the memory its boot takes again. Halting it stops the restart the ceiling left exempt.
+func TestAnUnreadableGrantDoesNotStopARestartInFlight(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRestarting})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.True(t, node.spec("my-agent").Running, "an unreadable grant stopped a machine that was restarting")
+}
+
+// TEST_SCENARIO: a start waiting for the node is retried every few seconds, so its gateway must not be scaled up and taken down on that cadence either: the machine is refused again until the node enacts the resize, and the gateway comes up on the retry after it starts.
+func TestARetryOfAStartWaitingForTheNodeKeepsTheGatewayDown(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonAwaitingAllocation}
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Equal(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason)
+
+	gatewayAtRetry := int32(-1)
+	node.onPut = func(vmrunner.MachineSpec) {
+		gatewayAtRetry = agentSSReplicas(t, r, GatewayName("my-agent"))
+	}
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	cached, err := FromCacheObject[apiv1.Agent](u)
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, cached))
+	assert.Equal(t, int32(0), gatewayAtRetry, "no gateway pod starts for a machine that waits for the node")
+	assert.Equal(t, vmReadinessPoll, requeued.last(), "and the retry keeps the machine watch's cadence")
+	require.Equal(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason)
+}
+
 // TEST_SCENARIO: on a wake the machine often answers before its gateway pod is ready, and the gateway pod turning ready starts a reconcile. That reconcile publishes Ready once the gateway is applied, before it calls the runner, because the status already holds the machine ready for this generation.
 func TestAGatewayTurningReadyIsPublishedBeforeTheRunnerCall(t *testing.T) {
 	agent := vmAgentCR()
@@ -1824,6 +1978,167 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	assert.Regexp(t, `^Your VM agents are using [0-9.]+ of 8\.0 GiB of memory, and starting this agent needs about [1-9][0-9.]* GiB more`, cond.Message, "the user reads the pool out of the total Home shows, and the room the start itself needs")
 	assert.Contains(t, cond.Message, "disable an agent you aren't using", "the user reads what frees it")
 	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
+}
+
+// TEST_SCENARIO: a start the node has not yet granted the memory for is refused under MachineAwaitingAllocation, which is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in the same reconcile, so the Agent is retried at the machine watch's 3 s cadence rather than at the parked tick, no idle agent is hibernated for room the node is already being asked for, and the person reads that their agent is waiting for the node rather than that their memory is gone.
+func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		reason    string
+		published string
+		reclaimed bool
+		message   string
+	}{
+		{reason: vmrunner.ReasonAwaitingAllocation, published: apiv1.ReasonAwaitingAllocation, message: "waiting for the node"},
+		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonOverBudget, reclaimed: true, message: "can't start yet"},
+	} {
+		agent := vmAgentCR()
+		r, node, requeued := setupVMReconciler(t, agent)
+		r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")},
+		}
+		r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+		for _, peer := range []string{"idle-peer", "other-peer"} {
+			peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+			_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+				[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+				metav1.PatchOptions{})
+			require.NoError(t, err)
+			r.noteMachineUse(peer, measured(700))
+		}
+		node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: tc.reason}
+
+		require.NoError(t, r.Reconcile(ctx, agent))
+
+		assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")),
+			"the gateway is scaled down while the machine waits")
+		cond := readyCondition(t, r, "my-agent")
+		require.NotNil(t, cond)
+		assert.Contains(t, cond.Message, tc.message)
+		assert.Equal(t, tc.published, cond.Reason,
+			"%s: a start waiting for the node is not the owner's budget being spent", tc.reason)
+		published, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		live, err := FromCacheObject[apiv1.Agent](published)
+		require.NoError(t, err)
+		agentPod := apimeta.FindStatusCondition(live.Status.Conditions, apiv1.ConditionAgentPodReady)
+		require.NotNil(t, agentPod)
+		assert.Equal(t, tc.published, agentPod.Reason)
+		hibernated := 0
+		for _, peer := range []string{"idle-peer", "other-peer"} {
+			u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})
+			require.NoError(t, err)
+			if u.GetAnnotations()[annReclaimedAt] != "" {
+				hibernated++
+			}
+		}
+		assert.Equal(t, tc.reclaimed, hibernated > 0,
+			"%s: an idle agent is hibernated only when the owner's own memory is what the start lacks", tc.reason)
+		if !tc.reclaimed {
+			assert.Equal(t, vmReadinessPoll, requeued.last(), "retried at the machine watch's cadence, not at the parked tick")
+			assert.NotContains(t, cond.Message, "disable an agent", "nothing the owner disables frees memory the node has not granted")
+		}
+	}
+}
+
+// TEST_SCENARIO: the node that keeps a runner at its old size is one no wait ends on: it has deferred the resize, so the room the pod was given is all the owner will get until their machines stop. The start frees that room from the owner's own idle agents, as a start the pool refused does, and the parked retry is the backstop under the machine watch's cadence. The room to free is what the node holds for the runner, not the pool: the pool has room, or the runner would have refused the start for it instead.
+func TestAStartWaitingOnADeferredResizeFreesWhatTheNodeDidGrant(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+		r.noteMachineUse(peer, measured(700))
+	}
+	runnerPod(t, r, "9Gi", "16Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("9Gi")},
+		},
+	}}
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonAwaitingAllocation}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	hibernated := 0
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		reclaimed, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})
+		require.NoError(t, err)
+		if reclaimed.GetAnnotations()[annReclaimedAt] != "" {
+			hibernated++
+		}
+	}
+	assert.Positive(t, hibernated,
+		"a resize the node will not enact leaves the room it did grant, and an idle agent's machine frees it")
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonAwaitingAllocation, cond.Reason)
+	assert.Equal(t, vmReadinessPoll, requeued.last(), "still retried at the machine watch's cadence, with the parked tick under it")
+}
+
+// TEST_SCENARIO: two wakes that become AwaitingAllocation together are both counted by the resize request, and neither holds a byte: counting the other waiter as a holder asks the reclaim for room no idle agent can give, so neither start is ever admitted even though one machine's worth of room would admit it.
+func TestReclaimForAWaitingStartDoesNotCountTheOtherWaiter(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+	}
+	// TEST_SCENARIO: one idle machine is up and holding memory; the second waiter reached this same wait first and its machine is stopped, holding nothing while it waits.
+	r.noteMachineUse("idle-peer", measured(700))
+	r.vmAnswers.Store("other-peer", vmrunner.ReasonAwaitingAllocation)
+	runnerPod(t, r, "9Gi", "16Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("9Gi")},
+		},
+	}}
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonAwaitingAllocation}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	hibernated := map[string]bool{}
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		reclaimed, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})
+		require.NoError(t, err)
+		hibernated[peer] = reclaimed.GetAnnotations()[annReclaimedAt] != ""
+	}
+	assert.True(t, hibernated["idle-peer"], "one idle machine frees what this start lacks")
+	assert.False(t, hibernated["other-peer"], "the other waiter holds nothing, so it is not a machine this reclaim can free room with")
 }
 
 // TEST_SCENARIO: a runner outside the cluster refuses a machine for memory; its limit is a share of its host's memory the controller never learns, so the refusal names no figures rather than quote the chart's limit.

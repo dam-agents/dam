@@ -1,6 +1,7 @@
 import { useEffect } from "react";
 
 import { useStore } from "../../../store.js";
+import { takeBackPress } from "../lib/back-entry.js";
 import {
   parseRoute,
   RETIRED_PATHS,
@@ -69,6 +70,7 @@ export function installBrowserHistory(): () => void {
   };
 
   const onPopState = () => {
+    if (takeBackPress()) return;
     const state = useStore.getState();
     const resetsDock =
       isChatView(state.view) ||

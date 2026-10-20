@@ -14,7 +14,9 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
 	"k8s.io/apimachinery/pkg/runtime"
+	fakediscovery "k8s.io/client-go/discovery/fake"
 	dynfake "k8s.io/client-go/dynamic/fake"
+	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
@@ -160,6 +162,19 @@ func TestAnUnreadUserBudgetStillStopsAMachine(t *testing.T) {
 
 	require.NoError(t, r.Reconcile(ctx, agent), "a stop was refused for a pool this process has not read")
 	assert.False(t, node.spec(agent.Name).Running, "the machine was left running for an unread pool")
+}
+
+// TEST_SCENARIO: the admission ceiling is read from the cluster's discovery, and a cluster that cannot answer leaves it unknown, which stops a start. A stop is not an admission: it needs no ceiling, and refusing it would leave a machine up that the controller asked to stop.
+func TestAClusterThatCannotSayWhetherItResizesStillStopsAMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	agent.Annotations[annStopRequested] = "true"
+	r, node, _ := setupVMReconciler(t, agent)
+	runnerPod(t, r, "1Gi", "8Gi")
+	r.client.(*fake.Clientset).Discovery().(*fakediscovery.FakeDiscovery).Resources = nil
+
+	require.NoError(t, r.Reconcile(ctx, agent), "a stop was refused for a ceiling it does not use")
+	assert.False(t, node.spec(agent.Name).Running, "the machine was left running for a ceiling a stop does not use")
 }
 
 // TEST_SCENARIO: a machine that should run is still refused while the pool is unread, because its size is the one the controller would have to guess. The agent reads as not ready and its start is retried once the budget can be read, which is what the refusal is for.
@@ -310,12 +325,53 @@ func TestTheRollHashLeavesTheMemoryOutAndKnowsTheOldOne(t *testing.T) {
 	old, err := runnerTemplateHash(before)
 	require.NoError(t, err)
 	assert.NotEqual(t, old, install)
-	assert.Equal(t, old, legacyRunnerTemplateHash(spec("8Gi", "16Gi"), spec("8Gi", "16Gi")))
-	assert.Equal(t, old, legacyRunnerTemplateHash(spec("4Gi", "4Gi"), spec("8Gi", "16Gi")),
+	assert.Contains(t, legacyRunnerTemplateHashes(spec("8Gi", "16Gi"), spec("8Gi", "16Gi")), old)
+	assert.Contains(t, legacyRunnerTemplateHashes(spec("4Gi", "4Gi"), spec("8Gi", "16Gi")), old,
 		"an owner whose UserBudget already set memory was rendered at the install's memory, so the upgrade must not roll them")
 	changed := spec("4Gi", "4Gi")
 	changed.Template.Spec.Containers[0].Args = []string{"--boot-mib=1024"}
-	assert.NotEqual(t, old, legacyRunnerTemplateHash(changed, spec("8Gi", "16Gi")), "a real pod change still rolls")
+	assert.NotContains(t, legacyRunnerTemplateHashes(changed, spec("8Gi", "16Gi")), old, "a real pod change still rolls")
+}
+
+// TEST_SCENARIO: an install that sets the runner's own CPU resources rendered a template that carried them, and the roll hash covered them until this controller left CPU out to move it in place. Upgrading must not read that earlier hash as a changed pod: every runner of such an install would roll, rebooting every machine of every owner at once.
+func TestTheRollHashKnowsTheOldOneThatCoveredCPU(t *testing.T) {
+	cpu := func(request, limit, memRequest, memLimit string) appsv1.DeploymentSpec {
+		return appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+			Name: vmRunnerComponent, Image: "runner:1",
+			Resources: corev1.ResourceRequirements{
+				Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(request), corev1.ResourceMemory: resource.MustParse(memRequest)},
+				Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse(limit), corev1.ResourceMemory: resource.MustParse(memLimit)},
+			},
+		}}}}}
+	}
+	before := cpu("2", "12", "8Gi", "16Gi")
+	before.Template.Spec.Containers[0].Image = ""
+	old, err := runnerTemplateHash(before)
+	require.NoError(t, err)
+	now, err := runnerTemplateHash(runnerRollSpec(cpu("2", "12", "8Gi", "16Gi")))
+	require.NoError(t, err)
+	assert.NotEqual(t, old, now, "the render alone reads the old hash as a changed pod")
+
+	// TEST_SCENARIO: the runner out there now carries the hash the release before this one wrote, which dropped memory and kept CPU, so both vintages must be recognised.
+	today := appsv1.DeploymentSpec{Template: corev1.PodTemplateSpec{Spec: corev1.PodSpec{Containers: []corev1.Container{{
+		Name: vmRunnerComponent,
+		Resources: corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("2")},
+			Limits:   corev1.ResourceList{corev1.ResourceCPU: resource.MustParse("12")},
+		},
+	}}}}}
+	shipped, err := runnerTemplateHash(today)
+	require.NoError(t, err)
+	assert.NotEqual(t, shipped, old, "the two vintages differ")
+	assert.Contains(t, legacyRunnerTemplateHashes(cpu("2", "12", "8Gi", "16Gi"), cpu("2", "12", "8Gi", "16Gi")), old,
+		"the vintage that covered memory and CPU")
+	assert.Contains(t, legacyRunnerTemplateHashes(cpu("2", "12", "8Gi", "16Gi"), cpu("2", "12", "8Gi", "16Gi")), shipped,
+		"the vintage a runner out there carries now, which covered CPU alone")
+	assert.Contains(t, legacyRunnerTemplateHashes(cpu("0", "24", "2Gi", "16Gi"), cpu("2", "12", "8Gi", "16Gi")), old,
+		"a pod the controller now renders at the owner's pool and with no request is still the pod it had, in all but what the resize sets")
+	changed := cpu("2", "12", "8Gi", "16Gi")
+	changed.Template.Spec.Containers[0].Args = []string{"--boot-mib=1024"}
+	assert.NotContains(t, legacyRunnerTemplateHashes(changed, cpu("2", "12", "8Gi", "16Gi")), old, "a real pod change still rolls")
 }
 
 // TEST_SCENARIO: a UserBudget that changes only `cpu` must reach the running runner pod within one memory pass, not wait for one of the owner's agents to start or stop.
@@ -339,6 +395,9 @@ func TestACPUOnlyUserBudgetChangeResizesWithinOneMemoryPass(t *testing.T) {
 	}
 	_, moved := r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, nil)
 	require.False(t, moved, "a pod already sized for its machines")
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	template := dep.Annotations[annRunnerTemplate]
 
 	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{CPU: new(resource.MustParse("6"))})
 	name, moved := r.ownerMemoryPass(ctx, testOwner, []*apiv1.Agent{agent}, nil)
@@ -347,6 +406,9 @@ func TestACPUOnlyUserBudgetChangeResizesWithinOneMemoryPass(t *testing.T) {
 	require.NoError(t, r.Reconcile(ctx, agent))
 	cpu := runnerPodResources(t, r).Limits[corev1.ResourceCPU]
 	assert.Equal(t, "6", cpu.String())
+	dep, err = r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, template, dep.Annotations[annRunnerTemplate], "the CPU pool change rolled the runner")
 }
 
 // TEST_SCENARIO: an owner whose pool was read while they had no override, and whose UserBudget then sets `storage` while they have no runner, gets their first claim at the override: the memory pass never reads an owner with nothing running, and a claim built at the install's ceiling would keep that size for good.

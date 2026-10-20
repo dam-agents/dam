@@ -234,7 +234,8 @@ What a runner measures is what judging the vm backend against the container one 
 
 - **Machine operations** — each create, wake, restart and stop as a duration by outcome; the runtime's own start call inside it; and **ready latency**, from asking a machine to start to the first health check its guest answers, once per boot.
 - **Unhealthy restarts** — the ones the runner made on its own because a guest that had answered went quiet, apart from those a changed spec causes.
-- **Failures** by operation and by the reason the Agent is told, and **admission refusals** — machines whose memory did not fit.
+- **Failures** by operation and by the reason the Agent is told, and **admission refusals** — machines whose memory did not fit the owner's own pool.
+  A start waiting for the node to grant the runner its memory is not counted: it is retried within seconds and ends when the node enacts the resize or when the room it did grant is freed, where the counter is the owner's pool refusing starts until their agents stop ([vm-memory](vm-memory.md)).
 - **Memory** committed to machines, counted the way admission counts it, beside the runner's limit and its own reserve; the working set its cgroup charges, with whether it is past the [pressure](vm-memory.md) threshold; and whether that cgroup kills every process in it for one process's memory, which is the one setting that would take an owner's machines down together ([vm-memory](vm-memory.md)).
 - **Kills** by reason: a machine whose VMM the kernel killed for memory, and one its seccomp filter killed, counted apart from the restarts the runner decides on its own.
 - **CPU** the runner's cgroup used, its limit, and the scheduler periods the limit throttled it in: every machine's vCPUs share that limit, so throttled periods over periods is how far the owner's machines are slowed down.

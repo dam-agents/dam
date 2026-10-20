@@ -48,6 +48,21 @@ describe("computeAgentState with a machine reason", () => {
     expect(computeAgentState(notReady("MachineRunnerNodeLost"))).toBe("error");
   });
 
+  // TEST_SCENARIO: a start held past the bound ends in a state of its own rather than waiting for ever, and it names a person's problem: the node never reported the grant, so only an admin can check the cluster.
+  it("reads a grant the node never reported as an error once the hold ends, not as one still waiting", () => {
+    expect(computeAgentState(notReady("MachineAllocationUnreadable"))).toBe(
+      "error",
+    );
+  });
+
+  // TEST_SCENARIO: a start waiting for the node is pinned in both spellings it reaches the state machine in: the controller's own on Ready, and the runner's on the Agent pod condition, whose `Machine` prefix is what every terminal machine reason carries.
+  it("leaves a start waiting for the node to grant its runner memory as starting", () => {
+    expect(computeAgentState(notReady("AwaitingAllocation"))).toBe("starting");
+    expect(computeAgentState(notReady("MachineAwaitingAllocation"))).toBe(
+      "starting",
+    );
+  });
+
   it("leaves a machine that is merely coming up as starting", () => {
     expect(computeAgentState(notReady("MachineNotReady"))).toBe("starting");
     expect(computeAgentState(notReady())).toBe("starting");

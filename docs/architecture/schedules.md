@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -98,7 +98,7 @@ An agent may also tie one to **the session that scheduled it**: *continue* makes
 Either way the scheduling session must be known for certain, and the platform tool has no session of its own — the MCP endpoint is one per agent.
 So agent-runtime gives every session a reference of its own and hands the harness, for each session it opens or loads, its own copy of the platform MCP entry carrying that reference; the tool records it, and the pod resolves it back when the fire lands.
 A harness that does not honour a per-session entry sends no reference, and the tool refuses to tie the task to a session rather than guess.
-The turn that lands in the scheduling session runs **unattended**, as a scheduled fire does, even in a person's chat with no tab open — a permission request in it expires the way a detached run's does.
+The turn that lands in the scheduling session runs **unattended**, as a scheduled fire does, even in a person's chat with no tab open — a permission request in it waits on Home for a verdict the way a detached run's does, and expires only when nobody answers it in time ([cli](cli.md#headless-runs)).
 If that session is gone by then, *continue* runs the task in a fresh session instead, so it is not lost; *report* drops the result, since there is nobody left to tell.
 
 An agent creates one through a platform tool of its own — kept apart from the recurring one so a model reaching for "once" is not steered through recurrence and Precheck options that do not apply.

@@ -338,6 +338,9 @@ importers:
       agent-runtime-api:
         specifier: workspace:*
         version: link:../agent-runtime-api
+      redos-detector:
+        specifier: ^6.1.4
+        version: 6.1.4
       rrule-temporal:
         specifier: 2.2.8
         version: 2.2.8
