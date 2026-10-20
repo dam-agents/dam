@@ -786,12 +786,14 @@ describe("acp-runtime: one harness process per harness", () => {
       idle: false,
       backgroundWork: [],
       keptProcesses: 2,
+      openLinks: 0,
     });
     world.keepProcesses(0);
     expect(world.router.status()).toEqual({
       idle: true,
       backgroundWork: [],
       keptProcesses: 0,
+      openLinks: 0,
     });
   });
 
@@ -801,7 +803,7 @@ describe("acp-runtime: one harness process per harness", () => {
   it("stays busy while an Environment Link is open", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     world.openLinks(1);
-    expect(world.router.status().idle).toBe(false);
+    expect(world.router.status()).toMatchObject({ idle: false, openLinks: 1 });
     world.openLinks(0);
     expect(world.router.status().idle).toBe(true);
   });

@@ -53,6 +53,8 @@ function fakeAgents(seed: Partial<Agent>[]) {
   );
   const created: AgentCreateInput[] = [];
   const deleted: string[] = [];
+  const woken: string[] = [];
+  const disabled = new Set<string>();
   let n = 0;
   const service = {
     list: async () => [...agents.values()],
@@ -76,8 +78,14 @@ function fakeAgents(seed: Partial<Agent>[]) {
       deleted.push(id);
       agents.delete(id);
     },
+    wake: async (id: string) => {
+      if (disabled.has(id))
+        return { ok: false, error: { type: "AgentDisabled" } };
+      woken.push(id);
+      return { ok: true, value: agents.get(id) };
+    },
   } as unknown as AgentsService;
-  return { service, created, deleted };
+  return { service, created, deleted, woken, disabled };
 }
 
 const vmOwning = {
@@ -90,7 +98,6 @@ function setup(opts: { agents?: Partial<Agent>[]; max?: number } = {}) {
   const repo = memoryRepo();
   const agents = fakeAgents(opts.agents ?? [vmOwning]);
   const starts: [string, string][] = [];
-  const woken: string[] = [];
   const service = createEnvironmentsService({
     owner: OWNER,
     repo,
@@ -101,10 +108,9 @@ function setup(opts: { agents?: Partial<Agent>[]; max?: number } = {}) {
       expiryMaxDays: 30,
     },
     startCommand: async (id, command) => void starts.push([id, command]),
-    wake: async (id) => void woken.push(id),
     now: () => NOW,
   });
-  return { repo, agents, starts, woken, service };
+  return { repo, agents, starts, woken: agents.woken, service };
 }
 
 describe("creating an Environment", () => {
@@ -244,9 +250,9 @@ describe("changing and deleting Environments", () => {
     expect(repo.rows).toHaveLength(0);
   });
 
-  // TEST_SCENARIO: the owning Agent wakes a sleeping Environment by name before it opens the Environment Link, which reaches only a running machine; a name it does not own wakes nothing.
+  // TEST_SCENARIO: the owning Agent wakes a sleeping Environment by name before it opens the Environment Link, which reaches only a running machine; a name it does not own wakes nothing, and one its owner turned off is refused with that reason, never reported as waking.
   it("wakes its own Environment by name", async () => {
-    const { service, woken } = setup();
+    const { service, woken, agents } = setup();
     const mine = service.forOwningAgent(vmOwning.id!);
     const env = await mine.create({
       name: "a",
@@ -257,6 +263,8 @@ describe("changing and deleting Environments", () => {
     expect(woken).toEqual([env.id]);
     await expect(mine.wake("b")).rejects.toThrow(/no Environment named/);
     expect(woken).toEqual([env.id]);
+    agents.disabled.add(env.id);
+    await expect(mine.wake("a")).rejects.toThrow(/turned off by your owner/);
   });
 
   // TEST_SCENARIO: another owner's Environment is not found, by id or by name.

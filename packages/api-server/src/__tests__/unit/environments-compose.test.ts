@@ -97,7 +97,6 @@ function world(
       expiryMaxDays: 30,
     },
     listAgents: async () => cluster,
-    wakeAgent: async () => {},
   });
   return { rows, deletedAgents, events, composition };
 }

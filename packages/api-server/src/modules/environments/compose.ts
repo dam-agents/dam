@@ -29,7 +29,6 @@ export interface ComposeEnvironmentsDeps {
   runtimeMutator: RuntimeMutator;
   config: EnvironmentsConfig;
   listAgents: () => Promise<ListedAgent[]>;
-  wakeAgent: (agentId: string) => Promise<void>;
 }
 
 export interface EnvironmentsComposition {
@@ -98,7 +97,6 @@ export function composeEnvironmentsOver(
         ]);
         await deps.runtimeMutator.enqueueAfterCommit(agentId);
       },
-      wake: deps.wakeAgent,
     });
 
   return {

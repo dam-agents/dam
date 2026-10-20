@@ -44,7 +44,6 @@ export interface EnvironmentsDeps {
   agents: AgentsService;
   config: EnvironmentsConfig;
   startCommand: (agentId: string, command: string) => Promise<void>;
-  wake: (agentId: string) => Promise<void>;
   now?: () => Date;
 }
 
@@ -247,7 +246,19 @@ export function createEnvironmentsService(
       },
 
       async wake(name) {
-        await deps.wake((await byName(name)).agentId);
+        const woke = await deps.agents.wake((await byName(name)).agentId);
+        if (woke.ok) return;
+        if (woke.error.type === "AgentDisabled")
+          refuse(
+            `${name} is turned off by your owner; it does not wake until they turn it on`,
+            "PRECONDITION_FAILED",
+          );
+        if (woke.error.type === "RuntimeMigrating")
+          refuse(
+            `${name} is moving to another runtime; try again later`,
+            "CONFLICT",
+          );
+        refuse(`no Environment named ${name}`, "NOT_FOUND");
       },
 
       async delete(name) {

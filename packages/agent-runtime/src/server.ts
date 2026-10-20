@@ -1073,6 +1073,7 @@ const server = http.createServer((req, res) => {
       idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
+      openLinks: acp.openLinks,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })

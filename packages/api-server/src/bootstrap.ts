@@ -1621,9 +1621,6 @@ export async function bootstrap() {
       maxPerAgent: config.environmentsMaxPerAgent,
       expiryMaxDays: config.environmentExpiryMaxDays,
     },
-    wakeAgent: async (agentId) => {
-      await agentsRepo.wakeIfHibernated(agentId);
-    },
   });
 
   const agentCleanupSources: AgentCleanupSource[] = [
