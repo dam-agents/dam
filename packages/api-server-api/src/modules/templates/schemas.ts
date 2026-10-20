@@ -38,6 +38,7 @@ export const harnessFamilySchema = z.enum([
   "codex",
   "pi",
   "bob",
+  "copilot",
 ]);
 
 export const templateHarnessSchema = z.enum([

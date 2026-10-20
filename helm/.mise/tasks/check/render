@@ -418,3 +418,13 @@ for refused in '[{"username":"qa-member"}]' '[{"username":"qa-member","password"
     exit 1
   fi
 done
+# A TLS-intercepting egress path's CA reaches the api-server too, not only the
+# gateways and agents: its own Slack, GitHub and OAuth calls take that path.
+extra_ca_env() {
+  helm template platform . "${COMMON[@]}" "$@" --show-only templates/apiserver/app.yaml |
+    yq -r '.spec.template.spec.containers[0].env[] | select(.name == "NODE_EXTRA_CA_CERTS") | .value'
+}
+[ "$(extra_ca_env --set controller.gatewayUpstreamExtraCAs=PEM)" = /etc/platform/extra-cas/extra-cas.crt ] \
+  || { echo "controller.gatewayUpstreamExtraCAs does not reach the api-server as NODE_EXTRA_CA_CERTS" >&2; exit 1; }
+[ -z "$(extra_ca_env)" ] \
+  || { echo "the api-server names NODE_EXTRA_CA_CERTS with no extra CA configured" >&2; exit 1; }

@@ -72,15 +72,21 @@ It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) tha
 ## The new layout
 
 The **new layout** [experimental feature](features.md) replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
-The sidebar becomes two columns: a strip of Agent avatars, and a list of Sessions beside it.
-Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
-With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; a Session with an approval waiting on the user shows the approval dot on its row, as in every Session list, and counts in its Agent's avatar badge.
-With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
-Both column headers carry one session filter, by state and by Session type, and share it: a filter set under Home also narrows an Agent's own list, and the control shows a mark while a filter is on.
-The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
-A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
+The sidebar becomes one tree: every Agent is a row that opens to that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
+The Agent open in the page opens in the tree until its row closes it, and closes again when another Agent opens in the page, unless the user opened it; any other Agent opens and closes from its row, and the open state lasts until the page reloads.
+While the new layout is on (the saved preference decides until the flags load), each attention hint, which names its Agent, refreshes that Agent's own list and its single-Session lookups, and a sync (sent when the owner stream overflows or a tab subscribes again) refreshes them for every Agent in the cache, at most eight of these Session families at a time across all hints, a family already queued joining that pass, while the Agent list and other families refresh at once since a Session read waiting for its Agent to start ends only when the Agent list refreshes, so an open list and an old pin stay live without that Agent's chat, for Sessions outside the record window too.
+A closed Agent row shows a mark for a waiting approval, or else for an unread Session, with a text equivalent; its New session and actions buttons show on hover or keyboard focus, and at all times on a device without hover; a New session row ends its open list and a New agent row ends the tree.
+The rows are a list of disclosure buttons, not an ARIA tree: Tab moves between them, and each Agent row names the list it opens.
+Each Session row has an activity dot: orange for a waiting approval, a spinning blue ring while working, a green ring for background work, green for unread, a pen for a draft and gray when idle; unlike the current layout's blue unread dot, unread is green here, and a line naming its harness, model and source; a Session from the record alone has no model.
+A Session row keeps its harness icon before the title and its schedule, terminal and messenger icons; a pinned row leads with its Agent's avatar under the activity dot, since the Pinned section mixes Agents.
+The tree's Agents header carries one session filter, by state and by Session type: it narrows the Pinned section and every Agent's list, and the control shows a mark while a filter is on.
+The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
+A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list; pinning from the keyboard keeps focus on the moved row, or on its Agent's row when that Agent is closed.
 Pins are kept in the browser, so they do not follow the user to another device.
-The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
+The Pinned section reads a pinned Session from the record, and one the record does not hold by its id from its Agent while that Agent can answer, seeded with the row it was pinned from so it shows at once, and offering a retry when its first lookup fails; the section orders all pins by latest activity; every pinned row has the same actions and spend as in its Agent's list; deleting a Session from the tree drops its pin, and a pin whose Session is gone otherwise shows nowhere but stays stored, since pins live only in the browser and no failed or stale list may count as proof that one is stale.
+A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
+An asleep Agent whose Sessions the record does not hold shows a note that its Sessions show when it wakes; the tree never reads an empty record as an empty list.
+Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
 An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.

@@ -29,8 +29,6 @@ export interface SidebarSlice {
   setSidebarPinned: (pinned: boolean) => void;
   sidebarPeek: boolean;
   setSidebarPeek: (peek: boolean) => void;
-  sidebarAgentId: string | null;
-  setSidebarAgentId: (agentId: string | null) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -75,6 +73,4 @@ export const createSidebarSlice: StateCreator<
   },
   sidebarPeek: false,
   setSidebarPeek: (peek) => set({ sidebarPeek: peek }),
-  sidebarAgentId: null,
-  setSidebarAgentId: (agentId) => set({ sidebarAgentId: agentId }),
 });

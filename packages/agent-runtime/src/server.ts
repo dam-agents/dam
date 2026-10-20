@@ -58,6 +58,8 @@ import {
   spawnSshd,
   type PreparedSshd,
 } from "./modules/ssh.js";
+import { terminalBusy } from "./modules/terminal-busy.js";
+import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
   agentBrowserCommand,
@@ -265,6 +267,7 @@ const modelCallExporter = createModelCallExporter({
  */
 let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
 let isRuntimeSession: ((sessionId: string) => boolean) | null = null;
+let runningSessionsOf: ((harness: string) => string[]) | null = null;
 const TERMINAL_PIN_REFRESH_MS = 2_000;
 const terminalSessionOf = createTerminalSessionLookup(
   Object.values(harnessManifests).flatMap((m) =>
@@ -282,6 +285,7 @@ const modelRouter = composeModelRouter({
   },
   isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
   terminalSessionOf,
+  runningSessionsOf: (harness) => runningSessionsOf?.(harness) ?? [],
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -504,6 +508,14 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+runningSessionsOf = (harness) =>
+  Object.entries(sessionMetadata.all())
+    .filter(
+      ([sessionId, entry]) =>
+        (entry.meta.harness ?? defaultHarness) === harness &&
+        acpRuntime.isSessionRunning(sessionId),
+    )
+    .map(([sessionId]) => sessionId);
 
 const { service: processesService, keepMarks } = processes.start({
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
@@ -608,6 +620,7 @@ const trpcHandler = createHTTPHandler({
 
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
+const PTY_BACKGROUND_WORK_RECHECK_MS = 15_000;
 const PTY_ACTIVE_WINDOW_MS = 5_000;
 const PTY_INPUT_ECHO_MS = 500;
 
@@ -739,20 +752,41 @@ function killPtySlot(sessionId: string): void {
   } catch {}
   slot.headless.dispose();
   ptySlots.delete(sessionId);
+  backgroundWork.forget(sessionId);
   ptyLog(sessionId, "killed");
+}
+
+function anyPtyBusy(): boolean {
+  const kept = new Set(backgroundWork.held().map((h) => h.sessionId));
+  const now = Date.now();
+  return [...ptySlots.values()].some((slot) =>
+    terminalBusy({
+      attached: slot.client !== null,
+      sinceDetachMs: now - slot.detachedAt,
+      quietMs: now - slot.lastOutputAt,
+      detachGraceMs: PTY_DETACH_GRACE_MS,
+      idleReapMs: PTY_IDLE_REAP_MS,
+      keptBackgroundWork: kept.has(slot.sessionId),
+    }),
+  );
 }
 
 function reapPtySlotIfIdle(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot || slot.client || !slot.pty) return;
-  const quietMs = Date.now() - slot.lastOutputAt;
-  if (quietMs >= PTY_IDLE_REAP_MS) {
+  const reap = terminalReap({
+    quietMs: Date.now() - slot.lastOutputAt,
+    idleReapMs: PTY_IDLE_REAP_MS,
+    holdsBackgroundWork: backgroundWork.hasWork(sessionId),
+    recheckMs: PTY_BACKGROUND_WORK_RECHECK_MS,
+  });
+  if (reap.kind === "kill") {
     killPtySlot(sessionId);
     return;
   }
   slot.graceTimer = setTimeout(
     () => reapPtySlotIfIdle(slot.sessionId),
-    PTY_IDLE_REAP_MS - quietMs,
+    reap.ms,
   );
 }
 
@@ -773,6 +807,7 @@ function attachPty(
     slot.client = null;
     slot.detachedAt = Date.now();
     markTerminalSeen(slot.sessionId);
+    void sessionsService.adoptHarnessTitle(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -917,6 +952,7 @@ function attachPty(
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(slot.sessionId, `exited ${exitCode}`);
+        void sessionsService.adoptHarnessTitle(slot.sessionId);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
@@ -925,6 +961,7 @@ function attachPty(
         slot.pty = null;
         slot.headless.dispose();
         ptySlots.delete(slot.sessionId);
+        backgroundWork.forget(slot.sessionId);
       });
       return;
     }
@@ -980,7 +1017,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
+      idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
     };
