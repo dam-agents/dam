@@ -23,6 +23,7 @@ import {
   type PlatformMcpEntryStore,
 } from "./infrastructure/platform-mcp-entry-store.js";
 import { createUndeliveredPromptStore } from "./infrastructure/undelivered-prompt-store.js";
+import { createContinuedFromStore } from "./infrastructure/continued-from-store.js";
 import {
   createActiveTurnStore,
   type ActiveTurnStore,
@@ -249,6 +250,9 @@ export function composeAcp(opts: ComposeAcpOptions): {
     opts.stateBackend,
     () => new Date().toISOString(),
   );
+  const continuedFrom = createContinuedFromStore(opts.stateBackend, () =>
+    new Date().toISOString(),
+  );
   const activeTurns = createActiveTurnStore(opts.stateBackend);
   const subAgentSessions = createSubAgentSessionStore(opts.stateBackend);
   const historyProviders = new Map(
@@ -343,6 +347,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
       });
       return createAcpRuntime({
         undeliveredPrompts,
+        continuedFrom,
         activeTurns,
         runResults,
         ...(opts.beforeSpawn && { beforeSpawn: opts.beforeSpawn }),

@@ -20,6 +20,7 @@ const persistedDraftSchema = z.object({
   version: z.literal(1),
   text: z.string(),
   attachmentNames: z.array(z.string()),
+  continuesInvocation: z.string().min(1).optional(),
 });
 
 type PersistedDraft = z.infer<typeof persistedDraftSchema>;
@@ -33,12 +34,14 @@ function parseDraftEntry(raw: string): SessionDraft | null {
   }
   const parsed = persistedDraftSchema.safeParse(json);
   if (!parsed.success) return null;
-  const { text, attachmentNames: names } = parsed.data;
-  if (text.length === 0 && names.length === 0) return null;
+  const { text, attachmentNames: names, continuesInvocation } = parsed.data;
+  if (text.length === 0 && names.length === 0 && !continuesInvocation)
+    return null;
   return {
     text,
     attachments: [],
     ...(names.length > 0 ? { droppedAttachmentNames: names } : {}),
+    ...(continuesInvocation ? { continuesInvocation } : {}),
   };
 }
 
@@ -77,7 +80,10 @@ function writeDraftEntry(
   const storageKey = `${DRAFT_STORAGE_PREFIX}${key}`;
   const names = draft === null ? [] : attachmentNames(draft);
   const blank =
-    draft === null || (draft.text.trim().length === 0 && names.length === 0);
+    draft === null ||
+    (draft.text.trim().length === 0 &&
+      names.length === 0 &&
+      draft.continuesInvocation === undefined);
   try {
     if (blank) {
       store.removeItem(storageKey);
@@ -89,6 +95,9 @@ function writeDraftEntry(
         version: 1,
         text: draft.text,
         attachmentNames: names,
+        ...(draft.continuesInvocation !== undefined && {
+          continuesInvocation: draft.continuesInvocation,
+        }),
       } satisfies PersistedDraft),
     );
   } catch (err) {
