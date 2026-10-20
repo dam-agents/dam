@@ -123,7 +123,7 @@ test("a container agent holds a HOME file and a session", async ({ page }) => {
     .toBeGreaterThan(0);
 });
 
-// TEST_SCENARIO: the operator asks for the move by annotating the Agent, the one trigger there is. The page offers none: no Migrate control on the row, and none in the sandbox header, since a move is not the owner's to start. The request switches nothing at once. The row badges the move with its phase as the controller carries it out, and it is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, and the machine is running.
+// TEST_SCENARIO: the operator asks for the move by annotating the Agent, the one trigger there is. The page offers none: the row carries no Migrate control, since a move is not the owner's to start. The request switches nothing at once. The row badges the move with its phase as the controller carries it out, and it is settled once the controller has copied HOME and booted the machine from the copy, the api-server has switched the Backend, and the machine is running.
 test("migrates to the vm Backend on an operator's request", async ({
   page,
 }) => {
