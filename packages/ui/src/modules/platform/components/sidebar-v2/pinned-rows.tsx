@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 
+import { failedLoad } from "../../../../lib/failed-load.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView, SessionView } from "../../../../types.js";
 import {
@@ -63,12 +64,8 @@ export function OffFeedPinnedRow({
   onNavigate?: () => void;
 }) {
   const answerable = useIsAgentAnswerableSoon(agent.id);
-  const {
-    data: session,
-    isError,
-    isFetching,
-    refetch,
-  } = useAgentSession(agent.id, sessionId, { enabled: answerable });
+  const lookup = useAgentSession(agent.id, sessionId, { enabled: answerable });
+  const { data: session, isFetching, refetch } = lookup;
   const conversationOf = useSessionConversations(agent.id);
   const approvals = useApprovalsForOwner().data;
   const filters = useStore((s) => s.sidebarActivityFilters);
@@ -79,7 +76,7 @@ export function OffFeedPinnedRow({
       s.sessionId === sessionId,
   );
   if (!session)
-    return isError ? (
+    return failedLoad(lookup) ? (
       <div data-pin-key={`${agent.id}:${sessionId}`}>
         <RetryRow
           label={`Couldn't load a pinned session of ${agent.name}.`}

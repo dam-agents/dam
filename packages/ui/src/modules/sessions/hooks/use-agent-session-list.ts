@@ -2,6 +2,7 @@ import { sessionCategoryOf, SessionMode } from "api-server-api";
 import { useMemo } from "react";
 import { useShallow } from "zustand/react/shallow";
 
+import { failedLoad } from "../../../lib/failed-load.js";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import {
@@ -34,7 +35,8 @@ export function useAgentSessionList(agentId: string) {
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
-    isError,
+    data,
+    errorUpdatedAt,
     fetchNextPage,
     refetch,
   } = useSessionPages(agentId, sessionFilter, {
@@ -95,7 +97,7 @@ export function useAgentSessionList(agentId: string) {
     loading,
     provisional,
     recordRead: lastKnown !== undefined,
-    failed: listed === undefined && !provisional && isError,
+    failed: !provisional && failedLoad({ data, errorUpdatedAt }),
     retrying: isFetching,
     retry: refetch,
     hasNextPage,

@@ -10,13 +10,22 @@ const list = vi.hoisted(() => ({
   loading: false,
   retrying: false,
 }));
-const pin = vi.hoisted(() => ({ isError: true, isFetching: false }));
+const pin = vi.hoisted(() => ({
+  result: {
+    data: undefined as unknown,
+    errorUpdatedAt: 1,
+    isFetching: false,
+    refetch: () => Promise.resolve(),
+  },
+}));
 
 vi.mock("../../store.js", async () => {
   const { defaultActivityFilters } =
     await import("../../modules/home/lib/activity-filter.js");
   const state = {
     view: "home",
+    drafts: {},
+    pendingPermissions: [],
     sidebarActivityFilters: defaultActivityFilters(),
   };
   return { useStore: (select: (s: unknown) => unknown) => select(state) };
@@ -24,6 +33,7 @@ vi.mock("../../store.js", async () => {
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
   useIsAgentAnswerableSoon: () => true,
+  useIsAgentOperable: () => true,
 }));
 vi.mock("../../modules/approvals/api/queries.js", () => ({
   useApprovalsForOwner: () => ({ data: [] }),
@@ -51,12 +61,13 @@ vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
 }));
 vi.mock("../../modules/sessions/api/queries.js", () => ({
   provisionalSessionView: vi.fn(),
-  useAgentSession: () => ({
-    data: undefined,
-    isError: pin.isError,
-    isFetching: pin.isFetching,
-    refetch: vi.fn(),
-  }),
+  useAgentSession: () => pin.result,
+}));
+vi.mock("../../modules/sessions/api/background-work.js", () => ({
+  useSessionBackgroundWork: () => [],
+}));
+vi.mock("../../modules/spend/api/queries.js", () => ({
+  useSessionSpend: () => new Map(),
 }));
 vi.mock("../../modules/sessions/lib/use-session-conversations.js", () => ({
   useSessionConversations: () => () => undefined,
@@ -84,8 +95,12 @@ beforeEach(() => {
   list.failed = true;
   list.loading = false;
   list.retrying = false;
-  pin.isFetching = false;
-  pin.isError = true;
+  pin.result = {
+    data: undefined,
+    errorUpdatedAt: 1,
+    isFetching: false,
+    refetch: () => Promise.resolve(),
+  };
 });
 
 // TEST_SCENARIO: the first page of an awake Agent's list failed after its retries, with nothing cached; the list must offer a retry and must not claim the Agent has no Sessions.
@@ -129,7 +144,7 @@ it("keeps a retry row for a pin whose first lookup failed", () => {
   expect(html).toContain('data-testid="sidebar-pin-failed"');
   expect(html).toContain("dam");
 
-  pin.isError = false;
+  pin.result = { ...pin.result, errorUpdatedAt: 0 };
   expect(
     renderToStaticMarkup(
       createElement(OffFeedPinnedRow, { agent, sessionId: "old" }),
@@ -137,23 +152,61 @@ it("keeps a retry row for a pin whose first lookup failed", () => {
   ).toBe("");
 });
 
-// TEST_SCENARIO: pressing Retry starts a refetch; the retry control must stay in place, marked busy, while it runs, so keyboard focus is not lost to a control that vanishes and comes back if the retry fails again.
-it("keeps each retry control mounted and busy while it retries", () => {
+// TEST_SCENARIO: pressing Retry on a failed list starts a refetch; the list's retry control must stay in place, marked busy, while it runs.
+it("keeps the list's retry control mounted and busy while it retries", () => {
   list.retrying = true;
-  const listHtml = renderToStaticMarkup(
+  const html = renderToStaticMarkup(
     createElement(AgentSessionList, { agentId: "a" }),
   );
-  expect(listHtml).toContain('data-testid="sidebar-agent-sessions-failed"');
-  expect(listHtml).toContain('aria-busy="true"');
-  expect(listHtml).toContain("Retrying…");
+  expect(html).toContain('data-testid="sidebar-agent-sessions-failed"');
+  expect(html).toContain('aria-busy="true"');
+  expect(html).toContain("Retrying…");
+});
 
-  pin.isFetching = true;
-  const pinHtml = renderToStaticMarkup(
-    createElement(OffFeedPinnedRow, {
-      agent: { id: "a", name: "dam" } as never,
-      sessionId: "old",
-    }),
+// TEST_SCENARIO: an old pin's first lookup failed with nothing cached, and Retry started a second lookup that is still running. React Query then reports the query as pending with no error, so a row keyed on isError would vanish and drop focus; read from a real query in that state, the pin's retry row must stay, busy and inert, and leave once the lookup succeeds.
+it("keeps an old pin's retry row through a real pending retry", async () => {
+  const { QueryClient, QueryObserver } = await import("@tanstack/react-query");
+  const client = new QueryClient({
+    defaultOptions: { queries: { retry: false } },
+  });
+  let release: (value: unknown) => void = () => {};
+  let calls = 0;
+  const observer = new QueryObserver(client, {
+    queryKey: ["pin", "old"],
+    queryFn: () =>
+      ++calls === 1
+        ? Promise.reject(new Error("offline"))
+        : new Promise((resolve) => (release = resolve)),
+  });
+  const off = observer.subscribe(() => {});
+  await vi.waitFor(() =>
+    expect(observer.getCurrentResult().isError).toBe(true),
   );
-  expect(pinHtml).toContain('data-testid="sidebar-pin-failed"');
-  expect(pinHtml).toContain('aria-disabled="true"');
+  void observer.refetch();
+  await vi.waitFor(() =>
+    expect(observer.getCurrentResult().isFetching).toBe(true),
+  );
+  const retrying = observer.getCurrentResult();
+  expect(retrying.isError).toBe(false);
+
+  pin.result = retrying as never;
+  const agent = { id: "a", name: "dam" } as never;
+  const html = renderToStaticMarkup(
+    createElement(OffFeedPinnedRow, { agent, sessionId: "old" }),
+  );
+  expect(html).toContain('data-testid="sidebar-pin-failed"');
+  expect(html).toContain('aria-disabled="true"');
+  expect(html).toContain("Retrying…");
+
+  release({ sessionId: "old" });
+  await vi.waitFor(() =>
+    expect(observer.getCurrentResult().data).toBeDefined(),
+  );
+  pin.result = observer.getCurrentResult() as never;
+  expect(
+    renderToStaticMarkup(
+      createElement(OffFeedPinnedRow, { agent, sessionId: "old" }),
+    ),
+  ).not.toContain("sidebar-pin-failed");
+  off();
 });

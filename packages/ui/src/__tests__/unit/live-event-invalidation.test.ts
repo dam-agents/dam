@@ -63,12 +63,15 @@ it("collapses a burst of hints into one trailing refetch", async () => {
     topic: "harnessConfig",
     agentId: "A",
   });
-  for (let i = 0; i < 4; i++)
-    void invalidateForLiveEvent({ topic: "harnessConfig", agentId: "A" });
-  releases.shift()?.();
+  const rest = Array.from({ length: 4 }, () =>
+    invalidateForLiveEvent({ topic: "harnessConfig", agentId: "A" }),
+  );
   await vi.waitFor(() => expect(releases).toHaveLength(1), { interval: 1 });
   releases.shift()?.();
   await first;
+  await vi.waitFor(() => expect(releases).toHaveLength(1), { interval: 1 });
+  releases.shift()?.();
+  await Promise.all(rest);
 
   expect(calls).toBe(3);
   expect(queryClient.getQueryData(key)).toBe(3);
@@ -146,31 +149,39 @@ it("still runs an old pin's lookup while the ordering watcher reads it", async (
   );
 });
 
-// TEST_SCENARIO: a sync after a stream overflow repairs every cached agent's lists and pin lookups; with many agents it must not send all those reads at once, so at most a bounded number of query families refetch together.
-it("bounds how many families a sync refetches at once", async () => {
-  newLayout(true);
+// TEST_SCENARIO: the live-events stream calls the handler without awaiting it, so several syncs can arrive while the first one's reads are still running. Across all of them at most eight query families refetch at once, and the burst costs one repair pass per family plus at most one trailing pass for those already refetching, not one pass per hint.
+it("bounds refetches and trailing passes across overlapping syncs", async () => {
   const { acpSessionsKeys } =
     await import("../../modules/sessions/api/keys.js");
+  newLayout(true);
   let inFlight = 0;
   let peak = 0;
+  let calls = 0;
   const slow = () => {
+    calls++;
     inFlight++;
     peak = Math.max(peak, inFlight);
     return new Promise<number>((resolve) =>
       setTimeout(() => {
         inFlight--;
         resolve(1);
-      }, 1),
+      }, 5),
     );
   };
   for (let i = 0; i < 30; i++)
     await watch(acpSessionsKeys.pagesOf(`agent-${i}`, ["chats"]), slow);
   peak = 0;
+  calls = 0;
 
-  await invalidateForLiveEvent({ topic: "sync" });
+  const hints = Array.from({ length: 6 }, () =>
+    invalidateForLiveEvent({ topic: "sync" }),
+  );
+  await Promise.all(hints);
 
   expect(peak).toBeGreaterThan(1);
   expect(peak).toBeLessThanOrEqual(8);
+  expect(calls).toBeGreaterThanOrEqual(30);
+  expect(calls).toBeLessThanOrEqual(30 + 8);
 });
 
 // TEST_SCENARIO: with the new layout off, no sidebar tree reads other agents' session pages, so an attention hint must not refetch them; the current layout's open chat keeps its own session watch.
@@ -185,4 +196,25 @@ it("leaves session pages alone on an attention hint while the new layout is off"
   await invalidateForLiveEvent({ topic: "sync" });
 
   expect(pagesA.calls()).toBe(1);
+});
+
+// TEST_SCENARIO: after a reload the sidebar draws the new layout from the preference this browser saved, before the feature flags answer; the first sync and named hints in that window must still refresh the tree's session pages, using the same decision the layout uses.
+it("refreshes session pages from the saved layout preference before flags load", async () => {
+  const { acpSessionsKeys } =
+    await import("../../modules/sessions/api/keys.js");
+  const saved = new Map([["platform-new-layout", "1"]]);
+  vi.stubGlobal("localStorage", {
+    getItem: (key: string) => saved.get(key) ?? null,
+    setItem: (key: string, value: string) => void saved.set(key, value),
+    removeItem: (key: string) => void saved.delete(key),
+  });
+  const pagesA = counter();
+  await watch(acpSessionsKeys.pagesOf("A", ["chats"]), pagesA.fn);
+
+  await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
+  expect(pagesA.calls()).toBe(2);
+
+  saved.clear();
+  await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
+  expect(pagesA.calls()).toBe(2);
 });
