@@ -22,6 +22,7 @@ Paths are under `packages/ui/src/modules/`.
    The target is the panel's `driverAgentId` (the root driver of the tree).
 4. **Draft view.** In `sessions/views/chat-view.tsx`, a new chat whose draft has `continuedFrom` shows the two copied bubbles and the divider instead of the hero (`chatIdle` around :341, hero at :535 and :632).
    Render the bubbles with the existing `ChatMessage` (read-only, the result as the agent bubble with the root driver's avatar).
+   A long result folds behind "Show all"; reuse a fold the chat already has if one fits.
 5. **Send.** In `sessions/hooks/use-acp-connection.ts` (`session/new` around :219-229), put the draft's `continuedFrom` into `_meta.platform`.
    The user bubble and the first prompt carry only the typed text; the runtime adds the hidden block (slice 01).
 6. **Load.** In `runSessionLoad` (`use-acp-connection.ts` around :345-445), read `_meta.platform.continuedFrom` beside `runStarts`, keep it in the session state, and draw the two copied bubbles above the replayed messages.

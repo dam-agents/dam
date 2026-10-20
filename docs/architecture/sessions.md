@@ -1,6 +1,6 @@
 # Sessions
 
-Last verified: 2026-10-15
+Last verified: 2026-10-20
 
 ## Session inside the pod
 
@@ -49,6 +49,7 @@ A harness cannot cut a session short in place, so one that can **fork** copies t
 User messages with nothing between them are one **batch**, which the agent took as one message: the chat shows them under one header and rewrites them as one, editing their texts joined by a blank line and sending the result as one message.
 The runtime finds that entry in the harness's own history, through the session-history provider, by the message's id or, for a message sent live, by its text; a message that history does not hold is refused rather than cut somewhere else, and only for the first message does an empty Session stand in.
 The copy's history is loaded before anything else and the edited message is its first new prompt.
+A rewritten follow-up chat keeps its copy, and the cut compares user messages with the `<continued-from>` block removed; a copy cut at the start carries the block again in its first prompt.
 A rewind gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
 Files the agent changed stay changed.
 The runtime answers before the copy's first frame, so the client that asked follows the new id without reloading.
@@ -64,6 +65,16 @@ A message still in the queue is removed from it; otherwise the chat stops the tu
 Either way, the message's text goes back to the input; when the runtime refuses because the agent already answered, the turn only stops.
 When the message started the Session, the chat deletes the Session instead and puts the text in a new chat.
 The copy keeps the original's times: the harness stamps the last entry it copies with the time of the fork, and the runtime gives that entry its original time back.
+
+### Follow-up chats
+
+A **follow-up chat** is a regular chat Session that starts from a finished sub-agent's work: its prompt and its result, the **copy**.
+A client asks for one on `session/new` with the copy in `_meta.platform.continuedFrom`; the runtime refuses a copy over its size bound rather than cut it.
+The runtime keeps the copy in its own byte-capped document under `.platform/`, apart from the log and the session metadata, because a session-history provider rebuilds the log from the harness's own store.
+The harness gets the copy once: the runtime puts it in a `<continued-from>` block before the first prompt it frames for the Session.
+The block then travels with that prompt wherever it goes — to the harness, into a dropped queue, into an undelivered record — and editing a queued prompt that carries it keeps it.
+The echo and the title use the typed text only, and a client hides the block wherever the first prompt shows.
+Every `session/load` returns the copy in `_meta.platform.continuedFrom`, so a client draws it above the conversation however the log was filled.
 
 ## Prompt delivery
 

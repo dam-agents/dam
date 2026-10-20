@@ -22,8 +22,12 @@ Read [`docs/architecture/invocations.md`](../../architecture/invocations.md) (th
   A grandchild's immediate driver is a released sub-agent, so it is never the target.
 - **The chat is a normal Session.** It is created at the first send, like any new chat.
   Before that it is a new-chat draft that carries the copy.
-- **The copy lives in session metadata.** The UI sends it on `session/new` as `_meta.platform.continuedFrom`.
-  The runtime stores it in the session-metadata state file, so it survives a log eviction and a cold reload from a session-history provider.
+- **The copy lives in its own runtime document.** The UI sends it on `session/new` as `_meta.platform.continuedFrom`.
+  The runtime stores it in a `continued-from` document on the agent's disk, keyed by session and byte-capped, beside the undelivered-prompts document.
+  It stays out of session metadata, which is rewritten on every metadata change.
+  It survives a log eviction and a cold reload from a session-history provider, and goes with its Session.
+- **The agent gets the whole result.** A big result is not cut or summarised by the platform: the harness manages its own context and compacts when it needs to.
+  The bubble folds a long result behind "Show all".
 - **The agent gets the copy once, hidden.** The runtime prepends a `<continued-from>` block to the first prompt it forwards to the harness.
   The echo and the title use the typed text only.
   The UI strips the block like the other plumbing tags, so a history-provider refill never shows it in the first bubble.
@@ -44,6 +48,9 @@ interface ContinuedFrom {
 }
 ```
 
+`prompt` and `result` are at most 1 MiB each; `label` at most 200 characters.
+The runtime refuses a larger value on `session/new`.
+
 The harness receives it once, before the first typed text:
 
 ```text
@@ -61,7 +68,7 @@ The exact block wording belongs to slice 01; the tag name `continued-from` is fi
 
 | #   | Title                                          | Scope                                                                       | Depends on |
 | --- | ---------------------------------------------- | --------------------------------------------------------------------------- | ---------- |
-| 01  | The runtime keeps a follow-up chat's copy      | agent-runtime: accept, store, inject once, return on load, rewind match     | —          |
+| 01  | ✅ The runtime keeps a follow-up chat's copy   | agent-runtime: accept, store, inject once, return on load, rewind match     | —          |
 | 02  | Continue in new chat from a finished sub-agent | UI: panel button, seeded draft, send, load rendering, divider, plumbing tag | 01         |
 
 ## Conventions & glossary

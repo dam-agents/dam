@@ -8,6 +8,7 @@ import {
   capInlineImages,
   buildPlatformTurnEndedNotification,
   jsonRpcErrorDetails,
+  platformContinuedFromSchema,
   platformRemoveQueuedParamsSchema,
   platformSteerQueuedParamsSchema,
   platformRewriteFromParamsSchema,
@@ -24,6 +25,7 @@ import {
   steerResponseSchema,
   steeringSupported,
   type PromptBlock,
+  type PlatformContinuedFrom,
   type PlatformTurnEndedParams,
   type PlatformRewriteFromParams,
   type PlatformUpdateQueuedParams,
@@ -42,6 +44,10 @@ import {
   createToolActivityReader,
   type ToolActivity,
 } from "../../../changes/index.js";
+import {
+  carriesContinuedFrom,
+  frameContinuedFrom,
+} from "../../domain/continued-from.js";
 import { frameDirectTurn, isDirectSurface } from "../../domain/direct-turn.js";
 import {
   isNonNullObject,
@@ -77,6 +83,7 @@ import {
 } from "../../infrastructure/session-metadata-store.js";
 import type { RunResultStore } from "../../infrastructure/run-result-store.js";
 import type { UndeliveredPromptStore } from "../../infrastructure/undelivered-prompt-store.js";
+import type { ContinuedFromStore } from "../../infrastructure/continued-from-store.js";
 import type { ActiveTurnStore } from "../../infrastructure/active-turn-store.js";
 import type {
   BackgroundWorkRegistry,
@@ -178,6 +185,7 @@ export interface AcpRuntimeDeps {
   backgroundWorkRecheckMs?: number;
   queueParkMs?: number;
   undeliveredPrompts: UndeliveredPromptStore;
+  continuedFrom: ContinuedFromStore;
   activeTurns: ActiveTurnStore;
   runResults?: RunResultStore;
   sessionMcpServers?: (ref: string) => unknown[];
@@ -214,6 +222,7 @@ interface OutboundMapping {
   promptSessionId: string | null;
   attachSessionId: string | null;
   platformMeta: PlatformSessionMeta | null;
+  continuedFrom?: PlatformContinuedFrom;
   rehydrate?: boolean;
   settingSessionId?: string;
   critical?: boolean;
@@ -441,6 +450,9 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     },
     runStartsOf(sessionId) {
       return deps.sessionMetadata?.runStartsOf(sessionId) ?? [];
+    },
+    continuedFromOf(sessionId) {
+      return deps.continuedFrom.readFor(sessionId);
     },
     engage(channel, sessionId) {
       engage(channel, sessionId);
@@ -928,6 +940,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     source: unknown,
     sessionId: string,
     outboundId: number,
+    carryContinuedFrom = false,
   ): object {
     const forward = stripPlatformMeta(source);
     const framed =
@@ -935,7 +948,11 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       deps.sessionMetadata?.get(sessionId)?.meta.threadTs !== undefined
         ? frameDirectTurn(forward)
         : forward;
-    return rewriteCwd({ ...framed, id: outboundId }, deps.workingDir);
+    const seed = carryContinuedFrom
+      ? deps.continuedFrom.readFor(sessionId)
+      : deps.continuedFrom.takeUnsent(sessionId);
+    const seeded = seed ? frameContinuedFrom(framed, seed) : framed;
+    return rewriteCwd({ ...seeded, id: outboundId }, deps.workingDir);
   }
 
   function updateQueuedPrompt(
@@ -948,7 +965,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const edited = { ...source, params: { ...params, prompt } };
       return {
         source: edited,
-        frame: promptFrameFor(edited, sessionId, entry.outboundId),
+        frame: promptFrameFor(
+          edited,
+          sessionId,
+          entry.outboundId,
+          carriesContinuedFrom(entry.frame),
+        ),
         typed: prompt,
         blocks: queueableBlocks(prompt),
       };
@@ -1086,6 +1108,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   function retireSession(sessionId: string): void {
     deps.sessionMetadata?.tombstone(sessionId);
     deps.undeliveredPrompts.forgetSession(sessionId);
+    deps.continuedFrom.forgetSession(sessionId);
     deps.activeTurns.remove(sessionId);
     deps.runResults?.forgetSession(sessionId);
     supersededEchoes.delete(sessionId);
@@ -1252,6 +1275,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
               ...(deps.sessionMetadata?.get(oldId)?.meta ?? {}),
               ...(params.title !== undefined && { customTitle: params.title }),
             };
+            deps.continuedFrom.copy(oldId, newId, !fresh);
             if (params.mode === "rewind") {
               deps.sessionMetadata?.adopt(newId, oldId, meta);
               retireSession(oldId);
@@ -1542,6 +1566,12 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           if (cacheable && result !== undefined) {
             transcript.cacheMetadata(sidForChannel, result);
           }
+          if (
+            mapping.method === "session/new" &&
+            sidFromResult &&
+            mapping.continuedFrom !== undefined
+          )
+            deps.continuedFrom.save(sidFromResult, mapping.continuedFrom);
           if (
             mapping.method === "session/new" &&
             sidFromResult &&
@@ -1992,6 +2022,23 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       const promptSessionId = method === "session/prompt" ? paramsSid : null;
       if (promptSessionId !== null) deps.onPrompt?.();
 
+      const continuedFrom =
+        method === "session/new" ? extractContinuedFrom(frame) : undefined;
+      if (continuedFrom === null) {
+        sendToChannel(
+          channel,
+          JSON.stringify({
+            jsonrpc: "2.0",
+            id: frame.id,
+            error: {
+              code: -32602,
+              message:
+                "the sub-agent's prompt or result is too large to continue from",
+            },
+          }),
+        );
+        return;
+      }
       const platformMeta =
         method === "session/new"
           ? { ...(extractPlatformMeta(frame) ?? {}), ref: randomUUID() }
@@ -2023,6 +2070,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         promptSessionId,
         attachSessionId: null,
         platformMeta,
+        ...(continuedFrom !== undefined && { continuedFrom }),
         ...(settingSessionId !== null && { settingSessionId }),
       });
 
@@ -2219,6 +2267,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
       lease.shutdown();
     },
   };
+}
+
+function extractContinuedFrom(
+  frame: unknown,
+): PlatformContinuedFrom | null | undefined {
+  const raw = platformField(frame, "continuedFrom");
+  if (raw === undefined) return undefined;
+  const parsed = platformContinuedFromSchema.safeParse(raw);
+  return parsed.success ? parsed.data : null;
 }
 
 function extractPlatformMeta(frame: unknown): PlatformSessionMeta | null {

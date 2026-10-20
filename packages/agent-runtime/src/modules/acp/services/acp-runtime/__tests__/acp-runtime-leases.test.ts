@@ -15,6 +15,7 @@ import {
 } from "./acp-world.js";
 import { createAcpRuntime } from "../acp-runtime.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
+import { createContinuedFromStore } from "../../../infrastructure/continued-from-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import {
   createLeaseRouter,
@@ -101,6 +102,9 @@ function createLeaseWorld(opts: { providers: string[] }) {
         idleReapDelayMs: IDLE_REAP_DELAY_MS,
         onArtifactTouch: () => {},
         undeliveredPrompts: createInMemoryUndeliveredStore(),
+        continuedFrom: createContinuedFromStore(memoryDocumentBackend(), () =>
+          new Date().toISOString(),
+        ),
         activeTurns: createActiveTurnStore(memoryDocumentBackend()),
         sessionMetadata: metadata.store,
         backgroundWork: scoped.backgroundWork,
