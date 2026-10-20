@@ -6,6 +6,7 @@ import { trpc } from "../../trpc.js";
 import { agentsKeys } from "../agents/api/queries.js";
 import { approvalsKeys } from "../approvals/api/queries.js";
 import { egressRulesKeys } from "../egress-rules/api/queries.js";
+import { acpSessionsKeys } from "../sessions/api/keys.js";
 
 type Topic = Exclude<LiveEvent["topic"], "sync">;
 
@@ -27,7 +28,15 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
     harnessConfig: (agentId) => [harnessConfigOf(agentId)],
     kbShares: () => [trpc.kbShares.pathKey()],
     artifacts: () => [trpc.artifactLibrary.pathKey()],
-    attention: () => [trpc.attention.pathKey()],
+    attention: (agentId) => [
+      trpc.attention.pathKey(),
+      ...(agentId
+        ? [
+            acpSessionsKeys.pages(agentId),
+            [...acpSessionsKeys.agent(agentId), "session"],
+          ]
+        : []),
+    ],
     gettingStarted: () => [trpc.gettingStarted.pathKey()],
   };
 

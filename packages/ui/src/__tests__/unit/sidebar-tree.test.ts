@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The new layout's sidebar is one tree of Agents. An Agent row opens and closes its Session list (the open Agent opens on its own, and only that one), a change in the attention record names the Agents whose lists must refresh, a "New session" row ends each open list and a "New agent" row ends the tree, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, a pin the bounded feed does not hold is read from its Agent's own list, a closed Agent shows a pending approval before unread, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
+// TEST_OVERVIEW: The new layout's sidebar is one tree of Agents. An Agent row opens and closes its Session list (the open Agent opens on its own, and only that one),  a "New session" row ends each open list and a "New agent" row ends the tree, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, a pin the bounded feed does not hold is looked up by its id, a closed Agent shows a pending approval before unread, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
 import { AddAlt, AddComment } from "@carbon/icons-react";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { createElement } from "react";
@@ -12,11 +12,9 @@ import {
 import { AddRow } from "../../modules/platform/components/sidebar-v2/add-row.js";
 import {
   activityTone,
-  agentsWithUnlistedPins,
   awaitsApproval,
-  changedAgents,
   isExpanded,
-  recordSignatures,
+  offFeedPins,
   sessionContext,
   splitPinned,
   toggleExpanded,
@@ -42,48 +40,14 @@ describe("sidebar tree", () => {
     expect(isExpanded(closed, "a", "a")).toBe(false);
   });
 
-  // TEST_SCENARIO: a Session that starts, finishes, is renamed, is read, appears or goes away changes its Agent's record signature, so that Agent's own list refreshes; an Agent whose rows did not change does not refetch.
-  it("names the Agents whose record changed", () => {
-    const row = (
-      agentId: string,
-      sessionId: string,
-      at: string,
-      working = false,
-    ) => ({
-      session: { agentId, sessionId, title: "t", seenAt: null },
-      at,
-      working,
-    });
-    const before = recordSignatures([row("a", "s1", "1"), row("b", "s2", "1")]);
-    expect(changedAgents(before, before)).toEqual([]);
-    expect(
-      changedAgents(
-        before,
-        recordSignatures([row("a", "s1", "1", true), row("b", "s2", "1")]),
-      ),
-    ).toEqual(["a"]);
-    expect(
-      changedAgents(before, recordSignatures([row("b", "s2", "1")])),
-    ).toEqual(["a"]);
-    expect(
-      changedAgents(
-        before,
-        recordSignatures([
-          row("a", "s1", "1"),
-          row("b", "s2", "1"),
-          row("c", "s3", "1"),
-        ]),
-      ),
-    ).toEqual(["c"]);
-  });
-
-  // TEST_SCENARIO: a pin the bounded attention feed does not hold, for example one on the second page of its Agent's list, sends that Agent's own list to the Pinned section; pins the feed holds need nothing more, and an Agent with no such pin is not read.
-  it("finds the Agents whose pins the feed lacks", () => {
-    const pins = new Set(["a:old", "b:new", "c:gone"]);
-    expect(
-      agentsWithUnlistedPins(pins, new Set(["b:new"]), ["a", "b", "c", "d"]),
-    ).toEqual(["a", "c"]);
-    expect(agentsWithUnlistedPins(pins, pins, ["a", "b", "c"])).toEqual([]);
+  // TEST_SCENARIO: a pin the bounded attention feed does not hold, for example an old Session far down its Agent's list, becomes one lookup of that Session by id; pins the feed holds need none, and a pin of an Agent that is not listed is not looked up.
+  it("turns pins the feed lacks into single-Session lookups", () => {
+    const pins = new Set(["a:old", "b:new", "c:gone", "x:orphan"]);
+    expect(offFeedPins(pins, new Set(["b:new"]), ["a", "b", "c"])).toEqual([
+      { agentId: "a", sessionId: "old" },
+      { agentId: "c", sessionId: "gone" },
+    ]);
+    expect(offFeedPins(pins, pins, ["a", "b", "c"])).toEqual([]);
   });
 
   // TEST_SCENARIO: a pin moves a Session into the Pinned list in activity order and out of the rest; unpinning puts it back in its old place.

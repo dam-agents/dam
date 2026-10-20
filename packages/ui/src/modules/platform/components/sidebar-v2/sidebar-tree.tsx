@@ -7,14 +7,7 @@ import {
   Tools,
   TrashCan,
 } from "@carbon/icons-react";
-import {
-  type ReactNode,
-  useEffect,
-  useId,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useId, useMemo, useState } from "react";
 
 import {
   DropdownMenu,
@@ -28,7 +21,6 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { queryClient } from "../../../../query-client.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDeleteAgent } from "../../../agents/api/mutations.js";
@@ -38,7 +30,6 @@ import {
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
-import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
 import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
@@ -47,43 +38,22 @@ import { useSidebarOrderActions } from "../../../agents/hooks/use-sidebar-order-
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
-import {
-  type AgentActivitySession,
-  useActivitySessions,
-} from "../../../home/hooks/use-activity-sessions.js";
+import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
-import { useSessionBackgroundWork } from "../../../sessions/api/background-work.js";
-import { acpSessionsKeys } from "../../../sessions/api/keys.js";
-import { provisionalSessionView } from "../../../sessions/api/queries.js";
-import { backgroundWorkLabel } from "../../../sessions/components/background-work-indicator.js";
-import { RenameSessionDialog } from "../../../sessions/components/rename-session-dialog.js";
-import { SessionRow } from "../../../sessions/components/session-row.js";
-import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
-import {
-  draftKey,
-  keysWithDraftContent,
-} from "../../../sessions/lib/draft-key.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import {
-  activityTone,
-  agentsWithUnlistedPins,
   awaitsApproval,
-  changedAgents,
   isExpanded,
-  recordSignatures,
-  sessionContext,
+  offFeedPins,
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
-import { ActivityDot, AgentCue } from "./activity-dot.js";
+import { AgentCue } from "./activity-dot.js";
 import { AddRow, FOCUS_RING } from "./add-row.js";
-import { AgentPinnedRows, AgentSessionList } from "./agent-session-list.js";
-import {
-  togglePinKeepingFocus,
-  TREE_ROW_CLASS,
-  useDeleteTreeSession,
-} from "./tree-session-row.js";
+import { AgentSessionList } from "./agent-session-list.js";
+import { FeedPinnedRow, OffFeedPinnedRow } from "./pinned-rows.js";
+
 const REVEAL =
   "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
 
@@ -92,8 +62,8 @@ const REVEAL =
  * Sessions of every Agent in a Pinned section at the top, then every Agent,
  * each opening to its own Sessions. The Agent that is open in the page opens
  * in the tree too until its row closes it; any other Agent opens and closes
- * from its row. A change in the attention record refreshes the changed
- * Agents' own lists, so an open list stays live without its chat.
+ * from its row. An Agent's attention hint refreshes that Agent's own list,
+ * so an open list stays live without its chat.
  */
 export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const { agents, openAgentId, sessionOpen, unreadAgentIds } =
@@ -106,18 +76,6 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(
     new Map(),
   );
-  const signatures = useMemo(
-    () => recordSignatures(activity.items),
-    [activity.items],
-  );
-  const lastSignatures = useRef(signatures);
-  useEffect(() => {
-    for (const id of changedAgents(lastSignatures.current, signatures))
-      void queryClient.invalidateQueries({
-        queryKey: acpSessionsKeys.pages(id),
-      });
-    lastSignatures.current = signatures;
-  }, [signatures]);
   const approvals = useApprovalsForOwner().data;
 
   const pinned = useMemo(
@@ -136,11 +94,15 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
     () => new Set(activity.items.map((item) => item.id)),
     [activity.items],
   );
-  const pinAgents = agentsWithUnlistedPins(
+  const offFeed = offFeedPins(
     pins,
     inFeed,
     agents.map((agent) => agent.id),
-  ).flatMap((id) => agents.filter((agent) => agent.id === id));
+  ).flatMap(({ agentId, sessionId }) =>
+    agents
+      .filter((agent) => agent.id === agentId)
+      .map((agent) => ({ agent, sessionId })),
+  );
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
   const defaultAgent = useCreateDefaultAgent();
@@ -151,7 +113,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-2 pb-3"
         data-testid="sidebar-tree"
       >
-        {(pinned.length > 0 || pinAgents.length > 0) && (
+        {(pinned.length > 0 || offFeed.length > 0) && (
           <section
             aria-label="Pinned"
             className="mb-2 hidden has-[[data-testid=session-row]]:block"
@@ -159,19 +121,18 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             <ListLabel>Pinned</ListLabel>
             <div className="flex flex-col gap-px">
               {pinned.map((item) => (
-                <PinnedRow
+                <FeedPinnedRow
                   key={item.id}
                   item={item}
                   conversation={conversationOf(item.session)}
                   onNavigate={onNavigate}
                 />
               ))}
-              {pinAgents.map((agent) => (
-                <AgentPinnedRows
-                  key={agent.id}
-                  agentId={agent.id}
-                  agentName={agent.name}
-                  inFeed={inFeed}
+              {offFeed.map(({ agent, sessionId }) => (
+                <OffFeedPinnedRow
+                  key={`${agent.id}:${sessionId}`}
+                  agent={agent}
+                  sessionId={sessionId}
                   onNavigate={onNavigate}
                 />
               ))}
@@ -183,7 +144,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             actions={
               <>
                 <ActivityFilterMenu filters={filters} onChange={setFilters} />
-                <CreateAgentMenu />
+                <CreateAgentMenu defaultAgent={defaultAgent} />
               </>
             }
           >
@@ -401,85 +362,11 @@ function AgentNode({
   );
 }
 
-function PinnedRow({
-  item,
-  conversation,
-  onNavigate,
+function CreateAgentMenu({
+  defaultAgent,
 }: {
-  item: AgentActivitySession;
-  conversation?: string;
-  onNavigate?: () => void;
+  defaultAgent: ReturnType<typeof useCreateDefaultAgent>;
 }) {
-  const openSession = useOpenSession();
-  const [renaming, setRenaming] = useState(false);
-  const { agentId, sessionId, mode } = item.session;
-  const active = useStore(
-    (s) =>
-      s.view === "chat" &&
-      s.selectedAgent === agentId &&
-      s.sessionId === sessionId,
-  );
-  const approvals = useApprovalsForOwner().data;
-  const permissionPending = useStore((s) =>
-    s.pendingPermissions.some((p) => p.sessionId === sessionId),
-  );
-  const actWhenAwake = useActWhenAwake(agentId);
-  const session = provisionalSessionView(item.session);
-  const remove = useDeleteTreeSession(agentId);
-  const backgroundWork = useSessionBackgroundWork(agentId, sessionId);
-  const draft = useStore((s) =>
-    keysWithDraftContent(s.drafts).includes(draftKey(agentId, sessionId)),
-  );
-  const state = {
-    working: item.working,
-    needsApproval:
-      permissionPending || awaitsApproval(approvals ?? [], agentId, sessionId),
-    unread: item.unread,
-    backgroundWork,
-    draft,
-  };
-  const tone = activityTone(state);
-  return (
-    <div data-pin-key={item.id}>
-      <SessionRow
-        session={session}
-        active={active}
-        {...state}
-        leading={
-          <ActivityDot
-            tone={tone}
-            {...(tone === "background" && {
-              label: backgroundWorkLabel(backgroundWork),
-            })}
-          />
-        }
-        indicators={false}
-        conversation={`${item.agent.name} · ${sessionContext(session, conversation)}`}
-        className={TREE_ROW_CLASS}
-        pinned
-        onTogglePin={() => togglePinKeepingFocus(item.id, agentId)}
-        onResume={() => {
-          openSession(agentId, sessionId, mode);
-          onNavigate?.();
-        }}
-        onRename={() =>
-          actWhenAwake(`rename:${sessionId}`, () => setRenaming(true))
-        }
-        onDelete={() => void remove(session)}
-      />
-      {renaming && (
-        <RenameSessionDialog
-          agentId={agentId}
-          session={session}
-          onClose={() => setRenaming(false)}
-        />
-      )}
-    </div>
-  );
-}
-
-function CreateAgentMenu() {
-  const defaultAgent = useCreateDefaultAgent();
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   return (
     <DropdownMenu>

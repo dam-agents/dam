@@ -117,60 +117,6 @@ export function AgentSessionList({
   );
 }
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: The pinned Sessions of one Agent that the owner's bounded attention feed does not hold, read from the Agent's own list for the Pinned section. It loads further pages until every such pin appears. A pin whose Session is gone shows nowhere and stays in storage: pins live only in this browser, so no failed or stale list may drop one.
- */
-export function AgentPinnedRows({
-  agentId,
-  agentName,
-  inFeed,
-  onNavigate,
-}: {
-  agentId: string;
-  agentName: string;
-  inFeed: ReadonlySet<string>;
-  onNavigate?: () => void;
-}) {
-  const { list, pins, pinned } = useAgentTreeRows(agentId);
-  const loaded = new Set(
-    list.sessions.map((s) => pinKey(agentId, s.sessionId)),
-  );
-  const missing = [...pins].filter(
-    (key) =>
-      key.startsWith(`${agentId}:`) && !inFeed.has(key) && !loaded.has(key),
-  );
-  const {
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPageFailed,
-    fetchNextPage,
-  } = list;
-  const chase =
-    missing.length > 0 &&
-    hasNextPage &&
-    !isFetchingNextPage &&
-    !fetchNextPageFailed &&
-    !list.provisional;
-  useEffect(() => {
-    if (chase) void fetchNextPage();
-  }, [chase, fetchNextPage]);
-
-  return pinned
-    .filter(({ session }) => !inFeed.has(pinKey(agentId, session.sessionId)))
-    .map(({ session, state }) => (
-      <TreeSessionRow
-        key={session.sessionId}
-        agentId={agentId}
-        session={session}
-        state={state}
-        operable={list.operable}
-        pinned
-        prefix={agentName}
-        onNavigate={onNavigate}
-      />
-    ));
-}
-
 function useLoadOnReach(enabled: boolean, load: () => void) {
   const ref = useRef<HTMLDivElement>(null);
   const loadRef = useRef(load);

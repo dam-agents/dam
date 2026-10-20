@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
+// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and an attention hint also refreshes the named agent's own session pages and single-Session lookups, and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
 import { type QueryKey, QueryObserver } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -67,4 +67,20 @@ it("collapses a burst of hints into one trailing refetch", async () => {
 
   expect(calls).toBe(3);
   expect(queryClient.getQueryData(key)).toBe(3);
+});
+
+// TEST_SCENARIO: an attention hint about agent A, sent for a rename or delete of a Session outside the owner's bounded feed, must refetch A's own session pages and A's single-Session lookups (the sidebar's older pins), and leave agent B's alone; otherwise an open list or an old pin keeps a stale title or a deleted row.
+it("refreshes the named agent's session pages and pin lookups on an attention hint", async () => {
+  const { acpSessionsKeys } =
+    await import("../../modules/sessions/api/keys.js");
+  const pagesA = counter();
+  const pinA = counter();
+  const pagesB = counter();
+  await watch(acpSessionsKeys.pagesOf("A", ["chats"]), pagesA.fn);
+  await watch(acpSessionsKeys.session("A", "old"), pinA.fn);
+  await watch(acpSessionsKeys.pagesOf("B", ["chats"]), pagesB.fn);
+
+  await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
+
+  expect([pagesA.calls(), pinA.calls(), pagesB.calls()]).toEqual([2, 2, 1]);
 });

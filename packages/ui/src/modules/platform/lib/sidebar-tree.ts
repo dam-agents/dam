@@ -55,45 +55,21 @@ export function toggleExpanded(
   );
 }
 
-export function recordSignatures(
-  items: readonly {
-    session: {
-      agentId: string;
-      sessionId: string;
-      title: string | null;
-      seenAt: string | null;
-    };
-    at: string;
-    working: boolean;
-  }[],
-): ReadonlyMap<string, string> {
-  const byAgent = new Map<string, string>();
-  for (const { session: s, at, working } of items)
-    byAgent.set(
-      s.agentId,
-      `${byAgent.get(s.agentId) ?? ""}|${s.sessionId}:${at}:${working}:${s.seenAt}:${s.title}`,
-    );
-  return byAgent;
-}
-
-export function changedAgents(
-  before: ReadonlyMap<string, string>,
-  after: ReadonlyMap<string, string>,
-): string[] {
-  return [...new Set([...before.keys(), ...after.keys()])].filter(
-    (id) => before.get(id) !== after.get(id),
-  );
-}
-
-export function agentsWithUnlistedPins(
+export function offFeedPins(
   pins: ReadonlySet<string>,
-  listed: ReadonlySet<string>,
+  inFeed: ReadonlySet<string>,
   agentIds: readonly string[],
-): string[] {
-  const unlisted = [...pins].filter((key) => !listed.has(key));
-  return agentIds.filter((id) =>
-    unlisted.some((key) => key.startsWith(`${id}:`)),
-  );
+): { agentId: string; sessionId: string }[] {
+  return [...pins]
+    .filter((key) => !inFeed.has(key))
+    .flatMap((key) =>
+      agentIds
+        .filter((id) => key.startsWith(`${id}:`))
+        .map((agentId) => ({
+          agentId,
+          sessionId: key.slice(agentId.length + 1),
+        })),
+    );
 }
 
 export function splitPinned<T>(
