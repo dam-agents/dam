@@ -146,6 +146,15 @@ One further condition holds that reap back: **background work the session report
 While a session reports work still running, the runtime keeps it open, and busy while that work is kept, so neither the reap nor the [idle checker](agent-lifecycle.md#hibernate) ends the work underneath it.
 The contract, and the process inventory that shows the user everything running in the agent, live on [agent-processes](agent-processes.md).
 
+**An Autonomous Turn holds the reap back too.**
+A harness can work on after it answered a prompt: Claude Code answers a prompt that started background agents, and when the last of them reports it runs a turn of its own to handle the reports and do the steps that follow.
+Closing the session then would cut that turn off, and Claude Code reads the close as the user interrupting.
+So the runtime asks the harness for its session state: on every session/new, session/load and session/resume it sends to Claude Code, it adds a `session_state_changed` filter to `_meta.claudeCode.emitRawSDKMessages`, and the adapter reports each change of state as a `_claude/sdkMessage` notification, which the runtime keeps out of the transcript.
+The image's manifest names that dialect (`harnessState`); a harness without one reports nothing and is idle once its prompt is answered.
+From a busy report to the idle one, in every session, the session is not reaped, the runtime is busy, and the Active-Turn marker stays, so a pod that dies in the Autonomous Turn resumes it on the next boot with the `<turn-interrupted>` notice.
+A busy report with no prompt turn running writes the marker itself.
+Claude Code can lose its idle report, so a busy session that stays silent for ten minutes — no session/update, no open tool call, no pending agent request, no reported background work — is treated as idle, with a warning in the log.
+
 Terminal-mode sessions follow a different model from the chat path above.
 agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.
 A session on a removed provider or an unknown harness closes with the reason.

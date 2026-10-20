@@ -18,7 +18,6 @@ export interface BackgroundWorkRegistry {
 }
 
 export interface BackgroundWorkRegistryDeps {
-  enabled?: boolean;
   keepPolicy: Pick<KeepPolicy, "isKeptTask" | "onChange">;
   log?: (msg: string) => void;
 }
@@ -37,8 +36,6 @@ export interface BackgroundWorkRegistryDeps {
 export function createBackgroundWorkRegistry(
   deps: BackgroundWorkRegistryDeps,
 ): BackgroundWorkRegistry {
-  const enabled = deps.enabled ?? true;
-
   const holds = new Map<string, BackgroundWorkItem[]>();
   const dropped = new Map<string, Set<string>>();
 
@@ -99,7 +96,6 @@ export function createBackgroundWorkRegistry(
         if (held) release(sessionId, "done");
         return;
       }
-      if (!enabled) return;
       const previous = holds.get(sessionId);
       holds.set(sessionId, items);
       if (!held) {

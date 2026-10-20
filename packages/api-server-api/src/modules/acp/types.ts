@@ -208,6 +208,47 @@ export const platformRunResultResponseSchema = z.discriminatedUnion("status", [
   z.object({ status: z.literal("none") }),
 ]);
 
+export const RUN_ENDED_CAPABILITY = "runEnded";
+
+export function runEndedSupported(initializeResult: unknown): boolean {
+  const parsed = z
+    .object({
+      _meta: z.object({
+        platform: z.object({ [RUN_ENDED_CAPABILITY]: z.literal(true) }),
+      }),
+    })
+    .safeParse(initializeResult);
+  return parsed.success;
+}
+
+export const platformRunEndedParamsSchema = z.object({
+  sessionId: z.string().min(1),
+  promptId: z.string().min(1).optional(),
+  stopReason: z.string().min(1).optional(),
+});
+export type PlatformRunEndedParams = z.infer<
+  typeof platformRunEndedParamsSchema
+>;
+
+const platformRunEndedNotificationSchema = z.object({
+  jsonrpc: z.literal("2.0"),
+  method: z.literal("platform/runEnded"),
+  params: platformRunEndedParamsSchema,
+});
+type PlatformRunEndedNotification = z.infer<
+  typeof platformRunEndedNotificationSchema
+>;
+
+export function buildPlatformRunEndedNotification(
+  params: PlatformRunEndedParams,
+): PlatformRunEndedNotification {
+  return platformRunEndedNotificationSchema.parse({
+    jsonrpc: "2.0",
+    method: "platform/runEnded",
+    params,
+  });
+}
+
 export const platformRunStartsMetaSchema = z.array(
   z.string().datetime({ offset: true }),
 );
