@@ -101,7 +101,7 @@ drivers:
           name: Mode
           description: Session permission mode
           category: mode
-          default: "auto"
+          default: "default"
           choices:
             - value: auto
               name: "Auto"
