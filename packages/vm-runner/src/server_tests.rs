@@ -1519,11 +1519,45 @@ async fn a_staged_archive_is_refused_with_how_to_restage_it() {
     let status = h.settle("m1").await;
     assert_eq!(status.reason, REASON_IMAGE_UNAVAILABLE, "{status:?}");
     assert!(
-        status.message.contains("mise run image:stage-vm"),
-        "{status:?}"
+        status.message.contains("mise run image:stage-vm <image>"),
+        "the message names no staging command: {status:?}"
+    );
+    assert!(
+        !status
+            .message
+            .contains(&format!("VM_IMAGE_DIR={}", images.display())),
+        "the message offers the directory this runner reads as one to stage into, and inside a pod that is a mount no staging can write: {status:?}"
     );
     assert!(h.fake.calls().is_empty());
     assert_eq!(h.crane_calls(), 0);
+}
+
+// TEST_SCENARIO: a runner pod reads the install's cache directory through a mount, so the path it reads is no directory on the node. The hint names where the node directory is known and never offers the mount: a person who stages into the mount leaves the archive in place that refuses the image, and the next boot refuses it again.
+#[test]
+fn the_restage_hint_of_a_runner_pod_points_at_the_node_directory() {
+    assert_eq!(
+        restage_hint(Path::new("/var/lib/platform/images"), false),
+        "`mise run image:stage-vm <image>`, with `VM_IMAGE_DIR` set to the node directory this runner's pod mounts its image cache from"
+    );
+}
+
+// TEST_SCENARIO: a runner outside a cluster owns its image directory, so the hint has to select the host staging mode as well as the directory: a shell a person opens exports no `VM_HOST_RUNNER` and no `PLATFORM_VM_RUNNER_HOME`, and a staging without them stages on the node instead. The home comes from the directory this runner reads, customized or default, and it arrives as one shell word.
+#[test]
+fn the_restage_hint_of_a_host_runner_stages_on_the_mac_in_its_home() {
+    assert_eq!(
+        restage_hint(
+            Path::new("/Users/example/VM images/it's/platform-vm-runner/images"),
+            true
+        ),
+        r"`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME='/Users/example/VM images/it'\''s/platform-vm-runner' mise run image:stage-vm <image>`"
+    );
+    assert_eq!(
+        restage_hint(
+            Path::new("/Users/example/.local/state/platform-vm-runner/images"),
+            true
+        ),
+        "`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME='/Users/example/.local/state/platform-vm-runner' mise run image:stage-vm <image>`"
+    );
 }
 
 // TEST_SCENARIO: an install stages an image as a tree with its launch record beside it (image:stage-vm), and the machine boots the tree in place. An archive left under the same name by an earlier install does not refuse the tree.

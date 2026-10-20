@@ -332,10 +332,13 @@ the API server: four decimal octets and a prefix up to 32, or an RFC 4291
 group form — hex fields, at most one `::`, an optional dotted IPv4 tail in the
 last two, and no more fields than the shape holds, which the pattern this
 replaces let through (`2001:::1/64`). The prefix is decimal with no leading
-zero: `netip.ParsePrefix` refuses `10.0.0.0/08`, which `net.ParseCIDR` takes,
-so a `controller.gatewayEgress` range written that way kept the controller from
-starting, and a range a policy carries reaches consumers with parsers of their
-own.
+zero, because Helm reads a leading zero as octal: `10.0.0.0/07` rendered as
+prefix 7 and `2001:db8::/064` as 52, while `netip.ParsePrefix` refuses a leading
+zero outright, so a `controller.gatewayEgress` range written that way passed the
+render and the controller then refused to start. A range a policy carries
+reaches consumers with parsers of their own. (`10.0.0.0/08` is no octal number,
+so Helm read it as 0 and the opens-every-range rule refused it for another
+reason.)
 */}}
 {{- define "platform.validate.cidr" -}}
 {{- $value := toString .value -}}

@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -330,6 +330,22 @@ fn check_id(id: &str) -> Result<(), Rejected> {
     } else {
         Err(Rejected::bad_request("invalid machine id"))
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how a person restages the image the runner refuses as an archive, which is the one thing a staging run cannot learn by itself — where this runner's images live. `host_runner` is set where the binary runs on a Mac, which is the host runner: it owns its image directory, so the staging is told to stay on that Mac, in the home the directory sits in, since a shell a person opens has neither. A runner pod reads a mount of the install's cache directory instead, whose node directory no process in the pod can see, so the hint says where that directory is named rather than the mount's path.
+fn restage_hint(image_dir: &Path, host_runner: bool) -> String {
+    if host_runner {
+        return format!(
+            "`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME={} mise run image:stage-vm <image>`",
+            shell_quote(image_dir.parent().unwrap_or(Path::new("/")))
+        );
+    }
+    "`mise run image:stage-vm <image>`, with `VM_IMAGE_DIR` set to the node directory this runner's pod mounts its image cache from".to_string()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one shell word, so a hint a person pastes works for a directory with a space or a quote in it. Every value it is given is single-quoted, and a quote inside one closes the quoting, escapes itself and opens it again.
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', r"'\''"))
 }
 
 impl Server {
@@ -1872,8 +1888,9 @@ impl Server {
         let archive = cache::archive_path(&self.config.image_dir, image);
         if archive.exists() {
             return Err(unusable(format!(
-                "{} is a staged image archive, which the runner does not boot; restage the image with `mise run image:stage-vm`",
-                archive.display()
+                "{} is a staged image archive, which the runner does not boot; restage the image with {}",
+                archive.display(),
+                restage_hint(&self.config.image_dir, cfg!(target_os = "macos")),
             )));
         }
         Ok(None)
