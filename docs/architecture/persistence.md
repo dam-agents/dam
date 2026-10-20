@@ -247,19 +247,20 @@ It is an ordinary file of the root, so `useradd` replaces it as on any root, and
 The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the image's build gives uid 0's entry the agent's `HOME`.
 The old upper is renamed aside with the record of its image and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short is deleted on the next boot.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
-Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root that start empty on every boot, whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-`/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
-What it may delete is only what something other than the agent calls replaceable: an entry carrying a `CACHEDIR.TAG` signature wherever it sits, and any entry of `HOME`'s `.cache` and `.npm`, which the XDG specification and npm call caches; an unmarked entry of `/tmp` or `/var/tmp` is never deleted, whatever its age, being the agent's own work.
-An entry is one name directly in such a folder, and it goes whole or not at all: a tool that keeps part of its cache takes it for complete and fails on it.
-Use is the newest modification or change time in the entry: a write moves those, a read moves no time the guest keeps, and a reader is seen by its descriptors alone.
-An entry used in the last ten minutes stays, and so does one a process holds, locked by any kind of lock as `systemd-tmpfiles` leaves it, or open, or worked in.
-A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour, stops at the bytes the runner asked of that machine, and ends with that shortage.
-A guest down at its grant's floor keeps that hour with no byte bound, served once per hour rather than at every look.
-Each eviction, and a disk still short with nothing left to evict, is a line on the machine's console.
-An agent that exits with its home nearly out of space or inodes is reported as a full home.
-A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
-A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, since a grown disk has more of both.
+Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root, empty on every boot whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
+`/var/cache` stays in the root: an image ships its caches there, and an empty folder over them rebuilt them each boot.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries until a fifth of the disk is free, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
+What it may delete is only what something other than the agent calls replaceable: an entry carrying a `CACHEDIR.TAG` signature wherever it sits, and any entry of `HOME`'s `.cache` and `.npm`, caches by the XDG specification and by npm; an unmarked `/tmp` or `/var/tmp` entry is never deleted, whatever its age: it is the agent's own work.
+An entry is one name directly in such a folder and goes whole or not at all: a tool keeping part of its cache takes it for complete and fails.
+Deletion is bound to the tree it judged, not the name it listed: the entry is opened once and its mark, mount and use are read through that descriptor.
+Use is the newest modification or change time in the entry: a write moves those, a read moves none the guest keeps, and a reader is seen by its descriptors alone.
+An entry used in the last ten minutes stays, and so does one a process holds, locks (as `systemd-tmpfiles` leaves it), or works in.
+A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that rule on: each request is served once, by one pass that keeps what was used in the last hour, stops at the bytes the runner asked of that machine, and ends with that shortage, reading the request again before each entry.
+A guest at its grant's floor keeps that hour with no byte bound, served once an hour rather than at every look.
+Each eviction, and a disk still short with nothing left to evict, is a console line.
+An agent that exits with its home nearly out of space or inodes is a full home.
+A boot that finds the disk with no space or inode left deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
+A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, which brings more of both.
 btrfs discards what it frees on its own (`discard=async`, the kernel's default on a disk that supports discard), so whatever the agent frees, by deleting or by rewriting a file, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
