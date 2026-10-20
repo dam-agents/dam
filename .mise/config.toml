@@ -20,10 +20,13 @@ GIT_PREFIX = false
 [vars]
 repo_root = "{{config_root}}"
 # Issue #5291's newer digests are under the 7-day floor: the api-server base
-# was built 2026-10-19T09:08Z and the controller base 2026-10-17T06:35Z, so
-# they can be taken from 2026-10-26 and 2026-10-24.
-base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c46573a1d159c05370bada02d6049f38fbdcfa6418c0868ad404f4b92743475c"
-base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:12ebc4493ccbb80fd47175c9c670ea590c4e7140a7c4858e038ac2df42be8ca8"
+# was built 2026-10-19T09:08Z and the controller base 2026-10-17T06:35Z.
+# Neither those nor main's 2026-10-15T01:50Z and T02:13Z pair is old enough,
+# so the pins hold at the newest pair that is: the 2026-10-09T15:20:14Z build
+# that main shipped from 2026-10-11 to 2026-10-16. It carries Node 26.10.0,
+# where main's pair has 26.11.1; that pair is eligible 2026-10-22T02:13Z.
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:dffe609fba03be24faf352015d3f2e3950e18a82922b39f8b3828b9696cc6fcf"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4730fe5f23bec7eb86b9736bc1458d58862372b1d1555ca9da77d21d4fffea17"
 # 26.8.1 (2026-10-13T08:59Z) fixes the pcre2 CVEs in 26.8.0 and Keycloak's own
 # advisories, so it carries a dated exception that ends 2026-10-20T08:59Z. It
 # is still the newest tag upstream publishes.
