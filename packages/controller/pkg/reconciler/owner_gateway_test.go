@@ -365,52 +365,62 @@ func ownerGatewayLDSVersion(t *testing.T, lds string) string {
 // TEST_SCENARIO: what an owner writes is decided by an answer it recorded, not by the absence of a marker: an agent whose rendering the pod has not answered is owed the files again on a doubling wait, one that answered is owed them once more, and the waits are bounded. A sleeping agent is never probed and a controller that restarted has recorded nothing, so both take the same wait; neither is ever read as a receipt.
 func TestOwnerGatewayRepairPlan_AnAgentIsOwedWhatItsOwnAnswerSays(t *testing.T) {
 	start := time.Date(2026, 10, 20, 3, 0, 0, 0, time.UTC)
-	r := &AgentReconciler{}
-	names := []string{"agent-a", "agent-b"}
-	r.ownerGatewayRevisions.Store("agent-a", "rev-1")
-	r.ownerGatewayRevisions.Store("agent-b", "rev-1")
-	planAt := func(after time.Duration) *ownerGatewayRepairPlan {
-		return r.ownerGatewayRepairPlan(testOwner, held(names...), start.Add(after))
+	// TEST_SCENARIO: every plan here is adopted, because the counters a plan reads are written by the apply it survives: a plan read back without one is a reconcile whose write never landed.
+	reconciler := func(revisions map[string]string) (*AgentReconciler, func(names []string, at time.Time) *ownerGatewayRepairPlan) {
+		r := &AgentReconciler{}
+		for name, revision := range revisions {
+			r.ownerGatewayRevisions.Store(name, revision)
+			r.ownerGatewayAnswered.Store(name, revision)
+		}
+		set := r.ownerGatewayOffersFor(testOwner)
+		return r, func(names []string, at time.Time) *ownerGatewayRepairPlan {
+			plan := r.ownerGatewayRepairPlan(testOwner, held(names...), nil, at)
+			if plan.wrote {
+				plan.adopt(set)
+			}
+			return plan
+		}
 	}
 
 	// TEST_SCENARIO: an unobserved rendering is written once, then again on a doubling wait, and the waits end after a bounded number of tries.
-	first := planAt(0)
+	r, planAt := reconciler(nil)
+	r.ownerGatewayRevisions.Store("agent-a", "rev-1")
+	r.ownerGatewayRevisions.Store("agent-b", "rev-1")
+	first := planAt([]string{"agent-a", "agent-b"}, start)
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", first.xdsVersion(), "the files move, so the pod reads them again")
 	assert.Equal(t, ownerGatewayOfferWait, first.due["agent-a"], "no answer, so another offer is a wait away")
-	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", planAt(time.Second).xdsVersion(), "and nothing is written inside the wait")
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", planAt([]string{"agent-a", "agent-b"}, start.Add(time.Second)).xdsVersion(), "and nothing is written inside the wait")
 	at := ownerGatewayOfferWait
-	plan := planAt(at)
+	plan := planAt([]string{"agent-a", "agent-b"}, start.Add(at))
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", plan.xdsVersion())
 	assert.Equal(t, 2*ownerGatewayOfferWait, plan.due["agent-a"], "then two waits after that")
 	for plan.due["agent-a"] > 0 {
 		at += plan.due["agent-a"]
-		plan = planAt(at)
+		plan = planAt([]string{"agent-a", "agent-b"}, start.Add(at))
 	}
 	assert.Equal(t, ownerGatewayTemplateRev+fmt.Sprintf("-repair-%d", ownerGatewayOfferTries), plan.xdsVersion(), "the tries are bounded")
 	assert.GreaterOrEqual(t, at, 90*time.Second, "the last offer is past a kubelet's sync period plus its cache delay")
 	assert.Zero(t, plan.due["agent-a"], "and a rendering that will not load is not rewritten for as long as the agent lives")
 
 	// TEST_SCENARIO: an agent whose rendering the pod answered is offered the files once more, and a second apply of the same answer writes nothing.
-	r = &AgentReconciler{}
-	r.ownerGatewayRevisions.Store("agent-a", "rev-1")
-	r.ownerGatewayAnswered.Store("agent-a", "rev-1")
-	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", r.ownerGatewayRepairPlan(testOwner, held("agent-a"), start).xdsVersion(), "the answer is the receipt, and the files are offered again after it")
-	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", r.ownerGatewayRepairPlan(testOwner, held("agent-a"), start.Add(time.Second)).xdsVersion(), "the offer is spent once")
+	_, planAt = reconciler(map[string]string{"agent-a": "rev-1"})
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", planAt([]string{"agent-a"}, start).xdsVersion(), "the answer is the receipt, and the files are offered again after it")
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", planAt([]string{"agent-a"}, start.Add(time.Second)).xdsVersion(), "the offer is spent once")
 
 	// TEST_SCENARIO: an answer to an older rendering, a controller with no recorded answer, and a sleeping agent are all unobserved, and none of them is a receipt.
 	for _, answer := range []string{"", "rev-0"} {
-		r = &AgentReconciler{}
+		r, planAt = reconciler(nil)
 		r.ownerGatewayRevisions.Store("agent-a", "rev-1")
 		if answer != "" {
 			r.ownerGatewayAnswered.Store("agent-a", answer)
 		}
-		plan = r.ownerGatewayRepairPlan(testOwner, held("agent-a"), start)
+		plan = planAt([]string{"agent-a"}, start)
 		assert.Equal(t, ownerGatewayOfferWait, plan.due["agent-a"], "only an answer to this rendering counts, not the absence of a stale mark")
 		assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", plan.xdsVersion())
 	}
 
 	// TEST_SCENARIO: one write carries every agent owed one, whatever their number, and no two writes land closer than the pace.
-	r = &AgentReconciler{}
+	r, planAt = reconciler(nil)
 	var many []string
 	for i := range 20 {
 		name := fmt.Sprintf("agent-%02d", i)
@@ -418,22 +428,57 @@ func TestOwnerGatewayRepairPlan_AnAgentIsOwedWhatItsOwnAnswerSays(t *testing.T) 
 		r.ownerGatewayRevisions.Store(name, "rev-1")
 	}
 	now := start
-	plan = r.ownerGatewayRepairPlan(testOwner, held(many...), now)
+	plan = planAt(many, now)
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", plan.xdsVersion())
 	assert.NotEmpty(t, plan.due, "twenty agents wait on one pace, not twenty writes")
-	plan = r.ownerGatewayRepairPlan(testOwner, held(many...), now.Add(ownerGatewayOfferWait))
+	plan = planAt(many, now.Add(ownerGatewayOfferWait))
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", plan.xdsVersion(), "and the next offer is one write for all of them")
 
 	// TEST_SCENARIO: a new rendering of an agent is a fresh offer, so a credential file it names is never repaired on the leftovers of an older one.
-	r = &AgentReconciler{}
-	r.ownerGatewayRevisions.Store("agent-a", "rev-1")
-	r.ownerGatewayAnswered.Store("agent-a", "rev-1")
-	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", r.ownerGatewayRepairPlan(testOwner, held("agent-a"), start).xdsVersion())
+	r, planAt = reconciler(map[string]string{"agent-a": "rev-1"})
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", planAt([]string{"agent-a"}, start).xdsVersion())
 	r.ownerGatewayRevisions.Store("agent-a", "rev-2")
+	r.ownerGatewayAnswered.Delete("agent-a")
 	now = start.Add(ownerGatewayWritePace)
-	plan = r.ownerGatewayRepairPlan(testOwner, held("agent-a"), now)
+	plan = planAt([]string{"agent-a"}, now)
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", plan.xdsVersion(), "a new rendering is offered the files")
-	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", r.ownerGatewayRepairPlan(testOwner, held("agent-a"), now).xdsVersion(), "and once only")
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", planAt([]string{"agent-a"}, now).xdsVersion(), "and once only")
+}
+
+// TEST_SCENARIO: one reconcile, exactly as the owner gateway runs it: the pod answers the rendering it is serving before the reconcile reads anything, the reconcile plans from the render it will keep, applies it, and records what it applied. `answer` is the pod's liveness, not a knob for the test: a pod that is running has loaded the last rendering it was given, and one that is not has loaded nothing.
+type ownerGatewayStep struct {
+	r       *AgentReconciler
+	set     *ownerGatewayOffers
+	at      time.Time
+	written int
+}
+
+func newOwnerGatewayStep(at time.Time) *ownerGatewayStep {
+	r := &AgentReconciler{}
+	return &ownerGatewayStep{r: r, set: r.ownerGatewayOffersFor(testOwner), at: at}
+}
+
+func (s *ownerGatewayStep) reconcile(members map[string][]string, keys []string, answer bool) *ownerGatewayRepairPlan {
+	if answer {
+		for name := range members {
+			if revision := s.r.ownerGatewayRevisionOf(name); revision != "" {
+				s.r.ownerGatewayAnswered.Store(name, revision)
+			}
+		}
+	}
+	plan := s.r.ownerGatewayRepairPlan(testOwner, members, keys, s.at)
+	plan.adopt(s.set)
+	s.written++
+	// TEST_SCENARIO: the rendering is a hash of what the agent reads — the credential files its chains project — and deliberately not of the generation its listener carries, nor of the version the files carry: an offer and a repair both move those without changing a byte the agent reads, and the answer a repair is decided from must survive it.
+	for name := range members {
+		revision := fmt.Sprintf("rev-%s-%v", name, members[name])
+		if revision != s.r.ownerGatewayRevisionOf(name) {
+			s.r.ownerGatewayAnswered.Delete(name)
+		}
+		s.r.ownerGatewayRevisions.Store(name, revision)
+	}
+	s.at = s.at.Add(ownerGatewayWritePace)
+	return plan
 }
 
 // TEST_SCENARIO: the plan takes each agent's own credential files, since a generation is owed only to an agent whose chains name the arriving key.
@@ -450,48 +495,65 @@ func heldKeys(name string, keys ...string) map[string][]string {
 	return map[string][]string{name: keys}
 }
 
-// TEST_SCENARIO: a credential file the pod has never been written can reach a listener one flip before the kubelet publishes that file's own pathname, so a provider built then reads a path that is not there and never reads again. A key that appears is written by one render and repaired by a later one, once its agent has answered a render that carried it, and only an agent whose own chains name that key is repaired.
+// TEST_SCENARIO: a credential file the pod has never been written can reach a listener one flip before the kubelet publishes that file's own pathname, so a provider built then reads a path that is not there and never reads again. Publication and repair are therefore two renders apart: a key takes a generation the first time a render finds it *already published*, so the render that publishes a key can never also repair it, and the member that names it is given the generation once it answered. Every step below is a reconcile — plan, then adopt what the apply wrote.
 func TestOwnerGatewayRepairPlan_ACredentialArrivalRecreatesTheAgentsListener(t *testing.T) {
-	start := time.Date(2026, 10, 20, 3, 0, 0, 0, time.UTC)
 	cos, news := "platform-conn-cos.aws-credentials", "platform-conn-new.aws-credentials"
-	r := &AgentReconciler{}
-	round, at := 0, start
-	// TEST_SCENARIO: write is one reconcile: the agent has answered the render it is about to be given, and its files are the ones named.
-	write := func(keys ...string) *ownerGatewayRepairPlan {
-		round++
-		revision := fmt.Sprintf("rev-%d", round)
-		r.ownerGatewayRevisions.Store("agent-a", revision)
-		r.ownerGatewayAnswered.Store("agent-a", revision)
-		at = at.Add(ownerGatewayWritePace)
-		plan := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), at)
-		plan.committed()
-		return plan
+	step := newOwnerGatewayStep(time.Date(2026, 10, 20, 3, 0, 0, 0, time.UTC))
+	one := func(keys ...string) map[string][]string { return map[string][]string{"agent-a": keys} }
+
+	// TEST_SCENARIO: the first render an owner applies is its baseline: its pod starts after that Secret exists and reads every file in it, so no key there is a repair.
+	first := step.reconcile(one(cos), []string{cos}, true)
+	assert.Zero(t, first.need[cos], "the files the pod starts with are no arrival")
+	assert.Zero(t, first.generation("agent-a"), "and nothing is repaired for them")
+
+	// TEST_SCENARIO: a new key is published by one render, which gives it no generation, and repaired by the next, which finds it already published. The member that answered is given it.
+	published := step.reconcile(one(cos, news), []string{cos, news}, true)
+	assert.Zero(t, published.need[news], "the render that publishes the key carries no generation for it")
+	assert.Zero(t, published.generation("agent-a"), "so it cannot repair it: its pathname arrives in that same flip")
+	repaired := step.reconcile(one(cos, news), []string{cos, news}, true)
+	assert.Equal(t, 1, repaired.need[news], "the first render to find the key already published gives it generation 1")
+	assert.Equal(t, 1, repaired.generation("agent-a"), "and the agent that answered takes it, so its provider is built again")
+
+	// TEST_SCENARIO: a key that leaves the render is not published any more, so its return is a new arrival rather than a generation it kept, and the keys that stayed keep the generations they have.
+	revoked := step.reconcile(one(cos), []string{cos}, true)
+	assert.NotContains(t, revoked.need, news, "a revoked key keeps no generation")
+	assert.Equal(t, 1, revoked.generation("agent-a"), "and the listener keeps the generation the keys that stayed carry")
+	returned := step.reconcile(one(cos, news), []string{cos, news}, false)
+	assert.Zero(t, returned.need[news], "its return is published unobserved, like any new key")
+	assert.Equal(t, 1, returned.generation("agent-a"), "so this render is no repair")
+	regranted := step.reconcile(one(cos, news), []string{cos, news}, true)
+	assert.Equal(t, 2, regranted.need[news], "and the render after the regrant gives it the next generation")
+	assert.Equal(t, 2, regranted.generation("agent-a"), "above the one the listener already carries")
+
+	// TEST_SCENARIO: a rotation of a file the pod already has is read, not rebuilt, and a settled owner stops writing.
+	for range 4 {
+		step.reconcile(one(cos, news), []string{cos, news}, true)
+	}
+	settled := step.reconcile(one(cos, news), []string{cos, news}, true)
+	assert.Equal(t, 2, settled.generation("agent-a"), "the generation it carries stays, and no other is owed")
+	assert.False(t, settled.wrote, "a settled owner writes nothing")
+}
+
+// TEST_SCENARIO: the repair is one render after the publication because that is the first point the pod can prove it read the publication: a volume flips asynchronously, so writing a key is no evidence its pod has read it. An agent that never answers is never given a generation, however many offers are written, and the first answer afterwards is what carries it.
+func TestOwnerGatewayRepairPlan_NoRepairBeforeThePublishingRenderIsAnswered(t *testing.T) {
+	cos, news := "platform-conn-cos.aws-credentials", "platform-conn-new.aws-credentials"
+	step := newOwnerGatewayStep(time.Date(2026, 10, 20, 3, 30, 0, 0, time.UTC))
+	one := func(keys ...string) map[string][]string { return map[string][]string{"agent-a": keys} }
+	step.reconcile(one(cos), []string{cos}, true)
+
+	published := step.reconcile(one(cos, news), []string{cos, news}, false)
+	require.True(t, published.wrote, "the render that publishes the file is written")
+	require.Zero(t, published.need[news], "and carries no generation for it")
+
+	// TEST_SCENARIO: the key is already published from here on, so every later render gives it its generation; none of them repairs the listener while the pod has not answered, and the offer waits are bounded.
+	for range ownerGatewayOfferTries + 2 {
+		plan := step.reconcile(one(cos, news), []string{cos, news}, false)
+		assert.Zero(t, plan.generation("agent-a"), "the pod has not answered a rendering applied since the file arrived")
 	}
 
-	// TEST_SCENARIO: the first applied render records the credential files the pod already has as the baseline, so nothing is regenerated for them.
-	first := write(cos)
-	assert.Zero(t, first.generation("agent-a"), "the files the pod already had need no generation")
-
-	// TEST_SCENARIO: a revoked credential file leaves the render, and a key that goes is no arrival: its pathname was there, and its provider went with its chain, so no listener is replaced for it.
-	revoked := write()
-	assert.Zero(t, revoked.generation("agent-a"), "a key that leaves is not one the pod never had")
-
-	// TEST_SCENARIO: a key the pod no longer has is an arrival. The render that writes it carries no generation, because its pathname arrives in that same flip; the render after that one carries it, its agent having answered.
-	returned := write(cos)
-	assert.Zero(t, returned.generation("agent-a"), "the file is written first, and its own write is no repair")
-	repaired := write(cos)
-	assert.Equal(t, 1, repaired.generation("agent-a"), "the answered agent is given one generation, so its provider is built again")
-
-	// TEST_SCENARIO: a file the pod was already written, rotated in place, is read rather than rebuilt, and a settled owner writes nothing more.
-	settled := write(cos)
-	assert.Equal(t, 1, settled.generation("agent-a"), "the generation it carries stays, and no other is owed")
-	assert.Equal(t, settled.xdsVersion(), r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", cos), at.Add(time.Second)).xdsVersion(), "and a settled owner owes nothing, so its files keep the version they have")
-
-	// TEST_SCENARIO: a second arrival is written by one render and repaired by the next, above the generation the listener already carries.
-	fresh := write(cos, news)
-	assert.Equal(t, 1, fresh.generation("agent-a"), "the new file is written, unobserved, so nothing is repaired for it in its own write")
-	arrived := write(cos, news)
-	assert.Equal(t, 2, arrived.generation("agent-a"), "the next render carries a generation above the last one, so that listener is replaced")
+	// TEST_SCENARIO: and the render after the first answer carries it.
+	step.reconcile(one(cos, news), []string{cos, news}, true)
+	assert.Equal(t, 1, step.reconcile(one(cos, news), []string{cos, news}, true).generation("agent-a"), "a rendering was applied and answered, so the file is now repaired")
 }
 
 // TEST_SCENARIO: the same through the reconcile loop: a rendering the pod read is offered once more, one Secret update carries it, and every later reconcile with the same rendering and the same answer writes nothing.
@@ -979,7 +1041,7 @@ func TestOwnerGateway_AnUpgradedOwnerKeepsServingFromTheRootsItsPodMounts(t *tes
 	}
 }
 
-// TEST_SCENARIO: a credential file written for the first time and a listener naming it reach the pod in one write, so if that write fails the generation must not have been spent: the retry is the same first publication, and a pod that reads the listener before the file exists never reads again. Publication is what makes a key an arrival, so the failed attempt owes nothing and the retry owes the generation it publishes.
+// TEST_SCENARIO: a credential file written for the first time and the listener naming it reach the pod in one write, so a write that failed published neither. The generation a key is repaired at is given by the render that finds it *already published*, so a discarded plan can never spend one: the retry after a failed write is the same first publication, and the repair still comes one render after it lands.
 func TestOwnerGatewayRepairPlan_AFailedWriteOwesTheGenerationItsRetryWrites(t *testing.T) {
 	start := time.Date(2026, 10, 20, 4, 0, 0, 0, time.UTC)
 	old, fresh := "platform-conn-old.aws-credentials", "platform-conn-new.aws-credentials"
@@ -988,28 +1050,26 @@ func TestOwnerGatewayRepairPlan_AFailedWriteOwesTheGenerationItsRetryWrites(t *t
 	r := &AgentReconciler{config: cfg, client: fake.NewSimpleClientset(existing)}
 	keys := []string{old, fresh}
 	r.seedOwnerGatewayOffers(context.Background(), testOwner)
-
 	r.ownerGatewayRevisions.Store("agent-a", "rev")
 	r.ownerGatewayAnswered.Store("agent-a", "rev")
-	failed := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), start)
-	// TEST_SCENARIO: the Secret write fails, so committed never runs
-	assert.Zero(t, failed.generation("agent-a"), "the write that publishes the file carries no generation, and this one never landed")
-	assert.Equal(t, 1, failed.arrivals, "the arrival is decided, but nothing is recorded")
 
-	retry := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), start.Add(ownerGatewayWritePace))
-	assert.Zero(t, retry.generation("agent-a"), "the retry is still that first publication, so still no repair")
-	retry.committed()
-	assert.Contains(t, retry.regenerated(), `"`+fresh+`":1`, "and once it lands, the new file is recorded as published for generation 1")
+	// TEST_SCENARIO: the plan that publishes the new file is never adopted, because its write failed
+	failed := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), keys, start)
+	assert.Zero(t, failed.generation("agent-a"), "the write that publishes the file carries no generation")
+	assert.Zero(t, failed.gen, "and spends nothing the discard could have recorded")
 
-	repair := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), start.Add(2*ownerGatewayWritePace))
-	assert.Equal(t, 1, repair.generation("agent-a"), "the render after the successful publication repairs the listener for it")
-	repair.committed()
+	retry := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), keys, start.Add(ownerGatewayWritePace))
+	assert.Zero(t, retry.gen, "the retry is the same first publication: nothing was spent by the discard")
+	assert.Zero(t, retry.generation("agent-a"), "so it too carries no repair")
+	retry.adopt(r.ownerGatewayOffersFor(testOwner))
 
-	settled := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), start.Add(3*ownerGatewayWritePace))
-	assert.Equal(t, 1, settled.generation("agent-a"), "and once it is written, the generation it carries stays")
+	repair := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), keys, start.Add(2*ownerGatewayWritePace))
+	assert.Equal(t, 1, repair.need[fresh], "the render after the publication is where the file takes its generation")
+	assert.Equal(t, 1, repair.generation("agent-a"), "and where the listener naming it is replaced")
+	assert.Contains(t, repair.regenerated(), `"`+fresh+`":1`, "which the applied render records")
 }
 
-// TEST_SCENARIO: an owner gateway Secret written before this state was recorded still says which credential files its pod was given, and that is the baseline. A new key in the first render after the upgrade is then an arrival, and the agent that names it gets the generation; without reading the Secret the whole set would look like a baseline and the new file would never be repaired.
+// TEST_SCENARIO: an owner gateway Secret written before this state was recorded still says which credential files its pod was given, so a new key in the first render after the upgrade is an arrival and not a baseline. Without reading the Secret the whole set would look like a baseline and the new file would never be repaired.
 func TestOwnerGatewayRepairPlan_AnUpgradeStillSeesTheKeyItsFirstRenderAdds(t *testing.T) {
 	start := time.Date(2026, 10, 20, 5, 0, 0, 0, time.UTC)
 	old, fresh := "platform-conn-old.aws-credentials", "platform-conn-new.aws-credentials"
@@ -1017,19 +1077,19 @@ func TestOwnerGatewayRepairPlan_AnUpgradeStillSeesTheKeyItsFirstRenderAdds(t *te
 	existing := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ownerGatewayName(cfg.ReleaseName, testOwner), Namespace: cfg.Namespace}, Data: map[string][]byte{old: []byte("dummy")}}
 	r := &AgentReconciler{config: cfg, client: fake.NewSimpleClientset(existing)}
 	r.seedOwnerGatewayOffers(context.Background(), testOwner)
-
 	keys := []string{old, fresh}
 	r.ownerGatewayRevisions.Store("agent-a", "rev")
 	r.ownerGatewayAnswered.Store("agent-a", "rev")
-	first := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), start)
-	assert.Equal(t, []string{fresh}, slices.Sorted(maps.Keys(first.pending)), "the only key the Secret did not carry is this render's arrival")
-	assert.Equal(t, 1, first.arrivals)
-	assert.Zero(t, first.generation("agent-a"), "which this render writes, unobserved")
-	first.committed()
-	assert.Contains(t, first.regenerated(), `"`+fresh+`":1`, "and records the generation that will repair it")
 
-	after := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), start.Add(ownerGatewayWritePace))
-	assert.Equal(t, 1, after.generation("agent-a"), "so the render after it repairs the agent that names it")
+	first := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), keys, start)
+	assert.Zero(t, first.need[old], "the file the Secret already carried is no arrival")
+	assert.Zero(t, first.need[fresh], "and neither is the one this render publishes")
+	assert.Zero(t, first.generation("agent-a"), "so this render repairs nothing, which is right: its own write is the publication")
+	first.adopt(r.ownerGatewayOffersFor(testOwner))
+
+	after := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", keys...), keys, start.Add(ownerGatewayWritePace))
+	assert.Equal(t, 1, after.need[fresh], "the render after the publication gives the new file a generation")
+	assert.Equal(t, 1, after.generation("agent-a"), "and repairs the agent whose chains name it")
 }
 
 // TEST_SCENARIO: an owner whose last files could not be read is not an owner with no credentials: treating the empty read as a baseline makes every file the pod already has look new, which rewrites every listener. The render waits for a successful read instead, and a Secret that is genuinely absent is the only empty baseline.
@@ -1051,45 +1111,63 @@ func TestOwnerGatewayRepairPlan_AFailedSeedIsRetriedNotGuessed(t *testing.T) {
 
 	r.seedOwnerGatewayOffers(ctx, testOwner)
 	assert.False(t, r.ownerGatewaySeeded(testOwner), "a read that failed leaves the baseline unknown")
-	assert.Zero(t, r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", key), time.Unix(0, 0)).arrivals, "and nothing is treated as published, so none of it is an arrival")
 
 	r.seedOwnerGatewayOffers(ctx, testOwner)
 	assert.True(t, r.ownerGatewaySeeded(testOwner), "the next read answers")
-	plan := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", key), time.Unix(0, 0))
-	assert.Empty(t, plan.pending, "and the file the pod already had is no arrival")
+	plan := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", key), []string{key}, time.Unix(0, 0))
+	assert.Zero(t, plan.need[key], "and the file the pod already had is no arrival")
 }
 
-// TEST_SCENARIO: one agent's new credential file is nothing to a sibling whose chains never name it, and a generation replaces that sibling's internal listener and drains its streams. So a generation goes only to the agents whose own files carry the arriving key, and the sibling is never even offered a write for it.
+// TEST_SCENARIO: one agent's new credential file is nothing to a sibling whose chains never name it, and a generation replaces that sibling's internal listener and drains its streams. So a generation goes only to the agents whose own files carry the arriving key, and the sibling is never offered a write for it.
 func TestOwnerGatewayRepairPlan_AnArrivalRebuildsOnlyTheAgentThatNamesIt(t *testing.T) {
-	start := time.Date(2026, 10, 20, 6, 0, 0, 0, time.UTC)
-	cfg := bootstrapTestCfg
-	only, other := "platform-conn-cos.aws-credentials", "platform-conn-gh.aws-credentials"
-	// TEST_SCENARIO: the Secret these two already have, so the first render is a settled baseline and the only arrival is the one this test adds
-	existing := &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: ownerGatewayName(cfg.ReleaseName, testOwner), Namespace: cfg.Namespace}, Data: map[string][]byte{other: []byte("dummy")}}
-	r := &AgentReconciler{config: cfg, client: fake.NewSimpleClientset(existing)}
-	r.seedOwnerGatewayOffers(context.Background(), testOwner)
+	other, only := "platform-conn-gh.aws-credentials", "platform-conn-cos.aws-credentials"
+	step := newOwnerGatewayStep(time.Date(2026, 10, 20, 6, 0, 0, 0, time.UTC))
 	names := map[string][]string{"agent-a": {other}, "agent-b": {other}}
-	for _, name := range slices.Sorted(maps.Keys(names)) {
-		r.ownerGatewayRevisions.Store(name, "rev-"+name)
-		r.ownerGatewayAnswered.Store(name, "rev-"+name)
-	}
-	first := r.ownerGatewayRepairPlan(testOwner, names, start)
-	assert.Empty(t, first.generation("agent-a"))
-	first.committed()
+	sorted := func() []string { return slices.Sorted(maps.Keys(names)) }
+
+	// TEST_SCENARIO: both agents already have their file, so this first render is a settled baseline.
+	step.reconcile(names, credentialKeysFor(names, sorted()), true)
 
 	// TEST_SCENARIO: agent-a's chains now name a file the pod has never had; agent-b's name the same file it always did.
 	names["agent-a"] = []string{other, only}
-	writing := r.ownerGatewayRepairPlan(testOwner, names, start.Add(ownerGatewayWritePace))
+	writing := step.reconcile(names, credentialKeysFor(names, sorted()), false)
 	assert.Zero(t, writing.generation("agent-a"), "the file is written first, unobserved")
-	assert.Equal(t, 1, writing.arrivals, "and recorded as an arrival when that write lands")
-	writing.committed()
+	assert.Zero(t, writing.need[only], "and the render publishing it records no generation")
 
-	repaired := r.ownerGatewayRepairPlan(testOwner, names, start.Add(2*ownerGatewayWritePace))
-	assert.Equal(t, 1, repaired.generation("agent-a"), "the agent whose chains name the new file is given the generation")
-	assert.True(t, repaired.credentialed["agent-a"])
+	repaired := step.reconcile(names, credentialKeysFor(names, sorted()), true)
+	assert.Equal(t, 1, repaired.need[only], "the render after the publication gives it generation 1")
+	assert.Equal(t, 1, repaired.generation("agent-a"), "the agent whose chains name the new file is given that generation")
 	assert.Zero(t, repaired.generation("agent-b"), "its sibling names nothing that moved, so nothing of its is replaced")
-	assert.False(t, repaired.credentialed["agent-b"], "and it is not even offered a write for it")
-	assert.NotContains(t, repaired.due, "agent-b")
+	assert.True(t, repaired.wrote, "the agent that owns the arrival is written for")
+	assert.False(t, step.reconcile(names, credentialKeysFor(names, sorted()), true).wrote, "and then nothing more is written")
+}
+
+// TEST_SCENARIO: the note the Secret carries is the size of the live state, not of every key an owner ever had. A revocation prunes the key and its generation, so an owner that has cycled through many credentials does not grow an annotation without bound, and a restart reading it back does not resurrect a key that is not published.
+func TestOwnerGatewayRepairPlan_TheNoteIsTheLiveStateNotItsHistory(t *testing.T) {
+	step := newOwnerGatewayStep(time.Date(2026, 10, 20, 6, 30, 0, 0, time.UTC))
+	one := func(keys ...string) map[string][]string { return map[string][]string{"agent-a": keys} }
+	sorted := func(keys []string) []string {
+		out := slices.Clone(keys)
+		slices.Sort(out)
+		return out
+	}
+
+	// TEST_SCENARIO: cycle through thirty credentials, one arrival at a time, each revoked before the next.
+	for i := range 30 {
+		key, previous := fmt.Sprintf("platform-conn-%02d.aws-credentials", i), fmt.Sprintf("platform-conn-%02d.aws-credentials", i-1)
+		step.reconcile(one(key), []string{key}, true)
+		step.reconcile(one(key), []string{key}, true)
+		if i > 0 {
+			assert.NotContains(t, step.set.need, previous, "the credential that left keeps no generation")
+		}
+	}
+	keys := step.set.published
+	require.Len(t, keys, 1, "one credential file is projected")
+
+	// TEST_SCENARIO: the note is written from the applied render and holds that key alone, whatever the owner has retired.
+	plan := step.reconcile(one(keys...), sorted(keys), true)
+	assert.Len(t, plan.need, 1, "the note holds one entry, for the one key published")
+	assert.NotContains(t, plan.regenerated(), "platform-conn-00.aws-credentials", "and nothing retired is written back")
 }
 
 // TEST_SCENARIO: the generation is a fact about one listener's metadata, so it must not reach anything an agent's traffic is answered from: the health body a listener answers is a hash of its own resources, and a generation folded into it would rewrite the outer listener too and drain the connections that are not being repaired.
@@ -1100,6 +1178,7 @@ func TestRenderOwnerGateway_AGenerationLeavesEveryOtherResourceAlone(t *testing.
 	repaired, err := renderOwnerGateway(agents, bootstrapTestCfg, &ownerGatewayRepairPlan{generations: map[string]int{"agent-a": 1}})
 	require.NoError(t, err)
 	assert.Equal(t, plain.Revisions["agent-a"], repaired.Revisions["agent-a"], "the agent answers the same revision either way, so its outer listener is unchanged")
+	assert.Equal(t, plain.Revisions["agent-b"], repaired.Revisions["agent-b"], "and so does its sibling")
 	resource := func(doc, name string) string {
 		for _, res := range resourcesOf(t, doc) {
 			if res["name"] == name {
@@ -1142,13 +1221,13 @@ func TestOwnerGateway_ALegacyCleanupFailureIsRetried(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "this time it is gone")
 }
 
-// TEST_SCENARIO: an unchanged restart must resume the generations a settled Secret records. Reverting an agent to the template's generation on the first render, then moving it forward again, replaces a listener twice for a change that never happened. The restored state also knows which credential files are already published, so none of them is counted as an arrival.
+// TEST_SCENARIO: an unchanged restart must resume what a settled Secret records. Starting the counters at zero would make every file the pod already has look new and rewrite every listener for a change that never happened. The restored state knows which files are published and which generation each listener carries, so the first render after the restart writes nothing at all.
 func TestOwnerGatewayRepairPlan_AnUnchangedRestartResumesTheGenerationsItLeft(t *testing.T) {
 	ctx := context.Background()
 	start := time.Date(2026, 10, 20, 7, 0, 0, 0, time.UTC)
 	cfg := bootstrapTestCfg
 	key := "platform-conn-cos.aws-credentials"
-	state := ownerGatewayGenerations{Arrivals: 1, Owed: map[string]int{key: 1}, Renders: map[string]int{"agent-a": 1}}
+	state := ownerGatewayGenerations{Gen: 1, Need: map[string]int{key: 1}, ListenerGen: map[string]int{"agent-a": 1}}
 	raw, err := json.Marshal(state)
 	require.NoError(t, err)
 	existing := &corev1.Secret{
@@ -1158,10 +1237,11 @@ func TestOwnerGatewayRepairPlan_AnUnchangedRestartResumesTheGenerationsItLeft(t 
 	r := &AgentReconciler{config: cfg, client: fake.NewSimpleClientset(existing)}
 	r.seedOwnerGatewayOffers(ctx, testOwner)
 	r.ownerGatewayRevisions.Store("agent-a", "rev")
+	r.ownerGatewayAnswered.Store("agent-a", "rev")
 
-	first := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", key), start)
-	assert.Equal(t, 1, first.generation("agent-a"), "the generation it carries is the one the Secret records, not the template's")
-	assert.Empty(t, first.pending, "and a file already published is no arrival")
-	first.committed()
-	assert.Contains(t, first.regenerated(), `"agent-a":1`, "and the state it writes back still carries it")
+	first := r.ownerGatewayRepairPlan(testOwner, heldKeys("agent-a", key), []string{key}, start)
+	assert.Equal(t, 1, first.gen, "the count the Secret records is the one it resumes, not zero")
+	assert.Equal(t, 1, first.need[key], "and a file already published keeps the generation it arrived at")
+	assert.Equal(t, 1, first.generation("agent-a"), "so the listener keeps the generation it carries instead of being replaced")
+	assert.Equal(t, 1, first.gen, "and no further generation is spent on a change that never happened")
 }

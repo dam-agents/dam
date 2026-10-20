@@ -176,14 +176,20 @@ The kubelet flips a projected volume once, all keys together, so a file that nam
 The leaf TLS files stay a Secret of their own: cert-manager writes them, a rotation changes their content rather than their names, and the leaf-SDS file that names them never moves.
 One case the one volume does not close: a key the pod has never had.
 The kubelet moves the volume's data into place before it publishes the new key at the path a listener names, so a listener that arrives in that same flip can still name a file whose pathname appears a moment later, and the provider built then never reads it.
-A credential file is an arrival when the render it belongs to carries a key the last *published* render did not.
-The render that writes an arrival carries no generation: its pathname reaches the pod in that same flip, so a provider built then is the case being repaired.
-The arrival is recorded only when that write succeeded, and from then on every agent whose own chains name that key — and which answers — is given a moved generation in its internal listener's metadata on a later render, by which time the pathname is on disk.
-That generation is the only thing that builds those providers again.
-An agent whose chains name none of the arriving keys is owed nothing and stays byte-identical, and the generation is left out of the listener's health revision, so an agent's outer listener does not change either.
-A rotation of a file the pod already has is not an arrival, and neither is a revoked one: a key that leaves takes its chain with it.
-A render the owner refuses is never observed, so a refused owner gains no arrivals at all.
-A controller that restarts reads the published key set from the Secret it wrote last — not from the note beside it, so a Secret written before that note existed still gives the baseline — and retries a read that failed rather than accepting an empty baseline, which would make every published key look new.
+The controller therefore keeps one piece of state per owner — the credential-file set of the Secret it last *applied* — and decides a repair from nothing else.
+It is written on that Secret's annotation and holds four things: the published key set, the count of generations handed out, the generation each published key is repaired at, and the generation each member's internal listener was written with.
+Publication is only what was applied: the set is read from the Secret's own data after a successful write, so a render the owner discards, a wider render it refuses, and a write that failed all leave it as it was, and a credential from a render that never reached the pod is never recorded as published.
+A revocation replaces the set wholesale, so a key that leaves the render leaves the set and its generation with it, and its return is published unobserved again.
+A key takes a generation the first time a render finds it *already published*, which is by construction one render after the one that wrote it: the kubelet publishes a key's pathname in the same volume flip that starts the provider, so the render that first writes a key must not be the render that repairs it.
+That generation reaches only the agents whose own chains name the key, and only once the agent answered the rendering carrying it, since a flip is asynchronous and writing a publication proves nothing about what the pod read.
+It moves `filter_metadata` on that agent's internal listener — where its providers are built — and by then the pathname is on disk, so those providers are built again and read a file that exists.
+A rotation of a file the pod already has is not an arrival and costs no generation, and a revoked key is not one either: it takes its chain with it.
+The generation is left out of the listener's health revision, so an agent's outer listener does not change and no connection is drained for a repair that is not about it; it is also left out of what an offer considers the rendering a pod answered, because a repair that changed its own evidence would re-arm the offer forever.
+An agent whose chains name none of the arriving keys is owed nothing and stays byte-identical.
+A render the owner refuses is never planned, so a refused owner gains no generations at all.
+A controller that restarts rebuilds the published set from the Secret's own data — not from the note beside it, so a Secret written before that note existed still gives the baseline, and the keys it holds are treated as generation zero — and resumes the counters from that note, where an absent note means generation zero, which can under-count a repair but never invent one.
+A read that failed is retried rather than accepted as an empty baseline, which would make every published key look new.
+The note is written from the applied render only, pruned to the keys that still publish and the members still served, so it stays the size of the live state however many keys an owner retires.
 An install that upgrades keeps the previous layout's ConfigMap and credentials Secret while a Deployment or a pod still mounts them, written with each render, and removes them once none does.
 Those objects name the credential root that layout mounts (`/etc/envoy/credentials`), not the one-volume root, so a pod of that layout kept serving through a blocked roll reads files under paths it has.
 A delete that failed is not reported as done: the objects are removed by a later render instead.
