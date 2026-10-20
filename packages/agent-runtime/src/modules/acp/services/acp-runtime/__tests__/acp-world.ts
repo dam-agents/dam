@@ -3,6 +3,7 @@ import {
   type AcpRuntime,
   type AcpRuntimeDeps,
 } from "../acp-runtime.js";
+import { noopAgentRequests } from "../pending-agent-requests.js";
 import type { DocumentStoreBackend } from "../../../../../core/document-store.js";
 import type { AgentProcess } from "../../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../../infrastructure/client-channel.js";
@@ -226,6 +227,7 @@ export function createWorld(
   const runtime = createAcpRuntime({
     workingDir: "/workspace",
     idleReapDelayMs: IDLE_REAP_DELAY_MS,
+    agentRequests: noopAgentRequests,
     onArtifactTouch: () => {},
     queueParkMs: QUEUE_PARK_MS,
     undeliveredPrompts: createInMemoryUndeliveredStore(),

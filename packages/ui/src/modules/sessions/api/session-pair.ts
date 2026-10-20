@@ -200,6 +200,7 @@ export function useGrantProvider(agentId: string | null) {
         trpc.connections.getAgentConnections.queryKey(),
         trpc.harnessConfig.sessionPair.queryKey(),
         egressRulesKeys.all,
+        trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't update model providers",
     },
@@ -276,19 +277,42 @@ export async function settledNextSessionPair(
 }
 
 export function rememberSessionPair(agentId: string, pair: SessionPair): void {
+  const key = trpc.harnessConfig.sessionPair.queryKey({ agentId });
+  const previous = queryClient.getQueryData<SessionPair | null>(key);
+  const resolved = pair.provider !== null;
+  if (resolved) queryClient.setQueryData<SessionPair | null>(key, pair);
   void api.harnessConfig.rememberSessionPair
     .mutate({ agentId, ...pair })
-    .then(() =>
-      queryClient.invalidateQueries({
-        queryKey: trpc.harnessConfig.sessionPair.queryKey({ agentId }),
-      }),
-    )
-    .catch((err: unknown) =>
+    .catch((err: unknown) => {
+      if (resolved)
+        queryClient.setQueryData<SessionPair | null>(key, previous ?? null);
       emitToast({
         kind: "error",
         message: `Couldn't save the default harness and model: ${err instanceof Error ? err.message : String(err)}`,
-      }),
-    );
+      });
+    })
+    .finally(() => queryClient.invalidateQueries({ queryKey: key }));
+}
+
+export async function rememberFirstModel(
+  agentId: string,
+  pair: SessionPair,
+): Promise<void> {
+  if (pair.model === null) return;
+  let saved: SessionPair | null;
+  try {
+    saved = await queryClient.ensureQueryData({
+      ...trpc.harnessConfig.sessionPair.queryOptions({ agentId }),
+      retry: false,
+    });
+  } catch (err) {
+    emitToast({
+      kind: "error",
+      message: `Couldn't check the agent's default model, so ${pair.model} was not saved as its default: ${err instanceof Error ? err.message : String(err)}`,
+    });
+    return;
+  }
+  if (!saved?.model) rememberSessionPair(agentId, pair);
 }
 
 export function harnessOfSession(

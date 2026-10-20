@@ -33,6 +33,7 @@ The panel takes its room from the page, as every side panel does, so it never co
 Every side panel's top bar ends with that X, behind a vertical border; it closes the panel.
 In an Agent's chat with the new layout off, the X shows only where it closes something: on Get started, Approvals and a docked delegation.
 On a phone the X is hidden, the ring sits in the top bar and the panel fills the screen under a back button.
+The phone's Back gesture closes that full-screen panel and returns to the page under it, or first closes a dialog open above the panel.
 The panel opens only when the user asks for it.
 An unlock the user has not seen puts a count on the ring instead of opening the panel.
 Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab, or in an Agent's chat with the new layout off, the Artifacts section beside the conversation.

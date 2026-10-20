@@ -114,7 +114,7 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 	if existing.DeletionTimestamp != nil {
 		return errRunnerTerminating
 	}
-	if stored := existing.Annotations[annRunnerTemplate]; stored != "" && stored != hash && stored == legacyRunnerTemplateHash(dep.Spec, existing.Spec) {
+	if stored := existing.Annotations[annRunnerTemplate]; stored != "" && stored != hash && slices.Contains(legacyRunnerTemplateHashes(dep.Spec, existing.Spec), stored) {
 		existing.Annotations[annRunnerTemplate] = hash
 		updated, err := cli.Update(ctx, existing, metav1.UpdateOptions{})
 		if err != nil {
@@ -198,34 +198,44 @@ func (r *AgentReconciler) rollRunnerDeploymentFrom(ctx context.Context, owner st
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod is what the hash covers, so a runner whose pod is unchanged is not rolled — but its own labels and owner references can still drift, from a hand edit or from the runner ServiceAccount being recreated with a new UID, and a Deployment owned by nothing outlives the release. Those are put back with a metadata-only update, which does not change the pod and so restarts no machine. An owner reference the controller could not resolve this pass is not written, rather than stripping the one the runner has.
-// UNIT_BOUNDARY_DESCRIPTION: the hash a runner rendered before the roll left its memory out (runnerRollSpec). That hash covered the memory limit and request the runner was rendered with, which for an owner with a UserBudget was the install's rather than their pool, so they are taken from the runner's own template, not the one rendered now. A runner whose hash matches has the pod the controller renders now in all but its memory, which the resize sets in place, so it takes the new hash in a metadata-only update rather than rolling every machine of every owner once.
-func legacyRunnerTemplateHash(desired, existing appsv1.DeploymentSpec) string {
-	legacy := runnerRollSpec(desired)
-	for i := range legacy.Template.Spec.Containers {
-		c := &legacy.Template.Spec.Containers[i]
-		old := slices.IndexFunc(existing.Template.Spec.Containers, func(o corev1.Container) bool { return o.Name == c.Name })
-		if old < 0 {
-			continue
-		}
-		res := existing.Template.Spec.Containers[old].Resources
-		if mem, ok := res.Limits[corev1.ResourceMemory]; ok {
+// UNIT_BOUNDARY_DESCRIPTION: the hashes a runner was written before this controller left its memory and CPU out of the roll (runnerRollSpec), one for each vintage that shipped: the first covered the memory limit and request it was rendered with — the install's, even for an owner whose UserBudget already set `memory` — and the CPU limit and request; the second, which is what a runner out there carries now, dropped the memory and kept both CPU fields. Both are the pod this controller renders in all but what the resize sets in place, so each is rebuilt from the runner's own template: the CPU fields always, the memory fields for the first vintage, since the second never hashed them. A runner whose stored hash matches either takes the new hash in a metadata-only update rather than rolling every machine of every owner once.
+func legacyRunnerTemplateHashes(desired, existing appsv1.DeploymentSpec) []string {
+	var out []string
+	for _, memory := range []bool{true, false} {
+		legacy := runnerRollSpec(desired)
+		for i := range legacy.Template.Spec.Containers {
+			c := &legacy.Template.Spec.Containers[i]
+			old := slices.IndexFunc(existing.Template.Spec.Containers, func(o corev1.Container) bool { return o.Name == c.Name })
+			if old < 0 {
+				continue
+			}
+			res := existing.Template.Spec.Containers[old].Resources
 			if c.Resources.Limits == nil {
 				c.Resources.Limits = corev1.ResourceList{}
 			}
-			c.Resources.Limits[corev1.ResourceMemory] = mem
-		}
-		if mem, ok := res.Requests[corev1.ResourceMemory]; ok {
 			if c.Resources.Requests == nil {
 				c.Resources.Requests = corev1.ResourceList{}
 			}
-			c.Resources.Requests[corev1.ResourceMemory] = mem
+			names := []corev1.ResourceName{corev1.ResourceCPU}
+			if memory {
+				names = append(names, corev1.ResourceMemory)
+			}
+			for _, name := range names {
+				if q, ok := res.Limits[name]; ok {
+					c.Resources.Limits[name] = q
+				}
+				if q, ok := res.Requests[name]; ok {
+					c.Resources.Requests[name] = q
+				}
+			}
 		}
+		hash, err := runnerTemplateHash(legacy)
+		if err != nil {
+			continue
+		}
+		out = append(out, hash)
 	}
-	hash, err := runnerTemplateHash(legacy)
-	if err != nil {
-		return ""
-	}
-	return hash
+	return out
 }
 
 func (r *AgentReconciler) repairRunnerDeploymentMeta(ctx context.Context, owner string, existing, desired *appsv1.Deployment) error {

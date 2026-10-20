@@ -161,6 +161,7 @@ describe("request body bounds", () => {
       sessionDirectory: {} as never,
       artifactTouchesFor: () => ({}) as never,
       kbPublish: {} as KbPublishGate,
+      toolApprovalsFor: () => ({}) as never,
     });
     const url = (size: number) =>
       `http://h/api/agents/a1/trpc/${batchPath("kbPublish.request", size)}`;

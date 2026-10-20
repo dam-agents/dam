@@ -1,4 +1,5 @@
 import type { AcpTurnAbandonedError } from "../../../core/acp-client.js";
+import type { NoDefaultModelError } from "../../harness-config/index.js";
 
 export function turnFailureUserCopy(err: AcpTurnAbandonedError): string {
   switch (err.abandonCause) {
@@ -23,4 +24,14 @@ export function turnFailureReasonToken(err: AcpTurnAbandonedError): string {
     case "stalled":
       return "turn-stalled";
   }
+}
+
+export function noDefaultModelUserCopy(
+  err: NoDefaultModelError,
+  uiBaseUrl: string,
+  agentId: string,
+): string {
+  return err.pending
+    ? "This agent is still setting up its default model after an update. Try again in a minute."
+    : `This agent has no default model, so it can't answer here yet. Its owner can set one at ${uiBaseUrl}/sandboxes/${agentId}/providers`;
 }

@@ -72,6 +72,12 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent can't start right now: the server running its owner's " +
             "agents is down. Tell an admin."
           );
+        case "MachineAllocationUnreadable":
+          return (
+            "This agent can't start right now: the server running its owner's " +
+            "agents has not reported how much memory it gave them. Tell an " +
+            "admin."
+          );
         case "RunnerOutOfMemory":
           return (
             "This agent restarted: its owner's agents ran out of memory " +
