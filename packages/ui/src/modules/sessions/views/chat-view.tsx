@@ -120,6 +120,7 @@ import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { Terminal } from "../components/terminal.js";
 import { BudgetExhaustedNotice } from "../../instant-start/components/budget-exhausted-notice.js";
 import { FreeBudgetBanner } from "../../instant-start/components/free-budget-banner.js";
+import { GettingStartedChecklist } from "../../instant-start/components/getting-started-checklist.js";
 import {
   KitSuggestionsEmpty,
   KitSuggestionsCompact,
@@ -754,7 +755,12 @@ export function ChatView() {
                           </p>
                         </div>
                       ) : isMock ? (
-                        <div className="flex flex-1 flex-col items-center justify-center" />
+                        <div className="flex flex-1 flex-col items-center justify-center">
+                          {(instantStart?.approach === 1 ||
+                            instantStart?.approach === 3) && (
+                            <GettingStartedChecklist />
+                          )}
+                        </div>
                       ) : (
                         <div className="flex flex-1 flex-col items-center justify-center text-center">
                           <p className="text-base font-bold text-foreground mb-2">
@@ -812,11 +818,7 @@ export function ChatView() {
                       <FreeBudgetBanner />
                       {instantStart.budgetExhausted && (
                         <div className="mt-3">
-                          <BudgetExhaustedNotice
-                            onAddProvider={() =>
-                              instantStart.setProviderAdded(true)
-                            }
-                          />
+                          <BudgetExhaustedNotice />
                         </div>
                       )}
                       {instantStart.approach === 3 &&

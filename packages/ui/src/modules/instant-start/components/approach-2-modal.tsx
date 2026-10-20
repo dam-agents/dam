@@ -4,8 +4,10 @@ import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Button } from "@/components/ui/button";
 
 import { useStore } from "../../../store.js";
+import { transcriptMetaForPack } from "../../../mock/data/transcripts/index.js";
 import { useCreateAgent } from "../../agents/api/mutations.js";
 import type { Pack } from "../../packs/data/packs.js";
+import { REAL_PACKS } from "../../packs/data/packs.js";
 import { BrowsePacksModal } from "../../packs/components/browse-packs-modal.js";
 import { FreeBudgetBanner } from "./free-budget-banner.js";
 
@@ -13,6 +15,28 @@ export function Approach2Modal({ onClose }: { onClose: () => void }) {
   const [browseOpen, setBrowseOpen] = useState(false);
   const createAgent = useCreateAgent();
   const selectAgent = useStore((s) => s.selectAgent);
+  const initOnboarding = useStore((s) => s.initOnboarding);
+
+  const applyPack = async (pack: Pack) => {
+    try {
+      const agent = await createAgent.mutateAsync({
+        name: pack.name,
+        templateId: "claude-code",
+        egressPreset: "trusted",
+      });
+      initOnboarding(agent.id, pack);
+      const meta = transcriptMetaForPack(pack.id);
+      useStore.setState({
+        starterKitMode: true,
+        selectedStarterKitId: pack.id,
+        onboardingStep: 0,
+        currentTranscriptSteps: meta?.steps ?? [],
+        currentTranscriptMeta: meta,
+      });
+      selectAgent(agent.id);
+      onClose();
+    } catch {}
+  };
 
   const handleBlankStart = async () => {
     try {
@@ -28,15 +52,15 @@ export function Approach2Modal({ onClose }: { onClose: () => void }) {
 
   const handleSelectPack = (pack: Pack) => {
     setBrowseOpen(false);
-    void handleBlankStart();
+    void applyPack(pack);
   };
 
   return (
     <>
-      <Modal size="lg" onClose={onClose}>
+      <Modal widthClass="w-[560px]">
         <DialogHeader
           title="How do you want to start?"
-          subtitle="Pick a pack or jump straight into a blank chat"
+          subtitle="Pick a starter kit or jump straight into a blank chat"
           onClose={onClose}
         />
         <DialogBody>
@@ -66,13 +90,32 @@ export function Approach2Modal({ onClose }: { onClose: () => void }) {
               <div className="flex-1 border-t border-border" />
             </div>
 
+            <div className="flex flex-col gap-2">
+              {REAL_PACKS.slice(0, 3).map((pack) => (
+                <button
+                  key={pack.id}
+                  type="button"
+                  onClick={() => void applyPack(pack)}
+                  disabled={createAgent.isPending}
+                  className="flex flex-col gap-1 rounded-lg border border-border p-4 text-left transition-colors hover:border-foreground/20 disabled:opacity-60"
+                >
+                  <p className="text-sm font-medium text-foreground">
+                    {pack.name}
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {pack.tagline}
+                  </p>
+                </button>
+              ))}
+            </div>
+
             <Button
               variant="outline"
               size="lg"
               className="w-full"
               onClick={() => setBrowseOpen(true)}
             >
-              Browse packs
+              Browse all starter kits
             </Button>
           </div>
         </DialogBody>

@@ -22,7 +22,7 @@ export interface InstantStartState {
 }
 
 const INITIAL_BUDGET: FreeBudget = {
-  used: 1.47,
+  used: 0,
   limit: 5.0,
   unit: "usd",
   resetsAt: null,

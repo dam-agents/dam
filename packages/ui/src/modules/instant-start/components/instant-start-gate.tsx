@@ -8,6 +8,7 @@ import { Approach2Modal } from "./approach-2-modal.js";
 import { CreatingAgentOverlay } from "./creating-agent-overlay.js";
 import { InstantStartDebugControls } from "./debug-controls.js";
 
+
 export function InstantStartGate({ children }: { children: ReactNode }) {
   const ctx = useInstantStart();
 
@@ -55,18 +56,15 @@ function Approach1Boot() {
 function Approach2Boot() {
   const ctx = useInstantStart()!;
   const [modalOpen, setModalOpen] = useState(true);
-  const selectedAgent = useStore((s) => s.selectedAgent);
 
-  useEffect(() => {
-    if (selectedAgent) {
-      setModalOpen(false);
-      ctx.setAgentCreated(true);
-    }
-  }, [selectedAgent]);
+  const handleClose = () => {
+    setModalOpen(false);
+    ctx.setAgentCreated(true);
+  };
 
   if (!modalOpen) return null;
 
-  return <Approach2Modal onClose={() => setModalOpen(false)} />;
+  return <Approach2Modal onClose={handleClose} />;
 }
 
 function Approach3Boot() {

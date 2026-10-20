@@ -1,14 +1,12 @@
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 
+import { useStore } from "../../../store.js";
 import { useInstantStart } from "../context.js";
 
-export function BudgetExhaustedNotice({
-  onAddProvider,
-}: {
-  onAddProvider: () => void;
-}) {
+export function BudgetExhaustedNotice() {
   const ctx = useInstantStart();
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   if (!ctx?.budgetExhausted) return null;
 
   return (
@@ -24,7 +22,7 @@ export function BudgetExhaustedNotice({
         variant="outline"
         size="sm"
         className="mt-3"
-        onClick={onAddProvider}
+        onClick={() => navigateToSettings("providers")}
       >
         Connect a provider
       </Button>

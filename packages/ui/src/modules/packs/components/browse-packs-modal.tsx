@@ -56,10 +56,10 @@ export function BrowsePacksModal({ open, onClose, onSelect }: Props) {
     <Modal widthClass="w-[960px]">
       <DialogHeader onClose={onClose} divided>
         <h2 className="text-lg font-semibold text-foreground">
-          Browse presets
+          Browse starter kits
         </h2>
         <p className="mt-0.5 text-sm text-muted-foreground">
-          Pick a preset to pre-fill your agent setup
+          Pick a starter kit to pre-fill your agent setup
         </p>
       </DialogHeader>
 

@@ -53,26 +53,35 @@ import { softwareDeveloperTranscript } from "./software-developer.js";
 import { spotlightsTranscript } from "./spotlights.js";
 import type { TranscriptMeta } from "./types.js";
 
-const KIT_TRANSCRIPTS: Record<string, () => TranscriptMeta> = {
-  [MOCK_SESSION_IDS.kitCodeGuardian]: codeReviewerTranscript,
-  [MOCK_SESSION_IDS.kitSoftwareDeveloper]: softwareDeveloperTranscript,
-  [MOCK_SESSION_IDS.kitQualityAssurance]: qualityAssuranceTranscript,
-  [MOCK_SESSION_IDS.kitQualityInspector]: qualityInspectorTranscript,
-  [MOCK_SESSION_IDS.kitPersonalAssistant]: personalAssistantTranscript,
-  [MOCK_SESSION_IDS.kitMicroManager]: microManagerTranscript,
-  [MOCK_SESSION_IDS.kitLlmWiki]: llmWikiTranscript,
-  [MOCK_SESSION_IDS.kitPlainWiki]: plainWikiTranscript,
-  [MOCK_SESSION_IDS.kitSpotlights]: spotlightsTranscript,
-  [MOCK_SESSION_IDS.kitKSearch]: kSearchTranscript,
-  [MOCK_SESSION_IDS.kitNous]: nousTranscript,
-  [MOCK_SESSION_IDS.kitOpenEvolve]: openevolveTranscript,
-  [MOCK_SESSION_IDS.kitShinkaEvolve]: shinkaevolveTranscript,
-  [MOCK_SESSION_IDS.kitGEPA]: gepaTranscript,
-  [MOCK_SESSION_IDS.kitAdaEvolve]: adaevolveTranscript,
-  [MOCK_SESSION_IDS.kitEvoX]: evoxTranscript,
+const PACK_TRANSCRIPTS: Record<string, () => TranscriptMeta> = {
+  "code-guardian": codeReviewerTranscript,
+  "software-developer": softwareDeveloperTranscript,
+  "quality-assurance": qualityAssuranceTranscript,
+  "quality-inspector": qualityInspectorTranscript,
+  "personal-assistant": personalAssistantTranscript,
+  "micro-manager": microManagerTranscript,
+  "llm-wiki": llmWikiTranscript,
+  "plain-wiki": plainWikiTranscript,
+  spotlights: spotlightsTranscript,
+  "k-search": kSearchTranscript,
+  nous: nousTranscript,
+  openevolve: openevolveTranscript,
+  shinkaevolve: shinkaevolveTranscript,
+  gepa: gepaTranscript,
+  adaevolve: adaevolveTranscript,
+  evox: evoxTranscript,
 };
 
+export { PACK_TRANSCRIPTS };
+
+const KIT_TRANSCRIPTS: Record<string, () => TranscriptMeta> = PACK_TRANSCRIPTS;
+
 export { KIT_TRANSCRIPTS };
+
+export function transcriptMetaForPack(packId: string): TranscriptMeta | null {
+  const factory = PACK_TRANSCRIPTS[packId];
+  return factory ? factory() : null;
+}
 
 export function mockTranscriptMeta(
   _agentId: string,
