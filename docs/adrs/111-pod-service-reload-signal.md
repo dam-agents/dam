@@ -19,7 +19,7 @@ ADR-066 gives a pod service two ways to take an env change: re-read a snapshot f
 It states them as the runtime that "persists the merged env to a well-known snapshot file" and sends SIGHUP, and as "a service that handles the signal re-reads the snapshot and re-points itself without closing its listener".
 No shipped image carries a pod service.
 The repository's only reader of the snapshot was a Claude Code image script that rewrote a permission mode, and that script reads nothing from it now.
-What remains is a write on the path that refreshes the pod service's env: it runs first, and its failure stops the refresh, the model catalog refresh and the recovery scheduling that follow it.
+What remains is a write on the path that refreshes the pod service's env: it runs first, and a failure the document store does not absorb, as a directory at the temp path it writes, stops the refresh, the model catalog refresh and the recovery scheduling that follow it.
 
 ## Decision
 
@@ -30,12 +30,12 @@ A service that handles it and stays up keeps the env it started with.
 
 ## Alternatives Considered
 
-- **Keep writing the snapshot** — it has no reader in this repository, and its write sits before the env refresh, where a full disk stops the refresh.
+- **Keep writing the snapshot** — it has no reader in this repository, and its write sits before the env refresh, where a write the store cannot place on disk, as a directory at its temp path, throws and stops the refresh.
 - **Restart every running service instead of signalling it** — a service that wants to drain in-flight work loses a signal it can still handle today, and none ships.
 - **Delete the pod service hook** — out of scope: the hook stays for a custom image.
 
 ## Consequences
 
-- **Easier:** an env change can no longer fail on a document write, so the refresh, the model catalog refresh and the recovery scheduling after it run as one step; the write was awaited before both of them.
+- **Easier:** an env change has one document write fewer on its path to the pod service's refresh; the snapshot write was awaited before that refresh and before the model catalog refresh that follows it.
 - **Harder:** a service that handles the reload signal and stays up keeps the env it started with, since nothing writes the merged env any more; to reach fresh env it exits and waits for the next change, or restarts itself.
 - **Committed-to:** in-place env reload without a restart is not supported. A future image that needs it has to bring back a file or a protocol for the service to read.

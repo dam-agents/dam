@@ -145,7 +145,7 @@ For lifecycle an SSH connection matters only as a pin: while it is open the Agen
 Beyond per-session children, agent-runtime supervises at most one **pod service** — an optional background process the agent image provides at a well-known path, running for the life of the pod.
 The runtime starts it once the runtime-channel env exists, restarts it when it crashes, and after a clean exit leaves it down until the env next changes.
 When the env changes, the service is signalled, and one that does not handle the signal is restarted with the fresh env.
-The runtime keeps no copy of the env on disk, so a service that stays up across the signal keeps the env it started with.
+The runtime no longer writes a separate merged env snapshot for pod services, so a service that stays up across the signal keeps the env it started with.
 Its output joins the pod log stream.
 The pod's init reaps processes orphaned by a dying harness or service, so none linger as zombies.
 No shipped image carries a pod service; the hook stays for a custom image.
