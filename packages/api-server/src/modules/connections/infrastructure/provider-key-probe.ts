@@ -1,4 +1,9 @@
-import { CURVE_BENDER_HOST, IBM_LITELLM_HOST } from "api-server-api";
+import {
+  CURVE_BENDER_HOST,
+  hasKeyCheck,
+  IBM_LITELLM_HOST,
+  type KeyCheckTemplateId,
+} from "api-server-api";
 import type { ProviderKeyProbe } from "../domain/provider-key-probe.js";
 
 const DEFAULT_TIMEOUT_MS = 10_000;
@@ -9,7 +14,7 @@ const INVALID_KEY_MARKER =
 const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
 
 const MODELS_ENDPOINTS: Record<
-  string,
+  KeyCheckTemplateId,
   { url: string; headers: (key: string) => Record<string, string> }
 > = {
   anthropic: {
@@ -42,8 +47,8 @@ export function createProviderKeyProbe(
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   return {
     async probe(templateId, key) {
+      if (!hasKeyCheck(templateId)) return { ok: true, unchecked: true };
       const endpoint = MODELS_ENDPOINTS[templateId];
-      if (!endpoint) return { ok: true, unchecked: true };
       try {
         const res = await fetch(endpoint.url, {
           headers: endpoint.headers(key),

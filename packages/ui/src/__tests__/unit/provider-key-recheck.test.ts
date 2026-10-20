@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider with a stored key is connected. While the recheck runs, the button and every connected row say so. After it, each row shows the stored result of its last key check: a check mark with the time when the key worked, a refused state in place of the green Connected badge that asks for a new key, a neutral warning with the detail when the provider could not say, and "not checked" for a template with no check.
+// TEST_OVERVIEW: Settings / Providers carries one Recheck button for the whole section, shown once a provider whose template has a key check is connected. While the recheck runs, the button and every row it checks say so, and each badge keeps its last known state. After it, each row shows the stored result of its last key check: a check mark with the time when the key worked, a refused state in place of the green Connected badge that asks for a new key and is named in the row's accessible name, a neutral warning with the detail when the provider could not say, and "not checked" for a template with no check.
 import type { ProviderKeyCheck } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -124,6 +124,7 @@ describe("provider key recheck", () => {
       ],
     ]);
     const row = rowOf(render(), "Edit Anthropic");
+    expect(row).toContain('aria-label="Edit Anthropic, key refused"');
     expect(row).toContain("Key refused");
     expect(row).not.toContain(">Connected<");
     expect(row).toContain("HTTP 401");
@@ -162,7 +163,27 @@ describe("provider key recheck", () => {
     expect(row).toContain("Key not checked");
   });
 
-  // TEST_SCENARIO: while the recheck runs, the button is disabled and reads Rechecking, and each connected row shows progress in place of its last result.
+  // TEST_SCENARIO: a provider whose template has no key check, such as Bob, gets no Recheck button of its own, since a recheck could never change its row.
+  it("offers no recheck when no connected provider has a key check", () => {
+    state.items = new Map([["bob", { id: "c3", conn: { templateId: "bob" } }]]);
+    expect(render()).not.toContain("Recheck");
+  });
+
+  // TEST_SCENARIO: while the recheck runs, a row with no key check keeps saying Key not checked rather than showing progress the server never makes.
+  it("shows no progress on a row the recheck cannot check", () => {
+    state.pending = true;
+    state.items = new Map([
+      ["openai", { id: "c2", conn: { templateId: "openai" } }],
+      ["bob", { id: "c3", conn: { templateId: "bob" } }],
+    ]);
+    const html = render();
+    expect(rowOf(html, "Edit OpenAI")).toContain("Checking the key…");
+    const bob = rowOf(html, "Edit Bob");
+    expect(bob).toContain("Key not checked");
+    expect(bob).not.toContain("Checking the key…");
+  });
+
+  // TEST_SCENARIO: while the recheck runs, the button is disabled and reads Rechecking, and each checkable row shows progress in place of its last result line; the badge keeps the last known state, so a refused key never flips to Connected.
   it("shows progress while the recheck runs", () => {
     state.pending = true;
     state.items = new Map([
@@ -185,6 +206,7 @@ describe("provider key recheck", () => {
     expect(html).toMatch(/<button[^>]*disabled=""[^>]*>.*Rechecking…/);
     const row = rowOf(html, "Edit Anthropic");
     expect(row).toContain("Checking the key…");
-    expect(row).not.toContain("Key refused");
+    expect(row).toContain(">Key refused<");
+    expect(row).not.toContain(">Connected<");
   });
 });

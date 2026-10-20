@@ -1,5 +1,9 @@
 import { Renew } from "@carbon/icons-react";
-import { BALANCE_PROVIDER_TYPES, harnessFits } from "api-server-api";
+import {
+  BALANCE_PROVIDER_TYPES,
+  harnessFits,
+  hasKeyCheck,
+} from "api-server-api";
 import { useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -36,9 +40,10 @@ export function ProviderSection({
   const deleteConnection = useDeleteConnection();
   const recheck = useRecheckProviderKeys();
   const loading = isPending || catalogPending || flagsPending;
-  const checkable = rows.some(
-    (row) => row.type !== "platform" && itemByType.has(row.type),
-  );
+  const checkable = rows.some((row) => {
+    const item = itemByType.get(row.type);
+    return !!item && hasKeyCheck(item.conn.templateId);
+  });
   const [dialog, setDialog] = useState<{
     provider: ProviderPresetType;
     item?: ProviderItem;
@@ -86,7 +91,11 @@ export function ProviderSection({
                   keyCheck={
                     item && !builtIn ? (item.conn.keyCheck ?? null) : undefined
                   }
-                  checking={recheck.isPending}
+                  checking={
+                    recheck.isPending &&
+                    !!item &&
+                    hasKeyCheck(item.conn.templateId)
+                  }
                   harnesses={catalog?.harnesses
                     .filter((h) =>
                       harnessFits(

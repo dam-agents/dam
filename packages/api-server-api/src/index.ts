@@ -402,6 +402,7 @@ export type {
   EnvMapping,
   BobModelPins,
   BedrockPins,
+  KeyCheckTemplateId,
 } from "./modules/connections/providers.js";
 export { ENV_NAME_RE, isValidEnvName } from "./modules/shared.js";
 export {
@@ -414,6 +415,8 @@ export {
   harnessFits,
   PROVIDERS,
   BALANCE_PROVIDER_TYPES,
+  KEY_CHECK_TEMPLATE_IDS,
+  hasKeyCheck,
   PROVIDER_PRESET_TYPES,
   ibmLitellmEnvMappings,
   curveBenderEnvMappings,

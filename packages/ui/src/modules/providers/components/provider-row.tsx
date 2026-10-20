@@ -34,7 +34,7 @@ export function ProviderRow({
   connectedAction = "Edit",
 }: Props) {
   const name = providerName(type);
-  const refused = connected && !checking && keyCheck?.result === "refused";
+  const refused = connected && keyCheck?.result === "refused";
   const body = (
     <>
       <CardIcon provider={type} />
@@ -88,7 +88,11 @@ export function ProviderRow({
   return onOpen ? (
     <CardButton
       onClick={onOpen}
-      aria-label={connected ? `${connectedAction} ${name}` : `Connect ${name}`}
+      aria-label={
+        connected
+          ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
+          : `Connect ${name}`
+      }
       className={layout}
     >
       {body}
