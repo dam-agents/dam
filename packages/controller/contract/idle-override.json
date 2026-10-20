@@ -47,6 +47,14 @@
     ".s",
     "-.s",
     "1..5h",
-    "5"
+    "5",
+    "1constructor",
+    "1toString",
+    "1__proto__",
+    "1hasOwnProperty",
+    "1valueOf",
+    "1nsconstructor",
+    "1.5constructor",
+    "1constructor2"
   ]
 }

@@ -20,26 +20,16 @@ export function minutesToDuration(min: number): string {
   return min === 0 ? "0s" : `${min}m`;
 }
 
-const GO_DURATION_UNITS_MS: Record<string, number> = {
-  ns: 1e-6,
-  us: 1e-3,
-  µs: 1e-3,
-  ms: 1,
-  s: 1e3,
-  m: 60e3,
-  h: 3600e3,
-};
-
-const GO_DURATION_UNITS: Record<string, bigint> = {
-  ns: 1n,
-  us: 1000n,
-  µs: 1000n,
-  μs: 1000n,
-  ms: 1000000n,
-  s: 1000000000n,
-  m: 60000000000n,
-  h: 3600000000000n,
-};
+const GO_DURATION_UNITS = new Map<string, bigint>([
+  ["ns", 1n],
+  ["us", 1000n],
+  ["µs", 1000n],
+  ["μs", 1000n],
+  ["ms", 1000000n],
+  ["s", 1000000000n],
+  ["m", 60000000000n],
+  ["h", 3600000000000n],
+]);
 
 const NS_PER_MINUTE = 60000000000n;
 const GO_MAX_DURATION = 1n << 63n;
@@ -81,7 +71,7 @@ export function parseGoDurationNs(raw: string): bigint | null {
       unitEnd++;
     }
     if (unitEnd === 0) return null;
-    const unit = GO_DURATION_UNITS[s.slice(0, unitEnd)];
+    const unit = GO_DURATION_UNITS.get(s.slice(0, unitEnd));
     if (unit === undefined) return null;
     s = s.slice(unitEnd);
     if (intPart.value > GO_MAX_DURATION / unit) return null;
