@@ -10,7 +10,6 @@ export function useAppConnections(options?: {
   return useQuery({
     ...trpc.connections.list.queryOptions(),
     enabled: options?.enabled ?? true,
-    refetchOnReconnect: "always" as const,
     ...(options?.fresh
       ? { staleTime: 0, refetchOnMount: "always" as const }
       : {}),

@@ -12,7 +12,6 @@ export function useSlackInstallAvailability() {
     queryKey: slackInstallKeys.availability(),
     queryFn: fetchSlackInstallAvailability,
     staleTime: 5 * 60_000,
-    refetchOnReconnect: "always" as const,
     meta: { errorToast: "Couldn't check whether you can connect a workspace" },
   });
 }

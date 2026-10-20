@@ -8,9 +8,9 @@ import {
 
 import { getApiHealthSnapshot, subscribeApiHealth } from "./lib/api-health.js";
 import { getErrorMessage } from "./lib/errors.js";
+import { refreshOnReturn } from "./lib/refresh-on-return.js";
 import { emitToast } from "./lib/toast.js";
 import { showStorageFull } from "./modules/budgets/lib/storage-full.js";
-import { acpSessionsKeys } from "./modules/sessions/api/keys.js";
 import {
   isTermsStale,
   isTermsStaleError,
@@ -58,9 +58,9 @@ export const queryClient = new QueryClient({
     queries: {
       retry: 3,
       staleTime: 30_000,
-      refetchOnWindowFocus: false,
+      refetchOnWindowFocus: (query) => refreshOnReturn(query.queryKey, "focus"),
       refetchOnReconnect: (query) =>
-        query.queryKey[0] === acpSessionsKeys.all[0] ? "always" : false,
+        refreshOnReturn(query.queryKey, "reconnect"),
     },
     mutations: {
       onSuccess: (_data, _vars, _ctx, mutation): Promise<unknown> =>
