@@ -434,7 +434,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			}
 			plan.adopt(r.ownerGatewayOffersFor(owner), files)
 			r.refreshOwnerGatewayCredentials(ctx, owner, files.Annotations[annOwnerCredentialsHash], names, r.clockNow())
-			return r.settleLegacyOwnerGatewayFiles(ctx, files.Name, legacy, legacyKeys)
+			return r.settleLegacyOwnerGatewayFiles(ctx, files.Name, legacy, legacyKeys, onIt)
 		},
 		func() error {
 			return r.applyCertificate(ctx, buildOwnerLeafCertificate(owner, r.config, leafAgents, refs))
@@ -613,7 +613,7 @@ func (r *AgentReconciler) deleteLegacyOwnerGatewayFiles(ctx context.Context, nam
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an upgraded owner keeps the two objects its old-layout pod mounts until nothing of that layout is left: the Deployment holds that template while a roll waits for its place in the roll budget, and its pod keeps serving until the new pod is ready, so deleting them then leaves a pod that cannot be replaced and a rotation that never reaches it. So while either still names them they are written, and once neither does they are removed. Only a render that read the layout settles it — a render that never rendered it saw nothing to conclude — and the mark that they are gone is set only when both deletes are confirmed, so a delete that failed is tried again later.
-func (r *AgentReconciler) settleLegacyOwnerGatewayFiles(ctx context.Context, name string, legacy *ownerRender, legacyKeys []string) error {
+func (r *AgentReconciler) settleLegacyOwnerGatewayFiles(ctx context.Context, name string, legacy *ownerRender, legacyKeys, members []string) error {
 	if name == "" || legacy == nil {
 		return nil
 	}
@@ -622,7 +622,7 @@ func (r *AgentReconciler) settleLegacyOwnerGatewayFiles(ctx context.Context, nam
 		if err := r.deleteLegacyOwnerGatewayFiles(ctx, name); err != nil {
 			return err
 		}
-		r.forgetLegacyOwnerGatewayRevisions(nil)
+		r.forgetLegacyOwnerGatewayRevisions(members, nil)
 		return nil
 	}
 	if err := r.applyConfigMap(ctx, ownerGatewayLegacyConfigMap(legacy.files, legacyKeys)); err != nil {
@@ -631,18 +631,17 @@ func (r *AgentReconciler) settleLegacyOwnerGatewayFiles(ctx context.Context, nam
 	if err := r.applyOwnerGatewayFiles(ctx, ownerGatewayLegacyCredentials(legacy.files, legacyKeys)); err != nil {
 		return err
 	}
-	r.forgetLegacyOwnerGatewayRevisions(legacy.revisions)
+	r.forgetLegacyOwnerGatewayRevisions(members, legacy.revisions)
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the health revisions the layout just applied answers for, registered so a live pod on it reads as ready. A pod of that layout hashes its resources against the old credential root, so its answer is a different string from the canonical one; the two layouts publish separately and a canonical write proves nothing about a legacy pod's credential volume, which is why this only ever answers readiness and never a repair. Anything no longer served by the layout is forgotten, so a moved agent is not held ready by a revision that is gone.
-func (r *AgentReconciler) forgetLegacyOwnerGatewayRevisions(revisions map[string]string) {
-	r.ownerGatewayLegacyRevisions.Range(func(key, _ any) bool {
-		if _, ok := revisions[key.(string)]; !ok {
-			r.ownerGatewayLegacyRevisions.Delete(key)
+// UNIT_BOUNDARY_DESCRIPTION: the health revisions the layout just applied answers for, registered so a live pod on it reads as ready. A pod of that layout hashes its resources against the old credential root, so its answer is a different string from the canonical one; the two layouts publish separately and a canonical write proves nothing about a legacy pod's credential volume, which is why this only ever answers readiness and never a repair. Only this owner's members are touched: an owner without a legacy layout retires its own registrations and leaves every other owner's alone, since another owner's old pod may still be the one serving.
+func (r *AgentReconciler) forgetLegacyOwnerGatewayRevisions(members []string, revisions map[string]string) {
+	for _, name := range members {
+		if _, ok := revisions[name]; !ok {
+			r.ownerGatewayLegacyRevisions.Delete(name)
 		}
-		return true
-	})
+	}
 	for agentName, rev := range revisions {
 		r.ownerGatewayLegacyRevisions.Store(agentName, rev)
 	}

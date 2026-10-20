@@ -188,6 +188,7 @@ A repair is written only on an answer that render itself took, from the sole own
 So a probe that could not be made — two pods, no pod, no address, or a refused request — settles nothing, and the debt stays owed.
 The receipt is taken before the render that would spend it, once per owing agent, on that agent's own proxy port, and at the pod's own address rather than through the Service, whose ordinary readiness probes would otherwise leave an answer that looks like a receipt.
 Only a canonical answer counts: a pod still on the previous two-volume layout hashes its resources against a different credential root, so its own revision keeps its readiness, registered when the controller applies that layout, but never authorises a repair.
+That registration belongs to the owner that applied the layout, and retiring it clears only that owner's, so one owner's render never makes another owner's old-layout pod stale.
 An agent whose debt is still owed reads as not ready, since a listener that answers the current revision proves the pod read the files, not that it rebuilt a provider it never built.
 That layout projects its files and its credentials as two separately moving objects, so nothing about it can prove what a canonical pod has read; its repair is best effort until it rolls.
 A rotation of a file the pod already has costs no rebuild, and an agent whose chains name none of the moved keys stays byte-identical.

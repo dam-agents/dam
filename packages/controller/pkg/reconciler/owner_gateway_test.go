@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"path"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -1165,9 +1166,9 @@ func TestOwnerGateway_ALegacyCleanupFailureIsRetried(t *testing.T) {
 		return true, nil, k8serrors.NewServiceUnavailable("one transient failure")
 	})
 	gone := &ownerRender{}
-	require.Error(t, r.settleLegacyOwnerGatewayFiles(ctx, name, gone, nil), "the failure reaches the caller")
+	require.Error(t, r.settleLegacyOwnerGatewayFiles(ctx, name, gone, nil, nil), "the failure reaches the caller")
 
-	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, name, gone, nil), "and the next render tries again")
+	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, name, gone, nil, nil), "and the next render tries again")
 	_, err := client.CoreV1().Secrets(cfg.Namespace).Get(ctx, name+"-credentials", metav1.GetOptions{})
 	assert.True(t, k8serrors.IsNotFound(err), "this time it is gone")
 }
@@ -1209,7 +1210,7 @@ func TestOwnerGateway_ALegacyAnswerIsReadyButNeverARepair(t *testing.T) {
 
 	// TEST_SCENARIO: once the layout is gone its revision is forgotten, so an agent it used to serve is not held ready by an answer nothing publishes.
 	require.NoError(t, r.deleteLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner)))
-	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner), &ownerRender{}, nil))
+	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner), &ownerRender{}, nil, []string{"my-agent"}))
 	assert.Empty(t, r.ownerGatewayLegacyRevisionOf("my-agent"), "the retired layout's revision does not outlive it")
 }
 
@@ -1278,7 +1279,13 @@ func TestOwnerGatewayRepairPlan_AReceiptMustBeForTheArrivalsOwnEpoch(t *testing.
 // TEST_SCENARIO: grants a Connection to the test agent through the dynamic client, so the reconciler reads it as it would any other grant.
 func grantConnectionToAgent(t *testing.T, r *AgentReconciler, connection string) *apiv1.Agent {
 	t.Helper()
-	live, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), "my-agent", metav1.GetOptions{})
+	return grantConnectionTo(t, r, "my-agent", connection)
+}
+
+// TEST_SCENARIO: the same grant, to whichever agent the test names.
+func grantConnectionTo(t *testing.T, r *AgentReconciler, agent, connection string) *apiv1.Agent {
+	t.Helper()
+	live, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), agent, metav1.GetOptions{})
 	require.NoError(t, err)
 	granted, err := FromCacheObject[apiv1.Agent](live)
 	require.NoError(t, err)
@@ -1484,4 +1491,135 @@ func TestOwnerGateway_PendingRepairIsNotReady(t *testing.T) {
 	assert.False(t, ready, "a gateway still owing a repair for this agent is not ready for it")
 	assert.Equal(t, apiv1.ReasonOwnerGatewayListenerStale, reason)
 	assert.Contains(t, msg, "credentials")
+}
+
+// TEST_SCENARIO: a second vm agent of the same owner, with the Service its gateway serves from, so an owner render has two members to keep or discard.
+func ownerSecondAgent(t *testing.T, r *AgentReconciler, name, clusterIP string, served bool) {
+	t.Helper()
+	ctx := context.Background()
+	second := vmAgentCR()
+	second.Name, second.Labels = name, map[string]string{envoyOwnerLabel: testOwner}
+	u, err := agentToUnstructured(second)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
+	require.NoError(t, err)
+	annotations := map[string]string{annOwnerGatewaySlot: "1"}
+	if served {
+		annotations[annOwnerGatewayServed] = "true"
+	}
+	_, err = r.client.CoreV1().Services("test-agents").Create(ctx, &corev1.Service{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName(name), Namespace: "test-agents", Labels: map[string]string{LabelRole: RoleGateway, LabelAgent: name}, Annotations: annotations},
+		Spec:       corev1.ServiceSpec{ClusterIP: clusterIP, Ports: []corev1.ServicePort{{Port: 10000}}},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: two signing Connections of one owner, each naming its own host, so both agents project a credential file of their own.
+func ownerTwoSigningSecrets(t *testing.T, r *AgentReconciler) {
+	t.Helper()
+	ctx := context.Background()
+	for name, host := range map[string]string{"platform-conn-cos": "s3.example.cloud", "platform-conn-two": "two.example.cloud"} {
+		s := signingSecret(name, strings.TrimPrefix(name, "platform-conn-"), host)
+		s.Namespace = "test-agents"
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, &s, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	grantConnectionToAgent(t, r, "cos")
+	grantConnectionTo(t, r, "agent-b", "two")
+}
+
+// TEST_SCENARIO: the retained-membership filter is a rule of the render itself, not of the planner it feeds. Two agents of one owner both name credentials; when the owner is refused one of them, the applied Secret carries neither that agent's file nor any state for it. The check drives production `ensureOwnerGateway` at two budgets, not the planner directly.
+func TestOwnerGateway_ARefusedMemberLeavesNoStateInTheRender(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := servedVMReconciler(t)
+	// TEST_SCENARIO: agent-b has not moved onto the owner gateway yet, which is what lets a refusal discard it and keep the served agent.
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", false)
+	ownerTwoSigningSecrets(t, r)
+
+	// TEST_SCENARIO: both fit, so both are rendered and both hold state.
+	r.ownerGatewayBudget = 0
+	_, err := r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	files, err := r.client.CoreV1().Secrets("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Contains(t, files.Data, "platform-conn-two.aws-credentials", "both agents are rendered to begin with")
+	var before ownerGatewayGenerations
+	require.NoError(t, json.Unmarshal([]byte(files.Annotations[annOwnerRegenerated]), &before))
+	require.Contains(t, before.Agents, "agent-b")
+
+	// TEST_SCENARIO: then only one fits, so the production render discards the other's files.
+	r.ownerGatewayBudget = secretSize(files) - 512
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	files, err = r.client.CoreV1().Secrets("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotContains(t, files.Data, "platform-conn-two.aws-credentials", "the refused agent's credential is not written")
+	require.Contains(t, files.Data, "platform-conn-cos.aws-credentials", "the served agent's is")
+	var after ownerGatewayGenerations
+	require.NoError(t, json.Unmarshal([]byte(files.Annotations[annOwnerRegenerated]), &after))
+	assert.NotContains(t, after.Agents, "agent-b", "a member whose files the render discarded holds no state in it")
+	assert.Contains(t, after.Agents, "my-agent")
+}
+
+// TEST_SCENARIO: the render probes the members that owe a repair and no others, which is a rule of `ensureOwnerGateway` and not of the helper it calls. One agent has settled and its sibling owes, and the render must ask only the owing agent's port.
+func TestOwnerGateway_ARenderProbesOnlyTheOwingAgent(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := servedVMReconciler(t)
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", true)
+	ownerTwoSigningSecrets(t, r)
+	_, err := r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+
+	// TEST_SCENARIO: my-agent's arrival is repaid, and agent-b's is not.
+	set := r.ownerGatewayOffersFor(testOwner)
+	set.mu.Lock()
+	set.agents["my-agent"].Repaired = set.agents["my-agent"].Arrived
+	set.agents["agent-b"].Repaired = set.agents["agent-b"].Arrived - 1
+	set.mu.Unlock()
+	held := map[string][]string{
+		"my-agent": {"platform-conn-cos.aws-credentials"},
+		"agent-b":  {"platform-conn-two.aws-credentials"},
+	}
+	require.Equal(t, []string{"agent-b"}, r.ownerGatewayOwesRepair(testOwner, held, []string{"my-agent", "agent-b"}))
+
+	var asked []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		asked = append(asked, req.Host)
+		_, _ = w.Write([]byte(""))
+	}))
+	t.Cleanup(srv.Close)
+	r.ownerProbeClient = &http.Client{Transport: &http.Transport{DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
+		return (&net.Dialer{}).DialContext(ctx, network, srv.Listener.Addr().String())
+	}}}
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"10.42.0.9:" + strconv.Itoa(ownerGatewayProxyPort(1))}, asked, "the render asks the owing agent's port and not its settled sibling's")
+}
+
+// TEST_SCENARIO: retiring one owner's legacy layout leaves every other owner's registrations alone. Two owners keep old-layout pods at once, and an ordinary render of a third owner that has no legacy layout must not make either of them unready.
+func TestOwnerGateway_ALegacyRetirementIsScopedToItsOwner(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := servedVMReconciler(t)
+	r.ownerGatewayLegacyRevisions.Store("my-agent", "legacy-of-this-owner")
+	r.ownerGatewayLegacyRevisions.Store("other-owner-agent", "legacy-of-another-owner")
+
+	// TEST_SCENARIO: this owner still runs its old layout, and settling it registers its own members and touches no one else's.
+	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner), &ownerRender{files: &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: "x", Namespace: "test-agents"}}, revisions: map[string]string{"my-agent": "legacy-new"}}, nil, []string{"my-agent"}))
+	assert.Equal(t, "legacy-new", r.ownerGatewayLegacyRevisionOf("my-agent"))
+	assert.Equal(t, "legacy-of-another-owner", r.ownerGatewayLegacyRevisionOf("other-owner-agent"), "another owner's registration survives this owner's render")
+
+	// TEST_SCENARIO: this owner retires its layout, so only its own registration goes.
+	require.NoError(t, r.deleteLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner)))
+	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner), &ownerRender{}, nil, []string{"my-agent"}))
+	assert.Empty(t, r.ownerGatewayLegacyRevisionOf("my-agent"), "its own retired registration is gone")
+	assert.Equal(t, "legacy-of-another-owner", r.ownerGatewayLegacyRevisionOf("other-owner-agent"), "and every other owner's is untouched")
+}
+
+// TEST_SCENARIO: the same scoping when one owner holds its layout and another has already retired: the retiring owner's cleanup must not clear the holder's registration, which is the case a render of an owner with no legacy objects at all hits.
+func TestOwnerGateway_ACanonicalOwnerDoesNotClearALegacyOne(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := servedVMReconciler(t)
+	r.ownerGatewayLegacyRevisions.Store("other-owner-agent", "legacy-of-another-owner")
+	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner), &ownerRender{}, nil, []string{"my-agent"}))
+	assert.Equal(t, "legacy-of-another-owner", r.ownerGatewayLegacyRevisionOf("other-owner-agent"), "a canonical owner's render leaves the legacy owner's registration intact")
 }
