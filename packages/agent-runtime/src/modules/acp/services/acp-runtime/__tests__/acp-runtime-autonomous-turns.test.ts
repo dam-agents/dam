@@ -97,8 +97,7 @@ function runResult(client: Client, id: number): unknown {
 
 function rawMessagesAsked(frame: Frame | undefined): unknown {
   const params = frame?.params as
-    | { _meta?: { claudeCode?: { emitRawSDKMessages?: unknown } } }
-    | undefined;
+    { _meta?: { claudeCode?: { emitRawSDKMessages?: unknown } } } | undefined;
   return params?._meta?.claudeCode?.emitRawSDKMessages;
 }
 

@@ -249,8 +249,9 @@ describe("run service", () => {
     });
 
     expect(result.ok && result.value.kind === "done").toBe(true);
-    expect(result.ok && result.value.kind === "done" && result.value.result)
-      .toMatchObject({ finalText: "A=1 C=3" });
+    expect(
+      result.ok && result.value.kind === "done" && result.value.result,
+    ).toMatchObject({ finalText: "A=1 C=3" });
   });
 
   /**

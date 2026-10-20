@@ -1979,14 +1979,14 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
           .find((marker) => marker.sessionId === paramsSid);
         const response =
           promptScheduler.hasWork(paramsSid) || heldRuns.has(paramsSid)
-          ? { status: "pending" }
-          : leftover !== undefined
-            ? leftover.attempts >= MAX_RESUME_ATTEMPTS
-              ? { status: "interrupted" }
-              : { status: "pending" }
-            : record === null
-              ? { status: "none" }
-              : { status: "done", result: record };
+            ? { status: "pending" }
+            : leftover !== undefined
+              ? leftover.attempts >= MAX_RESUME_ATTEMPTS
+                ? { status: "interrupted" }
+                : { status: "pending" }
+              : record === null
+                ? { status: "none" }
+                : { status: "done", result: record };
         sendToChannel(
           channel,
           JSON.stringify({ jsonrpc: "2.0", id: frame.id, result: response }),
