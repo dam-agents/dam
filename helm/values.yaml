@@ -1765,7 +1765,9 @@ controller:
         # Ships sh + iptables-wrapper; pinned by tag.
         # v0.11.1 (2026-10-16) is under the 7-day floor: it carries the Debian
         # point releases that fix CVE-2026-103111 and CVE-2026-84782 in
-        # v0.11.0. The exception can go 2026-10-23.
+        # v0.11.0, and its go-runner is built with Go 1.27.2, which fixes the
+        # Go stdlib rows the scan reported for the 1.27.1 build. The exception
+        # can go 2026-10-23.
         image: registry.k8s.io/build-image/distroless-iptables:v0.11.1
 
       # -- Userspace init container that blocks the agent's main
