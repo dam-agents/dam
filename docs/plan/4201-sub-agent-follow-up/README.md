@@ -8,7 +8,7 @@
 ## Goal
 
 From a finished sub-agent's read-only conversation, the user clicks **Continue in new chat** and lands in a new chat of the root driver.
-The chat already shows the sub-agent's prompt and result as two bubbles, then a divider "Continued from <label>".
+The chat already shows the sub-agent's prompt and result as two bubbles, then a divider "Continued from sub-agent session (<label>)".
 The user asks follow-up questions in the normal composer, and the agent answers with the sub-agent's work in context.
 Every later load of that chat shows the same two bubbles and the divider, then the real conversation, as if it all happened in this chat.
 
@@ -66,10 +66,10 @@ The exact block wording belongs to slice 01; the tag name `continued-from` is fi
 
 ## Sub-issues
 
-| #   | Title                                          | Scope                                                                       | Depends on |
-| --- | ---------------------------------------------- | --------------------------------------------------------------------------- | ---------- |
-| 01  | ✅ The runtime keeps a follow-up chat's copy   | agent-runtime: accept, store, inject once, return on load, rewind match     | —          |
-| 02  | Continue in new chat from a finished sub-agent | UI: panel button, seeded draft, send, load rendering, divider, plumbing tag | 01         |
+| #   | Title                                             | Scope                                                                       | Depends on |
+| --- | ------------------------------------------------- | --------------------------------------------------------------------------- | ---------- |
+| 01  | ✅ The runtime keeps a follow-up chat's copy      | agent-runtime: accept, store, inject once, return on load, rewind match     | —          |
+| 02  | ✅ Continue in new chat from a finished sub-agent | UI: panel button, seeded draft, send, load rendering, divider, plumbing tag | 01         |
 
 ## Conventions & glossary
 
@@ -87,7 +87,7 @@ The exact block wording belongs to slice 01; the tag name `continued-from` is fi
 2. Open the finished sub-agent from its delegation card.
    The panel footer shows **Continue in new chat**.
 3. Click it.
-   A new chat of the root driver opens with the prompt bubble, the result bubble and the divider "Continued from <label>".
+   A new chat of the root driver opens with the prompt bubble, the result bubble and the divider "Continued from sub-agent session (<label>)".
    No session appears in the sidebar yet.
 4. Ask "Why did you choose that?".
    The reply refers to the sub-agent's work.

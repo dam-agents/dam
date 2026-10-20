@@ -6,7 +6,7 @@
 ## Context
 
 The read-only panel of a finished sub-agent gets a **Continue in new chat** button.
-It opens a new-chat draft on the root driver that shows the copy (prompt bubble, result bubble) and the divider "Continued from <label>".
+It opens a new-chat draft on the root driver that shows the copy (prompt bubble, result bubble) and the divider "Continued from sub-agent session (<label>)".
 The first send creates the session with `continuedFrom`; every load draws the copy and the divider from the load meta, and the first bubble never shows the hidden block.
 
 ## Implementation plan
@@ -27,7 +27,7 @@ Paths are under `packages/ui/src/modules/`.
    The user bubble and the first prompt carry only the typed text; the runtime adds the hidden block (slice 01).
 6. **Load.** In `runSessionLoad` (`use-acp-connection.ts` around :345-445), read `_meta.platform.continuedFrom` beside `runStarts`, keep it in the session state, and draw the two copied bubbles above the replayed messages.
    When the loaded tail is cut and older pages exist, the copy goes above the oldest page, once.
-7. **Divider.** Add a `continued` variant to the thread divider in `sessions/lib/thread-items.ts` (:7, `dividerLabel` :111), placed between the copy and the first real message, with the label "Continued from <label>".
+7. **Divider.** Add a `continued` variant to the thread divider in `sessions/lib/thread-items.ts` (:7, `dividerLabel` :111), placed between the copy and the first real message, with the label "Continued from sub-agent session (<label>)".
 8. **Hide the block.** Add `continued-from` to `PLUMBING_TAGS` in `acp/session-projection.ts` (:31), so a history-provider refill never shows it in the first bubble.
 9. **Docs.** In `docs/architecture/invocations.md`, describe the panel action and the follow-up chat it opens.
    Update `Last verified:`.
@@ -35,7 +35,7 @@ Paths are under `packages/ui/src/modules/`.
 ## Acceptance criteria
 
 - [ ] A finished sub-agent's panel shows **Continue in new chat**; a running sub-agent's panel does not.
-- [ ] The click opens a new chat of the root driver with the prompt bubble, the result bubble and the divider "Continued from <label>"; no session appears in the sidebar until the first send.
+- [ ] The click opens a new chat of the root driver with the prompt bubble, the result bubble and the divider "Continued from sub-agent session (<label>)"; no session appears in the sidebar until the first send.
 - [ ] Leaving the draft and coming back keeps the copy; clearing the draft removes it.
 - [ ] After the first send, the user bubble shows only the typed text, and the agent's reply uses the sub-agent's work.
 - [ ] A reload, a cold reload after an agent pod restart, and an older-page load show the copy and the divider once, above the real conversation.

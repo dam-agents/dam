@@ -1,7 +1,9 @@
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DelegationNode } from "api-server-api";
+import type { DelegationNode, PlatformContinuedFrom } from "api-server-api";
 
+import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
+import { continuedFromOf } from "../lib/continued-from.js";
 import {
   awaitsCapture,
   hasJustEnded,
@@ -105,4 +107,38 @@ export function useDelegationTranscript(
     staleTime: Infinity,
     retry: false,
   });
+}
+
+export function useContinuedFrom(
+  driverAgentId: string | null,
+  invocationId: string | undefined,
+): PlatformContinuedFrom | null {
+  const ids = invocationId === undefined ? [] : [invocationId];
+  const { data } = useQuery({
+    ...trpc.invocations.tree.queryOptions(
+      driverAgentId && invocationId
+        ? { driverAgentId, ids: [invocationId] }
+        : skipToken,
+    ),
+    staleTime: Infinity,
+    retry: 2,
+  });
+  const node = data?.nodes.find((n) => ids.includes(n.id));
+  return node ? continuedFromOf(node) : null;
+}
+
+export async function readContinuedFrom(
+  driverAgentId: string,
+  invocationId: string,
+): Promise<PlatformContinuedFrom> {
+  const tree = await queryClient.fetchQuery({
+    ...trpc.invocations.tree.queryOptions({
+      driverAgentId,
+      ids: [invocationId],
+    }),
+    staleTime: Infinity,
+  });
+  const node = tree.nodes.find((n) => n.id === invocationId);
+  if (!node) throw new Error("The sub-agent is no longer recorded.");
+  return continuedFromOf(node);
 }

@@ -49,13 +49,14 @@ export interface SendPromptOptions {
   initiator?: PromptInitiator;
   retryOf?: string;
   blocks?: PromptBlock[];
+  continuesInvocation?: string;
 }
 
 interface UseAcpPromptOptions {
   selectedAgent: string | null;
   agentRunState: AgentState | undefined;
   ensureConnection: () => Promise<LiveSession | null>;
-  beginSession: () => Promise<StartedSession>;
+  beginSession: (continuesInvocation?: string) => Promise<StartedSession>;
   engagedSessionIdRef: React.MutableRefObject<string | null>;
   connectionRef: React.MutableRefObject<LiveConnection | null>;
   textareaRef: React.RefObject<HTMLTextAreaElement | null>;
@@ -301,7 +302,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           }
           ({ connection, isOpen, sessionId } = live);
         } else {
-          started = await beginSession();
+          started = await beginSession(sendOpts?.continuesInvocation);
           startedRef.current = started;
           ({ connection, sessionId, isOpen } = started);
         }

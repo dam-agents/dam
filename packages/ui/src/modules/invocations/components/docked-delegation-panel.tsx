@@ -1,4 +1,4 @@
-import { Bot, Close, Locked } from "@carbon/icons-react";
+import { AddComment, Bot, Close, Locked } from "@carbon/icons-react";
 import type { DelegationNode } from "api-server-api";
 import { useMemo } from "react";
 
@@ -17,6 +17,7 @@ import {
   useDelegationTree,
   useInvocationTurns,
 } from "../api/queries.js";
+import { useContinueInNewChat } from "../hooks/use-continue-in-new-chat.js";
 import { delegationState, firstLine } from "../lib/delegation-state.js";
 import {
   DelegationOwnersProvider,
@@ -123,6 +124,7 @@ function PanelBody({
     [transcript.data],
   );
   const owners = useDelegationOwners(messages);
+  const continueInNewChat = useContinueInNewChat(driverAgentId, node.id);
 
   return (
     <>
@@ -173,7 +175,13 @@ function PanelBody({
       {finished && (
         <div className="flex shrink-0 items-center gap-2 border-t border-border px-4 py-2.5 text-xs text-muted-foreground">
           <Locked size={14} aria-hidden />
-          Read-only. The agent was released when it reported.
+          <span className="min-w-0 flex-1">
+            Read-only. The agent was released when it reported.
+          </span>
+          <Button variant="outline" size="xs" onClick={continueInNewChat}>
+            <AddComment size={14} />
+            Continue in new chat
+          </Button>
         </div>
       )}
     </>

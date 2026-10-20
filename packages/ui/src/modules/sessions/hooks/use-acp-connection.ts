@@ -1,6 +1,7 @@
 import type { ClientConnection } from "@agentclientprotocol/sdk";
 import {
   platformClippedReplayMetaSchema,
+  platformContinuedFromSchema,
   platformQueueMetaSchema,
   platformReplayTurnMetaSchema,
   platformRunStartsMetaSchema,
@@ -27,6 +28,7 @@ import {
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 import { RECONNECT_DELAYS } from "../../acp/utils.js";
+import { readContinuedFrom } from "../../invocations/api/queries.js";
 import { handOverUndelivered } from "../api/acp-session-ops.js";
 import { seedStartedSession } from "../api/queries.js";
 import { settledNextSessionPair } from "../api/session-pair.js";
@@ -87,7 +89,7 @@ export interface StartedSession {
 interface UseAcpConnectionResult {
   state: ConnectionState;
   ensureLive: () => Promise<LiveSession | null>;
-  beginSession: () => Promise<StartedSession>;
+  beginSession: (continuesInvocation?: string) => Promise<StartedSession>;
   loadSessionHistory: (
     sid: string,
     replayBefore?: string,
@@ -197,9 +199,16 @@ export function useAcpConnection(
   );
 
   const startSession = useCallback(
-    async (holders: { count: number }): Promise<StartedSession> => {
+    async (
+      holders: { count: number },
+      continuesInvocation?: string,
+    ): Promise<StartedSession> => {
       if (!selectedAgent) throw new Error("No agent selected");
       const agentId = selectedAgent;
+      const continuedFrom =
+        continuesInvocation === undefined
+          ? null
+          : await readContinuedFrom(agentId, continuesInvocation);
 
       let listening = true;
       let settled = false;
@@ -226,10 +235,12 @@ export function useAcpConnection(
               type: SessionType.Regular,
               ...(next && pairMeta(next.pair)),
               ...(next?.pair.settings && { settings: next.pair.settings }),
+              ...(continuedFrom && { continuedFrom }),
             },
           },
         });
         startedSessionId = session.sessionId;
+        useStore.getState().setContinuedFrom(continuedFrom);
         useStore.getState().setHarnessForks(forksSessions);
         useStore.getState().setHarnessSteers(steers);
         seedStartedSession(agentId, startedSessionId, next?.pair ?? null);
@@ -270,18 +281,21 @@ export function useAcpConnection(
     [selectedAgent, makeUpdateHandler, delivery, keepAsLive, releaseStartSlot],
   );
 
-  const beginSession = useCallback((): Promise<StartedSession> => {
-    const pending = startInFlightRef.current;
-    if (pending) {
-      pending.holders.count += 1;
-      return pending.promise;
-    }
-    const holders = { count: 1 };
-    const promise = startSession(holders);
-    startInFlightRef.current = { holders, promise };
-    promise.catch(() => releaseStartSlot(holders));
-    return promise;
-  }, [startSession, releaseStartSlot]);
+  const beginSession = useCallback(
+    (continuesInvocation?: string): Promise<StartedSession> => {
+      const pending = startInFlightRef.current;
+      if (pending) {
+        pending.holders.count += 1;
+        return pending.promise;
+      }
+      const holders = { count: 1 };
+      const promise = startSession(holders, continuesInvocation);
+      startInFlightRef.current = { holders, promise };
+      promise.catch(() => releaseStartSlot(holders));
+      return promise;
+    },
+    [startSession, releaseStartSlot],
+  );
 
   const collectorRef = useRef<{
     sid: string;
@@ -357,6 +371,7 @@ export function useAcpConnection(
               superseded?: unknown;
               runStarts?: unknown;
               queue?: unknown;
+              continuedFrom?: unknown;
             };
           };
         } | null
@@ -377,6 +392,9 @@ export function useAcpConnection(
         : [];
       const queue = platformQueueMetaSchema.safeParse(
         platformMeta?.queue ?? [],
+      );
+      const continuedFrom = platformContinuedFromSchema.safeParse(
+        platformMeta?.continuedFrom,
       );
       const clipped =
         clippedRaw === undefined
@@ -438,6 +456,9 @@ export function useAcpConnection(
             ...new Set([...useStore.getState().runStarts, ...runStarts]),
           ]);
         useStore.getState().setQueuedPrompts(queue.success ? queue.data : []);
+        useStore
+          .getState()
+          .setContinuedFrom(continuedFrom.success ? continuedFrom.data : null);
         if (turn.success && !turn.data.inFlight)
           idleSessionsRef.current.set(sid, Date.now());
         else idleSessionsRef.current.delete(sid);

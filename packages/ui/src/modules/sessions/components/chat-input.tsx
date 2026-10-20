@@ -36,7 +36,11 @@ export interface ChatInputProps {
   textareaRef: RefObject<HTMLTextAreaElement | null>;
   busy: boolean;
   loadingSession: boolean;
-  onSend: (text: string, attachments?: Attachment[]) => void;
+  onSend: (
+    text: string,
+    attachments?: Attachment[],
+    opts?: { continuesInvocation?: string },
+  ) => void;
   onStop: () => void;
   onTakeBack?: (() => void) | null;
   blockedReason?: string | null;
@@ -197,7 +201,13 @@ export function ChatInput({
     if (!text && !files) return;
     promptHistory.reset();
     clearDraft(key);
-    onSend(text, files);
+    onSend(
+      text,
+      files,
+      current.continuesInvocation !== undefined
+        ? { continuesInvocation: current.continuesInvocation }
+        : undefined,
+    );
   }, [key, loadingSession, clearDraft, onSend, promptHistory]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
