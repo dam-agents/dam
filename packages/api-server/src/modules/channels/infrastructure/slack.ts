@@ -73,8 +73,10 @@ import {
 import {
   turnFailureReasonToken,
   turnFailureUserCopy,
+  noDefaultModelUserCopy,
 } from "./turn-failure-copy.js";
 import { createTurnRecovery, type WatchedTurnEnd } from "./turn-recovery.js";
+import { isNoDefaultModelError } from "../../harness-config/index.js";
 import {
   EventType,
   emit as defaultEmit,
@@ -3031,11 +3033,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     const postFailure = async (err: unknown) => {
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
-        : isAgentWakeTimeoutError(err)
-          ? wakeFailureReasonToken(err.failure)
-          : err instanceof AcpTurnAbandonedError
-            ? turnFailureReasonToken(err)
-            : "acp-error";
+        : isNoDefaultModelError(err)
+          ? "no-default-model"
+          : isAgentWakeTimeoutError(err)
+            ? wakeFailureReasonToken(err.failure)
+            : err instanceof AcpTurnAbandonedError
+              ? turnFailureReasonToken(err)
+              : "acp-error";
       getLogger().warn(
         {
           agentId: instanceName,
@@ -3050,11 +3054,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         ? err.disabled
           ? `This agent is disabled by its owner — ask them to enable it.${renderTurnFiles(ctx)}`
           : `This agent was put to sleep by its owner — try again in a moment, or ask its owner to wake it.${renderTurnFiles(ctx)}`
-        : isAgentWakeTimeoutError(err)
-          ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
-          : err instanceof AcpTurnAbandonedError
-            ? `${turnFailureUserCopy(err)}${renderTurnFiles(ctx)}`
-            : `Something went wrong while relaying this message — try again.${renderTurnFiles(ctx)}`;
+        : isNoDefaultModelError(err)
+          ? `${noDefaultModelUserCopy(err, uiBaseUrl, instanceName)}${renderTurnFiles(ctx)}`
+          : isAgentWakeTimeoutError(err)
+            ? `${wakeFailureUserCopy(err.failure)}${renderTurnFiles(ctx)}`
+            : err instanceof AcpTurnAbandonedError
+              ? `${turnFailureUserCopy(err)}${renderTurnFiles(ctx)}`
+              : `Something went wrong while relaying this message — try again.${renderTurnFiles(ctx)}`;
       await postNotice(text);
       failurePosted = true;
     };
@@ -5380,11 +5386,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       failureReason = isAgentStoppedError(err)
         ? "agent-stopped"
-        : isAgentWakeTimeoutError(err)
-          ? wakeFailureReasonToken(err.failure)
-          : err instanceof AcpTurnAbandonedError
-            ? turnFailureReasonToken(err)
-            : "acp-error";
+        : isNoDefaultModelError(err)
+          ? "no-default-model"
+          : isAgentWakeTimeoutError(err)
+            ? wakeFailureReasonToken(err.failure)
+            : err instanceof AcpTurnAbandonedError
+              ? turnFailureReasonToken(err)
+              : "acp-error";
       getLogger().warn(
         {
           agentId: args.instanceName,

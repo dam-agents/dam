@@ -44,6 +44,7 @@ import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.
 import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
+  servesHarness,
   VENDORED_PRICE_TABLE,
 } from "./modules/model-catalog/index.js";
 import {
@@ -352,6 +353,28 @@ const nativeConnectionOf = (
   const home = HARNESS_HOME_PROVIDERS[harness]?.[0];
   return home ? native(home) : null;
 };
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness whose sessions reach their models
+ * through the Model Router needs each session's model; one that runs on a
+ * native Connection, or an agent holding no provider whose API the harness
+ * speaks, keeps the harness's own model configuration. Before the pod's env
+ * arrives nothing is known, so a model is required.
+ */
+const modelRequired = (harness: string): boolean => {
+  const binding = harnessManifests[harness]?.modelRouter;
+  if (binding === undefined) return false;
+  if (!envStore.ready()) return true;
+  return (
+    nativeConnectionOf(harness, null) === null &&
+    envStore.state().providers.some((l) => {
+      const alias = l.template ? aliasForTemplateId(l.template) : null;
+      return (
+        alias !== null &&
+        servesHarness({ dialects: PROVIDER_DIALECTS[alias] }, harness, binding)
+      );
+    })
+  );
+};
 const nativeEnv = (connectionId: string): Record<string, string> =>
   envStore.state().providers.find((l) => l.id === connectionId)?.env ?? {};
 /**
@@ -483,6 +506,7 @@ const {
   unroutedProviderEnv,
   routerEnv: routerEnvOf,
   nativeConnectionOf,
+  modelRequired,
   nativeEnv,
   leaseIdleMs: config.LEASE_IDLE_MS,
   log: (msg) => process.stderr.write(`[acp] ${msg}\n`),

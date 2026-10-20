@@ -133,12 +133,17 @@ import {
 import {
   composeRuntimeDelivery,
   createBullConnection,
+  sessionPairFields,
 } from "./modules/runtime-delivery/index.js";
 import {
   createHarnessConfigSnapshotWriter,
   harnessConfigSupportOf,
+  composeConvertingFirePair,
+  composeDefaultConverter,
   composeFirePair,
+  composeScheduleModelForFire,
   composeSessionChoicesValidator,
+  isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
 import {
   composeSchedulesAtBoot,
@@ -617,6 +622,19 @@ export async function bootstrap() {
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
   });
+  const outcomePairFields = async (
+    agentId: string,
+  ): Promise<Record<string, unknown>> =>
+    sessionPairFields(
+      await firePair(agentId, {}).catch((err: unknown) => {
+        if (!isNoDefaultModelError(err)) throw err;
+        getLogger().info(
+          { err, agentId },
+          "outcome turn: no saved default to run it on",
+        );
+        return null;
+      }),
+    );
   await periodicJobs.register("starter-kits-refresh", 600_000, () =>
     starterKitsRefresh.run(),
   );
@@ -661,6 +679,7 @@ export async function bootstrap() {
 
   const outcomeDeliveryDeps = {
     repo: satellitesBoot.repo,
+    pairFields: outcomePairFields,
     bump: (
       agentId: string,
       events: Parameters<typeof runtimeDelivery.runtimeMutator.bump>[1],
@@ -953,6 +972,33 @@ export async function bootstrap() {
   });
   const metricsReader = composeMetricsReader(config);
   const telemetryReader = composeTelemetryReader(config);
+  const { converter: defaultConverter, helloSaga: defaultConversionSaga } =
+    composeDefaultConverter({
+      db,
+      namespace: config.namespace,
+      catalog: harnessCatalog,
+      getCapabilities: async (agentId) =>
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+      specHarness: async (agentId) =>
+        (await agentsRepo.get(agentId))?.spec.harness,
+      modelsRanBy: async (agentId, hours) =>
+        metricsReader
+          ? (await metricsReader.tokenSpendByModel([agentId], { hours }))
+              .sort((a, b) => b.outputTokens - a.outputTokens)
+              .map((r) => r.model)
+          : [],
+      movedToNewImage: async (agentId) =>
+        (await agentsRepo.get(agentId))?.imageUpdateFrom !== undefined,
+      isRunning: (agentId) => agentsRepo.isReady(agentId),
+      wake: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+      lastHelloAt: async (agentId) =>
+        (
+          await runtimeDelivery.agentsRuntimeRepo.get(agentId)
+        )?.runtimeLastHelloAt?.getTime() ?? null,
+      ownerOf: async (agentId) => (await agentsRepo.get(agentId))?.owner,
+      log: (msg) => getLogger().info(msg),
+    });
 
   const sessionWatcher = composeSessionWatcher({
     db,
@@ -1145,7 +1191,12 @@ export async function bootstrap() {
     return hold.reason;
   };
   const channelSpendHold = async (agentId: string) => {
-    const provider = (await firePair(agentId, {}))?.provider;
+    const provider = (
+      await firePair(agentId, {}).catch((err: unknown) => {
+        if (isNoDefaultModelError(err)) return undefined;
+        throw err;
+      })
+    )?.provider;
     return spendHold({
       agentId,
       ...(provider ? { connectionId: provider } : {}),
@@ -1189,7 +1240,7 @@ export async function bootstrap() {
       namespace: config.namespace,
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
-      firePair: (agentId) => firePair(agentId, {}),
+      firePair: composeConvertingFirePair(defaultConverter, firePair),
     });
 
   const agentIcons =
@@ -1423,6 +1474,22 @@ export async function bootstrap() {
     bullConnection,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     wakeAgent: (agentId) => agentsRepo.wakeIfHibernated(agentId),
+    ensureDefault: (agentId) => defaultConverter.ensureForFire(agentId),
+    scheduleModelFor: composeScheduleModelForFire({
+      db,
+      getCapabilities: async (agentId) =>
+        (await runtimeDelivery.agentsRuntimeRepo.get(agentId))
+          ?.runtimeCapabilities ?? null,
+    }),
+    defaultPendingAfterMove: async (agentId) => {
+      if (!(await defaultConverter.pendingAfterMove(agentId))) return false;
+      void defaultConverter
+        .ensureForFire(agentId)
+        .catch((err: unknown) =>
+          getLogger().warn({ err, agentId }, "default conversion failed"),
+        );
+      return true;
+    },
     restoreActivity: (agentId, stamp) =>
       agentsRepo.restoreActivityIfUnchanged(agentId, stamp),
     redis: sharedRedis,
@@ -1761,6 +1828,7 @@ export async function bootstrap() {
   );
   const subAgentOutcomes = composeSubAgentOutcomeDelivery({
     db,
+    pairFields: outcomePairFields,
     bump: (agentId, events) =>
       runtimeDelivery.runtimeMutator.bump(agentId, events),
     enqueue: (agentId) =>
@@ -1982,6 +2050,7 @@ export async function bootstrap() {
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
+    defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();
     gettingStarted.stop();

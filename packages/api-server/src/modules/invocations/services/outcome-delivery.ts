@@ -22,6 +22,7 @@ export interface SubAgentOutcomeDeliveryDeps {
   ) => Promise<number>;
   enqueue: (agentId: string) => Promise<void>;
   wakeUnlessStopped: (agentId: string) => Promise<boolean>;
+  pairFields: (agentId: string) => Promise<Record<string, unknown>>;
   log: (msg: string) => void;
   now?: () => Date;
 }
@@ -118,7 +119,11 @@ async function deliverTo(
       {
         id: `sub-agent-outcome:${driverAgentId}:${ids[0]!}:${firedAt}`,
         kind: "sub-agent-outcome",
-        payload: { task, ids },
+        payload: {
+          task,
+          ids,
+          ...(await deps.pairFields(driverAgentId)),
+        },
         expiresAt: new Date(firedAt + EVENT_TTL_MS),
       },
     ]);

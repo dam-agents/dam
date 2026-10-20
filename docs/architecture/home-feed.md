@@ -10,7 +10,7 @@ In an Agent's chat with the new layout off, the chat has no icon bar: the bell s
 
 ## What Home reads
 
-Three sources sit behind the feed, and they are deliberately different kinds of thing.
+Three sources sit behind the feed, and they are deliberately different kinds of thing; [default-model notices](#default-model-notices) are a fourth, read beside them.
 
 **Approvals** come from their own table: a decision is genuinely pending until someone makes it, so it is durable state the api-server owns outright.
 A spend-limit question is an approval too, but it belongs to no session: its card offers only "Continue" and "Stop for today", and it stays open until the next UTC midnight ([spend-limits](spend-limits.md#continue)).
@@ -104,6 +104,17 @@ Two consequences are worth stating plainly, because both are costs.
 A busy Agent now reports whether or not a human is looking — the watch is no longer scoped to who has a tab open.
 And the comparison state is in memory, held by whichever replica holds the lease: a row the retention trim removes is not known to be gone, so it is re-created on the next hold rather than staying deleted.
 That is harmless — the row is a fresh capture of live state — but it means retention trims history, not the present.
+
+## Default-model notices
+
+The bell also lists the Agents on the Model Router whose saved default needs their owner ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
+An Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
+They are computed on every read from the Agent's saved default, its granted providers and the conversion's note, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
+A pending default, one still being converted, says nothing.
+The same notice puts a line under the chat's model control, a count in the banner on Home, and "Won't run" on the Agent's schedules that name no model.
+Only the bell's card can be dismissed, per Agent and state; the others show every notice that stops runs, and a changed default is shown in the bell alone.
+A dismissal is dropped once its notice no longer holds, so the same state coming back later is shown again, and an Agent's dismissals go with it.
+Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default, and changing an Agent's providers refreshes the list in the tab that changed them.
 
 ## Seen, unread, and dismissed
 

@@ -296,6 +296,7 @@ export function useSetAgentConnections() {
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),
         egressRulesKeys.all,
+        trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't update app connections",
     },

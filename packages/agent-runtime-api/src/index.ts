@@ -23,6 +23,7 @@ export type {
 } from "./modules/sessions/types.js";
 export {
   PIN_MODEL_METHOD,
+  NO_MODEL_REASON,
   CONFIGURE_SESSION_METHOD,
 } from "./modules/sessions/types.js";
 export {
@@ -138,6 +139,14 @@ export type {
   HarnessConfigService,
 } from "./modules/harness-config/types.js";
 export { harnessConfigNoticeSchema } from "./modules/harness-config/schemas.js";
+export {
+  CLAUDE_TIERS,
+  chatModels,
+  claudeTierOf,
+  compareModelVersions,
+  newestOfTier,
+  type ClaudeTier,
+} from "./modules/harness-config/model-tiers.js";
 export type {
   ContainerEngine,
   FinishedRow,
@@ -222,6 +231,7 @@ export {
   onceOrigin,
   onceOriginMode,
   initializationEventPayload,
+  satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
   workspaceCommandEventPayload,
   workspaceSeedEventPayload,

@@ -18,6 +18,7 @@ import {
 import { SizeNeverFitsError } from "../../modules/budgets/index.js";
 import {
   AttenuationError,
+  NoSpawnModelError,
   InvalidSchemaError,
   ModelNameError,
   ProviderMismatchError,
@@ -185,6 +186,7 @@ function driverOps(
           err instanceof InvalidSchemaError ||
           err instanceof SizeNeverFitsError ||
           err instanceof ModelNameError ||
+          err instanceof NoSpawnModelError ||
           err instanceof ProviderMismatchError
         ) {
           return { ok: false, kind: "invalid", message: err.message };

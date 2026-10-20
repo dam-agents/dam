@@ -7,6 +7,7 @@ import type { InvocationsRepository } from "../../modules/invocations/infrastruc
 import {
   createInvocationsService,
   ModelNameError,
+  NoSpawnModelError,
   ProviderMismatchError,
   type SpawnInput,
 } from "../../modules/invocations/services/invocations-service.js";
@@ -97,6 +98,7 @@ const baseInput: SpawnInput = {
   connections: ["conn-ghe"],
   prompt: "run one cell",
   schema: { type: "object" },
+  harnessConfig: { model: "ibm/aws/claude-sonnet-5-5" },
 };
 
 describe("spawn applies an Agent Setup", () => {
@@ -144,11 +146,13 @@ describe("spawn applies an Agent Setup", () => {
       setup: { install: { command: "uv pip install ." }, env: [], skills: [] },
     });
 
-    expect(bumped[0]?.map((e) => e.kind)).toEqual([
+    expect(bumped[bumped.length - 1]?.map((e) => e.kind)).toEqual([
       "workspace-command",
       "trigger",
     ]);
-    expect(bumped[0]?.[0]?.payload).toEqual({ command: "uv pip install ." });
+    expect(bumped[bumped.length - 1]?.[0]?.payload).toEqual({
+      command: "uv pip install .",
+    });
   });
 
   test("without an install only the task is queued", async () => {
@@ -156,7 +160,7 @@ describe("spawn applies an Agent Setup", () => {
 
     await service.spawn(baseInput);
 
-    expect(bumped[0]?.map((e) => e.kind)).toEqual(["trigger"]);
+    expect(bumped[bumped.length - 1]?.map((e) => e.kind)).toEqual(["trigger"]);
   });
 
   test("external skills are applied to the target", async () => {
@@ -334,16 +338,17 @@ describe("spawn inherits the driver's provider", () => {
       runsOn: ["openai" as const, "anthropic" as const],
     };
 
+    const { harnessConfig: _model, ...noModel } = baseInput;
     await expect(
       service.spawn({
-        ...baseInput,
+        ...noModel,
         target,
         attachableProviders: ["openai", "bob"],
       }),
     ).rejects.toThrow(
       "codex runs on OpenAI, Anthropic, and this agent holds none of them; ask the user to attach OpenAI on this agent's Providers page",
     );
-    await expect(service.spawn({ ...baseInput, target })).rejects.toThrow(
+    await expect(service.spawn({ ...noModel, target })).rejects.toThrow(
       "ask the user to connect OpenAI, Anthropic in Settings and attach it on this agent's Providers page",
     );
     await expect(
@@ -356,6 +361,22 @@ describe("spawn inherits the driver's provider", () => {
       "the model names the anthropic provider, which codex does not run on; codex runs on OpenAI, IBM ETE LiteLLM Proxy, so name a model of IBM ETE LiteLLM Proxy",
     );
     expect(created).toEqual([]);
+  });
+
+  // TEST_SCENARIO: a spawn that names no model, onto a routed provider, is refused at once with how to name one, since the sub-agent's runtime refuses a turn without a model; an image-only spawn and one on Bedrock keep their own choices.
+  test("a spawn with no model is refused before anything starts", async () => {
+    const { service, created } = makeService();
+    const { harnessConfig: _model, ...noModel } = baseInput;
+    await expect(service.spawn(noModel)).rejects.toBeInstanceOf(
+      NoSpawnModelError,
+    );
+    expect(created).toEqual([]);
+    await service.spawn({
+      ...noModel,
+      driverProviders: [{ id: "conn-bedrock", type: "bedrock" }],
+      target: { templateId: "claude-code", runsOn: ["bedrock"] },
+    });
+    expect(created).toHaveLength(1);
   });
 
   test("the first compatible provider is picked", () => {
