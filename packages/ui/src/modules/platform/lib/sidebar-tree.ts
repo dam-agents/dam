@@ -105,7 +105,8 @@ const SOURCE: Record<SessionType, string> = {
  * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar tree: which Session
  * rows sit in the Pinned section, which Agents are open, the activity dot a
  * Session row shows, and the context line under its title (harness, model and
- * where the Session came from).
+ * where the Session came from). A terminal Session names no source there: the
+ * row's terminal icon says it.
  */
 export function sessionContext(
   s: Pick<SessionView, "harness" | "model" | "type" | "mode" | "scheduleId">,
@@ -113,7 +114,7 @@ export function sessionContext(
 ): string {
   const source =
     s.mode === SessionMode.Terminal
-      ? "Terminal"
+      ? null
       : s.scheduleId
         ? SOURCE[SessionType.ScheduleCron]
         : SOURCE[s.type];
@@ -121,7 +122,7 @@ export function sessionContext(
     s.harness &&
       (HARNESS_ICONS[s.harness as HarnessFamily]?.label ?? s.harness),
     s.model && modelDisplayName(s.model),
-    conversation ? `${source} ${conversation}` : source,
+    source && (conversation ? `${source} ${conversation}` : source),
   ]
     .filter(Boolean)
     .join(" · ");

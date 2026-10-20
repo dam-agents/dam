@@ -16,13 +16,13 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 const { SessionRow } =
   await import("../../modules/sessions/components/session-row.js");
 
-function render(quietPin: boolean) {
+function render(quietPin: boolean, mode = SessionMode.Chat) {
   return renderToStaticMarkup(
     createElement(SessionRow, {
       session: {
         agentId: "a",
         sessionId: "s1",
-        mode: SessionMode.Chat,
+        mode,
         type: SessionType.Regular,
         title: "Recent",
         createdAt: "2026-10-20T00:00:00Z",
@@ -49,4 +49,12 @@ it("shows a quiet pin only with the row's actions", () => {
     /data-row-actions[^>]*group-has-\[:focus-visible\]:w-auto/,
   );
   expect(quiet).toContain('aria-label="Unpin session"');
+});
+
+// TEST_SCENARIO: a terminal Session is marked by the terminal icon, with its accessible name, as before the new layout's context line existed.
+it("marks a terminal Session with the labelled terminal icon", () => {
+  expect(render(true, SessionMode.Terminal)).toMatch(
+    /<svg[^>]*aria-label="Terminal"/,
+  );
+  expect(render(true)).not.toContain('aria-label="Terminal"');
 });

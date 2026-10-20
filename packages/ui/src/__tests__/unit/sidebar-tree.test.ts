@@ -167,7 +167,7 @@ describe("sidebar tree", () => {
     expect(idle).not.toContain("animate-spin");
   });
 
-  // TEST_SCENARIO: the line under a Session title names the harness, the model and where the Session came from.
+  // TEST_SCENARIO: the line under a Session title names the harness, the model and where the Session came from; a terminal Session names no source, since the row's terminal icon says it.
   it("names harness, model and source", () => {
     const session: SessionView = {
       sessionId: "s1",
@@ -190,7 +190,7 @@ describe("sidebar tree", () => {
       }),
     ).toBe("Chat");
     expect(sessionContext({ ...session, mode: SessionMode.Terminal })).toBe(
-      "Claude · Opus 4.7 · Terminal",
+      "Claude · Opus 4.7",
     );
   });
 });
