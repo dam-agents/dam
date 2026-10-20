@@ -8,7 +8,11 @@ import {
   fitOutputBudget,
   floorOutputBudget,
 } from "./domain/replay.js";
-import { sessionOf, sessionStampOf } from "./domain/session-of.js";
+import {
+  sessionOf,
+  sessionOfRunningTurn,
+  sessionStampOf,
+} from "./domain/session-of.js";
 import { createCatalogEndpoints } from "./services/catalog-endpoints.js";
 import {
   createModelRouter,
@@ -26,6 +30,7 @@ export interface ComposeModelRouterOpts {
   sessionModelOf?: (sessionId: string) => SessionModelChoice | null;
   isSession?: (sessionId: string) => boolean;
   terminalSessionOf?: (harnessSessionId: string) => string | undefined;
+  runningSessionsOf?: (harness: string) => string[];
   onCall?: (record: ModelCallRecord) => void;
   onCallStarted?: (session: string | null) => void;
   onCallEnded?: (session: string | null, answered: boolean) => void;
@@ -51,8 +56,13 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
     envState: opts.envState,
     harnesses: opts.harnesses,
     defaultHarness: opts.defaultHarness,
-    sessionOf: (req, body) => {
-      const found = sessionOf(req, body);
+    sessionOf: (req, body, harness) => {
+      const found =
+        sessionOf(req, body) ??
+        sessionOfRunningTurn(
+          opts.harnesses[harness],
+          opts.runningSessionsOf?.(harness) ?? [],
+        );
       if (!found) return null;
       const stamp = sessionStampOf(req);
       return found.parentSessionId

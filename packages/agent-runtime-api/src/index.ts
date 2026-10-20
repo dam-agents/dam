@@ -29,6 +29,7 @@ export {
 export {
   sessionSettingsSchema,
   modelConstraintsFor,
+  startModeFor,
   sessionSettingsError,
   SUBAGENT_MODEL_SETTING,
   PLATFORM_SUBAGENT_PREFIX,

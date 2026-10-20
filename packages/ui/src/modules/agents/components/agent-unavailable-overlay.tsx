@@ -21,9 +21,9 @@ import type {
 } from "../utils/agent-resolver.js";
 import { AgentAvatar } from "./avatar/agent-avatar.js";
 import { OverlayFrame } from "./overlay-frame.js";
+import { RuntimeMigrationBadge } from "./runtime-migration-badge.js";
 import { StartupTip } from "./startup-tip.js";
 import { TerminationReason } from "./termination-reason.js";
-import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const OVERLAY_ICON: Partial<Record<AgentDisplayState, typeof Asleep>> = {
   hibernated: Asleep,
@@ -72,7 +72,7 @@ export function AgentUnavailableOverlay({
             {agent.name}
           </h2>
           <div className="flex items-center gap-2">
-            <VmRuntimeBadge agent={agent} />
+            <RuntimeMigrationBadge agent={agent} />
             <Badge variant="warning">Reconnecting</Badge>
           </div>
         </div>
@@ -108,7 +108,7 @@ export function AgentUnavailableOverlay({
           {agent.name}
         </h2>
         <div className="flex items-center gap-2 empty:hidden">
-          <VmRuntimeBadge agent={agent} />
+          <RuntimeMigrationBadge agent={agent} />
           {state !== "starting" && (
             <StatusBadge
               state={state}

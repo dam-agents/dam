@@ -45,7 +45,6 @@ const agent: AgentView = {
   spawnedBy: null,
   vm: false,
   runtimeMigration: null,
-  runtimeMigratable: false,
 };
 
 const slotUnit = { cpuMilli: 1000, memoryMi: 1024 };

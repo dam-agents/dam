@@ -318,6 +318,26 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(client.reply(2)?.result).toEqual({ value: "x" });
   });
 
+  /** TEST_SCENARIO: a terminal Session's title is known only to its harness,
+   * so a session/list that names a harness reaches that harness's process,
+   * started for it, and no other. */
+  it("asks the named harness for its listing", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(frames.initialize(0));
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/list",
+      params: { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    });
+    expect(world.harnessCount("codex")).toBe(1);
+    expect(world.harnessCount("claude-code")).toBe(0);
+    const codex = world.harness("codex");
+    codex.replyTo("initialize", {});
+    expect(codex.received("session/list")).toHaveLength(1);
+  });
+
   /** TEST_SCENARIO: Two harnesses ask the client a question with the same
    * request id. Each answer reaches the harness that asked it. */
   it("keeps agent requests from two processes apart", () => {
@@ -1016,7 +1036,8 @@ describe("acp-runtime: one harness process per harness", () => {
 
   /** TEST_SCENARIO: After the agent restarts, a client that loads a saved
    * session gets its saved model and mode on the new harness process before
-   * it can prompt, so both survive the restart. */
+   * it can prompt, so both survive the restart. The mode follows the model's
+   * own answer, since the harness reads a mode against the model it holds. */
   it("re-applies the saved model and settings when a client loads the session", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     world.metadata.store.set("saved", {
@@ -1030,6 +1051,8 @@ describe("acp-runtime: one harness process per harness", () => {
     const harness = world.harness("claude-code");
     harness.replyToSession("session/load", "saved", {});
     expect(modelFrames(harness, "saved")).toEqual(["ibm/aws/claude-opus-4-8"]);
+    expect(harness.received("session/set_mode")).toEqual([]);
+    harness.replyToSession("session/set_config_option", "saved", {});
     expect(harness.received("session/set_mode")).toEqual([
       expect.objectContaining({
         params: { sessionId: "saved", modeId: "plan" },

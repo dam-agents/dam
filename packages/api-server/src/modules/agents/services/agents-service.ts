@@ -54,18 +54,10 @@ import {
   ANN_STARTER_KIT_SEED,
 } from "../infrastructure/labels.js";
 import {
-  executeAbortRuntimeMigration,
-  executeRetryRuntimeMigration,
-  executeRuntimeMigration,
-  type RuntimeMigrationWrite,
-} from "./runtime-migration.js";
-import {
   type AgentMount,
   isVmBackend,
-  type RuntimeMigrationContext,
   type VmPoolCapacity,
 } from "../domain/runtime-migration.js";
-import { runtimeMigrationPlan } from "../domain/runtime-migration-plan.js";
 import {
   seedTelemetryIdentity,
   renamedTelemetryIdentity,
@@ -536,11 +528,6 @@ export interface StorageGatePort {
   readCapacity(): Promise<VmPoolCapacity | null>;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an Agent's home holds, read from the Agent's own runtime, which measures the volume it has mounted. Null when it cannot be read — the Agent is asleep or stopped, or its runtime does not answer — so a move is judged on the home's contents only where they are known.
-export interface HomeUsagePort {
-  read(agentId: string): Promise<number | null>;
-}
-
 export function createAgentsService(deps: {
   repo: AgentsRepository;
   agentEnvRepo: AgentEnvRepository;
@@ -557,15 +544,11 @@ export function createAgentsService(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
-  agentDefaultStorageSize?: string;
-  agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
   defaultHarness?: string;
   telemetry?: boolean;
-  runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   storageGate?: StorageGatePort;
-  homeUsage?: HomeUsagePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;
   grantProvisioner?: {
     resolveSpecGrants(sel: {
@@ -628,27 +611,6 @@ export function createAgentsService(deps: {
     (SlackConversationRef & { label: SlackConversationLabel | null })[]
   >;
 }): AgentsService {
-  const runtimeMigrationContext: RuntimeMigrationContext = {
-    virtualizationEnabled: deps.virtualizationEnabled === true,
-    defaultMounts: deps.agentDefaultMounts,
-    defaultStorageSize: deps.agentDefaultStorageSize ?? "10Gi",
-  };
-
-  // UNIT_BOUNDARY_DESCRIPTION: the context a move is decided from, with the pool and the home read live: the plan and the request must agree about whether the owner has room for it, and about how much of that room the home takes.
-  async function migrationContext(
-    agentId: string,
-  ): Promise<RuntimeMigrationContext> {
-    const [capacity, homeBytes] = await Promise.all([
-      deps.storageGate?.readCapacity() ?? null,
-      deps.homeUsage?.read(agentId) ?? null,
-    ]);
-    return {
-      ...runtimeMigrationContext,
-      capacity: capacity ?? null,
-      homeBytes: homeBytes ?? null,
-    };
-  }
-
   // UNIT_BOUNDARY_DESCRIPTION: every key of the Secret a secretRef names becomes the agent's environment, and the name alone reaches any Secret in the agent namespace, so a secretRef is accepted only for a Secret its agent's owner holds. An empty one clears the field and needs no check. The refusal reads the same whether the Secret is missing or belongs to someone else, so it cannot be used to learn which Secrets exist.
   async function assertOwnSecretRef(
     secretRef: string | undefined,
@@ -779,27 +741,8 @@ export function createAgentsService(deps: {
       status.features,
       status.unsupportedKinds,
       status.workspaceFailures,
-      runtimeMigrationContext,
       checklists.get(infra.id),
     );
-  }
-
-  const runtimeMigrationWrites = {
-    owner: deps.owner,
-    getAgent: (agentId: string) => deps.repo.getLive(agentId, deps.owner),
-    writeMigration: (agentId: string, patch: RuntimeMigrationWrite) =>
-      deps.repo.writeRuntimeMigration(agentId, deps.owner, patch),
-  };
-
-  async function migrationUpdated(
-    infra: InfraAgent,
-  ): Promise<ReturnType<typeof assembleAgent>> {
-    emit({
-      type: EventType.AgentUpdated,
-      agentId: infra.id,
-      ...(deps.owner ? { ownerSub: deps.owner } : {}),
-    });
-    return project(infra);
   }
 
   async function ownsOrDeny(id: string, surface: string): Promise<boolean> {
@@ -931,7 +874,6 @@ export function createAgentsService(deps: {
         status.features,
         status.unsupportedKinds,
         status.workspaceFailures,
-        runtimeMigrationContext,
         (await deps.onboardingChecklists.readMany([id])).get(id),
       ),
     );
@@ -1001,7 +943,6 @@ export function createAgentsService(deps: {
           status?.features ?? runtimeFeaturesOf(null),
           status?.unsupportedKinds ?? [],
           status?.workspaceFailures ?? [],
-          runtimeMigrationContext,
           checklistMap.get(infra.id),
         );
       });
@@ -1064,6 +1005,13 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
+      // UNIT_BOUNDARY_DESCRIPTION: Legacy container backend: remove once every agent runs as a VM. A container is what an install without virtualization can still make, and what the Agents made before the microVM was the default already run as; nothing new is created on it.
+      if (input.vm === false && deps.virtualizationEnabled)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this install runs every new agent as its own microVM, so a container agent cannot be created; only agents made before virtualization was enabled still run on the container backend",
+        });
       const vm = input.vm ?? deps.virtualizationEnabled === true;
       let spec: Record<string, unknown>;
       let templateId: string | undefined;
@@ -1285,7 +1233,6 @@ export function createAgentsService(deps: {
         runtimeFeaturesOf(null),
         [],
         [],
-        runtimeMigrationContext,
       );
       securityLog("info", "agent.create", {
         category: "resource",
@@ -1519,7 +1466,7 @@ export function createAgentsService(deps: {
         throw new TRPCError({
           code: "CONFLICT",
           message:
-            "This agent is moving to the new runtime and is not running; abort the move to stop it",
+            "This agent is moving to the new runtime and is not running; it can be stopped once the move ends",
         });
       const effectiveTimeout = resolveEffectiveHibernationTimeoutMin(
         current.spec.hibernationTimeout,
@@ -1580,42 +1527,6 @@ export function createAgentsService(deps: {
         ...(deps.owner ? { ownerSub: deps.owner } : {}),
       });
       return ok(await project(result.value));
-    },
-
-    async migrateRuntime(id) {
-      const result = await executeRuntimeMigration({
-        ...runtimeMigrationWrites,
-        migration: await migrationContext(id),
-      })(id);
-      if (!result.ok) return result;
-      return ok(await migrationUpdated(result.value));
-    },
-
-    async abortRuntimeMigration(id) {
-      const result = await executeAbortRuntimeMigration(runtimeMigrationWrites)(
-        id,
-      );
-      if (!result.ok) return result;
-      return ok(await migrationUpdated(result.value));
-    },
-
-    async retryRuntimeMigration(id) {
-      const result = await executeRetryRuntimeMigration(runtimeMigrationWrites)(
-        id,
-      );
-      if (!result.ok) return result;
-      return ok(await migrationUpdated(result.value));
-    },
-
-    async planRuntimeMigration(id) {
-      const infra = await deps.repo.getLive(id, deps.owner);
-      if (!infra) return err({ type: "AgentNotFound" as const });
-      return ok(
-        runtimeMigrationPlan(infra, {
-          ...(await migrationContext(id)),
-          retentionMs: deps.runtimeMigrationRetentionMs ?? null,
-        }),
-      );
     },
 
     async ensureReady(id, opts) {

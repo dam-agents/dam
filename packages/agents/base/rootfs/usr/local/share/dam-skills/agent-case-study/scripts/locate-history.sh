@@ -45,6 +45,12 @@ elif [ -d "$H/.pi/agent" ]; then
   if [ -f "$H/.pi/pi-acp/session-map.json" ]; then
     echo "SESSION_MAP=$H/.pi/pi-acp/session-map.json"
   fi
+elif [ -d "$H/.copilot/session-state" ]; then
+  echo "HARNESS=copilot"
+  echo "STORE=$H/.copilot/session-state"
+  echo "FORMAT=jsonl-per-session"
+  echo "TOTAL_SESSION_FILES=$(count_files "$H/.copilot/session-state")"
+  echo "RECENT_SESSION_FILES=$(count_recent_files "$H/.copilot/session-state")"
 elif [ -d "$H/.codex" ]; then
   echo "HARNESS=codex"
   if [ "$(count_files "$H/.codex")" != "0" ]; then

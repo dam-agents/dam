@@ -18,6 +18,7 @@ export {
 } from "./manifest.js";
 
 export { createEnvPlugin } from "./drivers/env-plugin.js";
+export { readCurrentValues } from "./drivers/harness-config-plugin.js";
 export {
   createEnvStateStore,
   staleEnvReason,

@@ -6,7 +6,7 @@ import { formatBytes, STORAGE_PARTS, storageRows } from "../lib/pools.js";
 
 const PART_HINT: Record<string, string> = {
   [STORAGE_PARTS.seeds]:
-    "Copies of agents' files moving onto VM agents. Each copy is deleted when its move finishes or is cancelled; a move that failed keeps its copy until you retry or cancel it.",
+    "Copies of agents' files moving onto VM agents. Each copy is deleted when its move finishes or is cancelled; a move that failed keeps its copy until it is retried or undone.",
   [STORAGE_PARTS.rest]: "Logs and records that keep your VM agents running.",
 };
 

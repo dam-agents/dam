@@ -125,3 +125,100 @@ describe("telegram worker turns", () => {
     }
   });
 });
+
+describe("telegram group turns", () => {
+  /**
+   * TEST_SCENARIO: The reported bug. With Group Privacy on, a reply to the
+   * bot is the one plain message Telegram still delivers, and the worker
+   * dropped it because it carried no mention. A reply to the bot is addressed
+   * to the agent and reaches it while ambient mode is off.
+   */
+  it("answers a reply to the bot while ambient mode is off", async () => {
+    const h = await started(telegramWorkerHarness());
+
+    h.sendGroup(JANE, "yo", { replyToBot: true });
+
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+    expect(h.prompts[0]!.prompt).toContain("mentions you or replies to you");
+    expect(h.prompts[0]!.prompt).toContain("Message: yo");
+  });
+
+  /**
+   * TEST_SCENARIO: With ambient mode off, chatter nobody addressed never
+   * reaches the agent, while a mention right after it does.
+   */
+  it("passes on only the mention while ambient mode is off", async () => {
+    const h = await started(telegramWorkerHarness());
+
+    h.sendGroup(OMAR, "lunch at noon?");
+    h.sendGroup(JANE, "@krodo_bot what is on the agenda?");
+
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+    expect(h.prompts[0]!.prompt).toContain("what is on the agenda?");
+    expect(h.prompts[0]!.prompt).not.toContain("lunch at noon?");
+  });
+
+  /**
+   * TEST_SCENARIO: With ambient mode on, chatter reaches the agent framed as
+   * reading along, so it chimes in only when it can clearly help.
+   */
+  it("reads along with chatter while ambient mode is on", async () => {
+    const h = await started(telegramWorkerHarness({ ambient: true }));
+
+    h.sendGroup(OMAR, "lunch at noon?");
+
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+    expect(h.prompts[0]!.prompt).toContain("you are reading along");
+    expect(h.prompts[0]!.prompt).toContain("Message: lunch at noon?");
+  });
+
+  /**
+   * TEST_SCENARIO: A read-along turn posts nothing when it fails. A mention
+   * steered into one would lose its failure notice, so a mention that
+   * arrives while a read-along turn runs waits and gets an addressed turn of
+   * its own.
+   */
+  it("gives a mention its own turn instead of steering it into a read-along turn", async () => {
+    const first = held();
+    const steer = vi.fn(async () => "injected" as const);
+    const h = await started(
+      telegramWorkerHarness({ ambient: true, turn: first.turn, steer }),
+    );
+    try {
+      h.sendGroup(OMAR, "lunch at noon?");
+      await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+
+      h.sendGroup(JANE, "@krodo_bot what is on the agenda?");
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(steer).not.toHaveBeenCalled();
+
+      first.release();
+      await vi.waitFor(() => expect(h.prompts).toHaveLength(2));
+      expect(h.prompts[1]!.prompt).toContain("mentions you or replies to you");
+      expect(h.prompts[1]!.prompt).toContain("what is on the agenda?");
+    } finally {
+      first.release();
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: An operator changes Group Privacy in BotFather while the
+   * bot runs. The `/ambient on` heads-up must follow the bot's setting at
+   * that moment, not the one it had when it started.
+   */
+  it("bases the Group Privacy heads-up on the bot's current setting", async () => {
+    const groupPrivacy = { on: true };
+    const h = await started(telegramWorkerHarness({ groupPrivacy }));
+
+    groupPrivacy.on = false;
+    h.sendGroup(JANE, "/ambient on");
+    await vi.waitFor(() => expect(h.posts).toHaveLength(1));
+    expect(h.posts[0]).toContain("Ambient mode turned on");
+    expect(h.posts[0]).not.toContain("Group Privacy");
+
+    groupPrivacy.on = true;
+    h.sendGroup(JANE, "/ambient on");
+    await vi.waitFor(() => expect(h.posts).toHaveLength(2));
+    expect(h.posts[1]).toContain("Group Privacy");
+  });
+});

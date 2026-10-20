@@ -153,6 +153,32 @@ describe("routerEnvFor", () => {
     expect(piEnv.PLATFORM_MODEL_ROUTER_SERVES).toBeUndefined();
   });
 
+  /** TEST_SCENARIO: Copilot refuses to start without a model, so the variable its manifest names gets the first model of the first provider that serves its Chat Completions API; the Anthropic key serves no such API and is passed over, and with no provider the variable stays unset. */
+  it("names the default model in the variable a harness needs at start", () => {
+    const copilot: ModelRouterBinding = {
+      dialects: ["openai-chat"],
+      defaultModelEnv: ["COPILOT_MODEL"],
+    };
+    const env = routerEnvFor({
+      harness: "copilot",
+      binding: copilot,
+      providers: [
+        provider(anthropic, [entry(anthropic, "claude-opus-5-5", 1_000_000)]),
+        provider(openai, [entry(openai, "gpt-5.5", 1_000_000)]),
+      ],
+      port: 1,
+    });
+    expect(env.COPILOT_MODEL).toBe("openai/gpt-5.5");
+    expect(
+      routerEnvFor({
+        harness: "copilot",
+        binding: copilot,
+        providers: [],
+        port: 1,
+      }).COPILOT_MODEL,
+    ).toBeUndefined();
+  });
+
   /** TEST_SCENARIO: An agent holds IBM and an Anthropic key. Anthropic is
    * Claude Code's own provider, so its tiers come from Anthropic, not from
    * IBM, which comes first in the shared order. */
