@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: one pending tool approval can meet two verdicts at once, from Home and from the chat. The tool runs on exactly one answer: a verdict that loses the row decision must not reach the harness, and the row must record the answer the runtime accepted, not the one that lost.
+// TEST_OVERVIEW: one pending tool approval can meet two verdicts at once, from Home and from the chat. The tool runs on exactly one answer: a verdict that loses the row decision must not reach the harness, and the row must record the answer the runtime accepted, not the one that lost. The harness stand-in here accepts the first answer to arrive and drops every later one, as the runtime does.
 import { describe, expect, it } from "vitest";
 import type { ApprovalVerdict } from "api-server-api";
 
@@ -77,10 +77,6 @@ function makeRepo() {
   };
 }
 
-/**
- * The harness end of the answer path: the first answer to arrive consumes the
- * request, and every later answer reaches nothing.
- */
 function makeHarness() {
   const frames: { optionId?: string }[] = [];
   let accepted: { optionId?: string } | null = null;
