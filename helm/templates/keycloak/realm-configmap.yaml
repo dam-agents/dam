@@ -201,6 +201,42 @@ data:
           {{- end }}
         },
         {{- end }}
+        {{- range .Values.keycloak.extraTestUsers }}
+        {{- if not (and .username .password) }}
+        {{- fail "keycloak.extraTestUsers: every entry needs a username and a password" }}
+        {{- end }}
+        {{- $groups := list }}
+        {{- range (.groups | default list) }}
+        {{- if and (eq . "inspectors") $.Values.keycloak.inspectorRole }}
+        {{- $groups = append $groups "/inspectors" }}
+        {{- else if and (eq . "slack-installers") $.Values.keycloak.slackInstallerRole }}
+        {{- $groups = append $groups "/slack-installers" }}
+        {{- else if not (has . (list "inspectors" "slack-installers")) }}
+        {{- fail (printf "keycloak.extraTestUsers: unknown group %q (inspectors, slack-installers)" .) }}
+        {{- end }}
+        {{- end }}
+        {
+          "username": {{ .username | quote }},
+          "enabled": true,
+          "emailVerified": true,
+          "firstName": {{ .firstName | default .username | quote }},
+          "lastName": {{ .lastName | default "User" | quote }},
+          "email": {{ printf "%s@platform.local" .username | quote }},
+          "credentials": [
+            {
+              "type": "password",
+              "value": {{ .password | quote }},
+              "temporary": false
+            }
+          ]
+          {{- if $.Values.keycloak.requiredRole }}
+          ,"realmRoles": [{{ $.Values.keycloak.requiredRole | quote }}]
+          {{- end }}
+          {{- if $groups }}
+          ,"groups": {{ toJson $groups }}
+          {{- end }}
+        },
+        {{- end }}
         {
           "username": {{ printf "service-account-%s" (lower .Values.keycloak.apiClientId) | quote }},
           "enabled": true,
