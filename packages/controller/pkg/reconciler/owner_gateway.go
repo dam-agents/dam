@@ -648,28 +648,36 @@ const (
 	ownerGatewayRepairWindow = 2 * time.Minute
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: one owner's repair of a listener its gateway did not load: when the pod was first found not serving what was rendered, the next rewrite it is owed, how many it has had, and whether the giving-up has been logged.
+// UNIT_BOUNDARY_DESCRIPTION: one owner's repair of a listener its gateway did not load: the agents of the owner it is for, when the attempt in hand started, when the next rewrite is due, how many the episode has had, and whether the giving-up has been logged.
 type ownerGatewayRepair struct {
+	marked []string
 	first  time.Time
 	next   time.Time
 	tries  int
 	warned bool
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the xDS version a render carries, empty for an ordinary one. It is the files' only change that a repair needs: Envoy reads a watched file again only when its content changes, and re-rendering the files unchanged, which is all a reconcile of an unchanged owner does, can never replace one Envoy refused. While an agent of the owner answers an older listener, the version moves on a wait that doubles from a few seconds, so the usual lost load — a file that reaches the pod a moment after the one that names it — is repaired by the first attempt, and a listener that will not load anyway is not rewritten into a loop. It goes back to empty once the pod serves what was rendered.
+// UNIT_BOUNDARY_DESCRIPTION: the xDS version a render carries, empty for an ordinary one. It is the files' only change that a repair needs: Envoy reads a watched file again only when its content changes, and re-rendering the files unchanged, which is all a reconcile of an unchanged owner does, can never replace one Envoy refused. While an agent of the owner answers an older listener, the version moves on a wait that doubles from a few seconds, so the usual lost load — a file that reaches the pod a moment after the one that names it — is repaired by the first attempt, and a listener that will not load anyway is not rewritten into a loop. It goes back to empty once the pod serves what was rendered. An episode is one set of agents waiting on the repair: another agent that hits the same lost load starts its own, so the giving-up of one does not silence the repair for the next.
 func (r *AgentReconciler) ownerGatewayRepairVersion(owner string, names []string, now time.Time) string {
+	var stale []string
+	for _, name := range names {
+		if _, ok := r.ownerStaleListeners.Load(name); ok {
+			stale = append(stale, name)
+		}
+	}
+	slices.Sort(stale)
 	m := ownerGatewayRepair{}
 	if v, ok := r.ownerGatewayRepairs.Load(owner); ok {
 		m = v.(ownerGatewayRepair)
 	}
 	switch {
-	case !slices.ContainsFunc(names, func(name string) bool { _, ok := r.ownerStaleListeners.Load(name); return ok }):
+	case len(stale) == 0:
 		m = ownerGatewayRepair{}
-	case m.first.IsZero():
-		m.first, m.next = now, now.Add(ownerGatewayRepairEvery)
+	case !slices.Equal(stale, m.marked):
+		m = ownerGatewayRepair{marked: stale, first: now, next: now.Add(ownerGatewayRepairEvery)}
 	case now.Sub(m.first) > ownerGatewayRepairWindow:
 		if !m.warned {
-			slog.Warn("owner gateway: its pod has not loaded the files rendered for one of its agents; it keeps the listener it has", "owner", owner, "waited", ownerGatewayRepairWindow)
+			slog.Warn("owner gateway: its pod has not loaded the files rendered for its agents; it keeps the listener it has", "owner", owner, "agents", len(stale), "waited", ownerGatewayRepairWindow)
 			m.warned = true
 		}
 		m.tries = 0

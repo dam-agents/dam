@@ -172,6 +172,7 @@ Envoy also reads a file again only when its content changes, so re-rendering the
 So a stale answer to the health probe is what makes the next renders repairs: while it stands, the files carry an xDS version of their own in place of the template's, on a wait that doubles from a few seconds, so each attempt is a file Envoy reads again and a listener that will not load anyway is not rewritten into a loop.
 The agent's listener is what proves the repair, and the files go back to the template's version once the pod serves the revision rendered for the agent.
 The attempts stop after about two minutes — the slowest way a file reaches a mounted volume — and the gateway keeps that listener, with the agent's readiness left reading the stale revision, since a file that cannot load for a reason of its own is not repaired by rewriting it.
+A later agent of the same owner that hits the same lost load starts a new episode of attempts, so one agent's give-up does not silence the repair for the next.
 
 **Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.

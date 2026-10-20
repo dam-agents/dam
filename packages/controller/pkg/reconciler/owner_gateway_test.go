@@ -303,10 +303,15 @@ func TestOwnerGateway_ARefusedFileIsSentAgainUnderANewVersion(t *testing.T) {
 	assert.Empty(t, patience(ownerGatewayRepairWindow+time.Second), "a file that will not load is not rewritten forever")
 	assert.Empty(t, patience(ownerGatewayRepairWindow+ownerGatewayRepairEvery))
 
+	// TEST_SCENARIO: a sibling that hits the same lost load starts an episode of its own, so the giving-up of one does not silence the repair for the next.
+	r.ownerStaleListeners.Store("sibling", struct{}{})
+	assert.Empty(t, r.ownerGatewayRepairVersion("paced", []string{"my-agent", "sibling"}, now.Add(ownerGatewayRepairWindow+time.Second)))
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", r.ownerGatewayRepairVersion("paced", []string{"my-agent", "sibling"}, now.Add(ownerGatewayRepairWindow+time.Second+ownerGatewayRepairEvery)))
+
 	// TEST_SCENARIO: the repair is what the ConfigMap carries, so the pod's files change and Envoy reads them again.
-	r.ownerGatewayRepairs.Store(testOwner, ownerGatewayRepair{first: now, next: now})
+	r.ownerGatewayRepairs.Store(testOwner, ownerGatewayRepair{marked: []string{"my-agent"}, first: now, next: now})
 	require.NoError(t, r.Reconcile(ctx, agent))
-	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", ownerGatewayLDSVersion(t, cm()))
+	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", ownerGatewayLDSVersion(t, cm()), "the repair is what the files carry")
 	assert.Contains(t, requeued.all(), ownerListenerRecheck)
 
 	// TEST_SCENARIO: once the pod answers the revision rendered for it, the files keep their canonical version.
