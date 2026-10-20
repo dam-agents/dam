@@ -52,15 +52,15 @@ func renderOwnerGatewayAt(agents []ownerGatewayAgent, cfg *config.Config, repair
 	revisions := map[string]string{}
 	var shared bootstrapParams
 	for i, a := range agents {
-		p := ownerAgentParams(a, cfg, repair.generation(a.Name), credentialRoot)
+		p := ownerAgentParams(a, cfg, repair.generation(a.Name), repair.arrivedOf(a.Name), credentialRoot)
 		if i == 0 {
 			shared = p
 		}
-		// UNIT_BOUNDARY_DESCRIPTION: the revision is of what the agent reads, not of the generation that made Envoy read it again: a generation is a fact about one listener's metadata, and folding it in would rewrite the health body of that listener's outer route as well.
+		// UNIT_BOUNDARY_DESCRIPTION: the revision is of what the agent reads plus the epoch its credential key set last changed at, and not of the generation that made Envoy read it again: a generation is a fact about one listener's metadata, and folding it in would rewrite the health body of that listener's outer route as well. The epoch is in it precisely so that a repair's receipt cannot be a receipt from before the arrival — a revoke and a regrant can return the resources to a hash they already had, but not to an epoch they have left.
 		steady := p
 		steady.RepairGeneration = 0
 		plainListeners, plainClusters := ownerAgentResources(steady)
-		p.HealthBody = ownerAgentRevision(plainListeners, plainClusters)
+		p.HealthBody = ownerAgentRevision(plainListeners, plainClusters, p.ArrivalEpoch)
 		revisions[a.Name] = p.HealthBody
 		agentListeners, agentClusters := ownerAgentResources(p)
 		listeners = append(listeners, agentListeners...)
@@ -108,7 +108,7 @@ func renderOwnerGatewayAt(agents []ownerGatewayAgent, cfg *config.Config, repair
 	return out, err
 }
 
-func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation int, credentialRoot string) bootstrapParams {
+func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation, epoch int, credentialRoot string) bootstrapParams {
 	suffix := "_" + a.Name
 	chains := make([]envoyHostChain, len(a.Chains))
 	for i, c := range a.Chains {
@@ -129,6 +129,7 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config, generation int, c
 	p.LeafSDSPath = envoyBootstrapMount + "/" + ownerGatewayLeafSDSKey
 	p.LuaDir = envoyBootstrapMount
 	p.RepairGeneration = generation
+	p.ArrivalEpoch = epoch
 	return p
 }
 
@@ -143,8 +144,14 @@ func ownerAgentResources(p bootstrapParams) (listeners, clusters []any) {
 	return listeners, clusters
 }
 
-func ownerAgentRevision(listeners, clusters []any) string {
-	raw, _ := sigsyaml.Marshal([]any{ownerGatewayTemplateRev, listeners, clusters})
+func ownerAgentRevision(listeners, clusters []any, epoch int) string {
+	var raw []byte
+	if epoch > 0 {
+		raw, _ = sigsyaml.Marshal([]any{ownerGatewayTemplateRev, listeners, clusters, epoch})
+	} else {
+		// UNIT_BOUNDARY_DESCRIPTION: an owner with no arrival yet renders byte for byte what it rendered before this state existed, so an upgrade does not rewrite every agent's health answer for a change that has not happened.
+		raw, _ = sigsyaml.Marshal([]any{ownerGatewayTemplateRev, listeners, clusters})
+	}
 	sum := sha256.Sum256(raw)
 	return hex.EncodeToString(sum[:8])
 }

@@ -102,10 +102,14 @@ type AgentReconciler struct {
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
 	ownerGatewayAnswered  sync.Map
-	ownerGatewayOffers    sync.Map
-	clock                 func() time.Time
-	ownerGatewayBudget    int
-	ownerProbeClient      *http.Client
+	// UNIT_BOUNDARY_DESCRIPTION: the revision a member's listener carries under the previous two-volume layout, which hashes differently because its credential root does. Readiness and cutover accept either, so a retained old-layout pod is not called stale while it serves; only a canonical answer ever authorises a repair, because the two layouts are separate publications and the canonical one is no receipt for the other.
+	ownerGatewayLegacyRevisions sync.Map
+	// UNIT_BOUNDARY_DESCRIPTION: the arrival epoch the revision the owner last published for an agent encodes. Recorded with the revision and adopted with it, so a probe answer can be matched to the epoch it is evidence about.
+	ownerGatewayEpochs sync.Map
+	ownerGatewayOffers sync.Map
+	clock              func() time.Time
+	ownerGatewayBudget int
+	ownerProbeClient   *http.Client
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
@@ -883,6 +887,8 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 	r.vmStartClocks.Delete(name)
 	r.ownerGatewayRevisions.Delete(name)
 	r.ownerGatewayAnswered.Delete(name)
+	r.ownerGatewayLegacyRevisions.Delete(name)
+	r.ownerGatewayEpochs.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)

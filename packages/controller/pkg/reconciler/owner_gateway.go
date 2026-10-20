@@ -375,17 +375,22 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the plan is built from the membership the owner keeps, never from a wider render it may refuse, so a discarded render cannot record a credential as published.
 	planFor := func(names []string) *ownerGatewayRepairPlan {
-		return r.ownerGatewayRepairPlan(owner, held, credentialKeysFor(held, names), r.clockNow())
+		plan := r.ownerGatewayRepairPlan(owner, held, credentialKeysFor(held, names), r.clockNow())
+		for name, after := range plan.due {
+			if r.requeue != nil {
+				r.requeue(name, max(after, 50*time.Millisecond))
+			}
+		}
+		return plan
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the answer a repair waits on is taken here, before the render that would act on it, and from the pod that is serving now: a rollout leaves a second pod that may have mounted before the arrival and would receive the arrival and its repair in one flip, so a repair waits until exactly one pod is left and that pod answers the revision that encodes the arrival. The probe records only a canonical answer, since a legacy layout's publication is a different one.
+	if r.ownerGatewayOwesRepair(owner, held, names) {
+		r.probeOwnerGatewayForRepair(ctx, owner, members, names)
 	}
 	plan := planFor(names)
 	current, err := render(names, ownerGatewayCredentialRoot, plan)
 	if err != nil {
 		return nil, err
-	}
-	for name, after := range plan.due {
-		if r.requeue != nil {
-			r.requeue(name, max(after, 50*time.Millisecond))
-		}
 	}
 	budget := cmp.Or(r.ownerGatewayBudget, ownerGatewayConfigBudget) - 4096
 	if r.config.VM.Gateway.PerOwner {
@@ -421,10 +426,16 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			if err := r.applyOwnerGatewayFiles(ctx, files); err != nil {
 				return err
 			}
-			// UNIT_BOUNDARY_DESCRIPTION: what was applied is the new truth, adopted before anything else can fail: the Secret is the file the pod reads, so a later ServiceAccount or cleanup failure must not make this publication unrecorded.
-			plan.adopt(r.ownerGatewayOffersFor(owner))
+			// UNIT_BOUNDARY_DESCRIPTION: what was applied is the new truth, adopted before anything else can fail: the Secret is the file the pod reads, so a later ServiceAccount or cleanup failure must not make this publication unrecorded. The revision goes in first, because the answer a repair is gated on is only ever recorded against the revision the owner has published.
 			for agentName, rev := range current.revisions {
 				r.ownerGatewayRevisions.Store(agentName, rev)
+				r.ownerGatewayEpochs.Store(agentName, plan.arrivedOf(agentName))
+			}
+			plan.adopt(r.ownerGatewayOffersFor(owner), files)
+			for agentName, rev := range legacy.revisions {
+				if _, ok := current.revisions[agentName]; !ok {
+					r.ownerGatewayLegacyRevisions.Store(agentName, rev)
+				}
 			}
 			r.refreshOwnerGatewayCredentials(ctx, owner, files.Annotations[annOwnerCredentialsHash], names, r.clockNow())
 			return r.settleLegacyOwnerGatewayFiles(ctx, files.Name, legacy, legacyKeys)
@@ -832,50 +843,61 @@ type ownerGatewayOffer struct {
 	warned    bool
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: an owner gateway's publication state, the only thing a repair is decided from. `published` is the credential-file set of the Secret the controller last *applied* — written from that Secret's own data on every successful write and from nothing else, so a removed key leaves it and a discarded render never enters it. `need` is the generation each published key is repaired at, pruned to the keys still published: a key is put in it by the first render that finds it already published, which is by construction a render *later* than the one that published it, and that is what keeps the render publishing a key from also repairing it. `gen` counts those, `listenerGen` is the generation each member's internal listener was written with, and every one of the four is bounded by the live keys and the live members.
+// UNIT_BOUNDARY_DESCRIPTION: an owner gateway's repair state: one entry per agent that names a credential, and the sequence its arrivals draw from. The debt is `repaired < arrived`, always stored as two explicit numbers, so "published and awaiting its repair" is a value that survives a restart rather than an absence that a restart cannot tell from a settled baseline. `arrived` also goes into that agent's health revision, so the answer a repair is gated on belongs to the epoch the arrival began, and a content hash that comes back after a revoke and a regrant is a different revision.
 type ownerGatewayOffers struct {
-	owner       string
-	mu          sync.Mutex
-	next        time.Time
-	writes      int
-	offers      map[string]*ownerGatewayOffer
-	published   []string
-	seeded      bool
-	gen         int
-	need        map[string]int
-	listenerGen map[string]int
+	owner string
+	mu    sync.Mutex
+	next  time.Time
+	// UNIT_BOUNDARY_DESCRIPTION: the files the last *applied* render wrote, and their key set. Both are only ever replaced by an adopted write, so a render the owner discards or refuses can never become the state a later arrival is measured against.
+	files     *corev1.Secret
+	published []string
+	seeded    bool
+	seq       int
+	agents    map[string]*ownerGatewayRepair
+	offers    map[string]*ownerGatewayOffer
+	writes    int
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: that state as the Secret carries it, so a restart resumes exactly what that Secret records. `need` holds only the keys still published, so a retired key leaves no trace and a later regrant of it arrives again.
+// UNIT_BOUNDARY_DESCRIPTION: what one agent's listener owes: the epoch its credential key set last changed at, the epoch its internal listener was last rebuilt for, and a hash of the key set that epoch was taken at. The hash is what decides the next arrival, so it is the agent's *own* referenced keys and not the Secret's: a key a sibling already published is still new to the agent just granted it, and the pod can deliver both writes in one flip. A repair is owed exactly when `repaired < arrived`.
+type ownerGatewayRepair struct {
+	Arrived  int    `json:"arrived,omitempty"`
+	Repaired int    `json:"repaired,omitempty"`
+	Keys     string `json:"keys,omitempty"`
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: that state as the Secret carries it, so a restart resumes the debt instead of inferring it from key sets. It holds one small entry per member that names a credential, and the map is pruned to the members the applied render serves, so it is the size of the live state.
 type ownerGatewayGenerations struct {
-	Gen         int            `json:"gen,omitempty"`
-	Need        map[string]int `json:"need,omitempty"`
-	ListenerGen map[string]int `json:"listenerGen,omitempty"`
+	Seq    int                            `json:"seq,omitempty"`
+	Agents map[string]*ownerGatewayRepair `json:"agents,omitempty"`
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one render's decision, computed without touching shared state: adopting a plan is what makes it true, so planning a render the owner goes on to discard changes nothing. `version` is what the files carry, one count per write this owner has made. `due` holds the agents whose next offer is still ahead, and when. `generations` is what each agent's internal listener carries this render.
+// UNIT_BOUNDARY_DESCRIPTION: one render's decision, computed without touching shared state: adopting a plan is what makes it true, so planning a render the owner goes on to discard changes nothing. `version` is what the files carry, one count per write this owner has made. `due` holds the agents whose next offer is still ahead, and when. `generations` is what each agent's internal listener carries this render, and `arrived` the epoch its health revision encodes.
 type ownerGatewayRepairPlan struct {
 	now         time.Time
 	version     string
 	due         map[string]time.Duration
 	generations map[string]int
+	arrived     map[string]int
 	members     []string
 	keys        []string
-	gen         int
-	need        map[string]int
+	seq         int
+	agents      map[string]*ownerGatewayRepair
 	offers      map[string]*ownerGatewayOffer
 	next        time.Time
 	writes      int
 	wrote       bool
+	arrivals    bool
+	// UNIT_BOUNDARY_DESCRIPTION: which members took an arrival in this plan. A repair and an arrival must never share a write: the write that publishes a key is the flip whose gap builds the broken provider, so a member that arrived is owed its rebuild in a later write, however good its receipt is.
+	newArrival map[string]bool
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an owner's state, one per owner for the controller's life.
 func (r *AgentReconciler) ownerGatewayOffersFor(owner string) *ownerGatewayOffers {
-	v, _ := r.ownerGatewayOffers.LoadOrStore(owner, &ownerGatewayOffers{owner: owner, offers: map[string]*ownerGatewayOffer{}, need: map[string]int{}, listenerGen: map[string]int{}})
+	v, _ := r.ownerGatewayOffers.LoadOrStore(owner, &ownerGatewayOffers{owner: owner, offers: map[string]*ownerGatewayOffer{}, agents: map[string]*ownerGatewayRepair{}})
 	return v.(*ownerGatewayOffers)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: seeds an owner's state once per controller run from the Secret it wrote last. The published key set is that Secret's own data, not the note beside it, so a Secret written before this state existed still gives the baseline every later comparison needs; the keys it holds are recorded as repaired at generation 0, since a pod that has them has nothing to repair. A read that failed is retried on the next render rather than accepted as an empty baseline, which would make every published key look new; only a Secret that is genuinely absent starts empty, because then nothing has been published.
+// UNIT_BOUNDARY_DESCRIPTION: reads the owner's state once per controller run from the Secret it last applied. The repair debt is that annotation verbatim, so a restart resumes a pending repair instead of losing it; a Secret without the annotation — a fresh owner, or one upgraded from the single-volume layout, whose pods roll onto fresh mounts anyway — is a baseline with no arrivals. A read that failed is retried, never accepted as an empty baseline.
 func (r *AgentReconciler) seedOwnerGatewayOffers(ctx context.Context, owner string) {
 	set := r.ownerGatewayOffersFor(owner)
 	set.mu.Lock()
@@ -889,28 +911,19 @@ func (r *AgentReconciler) seedOwnerGatewayOffers(ctx context.Context, owner stri
 		return
 	}
 	if err != nil {
-		slog.Warn("owner gateway: reading the files it wrote last failed; retrying before deciding which credentials are new", "owner", owner, "error", err)
+		slog.Warn("owner gateway: reading the state it wrote last failed; retrying before deciding which credentials are new", "owner", owner, "error", err)
 		return
 	}
-	set.published, set.seeded = ownerGatewayCredentialKeys(secret), true
+	set.files, set.published, set.seeded = secret, ownerGatewayCredentialKeys(secret), true
 	var state ownerGatewayGenerations
 	if json.Unmarshal([]byte(secret.Annotations[annOwnerRegenerated]), &state) != nil {
-		for _, key := range set.published {
-			set.need[key] = 0
-		}
 		return
 	}
-	set.gen = state.Gen
-	maps.Copy(set.need, state.Need)
-	maps.Copy(set.listenerGen, state.ListenerGen)
-	for _, key := range set.published {
-		if _, ok := set.need[key]; !ok {
-			set.need[key] = 0
-		}
-	}
+	set.seq = state.Seq
+	maps.Copy(set.agents, state.Agents)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether this owner's state has been read from the Secret it wrote last. A read that failed leaves it unread, so the render that follows waits rather than treating an unknown set of published credentials as an empty one.
+// UNIT_BOUNDARY_DESCRIPTION: whether this owner's state has been read from the Secret it wrote last. A read that failed leaves it unread, so the render that follows waits rather than treating an unknown state as an empty one.
 func (r *AgentReconciler) ownerGatewaySeeded(owner string) bool {
 	set := r.ownerGatewayOffersFor(owner)
 	set.mu.Lock()
@@ -918,7 +931,7 @@ func (r *AgentReconciler) ownerGatewaySeeded(owner string) bool {
 	return set.seeded
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the credential files one member's chains name: the keys its granted Secrets carry that the files project, which are the only ones a generation for that member can be about.
+// UNIT_BOUNDARY_DESCRIPTION: the credential files one member's chains name: the keys its granted Secrets carry that the files project, which are the only ones a repair for that member can be about.
 func memberCredentialKeys(m ownerGatewayMember, owner string) []string {
 	var keys []string
 	seen := map[string]bool{}
@@ -951,7 +964,7 @@ func credentialKeysFor(members map[string][]string, names []string) []string {
 	return keys
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the credential files an owner gateway Secret carries: every key that is not one of the files the controller writes itself.
+// UNIT_BOUNDARY_DESCRIPTION: the credential files an owner gateway Secret carries: every key that is not one of the files the controller writes itself. An empty result is a real answer — an applied Secret with no credentials — and is never read as "there is no Secret", which is what `files == nil` says.
 func ownerGatewayCredentialKeys(files *corev1.Secret) []string {
 	var keys []string
 	for k := range files.Data {
@@ -972,35 +985,52 @@ func ownerGatewayFileKeys(files *corev1.Secret) []string {
 	return keys
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner owes the members of the render it is about to write, decided from that render's own membership and key set so a wider render the owner then refuses can never enter it. `members` is each agent's own credential files and `keys` the set the render publishes. Publication and repair are two renders apart, and that separation is the whole rule: a key takes a generation the first time a render finds it *already published*, so the render that publishes a key can never also repair it — its pathname reaches the pod in that same volume flip, and a provider built then is the failure being repaired. A member is given that generation only when its own chains name the key, and a member naming none of the arriving keys keeps the generation it carries, byte for byte. This function mutates nothing; `adopt` is what makes a plan true.
+// UNIT_BOUNDARY_DESCRIPTION: what an owner owes the members of the render it is about to write, decided from that render's own membership and key sets so a wider render the owner then refuses can never enter it. `members` is each agent's own credential files and `keys` the set the render publishes. An arrival is decided from the member's *own* key set, not the Secret's: a key a sibling already published is still new to a member that has just been granted it, and the pod may deliver both writes in one flip, so that member needs its own rebuild. Every arrival takes the next sequence number, which also enters that agent's health revision, so the answer a later repair is gated on cannot be an answer from before the arrival — not even when a revoke and a regrant have returned the rendering to the same content hash. `repaired` catches up only on an answer to that arrival's own revision, and only when the member had no arrival in this plan: a repair that shared a write with an arrival would stay in the flip it was meant to repair. This function mutates nothing; `adopt` is what makes a plan true.
 func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, members map[string][]string, keys []string, now time.Time) *ownerGatewayRepairPlan {
 	set := r.ownerGatewayOffersFor(owner)
 	set.mu.Lock()
 	defer set.mu.Unlock()
-	p := &ownerGatewayRepairPlan{now: now, due: map[string]time.Duration{}, generations: map[string]int{}, keys: keys, gen: set.gen, need: map[string]int{}, offers: map[string]*ownerGatewayOffer{}, next: set.next, writes: set.writes}
+	p := &ownerGatewayRepairPlan{now: now, due: map[string]time.Duration{}, generations: map[string]int{}, arrived: map[string]int{}, newArrival: map[string]bool{}, keys: keys, seq: set.seq, agents: map[string]*ownerGatewayRepair{}, offers: map[string]*ownerGatewayOffer{}, next: set.next, writes: set.writes}
 	for name, offer := range set.offers {
 		copied := *offer
 		p.offers[name] = &copied
 	}
+	for name, repair := range set.agents {
+		copied := *repair
+		p.agents[name] = &copied
+	}
 	p.members = slices.Sorted(maps.Keys(members))
-	// UNIT_BOUNDARY_DESCRIPTION: the first render an owner ever applies is its baseline: the pod starts after that Secret exists and reads every file in it, so no key in it is a repair. Every later key takes a generation the first time a render finds it already published, which is one render after the one that published it.
-	for _, key := range keys {
-		if n, ok := set.need[key]; ok {
-			p.need[key] = n
-		} else if set.published == nil {
-			p.need[key] = 0
-		} else if slices.Contains(set.published, key) {
-			p.gen++
-			p.need[key] = p.gen
+	for _, name := range p.members {
+		if len(members[name]) == 0 {
+			delete(p.agents, name)
+			continue
+		}
+		repair := p.agents[name]
+		own := fmt.Sprintf("%q", members[name])
+		// UNIT_BOUNDARY_DESCRIPTION: an arrival is this agent's own key set differing from the one its last state was taken at, an absent entry included — and it is decided by the hash, not by whether the Secret gained a key, so an agent granted a key a sibling already published still gets its own rebuild. A removal is an arrival too, which costs one rebuild and keeps the rule to a single comparison.
+		if repair == nil || repair.Keys != own {
+			p.seq++
+			arrived, repaired := p.seq, 0
+			if repair != nil {
+				repaired = repair.Repaired
+			}
+			repair = &ownerGatewayRepair{Arrived: arrived, Repaired: repaired, Keys: own}
+			p.agents[name] = repair
+			p.arrivals, p.newArrival[name] = true, true
+		}
+		p.arrived[name] = repair.Arrived
+		p.generations[name] = repair.Repaired
+	}
+	for name := range p.agents {
+		if !slices.Contains(p.members, name) {
+			delete(p.agents, name)
 		}
 	}
-	var owed []string
 	for _, name := range p.members {
-		generation := set.listenerGen[name]
-		p.generations[name] = generation
+		repair := p.agents[name]
 		revision := r.ownerGatewayRevisionOf(name)
 		// UNIT_BOUNDARY_DESCRIPTION: a member whose rendering the controller has not recorded yet — one that just joined, or the first render after a restart — has nothing that can prove it loaded anything, so it owes no offer; the render that writes its files records the revision, and the offers start from there.
-		if revision == "" {
+		if revision == "" || repair == nil {
 			continue
 		}
 		answered := r.ownerGatewayAnswerOf(name)
@@ -1009,33 +1039,44 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, members map[strin
 			offer = &ownerGatewayOffer{revision: revision, next: now}
 			p.offers[name] = offer
 		}
-		// UNIT_BOUNDARY_DESCRIPTION: the answer is what proves the pod loaded the render that published a key, and a volume flips asynchronously, so applying a publication is no evidence the pod has read it. A generation is therefore given only to a member that answered the rendering carrying it, and the listener's revision deliberately does not include the generation: if it did, a repair would change the answer the repair was decided from and the offer would restart forever.
-		if want := highestNeed(members[name], p.need); want > generation && answered == revision {
-			p.generations[name] = want
+		// UNIT_BOUNDARY_DESCRIPTION: three things must hold together, and each rules out a different way to spend a repair it has not earned. The member took no arrival in this plan, or its rebuild would land in the flip that broke it. The recorded answer is the stored revision, which is the write that published this arrival — the arrival's own write is the one that failed if it is not. And that stored revision encodes the current arrival epoch, so an answer kept from before the arrival cannot match a rendering that has since returned to the same content hash.
+		if repair.Repaired >= repair.Arrived || p.newArrival[name] {
+			continue
 		}
-		switch {
-		case answered != revision && offer.tries < ownerGatewayOfferTries && !now.Before(offer.next):
-			owed = append(owed, name)
-		case answered == revision && !offer.reoffered:
-			owed = append(owed, name)
-		case p.generations[name] > generation:
-			owed = append(owed, name)
+		if answered != revision || r.ownerGatewayEpochOf(name) != repair.Arrived {
+			continue
 		}
+		repair.Repaired = repair.Arrived
+		p.generations[name] = repair.Repaired
 	}
 	for name := range p.offers {
 		if !slices.Contains(p.members, name) {
 			delete(p.offers, name)
 		}
 	}
-	// UNIT_BOUNDARY_DESCRIPTION: a render that publishes a key is written at once, because the pace bounds offers and not a credential an agent needs.
-	if len(owed) > 0 && now.Before(p.next) && p.gen == set.gen {
+	var owed []string
+	for _, name := range p.members {
+		offer := p.offers[name]
+		if offer == nil {
+			continue
+		}
+		answered := r.ownerGatewayAnswerOf(name)
+		switch {
+		case answered != offer.revision && offer.tries < ownerGatewayOfferTries && !now.Before(offer.next):
+			owed = append(owed, name)
+		case answered == offer.revision && !offer.reoffered:
+			owed = append(owed, name)
+		}
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: a write that publishes a key or repairs a listener is not paced, because the pace bounds offers and a credential is what an agent needs; anything else waits its turn so a large owner is not written once per agent.
+	if len(owed) > 0 && now.Before(p.next) && !p.arrivals && p.seq == set.seq {
 		for _, name := range owed {
 			p.due[name] = p.next.Sub(now)
 		}
 		p.version = ownerGatewayVersion(set.writes)
 		return p
 	}
-	if len(owed) > 0 || p.gen != set.gen {
+	if len(owed) > 0 || p.arrivals || p.seq != set.seq {
 		p.next, p.writes, p.wrote = now.Add(ownerGatewayWritePace), set.writes+1, true
 	}
 	p.version = ownerGatewayVersion(p.writes)
@@ -1059,13 +1100,81 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, members map[strin
 	return p
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the highest generation any of an agent's own credential files is repaired at, 0 when none of them is owed a repair.
-func highestNeed(keys []string, need map[string]int) int {
-	generation := 0
-	for _, key := range keys {
-		generation = max(generation, need[key])
+// UNIT_BOUNDARY_DESCRIPTION: the epoch an agent's health revision encodes this render, which is the epoch its own key set last changed at.
+func (p *ownerGatewayRepairPlan) arrivedOf(name string) int {
+	if p == nil {
+		return 0
 	}
-	return generation
+	return p.arrived[name]
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether any member of this render owes a repair, which is when the debt has to be probed before the plan is made.
+func (r *AgentReconciler) ownerGatewayOwesRepair(owner string, held map[string][]string, names []string) bool {
+	set := r.ownerGatewayOffersFor(owner)
+	set.mu.Lock()
+	defer set.mu.Unlock()
+	if !set.seeded {
+		return false
+	}
+	for _, name := range names {
+		if len(held[name]) == 0 {
+			continue
+		}
+		repair := set.agents[name]
+		if repair == nil {
+			continue
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: a member whose own key set has moved already owes a fresh arrival, which this render will assign; its repair belongs to a later write whatever the pod says now.
+		if repair.Keys != fmt.Sprintf("%q", held[name]) {
+			continue
+		}
+		if repair.Repaired < repair.Arrived {
+			return true
+		}
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: takes the answer a repair is gated on. Each owing member is probed once, on its own proxy port, at the address of the sole owner gateway pod that is not terminating: while a rollout has two, the newer one may have mounted before the arrival and would receive the arrival and its repair in one flip, so no receipt is taken and the debt waits for the rollout to settle. Recording an answer is `ownerListenerCurrent`'s job, and it records only a canonical one.
+func (r *AgentReconciler) probeOwnerGatewayForRepair(ctx context.Context, owner string, members map[string]ownerGatewayMember, names []string) {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent + "," + envoyOwnerLabel + "=" + owner})
+	if err != nil {
+		return
+	}
+	serving, distinct := "", 0
+	for _, pod := range pods.Items {
+		if pod.DeletionTimestamp != nil {
+			continue
+		}
+		if distinct++; distinct > 1 {
+			for _, name := range names {
+				if r.requeue != nil {
+					r.requeue(name, ownerListenerRecheck)
+				}
+			}
+			return
+		}
+		serving = pod.Status.PodIP
+	}
+	if serving == "" {
+		return
+	}
+	for _, name := range names {
+		m, ok := members[name]
+		if !ok || len(memberCredentialKeys(m, owner)) == 0 {
+			continue
+		}
+		if ok, _ := r.ownerListenerCurrent(ctx, name, serving, ownerGatewayProxyPort(m.slot)); !ok && r.requeue != nil {
+			r.requeue(name, ownerListenerRecheck)
+		}
+	}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the epoch the revision the owner last published for this agent encodes. It is recorded beside that revision, so a probe answer can only be spent on a repair when the write that produced the revision being answered is the write that carried the arrival; an arrival whose write failed left the older revision and its older epoch in place, so the debt stays.
+func (r *AgentReconciler) ownerGatewayEpochOf(name string) int {
+	v, _ := r.ownerGatewayEpochs.Load(name)
+	n, _ := v.(int)
+	return n
 }
 
 func (r *AgentReconciler) ownerGatewayRevisionOf(name string) string {
@@ -1080,46 +1189,25 @@ func (r *AgentReconciler) ownerGatewayAnswerOf(name string) string {
 	return s
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: that state as the Secret records it, pruned to the keys this render publishes and the members it serves, so nothing retired is carried forward.
+// UNIT_BOUNDARY_DESCRIPTION: that state as the Secret records it, pruned to the members this render serves, so nothing retired is carried forward. A member that owes a repair is written with both numbers, which is what lets a restart tell it from a settled one.
 func (p *ownerGatewayRepairPlan) regenerated() string {
 	if p == nil {
 		return ""
 	}
-	listenerGen, need := map[string]int{}, map[string]int{}
-	for _, name := range p.members {
-		if generation := p.generations[name]; generation > 0 {
-			listenerGen[name] = generation
-		}
-	}
-	// UNIT_BOUNDARY_DESCRIPTION: only the keys that ever took a generation are written; the ones the baseline already accounted for are re-derived from the Secret's own data on the next run, which is where a zero would otherwise have to be stored for every file an owner has ever had.
-	for _, key := range p.keys {
-		if generation := p.need[key]; generation > 0 {
-			need[key] = generation
-		}
-	}
-	raw, _ := json.Marshal(ownerGatewayGenerations{Gen: p.gen, Need: need, ListenerGen: listenerGen})
+	raw, _ := json.Marshal(ownerGatewayGenerations{Seq: p.seq, Agents: p.agents})
 	return string(raw)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: adopts this render's state once the Secret carrying it is written, wholesale: what was applied is the new truth, whether the write was an offer, a rotation, a revocation or a grant. A key that left the render leaves the published set with it, so its return arrives again; and each served member is recorded with the generation its listener was written with.
-func (p *ownerGatewayRepairPlan) adopt(set *ownerGatewayOffers) {
+// UNIT_BOUNDARY_DESCRIPTION: adopts this render's state once the Secret carrying it is written, wholesale: what was applied is the new truth, whether the write was an offer, a rotation, a revocation or a grant. `published` becomes exactly the keys that write carried, so an empty set is recorded as empty and never as "no Secret", and a revocation's key leaves with it so its return is a new arrival.
+func (p *ownerGatewayRepairPlan) adopt(set *ownerGatewayOffers, files *corev1.Secret) {
 	if p == nil || set == nil {
 		return
 	}
 	set.mu.Lock()
 	defer set.mu.Unlock()
-	set.published, set.gen, set.need = p.keys, p.gen, p.need
-	set.offers, set.next, set.writes = p.offers, p.next, p.writes
-	live := map[string]bool{}
-	for _, name := range p.members {
-		live[name] = true
-		set.listenerGen[name] = p.generations[name]
-	}
-	for name := range set.listenerGen {
-		if !live[name] {
-			delete(set.listenerGen, name)
-		}
-	}
+	set.files, set.published, set.seq = files, p.keys, p.seq
+	set.agents, set.offers, set.next, set.writes = p.agents, p.offers, p.next, p.writes
+	set.seeded = true
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the generation an agent's internal listener carries this render, 0 for the template's.
@@ -1142,6 +1230,7 @@ func (p *ownerGatewayRepairPlan) xdsVersion() string {
 	return p.version
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether the gateway at this address serves this agent's current listener, answered by the listener itself. A member of an owner gateway is asked for the revision the canonical Secret was rendered at; a pod still on the previous two-volume layout hashes its resources against a different credential root, so its own revision is accepted for readiness too. Only the canonical revision is recorded as an answer, because a repair is a change to the canonical rendering: the legacy layout projects its files and its credentials as two separately moving objects, so nothing about it can prove what a canonical pod has read.
 func (r *AgentReconciler) ownerListenerCurrent(ctx context.Context, agent, host string, port int) (bool, string) {
 	want, ok := r.ownerGatewayRevisions.Load(agent)
 	if !ok {
@@ -1159,12 +1248,24 @@ func (r *AgentReconciler) ownerListenerCurrent(ctx context.Context, agent, host 
 	}
 	defer resp.Body.Close()
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
-	if resp.StatusCode != http.StatusOK || string(body) != want.(string) {
+	serving := string(body)
+	// UNIT_BOUNDARY_DESCRIPTION: an answer that matches no revision this owner publishes is evidence about neither layout, so it clears the recorded repair evidence rather than leaving a stale receipt for a later plan to spend.
+	if resp.StatusCode != http.StatusOK || (serving != want.(string) && serving != r.ownerGatewayLegacyRevisionOf(agent)) {
 		r.ownerGatewayAnswered.Delete(agent)
-		return false, fmt.Sprintf("the owner gateway still serves an older listener for this agent (has %q, want %q)", body, want)
+		return false, fmt.Sprintf("the owner gateway still serves an older listener for this agent (has %q, want %q)", serving, want)
 	}
-	r.ownerGatewayAnswered.Store(agent, want.(string))
+	if serving == want.(string) {
+		r.ownerGatewayAnswered.Store(agent, want.(string))
+	} else {
+		r.ownerGatewayAnswered.Delete(agent)
+	}
 	return true, ""
+}
+
+func (r *AgentReconciler) ownerGatewayLegacyRevisionOf(name string) string {
+	v, _ := r.ownerGatewayLegacyRevisions.Load(name)
+	s, _ := v.(string)
+	return s
 }
 
 func (r *AgentReconciler) ownerGatewayProbe() *http.Client {
