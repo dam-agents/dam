@@ -19,8 +19,14 @@ GIT_PREFIX = false
 
 [vars]
 repo_root = "{{config_root}}"
-base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c94cc06edafa58bfc6c9dc387f3e1ddd5c1332553f240b193b214dce81d9276e"
-base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:cefdad691990bab9d5371070824c1bb52b9a0a9733eaf543eded2a6964715881"
+# Issue #5291's newer digests are under the 7-day floor: the api-server base
+# was built 2026-10-19T09:08Z and the controller base 2026-10-17T06:35Z, so
+# they can be taken from 2026-10-26 and 2026-10-24.
+base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:c46573a1d159c05370bada02d6049f38fbdcfa6418c0868ad404f4b92743475c"
+base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:12ebc4493ccbb80fd47175c9c670ea590c4e7140a7c4858e038ac2df42be8ca8"
+# 26.8.1 (2026-10-13T08:59Z) fixes the pcre2 CVEs in 26.8.0 and Keycloak's own
+# advisories, so it carries a dated exception that ends 2026-10-20T08:59Z. It
+# is still the newest tag upstream publishes.
 base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244"
 base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:63ef79903a967e6bf45ed76e7c5f8bf28fb7457931162e0d645e75bcdeee0c49"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
@@ -36,8 +42,9 @@ auto = true
 "conda:pigz" = "latest"
 "github:Boshen/cargo-shear" = "latest"
 # panache formats Markdown with semantic line breaks; config in panache.toml.
-# 3.16.0 (2026-10-13) is the newest release past the 7-day floor.
-"github:jolars/panache" = "3.16.0"
+# 3.16.0 (2026-10-13T07:09Z) clears the 7-day floor on 2026-10-20T07:09Z;
+# until then 3.15.0 (2026-10-09) is the newest eligible release.
+"github:jolars/panache" = "3.15.0"
 "go:golang.org/x/vuln/cmd/govulncheck" = "latest"
 "go:honnef.co/go/tools/cmd/staticcheck" = "latest"
 "go:sigs.k8s.io/controller-tools/cmd/controller-gen" = "0.22.0"

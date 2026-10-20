@@ -248,10 +248,10 @@ specifiers = ["1.0.2"]
 allow_low_downloads = "true"
 
 [[tools."npm:agent-browser"]]
-version = "0.39.1"
-aube = { path = ".mise/locks/npm-agent-browser/0.39.1", digest = "sha256:86a55f9f1f21ded0b891cd2b3da12b933e646be00a66593db933a128b44074a0" }
+version = "0.39.0"
+aube = { path = ".mise/locks/npm-agent-browser/0.39.0", digest = "sha256:a608b1dc1cbdc4509280789f3d1f7305aed7a7fcc4fb784274f62211f7e5a2b2" }
 backend = "npm:agent-browser"
-specifiers = ["0.39.1"]
+specifiers = ["0.39.0"]
 
 [[tools."npm:pi-acp"]]
 version = "0.0.34"
