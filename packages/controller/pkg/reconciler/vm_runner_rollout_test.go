@@ -309,6 +309,65 @@ func TestARollThatStopsBeingNeededClearsTheCacheStamp(t *testing.T) {
 	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "a roll nobody needs any more keeps a stamp from the outage it was waiting out")
 }
 
+// TEST_SCENARIO: a cache that recovers while every place in the roll is taken is never seen to recover, so the minute counts only over what a pass watched. A stamp from before that recovery would let the next outage pass it at once and end the turns of busy agents.
+func TestAnOutageNoPassCouldWatchDoesNotCountTowardTheGrace(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(_ context.Context, id string) bool { return id == "busy" }
+	r.config.VM.Runner.Rollout.MaxConcurrent = 1
+	changeRunnerPod(r)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "the only place in the roll is taken")
+
+	nodes["owner-a"].imageCache = vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock", Error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)"}
+	backdateRunnerAnnotation(t, r, "owner-a", annRunnerCacheDown, defaultRunnerCacheDownGrace+time.Minute)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the pass had no place to roll in")
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerCacheDown], "a stamp from an outage no pass watched outlived the place it waited for")
+
+	settleRunnerPod(t, r, "owner-b")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the minute starts over with the outage the pass can watch")
+	for _, event := range eventsOn(t, r, r.runnerName("owner-a")) {
+		assert.NotEqual(t, reasonRollImageCacheUnreachable, event.Reason, "no pass skipped the idle wait on an outage it did not watch")
+	}
+}
+
+// TEST_SCENARIO: a roll that says it passes the idle wait says so once it wrote the Deployment. A write that fails leaves the roll for the next pass, and the next pass is the one that announces it.
+func TestTheWaitOverEventFollowsTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a")
+	nodes["owner-a"].specs["busy"] = vmrunner.MachineSpec{Running: true}
+	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	r.busyProbe = func(context.Context, string) bool { return true }
+	changeRunnerPod(r)
+	backdateRunnerAnnotation(t, r, "owner-a", annRunnerBusy, defaultRunnerIdleWait+time.Minute)
+
+	cs := r.client.(*fake.Clientset)
+	refused := true
+	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
+		if !refused || dep.Annotations[annRunnerRolledAt] == "" {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewConflict(appsv1.Resource("deployments"), dep.Name, errors.New("the informer's copy is older"))
+	})
+
+	assert.Error(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true), "the roll's write was refused")
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the roll did not land")
+	assert.Empty(t, eventsOn(t, r, r.runnerName("owner-a")), "a roll that did not happen is not announced")
+
+	refused = false
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"))
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.Len(t, events, 1, "the pass that rolled says it once")
+	assert.Equal(t, reasonRollIdleWaitOver, events[0].Reason)
+}
+
 // TEST_SCENARIO: the pass that would hold a roll writes the stamp the next pass reads. When that write fails — an informer copy from before the write, which the API server refuses as a conflict — the pass reports nothing: a hold said twice for one wait is the noise the Events exist to remove, and the next pass says it when it lands.
 func TestARollWhoseWaitCannotBeRecordedSaysNothing(t *testing.T) {
 	ctx := context.Background()
