@@ -58,7 +58,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={node?.prompt}
         >
-          {node ? delegationTitle(node.prompt) : id}
+          {node ? delegationTitle(node) : id}
         </span>
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />

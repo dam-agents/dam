@@ -1,4 +1,3 @@
-import { Bot } from "@carbon/icons-react";
 import type { SpendBreakdown } from "api-server-api";
 import type { ReactNode } from "react";
 
@@ -25,9 +24,9 @@ import {
   SPEND_BY_SESSION_TYPE,
   SUB_AGENTS,
   SUB_AGENTS_HELP,
-  thisAgent,
 } from "../lib/copy.js";
-import { type SpendRow, spendRows } from "../lib/spend-rows.js";
+import { spendRows } from "../lib/spend-rows.js";
+import { DriverSpendByAgent } from "./driver-spend-by-agent.js";
 import { SpendAgentAvatar } from "./spend-agent-avatar.js";
 import { SpendRowList } from "./spend-row-list.js";
 
@@ -56,13 +55,6 @@ function describeSessionType(category: SessionType): {
   return { label: SESSION_CATEGORY_LABELS[category] };
 }
 
-function firstRow(rows: SpendRow[], key: string): SpendRow[] {
-  return [
-    ...rows.filter((row) => row.key === key),
-    ...rows.filter((row) => row.key !== key),
-  ];
-}
-
 interface Props {
   agentId?: string;
   breakdown: SpendBreakdown;
@@ -76,7 +68,6 @@ export function MeasuredBreakdownCards({
 }: Props) {
   const { data: connections = [] } = useAppConnections();
   const payerNameOf = agentNameOf(breakdown.byAgent);
-  const callerNameOf = agentNameOf(breakdown.byCallingAgent);
   const subAgentSpend = breakdown.byCallingAgent.some(
     (row) => row.agentId !== agentId && row.costMicros > 0,
   );
@@ -97,28 +88,11 @@ export function MeasuredBreakdownCards({
       )}
       {agentId !== undefined && subAgentSpend && (
         <BreakdownCard title={SPEND_BY_AGENT}>
-          <SpendRowList
-            rows={firstRow(
-              spendRows(
-                agentSources(breakdown.byCallingAgent, (id, name) =>
-                  id === agentId ? thisAgent(name ?? id) : agentLabel(name),
-                ),
-                showPlanUse,
-              ),
-              agentId,
-            )}
-            iconOf={(id) =>
-              id === agentId ? (
-                <SpendAgentAvatar
-                  agentId={id}
-                  name={agentLabel(callerNameOf(id))}
-                />
-              ) : (
-                <span className="flex size-4 shrink-0 items-center justify-center">
-                  <Bot size={14} className="text-accent" aria-hidden />
-                </span>
-              )
-            }
+          <DriverSpendByAgent
+            key={`${agentId}:${breakdown.from}:${breakdown.to}`}
+            agentId={agentId}
+            breakdown={breakdown}
+            showPlanUse={showPlanUse}
           />
         </BreakdownCard>
       )}

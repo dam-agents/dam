@@ -8,9 +8,9 @@ import type {
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createInvocationLinks } from "./infrastructure/invocation-links.js";
 import {
-  createInvocationTitles,
-  type InvocationTitles,
-} from "./infrastructure/invocation-titles.js";
+  createInvocationTasks,
+  type InvocationTasks,
+} from "./infrastructure/invocation-tasks.js";
 import {
   createSpawnSessions,
   type SpawnSessions,
@@ -178,8 +178,8 @@ export function createSpawnSessionsAdapter(db: Db): SpawnSessions {
   });
 }
 
-export function createInvocationTitlesAdapter(db: Db): InvocationTitles {
-  return createInvocationTitles(db);
+export function createInvocationTasksAdapter(db: Db): InvocationTasks {
+  return createInvocationTasks(db);
 }
 
 export function createInvocationsCleanupHook(opts: {

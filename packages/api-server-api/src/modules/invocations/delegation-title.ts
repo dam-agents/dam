@@ -1,6 +1,11 @@
-export function delegationTitle(prompt: string): string {
+export function delegationTitle(invocation: {
+  label: string | null;
+  prompt: string;
+}): string {
+  const label = invocation.label?.trim();
+  if (label) return label;
   return (
-    prompt
+    invocation.prompt
       .split("\n")
       .find((line) => line.trim() !== "")
       ?.trim() ?? ""

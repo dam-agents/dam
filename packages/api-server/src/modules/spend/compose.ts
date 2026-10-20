@@ -40,7 +40,7 @@ import {
   type AgentNames,
   type AgentPayers,
   type ConnectionNames,
-  type InvocationTitles,
+  type InvocationTasks,
   type OwnedAgentAges,
   type SessionCategories,
   type SpendQuestionCloser,
@@ -89,7 +89,7 @@ export function composeSpendSystem(deps: {
   brandName: string;
   connectionNames: ConnectionNames;
   agentNames: AgentNames;
-  invocationTitles: InvocationTitles;
+  invocationTasks: InvocationTasks;
   ownedAgents: OwnedAgentAges;
   sessions: SessionOwnership & SessionCategories;
   subAgents: SpawnedSubAgents;
@@ -169,8 +169,8 @@ export function composeSpendSystem(deps: {
         liveAgentNames: () => deps.agentNames.namesOf(owner.ownerSub),
         lastKnownNames: (agentIds) =>
           lastKnownNames.namesOf(owner.ownerSub, agentIds),
-        invocationTitles: (agentIds) =>
-          deps.invocationTitles.titlesOf(owner.ownerSub, agentIds),
+        invocationTasks: (agentIds) =>
+          deps.invocationTasks.tasksOf(owner.ownerSub, agentIds),
         ownedAgentCreatedBefore: (at) =>
           deps.ownedAgents.anyCreatedBefore(owner.ownerSub, at),
         telemetryStoreOn: deps.telemetryStoreOn,

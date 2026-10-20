@@ -243,7 +243,7 @@ import {
   composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
-  createInvocationTitlesAdapter,
+  createInvocationTasksAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
@@ -1160,7 +1160,7 @@ export async function bootstrap() {
           ]),
         ),
     },
-    invocationTitles: createInvocationTitlesAdapter(db),
+    invocationTasks: createInvocationTasksAdapter(db),
     ownedAgents: {
       anyCreatedBefore: async (ownerSub, at) =>
         (await agentsRepo.list(ownerSub)).some(

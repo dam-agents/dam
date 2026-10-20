@@ -74,7 +74,7 @@ export function DelegationCard({
             className="truncate text-sm font-medium text-foreground"
             title={node.prompt}
           >
-            {delegationTitle(node.prompt)}
+            {delegationTitle(node)}
           </span>
           <span
             className={cn(

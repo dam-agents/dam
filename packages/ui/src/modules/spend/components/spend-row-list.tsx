@@ -49,14 +49,22 @@ function AmountText({ amount }: { amount: RowAmount }) {
     .exhaustive();
 }
 
-function SpendRowItem({ row, icon }: { row: SpendRow; icon?: ReactNode }) {
+function SpendRowItem({
+  row,
+  icon,
+  indented,
+}: {
+  row: SpendRow;
+  icon?: ReactNode;
+  indented: boolean;
+}) {
   const hasBar = row.paidPct > 0 || row.planPct > 0;
   return (
-    <div className="flex flex-col gap-1">
+    <div className={cn("flex flex-col gap-1", indented && "pl-5.5")}>
       <div className="flex items-center justify-between gap-2 text-sm">
         <span className="flex min-w-0 items-center gap-1.5 text-foreground">
           {icon}
-          <span className="truncate" title={row.label}>
+          <span className="truncate" title={row.hint ?? row.label}>
             {row.label}
           </span>
           {row.help && <HelpTip content={row.help} />}
@@ -82,9 +90,11 @@ function SpendRowItem({ row, icon }: { row: SpendRow; icon?: ReactNode }) {
 export function SpendRowList({
   rows,
   iconOf,
+  indentOf,
 }: {
   rows: readonly SpendRow[];
   iconOf?: (key: string) => ReactNode;
+  indentOf?: (key: string) => boolean;
 }) {
   if (rows.length === 0) {
     return (
@@ -94,7 +104,12 @@ export function SpendRowList({
   return (
     <div className="flex flex-col gap-3">
       {rows.map((row) => (
-        <SpendRowItem key={row.key} row={row} icon={iconOf?.(row.key)} />
+        <SpendRowItem
+          key={row.key}
+          row={row}
+          icon={iconOf?.(row.key)}
+          indented={indentOf?.(row.key) ?? false}
+        />
       ))}
     </div>
   );

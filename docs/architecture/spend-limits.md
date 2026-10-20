@@ -147,9 +147,12 @@ The api-server folds the rows into totals per unit, the model time, and spend by
 A call whose calling agent is not its payer counts as a sub-agent's; other calls take their Session's kind from the directory.
 The read for one agent counts the calls that it pays for, so a driver's figures include its sub-agents; for a sub-agent, it counts the calls that the sub-agent made.
 The api-server names each agent row.
-A sub-agent takes the first line of its task, from its Invocation record ([invocations](invocations.md#the-delegation-record)), so a running sub-agent and a finished one have the same name.
+A sub-agent takes the label of its spawn, else the first line of its task, from its Invocation record ([invocations](invocations.md#the-delegation-record)), so a running sub-agent and a finished one have the same name.
 Any other agent takes its live name.
 An agent that is gone takes the last name that the api-server kept for it ([Ledger](#ledger)).
+In the read for a driver, the api-server keeps the driver and the five sub-agents with the most dollars (paid plus subscription value), then Bobcoins, then calls, and sums the rest, so the response and its name lookups stay small however many sub-agents ran.
+A second read lists the driver's sub-agents in the same order, up to a limit that the screen raises by 50 at a time, so the longer list always comes from one ranking.
+A sub-agent row carries the first 1,000 characters of its task for the hover text.
 
 **Spend per Session.** For one agent, the api-server sums the calls that the agent made per Session, newest first, and adds to each Session the calls of the sub-agents spawned from it at any depth, also as a part of its own.
 A sub-agent whose spawn recorded no Session ([invocations](invocations.md)) adds its spend to no Session.
@@ -358,7 +361,9 @@ Every text that a person reads gives the reset in that person's own time, on the
 The figure includes the sub-agents spawned from that Session, and its tooltip names their part.
 The Usage pages also show the sum of call times and the spend by session type, with a "Sub-agents" row for the calls of sub-agents and a "No session" row for calls with no Session.
 A driver's Usage section lists the driver and each sub-agent that spent in the period, and a sub-agent's own Usage section shows the calls that it made.
-Each sub-agent row shows the first line of its task, as its delegation card does.
+Its sub-agents sit indented under the driver's own row: the five that cost the most, each named as its delegation card names it and with its task on hover, then one "N more" row with the sum of the rest.
+"Show all" lists every sub-agent, 50 at a time.
+Settings › Usage and Home show one row per paying agent, with the spend of its sub-agents in it.
 A deleted agent keeps its last name beside a greyed avatar, and an agent with no recorded name shows as "Deleted agent".
 The line under each chat turn shows the measured cost of the calls that started in that turn, from the call rows.
 Its tooltip tells that the agent reports the time, calls and tokens without cached tokens, and that DAM measures the cost with cached tokens and without sub-agents.

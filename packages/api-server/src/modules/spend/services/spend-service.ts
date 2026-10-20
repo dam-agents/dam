@@ -14,8 +14,13 @@ import {
 import { match } from "ts-pattern";
 import { emit, EventType } from "../../../events.js";
 import {
+  agentIdsOf,
   agentNames,
   foldBreakdown,
+  labelAgents,
+  labelCallingAgents,
+  topSubAgents,
+  type AgentLabels,
   type BreakdownRow,
 } from "../domain/breakdown.js";
 import { utcDay } from "../domain/ledger.js";
@@ -52,11 +57,11 @@ export interface AgentNames {
   namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
 }
 
-export interface InvocationTitles {
-  titlesOf(
+export interface InvocationTasks {
+  tasksOf(
     ownerSub: string,
     agentIds: readonly string[],
-  ): Promise<ReadonlyMap<string, string>>;
+  ): Promise<ReadonlyMap<string, { name: string; task: string }>>;
 }
 
 export interface OwnedAgentAges {
@@ -87,9 +92,9 @@ export function createSpendService(deps: {
   lastKnownNames(
     agentIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>>;
-  invocationTitles(
+  invocationTasks(
     agentIds: readonly string[],
-  ): Promise<ReadonlyMap<string, string>>;
+  ): Promise<ReadonlyMap<string, { name: string; task: string }>>;
   ownedAgentCreatedBefore(at: Date): Promise<boolean>;
   telemetryStoreOn: boolean;
   ownerSub: string;
@@ -187,13 +192,29 @@ export function createSpendService(deps: {
     );
   };
 
-  const agentIdsOf = (rows: readonly BreakdownRow[]) => [
-    ...new Set(
-      rows.flatMap((row) =>
-        row.callingAgentId ? [row.payer, row.callingAgentId] : [row.payer],
-      ),
-    ),
-  ];
+  const labelsOf = async (
+    agentIds: readonly string[],
+    callingAgentIds: readonly string[],
+  ): Promise<AgentLabels> => {
+    const [liveNames, invocationTasks, lastKnownNames] = await Promise.all([
+      deps.liveAgentNames(),
+      deps.invocationTasks(callingAgentIds),
+      deps.lastKnownNames(agentIds),
+    ]);
+    const tasks = [...invocationTasks];
+    return {
+      names: agentNames({
+        subAgentNames: new Map(
+          tasks.flatMap(([id, { name }]) =>
+            name ? [[id, name] as const] : [],
+          ),
+        ),
+        liveNames,
+        lastKnownNames,
+      }),
+      tasks: new Map(tasks.map(([id, { task }]) => [id, task])),
+    };
+  };
 
   return {
     async daily({ agentId, from, to }) {
@@ -208,7 +229,7 @@ export function createSpendService(deps: {
     async breakdown({ agentId, from, to }) {
       const payer = agentId ? await deps.payers.payerOf(agentId) : undefined;
       const scope = !agentId ? "owner" : payer === agentId ? "payer" : "caller";
-      const [rows, connectionNames, liveNames] = await Promise.all([
+      const [rows, connectionNames] = await Promise.all([
         deps.ledger.breakdownRows({
           ownerSub: deps.ownerSub,
           agentIds: scopedAgents(payer),
@@ -217,28 +238,42 @@ export function createSpendService(deps: {
           to,
         }),
         deps.connectionNames(),
-        deps.liveAgentNames(),
       ]);
-      const agentIds = agentIdsOf(rows);
-      const [sessionCategories, invocationTitles, lastKnownNames] =
-        await Promise.all([
-          categoriesOf(rows),
-          deps.invocationTitles(agentIds),
-          deps.lastKnownNames(agentIds),
-        ]);
-      return foldBreakdown({
+      const breakdown = foldBreakdown({
         from,
         to,
         rows,
         connectionNames,
-        agentNames: agentNames({
-          invocationTitles,
-          liveNames,
-          lastKnownNames,
-        }),
-        sessionCategories,
+        sessionCategories: await categoriesOf(rows),
         scope,
       });
+      return labelAgents(
+        breakdown,
+        await labelsOf(
+          agentIdsOf([...breakdown.byAgent, ...breakdown.byCallingAgent]),
+          agentIdsOf(breakdown.byCallingAgent),
+        ),
+      );
+    },
+
+    async subAgents({ agentId, from, to, limit }) {
+      if ((await deps.payers.payerOf(agentId)) !== agentId) {
+        return { count: 0, rows: [] };
+      }
+      const top = topSubAgents(
+        await deps.ledger.breakdownRows({
+          ownerSub: deps.ownerSub,
+          agentIds: scopedAgents(agentId),
+          from,
+          to,
+        }),
+        limit,
+      );
+      const agentIds = agentIdsOf(top.rows);
+      return {
+        count: top.count,
+        rows: labelCallingAgents(top.rows, await labelsOf(agentIds, agentIds)),
+      };
     },
 
     async sessions({ agentId, from, to, sessionIds, limit }) {
