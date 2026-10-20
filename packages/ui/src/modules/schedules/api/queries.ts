@@ -3,6 +3,7 @@ import { skipToken, useQuery } from "@tanstack/react-query";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { listAgentSessionPage } from "../../sessions/api/acp-session-ops.js";
+import { acpSessionsKeys } from "../../sessions/api/keys.js";
 
 export function fetchSchedulesForAgent(agentId: string) {
   return queryClient
@@ -28,12 +29,19 @@ export function useOwnerSchedules(limit?: number) {
   });
 }
 
+export function scheduleSessionsKey(
+  agentId: string | null,
+  scheduleId: string | null,
+) {
+  return [...acpSessionsKeys.agent(agentId), "schedule-sessions", scheduleId];
+}
+
 export function useScheduleSessions(
   agentId: string | null,
   scheduleId: string | null,
 ) {
   return useQuery({
-    queryKey: ["schedule-sessions", agentId, scheduleId] as const,
+    queryKey: scheduleSessionsKey(agentId, scheduleId),
     queryFn:
       agentId && scheduleId
         ? async () =>

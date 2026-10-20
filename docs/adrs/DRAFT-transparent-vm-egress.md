@@ -26,7 +26,7 @@ Everything in the machine then reaches the network only through the same egress-
 - **Nothing reaches an upstream it could not reach through the proxy.** The proxy listener tells a TLS handshake from a CONNECT or plain HTTP by its first bytes, and hands transparent TLS to the same internal listener a CONNECT tunnel is unwrapped into, so no new listener or port is opened for it.
   Every chain there that dials a host checks egress first — the credential chains, the chains a path rule promotes, and the chain for a host with none, which holds a never-approved host for approval exactly as a CONNECT to it does.
   The one chain without a check is the telemetry collector's: it reaches only the platform's own collector, and a CONNECT to that collector skips the check today too.
-  Plain HTTP goes through the proxy listener's own check.
+  Plain HTTP goes through the proxy listener's own check, except the gateway's reserved OTLP path, which forwards only to that same collector and so has no check either.
   A connection with no name to check — no SNI, no Host, not TLS — is refused.
 - **Every DNS query reaches that resolver, by the VMM.** smolvm's network stack already intercepts every guest DNS query over UDP, whatever address it was sent to, and relays it from the runner to one upstream it is configured with; the runner configures that upstream as the machine's own gateway.
   So a pod with its own nameservers or a hardcoded public resolver gets the same answer, and nothing inside the guest, root included, can route DNS around it.

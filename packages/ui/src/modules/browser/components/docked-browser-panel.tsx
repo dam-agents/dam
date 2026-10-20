@@ -25,6 +25,7 @@ import {
   writePersistedFlag,
 } from "../../../lib/persisted-prefs.js";
 import { useStore } from "../../../store.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useBrowserControl } from "../hooks/use-browser-control.js";
 import { addressUrl } from "../lib/address.js";
 import { browserLinkLabel } from "../lib/browser-link.js";
@@ -194,6 +195,7 @@ export function DockedBrowserPanel({ agentId, agentName }: Props) {
             </span>
           </DropdownMenuSwitchItem>
         </RowActionsMenu>
+        <SidePanelCloseButton />
         {stream.page.loading && (
           <span
             aria-hidden

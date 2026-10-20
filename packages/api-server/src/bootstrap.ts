@@ -207,6 +207,7 @@ import {
   createContentApp,
   createShareAuthRoutes,
   createShareViewerApp,
+  shareSessionCookie,
   type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
@@ -247,6 +248,7 @@ import {
 import {
   composeApprovalsSystem,
   composeSpendLimitQuestions,
+  composeToolApprovalReports,
   createApprovalsCleanupHook,
   createSpendQuestionStore,
   listPendingApprovalAgentIds,
@@ -264,6 +266,7 @@ import {
   createL7PromotionReconcile,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
+  markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
 import {
   composeConnectionsAtBoot,
@@ -271,6 +274,7 @@ import {
   createConnectionGrantsCleanupHook,
   createConnectionNames,
   createGrantedConnectionTemplates,
+  createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
@@ -510,6 +514,7 @@ export async function bootstrap() {
     },
     shareBaseUrl: config.shareBaseUrl,
   });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
     share: {
       baseUrl: config.shareBaseUrl,
@@ -517,11 +522,12 @@ export async function bootstrap() {
         auth: createShareAuthRoutes({
           auth: shareAuth,
           brandName: config.brand.name,
-          secureCookie: new URL(config.shareBaseUrl).protocol === "https:",
+          sessionCookie: shareCookie,
         }),
         viewer: createShareViewerApp({
           viewer: shareViewer,
           auth: shareAuth,
+          sessionCookie: shareCookie,
           renderTokens: shareRenderTokens,
           brandName: config.brand.name,
           uiBaseUrl: config.uiBaseUrl,
@@ -1338,6 +1344,19 @@ export async function bootstrap() {
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+  await markTrustedRowsTakenOverAdapter(db, trustedHosts)
+    .then((marked) => {
+      if (marked > 0)
+        getLogger().info(
+          { marked },
+          "egress-rules: marked preset rows taken over by connections",
+        );
+    })
+    .catch((err) => {
+      getLogger().warn(
+        `egress-rules: marking preset rows taken over by connections failed: ${formatError(err)}`,
+      );
+    });
 
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
@@ -1364,6 +1383,7 @@ export async function bootstrap() {
       },
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),
+    providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
     spend: spend.check,
     wrapperFrameSender,
@@ -1881,6 +1901,8 @@ export async function bootstrap() {
       ownerSub: owner,
     });
   const harnessDeps = {
+    toolApprovalsFor: (owner: string) =>
+      composeToolApprovalReports(approvalsRelay, owner),
     satellitesBoot,
     secretStore,
     spendHold,

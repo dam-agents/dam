@@ -36,6 +36,9 @@ pub const IMAGE_DIGEST_FILE: &str = "image-digest";
 // UNIT_BOUNDARY_DESCRIPTION: the VM runtime the machine's running VMM booted, written at each start. A runner release may bring another runtime than the one that started a machine still running, and a machine on another runtime is managed on the assumption that the two are compatible, with any failure ending in a reboot onto the runner's own (see Server::foreign).
 pub const RUNTIME_FILE: &str = "runtime";
 
+// UNIT_BOUNDARY_DESCRIPTION: where the loader records the signal that ended a VMM it reaped, one file per pid, so the runner that adopted a machine across a hand-off still learns how it died: after its own process exits, the machine's VMMs are the loader's children and only the loader can read their status.
+pub const EXIT_RECORDS: &str = "vmm-exits";
+
 pub fn runtime(state_dir: &Path, id: &str) -> Option<String> {
     let dir = machine_dir(state_dir, id)?;
     fs::read_to_string(dir.join(RUNTIME_FILE))

@@ -18,6 +18,10 @@ type ev = map[string]any
 const (
 	attributionAgentHeader      = "x-platform-agent-id"
 	attributionInvocationHeader = "x-platform-invocation-id"
+
+	// UNIT_BOUNDARY_DESCRIPTION: the path prefix on the gateway's own address that takes an agent's OTLP export over plain HTTP, with no CONNECT. Claude Code sends its three OTLP exporters through one proxy agent that holds one socket, and requests that start together wait behind each other until the export times out, so most of its log records, the per-call spend, never arrive. A request to the gateway's address with no proxy uses a plain agent instead. The prefix is stripped before the collector, and the Claude Code image reads this same literal in model-gateway.sh.
+	gatewayOTLPPathPrefix = "/__platform_otlp/"
+	gatewayOTLPRouteName  = "gateway_otlp"
 )
 
 type bootstrapParams struct {
@@ -54,7 +58,7 @@ type bootstrapParams struct {
 	LuaDir                 string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's ConfigMap, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
+// UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's own directory, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
 func (p bootstrapParams) luaScript(params, bodyKey, body string) string {
 	if p.LuaDir == "" {
 		return params + body
@@ -208,7 +212,11 @@ func buildOuterListener(p bootstrapParams) ev {
 		hcm["tracing"] = otelTracing(p, 256)
 	}
 	if p.OTel.AccessLogs {
-		hcm["access_log"] = hcmAccessLog(p, "", "agent_egress", "egress")
+		accessLogs := hcmAccessLog(p, "", "agent_egress", "egress")
+		if p.Telemetry {
+			accessLogs = gatewayOTLPFailuresOnly(p, accessLogs)
+		}
+		hcm["access_log"] = accessLogs
 	}
 	listener := ev{
 		"name":    p.named("agent_egress"),
@@ -285,6 +293,9 @@ func buildOuterRoutes(p bootstrapParams) []any {
 			"typed_per_filter_config": extAuthzDisabledPerRoute(),
 		})
 	}
+	if p.Telemetry {
+		routes = append(routes, gatewayOTLPRoute(p))
+	}
 	genericRoute := ev{"cluster": p.named("tls_inspect_internal"), "upgrade_configs": connectUpgrade}
 	if p.AnyUpgrades {
 		genericRoute["idle_timeout"] = "14400s"
@@ -311,6 +322,38 @@ func buildOuterRoutes(p bootstrapParams) []any {
 	}
 	routes = append(routes, fallthroughRoute)
 	return routes
+}
+
+func gatewayOTLPRoute(p bootstrapParams) ev {
+	route := ev{
+		"name":  p.named(gatewayOTLPRouteName),
+		"match": ev{"prefix": gatewayOTLPPathPrefix},
+		"route": ev{
+			"cluster":              "otel_collector",
+			"prefix_rewrite":       "/",
+			"host_rewrite_literal": p.TelemetryCollectorHost,
+			"timeout":              "0s",
+		},
+		"typed_per_filter_config": extAuthzDisabledPerRoute(),
+	}
+	if p.OTel.Traces {
+		route["tracing"] = ev{"random_sampling": ev{"numerator": 0}, "overall_sampling": ev{"numerator": 0}}
+	}
+	return route
+}
+
+func gatewayOTLPFailuresOnly(p bootstrapParams, accessLogs []any) []any {
+	filter := ev{"extension_filter": ev{
+		"name": "envoy.access_loggers.extension_filters.cel",
+		"typed_config": ev{
+			"@type":      "type.googleapis.com/envoy.extensions.access_loggers.filters.cel.v3.ExpressionFilter",
+			"expression": fmt.Sprintf("xds.route_name != '%s' || response.code >= 400 || response.flags != 0u", p.named(gatewayOTLPRouteName)),
+		},
+	}}
+	for _, l := range accessLogs {
+		l.(ev)["filter"] = filter
+	}
+	return accessLogs
 }
 
 func buildInternalListener(p bootstrapParams) ev {

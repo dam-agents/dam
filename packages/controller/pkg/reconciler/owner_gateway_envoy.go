@@ -1,6 +1,7 @@
 package reconciler
 
 import (
+	"cmp"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -13,12 +14,14 @@ import (
 
 const (
 	ownerGatewayTemplateRev = "o1-owner-gateway"
-	ownerGatewayLDSKey      = "lds.yaml"
-	ownerGatewayCDSKey      = "cds.yaml"
-	ownerGatewayLeafSDSKey  = "leaf-sds.yaml"
-	ownerGatewayBootstrap   = "envoy.yaml"
-	envoyLeafSDSName        = "leaf"
-	harnessGuardHeader      = "x-platform-harness-agent"
+	// UNIT_BOUNDARY_DESCRIPTION: an owner gateway's files and the credentials its chains name are one volume, so they are one directory, and a credential is a file of it beside the listeners that name it.
+	ownerGatewayCredentialRoot = envoyBootstrapMount
+	ownerGatewayLDSKey         = "lds.yaml"
+	ownerGatewayCDSKey         = "cds.yaml"
+	ownerGatewayLeafSDSKey     = "leaf-sds.yaml"
+	ownerGatewayBootstrap      = "envoy.yaml"
+	envoyLeafSDSName           = "leaf"
+	harnessGuardHeader         = "x-platform-harness-agent"
 )
 
 type ownerGatewayAgent struct {
@@ -37,8 +40,9 @@ type ownerGatewayConfig struct {
 	Revisions map[string]string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the Envoy configuration of an owner gateway, which serves every vm Agent of one owner. The bootstrap holds only what the agents share: the internal-listener extension, the stats sink and the clusters to the harness, the object store, the dynamic forward proxies and the collector. Each agent's listeners and clusters are files Envoy watches, every name suffixed with the agent, so one agent's change replaces only its own listener and drains only its own connections. Identity is the listener's port, which only the agent's own Service maps to. The mesh no longer tells an owner's agents apart at the harness, so each agent's harness route ends in a guard listener that admits only that agent's own path and stamps the agent on the request; every other route strips that header, and the agent's harness policy requires it. The listener answers its health path with a revision of what was rendered for it, so a readiness probe tells a stale listener from a current one. Size: about 11 KB shared plus 4 KB per credentialed host before spend metering; one ConfigMap holds at most 1 MiB, and an owner past that needs an xDS server in the controller instead of files.
-func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config) (ownerGatewayConfig, error) {
+// UNIT_BOUNDARY_DESCRIPTION: the Envoy configuration of an owner gateway, which serves every vm Agent of one owner. The bootstrap holds only what the agents share: the internal-listener extension, the stats sink and the clusters to the harness, the object store, the dynamic forward proxies and the collector. Each agent's listeners and clusters are files Envoy watches, every name suffixed with the agent, so one agent's change replaces only its own listener and drains only its own connections. Identity is the listener's port, which only the agent's own Service maps to. The mesh no longer tells an owner's agents apart at the harness, so each agent's harness route ends in a guard listener that admits only that agent's own path and stamps the agent on the request; every other route strips that header, and the agent's harness policy requires it. The listener answers its health path with a revision of what was rendered for it, so a readiness probe tells a stale listener from a current one. Size: about 11 KB shared plus 4 KB per credentialed host before spend metering; one Secret holds at most 1 MiB, and an owner past that needs an xDS server in the controller instead of files.
+// UNIT_BOUNDARY_DESCRIPTION: `version` is the xDS version the files carry, empty for the template's. Envoy reads a projected file again when its volume moves, and deduplicates the listeners whose content it already accepted, so a file offered again under a new version re-offers everything the pod refused without replacing anything it took.
+func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config, version string) (ownerGatewayConfig, error) {
 	var listeners, clusters []any
 	revisions := map[string]string{}
 	var shared bootstrapParams
@@ -79,13 +83,13 @@ func renderOwnerGateway(agents []ownerGatewayAgent, cfg *config.Config) (ownerGa
 	if out.Bootstrap, err = marshalYAML(bootstrap); err != nil {
 		return out, err
 	}
-	if out.LDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.listener.v3.Listener", listeners)); err != nil {
+	if out.LDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.listener.v3.Listener", version, listeners)); err != nil {
 		return out, err
 	}
-	if out.CDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.cluster.v3.Cluster", clusters)); err != nil {
+	if out.CDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.config.cluster.v3.Cluster", version, clusters)); err != nil {
 		return out, err
 	}
-	out.LeafSDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", []any{ev{
+	out.LeafSDS, err = marshalYAML(discoveryResponse("type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.Secret", version, []any{ev{
 		"name": envoyLeafSDSName,
 		"tls_certificate": ev{
 			"certificate_chain": ev{"filename": envoyLeafTLSMount + "/tls.crt"},
@@ -103,7 +107,7 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config) bootstrapParams {
 		c.ChainID += suffix
 		c.UpstreamCluster += suffix
 		if rest, ok := strings.CutPrefix(c.UpstreamCAFile, envoyCredentialsRoot+"/cred-"); ok {
-			c.UpstreamCAFile = envoyCredentialsRoot + "/" + strings.Replace(rest, "/", ".", 1)
+			c.UpstreamCAFile = ownerGatewayCredentialRoot + "/" + strings.Replace(rest, "/", ".", 1)
 		}
 		chains[i] = c
 	}
@@ -113,6 +117,7 @@ func ownerAgentParams(a ownerGatewayAgent, cfg *config.Config) bootstrapParams {
 	p.HarnessGuardAgent = a.Name
 	p.HealthBody = "pending"
 	p.FlatCredentials = true
+	p.CredentialsRoot = ownerGatewayCredentialRoot
 	p.LeafSDSPath = envoyBootstrapMount + "/" + ownerGatewayLeafSDSKey
 	p.LuaDir = envoyBootstrapMount
 	return p
@@ -226,7 +231,7 @@ func watchedConfigSource(key string) ev {
 	}
 }
 
-func discoveryResponse(typeURL string, resources []any) ev {
+func discoveryResponse(typeURL, version string, resources []any) ev {
 	typed := make([]any, 0, len(resources))
 	for _, r := range resources {
 		withType := ev{"@type": typeURL}
@@ -235,7 +240,7 @@ func discoveryResponse(typeURL string, resources []any) ev {
 		}
 		typed = append(typed, withType)
 	}
-	return ev{"version_info": "0", "type_url": typeURL, "resources": typed}
+	return ev{"version_info": cmp.Or(version, ownerGatewayTemplateRev), "type_url": typeURL, "resources": typed}
 }
 
 func marshalYAML(doc any) (string, error) {

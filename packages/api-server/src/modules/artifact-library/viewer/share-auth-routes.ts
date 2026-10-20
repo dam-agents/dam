@@ -2,10 +2,10 @@ import { Hono, type Context } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
 
 import {
-  SHARE_SESSION_COOKIE,
   SHARE_SESSION_TTL_MS,
   safeNextOrRoot,
   type ShareSession,
+  type ShareSessionCookie,
 } from "../domain/share-session.js";
 import type { ShareAuthService } from "../services/share-auth-service.js";
 import { renderSignInFailed } from "./renderer.js";
@@ -13,7 +13,7 @@ import { renderSignInFailed } from "./renderer.js";
 export interface ShareAuthRoutesDeps {
   auth: ShareAuthService;
   brandName: string;
-  secureCookie: boolean;
+  sessionCookie: ShareSessionCookie;
 }
 
 export function loginPath(next: string | undefined): string {
@@ -23,13 +23,14 @@ export function loginPath(next: string | undefined): string {
 export async function readShareSession(
   c: Context,
   auth: Pick<ShareAuthService, "getSession">,
+  cookie: ShareSessionCookie,
 ): Promise<ShareSession | null> {
-  const id = getCookie(c, SHARE_SESSION_COOKIE);
+  const id = getCookie(c, cookie.name);
   return id ? auth.getSession(id) : null;
 }
 
 export function createShareAuthRoutes(deps: ShareAuthRoutesDeps): Hono {
-  const { auth } = deps;
+  const { auth, sessionCookie } = deps;
   const app = new Hono();
 
   app.use("*", async (c, next) => {
@@ -63,9 +64,9 @@ export function createShareAuthRoutes(deps: ShareAuthRoutesDeps): Hono {
         400,
       );
     }
-    setCookie(c, SHARE_SESSION_COOKIE, result.value.sessionId, {
+    setCookie(c, sessionCookie.name, result.value.sessionId, {
       httpOnly: true,
-      secure: deps.secureCookie,
+      secure: sessionCookie.secure,
       sameSite: "Lax",
       path: "/",
       maxAge: Math.floor(SHARE_SESSION_TTL_MS / 1000),
@@ -74,11 +75,11 @@ export function createShareAuthRoutes(deps: ShareAuthRoutesDeps): Hono {
   });
 
   app.post("/logout", async (c) => {
-    const id = getCookie(c, SHARE_SESSION_COOKIE);
+    const id = getCookie(c, sessionCookie.name);
     if (id) await auth.endSession(id);
-    deleteCookie(c, SHARE_SESSION_COOKIE, {
+    deleteCookie(c, sessionCookie.name, {
       path: "/",
-      secure: deps.secureCookie,
+      secure: sessionCookie.secure,
     });
     const body = await c.req.parseBody();
     const next = typeof body.next === "string" ? body.next : undefined;

@@ -19,7 +19,7 @@ const SETUP_COMMAND = ["gh", "auth", "setup-git"];
 
 export type GitCredentialHelperSetup = (
   contributions: readonly Contribution[],
-) => void;
+) => Promise<void>;
 
 function ghCredentialFingerprint(
   contributions: readonly Contribution[],
@@ -44,7 +44,7 @@ export function createGitCredentialHelperSetup(
   let queue: Promise<void> = Promise.resolve();
   return (contributions) => {
     const fingerprint = ghCredentialFingerprint(contributions);
-    if (fingerprint === "" || fingerprint === configuredFor) return;
+    if (fingerprint === "" || fingerprint === configuredFor) return queue;
     configuredFor = fingerprint;
     queue = queue.then(async () => {
       const result = await run({
@@ -57,5 +57,6 @@ export function createGitCredentialHelperSetup(
         log(describeFailure(SETUP_COMMAND.join(" "), result.error));
       }
     });
+    return queue;
   };
 }

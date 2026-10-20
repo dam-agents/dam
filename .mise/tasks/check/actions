@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+#MISE description="GitHub Actions workflows and composite actions pass jactionlint"
+# Offline: the online rules ask GitHub about archived repositories, impostor
+# commits and advisories, and print nothing here. JACTIONLINT_ONLINE=1 turns
+# them on for a run that has a token (it reads GITHUB_TOKEN, GH_TOKEN, then
+# `gh auth token`). With no file it checks every workflow, composite action and
+# dependabot.yml of the repository. Ignored paths and findings live in
+# .github/jactionlint.yaml (it reads actionlint's file too); it honors the
+# `# zizmor: ignore[...]` comments the workflows still carry.
+set -u
+
+status=0
+jactionlint || status=1
+
+# rules.template-injection.pedantic in .github/jactionlint.yaml is what keeps
+# the checks the zizmor task reported: a matrix value, a step output or
+# github.actor expanded in a script. This counterexample must keep failing; a
+# config that loses the option, or a rule that stops seeing the case, makes the
+# run silent, so the check fails here instead.
+fixture="$(mktemp)"
+trap 'rm -f "$fixture"' EXIT
+cat > "$fixture" <<'YAML'
+name: Dynamic matrix injection
+on:
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: test-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  source:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      names: ${{ steps.names.outputs.names }}
+    steps:
+      - id: names
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+        run: python3 -c 'import os,json; print("names=" + json.dumps([os.environ["TITLE"]]))' >> "$GITHUB_OUTPUT"
+  consume:
+    needs: source
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    strategy:
+      matrix:
+        name: ${{ fromJSON(needs.source.outputs.names) }}
+    steps:
+      - run: echo "${{ matrix.name }}"
+YAML
+report="$(jactionlint --config-file .github/jactionlint.yaml "$fixture" 2>&1 || true)"
+case "$report" in
+  *"[template-injection]"*) ;;
+  *)
+    echo "check:actions: the counterexample in .mise/tasks/check/actions was not reported as template-injection." >&2
+    echo "It is the dynamic matrix case zizmor reported; see rules.template-injection.pedantic in .github/jactionlint.yaml." >&2
+    echo "$report" >&2
+    status=1
+    ;;
+esac
+
+exit $status

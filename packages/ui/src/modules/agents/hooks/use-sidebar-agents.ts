@@ -6,11 +6,14 @@ import {
   type AgentActivitySession,
   useActivitySessions,
 } from "../../home/hooks/use-activity-sessions.js";
-import { filterActivitySessions } from "../../home/lib/activity-sessions.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents } from "../api/queries.js";
 import { useSidebarOrder } from "../api/sidebar-order.js";
-import { groupSessionsByAgent } from "../lib/sidebar-agent-order.js";
+import {
+  groupSessionsByAgent,
+  sidebarAgentFolded,
+  sidebarAgentOpen,
+} from "../lib/sidebar-agent-order.js";
 import { manualOrder } from "../lib/sidebar-order.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
@@ -21,7 +24,6 @@ export function useSidebarAgents() {
   const list = useAgents().data?.list ?? NO_AGENTS;
   const activity = useActivitySessions();
   const { order } = useSidebarOrder();
-  const filters = useStore((s) => s.sidebarActivityFilters);
   const openAgentId = useStore((s) =>
     s.view === "chat"
       ? s.selectedAgent
@@ -30,10 +32,13 @@ export function useSidebarAgents() {
         : null,
   );
   const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
+  const openOverrides = useStore((s) => s.sidebarAgentOpen);
+  const isOpen = (agentId: string) =>
+    sidebarAgentOpen(openOverrides, agentId, openAgentId);
 
   const sessionsByAgent = useMemo(
-    () => groupSessionsByAgent(filterActivitySessions(activity.items, filters)),
-    [activity.items, filters],
+    () => groupSessionsByAgent(activity.items),
+    [activity.items],
   );
 
   const agents = useMemo(
@@ -47,6 +52,15 @@ export function useSidebarAgents() {
     [list, order.agents],
   );
 
+  const { active, folded } = useMemo(() => {
+    const isFolded = (agent: AgentView) =>
+      sidebarAgentFolded(openOverrides, agent, openAgentId);
+    return {
+      active: agents.filter((agent) => !isFolded(agent)),
+      folded: agents.filter(isFolded),
+    };
+  }, [agents, openAgentId, openOverrides]);
+
   const unreadAgentIds = new Set(
     activity.items
       .filter((item) => item.unread)
@@ -58,7 +72,10 @@ export function useSidebarAgents() {
 
   return {
     agents,
+    active,
+    folded,
     openAgentId,
+    isOpen,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,

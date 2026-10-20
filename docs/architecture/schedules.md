@@ -1,6 +1,6 @@
 # Schedules
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -58,6 +58,11 @@ A fire on a [disabled](agent-lifecycle.md#disable) Agent is held too, reading `h
 A fire whose payer is at a [spend limit or the Spend Ceiling](spend-limits.md#unattended-work) is held the same way, reading `held: spend limit reached for today` or `held: spend ceiling reached for today`.
 That check runs once the fire's provider Connection is chosen, so a limit on that Connection counts as well.
 
+A fire refused before step 1 — the schedule's own choices no longer hold, or no granted provider can run its harness — starts nothing, and unlike a hold it gets no closer to running: it records the reason and arms the next occurrence, and the last-run stamp keeps the last fire that actually ran.
+That stamp is what a Precheck measures "anything new since last time?"
+from, so a fire that never happened must not move it.
+The refusal comes back at every occurrence until the schedule's choices or the Agent's granted providers change.
+
 An event that is never delivered stays pending in Postgres and is redelivered until it settles or expires, and the agent keeps a last-fire timestamp per schedule on the PVC, so a redelivered or superseded fire never runs twice.
 That safety net ends where a fire is settled.
 For an ordinary fire it covers everything up to the prompt; for a prechecked one it stops at acceptance, so a check that never finishes reaches only the pod log; a session that then fails to open is reported as a failed run.
@@ -93,7 +98,7 @@ An agent may also tie one to **the session that scheduled it**: *continue* makes
 Either way the scheduling session must be known for certain, and the platform tool has no session of its own — the MCP endpoint is one per agent.
 So agent-runtime gives every session a reference of its own and hands the harness, for each session it opens or loads, its own copy of the platform MCP entry carrying that reference; the tool records it, and the pod resolves it back when the fire lands.
 A harness that does not honour a per-session entry sends no reference, and the tool refuses to tie the task to a session rather than guess.
-The turn that lands in the scheduling session runs **unattended**, as a scheduled fire does, even in a person's chat with no tab open — a permission request in it expires the way a detached run's does.
+The turn that lands in the scheduling session runs **unattended**, as a scheduled fire does, even in a person's chat with no tab open — a permission request in it waits on Home for a verdict the way a detached run's does, and expires only when nobody answers it in time ([cli](cli.md#headless-runs)).
 If that session is gone by then, *continue* runs the task in a fresh session instead, so it is not lost; *report* drops the result, since there is nobody left to tell.
 
 An agent creates one through a platform tool of its own — kept apart from the recurring one so a model reaching for "once" is not steered through recurrence and Precheck options that do not apply.
@@ -121,7 +126,7 @@ A broken Precheck still contributes that block, carrying what it managed to prin
 
 Only the pod knows the verdict, so it reports each one back over the runtime channel's generic **event report**, naming the fire by its own event id ([runtime delivery](runtime-delivery.md#event-report--agent--api-server)); the api-server checks that the event belongs to the calling Agent, routes on its kind, and records the verdict on the schedule.
 The Precheck does not hold the fire's delivery open while it runs — the trigger settles when the pod accepts it, or a two-minute check would stop every other change reaching that Agent.
-**A schedule with a Precheck records its outcome only once the verdict exists**: the fire itself arms the next occurrence and nothing else, and the report that follows either stamps the last-run pair (allowed, and a broken Precheck that ran anyway) or counts a **declined fire** (`declined`).
+**A schedule with a Precheck records its outcome only once the verdict exists**: the fire itself arms the next occurrence and clears a failure result left standing from before, and the report that follows writes one of two things — the last-run pair (allowed, and a broken Precheck that ran anyway), or a **declined fire** (`declined`), which clears that failure too.
 The decline count is *since the last run*, not a lifetime total — a run resets it — so what the panel shows is how many fires the Precheck has saved since work last actually happened, which is the number that says whether the check is still finding anything (an [on-demand run](#on-demand-run) the Precheck declines counts here too, which is why the unit is fires rather than occurrences).
 That is what keeps the three states apart in the row the user reads, and it is what makes the last-run stamp mean *the last fire that actually ran* — the meaning the Precheck's own environment depends on.
 A schedule with no Precheck is unchanged: nothing will report, so the fire records its own delivery as before.
@@ -134,7 +139,7 @@ The check is detached, so an owner can swap the command while one is in flight; 
 The fire's payload carries the command that ran, which is what lets the report be matched to it.
 
 A report can also simply never arrive — the pod can die mid-check.
-Then the fire leaves no record at all: the last-run stamp keeps its earlier value, so the next Precheck is told work happened longer ago than it did.
+Then the fire leaves no verdict behind: the only write is the failure result it cleared when it committed, and the last-run stamp keeps its earlier value, so the next Precheck is told work happened longer ago than it did.
 The direction is deliberate.
 An older stamp makes a check find *more* than it should and run again, where a newer one would make it skip an interval's work silently, and the next report that lands corrects it.
 Its count is consecutive — since the script last ran and returned a verdict at all, allow or decline alike — because a run cannot clear it the way a run clears the decline count: a broken Precheck is what let that run happen, so counting from the last run would read *one* forever and never say that a check has been failing all week.
@@ -176,7 +181,7 @@ Each choice is optional; an unset one takes the agent's default: its default har
 
 **Checked twice, the same way.** The choices are checked at save and at each fire with one rule: the harness is one the agent's image carries; the model's provider is granted and accepted by the harness, and the model is on the list the harness last reported; the settings are ones the harness offers, valid for that model, and the platform sub-agent settings are ones the chosen sub-agent harness offers.
 A save that fails names the reason.
-A fire that fails, because a provider was revoked or a model left the list, fails the *run* with that reason rather than running on a substitute.
+A fire whose choices no longer hold, because a provider was revoked or a model left the list, is refused with that reason rather than running on a substitute.
 A one-time task that continues its scheduling session keeps that session's choices.
 An agent creating a schedule names the same choices through its tools.
 
@@ -189,10 +194,13 @@ There a schedule with no model runs on the harness's **default**, never on the m
 **Migration.** A schedule saved with a bare model was qualified with the alias of the agent's one provider; with several, its model was cleared and the schedule carries `migrationNote` until its owner picks a model again.
 The one-shot SQL migration carries its dry-run count query in its comment.
 
-**A refused fire is a failed run.** The fire still settles, so it is not redelivered, and the runtime reports a failed *run*, a stage distinct from a broken Precheck.
-The schedule's last result shows the reason (a one-time task records it as its result), and the last-run stamp stays put, since a Precheck measures "anything new since last time?"
+**A refused fire records its reason, and, on a recurring schedule, the last-run stamp stays put.** The last result names the reason, the schedule's card in the panel shows it in the failure colour, and the stamp keeps the last fire that actually ran, since a Precheck measures "anything new since last time?"
 from it.
-A switch the harness refuses at fire time leaves the unprompted session behind, empty.
+A one-time schedule is the exception: its stamp is the flag that says the task already fired, so a refused one-time fire writes it (and records its reason as the task's result).
+The reason clears itself when the schedule works again — a fire that commits, or a Precheck that declines, replaces the failure.
+A held fire records its reason the same way and leaves the stamp too: nothing ran, and the hold lifts on its own.
+A refusal the api-server reaches before it commits the trigger — a saved choice that no longer holds, or no granted provider that can run the harness — delivers nothing and wakes nothing: the fire writes the reason and arms the next occurrence.
+A refusal the runtime reaches instead — a harness that refuses the session's model at fire time — settles as a failed *run*, a stage distinct from a broken Precheck, so it is not redelivered, and leaves the unprompted session behind, empty.
 Follow-up turns keep the session's model as far as the harness restores it on reload.
 
 In a session with scheduled runs, each reply shows the model that answered it in a muted line, as the harness reports it: Claude Code only today, and the main conversation's model, never a subagent's.
@@ -228,3 +236,5 @@ Two cases refuse outright.
 A one-time schedule has no cadence to try out, and a run beside its own would do the task twice.
 And an Agent from a [starter kit](starter-kits.md#concepts) whose onboarding is still pending: a scheduled fire is *held* there because nobody is watching; here somebody is, so the refusal is reported rather than the fire quietly vanishing.
 An Agent at a spend limit or the Spend Ceiling is refused the same way, with the reason.
+A schedule whose saved choices no longer hold is refused with the reason a fire would fail with, so the owner reads what to fix instead of a generic failure.
+A schedule with no granted provider that can run its harness is refused with that reason.

@@ -1,4 +1,4 @@
-import { Box, Chemistry, Tools } from "@carbon/icons-react";
+import { Chemistry, Gift, Tools } from "@carbon/icons-react";
 import { isStartRefusal } from "api-server-api";
 
 import { Badge } from "@/components/ui/badge";
@@ -152,7 +152,7 @@ export function AgentRow({
               title={kitBadge.title}
               aria-label={`From the ${kitBadge.label} starter kit`}
             >
-              <Box size={14} className="shrink-0" aria-hidden />
+              <Gift size={14} className="shrink-0" aria-hidden />
               <span className="truncate">{kitBadge.label}</span>
             </span>
           )}

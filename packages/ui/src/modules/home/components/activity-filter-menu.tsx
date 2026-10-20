@@ -4,6 +4,7 @@ import {
   DropdownMenu,
   DropdownMenuCheckboxItem,
   DropdownMenuContent,
+  DropdownMenuItem,
   DropdownMenuLabel,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
@@ -17,6 +18,7 @@ import {
   type ActivityFilters,
   CHANNEL_TYPE_LABELS,
   CHANNEL_TYPES,
+  defaultActivityFilters,
   isFiltered,
   STATE_FILTER_LABELS,
   STATE_FILTERS,
@@ -60,7 +62,7 @@ export function ActivityFilterMenu({
         </DropdownMenuTrigger>
       </Tooltip>
       <DropdownMenuContent align="end">
-        <DropdownMenuLabel>Show</DropdownMenuLabel>
+        <DropdownMenuLabel>Status</DropdownMenuLabel>
         <DropdownMenuRadioGroup
           value={filters.state}
           onValueChange={(value) => {
@@ -79,7 +81,7 @@ export function ActivityFilterMenu({
           ))}
         </DropdownMenuRadioGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuLabel>Types</DropdownMenuLabel>
+        <DropdownMenuLabel>Type</DropdownMenuLabel>
         {CHANNEL_TYPES.map((type) => (
           <DropdownMenuCheckboxItem
             key={type}
@@ -90,6 +92,16 @@ export function ActivityFilterMenu({
             {CHANNEL_TYPE_LABELS[type]}
           </DropdownMenuCheckboxItem>
         ))}
+        {filtered && (
+          <>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem
+              onSelect={() => onChange(defaultActivityFilters())}
+            >
+              Reset to default
+            </DropdownMenuItem>
+          </>
+        )}
       </DropdownMenuContent>
     </DropdownMenu>
   );

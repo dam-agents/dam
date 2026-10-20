@@ -291,6 +291,24 @@ const ReasonMachineStopping = "MachineStopping"
 // lapses.
 const ReasonOverBudget = "OverBudget"
 
+// ReasonAwaitingAllocation is stamped on Ready when a vm agent's machine is
+// waiting for the node to grant its runner the memory the start needs. The
+// owner's pool has room and, while the node is still enacting the resize,
+// nothing they disable frees memory it has not handed over, so it is not
+// ReasonOverBudget: a wake waits for it the way it waits for any start in
+// progress, and no refusal is announced. Once the node defers or refuses that
+// resize, the owner's idle agents are hibernated for the room it did grant,
+// while the reason stays this one.
+const ReasonAwaitingAllocation = "AwaitingAllocation"
+
+// ReasonAllocationUnreadable is stamped on Ready when a vm agent's start has
+// waited past the point where the node is merely late to report how much memory
+// it granted the owner's VM runner. The start keeps holding and is retried at
+// the parked tick: the platform cannot admit it without a figure, and the node
+// may yet report one. It carries the Machine prefix every start failure the
+// page shows as an error carries.
+const ReasonAllocationUnreadable = "MachineAllocationUnreadable"
+
 // ReasonStuckOnSupersededRevision marks a pod that will never become ready,
 // its revision having been superseded — typically a template still referencing
 // a deleted credential Secret. Terminal, unlike PodNotReady.
@@ -317,11 +335,13 @@ const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 // runner is not running.
 const ReasonMachineRunnerNodeLost = "MachineRunnerNodeLost"
 
-// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent the
-// kernel took down when it OOM-killed the owner's VM runner, from the
-// runner pod's last termination, until the agent is ready again. Every
-// machine of the owner is a process of that pod, so they all restart at
-// once. Not a Machine* reason: the agent is starting again, not failed.
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent that
+// was running when the kernel OOM-killed the owner's VM runner, for the ten
+// minutes after the kill, from the runner pod's last termination, whatever
+// reason the agent reads until then. Every machine of the owner is a process
+// of that pod, so they all restart at once; an agent woken after the kill
+// carries nothing, since the kill did not take it down. Not a Machine*
+// reason: the agent is starting again, not failed.
 const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
 
 // ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container

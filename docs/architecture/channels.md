@@ -319,6 +319,7 @@ Which of two strategies an optional scope gets follows from what its absence mea
   The emoji is the Agent's emoji avatar if it has one, else the robot face, unless the conversation's binding names custom emoji: whoever connects or edits the conversation can switch them on and name the workspace's emoji for each of the eight characters, prefilled `<brand.short>-agent-1` to `-8` in the order the set was drawn.
   The names are trusted as given — Slack shows an unknown name as literal text — and a post to a conversation the Agent is not connected to uses the robot face.
   When such a post reaches another Agent, the opening is removed first, so a peer named at the start of the reply is still addressed.
+  The same emoji opens the post's [Agent Footer](channel-turns.md#the-agent-footer), before "Sent by" and the Agent's name, with or without the persona scope.
   Slack returns the line break after the opening as spaces, so the opening is found by its shape — an emoji in any form, then the bold name — and is removed only in a workspace where the platform signs posts.
   Platform notices (a failed turn, a slow start) are the platform speaking and always post as the app.
 - **Omit the capability entirely**, when no partial answer is possible: checked once proactively, not per call, and the affordance drops out of the tool list rather than staying registered to fail forever.

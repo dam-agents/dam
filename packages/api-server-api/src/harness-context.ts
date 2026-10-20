@@ -1,3 +1,4 @@
+import type { ToolApprovalReports } from "./modules/approvals/harness.js";
 import type { ArtifactTouchService } from "./modules/artifact-library/types.js";
 import type { KbPublishGate } from "./modules/kb-publish/harness.js";
 import type { RuntimeDeliveryService } from "./modules/runtime/types.js";
@@ -9,4 +10,5 @@ export interface HarnessContext {
   sessionDirectory: SessionDirectoryService;
   artifactTouches: ArtifactTouchService;
   kbPublish: KbPublishGate;
+  toolApprovals: ToolApprovalReports;
 }

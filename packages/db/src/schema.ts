@@ -144,6 +144,7 @@ export const egressRules = pgTable(
       .notNull(),
     status: text("status").notNull().default("active"),
     source: text("source").notNull().default("manual"),
+    presetSource: text("preset_source"),
   },
   (table) => [
     uniqueIndex("egress_rules_lookup_idx")

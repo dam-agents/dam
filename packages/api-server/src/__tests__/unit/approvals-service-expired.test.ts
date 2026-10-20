@@ -36,6 +36,7 @@ function makeService(seed: PendingApprovalRow) {
   const repo: ApprovalsRepository = {
     insertPending: async () => true,
     insertIfAbsent: async () => true,
+    insertSettled: async () => true,
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     findActivePendingExtAuthz: async () => null,
     listPendingForOwner: async () => rows,
@@ -60,6 +61,7 @@ function makeService(seed: PendingApprovalRow) {
       return true;
     },
     markDelivered: async () => {},
+    correctResolvedVerdict: async () => false,
     listResolvedUndelivered: async () => [],
     expirePending: async () => false,
     expireOverdue: async () => [],

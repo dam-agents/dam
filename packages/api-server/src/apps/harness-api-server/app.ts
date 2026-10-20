@@ -9,6 +9,7 @@ import type {
   RuntimeDeliveryService,
   SessionDirectoryService,
   SpendStatus,
+  ToolApprovalReports,
 } from "api-server-api";
 import type { Db } from "db";
 import type { OnboardingMarker } from "../../modules/starter-kits/services/onboarding-marker.js";
@@ -104,6 +105,7 @@ export interface HarnessApiServerAppDeps {
   secretStore: SecretStore;
   spendHold: SpendHoldGate;
   spendStatusFor: (agentId: string, owner: string) => Promise<SpendStatus>;
+  toolApprovalsFor: (owner: string) => ToolApprovalReports;
 }
 
 export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
@@ -187,7 +189,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
         defaultLimits,
-        vmForced: agentsInstallSettings(config).vmForced,
+        virtualizationEnabled:
+          agentsInstallSettings(config).virtualizationEnabled,
         gate: composeSpawnSizeGate({
           k8s: k8sClient,
           owner,
@@ -309,6 +312,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
       recordTouch: (input) => mcpArtifactLibraryFor(owner).recordTouch(input),
     }),
     kbPublish: kbPublishGate,
+    toolApprovalsFor: deps.toolApprovalsFor,
   });
 
   const server = serve(

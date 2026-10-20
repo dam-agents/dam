@@ -41,10 +41,7 @@ import { composeKbPublish } from "./modules/kb-publish/compose.js";
 import { createImportHandlers, sweepStaging } from "./modules/import/index.js";
 import { composeSkills, resolveGitHubToken } from "./modules/skills/index.js";
 import { createGitCredentialHelperSetup } from "./modules/git/credential-helper.js";
-import {
-  createPodServiceSupervisor,
-  createProviderEnvSnapshot,
-} from "./modules/pod-service.js";
+import { createPodServiceSupervisor } from "./modules/pod-service.js";
 import {
   createModelCatalog,
   VENDORED_PRICE_TABLE,
@@ -86,6 +83,7 @@ import { createWebSocketChannel } from "./modules/acp/infrastructure/create-webs
 import {
   composeRuntimeChannel,
   createArtifactTouchReporter,
+  createToolApprovalReporter,
   createEnvPlugin,
   createEnvStateStore,
   staleEnvReason,
@@ -224,12 +222,13 @@ const artifactTouchReporter = createArtifactTouchReporter({
   log: (msg) => process.stderr.write(`[artifact-touch] ${msg}\n`),
 });
 
+const toolApprovalReporter = createToolApprovalReporter({
+  client: harnessClient,
+  log: (msg) => process.stderr.write(`[tool-approvals] ${msg}\n`),
+});
+
 const podServicePath = "/usr/local/bin/pod-service";
 const podLog = (msg: string) => process.stderr.write(`[pod-service] ${msg}\n`);
-const providerEnvSnapshot = createProviderEnvSnapshot({
-  stateBackend,
-  envReader: envStore,
-});
 const podService = existsSync(podServicePath)
   ? createPodServiceSupervisor({
       command: podServicePath,
@@ -237,10 +236,6 @@ const podService = existsSync(podServicePath)
       log: podLog,
     })
   : null;
-const refreshPodEnv = (): void => {
-  providerEnvSnapshot.write();
-  podService?.refreshEnv();
-};
 
 const modelCatalog = createModelCatalog({
   envState: () => envStore.state(),
@@ -462,6 +457,7 @@ const {
   backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
+  agentRequests: toolApprovalReporter,
   onToolActivity: changes.onToolActivity,
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
@@ -540,7 +536,7 @@ const runtimeChannel = await composeRuntimeChannel({
       store: envStore,
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
-        refreshPodEnv();
+        podService?.refreshEnv();
         void modelCatalog.refresh();
         scheduleRecovery();
       },
@@ -551,10 +547,8 @@ const runtimeChannel = await composeRuntimeChannel({
     }),
     createSkillInstallPlugin({ install: skillsService.install }),
   ],
-  onSnapshotProcessed: (contributions) => {
-    reconcileOnState?.(contributions);
-    setupGitCredentialHelper(contributions);
-  },
+  onContributionsApplied: setupGitCredentialHelper,
+  ...(reconcileOnState && { onSnapshotProcessed: reconcileOnState }),
 });
 
 const sshLog = (msg: string) => process.stderr.write(`[ssh] ${msg}\n`);
@@ -1191,7 +1185,7 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) refreshPodEnv();
+  if (envStore.ready()) podService?.refreshEnv();
 
   modelCatalog.onChange(() =>
     acpRuntime.applyEnvChange({
