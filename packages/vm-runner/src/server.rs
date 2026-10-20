@@ -256,6 +256,9 @@ pub struct Server {
     // UNIT_BOUNDARY_DESCRIPTION: every death the reaper has collected and not yet reported or dropped, by pid, with the signal that ended it when one did: the runtime's own sweep of these children discards the status, and the status read once is all there is, so a machine still starting when its VMM dies keeps its record until the start call returns.
     exits: Mutex<BTreeMap<i32, (Option<i32>, Instant)>>,
     shed_request: Mutex<Option<(u64, String)>>,
+    // UNIT_BOUNDARY_DESCRIPTION: a test's gate on the moment a planned action is refused and the worker has not yet settled, which is the only window in which a spec can be accepted behind a refusal; never armed outside tests.
+    #[cfg(test)]
+    refusal_gate: Mutex<Option<(std::sync::mpsc::Sender<()>, std::sync::mpsc::Receiver<()>)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
     metrics: Metrics,
@@ -375,6 +378,8 @@ impl Server {
             oom_credit: AtomicU64::new(0),
             exits: Mutex::new(BTreeMap::new()),
             shed_request: Mutex::new(None),
+            #[cfg(test)]
+            refusal_gate: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
             metrics: Metrics::default(),
@@ -1194,8 +1199,20 @@ impl Server {
                 None => match self.plan_next(id) {
                     Ok((action, asked)) => {
                         // UNIT_BOUNDARY_DESCRIPTION: an action planned here follows one that has ended, which may have left the machine holding nothing: a boot that failed, or a stop. It is a new operation, so it is admitted on its own merits and against the spec it will run with, rather than inheriting the admission of the action before it. The action in flight keeps the admission it was given, which is why this sits on the planned path only.
-                        if action != Action::Stop && !self.admit(id) {
-                            return;
+                        if action != Action::Stop {
+                            // UNIT_BOUNDARY_DESCRIPTION: a refusal ends this worker only while the count it refused is still the newest spec. A spec accepted behind it started no worker of its own, because this one still held the machine, so ending here would leave it stopped until something else asked again.
+                            if let Err(refused) = self.admit(id) {
+                                #[cfg(test)]
+                                if let Some((reached, release)) = locked(&self.refusal_gate).take()
+                                {
+                                    let _ = reached.send(());
+                                    let _ = release.recv();
+                                }
+                                if settle.settles(&mut locked(&self.machines), Some(refused)) {
+                                    return;
+                                }
+                                continue;
+                            }
                         }
                         (action, asked)
                     }
@@ -1234,23 +1251,25 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether the machine may run the action about to be planned for it, refusing it in the machine's own words when the owner's pool or the node's grant has no room for the footprint that action asks for. Under the admission lock, so two machines cannot both be admitted into the same room.
-    fn admit(&self, id: &str) -> bool {
-        let spec = locked(&self.machines)
-            .entries
-            .get(id)
-            .and_then(|entry| entry.desired.clone())
-            .unwrap_or_default();
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine may run the action about to be planned for it, refusing it in the machine's own words when the owner's pool or the node's grant has no room for the footprint that action asks for, and answering the count of specs the refusal was decided under. Under the admission lock, so two machines cannot both be admitted into the same room.
+    fn admit(&self, id: &str) -> Result<(), u64> {
+        let (spec, asked) = {
+            let machines = locked(&self.machines);
+            let Some(entry) = machines.entries.get(id) else {
+                return Ok(());
+            };
+            (entry.desired.clone().unwrap_or_default(), entry.asked)
+        };
         let _admitting = locked(&self.admission);
         let Err((reason, e)) = self.room_for(id, &spec, true) else {
-            return true;
+            return Ok(());
         };
         if reason == REASON_OUT_OF_CAPACITY {
             self.metrics.refused();
         }
         let (_, status) = self.report(id);
         self.refuse(id, status, reason, e.to_string());
-        false
+        Err(asked)
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the step towards the spec stored while the last action ran, against what the runtime reports now. Nothing to do, or a runtime that cannot be read, answers with the count of specs it planned from, so the worker ends only if no newer spec arrived meanwhile.
@@ -2059,8 +2078,8 @@ impl Server {
         let mut capacity = self.capacity();
         let limit = capacity.limit_mib;
         // UNIT_BOUNDARY_DESCRIPTION: a restart of a machine already running replaces its own footprint, and boots at the warm-up floor, which is above the idle use the controller's request was sized from: capping it at that request refuses a roll, an image or env change, a CA rotation and a guest gone quiet for good, since the machine's use cannot shrink further to make the request grow. The same holds for a boot already running: both were admitted when they started, and a second verdict on the same operation can only end it, which the controller reads as a start that will not fit and answers by stopping the machine behind it. The exemption therefore lasts as long as the operation does, so an ensure that lands mid-boot, or between the stop and the boot of a restart, is not refused.
-        // UNIT_BOUNDARY_DESCRIPTION: an action the convergence loop plans after one ended is a new operation whatever the entry still says about the action that returned: it is admitted on the spec it will run with, so a boot that failed cannot leave its admission to the retry that follows it.
-        let admitted = !fresh && (self.known_running(id) || self.boot_admitted(id));
+        // UNIT_BOUNDARY_DESCRIPTION: an action the convergence loop plans after one ended is a new operation whatever the entry still says about the action that returned: it is admitted on the spec it will run with, so a boot that failed cannot leave its admission to the retry that follows it. Only the ended operation's admission is dropped for it: a machine the runtime reports running is exempt whatever is planned next, since replacing its VMM replaces memory it already holds — whether that plan comes from this loop or from the next PUT.
+        let admitted = self.known_running(id) || (!fresh && self.boot_admitted(id));
         let capped = !admitted && spec.admit_mib > 0 && (limit == 0 || spec.admit_mib < limit);
         let committing = self.committing();
         let running = |other: &str| self.known_running(other);
