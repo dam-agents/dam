@@ -283,8 +283,6 @@ spec:
               value: {{ .Values.virtualization.runner.storage | quote }}
             - name: VM_POOL_MEMORY
               value: {{ (((.Values.virtualization.runner.resources | default dict).limits) | default dict).memory | default "" | toString | quote }}
-            - name: RUNTIME_MIGRATION_RETENTION
-              value: {{ (.Values.virtualization.runtimeMigration | default dict).retention | default "168h" | toString | quote }}
             {{- end }}
             {{- if .Values.apiServer.activityTracking.enabled }}
             - name: ACTIVITY_TRACKING_ENABLED

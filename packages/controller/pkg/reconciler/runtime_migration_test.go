@@ -352,6 +352,30 @@ func TestAnAbortThatArrivesAfterVerificationKeepsTheMachine(t *testing.T) {
 	assert.Equal(t, int32(0), agentReplicas(t, r), "the container does not come back beside it")
 }
 
+// TEST_SCENARIO: a request left on a verified move is not an undo either, whether its target went with a late abort or is still there: the machine is the Agent's runtime, and only the Backend switch decides it.
+func TestAVerifiedMoveIsNotUndoneByARequestOrItsAbsence(t *testing.T) {
+	for _, target := range []string{"kept", "gone"} {
+		t.Run(target, func(t *testing.T) {
+			ctx := context.Background()
+			agent := migratingAgentIn(apiv1.ReasonRuntimeMigrationVerified, time.Now())
+			r, node, _ := setupVMReconciler(t, agent)
+			node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Port: 31000, Ready: true, HomeSeededFrom: testSeed.SHA256})
+			without := []string{}
+			if target == "gone" {
+				without = append(without, annRuntimeMigrationTarget)
+			}
+			agent = editStoredAgent(t, r, agent, withoutAnnotations(without...))
+			for range 2 {
+				require.NoError(t, r.Reconcile(ctx, agent))
+				agent = reloaded(t, r, agent)
+			}
+			requirePhase(t, agent, apiv1.ReasonRuntimeMigrationVerified)
+			assert.Empty(t, node.deleted)
+			assert.Equal(t, int32(0), agentReplicas(t, r))
+		})
+	}
+}
+
 // TEST_SCENARIO: an abort leaves no target or retry behind, so a request the operator writes afterwards is one nobody has decided: the api-server writes its target, and until then the controller makes nothing on the vm side and reads the request as no undo at all.
 func TestAnUndecidedRequestIsNotAnUndo(t *testing.T) {
 	ctx := context.Background()

@@ -544,12 +544,9 @@ export function createAgentsService(deps: {
   onboardingChecklists: OnboardingChecklistReader;
   podStatus: PodStatusClient;
   agentDefaultLimits: DefaultResourceLimits;
-  agentDefaultStorageSize?: string;
-  agentDefaultMounts: readonly AgentMount[];
   virtualizationEnabled?: boolean;
   defaultHarness?: string;
   telemetry?: boolean;
-  runtimeMigrationRetentionMs?: number | null;
   resizeGate?: ResizeGatePort;
   storageGate?: StorageGatePort;
   resizeLock: <T>(key: string, fn: () => Promise<T>) => Promise<T>;

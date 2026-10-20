@@ -96,7 +96,7 @@ function migrating(phase: string, overrides?: Partial<InfraAgent>): InfraAgent {
 }
 
 function writes(...agents: (InfraAgent | null)[]): {
-  getAgent: () => Promise<InfraAgent | null>;
+  getAgent: (id: string) => Promise<InfraAgent | null>;
   writeMigration: ReturnType<
     typeof vi.fn<
       (
@@ -106,10 +106,16 @@ function writes(...agents: (InfraAgent | null)[]): {
     >
   >;
 } {
-  const reads = [...agents];
+  const reads = new Map<string, InfraAgent[]>();
+  for (const agent of agents)
+    if (agent) reads.set(agent.id, [...(reads.get(agent.id) ?? []), agent]);
   const last = agents[agents.length - 1] ?? null;
   return {
-    getAgent: async () => (reads.length > 0 ? (reads.shift() ?? null) : last),
+    // UNIT_BOUNDARY_DESCRIPTION: the answers are keyed by the id asked for. A queue read by turn order would hand a sweep that walks several Agents the wrong one, and the test would then assert about an Agent its scenario never named.
+    getAgent: async (id: string) => {
+      const queue = reads.get(id) ?? [];
+      return queue.length > 1 ? (queue.shift() ?? null) : (queue[0] ?? null);
+    },
     writeMigration: vi.fn(
       async (
         _id: string,
@@ -521,10 +527,19 @@ describe("the Backend switch", () => {
   // TEST_SCENARIO: nothing before the verified boot switches, and neither does an agent whose target cannot be read, which would otherwise be switched to a shape nobody asked for.
   it("leaves every other agent alone", async () => {
     const s = switcher([
-      migrating("Booting", { runtimeMigrationTarget: target }),
-      migrating("Failed", { runtimeMigrationTarget: target }),
-      migrating("Verified", { runtimeMigrationTarget: "not json" }),
-      infraAgent(),
+      migrating("Booting", {
+        id: "agent-booting",
+        runtimeMigrationTarget: target,
+      }),
+      migrating("Failed", {
+        id: "agent-failed",
+        runtimeMigrationTarget: target,
+      }),
+      migrating("Verified", {
+        id: "agent-unreadable",
+        runtimeMigrationTarget: "not json",
+      }),
+      infraAgent({ id: "agent-idle" }),
     ]);
     await s.sweep.tick();
     expect(s.writeMigration).not.toHaveBeenCalled();

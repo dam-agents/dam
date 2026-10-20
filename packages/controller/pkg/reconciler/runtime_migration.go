@@ -125,9 +125,19 @@ func runtimeMigrationOfObject(u *unstructured.Unstructured) runtimeMigration {
 
 func (m runtimeMigration) active() bool { return m.requested || m.phase != "" }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a standing request landed in the middle of an undo. The api-server decides a request by writing its target in the same patch, so a request without one has not been decided; with a move's condition still on the Agent — past the preflight, which is where an undo is owed from — it arrived while that undo was not done, and the undo is finished first. Once the condition is gone the same request reads as a fresh one and starts.
+// UNIT_BOUNDARY_DESCRIPTION: whether a standing request landed in the middle of an undo. The api-server decides a request by writing its target in the same patch, so a request without one has not been decided; with a move's condition on the Agent at a phase an undo is owed from — past the preflight and before the verified boot — it arrived while that undo was not done, and the undo is finished first. Once the condition is gone the same request reads as a fresh one and starts.
 func (m runtimeMigration) midUndoRequest(annotations map[string]string) bool {
-	return annotations[annRuntimeMigration] != "" && !m.target && m.recorded && m.phase != apiv1.ReasonRuntimeMigrationRequested
+	return annotations[annRuntimeMigration] != "" && !m.target && m.recorded && m.undoOwed()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an interrupted move owes an undo. A request the api-server has not decided has nothing to undo, and a verified move is not undon: its machine booted from the copy and its disk is where the Agent's data is.
+func (m runtimeMigration) undoOwed() bool {
+	switch m.phase {
+	case apiv1.ReasonRuntimeMigrationStopping, apiv1.ReasonRuntimeMigrationCopying, apiv1.ReasonRuntimeMigrationBooting, apiv1.ReasonRuntimeMigrationFailed:
+		return true
+	default:
+		return false
+	}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether nothing of the Agent may run — neither the container, nor the machine, nor the gateway. That holds from the moment the container is stopped until the copy has landed: the old pod would keep writing to a volume being copied, and a machine that booted would seed its disk from the image and never look at the copy again. A boot is let through only with the seed it must come from recorded, since that is what the runner and platform-init hold the boot to. A migration that failed after the container was stopped keeps it stopped until an operator retries or aborts it; one that failed in preflight never stopped it.

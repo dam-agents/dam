@@ -209,14 +209,20 @@ export function createRuntimeMigrationSwitch(deps: {
     const agent = await deps.getAgent(id);
     if (!agent || !runtimeMigrationReadyToSwitch(agent)) return;
     let target = parseRuntimeMigrationTarget(agent.runtimeMigrationTarget);
-    if (!target) {
-      // UNIT_BOUNDARY_DESCRIPTION: an abort that reaches the cluster after the verified boot takes the target annotation with it, and the machine is the Agent's runtime by then whatever the annotations say. The shape is recomputed from the spec the request recorded it for, rather than read.
+    if (!target && agent.runtimeMigrationTarget === undefined) {
+      // UNIT_BOUNDARY_DESCRIPTION: an abort that reaches the cluster after the verified boot takes the target annotation with it, and the machine is the Agent's runtime by then whatever the annotations say. The shape is recomputed from the spec the request recorded it for, rather than read. A target that is there but unreadable is not guessed at.
       const context = await deps.migration(agent);
       target = runtimeMigrationRequest(
         agent.spec,
         context.defaultStorageSize,
         context.defaultMounts,
       ).target;
+    }
+    if (!target) {
+      deps.log(
+        `[runtime-migration] ${id} is verified but its target is not readable; not switching`,
+      );
+      return;
     }
     const written = await deps.writeMigration(id, {
       spec: runtimeMigrationSwitchSpec(target),

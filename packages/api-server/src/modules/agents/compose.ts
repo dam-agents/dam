@@ -69,9 +69,6 @@ export interface AgentsInstallSettings {
   virtualizationEnabled: boolean;
   defaultHarness: string;
   telemetry: boolean;
-  agentDefaultStorageSize: string;
-  agentDefaultMounts: AgentsServiceDeps["agentDefaultMounts"];
-  runtimeMigrationRetentionMs: number | null;
 }
 
 export function composeAgentsModule(deps: {
@@ -112,12 +109,9 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
-      agentDefaultMounts: deps.install.agentDefaultMounts,
       virtualizationEnabled: deps.install.virtualizationEnabled,
       defaultHarness: deps.install.defaultHarness,
       telemetry: deps.install.telemetry,
-      runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
       storageGate: deps.storageGate,
       resizeLock: createXactLock(deps.db),
