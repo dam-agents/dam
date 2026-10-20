@@ -66,6 +66,8 @@ Pi receives its selected provider and model as command-line options, because its
 A runtime with a harness that has a harness config but no `sessionSettings` predates per-session routing: its harnesses ignore a lease's model, and Pi then falls back to its built-in Anthropic default.
 For such an agent the chat shows an update notice instead of the picker, and new sessions, schedule fires and channel turns name no Session Pair, so they run on the agent's defaults.
 
+The ETE LiteLLM proxy answers Claude Code's auto-mode permission check on the model call itself, through the beta header the proxy accepts.
+
 ## Provider compatibility
 
 Provider compatibility follows the configured harness catalog, shared by the settings view and session selection.
