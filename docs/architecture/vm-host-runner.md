@@ -53,7 +53,9 @@ Stopping it stops its machines, as a pod's termination does; the controller's sw
 `cluster:stop` of the cluster that last started it stops it; `cluster:delete` also removes its machines.
 Nothing restarts it after the Mac reboots: `cluster:host-runner` (re)starts it.
 There is one host runner per Mac, serving the cluster that started it last.
-A Mac has no `/proc`, so the runner finds a VMM that outlived its stop through the kernel's process list and each process's arguments, and powers it off as it would in a pod.
-A process installing a new image answers no arguments for the moment the kernel takes to swap them, which is every VMM at its start, so the runner reads it again instead of taking it for gone.
-A scan that could not look is an error and never an empty answer: only a look that happened says a machine is free.
+A Mac has no `/proc`, so the runner finds a VMM that outlived its stop by scanning the kernel's process list and reading each process's arguments, and powers it off as it would in a pod.
+It reads that table only for processes of the user it runs as, since a VMM is its own child and the kernel refuses most other users' arguments, and it reads a full listing or none: the kernel stops at the buffer it is given without an error, so a table that filled it is listed again with more room.
+A process installing a new image answers no arguments, or an error, for the moment the kernel takes to swap them — the read is EIO for the copy it cannot make and EINVAL while the new task is not reachable yet — and every VMM is in that moment at its start, so the runner reads it again instead of taking it for gone.
+An answer is read only when its argument count, the padding the kernel aligns the executable's path with, and every argument it counts are all there, so a process's environment is never read as its arguments and named as a VMM the runner then kills.
+A scan that could not look is an error and never an empty answer, and only a look that described every process of the user says a machine is free: one that left a process the kernel would not describe says so, and a start that met no such look in its whole wait fails instead of booting beside a VMM it could not see.
 Runner pods an install ran before it switched to the host runner are left as they are, neither restarted nor removed: nothing schedules them, and their claims hold those owners' old machine disks, so an operator deletes them once nothing on those disks is wanted.
