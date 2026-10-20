@@ -2337,6 +2337,10 @@ function toAcpPlatformMeta(session: PodSession): Record<string, unknown> {
     ...(session.harness !== undefined && { harness: session.harness }),
     ...(session.provider !== undefined && { provider: session.provider }),
     ...(session.model !== undefined && { model: session.model }),
+    ...(session.customTitle !== undefined && {
+      customTitle: session.customTitle,
+    }),
+    ...(session.autoTitle !== undefined && { autoTitle: session.autoTitle }),
   };
 }
 

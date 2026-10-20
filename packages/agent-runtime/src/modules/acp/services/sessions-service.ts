@@ -45,7 +45,9 @@ const HARNESS_ONLY_META: PlatformSessionMeta = { mode: "terminal" };
 const MAX_HARNESS_PAGES = 200;
 
 interface HarnessListPage {
-  sessions?: ListedHarnessSession[];
+  sessions?: (ListedHarnessSession & {
+    _meta?: { platform?: { autoTitle?: string | null } };
+  })[];
   nextCursor?: string | null;
 }
 
@@ -71,11 +73,13 @@ async function readHarnessListing(
       cwd: ".",
       ...(cursor !== undefined && { cursor }),
     });
-    for (const { sessionId, title, updatedAt } of result.sessions ?? []) {
+    for (const { sessionId, title, updatedAt, _meta } of result.sessions ??
+      []) {
+      const autoTitle = _meta?.platform?.autoTitle;
       if (!byId.has(sessionId))
         byId.set(sessionId, {
           sessionId,
-          title: title ?? null,
+          title: (autoTitle !== undefined ? autoTitle : title) ?? null,
           updatedAt: updatedAt ?? null,
         });
     }

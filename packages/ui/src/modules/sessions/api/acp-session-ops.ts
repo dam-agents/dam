@@ -33,6 +33,8 @@ interface PlatformMeta {
   provider?: string;
   model?: string;
   settings?: Record<string, string>;
+  customTitle?: string | null;
+  autoTitle?: string | null;
 }
 
 interface ListedSession {
@@ -64,6 +66,8 @@ function toSessionView(agentId: string, s: ListedSession): SessionView {
     initialization: p?.initialization ?? null,
     threadTs: p?.threadTs ?? null,
     title: s.title ?? null,
+    ...(p?.customTitle !== undefined && { customTitle: p.customTitle }),
+    ...(p?.autoTitle !== undefined && { autoTitle: p.autoTitle }),
     updatedAt: s.updatedAt ?? null,
     running: p?.running ?? false,
     seenAt: p?.seenAt ?? null,
