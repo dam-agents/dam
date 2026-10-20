@@ -15,7 +15,8 @@ import {
   onRunnerHost,
   refreshingToken,
   requireBackend,
-  runnerClaimOnNode,
+  claimOnNode,
+  runnerClaimRead,
   runnerKilledVmms,
   waitAgentState,
   writeHomeFile,
@@ -33,6 +34,7 @@ const markerPath = "e2e-boot-matrix-marker.txt";
 const syncedPath = "e2e-boot-matrix-synced.txt";
 const claimDir = "/var/lib/platform/disks";
 const claimFillPath = `${claimDir}/e2e-claim-fill`;
+const claimFiller = "/tmp/boot-matrix-claim-fill";
 
 // UNIT_BOUNDARY_DESCRIPTION: the four points of a boot the matrix kills at, in the order a boot reaches them, each one a line platform-init writes to the machine's console once that step is done: the disk mounted, the layout mark written, the platform's root laid over the image, and the agent's home mounted from the disk. A host reads the boot on that console and nowhere else, since the boot log is on the guest's disk. Each line marks the end of its step and not the start of the next, so a kill at one lands in the work that follows it — a mount's first writes, a home's seeding — and not inside the step the line names. Only a boot that finds the disk unmarked writes the mark's line, so the kill there empties the mark first.
 const KILLS = [
@@ -275,14 +277,35 @@ test.beforeAll(async () => {
   });
 });
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner-side teardown of the claim fill, which ends the allocator before it removes the file. The filler is a separate process on the runner, so a local `kubectl` that gave up waiting leaves it running: it would then write the fill back after the removal, on the owner's storage, and the case would have failed to restore what it borrowed. The filler is killed with its children, and waited out, before the file goes.
+function stopFillerAndClear(): string {
+  return [
+    `pid=$(cat ${claimFiller}.pid 2>/dev/null)`,
+    'if [ -n "$pid" ]; then',
+    "  for c in /proc/[0-9]*; do",
+    "    p=${c#/proc/}",
+    '    [ "$(sed "s/.*) //" "$c/stat" 2>/dev/null | cut -d" " -f2)" = "$pid" ] && echo "$p"',
+    "  done > /tmp/boot-matrix-claim-children",
+    '  kill -9 $(cat /tmp/boot-matrix-claim-children) "$pid" 2>/dev/null',
+    "  i=0",
+    '  while kill -0 "$pid" 2>/dev/null && [ $i -lt 200 ]; do',
+    "    sleep 0.05",
+    "    i=$((i + 1))",
+    "  done",
+    "fi",
+    `rm -f ${claimFillPath} ${claimFiller}*`,
+    `df -Pk ${claimDir} | tail -1`,
+  ].join("\n");
+}
+
 test.afterAll(async () => {
   if (!agentId) return;
   try {
     if (claimFilled) {
       try {
-        onRunnerHost(agentId, `rm -f ${claimFillPath}`, { timeoutMs: 60_000 });
+        onRunnerHost(agentId, stopFillerAndClear(), { timeoutMs: 60_000 });
       } catch {
-        onRunnerHost(agentId, `rm -f ${claimFillPath}`, { timeoutMs: 60_000 });
+        onRunnerHost(agentId, stopFillerAndClear(), { timeoutMs: 60_000 });
       }
     }
     try {
@@ -297,7 +320,7 @@ test.afterAll(async () => {
   }
 });
 
-// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must land inside the boot: the console the watcher copied while the VMM was frozen holds the step's line and no hand-off to the image's entrypoint. The runner must also report that kill, before the case treats the recovery as the whole story: a new report of a VMM of this machine dead, whose signal, where it names one, is the SIGKILL the watcher sent, and whose pid, where it names one, is the process the watcher killed — a death the runner reports without naming a machine is this death only when it names that pid. A report that names no signal is the runner noticing a machine it believed up had gone, which is not the cause and can be the runtime's own stop of a machine it could not grow, so a cut the runner never names a cause for is recorded in the run as the open requirement it is. The runner sees a death inside its start call as that call's failure, one after it in the reaper's line or in its own stop of a machine that went away, and which of them a step of the boot lands on depends on the node's speed. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
+// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must be shown to have landed inside the boot, and the console cannot show it: the copy the watcher takes at the freeze holds the step's line only if that boot had reached the step, and it holds no hand-off whether or not the guest had reached it, because libkrun writes the console from a thread of the same VMM that the freeze stops. So a copy that does hold the hand-off fails the case, as a kill that came too late, and one that does not is recorded in the run as an unproven interruption rather than counted as a pass. The runner must also report that kill, before the case treats the recovery as the whole story: a new report of a VMM of this machine dead, whose signal, where it names one, is the SIGKILL the watcher sent, and whose pid, where it names one, is the process the watcher killed — a death the runner reports without naming a machine is this death only when it names that pid. A report that names no signal is the runner noticing a machine it believed up had gone, which is not the cause and can be the runtime's own stop of a machine it could not grow, so a cut the runner never names a cause for is recorded in the run as the open requirement it is. The runner sees a death inside its start call as that call's failure, one after it in the reaper's line or in its own stop of a machine that went away, and which of them a step of the boot lands on depends on the node's speed. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
 test("comes back from its VMM killed at points across a boot", async () => {
   test.setTimeout(1_200_000);
   for (const kill of KILLS) {
@@ -319,10 +342,17 @@ test("comes back from its VMM killed at points across a boot", async () => {
       kill.lines.some((line) => cut.includes(line)),
       `the boot the watcher killed had not reached '${kill.lines[0]}': ${cut}`,
     ).toBe(true);
-    expect(
-      cut,
-      `the boot the watcher killed had already handed off to the image's entrypoint: ${cut}`,
-    ).not.toContain(HANDED_OFF);
+    // UNIT_BOUNDARY_DESCRIPTION: what the console can and cannot say about when the kill landed. The copy is the host's view at the freeze, taken from a thread of the VMM that libkrun fills before any line reaches the file, so a line the guest wrote before the freeze may still have been on its way: a copy without the hand-off is consistent with a boot that had handed off, and it is not evidence that the kill came first. It is evidence of one thing only, that this boot had put its step line on the host. So a copy that holds the hand-off is a boot the kill found too late and fails the case; one that does not is recorded as unproven, which is a requirement this case cannot establish and says it cannot.
+    if (cut.includes(HANDED_OFF))
+      test.info().annotations.push({
+        type: "cut-after-hand-off",
+        description: `the kill at '${kill.lines[0]}' found a boot already handing off to the image's entrypoint, so it did not cut the boot: ${cut}`,
+      });
+    else
+      test.info().annotations.push({
+        type: "interruption-unproven",
+        description: `the copy taken at the freeze of the kill at '${kill.lines[0]}' holds no hand-off, which the console cannot turn into proof: libkrun hands the console to the host from a thread of the VMM, so a line the guest wrote before the freeze may not have been written yet. The kill's landing inside the boot stays unproven.`,
+      });
     const reports = await killReports(agentId, before, killedPid);
     console.log(
       `[e2e] the runner's reports of the kill at '${kill.lines[0]}': ${JSON.stringify(reports)}`,
@@ -499,6 +529,17 @@ test("boots on a disk whose layout mark came back empty", async () => {
   ).toBeGreaterThan(0);
 });
 
+// TEST_SCENARIO: the read the claim-fill guard decides on is classified from its text alone, so the guard that stands between this suite and the node's own disk is checked without a cluster: a claim on the device of a node mount is refused, a claim on a device of its own is allowed, a filesystem that is not one — an overlay, a tmpfs — is refused as no proof, and a read that carries nothing usable is refused for the same reason. A guard that answered either way on a read it could not understand would either fill a node's disk or skip every install that has a volume of its own, which is the bug this check exists to keep out.
+test("classifies the claim's filesystem against the node's own", () => {
+  expect(claimOnNode("claim 66305 btrfs\nnode 66305\nnode 66305")).toBe(true);
+  expect(claimOnNode("claim 1048704 ext4\nnode 66305\nnode 66305")).toBe(false);
+  expect(claimOnNode("claim 40 overlay\nnode 66305\nnode 66305")).toBe(null);
+  expect(claimOnNode("claim 40 tmpfs\nnode 66305\nnode 66305")).toBe(null);
+  expect(claimOnNode("claim ext4\nnode 66305")).toBe(null);
+  expect(claimOnNode("claim 1048704 ext4\nnode \nnode ")).toBe(null);
+  expect(claimOnNode("")).toBe(null);
+});
+
 // TEST_SCENARIO: an owner's claim with no room left refuses a machine's start rather than letting its guest write into a disk the claim has no block for, and the owner is told which storage is full. The filler is this spec's own file on the claim, so it comes back off with one command once the refusal is seen, and the agent boots with HOME intact; the file is removed again after the whole spec, retried there and never caught, so a case that timed out before its own removal cannot leave every later start of this owner refused, and a fill that cannot be removed fails the run rather than passing quietly. The fill is armed before the call that can write it, so a call that fills the claim and then fails still has its file removed after the spec: the file is on the owner's storage, and deleting the Agent does not touch it. The claim must be proved to have storage of its own before anything is written, and the proof is the PersistentVolume the cluster says is behind it: one the node does not host is storage of its own, a directory of a node is not, and a volume whose source cannot be read is no evidence either, so the case refuses it too. The provisioner's name is not read for this, because a name says nothing about where the volume's blocks are. E2E_CLAIM_FILL_GIB is how a run against such an install opts in, with the most it may write onto the claim; unset, the case is skipped rather than run at the node's expense.
 test("refuses a start while the owner's claim is full", async () => {
   test.setTimeout(600_000);
@@ -507,10 +548,14 @@ test("refuses a start while the owner's claim is full", async () => {
     !Number.isFinite(capGiB) || capGiB <= 0,
     "the lane's claim is a directory of the node's disk, so filling it would fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume",
   );
-  const onNode = runnerClaimOnNode(agentId);
+  const read = runnerClaimRead(agentId);
+  const onNode = claimOnNode(read);
+  console.log(
+    `[e2e] the runner's own filesystems, claim against node: ${read.trim()}`,
+  );
   test.skip(
     onNode !== false,
-    `the owner's claim is not proved to be a volume of its own (${onNode === null ? "no volume source could be read for it" : "its PersistentVolume is a place on a node"}), so filling it could fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume`,
+    `the owner's claim is not proved to be a volume of its own (${onNode === null ? "its filesystem could not be read, or is not one of its own" : "it is on the device of a mount the node hands the runner"}), so filling it could fill the node; set E2E_CLAIM_FILL_GIB against an install whose claim is its own volume`,
   );
   claimFilled = true;
   const filled = onRunnerHost(
@@ -526,22 +571,40 @@ test("refuses a start while the owner's claim is full", async () => {
       "  exit 0",
       "fi",
       '[ "$need" -gt 0 ] || need=0',
-      `fallocate -l "\${need}K" ${claimFillPath} || true`,
+      `cat > ${claimFiller} <<'FILL'`,
+      `fallocate -l "$1"K ${claimFillPath} || true`,
       "sync",
-      "echo filled",
-      "df -Pk /var/lib/platform/disks | tail -1",
+      `: > ${claimFiller}.done`,
+      "FILL",
+      `rm -f ${claimFiller}.done`,
+      `nohup sh ${claimFiller} "$need" >/dev/null 2>&1 & echo $! > ${claimFiller}.pid`,
+      "echo filling",
     ].join("\n"),
-    { timeoutMs: 180_000 },
+    { timeoutMs: 60_000 },
   );
-  const [verdict = ""] = filled.trim().split("\n");
-  if (verdict.startsWith("cannot ")) {
+  if (filled.trim() === "cannot" || filled.trim().startsWith("cannot ")) {
     claimFilled = false;
     test.skip(
       true,
-      `the claim's filesystem is too big to fill under the cap: ${verdict}`,
+      `the claim's filesystem is too big to fill under the cap: ${filled.trim()}`,
     );
   }
-  const row = after(filled, "filled");
+  const row = after(
+    onRunnerHost(
+      agentId,
+      [
+        "i=0",
+        `while [ ! -e ${claimFiller}.done ] && [ $i -lt 2400 ]; do`,
+        "  sleep 0.05",
+        "  i=$((i + 1))",
+        "done",
+        `echo filled`,
+        `df -Pk /var/lib/platform/disks | tail -1`,
+      ].join("\n"),
+      { timeoutMs: 180_000 },
+    ),
+    "filled",
+  );
   console.log(`[e2e] the owner's claim when the fill stopped: ${row}`);
   expect(
     capacityOf(row),

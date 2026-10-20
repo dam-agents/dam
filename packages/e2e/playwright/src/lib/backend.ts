@@ -438,44 +438,51 @@ export function runnerKilledVmms(
     });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the volume behind the claim the agent's runner keeps its machines' disks on is a place on a node, as the PersistentVolume itself states it: `hostPath` and `local` are directories of a node, and a CSI driver, `nfs`, `rbd`, `iscsi` or `fc` source is storage that node's disk does not have to hold. It answers `null` when no volume source can be read, which is no evidence either way: the claim's provisioner name is not asked, because a name says nothing about where the volume's blocks are. Every read carries a deadline, since a synchronous call with none cannot be interrupted by the case's own timeout.
-export function runnerClaimOnNode(agentId: string): boolean | null {
-  const claim = kubectlWithin(
-    LOOKUP_TIMEOUT_MS,
-    "-n",
-    AGENT_NS,
-    "get",
-    "pod",
-    runnerPod(agentId),
-    "-o",
-    String.raw`jsonpath={.spec.volumes[?(@.name=="state")].persistentVolumeClaim.claimName}`,
+// UNIT_BOUNDARY_DESCRIPTION: the directory inside a runner where its claim is mounted, and the two mounts the chart hands a runner from the node itself: the node's own filesystem is what those two are on.
+const CLAIM_DIR = "/var/lib/platform/disks";
+const NODE_MOUNTS = ["/var/lib/platform/images", "/var/lib/platform/releases"];
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a claim is the node's own disk, from what the runner's own `stat` says of it: the device the kernel gives a filesystem, and its type, against the devices of the mounts the chart hands the runner from the node itself. A directory of the node's disk is on the node's filesystem, so it has that filesystem's device whatever provisioner named it, which the provisioner's name and the PersistentVolume's source cannot say: a CSI driver named for the node's disk and a CSI driver backed by a network both read as a driver name, and neither is where the blocks are. `null` is a claim nothing above proves either way — an unreadable read, a filesystem that is not one (an overlay, a tmpfs), or a node mount that could not be read — and a caller must treat it as no proof of a volume of its own. This is the whole decision, apart from the reading, so it can be checked without a cluster.
+export function claimOnNode(read: string): boolean | null {
+  const lines = read
+    .split("\n")
+    .map((line) => line.trim().split(/\s+/))
+    .filter((parts) => parts[0] === "claim" || parts[0] === "node");
+  const claim = lines.find((parts) => parts[0] === "claim");
+  const device = claim?.[1];
+  const kind = claim?.[2];
+  if (device === undefined || !/^\d+$/.test(device)) return null;
+  if (
+    kind === undefined ||
+    kind === "overlay" ||
+    kind === "tmpfs" ||
+    kind === "ramfs"
+  )
+    return null;
+  const nodeDevices = lines
+    .filter((parts) => parts[0] === "node")
+    .map((parts) => parts[1])
+    .filter(
+      (value): value is string => value !== undefined && /^\d+$/.test(value),
+    );
+  if (nodeDevices.length === 0) return null;
+  return nodeDevices.includes(device);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: reads from inside the runner what `claimOnNode` decides on: the claim's filesystem and the filesystems of the two mounts the chart hands the runner from the node itself. Both mounts are hostPaths of the node's disk, so their device is the node's own filesystem.
+export function runnerClaimRead(agentId: string): string {
+  return onRunnerHost(
+    agentId,
+    [
+      `set -- $(stat -f -c '%d %T' ${CLAIM_DIR} 2>/dev/null)`,
+      'echo "claim $1 $2"',
+      `for p in ${NODE_MOUNTS.join(" ")}; do`,
+      '  set -- $(stat -f -c "%d %T" "$p" 2>/dev/null)',
+      '  echo "node $1"',
+      "done",
+    ].join("\n"),
+    { timeoutMs: 60_000 },
   );
-  if (!claim) return null;
-  const pv = kubectlWithin(
-    LOOKUP_TIMEOUT_MS,
-    "-n",
-    AGENT_NS,
-    "get",
-    "pvc",
-    claim,
-    "-o",
-    "jsonpath={.spec.volumeName}",
-  );
-  if (!pv) return null;
-  const source = kubectlWithin(
-    LOOKUP_TIMEOUT_MS,
-    "-n",
-    AGENT_NS,
-    "get",
-    "pv",
-    pv,
-    "-o",
-    "jsonpath={.spec.hostPath.path}\n{.spec.local.path}\n{.spec.csi.driver}\n{.spec.nfs.path}\n{.spec.rbd.pool}\n{.spec.iscsi.targetPortal}\n{.spec.fc.targetWWNs}",
-  );
-  const [onNode, local, ...elsewhere] = source.split("\n");
-  if (onNode === undefined) return null;
-  if (onNode !== "" || local !== "") return true;
-  return elsewhere.some((field) => field !== "") ? false : null;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
