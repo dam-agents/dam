@@ -10,7 +10,6 @@ const NO_PUSH_PATHS: readonly KeyPath[] = [
   ["channels", "telegramBot"],
   ["agents", "listTelegramChats"],
   ["agents", "get"],
-  ["agents", "planRuntimeMigration"],
   ["slack", "install", "availability"],
   ["features", "flags"],
   ["features", "install"],

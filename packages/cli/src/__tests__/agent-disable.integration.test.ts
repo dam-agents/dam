@@ -229,8 +229,8 @@ describe("dam agent disable / enable (integration)", () => {
   });
 
   /** TEST_SCENARIO: A runtime migration holds the Agent, so the server refuses
-   * with CONFLICT. The CLI names the move and exits 1, for enable as well as
-   * disable, since the server's own sentence only speaks of disabling. */
+   * with CONFLICT. The CLI names the move and the verb it was asked for, and
+   * exits 1. */
   it("a runtime migration hold exits 1 and names the move", async () => {
     const agent = makeAgent({ name: "prod" });
     await withFixture(
@@ -246,7 +246,7 @@ describe("dam agent disable / enable (integration)", () => {
 
         expect(r.exitCode).toBe(1);
         expect(r.stderr).toContain(
-          'error: agent "prod" is moving to the new runtime; abort the move to enable it\n',
+          'error: agent "prod" is moving to the new runtime; it can be enabled once the move ends\n',
         );
       },
     );

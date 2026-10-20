@@ -86,6 +86,18 @@ export function deleteAgentCr(name: string): void {
   );
 }
 
+export function requestRuntimeMigration(agent: string): void {
+  kubectl(
+    "-n",
+    AGENT_NS,
+    "annotate",
+    "agents.agent-platform.ai",
+    agent,
+    "--overwrite",
+    "agent-platform.ai/runtime-migration=requested",
+  );
+}
+
 export function scaleController(replicas: 0 | 1): void {
   const selector = `app.kubernetes.io/instance=${RELEASE},app.kubernetes.io/component=controller`;
   kubectl(

@@ -8,7 +8,7 @@ import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
-import { VmRuntimeBadge } from "../../agents/components/vm-runtime-badge.js";
+import { RuntimeMigrationBadge } from "../../agents/components/runtime-migration-badge.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
 
 /**
@@ -64,7 +64,10 @@ export function ClassicChatIdentity({
       )}
       {agent && (
         <span className="flex shrink-0 empty:hidden @max-[119px]:hidden">
-          <VmRuntimeBadge agent={agent} labelClassName="@max-[279px]:sr-only" />
+          <RuntimeMigrationBadge
+            agent={agent}
+            labelClassName="@max-[279px]:sr-only"
+          />
         </span>
       )}
       <div className="ml-auto flex shrink-0">

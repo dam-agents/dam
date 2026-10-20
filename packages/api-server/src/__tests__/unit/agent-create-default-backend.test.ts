@@ -39,7 +39,6 @@ async function createdBackend(
     registrySecretPort: unused(),
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
-    agentDefaultMounts: [],
     agentIdleTimeoutMinutes: { container: 30, vm: 5 },
     cleanupHooks: [],
     readTemplateSpec: async () => null,

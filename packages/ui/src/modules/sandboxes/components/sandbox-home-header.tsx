@@ -7,13 +7,9 @@ import type { AgentView } from "../../../types.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
-import { MigrateRuntimeAction } from "../../agents/components/migrate-runtime-action.js";
 import { UpdateAvailableAction } from "../../agents/components/update-available-action.js";
-import { useMigrateRuntime } from "../../agents/hooks/use-migrate-runtime.js";
-import { useRuntimeMigrationControls } from "../../agents/hooks/use-runtime-migration-controls.js";
 import { useUpdateSandbox } from "../../agents/hooks/use-update-sandbox.js";
 import type { AgentDisplay } from "../../agents/utils/agent-resolver.js";
-import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 
 interface Props {
   agent: AgentView;
@@ -56,7 +52,6 @@ export function SandboxHomeHeader({
   actions?: ReactNode;
 }) {
   const { updateOne, updatingId } = useUpdateSandbox();
-  const newLayout = useNewLayout();
   return (
     <PageHeader
       title={title}
@@ -64,7 +59,6 @@ export function SandboxHomeHeader({
       pictogram={pictogram}
       actions={
         <>
-          {newLayout && <MigrateAction agent={agent} />}
           <UpdateAvailableAction
             agent={agent}
             pending={updatingId === agent.id}
@@ -74,21 +68,6 @@ export function SandboxHomeHeader({
           {actions}
         </>
       }
-    />
-  );
-}
-
-function MigrateAction({ agent }: { agent: AgentView }) {
-  const migrate = useMigrateRuntime();
-  const controls = useRuntimeMigrationControls();
-  return (
-    <MigrateRuntimeAction
-      agent={agent}
-      pending={migrate.isMigrating(agent.id)}
-      onMigrate={() => void migrate.migrateOne(agent)}
-      controlsBusy={controls.isBusy(agent.id)}
-      onAbort={() => void controls.abortOne(agent)}
-      onRetry={() => void controls.retryOne(agent)}
     />
   );
 }
