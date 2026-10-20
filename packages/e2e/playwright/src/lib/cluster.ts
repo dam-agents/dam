@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const AGENT_NS = process.env.E2E_AGENT_NS ?? "platform-agents";
-const RELEASE_NS = process.env.E2E_RELEASE_NS ?? "default";
-const RELEASE = process.env.E2E_RELEASE_NAME ?? "platform";
+export const RELEASE_NS = process.env.E2E_RELEASE_NS ?? "default";
+export const RELEASE = process.env.E2E_RELEASE_NAME ?? "platform";
 
 function kubeconfig(): string {
   if (process.env.KUBECONFIG) return process.env.KUBECONFIG;
