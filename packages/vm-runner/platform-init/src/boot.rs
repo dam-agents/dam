@@ -1556,7 +1556,7 @@ impl Guard {
     // UNIT_BOUNDARY_DESCRIPTION: sizes the guard to `size` bytes of preallocated room, or leaves it at what the disk took when it refuses more, and reports the refusal. A shrink drops whole files and never shortens one, and it drops a file only when the rest still holds `size`, so the guard never holds less than a step below the room it was asked to hold. A growth adds unit files, each `min(POOL_GUARD_STEP, what is still missing)`, so a guard that grows by a step at a time is a set of equal files and the last one is the remainder.
     fn size(&mut self, dir: &File, size: u64) -> io::Result<()> {
         self.files
-            .retain(|file| file.metadata().map_or(false, |info| info.len() > 0));
+            .retain(|file| file.metadata().is_ok_and(|info| info.len() > 0));
         while self.held() > size {
             let Some(last) = self.files.last() else {
                 break;
