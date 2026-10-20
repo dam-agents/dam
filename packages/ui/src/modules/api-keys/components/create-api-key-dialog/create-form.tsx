@@ -41,7 +41,7 @@ interface Props {
 export function CreateApiKeyForm({ onCreated, onCancel }: Props) {
   const [name, setName] = useState("");
   const [selectedScopes, setSelectedScopes] = useState<Set<Scope>>(
-    new Set<Scope>(["agents:operate"]),
+    new Set<Scope>(["agents:read"]),
   );
   const [bindingMode, setBindingMode] = useState<BindingMode>("all");
   const [selectedAgentIds, setSelectedAgentIds] = useState<Set<string>>(

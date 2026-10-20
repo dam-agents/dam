@@ -60,6 +60,7 @@ drivers:
       effort: { configOption: effort }
       cacheTtl: { env: [CLAUDE_CODE_PROMPT_CACHE_TTL, CLAUDE_CODE_SUBAGENT_PROMPT_CACHE_TTL] }
       subagentModel: { env: [CLAUDE_CODE_SUBAGENT_MODEL] }
+      subagentEffort: { router: true }
     keys:
       model: "model"
       mode: "permissions.defaultMode"
@@ -94,6 +95,7 @@ drivers:
           name: Subagent model
           description: Model Claude Code's subagents run on
           category: model
+          subagents: true
           choices: []
         - id: mode
           name: Mode
@@ -107,17 +109,20 @@ drivers:
             - value: default
               name: "Ask for approvals"
               description: "Ask for permission before dangerous operations"
+              needsApproval: true
             - value: acceptEdits
-              name: "Accept Edits"
+              name: "Accept edits"
               description: "Auto-accept file edit operations"
+              needsApproval: true
             - value: plan
-              name: "Plan Mode"
+              name: "Plan mode"
               description: "Planning mode, no actual tool execution"
+              needsApproval: true
             - value: dontAsk
-              name: "Don't Ask"
+              name: "Don't ask"
               description: "Don't prompt for permissions, deny if not pre-approved"
             - value: bypassPermissions
-              name: "Bypass Permissions"
+              name: "Bypass permissions"
               description: "Bypass all permission checks"
         # Claude Code's persisted effortLevel setting accepts low|medium|high|xhigh.
         # "max" is session-only (/effort, --effort, CLAUDE_CODE_EFFORT_LEVEL accept
@@ -128,6 +133,23 @@ drivers:
           description: Reasoning effort level
           category: thought_level
           default: "medium"
+          choices:
+            - value: low
+              name: "Low"
+            - value: medium
+              name: "Medium"
+            - value: high
+              name: "High"
+            - value: xhigh
+              name: "Extra High"
+              description: "May use excessive tokens. Use sparingly for the hardest tasks."
+        # The router writes it over the effort of each call Claude Code marks as
+        # a subagent's, and only where Claude Code sent one.
+        - id: subagentEffort
+          name: Subagent effort
+          description: Reasoning effort of Claude Code's subagents
+          category: thought_level
+          subagents: true
           choices:
             - value: low
               name: "Low"
@@ -158,6 +180,7 @@ drivers:
         haiku:
           mode: ["default", "acceptEdits", "plan", "dontAsk", "bypassPermissions"]
           effort: []
+          subagentEffort: []
     # On a LiteLLM provider the tiers above all resolve to the gateway's
     # "latest" model, so the provider's other models are listed after them.
     # Names match what the router publishes (and /model writes):

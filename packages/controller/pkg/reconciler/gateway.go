@@ -4,7 +4,9 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
+	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
@@ -17,7 +19,12 @@ import (
 
 const gatewayTerminationGracePeriod int64 = 5
 
-const annGatewayCredentialsRev = "agent-platform.ai/credentials-rev"
+const (
+	annGatewayCredentialsRev     = "agent-platform.ai/credentials-rev"
+	annGatewayCredentialsTouched = "agent-platform.ai/credentials-touched"
+	annGatewayCredentialsResync  = "agent-platform.ai/credentials-resync"
+	gatewayCredentialsResyncWait = 5 * time.Second
+)
 
 func GatewayName(pairKey string) string {
 	return pairKey + "-gateway"
@@ -129,16 +136,39 @@ func gatewayCredentialsRev(secrets []corev1.Secret) string {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a credential rewritten in place reaches the gateway's mounted files only when the kubelet next syncs the pod, which on its own is the periodic sync about a minute later. Any change to a pod's annotations makes the kubelet sync it at once and refresh its Secret volumes, so the gateway pod carries the resource versions of the credential Secrets it mounts, and a rotation changes them. The pod's spec and its StatefulSet's template stay as they are, so nothing restarts.
-func (r *AgentReconciler) refreshGatewayCredentials(ctx context.Context, ssName string, secrets []corev1.Secret) error {
+func (r *AgentReconciler) refreshGatewayCredentials(ctx context.Context, ssName string, secrets []corev1.Secret, now time.Time) (time.Duration, error) {
 	pod, err := r.readPod(ctx, ssName)
 	if err != nil || pod == nil || pod.DeletionTimestamp != nil {
-		return err
+		return 0, err
 	}
-	rev := gatewayCredentialsRev(secrets)
-	if pod.Annotations[annGatewayCredentialsRev] == rev {
-		return nil
+	return r.nudgeCredentialSync(ctx, pod, gatewayCredentialsRev(secrets), now)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the kubelet refreshes a Secret volume from its own copy of the Secret, which a watch keeps current, so the sync one annotation change causes can come before that copy has the new version, and the old value then stays until the periodic sync. So a gateway pod is synced twice for each revision: once when the revision changes, and once more a few seconds later, by a second annotation, when the kubelet's copy has caught up. A pod that carries no revision yet mounted its Secrets when it started, so it takes both at once and needs no second sync. The first change also records when it was made, so the second waits the same time after a controller restart, and the returned delay is when to come back for it. A revision both changes have seen writes nothing, so the pod updates this causes do not loop the reconcile.
+func (r *AgentReconciler) nudgeCredentialSync(ctx context.Context, pod *corev1.Pod, rev string, now time.Time) (time.Duration, error) {
+	var annotations map[string]string
+	var recheck time.Duration
+	switch {
+	case pod.Annotations[annGatewayCredentialsRev] == "":
+		annotations = map[string]string{annGatewayCredentialsRev: rev, annGatewayCredentialsResync: rev}
+	case pod.Annotations[annGatewayCredentialsRev] != rev:
+		annotations = map[string]string{annGatewayCredentialsRev: rev, annGatewayCredentialsTouched: now.UTC().Format(time.RFC3339Nano)}
+		recheck = gatewayCredentialsResyncWait
+	case pod.Annotations[annGatewayCredentialsResync] != rev:
+		touched, _ := time.Parse(time.RFC3339Nano, pod.Annotations[annGatewayCredentialsTouched])
+		if wait := touched.Add(gatewayCredentialsResyncWait).Sub(now); wait > 0 {
+			return wait, nil
+		}
+		annotations = map[string]string{annGatewayCredentialsResync: rev}
+	default:
+		return 0, nil
 	}
-	patch := fmt.Sprintf(`{"metadata":{"annotations":{%q:%q}}}`, annGatewayCredentialsRev, rev)
-	_, err = r.client.CoreV1().Pods(pod.Namespace).Patch(ctx, pod.Name, types.MergePatchType, []byte(patch), metav1.PatchOptions{})
-	return err
+	patch, err := json.Marshal(map[string]any{"metadata": map[string]any{"annotations": annotations}})
+	if err != nil {
+		return 0, err
+	}
+	if _, err := r.client.CoreV1().Pods(pod.Namespace).Patch(ctx, pod.Name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
+		return 0, err
+	}
+	return recheck, nil
 }

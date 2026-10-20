@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -102,7 +102,8 @@ Each concept's depth lives on its owning architecture page; per-verb flags, exit
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
 - **`agent`** — list, get, create, interactive create, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
-- **`telemetry`** — list a session's turns, and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
+- **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
+- **`metrics`** — an agent's measured spend by model and by session, and its recent calls ([Metrics](metrics.md), [Spend limits](spend-limits.md#ledger)).
 - **`run`** — headless programmatic runs for CI and orchestration: submit a prompt, stream the answer, read a finished run's result later, cancel a running one ([Headless runs](#headless-runs)).
 - **`ssh`** — a login shell, SCP/SFTP, port-forwarding, and editor Remote-SSH into an agent ([SSH access](#ssh-access)).
 - **`import`** / **`file`** — bulk upload and granular file get/put/list into an agent workspace ([Files and import](#files-and-import)).
@@ -168,12 +169,13 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 `dam chat <agent>` connects the local terminal to a running agent's interactive TUI over a WebSocket, using the same binary terminal-frame protocol as the UI's terminal mode.
 It requires a TTY and puts stdin in raw mode so keystrokes — including Ctrl+C — pass through to the remote harness rather than being intercepted locally.
 There is no detach key: as in the UI, closing the terminal is how the user leaves, and Ctrl+C stays the harness's interrupt.
-Before it attaches, the CLI prints one line that says so, with the resume command to come back.
+Before it attaches, the CLI prints one line that says so, with the resume command to come back, and waits for Enter or five seconds so the line can be read before the harness's full-screen view covers it; `--no-pause` skips the wait, and Ctrl+C during it cancels the attach.
+While attached, the window title carries the same hint and resume command: the bridge saves the user's title, sets its own, drops the title sequences the remote harness sends, and restores the saved title when it ends.
 
 Session strategy is resolved **client-side**: sessions are agent-owned, so the CLI lists them over its own ACP connection to the api-server relay and resolves locally — mint a fresh id (new, the default), match the single most-recent terminal session (continue), or target a specific id (resume, prompting before a chat→terminal mode switch) — then builds the terminal-relay URL itself.
 There is no server-side session endpoint.
 A `--reset` flag tells the relay to kill the PTY and spawn a fresh one, which also clears the agent-side session.
-On disconnect the CLI prints a ready-to-paste resume command.
+On disconnect or exit the CLI prints a ready-to-paste resume command and the leave hint again.
 `dam session list` reads the same agent-owned session list.
 
 ## Headless runs

@@ -77,9 +77,6 @@ pub struct MachineStatus {
     // UNIT_BOUNDARY_DESCRIPTION: the SHA-256 of the seed this machine's home was restored from, once a guest booted with that seed expected has answered. Empty for a home seeded from the image, and for one not yet known to be on the disk. The controller ends a runtime migration only when this is the seed it expects.
     #[serde(rename = "homeSeededFrom", skip_serializing_if = "String::is_empty")]
     pub home_seeded_from: String,
-    // UNIT_BOUNDARY_DESCRIPTION: what the filesystem check at the machine's last boot repaired on its disk, as the guest's console said it; empty when that boot found the disk clean, and before the first boot a guest answered from. The controller puts it on the Agent, so an owner learns that files in damaged folders may be gone.
-    #[serde(rename = "homeRepaired", skip_serializing_if = "String::is_empty")]
-    pub home_repaired: String,
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine boots with the node's virtualization extensions: its spec asks for them and this runner grants them. The controller puts it on the Agent, so an owner who asked sees whether they got it.
     #[serde(skip_serializing_if = "is_zero")]
     pub nested: bool,
@@ -94,6 +91,9 @@ pub struct RunnerUsage {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub cpu: Option<CpuUsage>,
     pub machines: Vec<MachineUsage>,
+    // UNIT_BOUNDARY_DESCRIPTION: whether each machine above lists the memory figures a status reports for a running machine, which the controller's memory pass reads instead of a status read each. A runner older than those figures leaves this out, and the controller then reads each machine's status, so a controller newer than its runners still counts a warming machine at its warm-up floor and a machine still running at its old size at that size.
+    #[serde(rename = "machineFigures", skip_serializing_if = "is_zero")]
+    pub machine_figures: bool,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner's CPU over the last minute, off its cgroup: the limit the kernel holds it to (zero for none), what its machines used on average, the percentage of active scheduler periods in which that limit held them back, and the CPU pressure: the share of the last minute in which its agents waited for a CPU, by the cgroup's pressure stall information or by that throttling, whichever is higher. The pressure is absent when the cgroup has no cpu.pressure, and the whole figure when the runner has no cgroup, or neither a CPU limit nor a pressure to read.
@@ -110,7 +110,7 @@ pub struct CpuUsage {
     pub pressure_percent: Option<u32>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the parts of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the image trees the runner's own cache holds on the claim, and the seeds runtime migrations uploaded that nothing removed yet. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
+// UNIT_BOUNDARY_DESCRIPTION: the claim's use as the storage guard measures it; both zero when it could not be measured. Beside each machine's disk, the part of that use an owner did not write themselves, so a user whose storage is short is told what fills it: the seeds runtime migrations uploaded that nothing removed yet. Image trees are on the node's disk, not the claim. What is left is the runner's bookkeeping, its logs and the filesystem's own overhead.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct StorageUsage {
@@ -118,8 +118,6 @@ pub struct StorageUsage {
     pub used_bytes: u64,
     #[serde(rename = "usableBytes")]
     pub usable_bytes: u64,
-    #[serde(rename = "imageCacheBytes", skip_serializing_if = "is_zero")]
-    pub image_cache_bytes: u64,
     #[serde(rename = "seedBytes", skip_serializing_if = "is_zero")]
     pub seed_bytes: u64,
 }
@@ -139,8 +137,13 @@ pub struct MemoryUsage {
 pub struct MachineUsage {
     pub id: String,
     pub state: String,
+    // UNIT_BOUNDARY_DESCRIPTION: the memory figures a status reports for a running machine, sent under the `machineFigures` mark on the read. The measured use is kept out of the status version, so a figure that moves at every probe wakes nothing.
+    pub cpus: i32,
+    #[serde(rename = "memoryMiB", skip_serializing_if = "is_zero")]
+    pub memory_mib: i32,
     #[serde(rename = "usedMiB", skip_serializing_if = "is_zero")]
     pub used_mib: i32,
+    pub warming: bool,
     #[serde(rename = "diskGiB", skip_serializing_if = "is_zero")]
     pub disk_gib: i32,
     #[serde(rename = "diskUsedBytes", skip_serializing_if = "is_zero")]
@@ -170,7 +173,14 @@ pub struct RunnerRelease {
     pub message: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills the runner by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
+// UNIT_BOUNDARY_DESCRIPTION: the release the controller names for the pod's loader to run: the runner image reference the stager staged it under.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RunnerReleaseName {
+    pub release: String,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how close the runner's own memory is to its limit, as its cgroup last read: the working set the kernel kills a machine of it by, and whether that is past the pressure threshold. `version` moves when pressure starts or ends, and again while it lasts, so the controller can wait on it and reclaim at once. A runner with no cgroup to read never moves it.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(default)]
 pub struct RunnerPressure {
@@ -182,9 +192,20 @@ pub struct RunnerPressure {
     #[serde(rename = "workingSetMiB", skip_serializing_if = "is_zero")]
     pub working_set_mib: i32,
 }
-// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other two never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc, or one built against another VM runtime where the install keeps one runtime per pod — runs only in a new pod, and one that exited right after it took over is not tried again until the controller names another.
+
+// UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node image cache service right now, asked by the controller before it holds a changed runner pod back for a busy agent. A runner that cannot reach the service boots only a tree one of its own machines already holds, so waiting for a turn to end protects that turn at the price of every image the owner has not yet booted; the socket is named so an operator sees which mount answered, and the error is the refusal a machine of theirs would get.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(default)]
+pub struct RunnerImageCache {
+    pub socket: String,
+    #[serde(skip_serializing_if = "String::is_empty")]
+    pub error: String,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: why a loader holds on to the release it runs. Not yet staged passes once the node's stager has copied the release. The other three never pass in this pod: a release built for another pod — one whose runner does not load against this pod's libc — runs only in a new pod; one that declares another reboot key than this pod's release reboots the pod, which is what reboots its machines; and one that exited right after it took over is not tried again until the controller names another. `runtime` keeps its wire name from when it also meant another VM runtime.
 pub const HELD_UNSTAGED: &str = "unstaged";
 pub const HELD_RUNTIME: &str = "runtime";
+pub const HELD_REBOOT: &str = "reboot";
 pub const HELD_FAILED: &str = "failed";
 
 // UNIT_BOUNDARY_DESCRIPTION: vm-seed's exit code for a copy that a fresh attempt cannot change — a home past a walk limit, or larger than the machine's disk — so the controller fails the migration at once instead of spending its attempts on it.
@@ -240,11 +261,18 @@ impl std::fmt::Display for State {
 pub const REASON_NOT_READY: &str = "MachineNotReady";
 pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";
+// UNIT_BOUNDARY_DESCRIPTION: a machine refused because this runner cannot reach the node image cache service at all: the node's fault, not the image's. It is a reason of its own so the api-server holds an image update instead of convicting the image, and so an operator is sent to the mount rather than to the registry.
+pub const REASON_CACHE_UNREACHABLE: &str = "MachineImageCacheUnreachable";
 pub const REASON_BOOT_FAILED: &str = "MachineBootFailed";
 pub const REASON_SEED_MISSING: &str = "MachineSeedMissing";
 pub const REASON_STORAGE_FULL: &str = "MachineStorageFull";
 pub const REASON_HOME_FULL: &str = "MachineHomeFull";
-pub const REASON_HOME_DAMAGED: &str = "MachineHomeDamaged";
+// UNIT_BOUNDARY_DESCRIPTION: a boot that copies a disk before its guest first answers — a migration seed's restore — and is still at it. It is no failure: the runner holds the boot up to plan::COPYING_RESTART, so the controller counts no start failure and no idle time against it.
+pub const REASON_COPYING_DISK: &str = "MachineCopyingDisk";
+// UNIT_BOUNDARY_DESCRIPTION: the kernel killed the machine's VMM to free memory — the OOM killer taking the largest process of the runner's cgroup, or the kubelet's eviction doing the same. It is not a failure of the machine's own: the runner starts it again at the controller's next ensure, and the reason says what took it down only until it is ready.
+pub const REASON_OOM_KILLED: &str = "MachineOOMKilled";
+// UNIT_BOUNDARY_DESCRIPTION: the machine's own seccomp filter killed its VMM, for a call outside the allowlist `virtualization.runner.seccomp: enforce` installs. The guest is gone with the call it made, so the reason names the policy rather than leaving the agent to read as one that flapped.
+pub const REASON_SECCOMP_KILLED: &str = "MachineSeccompKilled";
 
 #[cfg(test)]
 mod tests {
@@ -334,8 +362,6 @@ mod tests {
                 version: 1,
                 home_seeded_from:
                     "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08".into(),
-                home_repaired:
-                    "storage: e2fsck -p repaired the filesystem: /dev/vda: 12/65536 files".into(),
                 nested: true,
             },
         );
@@ -349,12 +375,17 @@ mod tests {
             },
         );
         matches_the_contract(
+            "runner-release-name",
+            &RunnerReleaseName {
+                release: "quay.io/x/vm-runner@sha256:2".into(),
+            },
+        );
+        matches_the_contract(
             "runner-usage",
             &RunnerUsage {
                 storage: StorageUsage {
                     used_bytes: 32212254720,
                     usable_bytes: 107374182400,
-                    image_cache_bytes: 4294967296,
                     seed_bytes: 2147483648,
                 },
                 memory: MemoryUsage {
@@ -364,7 +395,10 @@ mod tests {
                 machines: vec![MachineUsage {
                     id: "agent-a".into(),
                     state: STATE_RUNNING.into(),
+                    cpus: 2,
+                    memory_mib: 2048,
                     used_mib: 640,
+                    warming: true,
                     disk_gib: 100,
                     disk_used_bytes: 8589934592,
                     cpu_milli: 350,
@@ -375,6 +409,7 @@ mod tests {
                     throttled_percent: 4,
                     pressure_percent: Some(12),
                 }),
+                machine_figures: true,
             },
         );
         matches_the_contract(
@@ -384,6 +419,13 @@ mod tests {
                 pressured: true,
                 limit_mib: 12288,
                 working_set_mib: 11800,
+            },
+        );
+        matches_the_contract(
+            "runner-image-cache",
+            &RunnerImageCache {
+                socket: "/var/lib/platform/images/.cache.sock".into(),
+                error: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)".into(),
             },
         );
         matches_the_contract(
@@ -427,17 +469,20 @@ mod tests {
                 REASON_NOT_READY,
                 REASON_OUT_OF_CAPACITY,
                 REASON_IMAGE_UNAVAILABLE,
+                REASON_CACHE_UNREACHABLE,
                 REASON_BOOT_FAILED,
                 REASON_SEED_MISSING,
                 REASON_STORAGE_FULL,
                 REASON_HOME_FULL,
-                REASON_HOME_DAMAGED,
+                REASON_COPYING_DISK,
+                REASON_OOM_KILLED,
+                REASON_SECCOMP_KILLED,
             ])
         );
         assert_eq!(vocabulary["seedExitPermanent"], SEED_EXIT_PERMANENT);
         assert_eq!(
             vocabulary["releaseHolds"],
-            serde_json::json!([HELD_UNSTAGED, HELD_RUNTIME, HELD_FAILED])
+            serde_json::json!([HELD_UNSTAGED, HELD_RUNTIME, HELD_REBOOT, HELD_FAILED])
         );
     }
 }

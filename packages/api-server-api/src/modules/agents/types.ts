@@ -27,10 +27,11 @@ export const TerminationCode = {
   RunnerOutOfMemory: "RunnerOutOfMemory",
   HomeVolumeFull: "HomeVolumeFull",
   MachineStorageFull: "MachineStorageFull",
-  MachineHomeDamaged: "MachineHomeDamaged",
   MachineImageUnavailable: "MachineImageUnavailable",
+  MachineImageCacheUnreachable: "MachineImageCacheUnreachable",
   MachineBootFailed: "MachineBootFailed",
   MachineRunnerUnschedulable: "MachineRunnerUnschedulable",
+  MachineRunnerNodeLost: "MachineRunnerNodeLost",
   ImagePullFailure: "ImagePullFailure",
   InvalidImageName: "InvalidImageName",
   ContainerTerminated: "ContainerTerminated",
@@ -39,11 +40,12 @@ export const TerminationCode = {
 // UNIT_BOUNDARY_DESCRIPTION: termination codes that mean the agent was refused a start rather than crashed, so every client says it "can't start" for the same codes.
 const START_REFUSAL_CODES: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
-  TerminationCode.MachineHomeDamaged,
   TerminationCode.HomeVolumeFull,
   TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineImageCacheUnreachable,
   TerminationCode.MachineBootFailed,
   TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.MachineRunnerNodeLost,
   TerminationCode.ImagePullFailure,
   TerminationCode.InvalidImageName,
 ]);
@@ -154,7 +156,6 @@ export interface Agent {
   notReadyMessage?: string;
   podRestarts: number;
   podRestartReason?: string;
-  homeRepaired?: string;
   gatewayFailure?: string;
   contributionFailures: { kind: string; message: string }[];
   unsupportedContributionKinds: string[];
@@ -215,6 +216,17 @@ export type MigrateRuntimeError =
   | { type: "StorageMigrationInProgress" }
   | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] }
   | { type: "HomeNotPersisted" }
+  | {
+      type: "VmStorageInsufficient";
+      neededBytes: number;
+      usedBytes: number;
+      usableBytes: number;
+    }
+  | {
+      type: "VmMemoryInsufficient";
+      committedMiB: number;
+      limitMiB: number;
+    }
   | { type: "ConcurrentUpdate" };
 
 export interface UnmovablePath {

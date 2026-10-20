@@ -3,7 +3,6 @@ import { expect, test } from "@playwright/test";
 import { baseUrl } from "../../config.js";
 import { createApiClient, type ApiClient } from "../../lib/api-client.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import { bootTimeoutMs } from "../../lib/backend.js";
 import { ensureAgentRunning } from "../../lib/agents.js";
 
 /**
@@ -166,7 +165,7 @@ test.describe("satellites", () => {
   test("a connected satellite shows among Connections and is added to an agent there", async ({
     page,
   }) => {
-    test.setTimeout(bootTimeoutMs(240_000));
+    test.setTimeout(300_000);
     const api = createApiClient(await getAccessToken());
     await acceptTerms(api);
     await removeIfPresent(api);

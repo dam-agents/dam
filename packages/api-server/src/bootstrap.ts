@@ -154,7 +154,7 @@ import {
 import { composeSessionDirectory } from "./modules/session-directory/index.js";
 import { composeUsageModule } from "./modules/usage/compose.js";
 import { composeGettingStartedModule } from "./modules/getting-started/index.js";
-import { composeSidebarPinsModule } from "./modules/sidebar-pins/index.js";
+import { composeSidebarOrderModule } from "./modules/sidebar-order/index.js";
 import {
   createUsageAgentsCleanupHook,
   listUsageAgentIds,
@@ -168,7 +168,6 @@ import { carriesInspectorRole } from "./modules/usage/infrastructure/actor-role-
 import {
   composeMetricsReader,
   createAgentTelemetry,
-  createUnavailableAgentTelemetry,
 } from "./modules/metrics/index.js";
 import { composeCaseStudiesModule } from "./modules/case-studies/index.js";
 import { composeAuditModule } from "./modules/audit/index.js";
@@ -208,6 +207,7 @@ import {
   createContentApp,
   createShareAuthRoutes,
   createShareViewerApp,
+  shareSessionCookie,
   type ArtifactLibraryFor,
 } from "./modules/artifact-library/index.js";
 import { createReposRepository } from "./modules/repos/infrastructure/repos-repository.js";
@@ -237,6 +237,7 @@ import {
   composeInvocationLivenessSweep,
   composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
+  createSpawnSessionsAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
@@ -264,12 +265,15 @@ import {
   createL7PromotionReconcile,
   createPresetSeederAdapter,
   listEgressRuleAgentIds,
+  markTrustedRowsTakenOverAdapter,
 } from "./modules/egress-rules/compose.js";
 import {
   composeConnectionsAtBoot,
   composeConnectionsForOwner,
   createConnectionGrantsCleanupHook,
+  createConnectionNames,
   createGrantedConnectionTemplates,
+  createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
@@ -509,6 +513,7 @@ export async function bootstrap() {
     },
     shareBaseUrl: config.shareBaseUrl,
   });
+  const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
     share: {
       baseUrl: config.shareBaseUrl,
@@ -516,11 +521,12 @@ export async function bootstrap() {
         auth: createShareAuthRoutes({
           auth: shareAuth,
           brandName: config.brand.name,
-          secureCookie: new URL(config.shareBaseUrl).protocol === "https:",
+          sessionCookie: shareCookie,
         }),
         viewer: createShareViewerApp({
           viewer: shareViewer,
           auth: shareAuth,
+          sessionCookie: shareCookie,
           renderTokens: shareRenderTokens,
           brandName: config.brand.name,
           uiBaseUrl: config.uiBaseUrl,
@@ -936,7 +942,7 @@ export async function bootstrap() {
   });
   gettingStarted.start();
 
-  const sidebarPins = composeSidebarPinsModule({ db });
+  const sidebarOrder = composeSidebarOrderModule({ db });
 
   const caseStudies = composeCaseStudiesModule({
     db,
@@ -1078,6 +1084,8 @@ export async function bootstrap() {
   const payerOf = async (agentId: string) =>
     (await invocationDriverResolution.resolveRoot(agentId)) ?? agentId;
 
+  const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
+    composeSessionDirectory(db);
   const spend = composeSpendSystem({
     db,
     redis: sharedRedis,
@@ -1092,9 +1100,26 @@ export async function bootstrap() {
     k8s: k8sClient,
     defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
+    connectionNames: createConnectionNames(db),
+    ownedAgents: {
+      anyCreatedBefore: async (ownerSub, at) =>
+        (await agentsRepo.list(ownerSub)).some(
+          (agent) =>
+            agent.createdAt !== undefined &&
+            Date.parse(agent.createdAt) < at.getTime(),
+        ),
+    },
+    sessions: sessionDirectory,
+    subAgents: createSpawnSessionsAdapter(db),
+    telemetryStoreOn: metricsReader !== null,
   });
   await periodicJobs.register("spend-unrecorded-calls", 5 * 60_000, () =>
     spend.ingest.settleUnrecordedCalls(),
+  );
+  await periodicJobs.register(
+    "spend-call-rows-retention",
+    24 * 60 * 60 * 1000,
+    () => spend.callRowsRetentionTick(),
   );
 
   const spendQuestions = composeSpendLimitQuestions(db);
@@ -1318,6 +1343,19 @@ export async function bootstrap() {
 
   const trustedHosts = loadTrustedHosts(config.trustedHostsPath);
   const presetSeeder = createPresetSeederAdapter(db, trustedHosts);
+  await markTrustedRowsTakenOverAdapter(db, trustedHosts)
+    .then((marked) => {
+      if (marked > 0)
+        getLogger().info(
+          { marked },
+          "egress-rules: marked preset rows taken over by connections",
+        );
+    })
+    .catch((err) => {
+      getLogger().warn(
+        `egress-rules: marking preset rows taken over by connections failed: ${formatError(err)}`,
+      );
+    });
 
   const wrapperFrameSender = createWrapperFrameSender({
     resolveWrapperUrl: (agentId) =>
@@ -1344,6 +1382,7 @@ export async function bootstrap() {
       },
     },
     ruleMatcher: createEgressRuleMatchAdapter(db),
+    providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
     spend: spend.check,
     wrapperFrameSender,
@@ -1485,9 +1524,9 @@ export async function bootstrap() {
       ...createChatFormPreferencesCleanup(db),
     },
     {
-      name: "sidebar-pins",
-      listAgentIds: () => sidebarPins.listAgentIds(),
-      cleanup: (agentId: string) => sidebarPins.deleteForAgent(agentId),
+      name: "sidebar-order",
+      listAgentIds: () => sidebarOrder.listAgentIds(),
+      cleanup: (agentId: string) => sidebarOrder.deleteForAgent(agentId),
     },
     {
       name: "agent-env",
@@ -1624,7 +1663,14 @@ export async function bootstrap() {
   const harnessAgentsServiceFor = (owner: string) =>
     composeAgentsModule({
       api,
-      storageGate: composeStorageGate({ k8s: k8sClient, owner }),
+      storageGate: composeStorageGate({
+        k8s: k8sClient,
+        owner,
+        vmPool: {
+          storage: config.vmPoolStorage,
+          memory: config.vmPoolMemory,
+        },
+      }),
       resolveSlackWorkspace,
       agentStateCache,
       namespace: config.namespace,
@@ -1760,8 +1806,6 @@ export async function bootstrap() {
   await periodicJobs.register("image-update", 60_000, () => imageUpdate.tick());
   await periodicJobs.retire("retired-image-migration");
 
-  const { sessionDirectory, retentionTick: sessionDirectoryRetentionTick } =
-    composeSessionDirectory(db);
   await periodicJobs.register(
     "session-directory-retention",
     7 * 24 * 60 * 60 * 1000,
@@ -1844,7 +1888,7 @@ export async function bootstrap() {
     shareHostGate,
     publicAgentPageService,
     gettingStarted,
-    sidebarPins,
+    sidebarOrder,
     sessionPresence,
     wakeAgent: wakeAgentFor,
     artifactLibraryFor,
@@ -1890,9 +1934,10 @@ export async function bootstrap() {
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,
     carriesInspectorRole: carriesInspectorRole(db, subPseudonymizer),
-    agentTelemetry: metricsReader
-      ? createAgentTelemetry({ reader: metricsReader })
-      : createUnavailableAgentTelemetry(),
+    agentTelemetry: createAgentTelemetry({
+      reader: metricsReader,
+      spend: spend.agentSpend,
+    }),
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
     markOnboardingComplete: (agentId: string, owner: string) =>

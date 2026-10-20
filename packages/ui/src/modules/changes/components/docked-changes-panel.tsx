@@ -5,11 +5,13 @@ import {
 } from "agent-runtime-api";
 import { memo, useId, useRef, useState } from "react";
 
+import { EmptyState } from "@/components/ui/empty-state";
 import { Select } from "@/components/ui/select";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
 import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useChangeSetDiff, useChangeSets } from "../api/queries.js";
 import { useChangeSetSelection } from "../hooks/use-change-set-selection.js";
 import { useChangesWatch } from "../hooks/use-changes-watch.js";
@@ -41,42 +43,47 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex shrink-0 flex-wrap items-center gap-2 border-b border-border px-4 py-2">
-        {changeSets && changeSets.length > 0 && selection ? (
-          <div className="flex min-w-40 flex-1">
-            <ChangeSetSelect
-              changeSets={changeSets}
-              selected={selected}
-              seen={selection.seen}
-              onSelect={select}
-            />
-          </div>
-        ) : (
-          <span className="flex-1 text-sm font-medium text-foreground">
-            Changes
-          </span>
-        )}
-        {selected && (
-          <div className="flex shrink-0 items-center gap-2">
-            <div className="w-32 shrink-0">
-              <Select
-                size="sm"
-                aria-label="Compare to"
-                value={compare}
-                onChange={(event) => {
-                  const parsed = compareToSchema.safeParse(event.target.value);
-                  if (parsed.success) setCompare(parsed.data);
-                }}
-              >
-                <option value="base">
-                  {selected.baseRef ? `vs ${selected.baseRef}` : "vs base"}
-                </option>
-                <option value="uncommitted">Uncommitted</option>
-              </Select>
+      <div className="flex min-h-12 shrink-0 items-center gap-2 border-b border-border pr-3">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2 py-1 pl-3">
+          {changeSets && changeSets.length > 0 && selection ? (
+            <div className="flex min-w-40 flex-1">
+              <ChangeSetSelect
+                changeSets={changeSets}
+                selected={selected}
+                seen={selection.seen}
+                onSelect={select}
+              />
             </div>
-            <LayoutToggle layout={layout} onChange={setLayout} />
-          </div>
-        )}
+          ) : (
+            <span className="flex-1 text-sm font-medium text-foreground">
+              Changes
+            </span>
+          )}
+          {selected && (
+            <div className="flex shrink-0 items-center gap-2">
+              <div className="w-32 shrink-0">
+                <Select
+                  size="sm"
+                  aria-label="Compare to"
+                  value={compare}
+                  onChange={(event) => {
+                    const parsed = compareToSchema.safeParse(
+                      event.target.value,
+                    );
+                    if (parsed.success) setCompare(parsed.data);
+                  }}
+                >
+                  <option value="base">
+                    {selected.baseRef ? `vs ${selected.baseRef}` : "vs base"}
+                  </option>
+                  <option value="uncommitted">Uncommitted</option>
+                </Select>
+              </div>
+              <LayoutToggle layout={layout} onChange={setLayout} />
+            </div>
+          )}
+        </div>
+        <SidePanelCloseButton />
       </div>
       {error ? (
         <Notice text={listErrorText(error.message)} />
@@ -84,6 +91,8 @@ export const DockedChangesPanel = memo(function DockedChangesPanel({
         <Notice text="Changes show while the agent is running." />
       ) : isPending || !changeSets || !selection ? (
         <CenteredSpinner />
+      ) : changeSets.length === 0 ? (
+        <EmptyState bordered={false}>No git repositories found.</EmptyState>
       ) : selected ? (
         <ChangeSetBody
           agentId={agentId}

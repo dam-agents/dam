@@ -3,7 +3,10 @@ import { createEgressRulesService } from "../../modules/egress-rules/services/eg
 import { createEgressRuleWriter } from "../../modules/egress-rules/services/egress-rule-writer.js";
 import { createConnectionRulesSync } from "../../modules/egress-rules/services/connection-rules-sync.js";
 import { createKitRulesSeeder } from "../../modules/egress-rules/services/kit-rules-seeder.js";
-import { createPresetSeeder } from "../../modules/egress-rules/services/preset-seeder.js";
+import {
+  createPresetSeeder,
+  markTrustedRowsTakenOver,
+} from "../../modules/egress-rules/services/preset-seeder.js";
 import type { EgressRulesRepository } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { NewEgressRule } from "../../modules/egress-rules/infrastructure/egress-rules-repository.js";
 import type { EgressRuleRow } from "../../modules/egress-rules/domain/types.js";
@@ -53,6 +56,15 @@ function fakeRepo(
       const r = rows.find((x) => x.id === id);
       if (r) r.status = "revoked";
     },
+    restorePresetSource: async (id) => {
+      const r = rows.find((x) => x.id === id && x.status === "active");
+      if (r?.presetSource) {
+        r.source = r.presetSource;
+        delete r.presetSource;
+      }
+    },
+    markPresetUnderConnections: async () => {},
+    markSeededConnectionRows: async () => 0,
     updateTakeOwnership: async () => null,
     listForAgent: async (agentId) =>
       rows.filter((r) => r.agentId === agentId && r.status === "active"),
@@ -307,6 +319,53 @@ describe("connection-rules-sync: threads port into the inserted rule", () => {
   });
 });
 
+describe("connection-rules-sync: a revoked Connection hands a taken-over preset row back", () => {
+  const connectionRow = (
+    presetSource?: EgressRuleRow["source"],
+  ): EgressRuleRow => ({
+    id: "r1",
+    agentId: "a1",
+    host: "api.anthropic.com",
+    method: "*",
+    pathPattern: "*",
+    verdict: "allow",
+    decidedBy: "sub-1",
+    decidedAt: new Date(0),
+    status: "active",
+    source: "connection:conn-1",
+    ...(presetSource ? { presetSource } : {}),
+  });
+
+  const revokeConn1 = async (seeded: EgressRuleRow) => {
+    const { repo, rows } = fakeRepo([seeded], {
+      listConnectionDerivedForAgent: async () => [seeded],
+    });
+    await createConnectionRulesSync({ repo }).syncForAgent({
+      agentId: "a1",
+      decidedBy: "sub-1",
+      grants: new Map(),
+      ownedSourceIds: new Set(["conn-1"]),
+    });
+    return rows;
+  };
+
+  // TEST_SCENARIO: the trusted preset seeds api.anthropic.com; granting an Anthropic Connection takes that row over, and revoking the Connection (a switch to LiteLLM) used to revoke it, so Claude Code's own calls to the host raised an approval nobody expected. The row must go back to the preset.
+  it("gives a row the Connection took over from the preset back to the preset", async () => {
+    const rows = await revokeConn1(connectionRow("preset:trusted"));
+
+    expect(rows).toEqual([
+      expect.objectContaining({ status: "active", source: "preset:trusted" }),
+    ]);
+  });
+
+  // TEST_SCENARIO: a user who revoked the preset row of a host, then granted a Connection for it, holds a row the Connection inserted fresh; revoking the Connection must not bring back the allow the user turned off.
+  it("revokes a row the Connection inserted, even for a trusted host", async () => {
+    const rows = await revokeConn1(connectionRow());
+
+    expect(rows).toEqual([expect.objectContaining({ status: "revoked" })]);
+  });
+});
+
 describe("kit-rules-seeder: a kit rule never silently loses to a preset row", () => {
   // TEST_SCENARIO: a kit that denies a host its preset already allows would otherwise leave the allow in place without a word; the seeder must refuse so apply can undo the create.
   it("refuses a kit rule whose verdict clashes with the row already there", async () => {
@@ -336,6 +395,28 @@ describe("kit-rules-seeder: a kit rule never silently loses to a preset row", ()
   });
 });
 
+describe("preset-seeder: rows taken over before the mark existed", () => {
+  // TEST_SCENARIO: rows a Connection took over from the trusted preset before preset_source existed carry no mark, so revoking the Connection would still revoke them; the startup sweep marks them, for the trusted hosts and the trusted preset source.
+  it("asks the repository to mark connection rows of the trusted hosts", async () => {
+    const asked: Array<{ hosts: readonly string[]; source: string }> = [];
+    const { repo } = fakeRepo([], {
+      markSeededConnectionRows: async (hosts, source) => {
+        asked.push({ hosts, source });
+        return 2;
+      },
+    });
+    const hosts = ["api.anthropic.com", "github.com"];
+
+    const marked = await markTrustedRowsTakenOver({
+      repo,
+      trustedHosts: hosts,
+    });
+
+    expect(marked).toBe(2);
+    expect(asked).toEqual([{ hosts, source: "preset:trusted" }]);
+  });
+});
+
 describe("preset-seeder: the trusted preset is one write", () => {
   // TEST_SCENARIO: an agent create seeds every trusted host; one round trip per host put ~0.5 s on the create, so the hosts go in as one batch after the old preset rows are revoked.
   it("revokes the old preset rows, then inserts every trusted host in one call", async () => {
@@ -343,6 +424,9 @@ describe("preset-seeder: the trusted preset is one write", () => {
     const { repo, rows } = fakeRepo([], {
       revokePresetRowsForAgent: async () => {
         calls.push("revoke");
+      },
+      markPresetUnderConnections: async (_agentId, marked, source) => {
+        calls.push(`mark:${marked.length}:${source}`);
       },
       insert: async () => {
         throw new Error("per-host insert");
@@ -359,7 +443,7 @@ describe("preset-seeder: the trusted preset is one write", () => {
       "trusted",
       "owner-1",
     );
-    expect(calls).toEqual(["revoke", "insertAll:3"]);
+    expect(calls).toEqual(["revoke", "insertAll:3", "mark:3:preset:trusted"]);
     expect(rows.map((r) => [r.host, r.source])).toEqual(
       hosts.map((h) => [h, "preset:trusted"]),
     );

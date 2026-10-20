@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
@@ -6,27 +6,24 @@ import {
   type AgentActivitySession,
   useActivitySessions,
 } from "../../home/hooks/use-activity-sessions.js";
-import { filterActivitySessions } from "../../home/lib/activity-sessions.js";
+import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents } from "../api/queries.js";
-import { useSidebarPins } from "../api/sidebar-pins.js";
+import { useSidebarOrder } from "../api/sidebar-order.js";
 import {
   groupSessionsByAgent,
-  leadAgentId,
-  openFirst,
-  orderByLatestSession,
+  sidebarAgentFolded,
+  sidebarAgentOpen,
 } from "../lib/sidebar-agent-order.js";
-import { pinnedFirst } from "../lib/sidebar-pins.js";
+import { manualOrder } from "../lib/sidebar-order.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
 
 const NO_AGENTS: AgentView[] = [];
 const NO_SESSIONS: AgentActivitySession[] = [];
-const NO_PINS: string[] = [];
 
 export function useSidebarAgents() {
   const list = useAgents().data?.list ?? NO_AGENTS;
   const activity = useActivitySessions();
-  const { pins } = useSidebarPins();
-  const filters = useStore((s) => s.sidebarActivityFilters);
+  const { order } = useSidebarOrder();
   const openAgentId = useStore((s) =>
     s.view === "chat"
       ? s.selectedAgent
@@ -34,30 +31,35 @@ export function useSidebarAgents() {
         ? s.agentId
         : null,
   );
-  const sessionOpen = useStore((s) => s.view === "chat" && !!s.sessionId);
+  const sessionOpen = useStore((s) => s.view === "chat" && !!shownSessionId(s));
+  const openOverrides = useStore((s) => s.sidebarAgentOpen);
+  const isOpen = (agentId: string) =>
+    sidebarAgentOpen(openOverrides, agentId, openAgentId);
 
   const sessionsByAgent = useMemo(
-    () => groupSessionsByAgent(filterActivitySessions(activity.items, filters)),
-    [activity.items, filters],
+    () => groupSessionsByAgent(activity.items),
+    [activity.items],
   );
 
-  const { items: ordered, pinned: pinnedAgentIds } = useMemo(
+  const agents = useMemo(
     () =>
-      pinnedFirst(
-        orderByLatestSession(
-          splitTemporarySandboxes(list).visible,
-          sessionsByAgent,
-        ),
-        pins.agents,
+      manualOrder(
+        splitTemporarySandboxes(list).visible,
+        order.agents,
         (agent) => agent.id,
+        (agent) => agent.createdAt,
       ),
-    [list, sessionsByAgent, pins.agents],
+    [list, order.agents],
   );
-  const [pointerInside, setPointerInside] = useState(false);
-  const [shownLead, setShownLead] = useState(openAgentId);
-  const lead = leadAgentId(shownLead, openAgentId, pointerInside);
-  if (lead !== shownLead) setShownLead(lead);
-  const agents = useMemo(() => openFirst(ordered, lead), [ordered, lead]);
+
+  const { active, folded } = useMemo(() => {
+    const isFolded = (agent: AgentView) =>
+      sidebarAgentFolded(openOverrides, agent, openAgentId);
+    return {
+      active: agents.filter((agent) => !isFolded(agent)),
+      folded: agents.filter(isFolded),
+    };
+  }, [agents, openAgentId, openOverrides]);
 
   const unreadAgentIds = new Set(
     activity.items
@@ -68,19 +70,15 @@ export function useSidebarAgents() {
   const sessionsOf = (agentId: string) =>
     sessionsByAgent.get(agentId) ?? NO_SESSIONS;
 
-  const pinnedSessionsOf = (agentId: string) =>
-    pins.sessions[agentId] ?? NO_PINS;
-
   return {
     agents,
-    pinnedAgentIds,
+    active,
+    folded,
     openAgentId,
-    leadAgentId: lead,
-    holdOrder: setPointerInside,
+    isOpen,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
-    pinnedSessionsOf,
     previewComplete: activity.complete,
   };
 }

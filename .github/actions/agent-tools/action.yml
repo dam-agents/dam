@@ -1,30 +1,66 @@
 name: agent tools
 description: >-
-  Every mise image's tools and Chromium for this arch, which the lockfile and
-  the image files fix; each build installs only what it lacks. A miss restores
-  the newest older entry, so a lockfile change reinstalls only the tools it
-  changed, and then writes the entry: any job on main that misses writes it,
-  since each may run without the others. A PR or a tag never writes one: at
-  over a gigabyte, its entry would count against the repo's 10 GB and evict
-  main's. Needs mise with node, pnpm, crane and usage.
+  The default image's tools layer, as its installer made it, and the other
+  images' own tools, for this arch, which the lockfile and the image files fix;
+  each build installs only what it lacks. Beside them the apt base those images
+  are packed onto, keyed by the day its build keys it by. A miss of the tools
+  restores the newest older entry, so a lockfile change reinstalls only the
+  other images' tools it changed (the tools layer is made again whole), and
+  then writes the entry: any job on main that misses writes it, since each may
+  run without the others. A PR or a tag never writes one: at over a gigabyte,
+  its entry would count against the repo's 10 GB and evict main's. Needs mise
+  with node, pnpm, crane, uv and usage, and sudo.
+outputs:
+  apt-base-key:
+    value: ${{ steps.apt-base.outputs.cache-primary-key }}
+  apt-base-hit:
+    value: ${{ steps.apt-base.outputs.cache-hit }}
 runs:
   using: composite
   steps:
+    # A release restores only what reviewed code wrote: main is this entry's
+    # one writer (the save below), and GitHub scopes a pull request's entry to
+    # its merge ref, which no tag run reads.
+    # jactionlint ignore=cache-poisoning
     - id: restore
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ~/.cache/platform-agent-oci/build/data
-          ~/.cache/platform-agent-oci/build/ms-playwright
-        key: agent-tools-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml') }}
-        restore-keys: agent-tools-${{ runner.os }}-${{ runner.arch }}-
+          ~/.cache/platform-agent-oci/harness-tools
+        key: agent-tools-v2-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/image.lock', 'packages/agents/base/image-locks/**', 'packages/agents/base/miserc.toml', 'packages/agents/base/rootfs/etc/mise/conf.d/settings.toml', 'packages/agents/*/image.toml', 'packages/agents/base/base.toml', 'packages/agents/*/*.py', 'packages/agents/*/*.txt', 'packages/e2e/agents/mock/image.toml', 'packages/agents/default/rootfs/usr/local/bin/install-harness-tools') }}
+        restore-keys: agent-tools-v2-${{ runner.os }}-${{ runner.arch }}-
+    # The apt base the default image is packed onto: the Debian base with its
+    # own apt-get run in it, which no entry above holds and every build
+    # otherwise redoes from deb.debian.org. The build keys its own copy by the
+    # day so that a rebuild picks up Debian's updates, which is why this key is
+    # dated too: an older day's entry would be built again anyway. The build
+    # makes the base after this action has run, so build.yml's build-agents job
+    # saves it on main, from the outputs below.
+    - id: day
+      shell: bash
+      run: echo "utc=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+    # As above: build.yml saves this entry on main alone.
+    # jactionlint ignore=cache-poisoning
+    - id: apt-base
+      uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      with:
+        path: |
+          ~/.cache/platform-agent-oci/apt-base
+          ~/.cache/platform-agent-oci/apt-base.key
+        key: agent-apt-base-v1-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('packages/agents/base/apt.txt', 'packages/agents/.mise/tasks/oci') }}-${{ steps.day.outputs.utc }}
+    # A miss installs every tool from scratch: anonymous, a shared runner's IP
+    # exhausts GitHub's 60 requests an hour within one install. mise reads the
+    # token from MISE_GITHUB_TOKEN; no other tool here reads it.
     - if: steps.restore.outputs.cache-hit != 'true'
       shell: bash
+      env:
+        MISE_GITHUB_TOKEN: ${{ github.token }}
       run: packages/agents/.mise/tasks/oci --warm
     - if: steps.restore.outputs.cache-hit != 'true' && github.ref == 'refs/heads/main'
       uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
       with:
         path: |
           ~/.cache/platform-agent-oci/build/data
-          ~/.cache/platform-agent-oci/build/ms-playwright
+          ~/.cache/platform-agent-oci/harness-tools
         key: ${{ steps.restore.outputs.cache-primary-key }}

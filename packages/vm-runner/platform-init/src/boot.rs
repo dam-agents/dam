@@ -1,16 +1,17 @@
-// UNIT_BOUNDARY_DESCRIPTION: the entrypoint of every vm-backend machine. It claims the machine's storage disk, moves the image onto a root of its own that lasts as long as the image does, mounts the agent's home from the disk, puts the temporary folders on the disk, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
+// UNIT_BOUNDARY_DESCRIPTION: the init of every vm-backend machine, its PID 1. It sets the VM up as smolvm's guest agent and crun did (vm.rs), mounts the machine's storage disk, boots the image on a root of its own that lasts as long as the image does, mounts the agent's home from the disk, gives it empty temporary folders, and starts the image's own entrypoint, which it then supervises. It exists so persistence is the platform's to guarantee rather than the image's to implement: the runner supplies this binary, so an image that has never heard of this platform still keeps its agent's home across a stop, and a machine that cannot mount its disk does not boot at all rather than losing its work at the first stop.
 use std::collections::HashSet;
 use std::ffi::{CString, OsStr, OsString};
 use std::fs::{self, DirBuilder, File, OpenOptions};
 use std::io::{self, Seek, SeekFrom, Write};
 use std::os::fd::{AsRawFd, FromRawFd, IntoRawFd};
-use std::os::unix::ffi::{OsStrExt, OsStringExt};
+use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::{DirBuilderExt, MetadataExt, OpenOptionsExt, PermissionsExt};
 use std::path::{Component, Path, PathBuf};
 
 use sha2::{Digest, Sha256};
 
 use crate::guest::{self, SeedDigest};
+use crate::pool_guard::{guard_look, read_grant, PoolGuard, POOL_GUARD_FLOOR};
 
 const BOOT_LOG_CAP: u64 = 32 << 20;
 const TRUST_CACHE_ENV: &str = "PLATFORM_TRUST_CACHE";
@@ -76,26 +77,36 @@ fn console_line(message: &str) -> String {
     line
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ends platform-init, and with it the machine's workload. A thread of this process writes the boot log, so the log is flushed and the thread waited for first. Without that, the line that explains the exit is the one that never reaches the disk.
+// UNIT_BOUNDARY_DESCRIPTION: ends platform-init, and with it the machine's workload. A thread of this process writes the boot log, so the log is flushed and the thread waited for first. Without that, the line that explains the exit is the one that never reaches the disk. As the guest's PID 1, its exit panics the kernel, which resets the VM before the console has passed on its last lines, the one that explains the exit among them, so it gives the console a second first.
 fn exit(code: i32) -> ! {
     close_boot_log();
+    if std::process::id() == 1 {
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }
     std::process::exit(code)
 }
 
-pub fn run(command: Vec<OsString>) -> ! {
+mod vm;
+
+pub use vm::stage0;
+
+pub fn run() -> ! {
+    // UNIT_BOUNDARY_DESCRIPTION: a panic of the guest's init ends the guest, and its message would go only to the boot log, which a thread may not have written out yet; it goes to the console too, where the runner reads why a boot ended, with the second the console needs before the reset (see exit).
+    std::panic::set_hook(Box::new(|info| {
+        announce(&format!("FATAL: {info}"));
+        std::thread::sleep(std::time::Duration::from_secs(1));
+    }));
     block_signals();
-    if command.is_empty() {
-        fatal!("no image entrypoint to exec; the runner passes it after this binary");
-    }
-
-    let workdir = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("/"));
     stop_propagation();
-    let root = claim_disk();
-    open_boot_log(&root);
+    let machine = vm::prepare();
+    let disk = machine.disk.clone();
+    open_boot_log(&disk);
 
-    logf!("storage disk claimed at {}", root.display());
-    claim_layout(&root);
-    fresh_root(&root);
+    logf!("storage disk mounted at {}", disk.display());
+    claim_layout(&disk);
+    fresh_root(&disk, &machine);
+    vm::serve();
+    let root = PathBuf::from(guest::DISK_PATH);
     bind_ca();
     let expected = match expected_seed(Path::new(guest::SEED_EXPECTED_PATH)) {
         Ok(expected) => expected,
@@ -106,35 +117,73 @@ pub fn run(command: Vec<OsString>) -> ! {
         fs::metadata(guest::SEEDED_PATH).is_ok(),
         expected.as_ref(),
     );
-    mount_scratch(&root);
-    let trust = offer_trust_cache(&root);
+    let trust = offer_trust_cache();
+    show_boot_log(&root);
     let guard = pool_guard(&root);
     leave_disk(&root);
     share_mounts();
-    enter_workdir(&workdir);
+    enter_workdir(Path::new(machine.launch.workdir.as_deref().unwrap_or("/")));
 
-    let binary = match look_path(&command[0], std::env::var_os("PATH")) {
+    let command: Vec<OsString> = machine.launch.command.iter().map(OsString::from).collect();
+    let env = &machine.launch.env;
+    let search = env
+        .iter()
+        .find(|(key, _)| key == "PATH")
+        .map(|(_, value)| OsString::from(value));
+    let binary = match look_path(&command[0], search) {
         Ok(binary) => binary,
         Err(e) => fatal!(
             "the image's entrypoint {:?} is not executable in this guest: {e}",
             command[0]
         ),
     };
-    std::thread::spawn(reclaim_cold_cache);
+    let swapping = compressed_swap();
+    std::thread::spawn(move || reclaim_cold_cache(swapping));
     let scratch = scratch_folders();
     std::thread::spawn(move || evict_scratch(&scratch));
-    std::thread::spawn(trim_freed_blocks);
     if let Some(guard) = guard {
-        std::thread::spawn(move || guard_pool(guard));
+        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(guard);
+        std::thread::spawn(guard_pool);
     }
-    supervise(&binary, &command, trust.as_deref())
+    let openrc = Path::new(OPENRC).exists();
+    if openrc {
+        let mut stopping = false;
+        for runlevel in ["sysinit", "boot", "default"] {
+            run_openrc(runlevel, env, &mut stopping);
+            if stopping {
+                break;
+            }
+        }
+        if stopping {
+            stop(openrc);
+        }
+    }
+    supervise(&binary, &command, env, trust.as_deref(), openrc)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, and the pages it frees go back to the host through free-page reporting within seconds. The guest has no swap, so reclaim drops only file pages: what the agent's processes hold stays. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
+// UNIT_BOUNDARY_DESCRIPTION: an image that ships openrc opts in to its services: platform-init stays PID 1 and runs openrc's runlevels before the entrypoint, as an init that boots openrc would, and openrc's shutdown when the machine stops. An image without it boots its entrypoint alone.
+const OPENRC: &str = "/sbin/openrc";
+
+// UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed. It is waited for as the entrypoint is, reaping every orphan meanwhile: a service's daemon is an orphan of PID 1, and openrc stopping one waits until its process is gone, which a zombie never is. A stop that arrives meanwhile is passed on to openrc and noted in `stopping`. openrc runs in the entrypoint's environment, of which its rc_env_allow passes on only what the image names, such as the gateway a service pulls through.
+fn run_openrc(runlevel: &str, env: &[(String, String)], stopping: &mut bool) {
+    let mut openrc = std::process::Command::new(OPENRC);
+    openrc.arg(runlevel).env_clear().env("PATH", DEFAULT_PATH);
+    let spawned = unblocked(openrc.envs(env.iter().map(|(key, value)| (key, value)))).spawn();
+    match spawned.map(|child| wait_for(child.id(), stopping)) {
+        Ok(0) => logf!("openrc {runlevel} done"),
+        Ok(status) => announce(&format!(
+            "WARNING: openrc {runlevel} {}",
+            exit_description(status)
+        )),
+        Err(e) => announce(&format!("WARNING: running openrc {runlevel}: {e}")),
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a guest keeps the files it read in its page cache until something needs the memory, and the host counts that cache as memory the machine holds, so an agent that once read a large tree holds it long after. Every RECLAIM_INTERVAL the cache on the kernel's inactive list — what nothing has touched lately — is handed to the root cgroup's proactive reclaim, and the pages it frees go back to the host through free-page reporting within seconds. With compressed swap (`swapping`) the inactive anonymous memory is handed over too, so what the agent's processes hold but have not touched lately is compressed into zram and the rest of its pages go back to the host; without it reclaim drops only file pages. A guest kernel without cgroup v2 reclaim gives nothing to read or write, and the loop does nothing.
 const RECLAIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
 const RECLAIM_FLOOR: u64 = 64 << 20;
 
-fn reclaim_cold_cache() {
+fn reclaim_cold_cache(swapping: bool) {
     let order = fs::read_to_string("/sys/module/page_reporting/parameters/page_reporting_order")
         .ok()
         .and_then(|text| text.trim().parse().ok())
@@ -144,7 +193,14 @@ fn reclaim_cold_cache() {
         std::thread::sleep(RECLAIM_INTERVAL);
         if let Some(cold) = fs::read_to_string("/sys/fs/cgroup/memory.stat")
             .ok()
-            .and_then(|stat| inactive_file(&stat))
+            .and_then(|stat| {
+                let anon = if swapping {
+                    stat_bytes(&stat, "inactive_anon")?
+                } else {
+                    0
+                };
+                Some(stat_bytes(&stat, "inactive_file")? + anon)
+            })
         {
             if cold >= RECLAIM_FLOOR {
                 let _ = fs::write("/sys/fs/cgroup/memory.reclaim", cold.to_string());
@@ -191,67 +247,119 @@ fn free_below_order(buddyinfo: &str, order: usize) -> u64 {
         .sum()
 }
 
-fn inactive_file(stat: &str) -> Option<u64> {
+fn stat_bytes(stat: &str, key: &str) -> Option<u64> {
     stat.lines()
-        .find_map(|line| line.strip_prefix("inactive_file "))?
+        .find_map(|line| line.strip_prefix(key)?.strip_prefix(' '))?
         .trim()
         .parse()
         .ok()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk is a sparse file on the owner's claim, and a block the agent frees stays allocated there until it is trimmed. smolvm's guest agent trims only once free space has risen by a quarter GiB since its last trim, so a file rewritten in place or replaced by a renamed copy — free space back where it was, the new copy on other blocks — keeps the old copy's blocks counted for up to half an hour. Every TRIM_INTERVAL the disk is trimmed regardless: ext4 skips every block group that has freed nothing since its last trim, so a trim with nothing to return costs little. Machines boot at different times, so their trims do not run in step.
-const TRIM_INTERVAL: std::time::Duration = std::time::Duration::from_secs(60);
-// UNIT_BOUNDARY_DESCRIPTION: _IOWR('X', 121, struct fstrim_range), the same on every architecture a guest runs; the libc crate does not export it.
-const FITRIM: libc::c_ulong = 0xC018_5879;
-// UNIT_BOUNDARY_DESCRIPTION: free extents smaller than this are skipped, so a minute's trim sends no stream of tiny discards to the claim's storage.
-const TRIM_MIN_BYTES: u64 = 1 << 20;
+// UNIT_BOUNDARY_DESCRIPTION: makes zram swap: memory the guest's processes hold but no longer touch is kept compressed in RAM rather than whole, so a machine of the same size holds about half to a quarter as much of it on the host. The guest boots below its size and grows once it is up, so the device takes ZRAM_BOOT_RAM_MULTIPLE times the RAM it boots with in uncompressed pages, a quarter to the whole of the machine's size; an unused device costs only its table. Pages are compressed with zstd: on an idle V8 heap it stored 1.5 GB in 163 MB where lz4 needed about 420 MB, and reading the heap back took 1.0 s against 0.86 s, and compression runs in the reclaim pass, off any request; swappiness 100 weighs a page in zram like a page of file cache, since reading one back costs about as little, and page-cluster 0 reads back one page at a time, as zram has no seek to amortise. The container's /sys is read-only and its /dev has no zram node, so the device is set up through a sysfs of platform-init's own, mounted at ZRAM_SYSFS and detached again, and its node is made from the numbers sysfs gives. A kernel without zram, or a device that will not set up, leaves the guest without swap, as before. True when swap is on.
+const ZRAM_BOOT_RAM_MULTIPLE: u64 = 2;
+const ZRAM_SYSFS: &str = "/run/platform-zram-sysfs";
 
-#[repr(C)]
-struct FstrimRange {
-    start: u64,
-    len: u64,
-    minlen: u64,
-}
-
-fn trim_freed_blocks() {
-    let home = match File::open(guest::AGENT_HOME) {
-        Ok(home) => home,
-        Err(e) => {
-            logf!(
-                "WARNING: opening {} ({e}); blocks the agent frees are not trimmed",
-                guest::AGENT_HOME
-            );
-            return;
-        }
+fn compressed_swap() -> bool {
+    let Ok(numbers) = fs::read_to_string("/sys/block/zram0/dev") else {
+        return false;
     };
-    let mut failing = false;
-    loop {
-        std::thread::sleep(TRIM_INTERVAL);
-        let mut range = FstrimRange {
-            start: 0,
-            len: u64::MAX,
-            minlen: TRIM_MIN_BYTES,
-        };
-        // SAFETY: `home` is an open file on the disk, and `range` is a live fstrim_range the kernel reads and writes back.
-        let rc = unsafe { libc::ioctl(home.as_raw_fd(), FITRIM as _, &mut range) };
-        if rc == 0 {
-            failing = false;
-            continue;
+    // SAFETY: sysconf has no preconditions.
+    let page = unsafe { libc::sysconf(libc::_SC_PAGESIZE) } as usize;
+    let sysfs = Path::new(ZRAM_SYSFS);
+    let result = (|| -> io::Result<()> {
+        let (major, minor) = numbers
+            .trim()
+            .split_once(':')
+            .and_then(|(major, minor)| Some((major.parse().ok()?, minor.parse().ok()?)))
+            .ok_or_else(|| io::Error::other(format!("zram0 is device {numbers:?}")))?;
+        let node = CString::new("/dev/zram0").expect("static path");
+        // SAFETY: a NUL-terminated path; an existing node is left as it is.
+        if unsafe {
+            libc::mknod(
+                node.as_ptr(),
+                libc::S_IFBLK | 0o600,
+                libc::makedev(major, minor),
+            )
+        } != 0
+            && io::Error::last_os_error().kind() != io::ErrorKind::AlreadyExists
+        {
+            return Err(io::Error::last_os_error());
         }
-        let error = io::Error::last_os_error();
-        if matches!(error.raw_os_error(), Some(libc::EOPNOTSUPP | libc::ENOTTY)) {
-            logf!("WARNING: the disk cannot be trimmed ({error}); blocks the agent frees stay counted until smolvm trims");
-            return;
+        fs::create_dir_all(sysfs)?;
+        let (source, fstype, target) = (
+            CString::new("sysfs").expect("static"),
+            CString::new("sysfs").expect("static"),
+            CString::new(ZRAM_SYSFS).expect("static path"),
+        );
+        // SAFETY: NUL-terminated source, target and type, and no data.
+        if unsafe {
+            libc::mount(
+                source.as_ptr(),
+                target.as_ptr(),
+                fstype.as_ptr(),
+                0,
+                std::ptr::null(),
+            )
+        } != 0
+        {
+            return Err(io::Error::last_os_error());
         }
-        if !failing {
-            logf!(
-                "WARNING: trimming the disk ({error}); retrying every {} s",
-                TRIM_INTERVAL.as_secs()
-            );
+        let zram = sysfs.join("block/zram0");
+        let configured = (|| -> io::Result<()> {
+            let ram = fs::read_to_string("/proc/meminfo")?
+                .lines()
+                .find_map(|line| {
+                    line.strip_prefix("MemTotal:")?
+                        .trim()
+                        .strip_suffix(" kB")?
+                        .parse::<u64>()
+                        .ok()
+                })
+                .ok_or_else(|| io::Error::other("no MemTotal in /proc/meminfo"))?;
+            fs::write(zram.join("comp_algorithm"), "zstd")?;
+            fs::write(
+                zram.join("disksize"),
+                (ram * 1024 * ZRAM_BOOT_RAM_MULTIPLE).to_string(),
+            )
+        })();
+        // SAFETY: the NUL-terminated target mounted above.
+        unsafe { libc::umount2(target.as_ptr(), libc::MNT_DETACH) };
+        configured?;
+        let size = fs::read_to_string("/sys/block/zram0/size")?
+            .trim()
+            .parse::<u64>()
+            .map_err(io::Error::other)?
+            * 512;
+        OpenOptions::new()
+            .write(true)
+            .open("/dev/zram0")?
+            .write_all(&swap_header(page, size))?;
+        let device = CString::new("/dev/zram0").expect("static path");
+        // SAFETY: a NUL-terminated path to the device the header was just written to.
+        if unsafe { libc::swapon(device.as_ptr(), 0) } != 0 {
+            return Err(io::Error::last_os_error());
         }
-        failing = true;
+        fs::write("/proc/sys/vm/swappiness", "100")?;
+        fs::write("/proc/sys/vm/page-cluster", "0")
+    })();
+    match result {
+        Ok(()) => true,
+        Err(e) => {
+            logf!("WARNING: setting up zram swap ({e}); the guest runs without swap");
+            false
+        }
     }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the first page of a swap area, as mkswap writes it (struct swap_header, version 1): the last usable page at 1028, no bad pages, and the magic `SWAPSPACE2` in the page's last ten bytes.
+fn swap_header(page: usize, size: u64) -> Vec<u8> {
+    let mut header = vec![0; page];
+    header[1024..1028].copy_from_slice(&1u32.to_ne_bytes());
+    header[1028..1032].copy_from_slice(&((size / page as u64 - 1) as u32).to_ne_bytes());
+    header[page - 10..].copy_from_slice(b"SWAPSPACE2");
+    header
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: the kernel refuses to move a mount out of a shared parent, and refuses pivot_root when either root's parent is shared. So the tree is made a slave before the disk is moved: mounts made elsewhere in the guest still arrive, and nothing this boot does leaves it. A private tree is left as it is.
 fn stop_propagation() {
     if let Err(e) = mount(Path::new(""), Path::new("/"), libc::MS_REC | libc::MS_SLAVE) {
@@ -261,54 +369,16 @@ fn stop_propagation() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a disk that failed to attach leaves an ordinary directory of the root overlay in its place, which would take every write the agent's home makes and discard it at the next stop — so the device is checked before anything is mounted onto it. The move that follows takes the disk off a name that means something else here: left where the VMM put it, its root is writable as "workspace", and anything written straight to it persists outside the agent's home. A kernel that refuses the move still has a working disk, which is worth a line in the log and not a failed boot.
-fn claim_disk() -> PathBuf {
-    let device_path = Path::new(guest::DISK_DEVICE_PATH);
-    let disk_path = Path::new(guest::DISK_PATH);
-    let device = match fs::metadata(device_path) {
-        Ok(device) => device,
-        Err(e) => fatal!("no storage disk at {}: {e}", device_path.display()),
-    };
-    let root = match fs::metadata("/") {
-        Ok(root) => root,
-        Err(e) => fatal!("stat /: {e}"),
-    };
-    if device.dev() == root.dev() {
-        fatal!(
-            "{} is on the root filesystem, so this machine has no storage disk; refusing to boot without persistence",
-            device_path.display()
-        );
-    }
-    if let Err(e) = mkdir_all(disk_path) {
-        logf!(
-            "WARNING: creating {} ({e}); keeping the disk at {}",
-            disk_path.display(),
-            device_path.display()
-        );
-        return device_path.to_path_buf();
-    }
-    if let Err(e) = mount(device_path, disk_path, libc::MS_MOVE) {
-        logf!(
-            "WARNING: moving the disk to {} ({e}); keeping it at {}, where it stays writable under that name too",
-            disk_path.display(),
-            device_path.display()
-        );
-        return device_path.to_path_buf();
-    }
-    let _ = fs::remove_dir(device_path).or_else(|_| fs::remove_file(device_path));
-    disk_path.to_path_buf()
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout there has been, and gets the mark now. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
+// UNIT_BOUNDARY_DESCRIPTION: holds the boot to a disk whose layout this platform-init knows, before anything else is read from the disk or written to it. A disk marked with a newer layout was written by a newer platform-init — a runner rolled back past it — and this one would misread it, so the boot stops rather than seed or mount by the wrong names. A disk with no mark is in the one layout the storage mount boots (vm::mount_storage), and gets the mark now; a mark that names an older layout means the disk is not what its mark says, and the boot stops rather than guess. A mark that is empty or only zeros counts as no mark: a disk with no journal can lose a file's data to an unclean stop and keep its name, and the home under it is still intact.
 fn claim_layout(root: &Path) {
-    match mark_layout(root) {
+    match mark_layout(root, guest::LAYOUT_VERSION) {
         Ok(Some(version)) => logf!("marked the disk as layout {version}"),
         Ok(None) => {}
         Err(e) => fatal!("reading the disk's layout: {e}"),
     }
 }
 
-fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
+fn mark_layout(root: &Path, layout: u32) -> io::Result<Option<u32>> {
     let path = guest::system_store(root, guest::LAYOUT_FILE);
     let text = match fs::read_to_string(&path) {
         Ok(text) => text,
@@ -317,14 +387,17 @@ fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
     };
     let text = text.trim_matches(|c: char| c == '\0' || c.is_whitespace());
     if text.is_empty() {
-        write_record(&path, format!("{}\n", guest::LAYOUT_VERSION).as_bytes())?;
-        return Ok(Some(guest::LAYOUT_VERSION));
+        write_record(&path, format!("{layout}\n").as_bytes())?;
+        return Ok(Some(layout));
     }
     match text.parse::<u32>() {
-        Ok(version) if version == guest::LAYOUT_VERSION => Ok(None),
+        Ok(version) if version == layout => Ok(None),
         Ok(version) if version > guest::LAYOUT_VERSION => Err(io::Error::other(format!(
             "the disk is in layout {version}, and this platform-init knows layouts up to {}. Refusing to boot a disk a newer platform-init wrote",
             guest::LAYOUT_VERSION
+        ))),
+        Ok(version) if version <= guest::LAYOUT_VERSION => Err(io::Error::other(format!(
+            "the disk is marked as layout {version}, but holds layout {layout}"
         ))),
         _ => Err(io::Error::other(format!(
             "{} holds {:?}, which is not a layout this platform-init knows",
@@ -334,18 +407,16 @@ fn mark_layout(root: &Path) -> io::Result<Option<u32>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm roots the image on an overlay whose upper layer sits on the storage disk, is named after the machine, and is kept across every stop and every change of image. Left on it, an old image's changes lie over a new one. This mounts the platform's own overlay over that root, with its upper and work layers on the disk, and pivots into it. The upper layer is kept while the machine boots the image that wrote it, as the runner names it in the share, and emptied when the image changed or either side names none, so what the image writes outside HOME lasts exactly as long as that image. The mounts smolvm made move along, except its other binds of the disk and its /tmp, which stay behind with the old root. A failure is fatal: a machine left on smolvm's root would look healthy while it keeps another image's changes.
-fn fresh_root(disk: &Path) {
+// UNIT_BOUNDARY_DESCRIPTION: boots the image on the platform's root: an overlay whose lower layer is the image tree the VMM shares, and whose upper and work layers are on the disk. The upper layer is kept while the machine boots the image that wrote it, as the runner names it in the share, and emptied when the image changed or either side names none, so what the image writes outside HOME lasts exactly as long as that image. The VM's own mounts go in before the pivot: /dev, /proc and /sys move over from init.krun, /run is a fresh tmpfs, every share goes to the path it belongs at, and the platform's part of the disk to guest::DISK_PATH. Everything else of the agent rootfs, the whole disk among it, stays with the old root, which is detached. A failure is fatal: the image cannot run as an agent without its root.
+fn fresh_root(disk: &Path, machine: &vm::Machine) {
     let layers = FreshRoot::on(disk);
-    let table = match fs::read_to_string("/proc/self/mountinfo") {
-        Ok(table) => table,
-        Err(e) => fatal!("reading the mount table: {e}"),
-    };
-    let plan = match plan_mounts(&parse_mountinfo(&table), disk) {
-        Ok(plan) => plan,
-        Err(e) => fatal!("{e}"),
-    };
-    let booting = image_record(Path::new(guest::IMAGE_PATH));
+    let booting = image_record(
+        &Path::new(guest::STAGE0_SHARE).join(
+            Path::new(guest::IMAGE_PATH)
+                .strip_prefix(guest::SHARE_PATH)
+                .expect("the image record is in the share"),
+        ),
+    );
     let recorded = image_record(&layers.image);
     let fresh = fresh_reason(booting.as_deref(), recorded.as_deref());
     let stamp = std::time::SystemTime::now()
@@ -389,53 +460,104 @@ fn fresh_root(disk: &Path) {
         }
         (Some(reason), None) => logf!("booting on a fresh root: {reason}"),
     }
-    if let Err(e) = layers.mount() {
-        if e.raw_os_error() == Some(libc::EINVAL) {
-            fatal!(
-                "the kernel refused the platform's root over this image ({e}). It does that when the image's root is already two overlays deep, which smolvm builds when it cannot stack the image's layers in one mount. Refusing to boot on smolvm's root, which keeps every image's changes"
-            );
-        }
+    if let Err(e) = layers.fresh_scratch(&machine.image, stamp) {
+        fatal!("{e}");
+    }
+    let accounts = machine.image.with_file_name("accounts");
+    let mut lowers = vec![machine.image.as_path()];
+    match accounts_layer(&machine.image, &accounts) {
+        Ok(true) => lowers.insert(0, &accounts),
+        Ok(false) => {}
+        Err(e) => logf!(
+            "WARNING: building the boot's /etc/passwd ({e}); SSH logins as agent do not land as root"
+        ),
+    }
+    if let Err(e) = layers.mount(&lowers) {
         fatal!(
-            "mounting the platform's root at {}: {e}; refusing to boot on smolvm's root, which keeps every image's changes",
+            "mounting the platform's root at {}: {e}",
             layers.merged.display()
         );
     }
-    let put_old = layers.merged.join(OLD_ROOT);
+    let merged = &layers.merged;
+    if let Err(e) = vm_mounts(merged, disk, machine) {
+        fatal!("{e}");
+    }
+    vm::name_resolution(merged, machine);
+    layers.purge_discarded();
+    let put_old = merged.join(OLD_ROOT);
     if let Err(e) = DirBuilder::new().mode(0o700).create(&put_old) {
         if e.kind() != io::ErrorKind::AlreadyExists {
             fatal!("creating {}: {e}", put_old.display());
         }
     }
-    if let Err(e) = pivot_root(&layers.merged, &put_old) {
+    if let Err(e) = pivot_root(merged, &put_old) {
         fatal!("pivoting into the platform's root: {e}");
     }
     if let Err(e) = std::env::set_current_dir("/") {
         fatal!("entering the platform's root: {e}");
     }
     let old = Path::new("/").join(OLD_ROOT);
-    for point in &plan.carried {
-        if let Err(e) = carry(&old, point) {
-            if point == disk {
-                fatal!("moving the storage disk into the platform's root: {e}");
-            }
-            logf!(
-                "WARNING: {} is missing from the platform's root ({e})",
-                point.display()
-            );
-        }
-    }
     if let Err(e) = unmount_detached(&old) {
-        fatal!("detaching the old root, which still reaches the disk under other names: {e}");
+        fatal!("detaching the old root, which still reaches the whole disk: {e}");
     }
     let _ = fs::remove_dir(&old);
-    for point in &plan.left_behind {
-        let _ = fs::remove_dir(point);
-    }
-    layers.purge_discarded();
     logf!(
         "what the image writes outside {} stays until the machine boots another image",
         guest::AGENT_HOME
     );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the mounts the image's root gets from the VM before the pivot. Each mount point is made in the new root, which is the overlay's upper layer, so an image that lacks one still gets it.
+fn vm_mounts(root: &Path, disk: &Path, machine: &vm::Machine) -> io::Result<()> {
+    let at = |path: &str| root.join(path.trim_start_matches('/'));
+    let point = |target: &Path| -> io::Result<()> {
+        mkdir_all(target)
+            .map_err(|e| io::Error::new(e.kind(), format!("creating {}: {e}", target.display())))
+    };
+    for kernel in ["/dev", "/proc", "/sys"] {
+        point(&at(kernel))?;
+        mount(Path::new(kernel), &at(kernel), libc::MS_MOVE).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!("moving {kernel} into the platform's root: {e}"),
+            )
+        })?;
+    }
+    point(&at("/run"))?;
+    vm::mount_typed(
+        "tmpfs",
+        &at("/run"),
+        "tmpfs",
+        libc::MS_NOSUID | libc::MS_NODEV,
+        "mode=0755",
+    )
+    .map_err(|e| io::Error::new(e.kind(), format!("mounting /run: {e}")))?;
+    point(&at("/run/lock"))?;
+    point(&at("/dev/mqueue"))?;
+    if let Err(e) = vm::mount_typed("mqueue", &at("/dev/mqueue"), "mqueue", 0, "") {
+        logf!("WARNING: mounting /dev/mqueue ({e}); POSIX message queues are unavailable");
+    }
+    for (staged, target) in &machine.shares {
+        let to = root.join(target.strip_prefix("/").unwrap_or(target));
+        point(&to)?;
+        mount(staged, &to, libc::MS_MOVE).map_err(|e| {
+            io::Error::new(
+                e.kind(),
+                format!(
+                    "moving the share for {} into the platform's root: {e}",
+                    target.display()
+                ),
+            )
+        })?;
+    }
+    let disk_path = at(guest::DISK_PATH);
+    point(&disk_path)?;
+    mount(disk, &disk_path, libc::MS_BIND).map_err(|e| {
+        io::Error::new(
+            e.kind(),
+            format!("binding the storage disk into the platform's root: {e}"),
+        )
+    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: one image record, the runner's in the share or the disk's beside the root, as its one line. A record that is missing, unreadable or empty names no image.
@@ -474,17 +596,15 @@ const OLD_ROOT: &str = ".platform-old-root";
 const LOWER_MAY_CHANGE: &str = ",index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off";
 
 const KEPT: &str = "kept";
-const LEGACY_UPPER: &str = "upper";
 const WORK: &str = "work";
-const DISCARDED_LAYERS: [&str; 3] = [KEPT, LEGACY_UPPER, WORK];
+const DISCARDED_LAYERS: [&str; 2] = [KEPT, WORK];
 
-// UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is "/", the image as smolvm mounted it: overlayfs reads a lower directory without the mounts on top of it, so /proc, /storage and the rest are not part of it. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`. A platform-init from before roots were kept empties `upper` and `work` on every boot and never looks in `kept`, so a runner rolled back and forward again finds the kept upper still beside the record of the image that wrote it. The old `upper` is cleared on every boot, so a disk from that layout gets its space back.
+// UNIT_BOUNDARY_DESCRIPTION: the platform root's layers. The lower layer is the image tree the VMM shares, read-only. The upper and work layers are on the disk and not in memory, so an agent that writes a lot outside HOME fills its disk and not its RAM. The kept upper layer and the record of the image that wrote it share a directory of their own, `kept`.
 struct FreshRoot {
     store: PathBuf,
     kept: PathBuf,
     upper: PathBuf,
     image: PathBuf,
-    legacy_upper: PathBuf,
     work: PathBuf,
     merged: PathBuf,
 }
@@ -496,16 +616,15 @@ impl FreshRoot {
             kept: store.join(KEPT),
             upper: store.join(KEPT).join("upper"),
             image: store.join(KEPT).join("image"),
-            legacy_upper: store.join(LEGACY_UPPER),
             work: store.join(WORK),
             merged: store.join("merged"),
             store,
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: empties the work layer and the legacy upper, and with `fresh` the kept upper and its image record together, so a boot cut short leaves no record and the next boot is fresh too. Each is renamed aside, which is one step however many files it holds; only a rename that fails deletes in place.
+    // UNIT_BOUNDARY_DESCRIPTION: empties the work layer, and with `fresh` the kept upper and its image record together, so a boot cut short leaves no record and the next boot is fresh too. Each is renamed aside, which is one step however many files it holds; only a rename that fails deletes in place.
     fn clear(&self, fresh: bool, stamp: u64) -> io::Result<()> {
-        let mut cleared = vec![&self.legacy_upper, &self.work];
+        let mut cleared = vec![&self.work];
         if fresh {
             cleared.push(&self.kept);
         }
@@ -518,23 +637,79 @@ impl FreshRoot {
         Ok(())
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: gives the root an empty /tmp and /var/tmp for this boot, as plain directories of its upper layer: what the last boot left there is moved aside into the store, out of the root, and deleted in the background with the other discarded layers, and each comes back empty, root's, with its mode, and opaque, so it starts empty whatever the image ships there. A parent the upper layer lacks takes the image's owner and mode, which is what the root shows for it.
+    fn fresh_scratch(&self, lower: &Path, stamp: u64) -> io::Result<()> {
+        for (dir, mode) in SCRATCH_DIRS {
+            let relative = dir.trim_start_matches('/');
+            let path = self.upper.join(relative);
+            if fs::symlink_metadata(&path).is_ok() {
+                let aside = self
+                    .store
+                    .join(format!("{}{DISCARDED_INFIX}{stamp}", scratch_name(dir)));
+                fs::rename(&path, &aside).map_err(|e| {
+                    io::Error::new(e.kind(), format!("moving the last boot's {dir} aside: {e}"))
+                })?;
+            }
+            if let Some(parent) = Path::new(relative)
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+            {
+                let upper_parent = self.upper.join(parent);
+                if fs::symlink_metadata(&upper_parent).is_err() {
+                    mkdir_all(&upper_parent)?;
+                    if let Ok(image) = fs::metadata(lower.join(parent)) {
+                        std::os::unix::fs::chown(
+                            &upper_parent,
+                            Some(image.uid()),
+                            Some(image.gid()),
+                        )?;
+                        fs::set_permissions(
+                            &upper_parent,
+                            fs::Permissions::from_mode(image.mode() & 0o7777),
+                        )?;
+                    }
+                }
+            }
+            DirBuilder::new().mode(0o700).create(&path)?;
+            std::os::unix::fs::chown(&path, Some(0), Some(0))?;
+            fs::set_permissions(&path, fs::Permissions::from_mode(mode))?;
+            let at = cstring(path.as_os_str())?;
+            // SAFETY: `at` and the attribute's name are NUL-terminated, and the value is readable for its length; all outlive the call.
+            let set = unsafe {
+                libc::setxattr(
+                    at.as_ptr(),
+                    c"trusted.overlay.opaque".as_ptr(),
+                    b"y".as_ptr().cast(),
+                    1,
+                    0,
+                )
+            };
+            succeeded(set == 0)
+                .map_err(|e| io::Error::new(e.kind(), format!("making {dir} start empty: {e}")))?;
+        }
+        Ok(())
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: deletes the layers fresh_root moved aside, in the background. A kept upper can hold millions of files, which would hold up the boot for minutes. leave_disk detaches the disk's root before the delete is done, so the store is reached through a descriptor opened now.
     fn purge_discarded(&self) {
         match File::open(&self.store) {
             Err(e) => logf!("WARNING: opening the root's store ({e}); the old root's layers stay on the disk until a later boot"),
             Ok(store) => {
                 std::thread::spawn(move || {
-                    purge_discarded(
-                        Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
-                        &DISCARDED_LAYERS,
-                    );
+                    let store = PathBuf::from(format!("/proc/self/fd/{}", store.as_raw_fd()));
+                    purge_discarded(&store, &DISCARDED_LAYERS);
+                    purge_discarded(&store, &scratch_layers());
                 });
             }
         }
     }
 
-    fn options(&self) -> io::Result<CString> {
-        for dir in [&self.upper, &self.work] {
+    fn options(&self, lowers: &[&Path]) -> io::Result<CString> {
+        for dir in lowers
+            .iter()
+            .copied()
+            .chain([self.upper.as_path(), self.work.as_path()])
+        {
             if dir
                 .as_os_str()
                 .as_bytes()
@@ -547,7 +722,15 @@ impl FreshRoot {
                 ));
             }
         }
-        let mut options = OsString::from("lowerdir=/,upperdir=");
+        let mut options = OsString::from("lowerdir=");
+        options.push(
+            lowers
+                .iter()
+                .map(|dir| dir.as_os_str())
+                .collect::<Vec<_>>()
+                .join(OsStr::new(":")),
+        );
+        options.push(",upperdir=");
         options.push(&self.upper);
         options.push(",workdir=");
         options.push(&self.work);
@@ -555,8 +738,8 @@ impl FreshRoot {
         cstring(&options)
     }
 
-    fn mount(&self) -> io::Result<()> {
-        let options = self.options()?;
+    fn mount(&self, lowers: &[&Path]) -> io::Result<()> {
+        let options = self.options(lowers)?;
         let target = cstring(self.merged.as_os_str())?;
         // SAFETY: the source, target, type and options are NUL-terminated strings that outlive the call, and overlayfs reads its options as a string.
         let rc = unsafe {
@@ -572,123 +755,46 @@ impl FreshRoot {
     }
 }
 
-#[derive(Debug, PartialEq)]
-struct MountEntry {
-    id: u64,
-    parent: u64,
-    device: String,
-    point: PathBuf,
+// UNIT_BOUNDARY_DESCRIPTION: a layer of this boot alone, over the image, holding the image's /etc/passwd with `agent` as uid 0: SSH logins come as `agent`, and on a machine the harness runs as root. A layer rather than a write keeps the entry out of the kept upper, so the next image's /etc/passwd shows through, and the file is an ordinary one of the root, which useradd copies up as it replaces it. The layer's /etc and passwd take the image's owners and modes, which the root shows for them. An image without /etc/passwd, or whose /etc/passwd names `agent` already, gets no layer.
+fn accounts_layer(image: &Path, layer: &Path) -> io::Result<bool> {
+    let image_passwd = image.join("etc/passwd");
+    let Some(passwd) = fs::read_to_string(&image_passwd)
+        .ok()
+        .and_then(|text| accounts_passwd(&text))
+    else {
+        return Ok(false);
+    };
+    let etc = layer.join("etc");
+    mkdir_all(&etc)?;
+    fs::write(etc.join("passwd"), passwd)?;
+    for (from, to) in [(image_passwd, etc.join("passwd")), (image.join("etc"), etc)] {
+        let meta = fs::metadata(&from)?;
+        std::os::unix::fs::chown(&to, Some(meta.uid()), Some(meta.gid()))?;
+        fs::set_permissions(&to, fs::Permissions::from_mode(meta.mode() & 0o7777))?;
+    }
+    Ok(true)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reads /proc/self/mountinfo. A line this cannot read is skipped and does not fail the boot: only the root and the mounts directly on it matter, and a mount missing from the plan is logged when the platform's root lacks it.
-fn parse_mountinfo(table: &str) -> Vec<MountEntry> {
-    table
+// UNIT_BOUNDARY_DESCRIPTION: the image's /etc/passwd with `agent` at its end as uid 0, with HOME as its home and root's shell, or nothing when the image names `agent` already.
+fn accounts_passwd(image: &str) -> Option<String> {
+    if image.lines().any(|line| line.starts_with("agent:")) {
+        return None;
+    }
+    let shell = image
         .lines()
-        .filter_map(|line| {
-            let mut fields = line.split(' ');
-            let id = fields.next()?.parse().ok()?;
-            let parent = fields.next()?.parse().ok()?;
-            let device = fields.next()?.to_string();
-            let _root = fields.next()?;
-            let point = unescape_mount_path(fields.next()?);
-            Some(MountEntry {
-                id,
-                parent,
-                device,
-                point,
-            })
-        })
-        .collect()
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the kernel writes a space, tab, newline or backslash in a mount path as a backslash and three octal digits, so a path is decoded before it is used.
-fn unescape_mount_path(field: &str) -> PathBuf {
-    let bytes = field.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        let digits = bytes
-            .get(i + 1..i + 4)
-            .filter(|digits| bytes[i] == b'\\' && digits.iter().all(|d| (b'0'..=b'7').contains(d)));
-        match digits {
-            Some(digits) => {
-                let value = digits
-                    .iter()
-                    .fold(0u32, |value, d| value * 8 + u32::from(d - b'0'));
-                out.push(value as u8);
-                i += 4;
-            }
-            None => {
-                out.push(bytes[i]);
-                i += 1;
-            }
-        }
+        .find(|line| line.starts_with("root:"))
+        .and_then(|line| line.rsplit(':').next())
+        .filter(|shell| !shell.is_empty())
+        .unwrap_or("/bin/sh");
+    let mut passwd = image.to_string();
+    if !passwd.is_empty() && !passwd.ends_with('\n') {
+        passwd.push('\n');
     }
-    PathBuf::from(OsString::from_vec(out))
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: which mounts follow the image onto the platform's root: every mount made directly on the old root, in the order the kernel lists them, except the other binds of the storage disk and the mounts platform-init makes again itself. The binds are smolvm's. /storage holds the whole disk, including the upper layer smolvm keeps, and carrying it would give the image a second, persistent name for the root of every image this machine ran. A mount on top of another moves with it, so only the ones on the root are named. The empty directory a left-behind mount stood on is removed too, so no script mistakes it for the disk. The directory of a mount platform-init makes again stays, since it mounts there.
-#[derive(Debug, PartialEq)]
-struct MountPlan {
-    carried: Vec<PathBuf>,
-    left_behind: Vec<PathBuf>,
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: smolvm's /tmp is a tmpfs. mount_scratch binds the platform's own there from the disk, beside the other temporary folders, so smolvm's is left with the old root.
-const DISCARDED_MOUNTS: [&str; 1] = ["/tmp"];
-
-fn plan_mounts(table: &[MountEntry], disk: &Path) -> Result<MountPlan, String> {
-    let root = table
-        .iter()
-        .rev()
-        .find(|entry| entry.point == Path::new("/"))
-        .ok_or("the mount table lists no root")?;
-    let on_root: Vec<_> = table
-        .iter()
-        .filter(|entry| entry.parent == root.id && entry.id != root.id)
-        .collect();
-    let disk_device = on_root
-        .iter()
-        .rev()
-        .find(|entry| entry.point == disk)
-        .map(|entry| &entry.device)
-        .ok_or_else(|| {
-            format!(
-                "the storage disk at {} is not mounted on the root",
-                disk.display()
-            )
-        })?;
-    let (carried, left_behind): (Vec<&&MountEntry>, Vec<_>) = on_root
-        .iter()
-        .partition(|entry| entry.point == disk || &entry.device != disk_device);
-    let carried = carried.into_iter().filter(|entry| {
-        entry.point == disk
-            || !DISCARDED_MOUNTS
-                .iter()
-                .any(|path| entry.point == Path::new(path))
-    });
-    let points = |entries: Vec<&&MountEntry>| entries.iter().map(|e| e.point.clone()).collect();
-    Ok(MountPlan {
-        carried: points(carried.collect()),
-        left_behind: points(left_behind),
-    })
-}
-
-fn carry(old_root: &Path, point: &Path) -> io::Result<()> {
-    let relative = point.strip_prefix("/").unwrap_or(point);
-    let from = old_root.join(relative);
-    let to = Path::new("/").join(relative);
-    if fs::symlink_metadata(&to).is_err() {
-        if fs::metadata(&from)?.is_dir() {
-            mkdir_all(&to)?;
-        } else {
-            if let Some(parent) = to.parent() {
-                mkdir_all(parent)?;
-            }
-            File::create(&to)?;
-        }
-    }
-    mount(&from, &to, libc::MS_MOVE)
+    passwd.push_str(&format!(
+        "agent:x:0:0:Agent User:{}:{shell}\n",
+        guest::AGENT_HOME
+    ));
+    Some(passwd)
 }
 
 fn pivot_root(new_root: &Path, put_old: &Path) -> io::Result<()> {
@@ -866,6 +972,18 @@ fn keep_tail(path: &Path, limit: u64) {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: where the guest reads its boot log: this boot's and the one before, read-only. The log lives in the platform's part of the disk, which is detached once the boot is through with it (leave_disk), and the host never reads the disk, so without this bind the log, which holds the harness's output, is readable by no one. Read-only, so nothing in the guest can rewrite what the platform recorded.
+const BOOT_LOG_VIEW: &str = "/var/log/platform";
+
+fn show_boot_log(root: &Path) {
+    let target = Path::new(BOOT_LOG_VIEW);
+    if let Err(e) =
+        mkdir_all(target).and_then(|()| bind_read_only(&guest::system_store(root, "log"), target))
+    {
+        logf!("WARNING: showing the boot log at {BOOT_LOG_VIEW} ({e}); it is still written to the disk");
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: an install whose gateway intercepts nothing mounts no CA, and every host then serves a certificate the public roots already cover — so a missing share is silence rather than a warning.
 fn bind_ca() {
     let share = Path::new(guest::SHARE_CA_DIR);
@@ -888,70 +1006,9 @@ fn bind_ca() {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are each a directory of the disk bound in place, empty on every boot, owned by root with the mode the image expects of them. Being plain directories of the disk rather than part of the root, they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. /var/cache is not one of them: an image ships its font, package and linker caches there, and an empty bind over them had every boot rebuild them, so it is part of the kept root, which lasts as long as the image's root generation. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
+// UNIT_BOUNDARY_DESCRIPTION: the folders that only ever hold temporary files or caches. The system ones are plain directories of the root's upper layer on the disk, empty on every boot, owned by root with the mode the image expects of them (FreshRoot::fresh_scratch), so they are bounded by the disk and not by the guest's memory, and nothing under them is the image's own. /var/cache is not one of them: an image ships its font, package and linker caches there, and emptying it had every boot rebuild them, so it is part of the kept root, which lasts as long as the image's root generation. In the agent's home, npm's cache directory and the XDG cache directory are ordinary directories of the home and last as it does. evict_scratch deletes from all of them when the disk runs short.
 const SCRATCH_DIRS: [(&str, u32); 2] = [("/tmp", 0o1777), ("/var/tmp", 0o1777)];
-// UNIT_BOUNDARY_DESCRIPTION: scratch folders an earlier platform-init bound, whose stores on the disk are discarded at boot so the disk gets their space back.
-const RETIRED_SCRATCH: [&str; 1] = ["/var/cache"];
 const HOME_CACHES: [&str; 2] = [".cache", ".npm"];
-const SCRATCH_STORE: &str = "scratch";
-
-// UNIT_BOUNDARY_DESCRIPTION: binds every system scratch folder from its store on the disk. It runs once the root is in place and the home is mounted. The last boot's folders, and the store of /var/cache an earlier platform-init bound, are moved aside and deleted in the background, so the disk gets its space back without holding up the boot. A home cache that is a symlink — a home moved here from a container may have ~/.cache pointing at /tmp/agent-cache — is removed, so the tool makes a directory of the home there. Home caches that earlier boots moved aside are deleted the same way. A bind that fails is a warning: the folder then stays on the root, and the agent still runs.
-fn mount_scratch(root: &Path) {
-    let stamp = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |since| since.as_secs());
-    let store = guest::system_store(root, SCRATCH_STORE);
-    for (dir, mode) in SCRATCH_DIRS {
-        let from = store.join(scratch_name(dir));
-        match discard(&from, stamp) {
-            Ok(Some(aside)) => logf!("discarding the last boot's {dir} at {}", aside.display()),
-            Ok(None) => {}
-            Err(e) => logf!("WARNING: moving the last boot's {dir} aside ({e}); it is kept"),
-        }
-        let bound = mkdir_all(&from)
-            .and_then(|()| std::os::unix::fs::chown(&from, Some(0), Some(0)))
-            .and_then(|()| fs::set_permissions(&from, fs::Permissions::from_mode(mode)))
-            .and_then(|()| mkdir_all(Path::new(dir)))
-            .and_then(|()| mount(&from, Path::new(dir), libc::MS_BIND));
-        if let Err(e) = bound {
-            logf!("WARNING: binding {dir} from the disk ({e}); it stays on the root");
-        }
-    }
-    for dir in RETIRED_SCRATCH {
-        if let Err(e) = discard(&store.join(scratch_name(dir)), stamp) {
-            logf!("WARNING: moving an earlier boot's {dir} aside ({e}); it is kept");
-        }
-    }
-    let home = PathBuf::from(guest::AGENT_HOME);
-    for name in HOME_CACHES {
-        let path = home.join(name);
-        if fs::symlink_metadata(&path).is_ok_and(|info| info.file_type().is_symlink()) {
-            if let Err(e) = fs::remove_file(&path) {
-                logf!("WARNING: removing the link at {} ({e})", path.display());
-            }
-        }
-    }
-    // UNIT_BOUNDARY_DESCRIPTION: leave_disk detaches the disk's root before the delete is done, so the store is reached through a descriptor opened now, which keeps the detached mount alive.
-    let store = File::open(&store);
-    std::thread::spawn(move || {
-        purge_discarded(&home, &HOME_CACHES);
-        match store {
-            Err(e) => logf!("WARNING: opening the scratch store ({e}); the last boot's folders stay on the disk until a later boot"),
-            Ok(store) => {
-            let names: Vec<String> = SCRATCH_DIRS
-                .map(|(dir, _)| dir)
-                .into_iter()
-                .chain(RETIRED_SCRATCH)
-                .map(scratch_name)
-                .collect();
-            purge_discarded(
-                Path::new(&format!("/proc/self/fd/{}", store.as_raw_fd())),
-                &names,
-            );
-            }
-        }
-    });
-}
 
 fn out_of_room(e: &io::Error) -> bool {
     matches!(e.raw_os_error(), Some(libc::ENOSPC | libc::EDQUOT))
@@ -962,17 +1019,15 @@ fn out_of_room(e: &io::Error) -> bool {
 fn free_room_for_boot(disk: &Path) {
     let layers = FreshRoot::on(disk);
     purge_discarded(&layers.store, &DISCARDED_LAYERS);
-    let scratch = guest::system_store(disk, SCRATCH_STORE);
-    let names: Vec<String> = SCRATCH_DIRS
-        .map(|(dir, _)| dir)
-        .into_iter()
-        .chain(RETIRED_SCRATCH)
-        .map(scratch_name)
-        .collect();
-    for name in &names {
-        let _ = remove_all(&scratch.join(name));
+    purge_discarded(&layers.store, &scratch_layers());
+    for (dir, _) in SCRATCH_DIRS {
+        let _ = remove_all(&layers.upper.join(dir.trim_start_matches('/')));
     }
-    purge_discarded(&scratch, &names);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the names /tmp and /var/tmp are moved aside under in the root's store (FreshRoot::fresh_scratch).
+fn scratch_layers() -> Vec<String> {
+    SCRATCH_DIRS.map(|(dir, _)| scratch_name(dir)).to_vec()
 }
 
 fn scratch_name(dir: &str) -> String {
@@ -1040,6 +1095,7 @@ struct ScratchRoot {
     dir: File,
     shown: PathBuf,
     mount: u64,
+    dev: Option<u64>,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the scratch folders eviction serves, each with the mount it is on at boot, before the agent runs: /tmp's own bind, and a home cache's home, or the cache itself when it already exists. A folder whose mount cannot be read is not served.
@@ -1063,6 +1119,17 @@ fn scratch_folders() -> Vec<(PathBuf, u64)> {
         .collect()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether `dir` is on overlayfs, as /tmp and /var/tmp are on the platform's root. overlayfs gives its directories a device of its own but shows each file with its upper layer's, so a device check would reject every file there; the mount id is the boundary instead.
+fn on_overlay(dir: &File) -> bool {
+    const OVERLAYFS_SUPER_MAGIC: i64 = 0x794C_7630;
+    // SAFETY: a zeroed statfs is a valid value for the kernel to fill, and `dir` keeps its descriptor open for the call.
+    let mut info: libc::statfs = unsafe { std::mem::zeroed() };
+    unsafe {
+        libc::fstatfs(dir.as_raw_fd(), &mut info) == 0
+            && info.f_type as i64 == OVERLAYFS_SUPER_MAGIC
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: opens the scratch folders for a pass, without following a symlink. A folder that is one, such as a ~/.cache an agent pointed at its work, is skipped, since what it points at is not scratch, and so is one that is no longer on the mount it had at boot, such as a work directory bound onto it. A missing folder is skipped quietly.
 fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
     dirs.iter()
@@ -1071,16 +1138,18 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
                 .read(true)
                 .custom_flags(libc::O_DIRECTORY | libc::O_NOFOLLOW)
                 .open(shown)
-                .and_then(|dir| Ok((statx(dir.as_raw_fd(), Path::new(""))?.stx_mnt_id, dir)))
+                .and_then(|dir| Ok((statx(dir.as_raw_fd(), Path::new(""))?, dir)))
             {
-                Ok((mount, _)) if mount != *boot_mount => {
+                Ok((info, _)) if info.stx_mnt_id != *boot_mount => {
                     logf!("WARNING: not evicting from {}, which is a mount it was not at boot: what is mounted there is not scratch", shown.display());
                     None
                 }
-                Ok((mount, dir)) => Some(ScratchRoot {
+                Ok((info, dir)) => Some(ScratchRoot {
+                    dev: (!on_overlay(&dir))
+                        .then(|| libc::makedev(info.stx_dev_major, info.stx_dev_minor)),
                     dir,
                     shown: shown.clone(),
-                    mount,
+                    mount: info.stx_mnt_id,
                 }),
                 Err(e) if e.kind() == io::ErrorKind::NotFound => None,
                 Err(_) if fs::symlink_metadata(shown).is_ok_and(|info| info.is_symlink()) => {
@@ -1098,13 +1167,6 @@ fn open_scratch_roots(dirs: &[(PathBuf, u64)]) -> Vec<ScratchRoot> {
 
 fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     let home = Path::new(guest::AGENT_HOME);
-    let disk = match fs::metadata(home) {
-        Ok(info) => info.dev(),
-        Err(e) => {
-            logf!("WARNING: reading the disk of {} ({e}); scratch is not evicted when the disk runs short", home.display());
-            return;
-        }
-    };
     let (mut stuck, mut served) = (false, None::<String>);
     loop {
         std::thread::sleep(EVICT_INTERVAL);
@@ -1129,7 +1191,7 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
             }
         };
         let roots = open_scratch_roots(dirs);
-        for entry in scratch_entries(&roots, disk, &locked, now, pass.youngest) {
+        for entry in scratch_entries(&roots, &locked, now, pass.youngest) {
             if !pass.continues(free_percent(home), freed) {
                 break;
             }
@@ -1167,15 +1229,13 @@ fn evict_scratch(dirs: &[(PathBuf, u64)]) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds the image's trust cache, a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
+// UNIT_BOUNDARY_DESCRIPTION: every entry of the scratch folders that may be evicted at `now`, in the order to evict them: by the first EVICT_AGES pass it is old enough for, then rebuildable before not, then oldest first. An entry is left out when it was used within `youngest` seconds, when it holds a socket or fifo a process may still listen on, a mount, or a file in `locked`, or when it cannot be read.
 fn scratch_entries(
     roots: &[ScratchRoot],
-    disk: u64,
     locked: &HashSet<(u32, u32, u64)>,
     now: u64,
     youngest: u64,
 ) -> Vec<ScratchEntry> {
-    let trust = Path::new(TRUST_CACHE_PATH);
     let mut entries: Vec<(usize, ScratchEntry)> = roots
         .iter()
         .filter_map(|root| {
@@ -1183,13 +1243,17 @@ fn scratch_entries(
             Some((root, fs::read_dir(&at).ok()?))
         })
         .flat_map(|(root, names)| {
-            names
-                .flatten()
-                .map(|name| (name.path(), root.shown.join(name.file_name()), root.mount))
+            names.flatten().map(|name| {
+                (
+                    name.path(),
+                    root.shown.join(name.file_name()),
+                    root.mount,
+                    root.dev,
+                )
+            })
         })
-        .filter(|(_, shown, _)| !trust.starts_with(shown))
-        .filter_map(|(path, shown, mount)| {
-            let (used, bytes) = tree_use(&path, disk, mount, locked)?;
+        .filter_map(|(path, shown, mount, dev)| {
+            let (used, bytes) = tree_use(&path, dev, mount, locked)?;
             let leftover = path
                 .file_name()
                 .is_some_and(|name| name.to_string_lossy().contains(EVICTED_INFIX));
@@ -1218,13 +1282,13 @@ fn scratch_entries(
 // UNIT_BOUNDARY_DESCRIPTION: the newest modification or change time anywhere under `path`, and the bytes it holds, without following a symlink. None when the tree cannot be evicted whole: it leaves the disk's device or the scratch folder's `mount` — a bind mount on the same disk has the device but not the mount, and what it shows is someone's work — holds a socket or fifo or a file in `locked`, or a directory in it cannot be read.
 fn tree_use(
     path: &Path,
-    disk: u64,
+    disk: Option<u64>,
     mount: u64,
     locked: &HashSet<(u32, u32, u64)>,
 ) -> Option<(u64, u64)> {
     let info = statx(libc::AT_FDCWD, path).ok()?;
     let kind = u32::from(info.stx_mode) & libc::S_IFMT;
-    if libc::makedev(info.stx_dev_major, info.stx_dev_minor) != disk
+    if disk.is_some_and(|disk| libc::makedev(info.stx_dev_major, info.stx_dev_minor) != disk)
         || info.stx_mnt_id != mount
         || ![libc::S_IFDIR, libc::S_IFREG, libc::S_IFLNK].contains(&kind)
         || locked.contains(&(info.stx_dev_major, info.stx_dev_minor, info.stx_ino))
@@ -1376,11 +1440,11 @@ fn eviction_pass(
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops. The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
+// UNIT_BOUNDARY_DESCRIPTION: a guest's disk is a sparse file sized at the owner's whole claim, which every other disk of the owner shares, so the guest sees room the claim no longer has, and a write past the claim's last block fails as a broken disk would, for every agent of the owner at once. So platform-init holds the guest to the room the runner grants it (guest::STORAGE_ROOM_PATH): every POOL_GUARD_INTERVAL it sizes a file it preallocates on the disk so that what the guest can still write is the grant, less what the guest wrote since the grant came, or, once that is below POOL_GUARD_FLOOR, the floor once per shortage (pool_guard::PoolGuard). A write past it then fails inside the guest with "no space left on device", which the agent and its tools handle and the runner reports as a full home, and the claim stays writable for the other agents. Preallocated blocks are only marked in the guest's filesystem and never written, so the file takes nothing from the claim. It is an unnamed temporary file: no older platform-init, no image and no agent can find it, and the guest's filesystem frees it whenever the guest stops, however it stops; a clean stop empties it before the disk is synced and frozen (release_pool_guard), so the next boot does not find its blocks still taken. btrfs counts an allocation in the free space statvfs reports only at its next transaction commit, about every 30 s, so the guard reads its own size from its blocks, syncs the filesystem before and after it moves, so the free space it reads counts what is pending and its own move, and moves at most once per POOL_GUARD_BACKOFF and only by more than POOL_GUARD_STEP (guard_look). btrfs's free space is an estimate that can pass the disk's own size, so the guard counts on no more than the disk holds beyond the guest's use, and when a preallocation is refused it finds what the disk takes and holds to that until the guest frees room, warning once (PoolGuard::grow). The floor keeps room for SSH keys, a shell and the agent's own state while every agent of an owner is held near zero, so with N agents running the claim can pass the runner's level by N times the floor.
 const POOL_GUARD_INTERVAL: std::time::Duration = std::time::Duration::from_secs(2);
-const POOL_GUARD_FLOOR: u64 = 256 << 20;
-const POOL_GUARD_STEP: u64 = 16 << 20;
+const POOL_GUARD_BACKOFF: std::time::Duration = std::time::Duration::from_secs(30);
 
+static POOL_GUARD: std::sync::Mutex<Option<File>> = std::sync::Mutex::new(None);
 static POOL_GUARD_HELD: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
 fn pool_guard(root: &Path) -> Option<File> {
@@ -1400,111 +1464,111 @@ fn pool_guard(root: &Path) -> Option<File> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the guard knows between two looks: the latest grant, as its id and bytes and what the guest had written when it came, and, once the guest is held below the floor, what it had written then. The floor is one allowance per shortage and not per look: it counts down from that point across every grant too small to hold it, and is given again only once a grant arrives that holds it, which means the claim has room again. So a guest past its grant adds at most the floor in all, however many grants of nothing the runner renews. A guest that used it up gets room back once the claim has room, or with the fresh floor of its next boot, which is how its user gets in to free its own files.
-#[derive(Default)]
-struct PoolGuard {
-    grant: Option<(String, u64, u64)>,
-    floor_from: Option<u64>,
-}
-
-impl PoolGuard {
-    // UNIT_BOUNDARY_DESCRIPTION: takes one look's grant, and returns how large the guard file is to be, given the guest could still write `avail` bytes without it and has written `used` bytes of its own. No grant holds nothing back.
-    fn size(&mut self, grant: Option<(String, u64)>, avail: u64, used: u64) -> u64 {
-        match grant {
-            None => {
-                *self = PoolGuard::default();
-                return 0;
-            }
-            Some((id, bytes)) if self.grant.as_ref().is_none_or(|(held, ..)| *held != id) => {
-                if bytes >= POOL_GUARD_FLOOR {
-                    self.floor_from = None;
-                }
-                self.grant = Some((id, bytes, used));
-            }
-            Some(_) => {}
-        }
-        let Some((_, bytes, used_at)) = self.grant else {
-            return 0;
-        };
-        let left = bytes.saturating_sub(used.saturating_sub(used_at));
-        if left < POOL_GUARD_FLOOR && self.floor_from.is_none() {
-            self.floor_from = Some(used);
-        }
-        let floor = self.floor_from.map_or(POOL_GUARD_FLOOR, |from| {
-            POOL_GUARD_FLOOR.saturating_sub(used.saturating_sub(from))
-        });
-        avail.saturating_sub(left.max(floor))
-    }
-}
-
-fn read_grant(text: &str) -> Option<(String, u64)> {
-    let mut words = text.split_whitespace();
-    let id = words.next()?.to_string();
-    Some((id, words.next()?.parse().ok()?))
-}
-
-fn guard_pool(guard: File) {
+fn guard_pool() {
     let home = Path::new(guest::AGENT_HOME);
     let mut state = PoolGuard::default();
-    let mut held = 0u64;
+    let mut moved: Option<std::time::Instant> = None;
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
-        let Some(stat) = statvfs(home) else {
-            continue;
+        let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+        let Some(guard) = slot.as_ref() else {
+            return;
         };
-        #[allow(clippy::unnecessary_cast)]
-        let (size, blocks, free, avail) = (
-            stat.f_frsize as u64,
-            stat.f_blocks as u64,
-            stat.f_bfree as u64,
-            stat.f_bavail as u64,
+        let held = guard.metadata().map_or_else(
+            |_| POOL_GUARD_HELD.load(std::sync::atomic::Ordering::Relaxed),
+            |info| info.blocks() * 512,
         );
-        let used = blocks
-            .saturating_sub(free)
-            .saturating_mul(size)
-            .saturating_sub(held);
-        let avail = avail.saturating_mul(size).saturating_add(held);
+        POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
         let grant = fs::read_to_string(guest::STORAGE_ROOM_PATH)
             .ok()
             .as_deref()
             .and_then(read_grant);
-        let want = state.size(grant, avail, used);
-        if want.abs_diff(held) < POOL_GUARD_STEP && !(want == 0 && held > 0) {
+        let backed_off = moved.is_none_or(|at| at.elapsed() >= POOL_GUARD_BACKOFF);
+        let look = |state: &mut PoolGuard| {
+            let stat = statvfs(home)?;
+            #[allow(clippy::unnecessary_cast)]
+            let (size, blocks, free, avail) = (
+                stat.f_frsize as u64,
+                stat.f_blocks as u64,
+                stat.f_bfree as u64,
+                stat.f_bavail as u64,
+            );
+            let used = blocks.saturating_sub(free).saturating_mul(size);
+            guard_look(
+                state,
+                grant.clone(),
+                used,
+                avail.saturating_mul(size),
+                held,
+                blocks.saturating_mul(size),
+                backed_off,
+            )
+            .map(|want| (want, used.saturating_sub(held)))
+        };
+        if look(&mut state).is_none() {
             continue;
         }
-        let Ok(length) = libc::off_t::try_from(want) else {
+        if let Err(e) = flush_filesystem(home) {
+            logf!("WARNING: syncing the disk before sizing the storage guard: {e}");
+            continue;
+        }
+        let Some((want, mine)) = look(&mut state) else {
             continue;
         };
-        // SAFETY: the descriptor is open for the call, and neither call takes a pointer.
-        let rc = unsafe {
-            if want > held {
-                libc::fallocate(guard.as_raw_fd(), 0, 0, length)
+        moved = Some(std::time::Instant::now());
+        let (mut error, mut current) = (None, held);
+        let mut size_to = |size: u64| {
+            let Ok(length) = libc::off_t::try_from(size) else {
+                return false;
+            };
+            // SAFETY: the descriptor is open for the call, and neither call takes a pointer.
+            let rc = unsafe {
+                if size > current {
+                    libc::fallocate(guard.as_raw_fd(), 0, 0, length)
+                } else {
+                    libc::ftruncate(guard.as_raw_fd(), length)
+                }
+            };
+            if rc == 0 {
+                current = size;
             } else {
-                libc::ftruncate(guard.as_raw_fd(), length)
+                error = Some(io::Error::last_os_error());
             }
+            rc == 0
         };
+        let (sized, warn) = if want > held {
+            state.grow(held, want, mine, size_to)
+        } else {
+            (if size_to(want) { want } else { held }, error.is_some())
+        };
+        if let Err(e) = flush_filesystem(home) {
+            logf!("WARNING: syncing the disk after sizing the storage guard: {e}");
+        }
         let was = held;
-        held = match guard.metadata() {
-            Ok(info) => info.blocks() * 512,
-            Err(_) if rc == 0 => want,
-            Err(_) => held,
-        };
+        let held = guard.metadata().map_or(sized, |info| info.blocks() * 512);
         POOL_GUARD_HELD.store(held, std::sync::atomic::Ordering::Relaxed);
-        if rc != 0 {
-            logf!(
-                "WARNING: sizing the storage guard to {want} bytes: {}",
-                io::Error::last_os_error()
-            );
+        if let (true, Some(e)) = (warn, error) {
+            logf!("WARNING: sizing the storage guard to {want} bytes, it holds {sized}: {e}");
         }
         if (was < POOL_GUARD_FLOOR) != (held < POOL_GUARD_FLOOR) {
             announce(&if held < POOL_GUARD_FLOOR {
                 "the owner's storage has room again: this agent's writes are no longer held back"
                     .to_string()
             } else {
-                format!("the owner's storage is nearly full: this agent may write {} more bytes before its writes fail with no space left", avail.saturating_sub(held))
+                format!("the owner's storage is nearly full: this agent may write {} more bytes before its writes fail with no space left", state.keep)
             });
         }
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: empties and closes the guard file on a clean stop, before the disk is synced and frozen. An unnamed file is freed only once the filesystem gets to it, which on btrfs once lasted 35 s into the next boot, holding that boot's guest to room it did not have. The guard thread finds no file after this and ends, so it cannot grow the file again.
+fn release_pool_guard() {
+    if let Some(guard) = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()).take() {
+        if let Err(e) = guard.set_len(0) {
+            logf!("WARNING: emptying the storage guard before the stop: {e}");
+        }
+    }
+    POOL_GUARD_HELD.store(0, std::sync::atomic::Ordering::Relaxed);
 }
 
 fn statvfs(path: &Path) -> Option<libc::statvfs> {
@@ -1516,7 +1580,7 @@ fn statvfs(path: &Path) -> Option<libc::statvfs> {
     (rc == 0).then_some(stat)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes. A disk gets one inode per 16 KiB, so a home of many small files (dependency trees, checkouts) runs out of inodes with most of its space free, and a write then fails with "no space left on device" all the same.
+// UNIT_BOUNDARY_DESCRIPTION: the smaller of the disk's free share of blocks and of inodes. A filesystem with a fixed inode count can run out of inodes with most of its space free under a home of many small files (dependency trees, checkouts), and a write then fails with "no space left on device" all the same; btrfs reports no inode count, and is judged by its blocks.
 // UNIT_BOUNDARY_DESCRIPTION: the storage guard's blocks count as free here: they hold the guest to the owner's storage, which the runner's claim requests already shed for, so they must not have the disk read as its own disk short and evict every few minutes.
 fn free_percent(path: &Path) -> Option<u64> {
     let mut stat = statvfs(path)?;
@@ -1550,21 +1614,17 @@ fn home_full(path: &Path) -> bool {
     })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the image's own boot may keep its extracted CA trust store here rather than rebuilding it every time. The variable is set only on this backend, so an image that honors it caches on a machine and silently does without in a container, where there is no disk to cache on. The store is bound to a path of its own because the disk itself is detached before the image runs.
-fn offer_trust_cache(root: &Path) -> Option<PathBuf> {
-    let trust = guest::system_store(root, "trust");
-    let guest_dir = Path::new(TRUST_CACHE_PATH);
-    let bound = mkdir_all(&trust)
-        .and_then(|()| mkdir_all(guest_dir))
-        .and_then(|()| mount(&trust, guest_dir, libc::MS_BIND));
-    if let Err(e) = bound {
+// UNIT_BOUNDARY_DESCRIPTION: a directory an image's boot may keep its extracted trust store in rather than rebuilding it, named to the entrypoint in TRUST_CACHE_ENV. It is a plain directory of the root, so it lasts as long as the root does: an extracted trust store belongs to the image that extracted it, and a new image starts with none.
+fn offer_trust_cache() -> Option<PathBuf> {
+    let dir = Path::new(TRUST_CACHE_PATH);
+    if let Err(e) = mkdir_all(dir) {
         logf!("WARNING: no trust cache directory ({e}); the image re-extracts its CA store every boot");
         return None;
     }
-    Some(guest_dir.to_path_buf())
+    Some(dir.to_path_buf())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home, the trust cache, the root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past its root, straight into the record of which image wrote that root or the platform's own state.
+// UNIT_BOUNDARY_DESCRIPTION: the disk's root stays mounted only as long as the boot needs it. Everything the image may keep is on it under other mounts by now — its home and the root's layers — and an open file such as the boot log keeps working once the mount is gone. Left mounted, the disk's root lets anything in the guest write outside HOME and past its root, straight into the record of which image wrote that root or the platform's own state.
 fn leave_disk(root: &Path) {
     if let Err(e) = unmount_detached(root) {
         logf!(
@@ -1818,6 +1878,11 @@ fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result
     mkdir_all(parent)?;
     let staged = with_suffix(store, ".seeding");
     remove_all(&staged)?;
+    if subvolume_root(parent) {
+        if let Some(name) = staged.file_name() {
+            vm::ensure_subvolume(parent, &name.to_string_lossy())?;
+        }
+    }
     if let Err(e) = fill(&staged).and_then(|()| flush_filesystem(&staged)) {
         let _ = remove_all(&staged);
         return Err(e);
@@ -1829,6 +1894,19 @@ fn stage(store: &Path, fill: impl FnOnce(&Path) -> io::Result<()>) -> io::Result
         fs::rename(&staged, store)?;
     }
     File::open(parent)?.sync_all()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether `dir` is the root of a btrfs subvolume, as the disk's top is in the subvolume layout. A store staged there is staged as a subvolume of its own, so the home it becomes is one too; a store that existed before its seed would be taken for a seeded home (needs_seed). The root of every btrfs subvolume is inode 256.
+fn subvolume_root(dir: &Path) -> bool {
+    const BTRFS_SUPER_MAGIC: i64 = 0x9123_683E;
+    let Ok(path) = cstring(dir.as_os_str()) else {
+        return false;
+    };
+    // SAFETY: a zeroed statfs is a valid value for the kernel to fill, and `path` is NUL-terminated; both outlive the call.
+    let mut fs_info: libc::statfs = unsafe { std::mem::zeroed() };
+    let btrfs = unsafe { libc::statfs(path.as_ptr(), &mut fs_info) } == 0
+        && fs_info.f_type as i64 == BTRFS_SUPER_MAGIC;
+    btrfs && fs::metadata(dir).is_ok_and(|info| info.ino() == 256)
 }
 
 fn exchange(a: &Path, b: &Path) -> io::Result<()> {
@@ -2189,7 +2267,7 @@ const FORWARDED: [libc::c_int; 7] = [
 ];
 const STOPPING: [libc::c_int; 3] = [libc::SIGTERM, libc::SIGINT, libc::SIGQUIT];
 
-// UNIT_BOUNDARY_DESCRIPTION: every signal platform-init handles is blocked in every thread and read with sigtimedwait instead, so none arrives while the boot is half done and none is lost to the thread that writes the boot log. It runs before that thread exists, because a thread takes its signal mask from the one that starts it. A handler that does nothing is installed as well, because a signal the first process of a PID namespace leaves at its default is dropped by the kernel. std's spawn resets the mask in the entrypoint.
+// UNIT_BOUNDARY_DESCRIPTION: every signal platform-init handles is blocked in every thread and read with sigtimedwait instead, so none arrives while the boot is half done and none is lost to the thread that writes the boot log. It runs before that thread exists, because a thread takes its signal mask from the one that starts it. A handler that does nothing is installed as well, because a signal the first process of a PID namespace leaves at its default is dropped by the kernel. A child inherits the mask, so every child that outlives a moment is started unblocked.
 fn block_signals() {
     // SAFETY: the sigset is initialised by sigemptyset before any other use, sigaction is given a zeroed struct naming a handler with the signature the kernel calls, and both calls read only the memory passed to them.
     unsafe {
@@ -2204,6 +2282,19 @@ fn block_signals() {
 }
 
 extern "C" fn ignore_signal(_: libc::c_int) {}
+
+// UNIT_BOUNDARY_DESCRIPTION: starts `command`'s child with no signal blocked. std clears the mask it inherited only when it forks, not when it uses posix_spawn, and a child that waits for SIGCHLD, as openrc-run does, then waits forever.
+fn unblocked(command: &mut std::process::Command) -> &mut std::process::Command {
+    use std::os::unix::process::CommandExt;
+    // SAFETY: sigemptyset and sigprocmask are async-signal-safe and touch only the set on the child's stack.
+    unsafe {
+        command.pre_exec(|| {
+            let mut set: libc::sigset_t = std::mem::zeroed();
+            libc::sigemptyset(&mut set);
+            succeeded(libc::sigprocmask(libc::SIG_SETMASK, &set, std::ptr::null_mut()) == 0)
+        })
+    }
+}
 
 fn handled_signals() -> libc::sigset_t {
     // SAFETY: sigemptyset initialises the set before sigaddset reads it, and a zeroed sigset_t is valid memory for both.
@@ -2230,19 +2321,37 @@ fn next_signal(limit: std::time::Duration) -> Option<libc::c_int> {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the image's entrypoint, with argv exactly as the image names it — argv[0] included, although the binary was resolved from PATH — in the working directory and environment this boot has built.
-fn entrypoint(binary: &Path, command: &[OsString], trust: Option<&Path>) -> std::process::Command {
+// UNIT_BOUNDARY_DESCRIPTION: the entrypoint's process, with the env of the launch record and nothing of platform-init's own: init.krun hands the init the VMM's settings, which are not the image's. A record without PATH gets the one a container runtime would search.
+fn entrypoint(
+    binary: &Path,
+    command: &[OsString],
+    env: &[(String, String)],
+    trust: Option<&Path>,
+) -> std::process::Command {
     use std::os::unix::process::CommandExt;
     let mut entrypoint = std::process::Command::new(binary);
-    entrypoint.arg0(&command[0]).args(&command[1..]);
+    entrypoint.arg0(&command[0]).args(&command[1..]).env_clear();
+    if !env.iter().any(|(key, _)| key == "PATH") {
+        entrypoint.env("PATH", DEFAULT_PATH);
+    }
+    entrypoint.envs(env.iter().map(|(key, value)| (key, value)));
     if let Some(trust) = trust {
         entrypoint.env(TRUST_CACHE_ENV, trust);
     }
+    unblocked(&mut entrypoint);
     entrypoint
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: platform-init stays the parent of the image's entrypoint instead of becoming it. smolvm launches the workload once per boot and nothing in the guest starts it again, so an entrypoint that exited used to leave a machine that runs and answers nothing until the runner's unhealthy restart, ten minutes later. It cannot power the guest off instead: it is the first process of the workload's own PID namespace, where reboot(2) only ends that namespace. So when the entrypoint exits, every process it left is ended, as a container restart would, and it is started again on the same root and the same home, after a delay that doubles while it keeps failing. Each exit is announced, so the machine's console says why the agent went away. Being the first process of the namespace, platform-init also reaps every orphan, which is the job an image's own init did as that process.
-fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
+// UNIT_BOUNDARY_DESCRIPTION: platform-init stays the parent of the image's entrypoint instead of becoming it. Nothing else in the guest starts the entrypoint again, so an entrypoint that exited would leave a machine that runs and answers nothing until the runner's unhealthy restart, ten minutes later; powering the guest off instead would lose the stop handshake with the host. So when the entrypoint exits, every process it left is ended, as a container restart would, and it is started again on the same root and the same home, after a delay that doubles while it keeps failing. Each exit is announced, so the machine's console says why the agent went away. Being PID 1, platform-init also reaps every orphan. A stop ends in vm::stopped, never in an exit: the guest's PID 1 may not exit.
+fn supervise(
+    binary: &Path,
+    command: &[OsString],
+    env: &[(String, String)],
+    trust: Option<&Path>,
+    openrc: bool,
+) -> ! {
     let words: Vec<_> = command.iter().map(|word| word.to_string_lossy()).collect();
+    let cgroup = if openrc { entrypoint_cgroup() } else { None };
     let mut delay = None;
     let mut stopping = false;
     loop {
@@ -2251,7 +2360,16 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
             words.join(" ")
         ));
         let started = std::time::Instant::now();
-        let status = match entrypoint(binary, command, trust).spawn() {
+        let mut start = entrypoint(binary, command, env, trust);
+        if let Some(procs) = &cgroup {
+            use std::os::unix::process::CommandExt;
+            let procs = procs.as_raw_fd();
+            // SAFETY: the child only calls write(2), which is async-signal-safe, on a descriptor the parent keeps open across the fork; "0" moves the writer itself.
+            unsafe {
+                start.pre_exec(move || succeeded(libc::write(procs, b"0".as_ptr().cast(), 1) == 1))
+            };
+        }
+        let status = match start.spawn() {
             Ok(child) => wait_for(child.id(), &mut stopping),
             Err(e) if delay.is_none() => fatal!("starting {}: {e}", binary.display()),
             Err(e) => {
@@ -2270,10 +2388,14 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
                 String::new()
             }
         ));
-        end_the_rest(&mut stopping);
+        // UNIT_BOUNDARY_DESCRIPTION: with openrc the other processes are its services, which a restart of the entrypoint keeps, so only the entrypoint's cgroup is ended. A guest whose cgroup could not be made keeps what the old entrypoint left too, holding its ports.
+        if !openrc {
+            end_the_rest(&mut stopping);
+        } else if cgroup.is_some() {
+            end_cgroup(&mut stopping);
+        }
         if stopping {
-            flush_home_on_stop();
-            exit(exit_code(status));
+            stop(openrc);
         }
         let wait = restart_delay(delay, started.elapsed());
         delay = Some(wait);
@@ -2282,13 +2404,58 @@ fn supervise(binary: &Path, command: &[OsString], trust: Option<&Path>) -> ! {
             wait.as_secs()
         ));
         if pause(wait, &mut stopping) {
-            flush_home_on_stop();
-            exit(exit_code(status));
+            stop(openrc);
         }
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here makes that power-off cost at most a journal replay, never what the agent last wrote, whatever version the host runs.
+// UNIT_BOUNDARY_DESCRIPTION: the cgroup an openrc guest's entrypoint runs in, apart from openrc's services, so that whatever the entrypoint started can be ended without them, however it detached itself. Returns its cgroup.procs, open for the child to move itself into.
+const ENTRYPOINT_CGROUP: &str = "/sys/fs/cgroup/entrypoint";
+
+fn entrypoint_cgroup() -> Option<File> {
+    let cgroup = Path::new(ENTRYPOINT_CGROUP);
+    match mkdir_all(cgroup).and_then(|()| {
+        OpenOptions::new()
+            .write(true)
+            .open(cgroup.join("cgroup.procs"))
+    }) {
+        Ok(procs) => Some(procs),
+        Err(e) => {
+            announce(&format!("WARNING: making the entrypoint's cgroup {ENTRYPOINT_CGROUP} ({e}); a restart of the entrypoint ends none of what it started"));
+            None
+        }
+    }
+}
+
+fn end_cgroup(stopping: &mut bool) {
+    let cgroup = Path::new(ENTRYPOINT_CGROUP);
+    if let Err(e) = fs::write(cgroup.join("cgroup.kill"), "1") {
+        announce(&format!("WARNING: ending the entrypoint's cgroup: {e}"));
+        return;
+    }
+    let deadline = std::time::Instant::now() + END_GRACE;
+    while fs::read_to_string(cgroup.join("cgroup.procs"))
+        .is_ok_and(|procs| !procs.trim().is_empty())
+        && std::time::Instant::now() < deadline
+    {
+        reap();
+        if let Some(signal) = next_signal(REAP_INTERVAL / 10) {
+            on_signal(signal, stopping);
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
+fn stop(openrc: bool) -> ! {
+    if openrc {
+        run_openrc("shutdown", &[], &mut true);
+        end_the_rest(&mut true);
+    }
+    flush_home_on_stop();
+    vm::stopped()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here means that power-off never costs what the agent last wrote, whatever version the host runs.
 fn flush_home_on_stop() {
     if let Err(e) = flush_filesystem(Path::new(guest::AGENT_HOME)) {
         announce(&format!(
@@ -2356,7 +2523,11 @@ fn reap() -> (Vec<(libc::pid_t, libc::c_int)>, bool) {
         let pid = unsafe { libc::waitpid(-1, &mut status, libc::WNOHANG) };
         match pid {
             0 => return (exited, true),
-            pid if pid > 0 => exited.push((pid, status)),
+            pid if pid > 0 => {
+                if !vm::claim_exit(pid, status) {
+                    exited.push((pid, status));
+                }
+            }
             _ => return (exited, false),
         }
     }
@@ -2414,15 +2585,6 @@ fn exit_description(status: libc::c_int) -> String {
         format!("was killed by signal {}", libc::WTERMSIG(status))
     } else {
         format!("ended with wait status {status}")
-    }
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the exit code a shell would report for the entrypoint: its own, or 128 plus the signal that killed it.
-fn exit_code(status: libc::c_int) -> i32 {
-    if libc::WIFSIGNALED(status) {
-        128 + libc::WTERMSIG(status)
-    } else {
-        libc::WEXITSTATUS(status)
     }
 }
 
@@ -2557,49 +2719,18 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
-    // TEST_SCENARIO: the guard file leaves the guest what is left of its grant: the grant less what the guest wrote since it came, never less than the floor, and nothing held back without a grant or when the disk has less free than the grant anyway. A new grant counts from what the guest had written when it came.
+    // TEST_SCENARIO: a guard that held room when the guest stopped is emptied and closed first, so the stop's sync frees its blocks and the next boot does not find them still taken; the guard thread then finds no file and ends.
     #[test]
-    fn the_storage_guard_leaves_the_guest_its_grant() {
-        let gib = 1u64 << 30;
-        let grant = |id: &str, bytes| Some((id.to_string(), bytes));
-        assert_eq!(PoolGuard::default().size(None, 90 * gib, 5 * gib), 0);
-        let mut guard = PoolGuard::default();
-        assert_eq!(
-            guard.size(grant("1", 10 * gib), 90 * gib, 5 * gib),
-            80 * gib
-        );
-        assert_eq!(
-            guard.size(grant("1", 10 * gib), 86 * gib, 9 * gib),
-            80 * gib
-        );
-        assert_eq!(
-            guard.size(grant("2", 10 * gib), 86 * gib, 9 * gib),
-            76 * gib
-        );
-        assert_eq!(guard.size(grant("3", 10 * gib), 8 * gib, 9 * gib), 0);
-        assert_eq!(read_grant("7 1024\n"), Some(("7".into(), 1024)));
-        assert_eq!(read_grant("7"), None);
-        assert_eq!(read_grant(""), None);
-    }
-
-    // TEST_SCENARIO: a guest that writes without pause past a grant of nothing, which the runner renews at every look while the claim stays full, may add the floor once and then nothing more: the floor counts down across the renewed grants rather than coming back with each, which would let one writer fill the claim a floor at a time. A grant with room gives the floor back.
-    #[test]
-    fn a_writer_past_its_grant_adds_at_most_the_floor_across_looks() {
-        let (disk, start) = (100u64 << 30, 10u64 << 30);
-        let mut guard = PoolGuard::default();
-        let mut used = start;
-        for tick in 0..400u64 {
-            let room = Some(((tick / 15).to_string(), 0));
-            let want = guard.size(room, disk - used, used);
-            used += (disk - used).saturating_sub(want).min(100 << 20);
-        }
-        assert!(
-            used - start <= POOL_GUARD_FLOOR,
-            "wrote {} bytes past a grant of nothing",
-            used - start
-        );
-        let want = guard.size(Some(("room".into(), 1 << 30)), disk - used, used);
-        assert_eq!(disk - used - want, 1 << 30);
+    fn a_clean_stop_empties_the_storage_guard() {
+        let disk = TempDir::new("guard-stop");
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let guard = pool_guard(disk.path()).expect("an unnamed file on the disk");
+        guard.set_len(1 << 20).unwrap();
+        let probe = guard.try_clone().unwrap();
+        *POOL_GUARD.lock().unwrap() = Some(guard);
+        release_pool_guard();
+        assert!(POOL_GUARD.lock().unwrap().is_none());
+        assert_eq!(probe.metadata().unwrap().len(), 0);
     }
 
     // TEST_SCENARIO: the guard file has no name, so no older platform-init, image or agent can find it, and the filesystem frees it once the guest stops; a disk where it cannot be made boots without it.
@@ -2654,13 +2785,12 @@ mod tests {
     fn a_full_disk_gives_back_only_what_a_boot_discards() {
         let disk = TempDir::new("free-room");
         let layers = FreshRoot::on(disk.path());
-        let scratch = guest::system_store(disk.path(), SCRATCH_STORE);
         let home = disk.path().join("home");
         for dir in [
             layers.upper.clone(),
             layers.store.join(format!("work{DISCARDED_INFIX}1")),
-            scratch.join("tmp/repo"),
-            scratch.join(format!("var-tmp{DISCARDED_INFIX}1")),
+            layers.store.join(format!("var-tmp{DISCARDED_INFIX}1")),
+            layers.upper.join("tmp/repo"),
             home.clone(),
         ] {
             fs::create_dir_all(&dir).unwrap();
@@ -2673,8 +2803,11 @@ mod tests {
             .store
             .join(format!("work{DISCARDED_INFIX}1"))
             .exists());
-        assert!(!scratch.join("tmp").exists());
-        assert!(!scratch.join(format!("var-tmp{DISCARDED_INFIX}1")).exists());
+        assert!(!layers.upper.join("tmp").exists());
+        assert!(!layers
+            .store
+            .join(format!("var-tmp{DISCARDED_INFIX}1"))
+            .exists());
     }
 
     // TEST_SCENARIO: a guest's own disk that is short is evicted on every look down to the last EVICT_AGES step, until it has room; a disk whose room cannot be read is left alone.
@@ -3431,58 +3564,6 @@ mod tests {
         std::env::set_current_dir(before).unwrap();
     }
 
-    // TEST_SCENARIO: the scenarios below plan from the mount table smolvm leaves a container with when platform-init starts, after the disk has been moved to /mnt/platform. The disk's device is 254:16, and /storage is smolvm's bind of the whole of it.
-    const SMOLVM_TABLE: &str = "\
-50 1 0:40 / / rw,relatime - overlay overlay rw,lowerdir=/storage/layers/a,upperdir=/storage/overlays/persistent-m1/upper,workdir=/storage/overlays/persistent-m1/work
-51 50 0:45 / /proc rw,nosuid,nodev,noexec,relatime - proc proc rw
-52 50 0:46 / /dev rw,nosuid - tmpfs tmpfs rw,size=65536k,mode=755
-53 52 0:47 / /dev/pts rw,nosuid,noexec - devpts devpts rw,mode=620,ptmxmode=666
-54 50 0:23 / /sys ro,nosuid,nodev,noexec - sysfs sysfs ro
-55 54 0:30 / /sys/fs/cgroup rw,nosuid,nodev,noexec - cgroup2 cgroup rw
-56 50 0:49 / /run rw,nosuid,nodev - tmpfs tmpfs rw,mode=755
-57 50 0:51 / /tmp rw,nosuid,nodev - tmpfs tmpfs rw
-58 50 0:38 / /platform ro,relatime - virtiofs smolvm1 rw
-59 50 254:16 / /storage rw,relatime - ext4 /dev/vdb rw
-61 50 254:16 /workspace /mnt/platform rw,relatime - ext4 /dev/vdb rw
-62 50 0:52 / /etc/host\\040name rw - tmpfs tmpfs rw
-";
-
-    fn carried(table: &str, disk: &str) -> Result<Vec<String>, String> {
-        plan_mounts(&parse_mountinfo(table), Path::new(disk)).map(|plan| {
-            plan.carried
-                .iter()
-                .map(|point| point.display().to_string())
-                .collect()
-        })
-    }
-
-    // TEST_SCENARIO: the image keeps every mount smolvm made for it — /proc, /dev, /sys, /run, the share, a bind over a file — and the disk. It loses /storage, which is the whole disk and holds the upper layer smolvm keeps. Carried, it would be a persistent name for the root of every image this machine ran. A mount on top of another is not named, because it moves with the one under it.
-    #[test]
-    fn the_fresh_root_keeps_every_mount_but_the_other_names_of_the_disk() {
-        assert_eq!(
-            carried(SMOLVM_TABLE, "/mnt/platform").unwrap(),
-            [
-                "/proc",
-                "/dev",
-                "/sys",
-                "/run",
-                "/platform",
-                "/mnt/platform",
-                "/etc/host name"
-            ]
-        );
-        let plan = plan_mounts(&parse_mountinfo(SMOLVM_TABLE), Path::new("/mnt/platform")).unwrap();
-        assert_eq!(plan.left_behind, [Path::new("/storage")]);
-    }
-
-    // TEST_SCENARIO: smolvm's /tmp is a tmpfs, and platform-init binds its own there from the disk with the other scratch folders. smolvm's is neither carried onto the platform's root nor left behind, since a left-behind mount's directory is removed and /tmp is where the platform's bind goes.
-    #[test]
-    fn smolvms_tmp_gives_way_to_the_platforms_own() {
-        let plan = plan_mounts(&parse_mountinfo(SMOLVM_TABLE), Path::new("/mnt/platform")).unwrap();
-        assert!(!plan.carried.contains(&PathBuf::from("/tmp")));
-        assert!(!plan.left_behind.contains(&PathBuf::from("/tmp")));
-    }
-
     // TEST_SCENARIO: a root is kept only when the runner names this boot's image and the disk records the same one for the root. A runner from before the record, a disk from the layout that emptied its root every boot, and an image that changed each start from an empty upper layer, so an old image's writes never lie over a new one.
     #[test]
     fn a_root_is_kept_only_for_the_image_that_wrote_it() {
@@ -3498,6 +3579,27 @@ mod tests {
             .unwrap()
             .contains("names no image"));
         assert!(fresh_reason(None, None).is_some());
+    }
+
+    // TEST_SCENARIO: an image names its root generation as a key, and the root is kept only when the key line is exactly the one the root was written under. An image that extends the default one appends its own segment, so its key starts with the default's and still boots on an empty root; so do a bumped key and the integer generation of the images before keys.
+    #[test]
+    fn a_root_is_kept_only_under_an_equal_generation_key() {
+        let default = "root-generation default-1";
+        assert_eq!(fresh_reason(Some(default), Some(default)), None);
+        for other in [
+            "root-generation default-1/gepa-1",
+            "root-generation default-2",
+            "root-compat 1",
+        ] {
+            assert!(
+                fresh_reason(Some(other), Some(default)).is_some(),
+                "{other}"
+            );
+            assert!(
+                fresh_reason(Some(default), Some(other)).is_some(),
+                "{other}"
+            );
+        }
     }
 
     // TEST_SCENARIO: the records are read as one trimmed line. A missing or empty record names no image, so a share from an older runner reads as unknown rather than as an image called "".
@@ -3546,18 +3648,10 @@ mod tests {
         assert!(store.path().join("tmp").is_dir());
     }
 
-    // TEST_SCENARIO: an image ships its font, package and linker caches in /var/cache, and an empty folder bound over it every boot had each boot rebuild them. /var/cache is no scratch folder, so it stays the image's and the kept root's, while the store an earlier platform-init bound there is among the names the background delete clears.
+    // TEST_SCENARIO: an image ships its font, package and linker caches in /var/cache, and emptying it every boot had each boot rebuild them. /var/cache is no scratch folder, so it stays the image's and the kept root's.
     #[test]
-    fn the_images_var_cache_is_not_bound_over() {
+    fn the_images_var_cache_is_not_emptied() {
         assert!(SCRATCH_DIRS.iter().all(|(dir, _)| *dir != "/var/cache"));
-        let store = TempDir::new("retired-scratch");
-        fs::create_dir(store.path().join("var-cache")).unwrap();
-        fs::write(store.path().join("var-cache/fontconfig"), b"x").unwrap();
-        let aside = discard(&store.path().join(scratch_name(RETIRED_SCRATCH[0])), 9)
-            .unwrap()
-            .unwrap();
-        purge_discarded(store.path(), &RETIRED_SCRATCH.map(scratch_name));
-        assert!(!aside.exists());
     }
 
     // TEST_SCENARIO: a new image boots on an empty upper, and the old one can hold millions of files, which deleted in place hold up the boot for minutes. Clearing renames the kept upper aside with its image record, so nothing under the old names is left to mount, and a later delete takes it away. A root kept for the same image is left as it is, while the work layer is emptied on every boot.
@@ -3617,8 +3711,10 @@ mod tests {
             .unwrap()
             .as_secs();
         let dirs = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
-        let names = |now, disk| -> Vec<String> {
-            scratch_entries(&dirs, disk, &HashSet::new(), now, EVICT_AGES[3])
+        let names = |now, dev| -> Vec<String> {
+            let mut roots = open_scratch_roots(&[(s.to_path_buf(), mount_of(s))]);
+            roots.iter_mut().for_each(|root| root.dev = Some(dev));
+            scratch_entries(&roots, &HashSet::new(), now, EVICT_AGES[3])
                 .iter()
                 .map(|entry| {
                     entry
@@ -3644,7 +3740,6 @@ mod tests {
         assert_eq!(
             scratch_entries(
                 &dirs,
-                disk,
                 &HashSet::new(),
                 now + 2 * EVICT_AGES[3],
                 CLAIM_EVICT_AGE
@@ -3655,7 +3750,6 @@ mod tests {
         );
         assert!(scratch_entries(
             &dirs,
-            disk,
             &HashSet::new(),
             now + 2 * EVICT_AGES[3],
             EVICT_AGES[3]
@@ -3679,7 +3773,6 @@ mod tests {
         std::os::unix::fs::symlink("work", h.join(".cache")).unwrap();
         fs::create_dir_all(h.join(".npm/_cacache")).unwrap();
         fs::write(h.join(".npm/main.rs"), b"cache").unwrap();
-        let disk = fs::metadata(h).unwrap().dev();
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -3690,7 +3783,7 @@ mod tests {
             (h.join(".cache"), mount_of(h)),
             (h.join(".npm"), mount_of(h)),
         ]);
-        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
+        let offered = scratch_entries(&roots, &HashSet::new(), later, EVICT_AGES[3]);
         let mut shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         shown.sort();
         assert_eq!(shown, [h.join(".npm/_cacache"), h.join(".npm/main.rs")]);
@@ -3768,7 +3861,6 @@ mod tests {
         )
         .unwrap();
         mount(&h.join("notes"), &h.join(".npm"), libc::MS_BIND).unwrap();
-        let disk = fs::metadata(h).unwrap().dev();
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -3776,7 +3868,7 @@ mod tests {
             + 2 * EVICT_AGES[0];
 
         let roots = open_scratch_roots(&boot);
-        let offered = scratch_entries(&roots, disk, &HashSet::new(), later, EVICT_AGES[3]);
+        let offered = scratch_entries(&roots, &HashSet::new(), later, EVICT_AGES[3]);
         let shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         assert_eq!(shown, [h.join(".cache/plain")]);
         for entry in &offered {
@@ -3814,7 +3906,6 @@ mod tests {
             fs::write(h.join(file), b"x").unwrap();
         }
         let roots = open_scratch_roots(&[(h.join(".cache"), mount_of(h))]);
-        let disk = fs::metadata(h).unwrap().dev();
         let later = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
@@ -3822,7 +3913,7 @@ mod tests {
             + 2 * EVICT_AGES[0];
         let offered = || {
             let locked = locked_files(&fs::read_to_string("/proc/locks").unwrap());
-            let mut shown: Vec<_> = scratch_entries(&roots, disk, &locked, later, EVICT_AGES[3])
+            let mut shown: Vec<_> = scratch_entries(&roots, &locked, later, EVICT_AGES[3])
                 .into_iter()
                 .map(|entry| entry.shown)
                 .collect();
@@ -3908,47 +3999,7 @@ mod tests {
         assert!(target.path().join("kept").is_file());
     }
 
-    // TEST_SCENARIO: when the kernel refused to move the disk, it stays at the path the VMM gave it. That path is then the one name the platform's root keeps, and /storage still goes.
-    #[test]
-    fn a_disk_left_where_the_vmm_put_it_is_still_the_one_carried() {
-        let table = SMOLVM_TABLE.replace(" /mnt/platform ", " /workspace ");
-        let points = carried(&table, "/workspace").unwrap();
-        assert!(points.contains(&"/workspace".to_string()));
-        assert!(!points.contains(&"/storage".to_string()));
-    }
-
-    // TEST_SCENARIO: a disk that is not a mount directly on the root means the table is not what this code expects. Booting anyway would lose the disk with the old root, so the plan fails and the boot with it.
-    #[test]
-    fn a_disk_that_is_not_on_the_root_fails_the_plan() {
-        assert!(carried(SMOLVM_TABLE, "/home/agent").is_err());
-        assert!(carried("", "/mnt/platform").is_err());
-    }
-
-    // TEST_SCENARIO: something mounted over the root hides the root below it. The mounts that count are the ones on the topmost root, which the kernel lists last.
-    #[test]
-    fn the_topmost_root_is_the_one_planned_from() {
-        let table = format!(
-            "{SMOLVM_TABLE}70 50 0:60 / / rw - overlay overlay rw\n71 70 0:61 / /proc rw - proc proc rw\n72 70 254:16 /workspace /mnt/platform rw - ext4 /dev/vdb rw\n"
-        );
-        assert_eq!(
-            carried(&table, "/mnt/platform").unwrap(),
-            ["/proc", "/mnt/platform"]
-        );
-    }
-
-    #[test]
-    fn mount_paths_are_decoded() {
-        assert_eq!(
-            unescape_mount_path(r"/a\040b\011c\134d\012"),
-            Path::new("/a b\tc\\d\n")
-        );
-        assert_eq!(
-            unescape_mount_path(r"/not\08escape\"),
-            Path::new(r"/not\08escape\")
-        );
-    }
-
-    // TEST_SCENARIO: the platform root's layers are on the disk, in the platform's own namespace, so the image's home cannot collide with them. Its lower layer is "/" — the image as smolvm mounted it — and nothing else. The kept upper layer is not at `rootfs/upper`, which a platform-init from before kept roots empties on every boot, so a rollback never leaves an upper that the image record beside it does not describe.
+    // TEST_SCENARIO: the platform root's layers are on the disk, in the platform's own namespace, so the image's home cannot collide with them. Its lower layer is the image tree the VMM shares, and nothing else. The kept upper layer sits beside the record of the image that wrote it.
     #[test]
     fn the_platforms_root_stacks_a_disk_upper_over_the_image() {
         let layers = FreshRoot::on(Path::new(guest::DISK_PATH));
@@ -3957,18 +4008,79 @@ mod tests {
             Path::new("/mnt/platform/system/rootfs/merged")
         );
         assert_eq!(layers.image, layers.upper.with_file_name("image"));
-        assert_ne!(layers.upper, layers.legacy_upper);
         assert_eq!(
-            layers.options().unwrap().to_str().unwrap(),
-            "lowerdir=/,upperdir=/mnt/platform/system/rootfs/kept/upper,workdir=/mnt/platform/system/rootfs/work,index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off"
+            layers.options(&[Path::new("/run/platform-boot/image")]).unwrap().to_str().unwrap(),
+            "lowerdir=/run/platform-boot/image,upperdir=/mnt/platform/system/rootfs/kept/upper,workdir=/mnt/platform/system/rootfs/work,index=off,redirect_dir=off,metacopy=off,xino=off,uuid=off"
         );
     }
 
     // TEST_SCENARIO: overlayfs splits its options on commas and its lower layers on colons, so a disk path holding either would name other layers than the ones meant. That is refused, not mounted.
     #[test]
     fn a_layer_path_overlayfs_would_misread_is_refused() {
-        assert!(FreshRoot::on(Path::new("/mnt/a,b")).options().is_err());
-        assert!(FreshRoot::on(Path::new("/mnt/a:b")).options().is_err());
+        let image = Path::new("/run/platform-boot/image");
+        assert!(FreshRoot::on(Path::new("/mnt/a,b"))
+            .options(&[image])
+            .is_err());
+        assert!(FreshRoot::on(Path::new("/mnt/a:b"))
+            .options(&[image])
+            .is_err());
+        assert!(FreshRoot::on(Path::new(guest::DISK_PATH))
+            .options(&[Path::new("/i:x"), image])
+            .is_err());
+    }
+
+    // TEST_SCENARIO: the boot's accounts layer sits over the image, so its /etc/passwd is the one the root shows, and the kept upper over both.
+    #[test]
+    fn the_accounts_layer_sits_between_the_image_and_the_upper() {
+        let layers = FreshRoot::on(Path::new(guest::DISK_PATH));
+        let options = layers
+            .options(&[
+                Path::new("/run/platform-boot/accounts"),
+                Path::new("/run/platform-boot/image"),
+            ])
+            .unwrap();
+        assert!(options.to_str().unwrap().starts_with(
+            "lowerdir=/run/platform-boot/accounts:/run/platform-boot/image,upperdir="
+        ));
+    }
+
+    // TEST_SCENARIO: SSH logins come as `agent`, which on a machine is uid 0 with the agent's home and root's shell, appended to the image's own entries; an image that names `agent` itself is left as it is.
+    #[test]
+    fn the_boot_maps_agent_to_root_after_the_images_entries() {
+        let image = "root:x:0:0:root:/home/agent:/bin/bash\ndaemon:x:1:1::/:/usr/sbin/nologin";
+        assert_eq!(
+            accounts_passwd(image).unwrap(),
+            format!("{image}\nagent:x:0:0:Agent User:/home/agent:/bin/bash\n")
+        );
+        assert_eq!(
+            accounts_passwd("root:x:0:0:root:/root:\n").unwrap(),
+            "root:x:0:0:root:/root:\nagent:x:0:0:Agent User:/home/agent:/bin/sh\n"
+        );
+        assert_eq!(
+            accounts_passwd("root:x:0:0::/root:/bin/sh\nagent:x:1000:1000::/home/agent:/bin/sh\n"),
+            None
+        );
+    }
+
+    // TEST_SCENARIO: the layer's /etc and passwd show the image's owners and modes, since the topmost layer that holds a directory sets what the root shows; an image without /etc/passwd gets no layer.
+    #[test]
+    fn the_accounts_layer_keeps_the_images_modes() {
+        let image = TempDir::new("accounts-image");
+        let layer = image.path().join("layer");
+        let etc = image.path().join("etc");
+        fs::create_dir(&etc).unwrap();
+        assert!(!accounts_layer(image.path(), &layer).unwrap());
+        assert!(!layer.exists());
+        fs::write(etc.join("passwd"), "root:x:0:0:root:/root:/bin/bash\n").unwrap();
+        fs::set_permissions(&etc, fs::Permissions::from_mode(0o751)).unwrap();
+        fs::set_permissions(etc.join("passwd"), fs::Permissions::from_mode(0o640)).unwrap();
+        assert!(accounts_layer(image.path(), &layer).unwrap());
+        let mode = |p: &Path| fs::metadata(p).unwrap().mode() & 0o7777;
+        assert_eq!(mode(&layer.join("etc")), 0o751);
+        assert_eq!(mode(&layer.join("etc/passwd")), 0o640);
+        assert!(fs::read_to_string(layer.join("etc/passwd"))
+            .unwrap()
+            .ends_with("agent:x:0:0:Agent User:/home/agent:/bin/bash\n"));
     }
 
     // TEST_SCENARIO: an image whose config sets no PATH still names bare commands, because a container runtime searches its own default for them. An empty or missing PATH is searched the same way here.
@@ -4004,21 +4116,32 @@ mod tests {
         assert!(!must_seed(&store, false).unwrap());
     }
 
-    // TEST_SCENARIO: every disk leaves its first boot marked with the layout it is in, and a disk from before the mark existed is marked on its next boot, since it can only be in the one layout there has been. A disk already marked with this layout boots without being written.
+    // TEST_SCENARIO: every disk leaves its first boot marked with its layout, and a disk from before the mark existed is marked on its next boot. A disk already marked with its layout boots without being written; one whose mark names an older layout is refused, since its names are not what the mark says.
     #[test]
     fn a_disk_is_marked_with_its_layout_once() {
         let disk = TempDir::new("disk");
         let mark = guest::system_store(disk.path(), guest::LAYOUT_FILE);
 
         assert_eq!(
-            mark_layout(disk.path()).unwrap(),
+            mark_layout(disk.path(), guest::LAYOUT_VERSION).unwrap(),
             Some(guest::LAYOUT_VERSION)
         );
         assert_eq!(
             fs::read_to_string(&mark).unwrap(),
             format!("{}\n", guest::LAYOUT_VERSION)
         );
-        assert_eq!(mark_layout(disk.path()).unwrap(), None);
+        assert_eq!(
+            mark_layout(disk.path(), guest::LAYOUT_VERSION).unwrap(),
+            None
+        );
+        fs::write(&mark, "1\n").unwrap();
+        let marked = mark_layout(disk.path(), guest::LAYOUT_VERSION)
+            .unwrap_err()
+            .to_string();
+        assert!(
+            marked.contains("marked as layout 1, but holds layout 2"),
+            "{marked}"
+        );
     }
 
     // TEST_SCENARIO: on a disk with no journal an unclean stop can leave the mark with its name and none of its data, as an empty file or one of zeros. The home under it is intact, so the boot takes it for no mark and marks the disk again, instead of refusing every boot until the agent is deleted.
@@ -4031,7 +4154,7 @@ mod tests {
         for emptied in ["", "\0\0"] {
             fs::write(&mark, emptied).unwrap();
             assert_eq!(
-                mark_layout(disk.path()).unwrap(),
+                mark_layout(disk.path(), guest::LAYOUT_VERSION).unwrap(),
                 Some(guest::LAYOUT_VERSION),
                 "{emptied:?}"
             );
@@ -4050,13 +4173,15 @@ mod tests {
         fs::create_dir_all(mark.parent().unwrap()).unwrap();
 
         fs::write(&mark, format!("{}\n", guest::LAYOUT_VERSION + 1)).unwrap();
-        let newer = mark_layout(disk.path()).unwrap_err().to_string();
+        let newer = mark_layout(disk.path(), guest::LAYOUT_VERSION)
+            .unwrap_err()
+            .to_string();
         assert!(newer.contains("a newer platform-init wrote"), "{newer}");
 
         for unreadable in ["0", "one", "-1"] {
             fs::write(&mark, unreadable).unwrap();
             assert!(
-                mark_layout(disk.path()).is_err(),
+                mark_layout(disk.path(), guest::LAYOUT_VERSION).is_err(),
                 "{unreadable:?} was taken for a layout"
             );
             assert_eq!(fs::read_to_string(&mark).unwrap(), unreadable);
@@ -4124,7 +4249,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the entrypoint is started with argv exactly as the image names it, argv[0] included although the binary was found on PATH, and with the trust cache named in its environment. platform-init blocks the signals it forwards, and Rust ignores SIGPIPE; the entrypoint must inherit neither, or a shell pipeline in the image is never ended by a closed pipe and the entrypoint never sees SIGTERM. The signals glibc reserves below SIGRTMIN are left out: under Docker's default seccomp profile the spawned process starts with them ignored, and the C library keeps them for its own use, so no program in the image can catch or send them.
+    // TEST_SCENARIO: the entrypoint is started with argv exactly as the image names it, argv[0] included although the binary was found on PATH, and with the trust cache and the launch record's env in its environment, and nothing of platform-init's own (cargo's CARGO here, the VMM's settings in a guest). platform-init blocks the signals it forwards, and Rust ignores SIGPIPE; the entrypoint must inherit neither, or a shell pipeline in the image is never ended by a closed pipe and the entrypoint never sees SIGTERM. The signals glibc reserves below SIGRTMIN are left out: under Docker's default seccomp profile the spawned process starts with them ignored, and the C library keeps them for its own use, so no program in the image can catch or send them.
     #[test]
     fn the_entrypoint_starts_with_the_images_argv_and_a_clean_signal_state() {
         let binary = look_path(OsStr::new("sh"), None).unwrap();
@@ -4132,7 +4257,7 @@ mod tests {
             OsString::from("image-sh"),
             OsString::from("-c"),
             OsString::from(
-                r#"echo "$0 $PLATFORM_TRUST_CACHE"; grep -E '^Sig(Blk|Ign):' /proc/self/status"#,
+                r#"echo "$0 $PLATFORM_TRUST_CACHE $FROM_LAUNCH ${CARGO:-clean}"; grep -E '^Sig(Blk|Ign):' /proc/self/status"#,
             ),
         ];
         let thread = std::thread::spawn(move || {
@@ -4146,6 +4271,7 @@ mod tests {
             entrypoint(
                 &binary,
                 &command,
+                &[("FROM_LAUNCH".into(), "yes".into())],
                 Some(Path::new("/var/cache/platform/trust")),
             )
             .output()
@@ -4153,7 +4279,10 @@ mod tests {
         });
         let output = String::from_utf8(thread.join().unwrap().stdout).unwrap();
         let mut lines = output.lines();
-        assert_eq!(lines.next(), Some("image-sh /var/cache/platform/trust"));
+        assert_eq!(
+            lines.next(),
+            Some("image-sh /var/cache/platform/trust yes clean")
+        );
         let glibc_reserved: u64 = (32..libc::SIGRTMIN()).map(|s| 1 << (s - 1)).sum();
         for line in lines {
             let mask = u64::from_str_radix(line.split_whitespace().nth(1).unwrap(), 16).unwrap();
@@ -4163,11 +4292,9 @@ mod tests {
 
     #[test]
     fn exit_statuses_read_like_a_shells() {
-        assert_eq!(exit_code(3 << 8), 3);
         assert_eq!(exit_description(3 << 8), "exited with status 3");
-        assert_eq!(exit_code(libc::SIGKILL), 137);
         assert_eq!(exit_description(libc::SIGKILL), "was killed by signal 9");
-        assert_eq!(exit_code(NOT_STARTED), 127);
+        assert_eq!(exit_description(NOT_STARTED), "exited with status 127");
     }
 
     // TEST_SCENARIO: a signal the workload is stopped with ends the supervision, so an entrypoint that exits on it is not started again; every forwarded signal reaches the entrypoint, and SIGCHLD, which only wakes the reaper, does not.
@@ -4190,11 +4317,83 @@ mod tests {
         assert_eq!(free_below_order(buddy, 1), 4);
         assert_eq!(free_below_order("", 9), 0);
     }
-    // TEST_SCENARIO: the cold cache is read from the root cgroup's memory.stat, where `inactive_file` sits beside `file`, `active_file` and `inactive_anon`, all byte counts. Picking a neighbour would reclaim the wrong amount every minute — anonymous memory the guest cannot drop, or the active cache the agent is using.
+    // TEST_SCENARIO: the cold memory is read from the root cgroup's memory.stat, where `inactive_file` and `inactive_anon` sit beside `file`, `active_file` and `inactive_anon`, all byte counts. Picking a neighbour would reclaim the wrong amount every minute — anonymous memory the guest cannot drop, or the active cache the agent is using.
     #[test]
-    fn the_cold_cache_is_the_inactive_file_count() {
+    fn the_cold_memory_is_the_inactive_counts() {
         let stat = "anon 4096\nfile 1289818112\ninactive_anon 0\nactive_anon 4096\ninactive_file 1283219456\nactive_file 2838528\n";
-        assert_eq!(inactive_file(stat), Some(1283219456));
-        assert_eq!(inactive_file("file 1\nactive_file 1\n"), None);
+        assert_eq!(stat_bytes(stat, "inactive_file"), Some(1283219456));
+        assert_eq!(stat_bytes("file 1\nactive_file 1\n", "inactive_file"), None);
+        assert_eq!(stat_bytes(stat, "inactive_anon"), Some(0));
+    }
+
+    // TEST_SCENARIO: the kernel refuses swapon on a zram device whose first page is not a version 1 swap header with the right last page, and the guest then runs without swap. So the header carries the magic in the page's last ten bytes and names the last page of the device.
+    #[test]
+    fn the_zram_swap_header_is_the_one_mkswap_writes() {
+        let header = swap_header(4096, 8 << 20);
+        assert_eq!(header.len(), 4096);
+        assert_eq!(&header[4086..], b"SWAPSPACE2");
+        assert_eq!(header[1024..1028], 1u32.to_ne_bytes());
+        assert_eq!(header[1028..1032], 2047u32.to_ne_bytes());
+        assert!(header[..1024].iter().all(|&b| b == 0));
+    }
+
+    // TEST_SCENARIO: /tmp is on the platform's overlay root, where overlayfs shows a directory on a device of its own and each file on its upper layer's. Eviction must still offer a file, a symlink and a directory holding a file there, or a full disk frees nothing of /tmp. Needs root, for the overlay mount: `sudo -E cargo test -p platform-init -- --ignored overlay`.
+    #[test]
+    #[ignore = "needs root"]
+    fn eviction_offers_files_on_an_overlay_root() {
+        let dir = TempDir::new("evict-overlay");
+        let d = dir.path();
+        for name in ["lower", "upper", "work", "merged"] {
+            fs::create_dir_all(d.join(name)).unwrap();
+        }
+        let options = format!(
+            "lowerdir={},upperdir={},workdir={}",
+            d.join("lower").display(),
+            d.join("upper").display(),
+            d.join("work").display()
+        );
+        let merged = d.join("merged");
+        let out = std::process::Command::new("mount")
+            .args(["-t", "overlay", "overlay", "-o", &options])
+            .arg(&merged)
+            .output()
+            .unwrap();
+        assert!(
+            out.status.success(),
+            "{}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+        let checks = || {
+            fs::write(merged.join("file"), b"x").unwrap();
+            std::os::unix::fs::symlink("file", merged.join("link")).unwrap();
+            fs::create_dir(merged.join("cache")).unwrap();
+            fs::write(merged.join("cache/blob"), b"y").unwrap();
+            let roots = open_scratch_roots(&[(merged.clone(), mount_of(&merged))]);
+            assert_eq!(
+                roots[0].dev, None,
+                "an overlay root is bounded by its mount alone"
+            );
+            let later = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 2 * EVICT_AGES[0];
+            let mut names: Vec<_> = scratch_entries(&roots, &HashSet::new(), later, EVICT_AGES[3])
+                .into_iter()
+                .map(|entry| {
+                    entry
+                        .path
+                        .file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .into_owned()
+                })
+                .collect();
+            names.sort();
+            assert_eq!(names, ["cache", "file", "link"]);
+        };
+        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(checks));
+        let _ = std::process::Command::new("umount").arg(&merged).status();
+        result.unwrap();
     }
 }

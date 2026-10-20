@@ -1,4 +1,10 @@
-import { ChevronLeft, Close, Download, Edit, Save } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  Close,
+  Download,
+  RequestQuote,
+  Save,
+} from "@carbon/icons-react";
 import { useCallback, useEffect, useState } from "react";
 
 import { RenderToggle } from "@/components/render-toggle";
@@ -10,6 +16,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import { useFilePromotion } from "../../artifacts/hooks/use-file-promotion.js";
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { type FileContent, useFileWriteMutation } from "../api/queries.js";
 import { base64ToBlob, downloadFileContent } from "../lib/download.js";
 import { PLATFORM_INSTRUCTIONS_PATH } from "../lib/platform-instructions.js";
@@ -149,7 +156,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
           aria-label="Back to files"
           tooltip="Back to files"
         >
-          <ChevronLeft size={16} />
+          <ArrowLeft size={16} />
         </Button>
         <TruncateStart
           className="text-sm font-medium text-foreground flex-1 min-w-0"
@@ -214,7 +221,8 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
                 aria-label="Edit"
                 tooltip="Edit"
               >
-                <Edit size={14} /> <span className={TOOLBAR_LABEL}>Edit</span>
+                <RequestQuote size={14} />{" "}
+                <span className={TOOLBAR_LABEL}>Edit</span>
               </Button>
             )}
             {!tooLarge && (
@@ -259,6 +267,7 @@ export function FileViewer({ file, onClose, onOpenFile }: Props) {
             )}
           </>
         )}
+        <SidePanelCloseButton />
       </div>
       {platformInstructions && (
         <p className="px-4 py-2 border-b border-border text-xs text-muted-foreground">

@@ -14,7 +14,6 @@ export function useSkillsState(
     retry: false,
     staleTime: SKILLS_STALE_MS,
     gcTime: SKILLS_GC_MS,
-    refetchOnWindowFocus: false,
     ...(opts.pollMs === undefined ? {} : { refetchInterval: opts.pollMs }),
   });
 }
@@ -25,7 +24,6 @@ export function useSkillSources(agentId: string | null) {
     retry: false,
     staleTime: SKILLS_STALE_MS,
     gcTime: SKILLS_GC_MS,
-    refetchOnWindowFocus: false,
   });
 }
 

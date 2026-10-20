@@ -18,6 +18,10 @@ type ev = map[string]any
 const (
 	attributionAgentHeader      = "x-platform-agent-id"
 	attributionInvocationHeader = "x-platform-invocation-id"
+
+	// UNIT_BOUNDARY_DESCRIPTION: the path prefix on the gateway's own address that takes an agent's OTLP export over plain HTTP, with no CONNECT. Claude Code sends its three OTLP exporters through one proxy agent that holds one socket, and requests that start together wait behind each other until the export times out, so most of its log records, the per-call spend, never arrive. A request to the gateway's address with no proxy uses a plain agent instead. The prefix is stripped before the collector, and the Claude Code image reads this same literal in model-gateway.sh.
+	gatewayOTLPPathPrefix = "/__platform_otlp/"
+	gatewayOTLPRouteName  = "gateway_otlp"
 )
 
 type bootstrapParams struct {
@@ -46,9 +50,42 @@ type bootstrapParams struct {
 	Transparent            bool
 	OTel                   envoyOTelView
 	UpstreamTrustedCA      string
+	Suffix                 string
+	HarnessGuardAgent      string
+	HealthBody             string
+	FlatCredentials        bool
+	LeafSDSPath            string
+	LuaDir                 string
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's ConfigMap, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
+func (p bootstrapParams) luaScript(params, bodyKey, body string) string {
+	if p.LuaDir == "" {
+		return params + body
+	}
+	return strings.ReplaceAll("\n"+params, "\nlocal ", "\n")[1:] + "dofile(" + strconv.Quote(p.LuaDir+"/"+bodyKey) + ")\n"
+}
+
+func (p bootstrapParams) named(base string) string { return base + p.Suffix }
+
+func (p bootstrapParams) credentialFile(volume, key string) (file, dir string) {
+	if p.FlatCredentials {
+		return p.CredentialsRoot + "/" + strings.TrimPrefix(volume, "cred-") + "." + key, p.CredentialsRoot
+	}
+	dir = p.CredentialsRoot + "/" + volume
+	return dir + "/" + key, dir
 }
 
 func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain, transparent bool) (string, error) {
+	doc := buildEnvoyBootstrap(newBootstrapParams(instanceID, attributionID, cfg, chains, transparent))
+	out, err := sigsyaml.Marshal(doc)
+	if err != nil {
+		return "", fmt.Errorf("marshaling envoy bootstrap: %w", err)
+	}
+	return string(out), nil
+}
+
+func newBootstrapParams(instanceID, attributionID string, cfg *config.Config, chains []envoyHostChain, transparent bool) bootstrapParams {
 	extAuthzTimeoutSeconds := cfg.ExtAuthzHoldSeconds + 60
 	harnessAuthority := fmt.Sprintf("%s:%d", cfg.HarnessHost(), cfg.HarnessServerPort)
 	objectStoreAuthority := ""
@@ -66,7 +103,7 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 			break
 		}
 	}
-	p := bootstrapParams{
+	return bootstrapParams{
 		UpstreamTrustedCA:      gatewayUpstreamTrustedCA(cfg),
 		ListenAddress:          envoyListenAddress,
 		Port:                   cfg.EnvoyPort,
@@ -93,12 +130,6 @@ func renderEnvoyBootstrap(instanceID, attributionID string, cfg *config.Config, 
 		Transparent:            transparent,
 		OTel:                   newEnvoyOTelView(instanceID, cfg),
 	}
-	doc := buildEnvoyBootstrap(p)
-	out, err := sigsyaml.Marshal(doc)
-	if err != nil {
-		return "", fmt.Errorf("marshaling envoy bootstrap: %w", err)
-	}
-	return string(out), nil
 }
 
 func chainsWithoutHost(instanceID string, chains []envoyHostChain, host string) []envoyHostChain {
@@ -135,6 +166,11 @@ func buildEnvoyBootstrap(p bootstrapParams) ev {
 			"clusters":  buildClusters(p),
 		},
 	}
+	addStatsSink(doc, p)
+	return doc
+}
+
+func addStatsSink(doc ev, p bootstrapParams) {
 	if p.OTel.Metrics {
 		doc["stats_sinks"] = []any{
 			ev{
@@ -149,78 +185,94 @@ func buildEnvoyBootstrap(p bootstrapParams) ev {
 		doc["stats_config"] = gatewayStatsConfig()
 		doc["stats_flush_interval"] = gatewayStatsFlushInterval
 	}
-	return doc
 }
 
 func buildOuterListener(p bootstrapParams) ev {
 	hcm := ev{
 		"@type":       "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
-		"stat_prefix": "agent_egress",
+		"stat_prefix": p.named("agent_egress"),
 		"upgrade_configs": []any{
 			ev{"upgrade_type": "CONNECT"},
 			ev{"upgrade_type": "websocket"},
 		},
-		"http_filters": []any{
-			ev{
-				"name": "envoy.filters.http.health_check",
-				"typed_config": ev{
-					"@type":             "type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck",
-					"pass_through_mode": false,
-					"headers":           []any{ev{"name": ":path", "string_match": ev{"exact": p.HealthPath}}},
-				},
-			},
-			extAuthzHTTPFilter(p),
-			dynamicForwardProxyHTTPFilter(),
-			routerHTTPFilter(),
-		},
+		"http_filters": []any{extAuthzHTTPFilter(p), dynamicForwardProxyHTTPFilter(), routerHTTPFilter()},
 		"route_config": buildOuterRouteConfig(p),
+	}
+	if p.HealthBody == "" {
+		hcm["http_filters"] = append([]any{ev{
+			"name": "envoy.filters.http.health_check",
+			"typed_config": ev{
+				"@type":             "type.googleapis.com/envoy.extensions.filters.http.health_check.v3.HealthCheck",
+				"pass_through_mode": false,
+				"headers":           []any{ev{"name": ":path", "string_match": ev{"exact": p.HealthPath}}},
+			},
+		}}, hcm["http_filters"].([]any)...)
 	}
 	if p.OTel.Traces {
 		hcm["tracing"] = otelTracing(p, 256)
 	}
 	if p.OTel.AccessLogs {
-		hcm["access_log"] = hcmAccessLog(p, "", "agent_egress", "egress")
+		accessLogs := hcmAccessLog(p, "", "agent_egress", "egress")
+		if p.Telemetry {
+			accessLogs = gatewayOTLPFailuresOnly(p, accessLogs)
+		}
+		hcm["access_log"] = accessLogs
 	}
 	listener := ev{
-		"name":    "agent_egress",
+		"name":    p.named("agent_egress"),
 		"address": ev{"socket_address": ev{"address": p.ListenAddress, "port_value": p.Port}},
 		"filter_chains": []any{
 			ev{"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": hcm}}},
 		},
 	}
 	if p.Transparent {
-		acceptTransparentTLS(listener)
+		acceptTransparentTLS(listener, p)
 	}
 	return listener
 }
 
 func buildOuterRouteConfig(p bootstrapParams) ev {
 	routeConfig := ev{
-		"name": "connect_routes",
+		"name": p.named("connect_routes"),
 		"virtual_hosts": []any{
 			ev{"name": "connect", "domains": []any{"*"}, "routes": buildOuterRoutes(p)},
 		},
 	}
+	remove := []any{attributionAgentHeader, attributionInvocationHeader}
 	if p.Telemetry {
 		applyAttributionMutations(routeConfig, p)
-		return routeConfig
+		remove, _ = routeConfig["request_headers_to_remove"].([]any)
 	}
-	routeConfig["request_headers_to_remove"] = []any{attributionAgentHeader, attributionInvocationHeader}
+	remove = append(remove, sessionStampHeader, harnessStampHeader)
+	if p.HarnessGuardAgent != "" {
+		remove = append(remove, harnessGuardHeader)
+	}
+	routeConfig["request_headers_to_remove"] = remove
 	return routeConfig
 }
 
 func buildOuterRoutes(p bootstrapParams) []any {
 	connectUpgrade := []any{ev{"upgrade_type": "CONNECT", "connect_config": ev{}}}
-	routes := []any{
-		ev{
-			"match": ev{
-				"connect_matcher": ev{},
-				"headers":         []any{ev{"name": ":authority", "string_match": ev{"exact": p.HarnessAuthority}}},
-			},
-			"route":                   ev{"cluster": "harness_passthrough", "upgrade_configs": connectUpgrade},
-			"typed_per_filter_config": extAuthzDisabledPerRoute(),
-		},
+	harnessCONNECT, harnessHTTP := "harness_passthrough", "dynamic_forward_proxy_http"
+	if p.HarnessGuardAgent != "" {
+		harnessCONNECT, harnessHTTP = p.named("harness_guard"), p.named("harness_guard")
 	}
+	var routes []any
+	if p.HealthBody != "" {
+		routes = append(routes, ev{
+			"match":                   ev{"path": p.HealthPath},
+			"direct_response":         ev{"status": 200, "body": ev{"inline_string": p.HealthBody}},
+			"typed_per_filter_config": extAuthzDisabledPerRoute(),
+		})
+	}
+	routes = append(routes, ev{
+		"match": ev{
+			"connect_matcher": ev{},
+			"headers":         []any{ev{"name": ":authority", "string_match": ev{"exact": p.HarnessAuthority}}},
+		},
+		"route":                   ev{"cluster": harnessCONNECT, "upgrade_configs": connectUpgrade},
+		"typed_per_filter_config": extAuthzDisabledPerRoute(),
+	})
 	if p.ObjectStoreAuthority != "" {
 		routes = append(routes, ev{
 			"match": ev{
@@ -236,12 +288,15 @@ func buildOuterRoutes(p bootstrapParams) []any {
 				"connect_matcher": ev{},
 				"headers":         []any{ev{"name": ":authority", "string_match": ev{"exact": fmt.Sprintf("%s:%d", p.TelemetryCollectorHost, p.TelemetryCollectorPort)}}},
 			},
-			"route":                   ev{"cluster": "tls_inspect_internal", "upgrade_configs": connectUpgrade},
+			"route":                   ev{"cluster": p.named("tls_inspect_internal"), "upgrade_configs": connectUpgrade},
 			"tracing":                 ev{"random_sampling": ev{"numerator": 0}, "overall_sampling": ev{"numerator": 0}},
 			"typed_per_filter_config": extAuthzDisabledPerRoute(),
 		})
 	}
-	genericRoute := ev{"cluster": "tls_inspect_internal", "upgrade_configs": connectUpgrade}
+	if p.Telemetry {
+		routes = append(routes, gatewayOTLPRoute(p))
+	}
+	genericRoute := ev{"cluster": p.named("tls_inspect_internal"), "upgrade_configs": connectUpgrade}
 	if p.AnyUpgrades {
 		genericRoute["idle_timeout"] = "14400s"
 	}
@@ -255,7 +310,7 @@ func buildOuterRoutes(p bootstrapParams) []any {
 			"prefix":  "/",
 			"headers": []any{ev{"name": ":authority", "string_match": ev{"exact": p.HarnessAuthority}}},
 		},
-		"route":                   ev{"cluster": "dynamic_forward_proxy_http", "timeout": "0s"},
+		"route":                   ev{"cluster": harnessHTTP, "timeout": "0s"},
 		"typed_per_filter_config": extAuthzDisabledPerRoute(),
 	})
 	fallthroughRoute := ev{
@@ -269,6 +324,38 @@ func buildOuterRoutes(p bootstrapParams) []any {
 	return routes
 }
 
+func gatewayOTLPRoute(p bootstrapParams) ev {
+	route := ev{
+		"name":  p.named(gatewayOTLPRouteName),
+		"match": ev{"prefix": gatewayOTLPPathPrefix},
+		"route": ev{
+			"cluster":              "otel_collector",
+			"prefix_rewrite":       "/",
+			"host_rewrite_literal": p.TelemetryCollectorHost,
+			"timeout":              "0s",
+		},
+		"typed_per_filter_config": extAuthzDisabledPerRoute(),
+	}
+	if p.OTel.Traces {
+		route["tracing"] = ev{"random_sampling": ev{"numerator": 0}, "overall_sampling": ev{"numerator": 0}}
+	}
+	return route
+}
+
+func gatewayOTLPFailuresOnly(p bootstrapParams, accessLogs []any) []any {
+	filter := ev{"extension_filter": ev{
+		"name": "envoy.access_loggers.extension_filters.cel",
+		"typed_config": ev{
+			"@type":      "type.googleapis.com/envoy.extensions.access_loggers.filters.cel.v3.ExpressionFilter",
+			"expression": fmt.Sprintf("xds.route_name != '%s' || response.code >= 400 || response.flags != 0u", p.named(gatewayOTLPRouteName)),
+		},
+	}}
+	for _, l := range accessLogs {
+		l.(ev)["filter"] = filter
+	}
+	return accessLogs
+}
+
 func buildInternalListener(p bootstrapParams) ev {
 	chains := make([]any, 0, len(p.Chains)+2)
 	for _, c := range p.Chains {
@@ -279,7 +366,7 @@ func buildInternalListener(p bootstrapParams) ev {
 	}
 	chains = append(chains, buildL4CatchAllChain(p))
 	return ev{
-		"name":              "tls_inspect_internal",
+		"name":              p.named("tls_inspect_internal"),
 		"internal_listener": ev{},
 		"listener_filters": []any{
 			ev{
@@ -292,14 +379,7 @@ func buildInternalListener(p bootstrapParams) ev {
 }
 
 func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
-	commonTLS := ev{
-		"tls_certificates": []any{
-			ev{
-				"certificate_chain": ev{"filename": p.LeafTLSDir + "/tls.crt"},
-				"private_key":       ev{"filename": p.LeafTLSDir + "/tls.key"},
-			},
-		},
-	}
+	commonTLS := leafTLSContext(p)
 	if c.HTTP2 {
 		commonTLS["alpn_protocols"] = []any{"h2", "http/1.1"}
 	}
@@ -315,7 +395,7 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 					"name":                      "default",
 					"domains":                   []any{"*"},
 					"routes":                    buildChainForwardRoutes(c),
-					"request_headers_to_remove": []any{connectionAddressHeader},
+					"request_headers_to_remove": chainHeadersToRemove(p),
 				},
 			},
 		},
@@ -352,10 +432,38 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 	}
 }
 
+func leafTLSContext(p bootstrapParams) ev {
+	if p.LeafSDSPath != "" {
+		return ev{"tls_certificate_sds_secret_configs": []any{ev{
+			"name": envoyLeafSDSName,
+			"sds_config": ev{"path_config_source": ev{
+				"path":              p.LeafSDSPath,
+				"watched_directory": ev{"path": envoyBootstrapMount},
+			}},
+		}}}
+	}
+	return ev{
+		"tls_certificates": []any{
+			ev{
+				"certificate_chain": ev{"filename": p.LeafTLSDir + "/tls.crt"},
+				"private_key":       ev{"filename": p.LeafTLSDir + "/tls.key"},
+			},
+		},
+	}
+}
+
+func chainHeadersToRemove(p bootstrapParams) []any {
+	headers := []any{connectionAddressHeader, sessionStampHeader, harnessStampHeader}
+	if p.HarnessGuardAgent != "" {
+		headers = append(headers, harnessGuardHeader)
+	}
+	return headers
+}
+
 func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	var filters []any
 	if len(c.ConnectionIDs()) > 0 {
-		filters = append(filters, connectionAddressHTTPFilter(c))
+		filters = append(filters, connectionAddressHTTPFilter(p, c))
 	}
 	if c.Metered() {
 		filters = append(filters, spendMeterHTTPFilter(p, c), withSpendMetadata(extAuthzHTTPFilter(p)))
@@ -363,6 +471,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 		filters = append(filters, extAuthzHTTPFilter(p))
 	}
 	for _, cred := range c.Credentials {
+		sdsFile, sdsDir := p.credentialFile(cred.VolumeName, cred.SDSFileKey)
 		rivals := c.RivalsOf(cred)
 		gate := func(filter ev, innerName string) ev { return skippedForRivals(filter, innerName, rivals) }
 		if c.RequireAddress && cred.ConnectionID != "" {
@@ -383,8 +492,8 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 							"name": p.CredentialSDSName,
 							"sds_config": ev{
 								"path_config_source": ev{
-									"path":              p.CredentialsRoot + "/" + cred.VolumeName + "/" + cred.SDSFileKey,
-									"watched_directory": ev{"path": p.CredentialsRoot + "/" + cred.VolumeName},
+									"path":              sdsFile,
+									"watched_directory": ev{"path": sdsDir},
 								},
 							},
 						},
@@ -405,7 +514,7 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	}
 	for _, signer := range c.Signers {
 		filters = append(filters,
-			skippedUnlessAddressed(signingGuardHTTPFilter(c, signer), "envoy.filters.http.lua", signer.ConnectionID),
+			skippedUnlessAddressed(signingGuardHTTPFilter(p, c, signer), "envoy.filters.http.lua", signer.ConnectionID),
 			skippedUnlessAddressed(requestSigningHTTPFilter(p, c, signer), "envoy.filters.http.aws_request_signing", signer.ConnectionID),
 		)
 	}
@@ -413,18 +522,18 @@ func buildChainHTTPFilters(p bootstrapParams, c envoyHostChain) []any {
 	return filters
 }
 
-func signingGuardHTTPFilter(c envoyHostChain, signer envoySigner) ev {
+func signingGuardHTTPFilter(p bootstrapParams, c envoyHostChain, signer envoySigner) ev {
 	return ev{
 		"name": signer.GuardFilterName(),
 		"typed_config": ev{
 			"@type":               "type.googleapis.com/envoy.extensions.filters.http.lua.v3.Lua",
-			"default_source_code": ev{"inline_string": luaSigningGuardScript(c, signer)},
+			"default_source_code": ev{"inline_string": p.luaScript(luaSigningGuardParams(c, signer), luaSigningGuardKey, luaSigningGuardBody)},
 		},
 	}
 }
 
 func requestSigningHTTPFilter(p bootstrapParams, c envoyHostChain, signer envoySigner) ev {
-	volume := p.CredentialsRoot + "/" + signer.VolumeName
+	file, dir := p.credentialFile(signer.VolumeName, signer.CredentialsKey)
 	return ev{
 		"name": signer.FilterName(),
 		"typed_config": ev{
@@ -438,8 +547,8 @@ func requestSigningHTTPFilter(p bootstrapParams, c envoyHostChain, signer envoyS
 				"custom_credential_provider_chain": true,
 				"credentials_file_provider": ev{
 					"credentials_data_source": ev{
-						"filename":          volume + "/" + signer.CredentialsKey,
-						"watched_directory": ev{"path": volume},
+						"filename":          file,
+						"watched_directory": ev{"path": dir},
 					},
 					"profile": awsCredentialsProfile,
 				},
@@ -488,7 +597,7 @@ func luaAddressedPathPattern() string {
 	return "^" + luaPatternEscape("/"+connectionEgressPathSegment+"/") + "[%w%._~%-]+(/.*)$"
 }
 
-func luaSigningGuardScript(c envoyHostChain, signer envoySigner) string {
+func luaSigningGuardParams(c envoyHostChain, signer envoySigner) string {
 	patterns := make([]string, 0, len(signer.PathPatterns))
 	for _, p := range signer.PathPatterns {
 		patterns = append(patterns, luaGlobPattern(p))
@@ -497,9 +606,10 @@ func luaSigningGuardScript(c envoyHostChain, signer envoySigner) string {
 		"local SCOPE_BODY = " + strconv.Quote(outOfScopeRefusedBody(c, signer)) + "\n" +
 		"local ADDRESSED_PATH = " + strconv.Quote(luaAddressedPathPattern()) + "\n" +
 		"local PREFIX = " + strconv.Quote(streamingPayloadPrefix) + "\n" +
-		"local BODY = " + strconv.Quote(streamingRefusedBody) + "\n" +
-		luaSigningGuardBody
+		"local BODY = " + strconv.Quote(streamingRefusedBody) + "\n"
 }
+
+const luaSigningGuardKey = "signing-guard.lua"
 
 const luaSigningGuardBody = `local function path_in_scope(path)
   if #PATTERNS == 0 then return true end
@@ -694,7 +804,7 @@ func buildCollectorChain(p bootstrapParams) ev {
 	applyAttributionMutations(route, p)
 	hcm := ev{
 		"@type":        "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
-		"stat_prefix":  "terminate_otel_collector",
+		"stat_prefix":  p.named("terminate_otel_collector"),
 		"http_filters": []any{routerHTTPFilter()},
 		"route_config": ev{
 			"name": "forward_otel_collector",
@@ -716,15 +826,8 @@ func buildCollectorChain(p bootstrapParams) ev {
 		"transport_socket": ev{
 			"name": "envoy.transport_sockets.tls",
 			"typed_config": ev{
-				"@type": "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
-				"common_tls_context": ev{
-					"tls_certificates": []any{
-						ev{
-							"certificate_chain": ev{"filename": p.LeafTLSDir + "/tls.crt"},
-							"private_key":       ev{"filename": p.LeafTLSDir + "/tls.key"},
-						},
-					},
-				},
+				"@type":              "type.googleapis.com/envoy.extensions.transport_sockets.tls.v3.DownstreamTlsContext",
+				"common_tls_context": leafTLSContext(p),
 			},
 		},
 		"filters": []any{ev{"name": "envoy.filters.network.http_connection_manager", "typed_config": hcm}},
@@ -734,7 +837,7 @@ func buildCollectorChain(p bootstrapParams) ev {
 func buildL4CatchAllChain(p bootstrapParams) ev {
 	tcpProxy := ev{
 		"@type":       "type.googleapis.com/envoy.extensions.filters.network.tcp_proxy.v3.TcpProxy",
-		"stat_prefix": "l4_authz_forward",
+		"stat_prefix": p.named("l4_authz_forward"),
 		"cluster":     "dynamic_forward_proxy_tcp",
 	}
 	if p.OTel.AccessLogs {
@@ -747,12 +850,12 @@ func buildL4CatchAllChain(p bootstrapParams) ev {
 				"name": "envoy.filters.network.ext_authz",
 				"typed_config": ev{
 					"@type":                 "type.googleapis.com/envoy.extensions.filters.network.ext_authz.v3.ExtAuthz",
-					"stat_prefix":           "l4_authz",
+					"stat_prefix":           p.named("l4_authz"),
 					"transport_api_version": "V3",
 					"failure_mode_allow":    false,
 					"include_tls_session":   true,
 					"grpc_service": ev{
-						"envoy_grpc": ev{"cluster_name": "ext_authz_cluster", "authority": p.ExtAuthzHost},
+						"envoy_grpc": ev{"cluster_name": p.named("ext_authz_cluster"), "authority": p.ExtAuthzHost},
 						"timeout":    fmt.Sprintf("%ds", p.ExtAuthzTimeoutSeconds),
 					},
 				},
@@ -772,18 +875,7 @@ func buildL4CatchAllChain(p bootstrapParams) ev {
 
 func buildClusters(p bootstrapParams) []any {
 	clusters := []any{
-		ev{
-			"name":            "tls_inspect_internal",
-			"connect_timeout": "1s",
-			"load_assignment": ev{
-				"cluster_name": "tls_inspect_internal",
-				"endpoints": []any{
-					ev{"lb_endpoints": []any{
-						ev{"endpoint": ev{"address": ev{"envoy_internal_address": ev{"server_listener_name": "tls_inspect_internal"}}}},
-					}},
-				},
-			},
-		},
+		internalListenerCluster("tls_inspect_internal"),
 		dynamicForwardProxyCluster("dynamic_forward_proxy_https", true, p.UpstreamTrustedCA),
 		dynamicForwardProxyCluster("dynamic_forward_proxy_tcp", false, ""),
 		dynamicForwardProxyCluster("dynamic_forward_proxy_http", false, ""),
@@ -800,8 +892,32 @@ func buildClusters(p bootstrapParams) []any {
 	if p.Telemetry {
 		clusters = append(clusters, pinnedTCPCluster("otel_collector", p.TelemetryCollectorHost, p.TelemetryCollectorPort))
 	}
-	clusters = append(clusters, ev{
-		"name":            "ext_authz_cluster",
+	clusters = append(clusters, extAuthzCluster(p))
+	if p.OTel.Collector {
+		clusters = append(clusters, buildOTelExportCluster(p))
+	}
+	return clusters
+}
+
+func internalListenerCluster(name string) ev {
+	return ev{
+		"name":            name,
+		"connect_timeout": "1s",
+		"load_assignment": ev{
+			"cluster_name": name,
+			"endpoints": []any{
+				ev{"lb_endpoints": []any{
+					ev{"endpoint": ev{"address": ev{"envoy_internal_address": ev{"server_listener_name": name}}}},
+				}},
+			},
+		},
+	}
+}
+
+func extAuthzCluster(p bootstrapParams) ev {
+	name := p.named("ext_authz_cluster")
+	return ev{
+		"name":            name,
 		"connect_timeout": "1s",
 		"type":            "STRICT_DNS",
 		"lb_policy":       "ROUND_ROBIN",
@@ -811,12 +927,8 @@ func buildClusters(p bootstrapParams) []any {
 				"explicit_http_config": ev{"http2_protocol_options": ev{}},
 			},
 		},
-		"load_assignment": socketLoadAssignment("ext_authz_cluster", p.ExtAuthzHost, p.ExtAuthzPort),
-	})
-	if p.OTel.Collector {
-		clusters = append(clusters, buildOTelExportCluster(p))
+		"load_assignment": socketLoadAssignment(name, p.ExtAuthzHost, p.ExtAuthzPort),
 	}
-	return clusters
 }
 
 func dynamicForwardProxyCluster(name string, withTLS bool, trustedCA string) ev {
@@ -948,7 +1060,7 @@ func extAuthzHTTPFilter(p bootstrapParams) ev {
 			"transport_api_version": "V3",
 			"failure_mode_allow":    false,
 			"grpc_service": ev{
-				"envoy_grpc": ev{"cluster_name": "ext_authz_cluster", "authority": p.ExtAuthzHost},
+				"envoy_grpc": ev{"cluster_name": p.named("ext_authz_cluster"), "authority": p.ExtAuthzHost},
 				"timeout":    fmt.Sprintf("%ds", p.ExtAuthzTimeoutSeconds),
 			},
 		},

@@ -54,6 +54,7 @@ export function ProviderRow({
               <HarnessIcons
                 harnesses={harnesses}
                 size="sm"
+                focusable={!onOpen}
                 className="text-muted-foreground opacity-70"
               />
             ) : (

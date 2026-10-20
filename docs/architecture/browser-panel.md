@@ -78,6 +78,7 @@ It does not start with a harness: the default harness starts as soon as the heal
 A prompt is early enough for a tool call: the virtual display is up about 0.1 s after the start, before the model's first answer.
 That delay is the limit: a command run by anything else in those ten seconds finds no display yet.
 It exits as soon as any part of it dies, and agent-runtime kills what it left and starts it again, with a growing delay while it keeps failing, so a crashed stream server or display comes back by itself.
+Since a part that dies takes the whole stack down, and the browser on its display with it, each part starts only once what it connects to listens: i3 and PipeWire after Xvfb, and PipeWire's session manager (WirePlumber), which exits when it finds no PipeWire, after PipeWire.
 
 Selkies captures the screen, encodes it as VP8 and sends it over a WebSocket to its web client, which decodes it with WebCodecs and sends pointer and keys back as X input.
 The client asks for the panel's size and Selkies resizes the display to it, at a pixel ratio of 1: the browser fills the screen, so the page lays out at the panel's size, and the agent's screenshot pixels are the CSS pixels its mouse commands take.

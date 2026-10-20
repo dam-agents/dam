@@ -2,6 +2,7 @@ import { TRPCError } from "@trpc/server";
 import type { InvocationsQueryService } from "api-server-api";
 
 import { buildDelegationTree } from "../domain/delegation-tree.js";
+import { shownInSession } from "../domain/session-scope.js";
 import type { InvocationsRepository } from "../infrastructure/invocations-repository.js";
 import type { DelegationFramesPort } from "./delegation-frames.js";
 
@@ -42,9 +43,13 @@ export function createDelegationsQuery(deps: {
       return { nodes: buildDelegationTree(owned, ids) };
     },
 
-    async running({ driverAgentId }) {
+    async running({ driverAgentId, sessionId }) {
       const running = (await deps.repo.listRunningByDriver(driverAgentId))
-        .filter((r) => r.owner === deps.owner)
+        .filter(
+          (r) =>
+            r.owner === deps.owner &&
+            (sessionId === undefined || shownInSession(r, sessionId)),
+        )
         .map((r) => r.id);
       if (running.length === 0) return { nodes: [] };
       const owned = await ownedRowsOfRoot(driverAgentId);

@@ -1,4 +1,11 @@
+import type { AgentState } from "api-server-api";
+
 import type { ActivitySession } from "../../home/lib/activity-sessions.js";
+
+const FOLDED_STATES: ReadonlySet<AgentState> = new Set([
+  "hibernating",
+  "hibernated",
+]);
 
 export function groupSessionsByAgent<T extends ActivitySession>(
   sessions: readonly T[],
@@ -12,36 +19,32 @@ export function groupSessionsByAgent<T extends ActivitySession>(
   return byAgent;
 }
 
-export function orderByLatestSession<A extends { id: string }>(
-  agents: readonly A[],
-  sessionsByAgent: ReadonlyMap<string, readonly ActivitySession[]>,
-): A[] {
-  const latest = (agent: A) => {
-    const at = sessionsByAgent.get(agent.id)?.[0]?.at;
-    return at === undefined ? null : Date.parse(at);
-  };
-  return [...agents].sort((a, b) => {
-    const [atA, atB] = [latest(a), latest(b)];
-    if (atA === null || atB === null)
-      return atA === atB ? 0 : atA === null ? 1 : -1;
-    return atB - atA;
-  });
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: an Agent's Sessions show in the sidebar while the
+ * user has opened the Agent there, by a click on its row; until the user
+ * clicks it, the Agent whose chat or configuration page is shown is open.
+ */
+export function sidebarAgentOpen(
+  overrides: Readonly<Record<string, boolean>>,
+  agentId: string,
+  shownAgentId: string | null,
+): boolean {
+  return overrides[agentId] ?? agentId === shownAgentId;
 }
 
-export function openFirst<A extends { id: string }>(
-  agents: readonly A[],
-  openAgentId: string | null,
-): A[] {
-  const open = agents.find((agent) => agent.id === openAgentId);
-  return open
-    ? [open, ...agents.filter((agent) => agent !== open)]
-    : [...agents];
-}
-
-export function leadAgentId(
-  shown: string | null,
-  openAgentId: string | null,
-  pointerInside: boolean,
-): string | null {
-  return pointerInside ? shown : openAgentId;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a hibernated Agent folds under See all unless its
+ * Sessions are open in the sidebar, or its chat or configuration page is
+ * shown: closing the shown Agent's list keeps its row where the user clicked.
+ */
+export function sidebarAgentFolded(
+  overrides: Readonly<Record<string, boolean>>,
+  agent: { id: string; state: AgentState },
+  shownAgentId: string | null,
+): boolean {
+  return (
+    FOLDED_STATES.has(agent.state) &&
+    agent.id !== shownAgentId &&
+    !sidebarAgentOpen(overrides, agent.id, shownAgentId)
+  );
 }

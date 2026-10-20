@@ -6,9 +6,8 @@ use std::time::Duration;
 use clap::Parser;
 use vm_runner::embedded::Smolvm;
 use vm_runner::forward::LOOPBACK_OFFSET;
-use vm_runner::runtime::MAX_IMAGE_BYTES;
+use vm_runner::http;
 use vm_runner::server::{Config, Server};
-use vm_runner::{http, templates};
 
 // UNIT_BOUNDARY_DESCRIPTION: every flag the runner defines. Each is set by exactly one of two callers, and neither relies on a default: the image's ENTRYPOINT sets the paths that are the image's own layout, and the controller sets everything it has chosen — the ports it opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials and the runner's budgets. The controller builds those args in Go, so a rename is not a build failure on either side: it is a runner that rejects an argument its own Deployment sets, which surfaces as a pod that will not start. contract/runner-args.json holds the args the controller renders, and both sides test against it.
 #[derive(Parser, Debug)]
@@ -22,24 +21,24 @@ struct Args {
     // UNIT_BOUNDARY_DESCRIPTION: per-machine state: published port, applied spec, and the share each guest reads its CA and platform-init from.
     #[arg(long = "state-dir", default_value = "/var/lib/platform/machines")]
     state_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: unpacked agent images, or the archives an install with no registry stages. On a node cache this is the node's directory, mounted read-only.
+    // UNIT_BOUNDARY_DESCRIPTION: the node's image cache directory, mounted read-only: the trees its service unpacks, and the trees an install with no registry stages beside them.
     #[arg(long = "image-dir", default_value = "/var/lib/platform/images")]
     image_dir: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket. Set, every image is resolved and fetched by that service and this runner only reads the image directory; empty makes this runner the one writer of its own cache.
+    // UNIT_BOUNDARY_DESCRIPTION: the node image cache service's socket: every image that is not staged is resolved and fetched by that service, and this runner only reads the image directory. Empty boots only staged trees, which is how a runner outside the cluster with no service runs, and how a pod a controller from before the node cache was the only cache rendered runs until it rolls.
     #[arg(long = "image-cache-socket", default_value = "")]
     image_cache_socket: String,
-    // UNIT_BOUNDARY_DESCRIPTION: bytes the cached images may occupy; 0 evicts nothing, and the controller refuses to start a runner without a positive budget.
+    // UNIT_BOUNDARY_DESCRIPTION: bytes the node's cached images may occupy, reported in the runner's metrics; the service, not the runner, evicts to it.
     #[arg(long = "image-budget-bytes", default_value_t = 0)]
     image_budget_bytes: i64,
-    // UNIT_BOUNDARY_DESCRIPTION: the node's harness tools — mise's system data dir that a per-node installer fills — mounted read-only; every machine whose image asks for them gets them read-only at the path it names. Empty shares none.
-    #[arg(long = "tools-dir", default_value = "")]
-    tools_dir: String,
+    // UNIT_BOUNDARY_DESCRIPTION: retired and ignored: the node's harness tools directory. A hand-off starts a new release with the args the pod was created with, so a pod a controller from before the retirement rendered still passes it.
+    #[arg(long = "tools-dir", default_value = "", hide = true)]
+    _tools_dir: String,
     // UNIT_BOUNDARY_DESCRIPTION: the smolvm release's launcher. The runner drives smolvm as a library and forks no CLI, but the release is still where the libraries the VMM loads, the guest agent's root filesystem and the disk templates live — all beside this path, as the release's own launcher script finds them.
     #[arg(long, default_value = "/opt/smolvm/smolvm")]
     smolvm: PathBuf,
-    // UNIT_BOUNDARY_DESCRIPTION: crane fetches an agent image this runner's own cache does not hold; empty disables the fetch. Unused with a node cache, whose service fetches.
-    #[arg(long, default_value = "crane")]
-    crane: String,
+    // UNIT_BOUNDARY_DESCRIPTION: retired and ignored: crane, which a runner once fetched into its own cache with. The image's ENTRYPOINT still passes it, and a hand-off starts a new release with the args the pod was created with.
+    #[arg(long = "crane", default_value = "", hide = true)]
+    _crane: String,
     // UNIT_BOUNDARY_DESCRIPTION: platform-init is copied into every machine's share and run as its entrypoint. It is the binary that mounts the agent's home inside the guest: the platform-init package beside this one, linked statically because it runs against the agent image's libc and not this one's.
     #[arg(
         long = "platform-init",
@@ -81,7 +80,7 @@ struct Args {
     tls_key: String,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. The subcommand is checked before anything else runs: a boot process must never parse runner flags, bind the machine API or start a runtime of its own. Serving it here rather than pointing smolvm at a separate binary means the VMM is always the smolvm library this runner was built against.
+// UNIT_BOUNDARY_DESCRIPTION: smolvm boots every VMM by spawning its own executable again with `_boot-vm` and a boot-config path, so this binary is also the VMM. Its machines boot no smolvm guest agent, in this process and in every VMM: platform-init is their init (agent rootfs /sbin/init), so smolvm makes no overlay disk, pulls and runs no workload, and boots the init as PID 1; each machine has one disk, its storage disk.
 fn boot_config(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<Option<PathBuf>> {
     args.next();
     if args.next().as_deref() != Some(std::ffi::OsStr::new("_boot-vm")) {
@@ -104,7 +103,7 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. The archive cap is the `--max-image-size` flag. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the harness tools, which every harness start reads `node` and its modules from, and the share. smolvm has no per-mount switch. Both mounts are read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX needs a guest kernel with smol-machines/libkrunfw#31, which smolvm 1.27.4 and later ship: before it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane checks the kernel for that. Setting it to 0 turns DAX off to compare.
+// UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the share, its one mount. The share is read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX needs a guest kernel with smol-machines/libkrunfw#31, which smolvm 1.27.4 and later ship: before it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane checks the kernel for that. Setting it to 0 turns DAX off to compare.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
     let lib = install.join("lib");
@@ -122,9 +121,6 @@ fn configure_smolvm(launcher: &Path) {
     let rootfs = install.join("agent-rootfs");
     if rootfs.is_dir() && std::env::var_os("SMOLVM_AGENT_ROOTFS").is_none() {
         std::env::set_var("SMOLVM_AGENT_ROOTFS", rootfs);
-    }
-    if std::env::var_os("SMOLVM_MAX_IMAGE_BYTES").is_none() {
-        std::env::set_var("SMOLVM_MAX_IMAGE_BYTES", MAX_IMAGE_BYTES.to_string());
     }
     if std::env::var_os("SMOLVM_MOUNT_DAX").is_none() {
         std::env::set_var("SMOLVM_MOUNT_DAX", "1");
@@ -181,10 +177,76 @@ fn reload_tls(tls: axum_server::tls_rustls::RustlsConfig, cert: String, key: Str
     });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: `vm-runner exec <machine> [--] <command>...` runs one command as root in a running machine's guest, through its init (platform-init's answer to smolvm's exec request), prints what it wrote and exits with its exit code. It finds the machine under HOME as the runner does, so it runs in the runner's pod or beside a host runner. smolvm's own `machine exec` reaches the container a guest agent ran, which these machines do not have.
+fn exec_args(mut args: impl Iterator<Item = std::ffi::OsString>) -> Option<(String, Vec<String>)> {
+    args.next();
+    if args.next().as_deref() != Some(std::ffi::OsStr::new("exec")) {
+        return None;
+    }
+    let id = args.next()?.into_string().ok()?;
+    let mut command: Vec<String> = args.filter_map(|arg| arg.into_string().ok()).collect();
+    if command.first().is_some_and(|arg| arg == "--") {
+        command.remove(0);
+    }
+    Some((id, command))
+}
+
+fn guest_exec(id: &str, command: Vec<String>) -> anyhow::Result<()> {
+    use std::io::Write;
+    anyhow::ensure!(
+        !command.is_empty(),
+        "usage: vm-runner exec <machine> [--] <command>..."
+    );
+    let manager = smolvm::agent::AgentManager::for_vm(id)?;
+    manager.detach();
+    let mut client = smolvm::agent::AgentClient::connect(manager.vsock_socket())?;
+    let (code, stdout, stderr) = client.vm_exec(
+        command,
+        Vec::new(),
+        None,
+        Some(std::time::Duration::from_secs(300)),
+        None,
+    )?;
+    std::io::stdout().write_all(&stdout)?;
+    std::io::stderr().write_all(&stderr)?;
+    std::process::exit(code)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the OOM score a VMM asks for: the highest the kernel lets a process set for itself, which needs no capability, so that a machine that grows past the runner's memory is killed by itself rather than the runner or the loader beside it, which each hold every machine of the owner. It decides the victim only where the node's kubelet leaves the pod's memory.oom.group at 0, which is its default: with the group set, one process's memory kills the whole pod whatever the scores say, and the runner reports that on a gauge of its own.
+const OOM_SCORE_ADJ: &str = "1000";
+
+// UNIT_BOUNDARY_DESCRIPTION: outranks the runner and the loader in the kernel's choice of victim, for this process alone. A failure is said on the console rather than fatal: a machine that cannot raise its score still boots.
+fn raise_oom_score_adj(path: &Path) {
+    if let Err(e) = std::fs::write(path, OOM_SCORE_ADJ) {
+        eprintln!(
+            "vm-runner: could not raise this VMM's OOM score at {}: {e}; the kernel may kill the runner instead of a machine",
+            path.display()
+        );
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes lower their own scores instead: -1000 where the kernel allows it, else 0, which no process whose memory is smaller can outrank. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself.
+fn lower_own_oom_score_adj() {
+    const PATH: &str = "/proc/self/oom_score_adj";
+    if std::fs::write(PATH, "-1000").is_ok() {
+        return;
+    }
+    if let Err(e) = std::fs::write(PATH, "0") {
+        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it against its machines");
+    }
+}
+
 fn main() -> anyhow::Result<()> {
+    smolvm::internal_boot::GUEST_AGENT.store(false, std::sync::atomic::Ordering::Relaxed);
+    if let Some((id, command)) = exec_args(std::env::args_os()) {
+        return guest_exec(&id, command);
+    }
     if let Some(config) = boot_config(std::env::args_os()) {
         let config =
             config.ok_or_else(|| anyhow::anyhow!("_boot-vm requires a boot-config path"))?;
+        if cfg!(target_os = "linux") {
+            raise_oom_score_adj(Path::new("/proc/self/oom_score_adj"));
+        }
         if let Some(port) = gateway_host_port(&config)? {
             smolvm::network::launch::configure_guest_host_service(port, port)
                 .map_err(|e| anyhow::anyhow!("mapping the gateway host port: {e}"))?;
@@ -193,6 +255,9 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     tracing_subscriber::fmt().json().init();
+    if cfg!(target_os = "linux") {
+        lower_own_oom_score_adj();
+    }
     let args = Args::parse();
     anyhow::ensure!(
         args.memory_mib > 0,
@@ -239,7 +304,7 @@ fn check_ports(min: u16, max: u16) -> anyhow::Result<()> {
     Ok(())
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. An install with no registry mounts the image directory read-only, with archives staged in it, and so does a node cache, whose service is its only writer; a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
+// UNIT_BOUNDARY_DESCRIPTION: what the runner's pod has to give its machines before any exists. The VMMs open /dev/kvm, and the state directories must be traversable by them; a device that cannot be opened is reported and not fatal, because the error it causes at boot names the device. The image directory is the node cache's, mounted read-only because its service is its only writer, so a chmod there fails with EROFS and is not fatal either: the mount decides what machine uids see, and a tree they cannot read fails at boot with a message naming it.
 fn prepare_host(args: &Args) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     if let Err(e) = std::fs::set_permissions("/dev/kvm", std::fs::Permissions::from_mode(0o666)) {
@@ -267,18 +332,24 @@ fn prepare_host(args: &Args) -> anyhow::Result<()> {
 
 async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
     let nested = args.nested_virtualization;
-    let tools = (!args.tools_dir.is_empty()).then(|| PathBuf::from(&args.tools_dir));
-    let runtime = Arc::new(
-        tokio::task::spawn_blocking(move || Smolvm::open(nested, tools.as_deref())).await??,
-    );
+    let install = args
+        .smolvm
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_default();
+    let btrfs = install.join(vm_runner::embedded::BTRFS_TEMPLATE);
+    let runtime =
+        Arc::new(tokio::task::spawn_blocking(move || Smolvm::open(nested, btrfs)).await??);
     let server = Server::start(
         Config {
             state_dir: args.state_dir.clone(),
             image_dir: args.image_dir.clone(),
-            image_cache_socket: (!args.image_cache_socket.is_empty())
-                .then(|| PathBuf::from(&args.image_cache_socket)),
+            images: (!args.image_cache_socket.is_empty()).then(|| {
+                Arc::new(vm_runner::cacheapi::CacheClient::new(PathBuf::from(
+                    &args.image_cache_socket,
+                ))) as Arc<dyn vm_runner::imagecache::Images>
+            }),
             image_budget: args.image_budget_bytes,
-            crane: args.crane.clone(),
             init: Some(args.platform_init.clone()),
             runc: Some(args.platform_runc.clone()),
             ports: args.port_min..=args.port_max,
@@ -299,16 +370,6 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         runtime,
     )?;
 
-    let install = args
-        .smolvm
-        .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_default();
-    let home = std::env::var_os("HOME")
-        .map(PathBuf::from)
-        .unwrap_or_default();
-    let kept = (!home.as_os_str().is_empty()).then(|| home.join(templates::KEPT_DIR));
-    server.background(move |cancel| templates::warm(&install, kept.as_deref(), &home, &cancel));
     let logs = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(vm_runner::console::TRIM_EVERY);
@@ -327,11 +388,13 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
             .await;
         }
     });
-    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped.
+    // UNIT_BOUNDARY_DESCRIPTION: collects the exit status of VMM processes that have ended. smolvm spawns each VMM detached and never waits on it, so an embedder that does not sweep keeps one zombie per machine that ever stopped. Each machine's own status is read first, in the same tick: it says which signal killed the machine, which the sweep below discards.
+    let reaping = server.clone();
     tokio::spawn(async move {
         let mut tick = tokio::time::interval(REAP_EVERY);
         loop {
             tick.tick().await;
+            reaping.reap_killed();
             smolvm::process::reap_vm_children();
         }
     });
@@ -354,7 +417,6 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
         listen = %args.listen,
         state_dir = %args.state_dir.display(),
         image_dir = %args.image_dir.display(),
-        tools_dir = %args.tools_dir,
         platform_init = %args.platform_init.display(),
         platform_runc = %args.platform_runc.display(),
         metrics = %args.metrics_listen,
@@ -432,6 +494,27 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    // TEST_SCENARIO: `exec` names a machine and the command to run in it, with an optional `--` before the command; anything else is the runner's own invocation and is left to flag parsing.
+    #[test]
+    fn an_exec_names_the_machine_and_the_command() {
+        let args = |words: &[&str]| {
+            words
+                .iter()
+                .map(std::ffi::OsString::from)
+                .collect::<Vec<_>>()
+                .into_iter()
+        };
+        assert_eq!(
+            exec_args(args(&["vm-runner", "exec", "m1", "--", "sh", "-c", "true"])),
+            Some(("m1".into(), vec!["sh".into(), "-c".into(), "true".into()]))
+        );
+        assert_eq!(
+            exec_args(args(&["vm-runner", "exec", "m1", "ls"])),
+            Some(("m1".into(), vec!["ls".into()]))
+        );
+        assert_eq!(exec_args(args(&["vm-runner", "--listen=:4600"])), None);
+    }
+
     // TEST_SCENARIO: smolvm spawns this binary as the VMM with `_boot-vm <config>`. That call must be recognised before flag parsing, which would refuse it, and nothing else may be mistaken for it — the runner's own invocation least of all.
     #[test]
     fn a_boot_process_is_told_apart_from_the_runner() {
@@ -487,6 +570,35 @@ mod tests {
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
     }
+    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner lowers its own score, which is the write the kernel permits without a capability: -1000 where it is allowed, else 0, and in either case below the VMM's.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn the_runner_asks_for_the_lowest_score_the_kernel_allows_it() {
+        lower_own_oom_score_adj();
+        let score: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
+            .unwrap()
+            .trim()
+            .parse()
+            .unwrap();
+        assert!(
+            score == -1000 || score == 0,
+            "the runner's own score is {score}, which a VMM at 1000 only ties"
+        );
+        assert!(score < OOM_SCORE_ADJ.parse::<i32>().unwrap());
+    }
+
+    // TEST_SCENARIO: the OOM killer picks the process with the highest score in the cgroup, and the runner and the loader hold every machine of the owner between them. A VMM asks for the kernel's maximum, and a VMM that cannot write its score — a host runner with no /proc — still boots.
+    #[test]
+    fn a_vmm_outranks_the_runner_in_the_kernels_choice_of_victim() {
+        let dir = std::env::temp_dir().join(format!("vm-runner-oom-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let score = dir.join("oom_score_adj");
+        raise_oom_score_adj(&score);
+        assert_eq!(std::fs::read_to_string(&score).unwrap(), "1000");
+        raise_oom_score_adj(&dir.join("absent").join("oom_score_adj"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // TEST_SCENARIO: `:4600` is the flag's spelling of every interface on a port. It must bind, and a port that is not a number must be refused rather than read as some default.
     #[test]
     fn a_bare_port_binds_every_interface() {
@@ -616,22 +728,13 @@ mod tests {
         assert!(!args.nested_virtualization);
     }
 
-    // TEST_SCENARIO: an install that sets no harness tools directory renders `--tools-dir=` with nothing after it, as it renders an empty `--image-cache-socket=`. The runner must start from that argv and share no tools, or every runner of such an install exits on start.
+    // TEST_SCENARIO: a pod that a controller from before the retirement of the node's harness tools rendered passes `--tools-dir`, and a hand-off starts the new release with those args. The runner must still start from them, or every hand-off onto it from such a pod fails.
     #[test]
-    fn a_runner_without_harness_tools_starts_and_shares_none() {
-        let argv: Vec<String> = base_argv()
-            .into_iter()
-            .map(|arg| {
-                if arg.starts_with("--tools-dir=") {
-                    "--tools-dir=".to_string()
-                } else {
-                    arg
-                }
-            })
-            .collect();
-        let args = Args::try_parse_from(&argv)
+    fn a_runner_handed_the_retired_tools_dir_still_starts() {
+        let mut argv = base_argv();
+        argv.push("--tools-dir=/var/lib/platform/tools".to_string());
+        Args::try_parse_from(&argv)
             .unwrap_or_else(|e| panic!("the pod's arguments {argv:?} are rejected: {e}"));
-        assert!(args.tools_dir.is_empty());
     }
 
     // TEST_SCENARIO: a flag nobody passes runs on its default, and a default is a second copy of a value its owner already holds — the port range the controller opens in the runner's NetworkPolicy, the path the image installs platform-init at. So every flag is set by the image or by the controller, and a new flag fails here until one of them sets it.
@@ -648,7 +751,7 @@ mod tests {
         for flag in command
             .get_arguments()
             .filter_map(|arg| arg.get_long())
-            .filter(|flag| !matches!(*flag, "help" | "version"))
+            .filter(|flag| !matches!(*flag, "help" | "version" | "tools-dir"))
         {
             assert!(
                 passed.contains(&flag),

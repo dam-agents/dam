@@ -92,7 +92,6 @@ export function otlpLogRecord(
       output_tokens: usage?.outputTokens ?? 0,
       cache_read_tokens: usage?.cacheReadTokens ?? 0,
       cache_creation_tokens: usage?.cacheCreationTokens ?? 0,
-      cost_usd_micros: record.costUsdMicros ?? 0,
       duration_ms: record.durationMs,
       request_id: record.requestId ?? "",
       "platform.model.router": true,
@@ -105,10 +104,6 @@ export function otlpLogRecord(
       "platform.status": record.status,
       "platform.stream": record.stream,
       "platform.uncounted": record.uncounted ?? "",
-      "platform.provider.reported_cost_usd":
-        record.providerReportedCostUsd === null
-          ? null
-          : record.providerReportedCostUsd,
     }),
   };
 }

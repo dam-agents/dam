@@ -2,7 +2,6 @@ import type { GettingStartedTask } from "api-server-api";
 import { useCallback } from "react";
 import { match } from "ts-pattern";
 
-import { useDockDraftGuard } from "../../../hooks/use-dock-draft-guard.js";
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useCreateDefaultAgent } from "../../agents/hooks/use-create-default-agent.js";
@@ -18,24 +17,26 @@ import { FIRST_MESSAGE_PREFILL, SCHEDULE_PREFILL } from "../lib/tasks.js";
 export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
   const agents = useAgentsList();
   const createDefault = useCreateDefaultAgent();
-  const confirmDiscard = useDockDraftGuard();
+  const leaveChatContext = useStore((s) => s.leaveChatContext);
   const appendNewSessionDraft = useStore((s) => s.appendNewSessionDraft);
   const selectAgent = useStore((s) => s.selectAgent);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
-  const setView = useStore((s) => s.setView);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
 
   return useCallback(
     async (task) => {
       const agent = newestAgent(agents);
       const openChat = async (prefill: string) => {
         if (!agent) return createDefault.create();
-        if (!(await confirmDiscard())) return;
-        appendNewSessionDraft(agent.id, prefill);
-        selectAgent(agent.id);
-        setMobileScreen("chat");
+        leaveChatContext(() => {
+          appendNewSessionDraft(agent.id, prefill);
+          selectAgent(agent.id);
+          setMobileScreen("chat");
+        });
       };
       const openAgentSection = async (section: "skills" | "channels") => {
         if (!agent) return createDefault.create();
@@ -50,21 +51,26 @@ export function useStartTask(): (task: GettingStartedTask) => Promise<void> {
         .with("add-skill", () => openAgentSection("skills"))
         .with("apply-starter-kit", async () => setKitBrowserOpen(true))
         .with("create-schedule", () => openChat(SCHEDULE_PREFILL))
-        .with("create-artifact", async () => setView("artifacts"))
+        .with("create-artifact", async () => {
+          setSidePanelTab("artifacts");
+          setArtifactsSectionOpen(true);
+          setMobileScreen("files");
+        })
         .with("connect-slack", () => openAgentSection("channels"))
         .exhaustive();
     },
     [
       agents,
       createDefault,
-      confirmDiscard,
+      leaveChatContext,
       appendNewSessionDraft,
       selectAgent,
       setMobileScreen,
       navigateToSettings,
       navigateToSandboxHome,
       setKitBrowserOpen,
-      setView,
+      setSidePanelTab,
+      setArtifactsSectionOpen,
     ],
   );
 }

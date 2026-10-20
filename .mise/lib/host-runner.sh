@@ -12,9 +12,8 @@ export HOST_RUNNER_PORT_MIN=33000 HOST_RUNNER_PORT_MAX=33099
 
 # host_runner_volume <name>: attaches, creating it the first time, a
 # case-sensitive volume of the runner's, and prints its mount point. An image
-# tree, and the harness tools machines mount, hold names that differ only in
-# case (xtables' libxt_DSCP.so and libxt_dscp.so), which the Mac's default
-# filesystem folds into one file.
+# tree holds names that differ only in case (xtables' libxt_DSCP.so and
+# libxt_dscp.so), which the Mac's default filesystem folds into one file.
 host_runner_volume() {
   local img="$HOST_RUNNER_DIR/$1.sparsebundle" mnt="$HOST_RUNNER_DIR/$1"
   mkdir -p "$HOST_RUNNER_DIR"

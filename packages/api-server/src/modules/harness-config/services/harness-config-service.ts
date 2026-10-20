@@ -5,6 +5,8 @@ import {
   harnessConfigCatalog,
   routesByModelName,
   routesSessionPairs,
+  isPlatformSubagentSetting,
+  platformSubagentSettingsError,
   sessionSettingsError,
   type HarnessCapability,
   type HarnessConfigCatalog,
@@ -177,16 +179,23 @@ export function createHarnessConfigService(deps: {
         });
       const harness = carried.find((h) => h.name === pair.harness);
       const unsupported = Object.keys(pair.settings ?? {}).find(
-        (id) => !harness?.sessionSettings?.includes(id),
+        (id) =>
+          !(isPlatformSubagentSetting(id)
+            ? harness?.platformSubagentSettings
+            : harness?.sessionSettings?.includes(id)),
       );
       const invalid = unsupported
         ? `the ${pair.harness} harness cannot keep ${unsupported} as a default`
         : pair.settings &&
-          sessionSettingsError(
+          (sessionSettingsError(
             harness?.harnessConfigCatalog,
             pair.settings,
             pair.model,
-          );
+          ) ??
+            platformSubagentSettingsError(
+              pair.settings,
+              (h) => carried.find((c) => c.name === h)?.harnessConfigCatalog,
+            ));
       if (invalid)
         throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
       await deps.pairRepo.write(agentId, pair);

@@ -1,11 +1,12 @@
 # VM host runner
 
-Last verified: 2026-10-14
+Last verified: 2026-10-19
 
 On a Mac, the local cluster's `vm` Backend runs on **one runner outside the cluster**, on the Mac's own hypervisor, instead of on the per-owner [runner pods](vm-runner.md) inside the cluster's VM, which would need a hypervisor nested in that VM.
 A nested guest boots several times slower, a busy laptop pushes it past smolvm's fixed ready window, and only recent Apple chips nest at all.
 The host runner is the same vm-runner and machine API, built for the Mac.
 It is a local-development shape only: an install turns it on by naming the address pods reach the Mac at (`virtualization.runner.hostAddress`), and `cluster:install` does so on a Mac unless told to nest.
+`cluster:install` turns the `vm` Backend on by default on an Apple silicon Mac, so a local cluster there runs this runner unless the install turns the Backend off.
 
 **One runner serves every owner.** There is no per-owner boundary.
 A guest that escapes its hypervisor reaches every owner's machines and the Mac itself, as the user who started the runner.
@@ -27,6 +28,7 @@ A runtime migration's copy Job reaches the runner the same way, pinned by addres
 
 **A machine reaches its gateway through a NodePort.** Guest egress leaves from the Mac, where a gateway's ClusterIP does not route.
 The controller exposes each vm Agent's gateway as a NodePort, and the cluster's VM forwards NodePorts to the Mac's loopback.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, the NodePort follows the agent's Service onto its slot on the owner's gateway pod, so nothing else changes here.
 The guest's proxy is smolvm's gateway address, which smolvm relays to the host's loopback.
 Allowing that address would open every loopback port: other machines' published ports, the runner's API, and whatever the user runs locally.
 So the machine is given its gateway's loopback port in place of an allowlist.
@@ -36,12 +38,15 @@ Both sides hold the gateway address to the [guest contract](../../packages/vm-ru
 No kernel gate stands behind that smolvm filter, since a Mac process has no NetworkPolicy.
 And the forwarded NodePort is open to any process on the Mac, which can use a gateway's credentials: the same trust as the laptop's own user.
 
-**Images and disks.** With no registry, the install stages image trees onto a case-sensitive volume the runner owns.
-The harness tools the default image boots with are installed on the k3s node, which this runner does not see, so starting the runner waits for that install and copies the node's directory onto a second such volume, adding new versions beside the old ones.
+**The VMM library is the release's, at the link and at the load.** The host runner links libkrun, the library smolvm boots a machine with, so the build links the copy in the pinned smolvm release and records a loader path to the copy the install stages beside the binary.
+smolvm loads that same copy at run time, and no other.
+A build that could reach a system-wide copy would record that one instead, leaving a runner that starts only while the copy is where it was, so the build refuses a binary whose loader would search the system for one.
+
+**Images and disks.** The host runner is the one runner with no node image cache: no cache service runs beside it, so it fetches nothing from a registry and boots only the image trees the install stages onto a case-sensitive volume it owns.
 The Mac's default filesystem folds names that differ only in case into one file, and agent images carry such names.
 Trees are unpacked without privilege, so a guest sees every image file owned by the runner's user rather than by the image's owners.
-smolvm needs ext4 tools the Mac lacks, so the disk templates are expanded inside the cluster's VM and carried back sparse.
-The runner formats a new disk at its full size with `mkfs.ext4`, which a Mac has only from Homebrew's e2fsprogs; without it smolvm copies the template instead, so the disk has no journal and one asked for below the template's 20 GiB keeps the template's size, and `cluster:host-runner` says so.
+The runner makes a new disk btrfs from the runner image's template ([vm-runner](vm-runner.md)), which needs no filesystem tool on the Mac.
+platform-init and the guest kernel are the runner image's, so the Mac's guests mount btrfs as the pods' do: the image build in the cluster's VM leaves its kernel wrapped for macOS, and `cluster:host-runner` compiles that into the release's libkrunfw.
 
 **Lifecycle.** The runner is a process on the Mac, not a supervised service.
 Stopping it stops its machines, as a pod's termination does; the controller's sweep starts them again once the runner is back.

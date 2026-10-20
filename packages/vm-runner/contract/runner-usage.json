@@ -2,7 +2,6 @@
   "storage": {
     "usedBytes": 32212254720,
     "usableBytes": 107374182400,
-    "imageCacheBytes": 4294967296,
     "seedBytes": 2147483648
   },
   "memory": {
@@ -19,10 +18,14 @@
     {
       "id": "agent-a",
       "state": "running",
+      "cpus": 2,
+      "memoryMiB": 2048,
       "usedMiB": 640,
+      "warming": true,
       "diskGiB": 100,
       "diskUsedBytes": 8589934592,
       "cpuMilli": 350
     }
-  ]
+  ],
+  "machineFigures": true
 }

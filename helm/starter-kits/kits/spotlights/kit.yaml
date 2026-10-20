@@ -20,17 +20,37 @@ resources:
   storage: 10Gi
   note: >-
     A run clones the target repository and drives claude and codex as
-    subprocesses for 30-45 minutes per module.
+    subprocesses for 20-45 minutes per module.
 install:
   # uv puts the CLIs in ~/.local/bin, which is not on the image's PATH;
-  # ~/.local/share/aube/bin is, and it is in the home, so the links last.
+  # ~/.local/share/aube/bin is, and it is in the home, so the wrappers last.
+  # The wrappers put a claude shim first on PATH: the engine drops
+  # ANTHROPIC_BASE_URL and ANTHROPIC_AUTH_TOKEN, which point claude at the
+  # Model Router, and fails a call whose result event is not the last
+  # stream-json line, which some claude versions follow with a status line.
   command: |
     set -eu
     uv tool install --force "git+https://github.com/AI-native-Systems-Research/spotlights.git@v0.1.1"
-    mkdir -p "$HOME/.local/share/aube/bin"
-    for bin in spotlights-engine signal-pipeline spotlights-objectives; do
+    shim="$HOME/.local/share/spotlights/shim"
+    mkdir -p "$shim" "$HOME/.local/share/aube/bin"
+    cat > "$shim/claude" <<'SHIM'
+    #!/bin/bash
+    if [ -n "${PLATFORM_MODEL_ROUTER_SERVES:-}" ]; then
+      export ANTHROPIC_BASE_URL="${ANTHROPIC_BASE_URL:-$PLATFORM_MODEL_ROUTER_URL}"
+      [ -n "${ANTHROPIC_API_KEY:-}${ANTHROPIC_AUTH_TOKEN:-}" ] || export ANTHROPIC_AUTH_TOKEN=platform:conn:router
+    fi
+    PATH="${PATH//"$(dirname "$0")":/}"
+    case " $* " in
+    *" --output-format stream-json "* | *" --output-format json "*) exec claude "$@" > >(awk '/^\{"type":"result"/ { r = $0; next } /^\{/ { print; fflush() } END { if (r != "") print r }') ;;
+    *) exec claude "$@" ;;
+    esac
+    SHIM
+    chmod +x "$shim/claude"
+    for bin in spotlights-engine signal-pipeline spotlights-objectives spotlights-validation; do
       if [ -x "$HOME/.local/bin/$bin" ]; then
-        ln -sf "$HOME/.local/bin/$bin" "$HOME/.local/share/aube/bin/$bin"
+        rm -f "$HOME/.local/share/aube/bin/$bin"
+        printf '#!/bin/sh\nPATH="%s:$PATH" exec "%s" "$@"\n' "$shim" "$HOME/.local/bin/$bin" > "$HOME/.local/share/aube/bin/$bin"
+        chmod +x "$HOME/.local/share/aube/bin/$bin"
       fi
     done
     spotlights-engine init
@@ -42,12 +62,17 @@ onboarding:
     before you go on. Then ask the user for the target repository and the
     optimization objective. If they are unsure about the objective, run
     `/spotlights-objective-setting` with them. Clone the repository under the
-    work directory and confirm with the user which modules to include. Pin
-    the models with `--claude-model "$ANTHROPIC_DEFAULT_OPUS_MODEL"
-    --codex-model "$OPENAI_MODEL"`. Tell the user that one
-    module takes about 30-45 minutes and a few dollars in model cost before
-    you start a run, and start it with `platform-keep` so it finishes after
-    your turn ends.
+    work directory and confirm with the user which modules to include.
+    `--include` takes the extractor's qualified names: paths relative to the
+    source root it picks (the repository root, or a directory like `src/`),
+    with every level kept (`pkg/sub`, not `sub`); a run whose names match nothing
+    logs the available ones and stops after extraction. Pin the models with
+    `--claude-model "$ANTHROPIC_DEFAULT_OPUS_MODEL" --codex-model
+    "$OPENAI_MODEL"`. A run resumes from its `--artifacts-dir`, and refuses
+    to resume once any option has changed, so pass a fresh `--artifacts-dir`
+    whenever you change one. Tell the user that one module takes about 20-45
+    minutes and $15-20 in model cost before you start a run, and start it
+    with `platform-keep` so it finishes after your turn ends.
 connections:
   - accepts: [github, github-enterprise]
     note: Needed to clone private target repositories.

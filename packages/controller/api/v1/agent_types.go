@@ -229,17 +229,7 @@ const (
 	// account in the message. The machine keeps running at what the pod has,
 	// so readiness does not follow it; it is for operators.
 	ConditionRunnerCapacity = "RunnerCapacity"
-	// ConditionHomeRepaired is present only on a vm agent whose machine's
-	// last boot found its disk's filesystem damaged and repaired it before
-	// mounting it (ReasonHomeRepaired, status True). The message is the
-	// check's own account. It goes with the next boot that finds the disk
-	// clean. The agent runs, so readiness does not follow it; it tells the
-	// owner that files in damaged folders may be gone.
-	ConditionHomeRepaired = "HomeRepaired"
 )
-
-// ReasonHomeRepaired is the reason on ConditionHomeRepaired.
-const ReasonHomeRepaired = "FilesystemRepaired"
 
 // Reasons on ConditionRunnerCapacity.
 const (
@@ -306,6 +296,11 @@ const ReasonOverBudget = "OverBudget"
 // a deleted credential Secret. Terminal, unlike PodNotReady.
 const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 
+// ReasonOwnerGatewayListenerStale marks a vm agent whose owner gateway does
+// not yet serve the listener last rendered for it. Transient: Envoy applies
+// the new file within seconds of the kubelet's sync.
+const ReasonOwnerGatewayListenerStale = "OwnerGatewayListenerStale"
+
 // ReasonMachineRunnerUnschedulable is stamped on AgentPodReady when a vm
 // agent's owner has a VM runner pod the scheduler cannot place (no node
 // offers the virtualization devices, say). The controller sets it from the
@@ -314,11 +309,21 @@ const ReasonStuckOnSupersededRevision = "StuckOnSupersededRevision"
 // scheduler's own account.
 const ReasonMachineRunnerUnschedulable = "MachineRunnerUnschedulable"
 
-// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent the
-// kernel took down when it OOM-killed the owner's VM runner, from the
-// runner pod's last termination, until the agent is ready again. Every
-// machine of the owner is a process of that pod, so they all restart at
-// once. Not a Machine* reason: the agent is starting again, not failed.
+// ReasonMachineRunnerNodeLost is stamped on AgentPodReady when a vm agent's
+// owner has a VM runner pod on a node the cluster does not report ready. The
+// pod cannot be replaced there — the claim stays attached to a node nothing
+// runs on — so every agent of that owner is down until an operator brings the
+// node back or fences it. Not a Machine* reason the runner can report: the
+// runner is not running.
+const ReasonMachineRunnerNodeLost = "MachineRunnerNodeLost"
+
+// ReasonRunnerOutOfMemory is stamped on AgentPodReady of each vm agent that
+// was running when the kernel OOM-killed the owner's VM runner, for the ten
+// minutes after the kill, from the runner pod's last termination, whatever
+// reason the agent reads until then. Every machine of the owner is a process
+// of that pod, so they all restart at once; an agent woken after the kill
+// carries nothing, since the kill did not take it down. Not a Machine*
+// reason: the agent is starting again, not failed.
 const ReasonRunnerOutOfMemory = "RunnerOutOfMemory"
 
 // ReasonHomeVolumeFull is stamped on AgentPodReady when the agent container

@@ -12,6 +12,7 @@ export interface AttentionItem {
   title: string | null;
   scheduleId: string | null;
   threadTs: string | null;
+  harness: string | null;
   createdAt: string;
   activityAt: string | null;
   seenAt: string | null;

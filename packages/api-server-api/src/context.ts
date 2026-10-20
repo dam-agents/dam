@@ -29,7 +29,7 @@ import type { FilesService } from "./modules/files/router.js";
 import type { GettingStartedService } from "./modules/getting-started/types.js";
 import type { HarnessConfigService } from "./modules/harness-config/types.js";
 import type { SchedulesService } from "./modules/schedules/types.js";
-import type { SidebarPinsService } from "./modules/sidebar-pins/types.js";
+import type { SidebarOrderService } from "./modules/sidebar-order/types.js";
 import type { SkillsService } from "./modules/skills/types.js";
 import type { SpendService } from "./modules/spend/types.js";
 import type { StarterKitsService } from "./modules/starter-kits/types.js";
@@ -72,7 +72,7 @@ export interface ApiContext {
   features: FeaturesService;
   chatFormPreferences: ChatFormPreferencesService;
   gettingStarted: GettingStartedService;
-  sidebarPins: SidebarPinsService;
+  sidebarOrder: SidebarOrderService;
   files: FilesService;
   harnessConfig: HarnessConfigService;
   links: Links;
@@ -90,6 +90,6 @@ export interface ApiContext {
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;
-  vmForced: boolean;
   featureModes: FeatureModes;
+  telemetryBackend: boolean;
 }

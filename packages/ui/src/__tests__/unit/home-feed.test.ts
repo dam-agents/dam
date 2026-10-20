@@ -27,6 +27,7 @@ function session(overrides: Partial<AttentionItem> = {}): AttentionItem {
     title: null,
     scheduleId: null,
     threadTs: null,
+    harness: null,
     createdAt: "2026-08-19T10:00:00Z",
     activityAt: null,
     seenAt: null,
@@ -110,6 +111,7 @@ describe("the activity filters", () => {
       }),
     ],
     running,
+    new Set(["a-1:seen"]),
   );
   const ids = (list: readonly { session: AttentionItem }[]) =>
     list.map((i) => i.session.sessionId).sort();
@@ -141,15 +143,18 @@ describe("the activity filters", () => {
     expect(ids(filterActivitySessions(items, onlySchedule))).toEqual(["sched"]);
   });
 
-  // TEST_SCENARIO: the state filter is separate from the type filter, and every state keeps different sessions. "Unread" keeps only sessions with activity newer than the seen watermark, so a session the user already read is not in the unread pile, and no two states may resolve to the same list, which is how a filter stops meaning anything.
+  // TEST_SCENARIO: the state filter is separate from the type filter, and every state keeps different sessions. "Needs attention" keeps the sessions with an approval waiting on the user, read or not. "Unread" keeps only sessions with activity newer than the seen watermark, so a session the user already read is not in the unread pile, and no two states may resolve to the same list, which is how a filter stops meaning anything.
   it("gives each state its own sessions", () => {
     const base = defaultActivityFilters();
-    const byState = (state: "any" | "in-progress" | "unread") =>
-      ids(filterActivitySessions(items, { ...base, state }));
+    const byState = (
+      state: "any" | "needs-attention" | "in-progress" | "unread",
+    ) => ids(filterActivitySessions(items, { ...base, state }));
 
+    expect(byState("needs-attention")).toEqual(["seen"]);
     expect(byState("in-progress")).toEqual(["run"]);
     expect(byState("unread")).toEqual(["chat", "sched", "slack"]);
     expect(byState("any")).toHaveLength(items.length);
     expect(byState("unread")).not.toEqual(byState("in-progress"));
+    expect(byState("needs-attention")).not.toEqual(byState("unread"));
   });
 });

@@ -4,7 +4,8 @@
  * Claude Code and Pi, Codex's catalog with every field its 0.158 ModelInfo
  * requires, Bob's LiteLLM-shaped model-info under `/inference/v1`), the
  * session handle each harness stamps on its calls, Bob's per-session model
- * rewrite and tier-alias mapping, the three replay rules, the usage
+ * rewrite and tier-alias mapping, the replay rules and the effort level a
+ * DeepSeek target's chat template takes, the usage
  * chunk injection for streamed chat completions, and the Anthropic
  * subscription token routed for Claude Code alone with its OAuth beta flag.
  */
@@ -854,6 +855,30 @@ describe("replay rules", () => {
     expect(applyReplayRules(full, { ...ibm, alias: "anthropic" })).toBe(full);
     const ok = { thinking: { type: "enabled", display: "summarized" } };
     expect(applyReplayRules(ok, ibm)).toBe(ok);
+  });
+
+  /** TEST_SCENARIO: Claude Code sends its persisted effort level, `medium` by
+   * default, as `output_config.effort`; DeepSeek's chat template behind vLLM
+   * refuses that level on the whole call, so a DeepSeek target gets the
+   * nearest one it knows, and every other value and target is left alone. */
+  it("maps an effort level onto the DeepSeek template's own", () => {
+    const deepseek = {
+      dialect: "anthropic-messages" as const,
+      alias: "platform" as const,
+      upstreamId: "deepseek-v4.1-flash",
+    };
+    expect(
+      applyReplayRules(
+        { output_config: { effort: "medium", format: "x" } },
+        deepseek,
+      ),
+    ).toEqual({ output_config: { effort: "high", format: "x" } });
+    const low = { output_config: { effort: "low" } };
+    expect(applyReplayRules(low, deepseek)).toBe(low);
+    const other = { output_config: { effort: "medium" } };
+    expect(
+      applyReplayRules(other, { ...deepseek, upstreamId: "azure/gpt-5.5" }),
+    ).toBe(other);
   });
 
   /** TEST_SCENARIO: Bob asks every model for 64000 output tokens. OpenAI

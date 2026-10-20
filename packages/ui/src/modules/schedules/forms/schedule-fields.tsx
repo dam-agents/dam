@@ -31,11 +31,7 @@ import {
   type Choice,
   OptionPicker,
 } from "../../sessions/components/model-settings-panel.js";
-import {
-  SessionSettingsControls,
-  settingDefaults,
-  settingsForModel,
-} from "../../sessions/components/session-settings-controls.js";
+import { SessionSettingsControls } from "../../sessions/components/session-settings-controls.js";
 import {
   findModel,
   modelGroups,
@@ -43,6 +39,11 @@ import {
   sameSideGroups,
 } from "../../sessions/lib/catalog-groups.js";
 import { fittingProviders } from "../../sessions/lib/session-pair-options.js";
+import {
+  applySettingChanges,
+  settingDefaults,
+  settingsForModel,
+} from "../../sessions/lib/session-settings.js";
 import {
   useHasHarnessDefault,
   useScheduleDefault,
@@ -363,7 +364,7 @@ export function ScheduleSessionTypeField<T extends FieldValues>({
 }
 
 const PRECHECK_HINT =
-  "A shell command run before each fire, from the agent's workspace root (/home/agent/work) — so a script in a repo cloned there is ./<repo>/scripts/check.sh. Exit 0 runs the task, exit 1 skips this occurrence without waking a model, and any other exit means the check itself broke — the task runs anyway. Whatever it prints is appended to the prompt.";
+  "A shell command run in the agent's workspace before each run. Exit 0 runs the task, exit 1 skips this run, and any other exit runs it anyway. What it prints is added to the prompt.";
 
 const PRECHECK_PLACEHOLDER =
   "git fetch -q && git log --oneline HEAD..origin/main | grep -q .";
@@ -625,7 +626,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       </FormField>
       <FormField
         label="Model"
-        hint="Named with its provider. Agent default runs on the agent's default model for the harness."
+        hint="Each model is named with its provider. Agent default uses the agent's default model for the harness."
         {...(migrationNote ? { error: migrationNote } : {})}
       >
         <OptionPicker
@@ -657,6 +658,8 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       {capability?.sessionSettings && capability.sessionSettings.length > 0 && (
         <FormField label="Session settings">
           <SessionSettingsControls
+            agentId={agentId}
+            carried={carried}
             capability={capability}
             model={modelValue || null}
             settings={settingsValue ?? {}}
@@ -670,8 +673,10 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
                 name: `${m.upstreamId} · ${g.displayName}`,
               })),
             )}
-            onChange={(id, value) =>
-              settingsField.onChange({ ...(settingsValue ?? {}), [id]: value })
+            onChange={(changes) =>
+              settingsField.onChange(
+                applySettingChanges(settingsValue ?? {}, changes),
+              )
             }
           />
         </FormField>

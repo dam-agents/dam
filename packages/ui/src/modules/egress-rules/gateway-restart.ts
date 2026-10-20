@@ -10,7 +10,7 @@ import { splitHostPort } from "./host-port.js";
 
 type ShowConfirm = DialogSlice["showConfirm"];
 
-const GATEWAY_RESTART_TITLE = "Restart network gateway?";
+export const GATEWAY_RESTART_TITLE = "Restart network access?";
 
 interface StagedGatewayRestart {
   promoted: string[];
@@ -77,9 +77,9 @@ export function describeGatewayRestart(impact: StagedGatewayRestart): string {
   const timing =
     rolls > 1 ? "restarts more than once (~5–15s each)" : "restarts (~5–15s)";
   if (clauses.length === 0) {
-    return `The network gateway ${timing}. ${AGENT_KEEPS_RUNNING}`;
+    return `Network access ${timing}. ${AGENT_KEEPS_RUNNING}`;
   }
-  return `The network gateway ${timing} to ${joinClauses(clauses)}. ${AGENT_KEEPS_RUNNING}`;
+  return `Network access ${timing} to ${joinClauses(clauses)}. ${AGENT_KEEPS_RUNNING}`;
 }
 
 async function confirmGatewayRestart(

@@ -187,7 +187,8 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         readTemplateResources: async (templateId) =>
           (await templatesRepo.readSpec(templateId))?.spec.resources,
         defaultLimits,
-        vmForced: agentsInstallSettings(config).vmForced,
+        virtualizationEnabled:
+          agentsInstallSettings(config).virtualizationEnabled,
         gate: composeSpawnSizeGate({
           k8s: k8sClient,
           owner,
@@ -242,6 +243,10 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
         defaultCeiling,
         slotSize: defaultLimits,
         isSlackUnlinked: async () => false,
+        vmPool: {
+          storage: config.vmPoolStorage,
+          memory: config.vmPoolMemory,
+        },
       }).budgets,
     defaultLimits,
   };

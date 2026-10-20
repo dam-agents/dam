@@ -6,6 +6,11 @@ import type {
   SkillsService,
 } from "api-server-api";
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
+import { createInvocationLinks } from "./infrastructure/invocation-links.js";
+import {
+  createSpawnSessions,
+  type SpawnSessions,
+} from "./services/spawn-sessions.js";
 import { createDelegationControl } from "./services/delegation-control.js";
 import { createSubAgentOutcomesRepository } from "./infrastructure/sub-agent-outcomes-repository.js";
 import { createDelegationsQuery } from "./services/delegations-query.js";
@@ -160,6 +165,13 @@ export function composeSubAgentAwaitMarks(
 
 export function createDriverResolutionAdapter(db: Db): DriverResolution {
   return createDriverResolution({ repo: createInvocationsRepository(db) });
+}
+
+export function createSpawnSessionsAdapter(db: Db): SpawnSessions {
+  return createSpawnSessions({
+    driverResolution: createDriverResolutionAdapter(db),
+    links: createInvocationLinks(db),
+  });
 }
 
 export function createInvocationsCleanupHook(opts: {

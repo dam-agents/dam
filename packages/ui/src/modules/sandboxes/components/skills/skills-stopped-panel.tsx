@@ -60,8 +60,9 @@ export function SkillsStoppedPanel({
   loadingBySource,
   revalidatingBySource,
   errorBySource,
-  addSourceButton,
+  addSourceRow,
   callout,
+  disabledNotice,
   comingUp,
   onStart,
   onRescan,
@@ -77,8 +78,9 @@ export function SkillsStoppedPanel({
   loadingBySource: Record<string, boolean>;
   revalidatingBySource: Record<string, boolean>;
   errorBySource: Record<string, ScanFailure | null>;
-  addSourceButton: ReactNode;
+  addSourceRow: ReactNode;
   callout?: ReactNode;
+  disabledNotice?: ReactNode;
   comingUp: boolean;
   onStart: () => void;
   onRescan: (source: SkillSource) => void;
@@ -88,10 +90,12 @@ export function SkillsStoppedPanel({
   return (
     <div className="flex flex-col gap-8">
       {callout && <div className="-mb-4">{callout}</div>}
-      <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
-        — its skills are read-only until it wakes. Wake the agent to change
-        them.
-      </AgentSleepingCallout>
+      {disabledNotice ?? (
+        <AgentSleepingCallout comingUp={comingUp} onStart={onStart}>
+          — its skills are read-only until it wakes. Wake the agent to change
+          them.
+        </AgentSleepingCallout>
+      )}
 
       <section>
         <SectionHeader label="Skills at next start" />
@@ -121,16 +125,10 @@ export function SkillsStoppedPanel({
             </SnapshotRow>
           ))}
         </Card>
-        <p className="mt-2.5 text-sm text-muted-foreground">
-          Search, bulk actions and per-skill toggles need the agent running —
-          they&rsquo;re left out here rather than shown greyed out.
-        </p>
       </section>
 
       <section>
-        <SectionHeader label="Connected sources">
-          {addSourceButton}
-        </SectionHeader>
+        <SectionHeader label="Connected sources" />
         <SkillSourceList
           sources={sources}
           loaded={sourcesLoaded}
@@ -143,6 +141,9 @@ export function SkillsStoppedPanel({
           onRemove={onRemove}
           onManageConnections={onManageConnections}
         />
+        {sourcesLoaded && (
+          <Card className="mt-3 overflow-hidden">{addSourceRow}</Card>
+        )}
         <p className="mt-2.5 text-sm text-muted-foreground">
           Sources stay editable while stopped. Reading what a private one
           contains needs the agent running.

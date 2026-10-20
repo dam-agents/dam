@@ -1,12 +1,17 @@
 # VM runtime migration
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
-A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it only to users who opted into the new runtime.
+A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at the user's request, and can be undone until the Agent's machine has booted from the copy; the UI offers it to the owner of any container Agent on an install that can run a machine, which is the only install where one could move.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
 An Agent whose mounts persist any other path — outside `HOME`, or a volume of its own inside it — is refused with each such path named, rather than moved without it; a mount that is not persisted, such as `/tmp`, is carried by nothing and refuses nothing.
 The api-server plans from the mounts the controller renders — the Agent's own, or the install's template defaults when it names none — and refuses such a path, an Agent that does not persist `HOME`, which leaves nothing to carry, an Agent already being moved or still clearing up an earlier move, and one mid-way through a storage migration; the UI offers the move from that same refusal.
-Starting the move is also refused while its owner's storage is 90% used; the plan does not say so in advance.
+Starting the move is also refused when the owner's [VM pool](budgets.md#what-is-counted) cannot hold it: the move needs about twice what `HOME` holds on that pool's storage — the seed until the switch, and as much again on the machine's first disk — up to the level the runner itself refuses a seed at, and the pool needs the memory for one more machine, which may grow to half of it.
+What `HOME` holds is what the Agent's own runtime measured on its volume: the volume's size is the most it may hold, and a home judged by that would never move off a workspace it is nowhere near filling.
+An Agent that is not running cannot be measured — its volume has nothing mounted on it to ask — so it is refused on nothing there and the runner stops a copy that does not fit on its own.
+A measurement larger than the volume's own size is not the home: a claim backed by a directory on a node is mounted from a filesystem the whole node shares, so it is read as the volume at most.
+The pool is the figures the owner's runner last reported, and, for an owner with no runner yet, the sizes the install creates it at, each replaced by the owner's [UserBudget](budgets.md#the-ceiling) where it names one.
+Those figures come from the runner's own [usage read](vm-runner.md), so the plan says them before the user agrees, and an unreadable pool refuses nothing, since the runner refuses what it has no room for on its own.
 Otherwise it writes a request and no spec: the **target** shape and a **snapshot** of every field the switch will change.
 That write, and every later one — an abort, a retry, the switch — is conditioned on the version of the Agent it was decided from, so a change in between — a storage migration starting, a second request, the controller's status — fails it as a conflict, decided again from a fresh read and reported to retry if it keeps losing.
 The container spec stays the Agent's spec until the machine has proven the copy, so the api-server stays the only spec writer and the switch is its write, not the controller's.
@@ -17,6 +22,7 @@ Only then does it scale the container's StatefulSet to zero — keeping it, and 
 The machine boots once even for an Agent that was asleep or stopped when the move began, and that stop holds again once the guest has answered.
 No stop holds the boot, not even one asked for during the move, because every wake is refused until the move ends and nothing could release it; the api-server refuses a sleep while the move holds the Agent, and a stop from the preflight, whose own clear may have been missed, waits for the guest's answer like an older one.
 While it boots the gateway serves the machine, admitting the owner's runner, and the container stays down, so the Agent's Service routes to the machine instead, as a vm Agent's does; an abort before the verified boot gives the container its headless Service back.
+With the [owner gateway](credential-gateway.md#owner-gateway) on, the migrating Agent keeps its own gateway until its Backend switches, and moves to the owner gateway like any vm Agent after that.
 A guest that answers with its home from the copy's seed, as the next paragraph says, makes the migration **verified**, the point of no return; the api-server, which polls for verified Agents, then switches the Backend to the target shape and withdraws the request in one write, and only after that does the controller remove the StatefulSet and the seed and retain the old home volume.
 A copy that fails is reported with the copy Job's own error and retried, and so is one whose pod has not started ten minutes after its Job was made — a volume still attached to another node, a mount that fails — with the reason its pod's Events give; after three attempts, or once the migration has run for six hours, it is **failed**, with the reason on the Agent.
 A copy no fresh attempt can change — a home past the copy's walk limits, or larger than the machine's disk — fails it at the first attempt instead, saying what the user can change.
@@ -27,7 +33,7 @@ A failed migration keeps a container it had stopped stopped and one it never sto
 A **retry** starts over from the preflight with a fresh machine, since a boot that failed may have seeded part of its disk.
 An **abort** is valid in every phase before verified: the api-server withdraws the request and writes the snapshot's fields back, and the controller deletes the copy Job and the machine with its seed and removes the condition; the old volumes never lost their labels, so the container resumes on them as they were.
 An abort does not wait on a runner that cannot be reached, since that is when a user most needs the container back: the controller marks the machine it could not delete as left on the Agent (`agent-platform.ai/runtime-migration-machine-left`) and removes the condition anyway.
-Such an Agent no longer claims a machine of its name, so the [orphan sweep](vm-runner.md#runner-lifecycle) deletes it once the runner answers and drops the mark; a new migration of the Agent deletes it first, so its machine starts on a fresh disk.
+Such an Agent no longer claims a machine of its name, so the [orphan sweep](vm-runner.md#runner-lifecycle) deletes it once the runner answers and no sweep has found an Agent for it in half an hour, and then drops the mark; a new migration of the Agent deletes it first, so its machine starts on a fresh disk.
 Both writes carry the version they were decided from — the api-server's abort against the controller's status, the controller's verified mark against the request — so exactly one of an abort and a verified boot wins.
 The copy Job waits for the runner to accept its connection before it uploads, because a policy engine admits a new pod to the runner's ingress rule only after the pod exists.
 
@@ -47,6 +53,7 @@ The copy Job reports the seed the runner stored, its size and digest, once the r
 The Job is the only record of that seed, so it has no time to live and is deleted only once the seed is on the Agent: a controller that restarts or comes late finds one or the other, and the migration boots without another copy.
 The runner starts that machine only while its share holds exactly that seed, judged by the digest its upload was answered with, and otherwise refuses under a reason of its own; it also writes the expectation into the share, where the guest reads it and cannot change it.
 platform-init then restores the home from that seed, hashing it as it unpacks, or fails the boot — it never falls back to the image — and records on the disk which seed it used, so a reboot before the migration ends mounts that home again and refuses any other.
+Until the guest first answers, the runner reports the boot as copying a disk, so a large home's restore is held for up to six hours rather than restarted, and the controller counts it as neither a failed start nor idle.
 When the guest first answers, the runner records the expected seed as the one the home came from and reports it in the machine's status: platform-init let the image start only on a home from that seed, so the answer is the proof, and nothing is read off a disk the guest has had root on.
 A change in the expectation alone restarts no machine.
 The controller marks the migration verified only when the machine is ready and reports the seed it expects.

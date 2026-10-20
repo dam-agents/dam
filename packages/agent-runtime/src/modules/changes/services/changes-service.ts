@@ -57,7 +57,7 @@ function byRepositoryThenPath(a: ChangeSetEntry, b: ChangeSetEntry): number {
 }
 
 export interface ChangesRuntime extends ChangesService {
-  onToolActivity(activity: ToolActivity): void;
+  onToolActivity(activity: ToolActivity): Promise<void>;
   repositoriesOf(sessionId: string): SessionRepository[];
 }
 
@@ -249,6 +249,7 @@ export function createChangesService(deps: {
   const toplevelOf = new Map<string, string>();
   let indexedAt = Number.NEGATIVE_INFINITY;
   let indexing = false;
+  let indexed = Promise.resolve();
 
   const pushLogs = createPushLogWatcher({
     onPush: (push) =>
@@ -260,11 +261,12 @@ export function createChangesService(deps: {
     log: deps.log,
   });
 
-  function indexRepositories(): void {
-    if (indexing || Date.now() - indexedAt < REPOSITORY_INDEX_MS) return;
+  function indexRepositories(): Promise<void> {
+    if (indexing || Date.now() - indexedAt < REPOSITORY_INDEX_MS)
+      return indexed;
     indexing = true;
     indexedAt = Date.now();
-    void (async () => {
+    indexed = (async () => {
       const dirs = await findRepositoryDirs(deps.roots);
       const located = await mapLimit(
         [...new Set([...dirs, ...deps.touched.paths()])],
@@ -284,6 +286,7 @@ export function createChangesService(deps: {
       .finally(() => {
         indexing = false;
       });
+    return indexed;
   }
 
   function pushedFrom(
@@ -362,7 +365,10 @@ export function createChangesService(deps: {
     changed();
   }
 
-  async function recordEdits(activity: ToolActivity): Promise<void> {
+  async function recordEdits(
+    activity: ToolActivity,
+    pushWatches: Promise<void>[],
+  ): Promise<void> {
     const editedAt = now().toISOString();
     const locations = await mapLimit(
       activity.editedPaths,
@@ -375,7 +381,7 @@ export function createChangesService(deps: {
     for (const location of toplevels.values()) {
       if (!toplevelOf.has(location.commonDir)) {
         toplevelOf.set(location.commonDir, location.toplevel);
-        void pushLogs.watch([location.commonDir]);
+        pushWatches.push(pushLogs.watch([location.commonDir]));
       }
       const { name, branch } = await describe(location.toplevel);
       deps.touched.record(activity.sessionId, location.toplevel, {
@@ -436,7 +442,7 @@ export function createChangesService(deps: {
     },
 
     onToolActivity(activity) {
-      indexRepositories();
+      const pushWatches = [indexRepositories()];
       if (activity.toolCallId !== null) {
         if (activity.started)
           windows.started(activity.sessionId, activity.toolCallId);
@@ -445,7 +451,7 @@ export function createChangesService(deps: {
       }
       const recorded =
         activity.editedPaths.length > 0
-          ? recordEdits(activity).catch((error: unknown) =>
+          ? recordEdits(activity, pushWatches).catch((error: unknown) =>
               deps.log(
                 `recording edited repositories failed: ${error instanceof Error ? error.message : String(error)}`,
               ),
@@ -461,6 +467,9 @@ export function createChangesService(deps: {
               `linking the session's pull requests failed: ${error instanceof Error ? error.message : String(error)}`,
             ),
           );
+      return recorded
+        .then(() => Promise.all(pushWatches))
+        .then(() => undefined);
     },
 
     repositoriesOf(sessionId) {

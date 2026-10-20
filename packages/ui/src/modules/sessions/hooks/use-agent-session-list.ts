@@ -10,16 +10,17 @@ import {
 } from "../../agents/api/queries.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
-import { useSessionCosts } from "../../metrics/api/queries.js";
+import { useSessionSpend } from "../../spend/api/queries.js";
 import { useAgentBackgroundWork } from "../api/background-work.js";
 import { useProvisionalSessions, useSessionPages } from "../api/queries.js";
 import { draftKey, keysWithDraftContent } from "../lib/draft-key.js";
+import { shownSessionId } from "../lib/shown-session.js";
 import { useSessionConversations } from "../lib/use-session-conversations.js";
 
 const EMPTY: never[] = [];
 
 export function useAgentSessionList(agentId: string) {
-  const sessionId = useStore((s) => s.sessionId);
+  const sessionId = useStore(shownSessionId);
   const busy = useStore((s) => s.busy);
   const pendingPermissions = useStore((s) => s.pendingPermissions);
   const sessionFilter = useStore((s) => s.sessionFilter);
@@ -50,7 +51,7 @@ export function useAgentSessionList(agentId: string) {
     [sessions, sessionFilter],
   );
 
-  const costs = useSessionCosts(agentId, sessions);
+  const costs = useSessionSpend(agentId, sessions);
   const { data: approvals = EMPTY } = useApprovalsForAgent(agentId);
   const approvalSessions = useMemo(() => {
     const set = new Set<string>();
@@ -79,7 +80,6 @@ export function useAgentSessionList(agentId: string) {
         pendingPermissions.some((p) => p.sessionId === s.sessionId),
       unread: isUnreadSession(s, { open }),
       draft: !terminal && draftKeySet.has(draftKey(agentId, s.sessionId)),
-      provisional,
       backgroundWork: backgroundWorkBySession.get(s.sessionId),
       cost: costs.get(s.sessionId),
       conversation: conversationOf(s),

@@ -28,6 +28,12 @@ describe("computeAgentState with a machine reason", () => {
     );
   });
 
+  it("reads a runner that cannot reach its node's image cache as an error", () => {
+    expect(computeAgentState(notReady("MachineImageCacheUnreachable"))).toBe(
+      "error",
+    );
+  });
+
   it("reads a runner no node can place as an error", () => {
     expect(computeAgentState(notReady("MachineRunnerUnschedulable"))).toBe(
       "error",
@@ -36,6 +42,10 @@ describe("computeAgentState with a machine reason", () => {
 
   it("reads a machine refused for its owner's full storage as an error", () => {
     expect(computeAgentState(notReady("MachineStorageFull"))).toBe("error");
+  });
+
+  it("reads a runner whose node the cluster has lost as an error, not as one still starting", () => {
+    expect(computeAgentState(notReady("MachineRunnerNodeLost"))).toBe("error");
   });
 
   it("leaves a machine that is merely coming up as starting", () => {

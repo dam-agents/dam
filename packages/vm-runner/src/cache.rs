@@ -11,14 +11,14 @@ pub const PARTIAL_PREFIX: &str = ".unpack-";
 // UNIT_BOUNDARY_DESCRIPTION: the longest a single image fetch may run.
 pub const PULL_TIMEOUT: Duration = Duration::from_secs(20 * 60);
 
-// UNIT_BOUNDARY_DESCRIPTION: where an install with no registry stages the `docker save` archive of an image: the reference with the three characters a path segment must not carry replaced by an underscore, and `.tar` after it. `cluster:install` writes the archive under this name, so both must replace the same characters. The runner only reads these archives, and eviction never counts one.
+// UNIT_BOUNDARY_DESCRIPTION: where an install with no registry once staged the `docker save` archive of an image: the staged tree's name with `.tar` after it. The runner boots no archive and refuses one it finds here, so the person who staged it by hand learns to restage it as a tree; eviction never counts one.
 pub fn archive_path(image_dir: &Path, image: &str) -> PathBuf {
     let mut path = staged_path(image_dir, image).into_os_string();
     path.push(".tar");
     path.into()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: where an install with no registry stages an image as a tree, `rootfs` and the launch record under the same name the archive would carry without its extension. This is what `image:stage-vm` makes.
+// UNIT_BOUNDARY_DESCRIPTION: where an install with no registry stages an image as a tree, `rootfs` and the launch record: the reference with the three characters a path segment must not carry replaced by an underscore. This is what `image:stage-vm` makes, so both must replace the same characters.
 pub fn staged_path(image_dir: &Path, image: &str) -> PathBuf {
     image_dir.join(image.replace(['/', ':', '@'], "_"))
 }
@@ -156,9 +156,9 @@ mod tests {
     use super::*;
     use crate::testdir::TempDir;
 
-    // TEST_SCENARIO: an install with no registry stages each image's archive under a name `cluster:install` makes by replacing the three characters a reference carries that a path segment cannot. The runner has to look for the same name, or it finds no archive and the machine has nothing to boot.
+    // TEST_SCENARIO: an install with no registry stages each image under a name `image:stage-vm` makes by replacing the three characters a reference carries that a path segment cannot, and an archive staged by hand carries that name with `.tar`. The runner has to look for the same names, or it finds no tree to boot and no archive to refuse.
     #[test]
-    fn a_staged_archive_is_named_after_its_reference() {
+    fn a_staged_image_is_named_after_its_reference() {
         let dir = Path::new("/images");
         assert_eq!(
             archive_path(dir, "quay.io/dam-agents/agent:1.2.3"),

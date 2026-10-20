@@ -1,25 +1,31 @@
 # OpenShift node configuration
 
-Node configuration for an OpenShift cluster that runs the platform with VM agents and the harness tools.
+Node configuration for an OpenShift cluster that runs the platform with VM agents.
 Applying either file drains and reboots every node of the pools it reaches, one node at a time per pool, so a cluster admin applies them at a scheduled time.
 [`cluster-owner-requests.md`](cluster-owner-requests.md) lists what else the platform asks of the cluster owner.
 
 ## Files
 
-| File                                                                     | Kind                          | What it does                                                                                                                                                                                                                     |
-| ------------------------------------------------------------------------ | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| [`99-worker-platform-host-dirs.yaml`](99-worker-platform-host-dirs.yaml) | MachineConfig, Ignition 3.5.0 | Creates the platform's node directories as `root:root 0755` through a tmpfiles.d entry, and labels each one `system_u:object_r:container_file_t:s0` on every boot through a oneshot unit that runs before CRI-O and the kubelet. |
-| [`worker-image-gc.yaml`](worker-image-gc.yaml)                           | KubeletConfig                 | Starts kubelet image garbage collection at 75% disk use and collects down to 65%, for images unused for at least 30 minutes.                                                                                                     |
+| File                                                                     | Kind                          | What it does                                                                                                                                                                                                                                                    |
+| ------------------------------------------------------------------------ | ----------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`99-worker-platform-host-dirs.yaml`](99-worker-platform-host-dirs.yaml) | MachineConfig, Ignition 3.5.0 | Creates the platform's node directories as `root:root`, `0755` and the image cache `0700`, through a tmpfiles.d entry, and labels each one `system_u:object_r:container_file_t:s0` on every boot through a oneshot unit that runs before CRI-O and the kubelet. |
+| [`worker-image-gc.yaml`](worker-image-gc.yaml)                           | KubeletConfig                 | Starts kubelet image garbage collection at 75% disk use and collects down to 65%, for images unused for at least 30 minutes.                                                                                                                                    |
 
 ### The node directories
 
 The chart's defaults and the values an OpenShift install uses for them:
 
-| Path                                   | Chart value                             | Writer                      | Readers                                                 |
-| -------------------------------------- | --------------------------------------- | --------------------------- | ------------------------------------------------------- |
-| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath` | the release stager          | VM runners, read-only                                   |
-| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath`    | the image cache service     | VM runners, read-only, and the cache's socket inside it |
-| `/var/lib/platform-harness-tools`      | `harnessTools.hostPath`                 | the harness tools installer | container agents and VM runners, read-only              |
+| Path                                   | Chart value                                                                                 | Writer                  | Readers                                                 |
+| -------------------------------------- | ------------------------------------------------------------------------------------------- | ----------------------- | ------------------------------------------------------- |
+| `/var/lib/platform-vm-runner-releases` | `virtualization.runner.releaseHostPath`                                                     | the release stager      | VM runners, read-only                                   |
+| `/var/lib/platform-images`             | `virtualization.imageCache.hostPath` (no default: a root the chart names an install inside) | the image cache service | VM runners, read-only, and the cache's socket inside it |
+| `/var/lib/platform-harness-tools`      | none                                                                                        | none                    | none                                                    |
+
+Each install's cache directory is the chart's own subdirectory of this root, named `<release namespace>/<release name>` — the pair the cluster keeps unique — and the chart derives it, so no value can give two installs one directory: the nodes are shared, and the service is the only writer of the directory it serves.
+The kubelet creates that subdirectory on the node, for the `DirectoryOrCreate` volume of the cache pod, and the service labels it for containers as it opens it.
+
+`/var/lib/platform-harness-tools` held the harness tools before the default image baked them, and no pod mounts it any more.
+The MachineConfig still creates it, because a change to the MachineConfig drains and reboots every node; drop it the next time the MachineConfig changes for another reason.
 
 If an install sets other paths in its values, change the paths in the MachineConfig to match: the tmpfiles entry is URL-encoded in the file's `source`, decoded in the comment above it.
 
@@ -40,13 +46,11 @@ Why this label and mechanism:
 
 ### Every node host path the platform mounts
 
-| Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                                                           | Created by this MachineConfig                                                                                          |
-| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `harnessTools.hostPath` (`/var/lib/platform-harness-tools`)                      | harness tools installer (writes); container agents and VM runners (read-only, from the controller)             | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
-| `virtualization.imageCache.hostPath` (`/var/lib/platform-images`)                | image cache service (writes); VM runners (read-only, from the controller)                                      | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
-| `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755`                                           | yes                                                                                                                    |
-| `virtualization.runner.imageArchiveHostPath` (empty by default)                  | VM runners (read-only, from the controller)                                                                    | `container_file_t:s0` on OpenShift; staged by hand with `mise run image:stage-vm` | no: it is for clusters without a registry, such as local dev, and is left to `DirectoryOrCreate` and whoever stages it |
-| `/var/lib/kubelet/device-plugins`, `/dev`                                        | KVM device plugin ([`helm/extra/kvm-device-plugin.yaml`](../../helm/extra/kvm-device-plugin.yaml)), privileged | the host's own labels                                                             | no: system paths, and the pod is privileged                                                                            |
+| Host path                                                                        | Mounted by                                                                                                     | Label and mode it needs                                                                 | Created by this MachineConfig                                                                            |
+| -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| `virtualization.imageCache.hostPath` (under `/var/lib/platform-images`)          | image cache service (writes); VM runners (read-only, from the controller)                                      | inherited from the directory above, then `container_file_t:s0` set by the cache service | the parent only: the kubelet creates the install's own `<release namespace>/<release name>` subdirectory |
+| `virtualization.runner.releaseHostPath` (`/var/lib/platform-vm-runner-releases`) | release stager (writes); VM runners (read-only, from the controller)                                           | `container_file_t:s0`, `root:root 0755`                                                 | yes                                                                                                      |
+| `/var/lib/kubelet/device-plugins`, `/dev`                                        | KVM device plugin ([`helm/extra/kvm-device-plugin.yaml`](../../helm/extra/kvm-device-plugin.yaml)), privileged | the host's own labels                                                                   | no: system paths, and the pod is privileged                                                              |
 
 Every other volume the chart and the controller create is a claim, a ConfigMap, a Secret, a projected volume or an `emptyDir`.
 
@@ -145,7 +149,7 @@ Expect 6 to 10 minutes per node (drain plus an RHCOS reboot), times the node cou
      grep -E "imageGC(High|Low)ThresholdPercent|imageMinimumGCAge" /etc/kubernetes/kubelet.conf'
    ```
 
-   Expected: each directory `root:root 755 system_u:object_r:container_file_t:s0`, the unit `active`, and the kubelet values `75`, `65` and `30m`.
+   Expected: each directory `root:root 755 system_u:object_r:container_file_t:s0`, `/var/lib/platform-images` at `700`, the unit `active`, and the kubelet values `75`, `65` and `30m`.
 
 ## Roll back
 
@@ -165,7 +169,7 @@ Deleting the MachineConfig removes the tmpfiles entry and the unit, but leaves t
 ## Follow-up chart changes
 
 Make these only after every node of every reached pool passes the spot-check.
-All three writers keep the SCC that admits a host directory and leaves SELinux options to the pod (`seLinuxContext: RunAsAny`): the hostPath needs it, and so does pinning `level: s0`, without which a pod gets its namespace's category pair and writes files other namespaces cannot read.
+Both writers keep the SCC that admits a host directory and leaves SELinux options to the pod (`seLinuxContext: RunAsAny`): the hostPath needs it, and so does pinning `level: s0`, without which a pod gets its namespace's category pair and writes files other namespaces cannot read.
 
 **Release stager** ([`vm-runner-releases.yaml`](../../helm/templates/controller/vm-runner-releases.yaml)):
 
@@ -182,13 +186,7 @@ All three writers keep the SCC that admits a host directory and leaves SELinux o
 - On OpenShift, change the hostPath type to `Directory`.
 - Test on a dev install first: runners then connect to the cache's socket held by a confined process at `s0`, instead of an unconfined one.
 
-**Harness tools installer** ([`harness-tools.yaml`](../../helm/templates/harness-tools.yaml)):
-
-- Drop `seLinuxOptions.type: spc_t`, keep `level: s0`, and drop the label argument the installer passes to `chcon`.
-- Keep `DAC_OVERRIDE`: mise writes its own directories as root under an SCC that drops every capability.
-- On OpenShift, change the hostPath type to `Directory`.
-
-The controller mounts the same three directories into agents and runners as `DirectoryOrCreate`; on OpenShift, switch those to `Directory` in the same change, so a pod on a node without them fails visibly.
+The controller mounts the same two directories into runners as `DirectoryOrCreate`; on OpenShift, switch those to `Directory` in the same change, so a pod on a node without them fails visibly.
 Update the text that says the writers run as `spc_t`: the `values.yaml` comments, the `_validators.tpl` messages and the architecture pages ([VM runner upgrades](../../docs/architecture/vm-runner-upgrades.md), [VM image cache](../../docs/architecture/vm-image-cache.md), [agent images](../../docs/architecture/agent-images.md)).
 
 **Runner image file modes, so the stager can drop `DAC_OVERRIDE`.**
@@ -196,17 +194,19 @@ The stager holds `DAC_OVERRIDE` on OpenShift (`DAC_READ_SEARCH` elsewhere) only 
 Make those files owner-readable in the runner image build, then drop the capability from the stager on every platform.
 The stager copies the guest agent's root filesystem with its modes, so check that the guest does not rely on the restrictive mode before changing it.
 
-## Turn on runner release hand-offs
+## Runner release hand-offs
 
-Do this after the chart changes above, on an install whose nodes all have the release directory.
+Every install with runner pods has a release directory: `virtualization.runner.releaseHostPath` defaults to `/var/lib/platform-vm-runner-releases`, and the chart refuses an empty one.
+Give the nodes that directory first, with the chart changes above.
 
-1. Set `virtualization.runner.releaseHostPath: /var/lib/platform-vm-runner-releases` in the install's values and upgrade the release.
-   The chart then deploys the release stager on the runners' nodes.
-   Installs that share nodes each take their own subdirectory, such as `/var/lib/platform-vm-runner-releases/<release>`: every stager keeps only the newest few releases in its directory, so in a shared one an install that releases often removes another's.
-2. The new hostPath changes every runner pod's shape, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
-   The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
-   Expect the whole roll to take about owners / `maxConcurrent` × (runner restart + machine boot), plus the idle waits.
-3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots.
+1. Set `virtualization.runner.releaseHostPath` in the install's values if the default does not fit, and upgrade the release.
+   The chart deploys the release stager on the runners' nodes.
+   Each install stages into its own subdirectory, named after its agent namespace, because every stager keeps only the newest few releases in its directory.
+   A chart from before the subdirectories staged releases at the top of the directory; nothing reads those any more, and they can be removed by hand.
+2. The upgrade to a chart that names releases over the machine API changes every runner pod's shape, whether or not the install had a release directory before, so the controller rolls every runner once, and each roll reboots all of that owner's machines.
+   The roll follows `virtualization.runner.rollout`: `maxConcurrent` runners at a time, or `maxConcurrentPercent` of them where that is set, and a runner whose owner has an agent in the middle of a turn waits for it to go idle, at most `idleWait`.
+   Expect the whole roll to take about owners / width × (runner restart + machine boot), plus the idle waits.
+3. From then on, a new runner image reaches each runner pod in place: the loader hands the machines to the new release, and no machine reboots — except for a release that declares a reboot key the pod does not run (`packages/vm-runner/reboot-id`), whose fix reaches a machine only by rebooting it, so the runner holds it and the controller rolls the runner pods onto it instead of handing off, under the same width and without waiting for idle agents (that roll ends the turn each busy agent is in); a pod built from a release that declares no key takes it in place, since there is nothing to compare, until its pod's shape changes for another reason, which rolls it onto a release that carries a key; a runner that holds that release as failed keeps its pod, since a pod on it would fail the same way.
    The first live hand-off is the first proof of the hand-off on OpenShift; it happens at the next chart upgrade that changes the runner image.
 
 Watch the first hand-off:
@@ -222,6 +222,6 @@ A good hand-off logs `handing the machines off to another runner release`, then 
 The runner pods keep their start time and restart count, and the agents' sessions keep running: their machines did not reboot.
 A line with `going back to the one it replaced` means the new release failed and the loader returned to the old one; the machines keep running on it, and the controller rolls that runner's pod onto the new image only when the release was built for another pod.
 
-To roll back, unset `releaseHostPath` and upgrade the release.
-That removes the stager and changes every runner pod's shape again, so every runner rolls once more and reboots its owner's machines; after that, each new runner image rolls the pods as before.
+To leave a runner release, configure the previous runner image again and upgrade: the same hand-off takes the machines back to it.
+A hand-off the controller finds in trouble is marked with the `agent-platform.ai/runner-handoff-stalled` annotation on that runner's Deployment and halts the release; remove the annotation to let it go on.
 The directory and its staged releases stay on the nodes until removed by hand.

@@ -1,7 +1,12 @@
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { DelegationNode } from "api-server-api";
 
 import { trpc } from "../../../trpc.js";
-import { awaitsCapture, hasRunning } from "../lib/delegation-state.js";
+import {
+  awaitsCapture,
+  hasJustEnded,
+  hasRunning,
+} from "../lib/delegation-state.js";
 
 const LIVE_POLL_MS = 5_000;
 const IDLE_POLL_MS = 15_000;
@@ -34,7 +39,7 @@ export function useInvocationTurns(
   driverAgentId: string | null,
   ids: readonly string[],
   enabled: boolean,
-  live: boolean,
+  nodes: readonly DelegationNode[],
 ) {
   return useQuery({
     ...trpc.telemetry.invocationTurns.queryOptions(
@@ -43,30 +48,42 @@ export function useInvocationTurns(
         : skipToken,
     ),
     staleTime: 2_000,
-    refetchInterval: live ? LIVE_POLL_MS : false,
+    refetchInterval: () =>
+      hasRunning(nodes) || hasJustEnded(nodes, Date.now())
+        ? LIVE_POLL_MS
+        : false,
     retry: false,
   });
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a driver's running children are read while its
+ * UNIT_BOUNDARY_DESCRIPTION: a driver's running children, as one of its
+ * chats shows them: the ones that chat's Session spawned and the ones with no
+ * recorded Session. They are read once when a chat first shows, while its
  * turn runs, while its transcript names a fan-out, and for as long as the last
  * answer still had a child running, so a background fan-out stays in view
  * without every open chat polling forever.
  */
 export function useRunningDelegations(
   driverAgentId: string | null,
+  sessionId: string | null,
   opts: { busy: boolean; watch: boolean },
 ) {
   const options = trpc.invocations.running.queryOptions(
-    driverAgentId ? { driverAgentId } : skipToken,
+    driverAgentId ? { driverAgentId, sessionId } : skipToken,
   );
-  const cached = useQueryClient().getQueryData(options.queryKey);
+  const state = useQueryClient().getQueryState(options.queryKey);
+  const neverRead =
+    state === undefined ||
+    (state.dataUpdatedAt === 0 && state.errorUpdatedAt === 0);
   return useQuery({
     ...options,
     enabled:
       driverAgentId !== null &&
-      (opts.busy || opts.watch || hasRunning(cached?.nodes ?? [])),
+      (opts.busy ||
+        opts.watch ||
+        neverRead ||
+        hasRunning(state.data?.nodes ?? [])),
     staleTime: 1_000,
     refetchInterval: (query) =>
       opts.busy || hasRunning(query.state.data?.nodes ?? [])

@@ -173,9 +173,21 @@ describe("harness icons on provider and preset cards", () => {
         expect(html).toContain(">Not connected<");
       }
       for (const name of ["Bob", "Claude", "Codex", "Pi"])
-        expect(html).toContain(`role="img" aria-label="${name}" tabindex="0"`);
+        expect(html).toContain(`role="img" aria-label="${name}"`);
+      expect(html).not.toContain("tabindex");
     },
   );
+
+  it("keeps the harness icons focusable on a row that is not a button", () => {
+    const html = renderToStaticMarkup(
+      createElement(ProviderRow, {
+        type: "anthropic",
+        connected: true,
+        harnesses: ["claude-code"],
+      }),
+    );
+    expect(html).toContain('role="img" aria-label="Claude" tabindex="0"');
+  });
 
   it.each([{ harnesses: undefined }, { harnesses: [] }])(
     "does not invent compatibility when the catalog is missing or empty (%s)",

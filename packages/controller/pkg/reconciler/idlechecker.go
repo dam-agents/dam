@@ -163,7 +163,7 @@ func hibernationPublished(agent *unstructured.Unstructured) bool {
 	return false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
+// UNIT_BOUNDARY_DESCRIPTION: a cold first boot of a vm agent can outlast the idle timeout the wake started: an image no runner has cached, a fresh runner expanding its disk templates, a large nested guest. The idle clock therefore runs from the moment the agent turned ready, and a boot still in progress is never idle, so a scheduled fire is not lost to a hibernation mid-boot. A boot in progress is a machine not ready for no reason of its own and with no start failure decided — a machine the kernel, its seccomp filter or its runner's own OOM kill took down is booting again, and that reason says why it went down rather than that it is up to nothing; the start failure report ends the hold for a machine that runs without answering. The hold is capped at vmStartHold past the idle timeout, since a machine can read not ready for causes no start failure covers, such as an unreachable runner. A boot the runner reports copying a disk is held without that cap: the runner bounds it, for up to six hours, and a hibernation would stop the copy and start it again from nothing. It needs the pair awake, which the caller checks: a hibernation the runner has not confirmed reads not ready too.
 func vmStartHolds(agent *unstructured.Unstructured, idleTimeout time.Duration, now time.Time) bool {
 	ready, _, failed := vmStartConditions(agent)
 	if !isVMObject(agent) || idleTimeout <= 0 || failed {
@@ -182,7 +182,12 @@ func vmBootInProgress(agent *unstructured.Unstructured, idleTimeout time.Duratio
 	if !isVMObject(agent) || idleTimeout <= 0 || failed || ready != nil && ready["status"] == string(metav1.ConditionTrue) {
 		return false
 	}
-	if podReady == nil || podReady["reason"] != vmrunner.ReasonNotReady {
+	// UNIT_BOUNDARY_DESCRIPTION: a machine the kernel or its seccomp filter killed is booting again, which is held like any boot: the reason says why the machine went down, not that it is up to nothing.
+	switch podReady["reason"] {
+	case vmrunner.ReasonCopyingDisk:
+		return true
+	case vmrunner.ReasonNotReady, vmrunner.ReasonOOMKilled, vmrunner.ReasonSeccompKilled, apiv1.ReasonRunnerOutOfMemory:
+	default:
 		return false
 	}
 	last, err := time.Parse(time.RFC3339, agent.GetAnnotations()[annLastActivity])
@@ -229,6 +234,16 @@ func (c *IdleChecker) agentsAtZero(ctx context.Context) map[string]bool {
 	atZero := map[string]bool{}
 	for name := range seen {
 		atZero[name] = !scaledUp[name]
+	}
+	svcs, err := c.client.CoreV1().Services(c.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: LabelRole + "=" + RoleGateway})
+	if err != nil {
+		slog.ErrorContext(ctx, "idle checker: listing gateway services", "error", err)
+		return atZero
+	}
+	for i := range svcs.Items {
+		if up, ok := desiredUpRecord(&svcs.Items[i]); ok {
+			atZero[svcs.Items[i].Labels[LabelAgent]] = !up
+		}
 	}
 	return atZero
 }
@@ -325,6 +340,9 @@ func scaleAgentPairToZero(ctx context.Context, kube kubernetes.Interface, halt M
 		if err := halt(ctx, owner, name); err != nil && !errors.Is(err, errMachineStopping) {
 			slog.WarnContext(ctx, "stopping the agent's machine failed; scaling the rest down, the next reconcile stops the machine", "agent", name, "owner", owner, "error", err)
 		}
+	}
+	if err := recordDesiredUp(ctx, kube, namespace, name, false); err != nil {
+		return fmt.Errorf("recording %s down: %w", name, err)
 	}
 	sss, err := kube.AppsV1().StatefulSets(namespace).List(ctx, metav1.ListOptions{
 		LabelSelector: LabelAgent + "=" + name,

@@ -1,6 +1,6 @@
 # Chat forms
 
-Last verified: 2026-10-15
+Last verified: 2026-10-16
 
 ## Overview
 
@@ -43,6 +43,8 @@ sequenceDiagram
   The chat shows a label's trailing `(Recommended)` as a muted tag.
 - **The check tool.** While the owner has the feature on and the agent's forms are not off, the agent's [platform MCP server](features.md#what-a-flag-does--and-does-not--gate) also offers `check_chat_form`.
   It validates a reply's blocks with the same code the chat replays them with, so the agent can fix a form before the user sees it.
+  The skill and the tool's description require the agent to check every reply with a block and to send only a reply the tool answered `ok` for; without the tool, the agent asks in plain text.
+  The chat does not verify that a block was checked.
   A surface the reply updates without creating is taken to come from an earlier reply, and only its components' shape is checked; agent function calls are checked, not run.
   The tool takes the attempt number and refuses a fourth: after the third failed check the skill and the tool's answer both tell the agent to ask in plain text.
   The count travels in the call, because the endpoint keeps no state between requests.
@@ -72,8 +74,9 @@ The chat replays every block of the session in order, so a surface outlives the 
 - A later reply may **update** a surface (replace components, change its data) or **delete** it.
   The surface re-renders where it was created; the later reply shows a one-line note instead.
 - **Only the surface the newest finished reply created or touched accepts input.** Older surfaces stay visible and locked, so the user cannot answer a question the agent has moved past.
-- The user's unsent edits are kept per surface version: they survive scrolling and re-renders, and are replaced when the agent updates that surface.
-  Editing a form in another session drops them.
+- The user's unsent edits are kept per session and surface version: they survive scrolling, re-renders and switching to another session and back, and are replaced when the agent updates that surface.
+  The chat keys them by the surface identifier, how many times the session created it, and its version, because a reloaded transcript gives its messages new identifiers.
+  They live in the browser tab's memory, so a reload of the page drops them.
 - Reloading the session rebuilds every surface from the loaded part of the transcript.
   An update to a surface whose creating reply is not loaded yet shows as a surface-not-found error.
 

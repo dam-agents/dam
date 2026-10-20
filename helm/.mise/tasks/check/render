@@ -9,35 +9,23 @@
 # CRD/Istio kinds. Not network-sandboxed: kubeconform fetches its schemas.
 set -euo pipefail
 KUBECONFORM=(kubeconform -strict -summary -skip Certificate,Issuer,ClusterIssuer,AuthorizationPolicy,DestinationRule,Gateway,SecurityContextConstraints,CustomResourceDefinition,ClickHouseCluster,KeeperCluster,MongoDBCommunity)
-COMMON=(--include-crds --set terms.version=test --set terms.text='Test Terms')
+COMMON=(--include-crds --namespace default --set terms.version=test --set terms.text='Test Terms')
 helm template platform . "${COMMON[@]}" --set clickstack.enabled=true | "${KUBECONFORM[@]}" "$@"
 # The vm backend renders a whole second set of objects (runner, its policy and
-# credentials) that the default values never reach — and,
-# with the telemetry backend on, the collector's runner scrape and its RBAC.
+# credentials, and the node image cache DaemonSet) that the default values
+# never reach — and, with the telemetry backend on, the collector's runner
+# scrape and its RBAC.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
-  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
-  --set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' \
   --set openshift.scc.anyuidCapNet.enabled=true --set agentNamespace=platform-agents \
   --set virtualization.runner.scc=hostmount-anyuid \
   --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set clickstack.enabled=true \
   | "${KUBECONFORM[@]}" "$@"
-# The node image cache adds one more object nothing else renders: the DaemonSet
-# that is the only writer of the node directory, which exists only where the
-# cache is a node directory.
+# The stager DaemonSet with the node image cache beside it.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
-  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
-  --set virtualization.runner.scc=hostmount-anyuid \
-  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
-  --set agentNamespace=platform-agents \
-  | "${KUBECONFORM[@]}" "$@"
-# Staged runner releases add the stager DaemonSet, which only an install that
-# names a release directory renders.
-helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
-  --set virtualization.runner.resources.limits.memory=8Gi \
-  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases \
   --set agentNamespace=platform-agents \
@@ -46,7 +34,6 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 # projected volume, which no other render reaches.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
-  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
   --set virtualization.imageCache.hostPath=/var/lib/platform-images \
   --set 'controller.agent.base.imagePullSecrets[0]=regcred' \
   --set 'controller.agent.base.imagePullSecrets[1]=fallback' \
@@ -57,44 +44,237 @@ helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
 # the envoyMitm path off.
 helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
   --set virtualization.runner.resources.limits.memory=8Gi \
-  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
-  --set virtualization.runner.dnsPolicy=ClusterFirst \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.imageCache.dnsPolicy=ClusterFirst \
   --set controller.envoyMitm.enabled=false \
   | "${KUBECONFORM[@]}" "$@"
-# A confined runner reaches DNS only at the resolver it uses. One that caches
-# on its own claim and names no resolver, a resolver range of /0, and an
-# egress entry naming the link-local metadata endpoint all fail the render, as
-# does a VMM seccomp mode smolvm would read as no filter.
+# A runner with no node image cache has no image to boot, and a VMM seccomp
+# mode smolvm would read as no filter installs none: each fails the render.
+# So does a cache root that is not a path on the node, or one whose derived
+# directory lands in the release directory — however the path is spelled, since
+# `a//b`, `a/./b` and `a/x/../b` are the same directory — a range the API
+# server or the controller's own parser refuses, a leading zero in the prefix
+# included, a port the API server would reject the whole cache policy on, and a
+# legacy window over a directory this install's own cache shares.
 VM=(--set virtualization.enabled=true --set virtualization.runner.resources.limits.memory=8Gi
-  --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0')
-for refused in 'virtualization.runner.dnsPolicy=Default' \
-  'virtualization.runner.dnsCidrs[0]=0.0.0.0/0' \
-  'virtualization.runner.egressCidrs[1]=169.254.169.254/32' \
-  'virtualization.runner.clusterDns=null' \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images
+  --set virtualization.runner.releaseHostPath=/var/lib/platform-runner-releases)
+for refused in 'virtualization.imageCache.hostPath=' \
+  'virtualization.imageCache.hostPath=var/lib/platform-images' \
+  'virtualization.imageCache.hostPath=/var/lib/platform-runner-releases/platform-agents' \
+  'virtualization.imageCache.hostPath=/var/lib/platform-runner-releases//platform-agents' \
+  'virtualization.imageCache.hostPath=/var/lib/platform-runner-releases/./platform-agents' \
+  'virtualization.imageCache.hostPath=/var/lib/platform-runner-releases/x/../platform-agents' \
+  'virtualization.imageCache.legacyPath=var/lib/platform-images' \
+  'virtualization.imageCache.legacyPath=/var/lib/platform-images' \
+  'virtualization.imageCache.legacyPath=/var/lib/platform-images/default' \
+  'virtualization.imageCache.legacyPath=/var/lib/platform-images/default/platform' \
+  'virtualization.imageCache.legacyPath=/var/lib/platform-images/default/platform/old' \
+  'virtualization.imageCache.egressCidrs[0]=not-a-cidr' \
+  'virtualization.imageCache.egressCidrs[0]=0.0.0.0/0' \
+  'virtualization.imageCache.egressCidrs[0]=1.2.3.4/33' \
+  'virtualization.imageCache.egressCidrs[0]=2001:::1/64' \
+  'virtualization.imageCache.egressCidrs[0]=1:2:3:4:5:6:7:8:9/64' \
+  'virtualization.imageCache.egressCidrs[0]=::gggg/64' \
+  'virtualization.imageCache.egressCidrs[0]=1:2:3:4:5:6:7::8/64' \
+  'virtualization.imageCache.egressCidrs[0]=:1:2::3:4/64' \
+  'virtualization.imageCache.egressCidrs[0]=1:2::3:4:/64' \
+  'virtualization.imageCache.peers[0].namespace=registry' \
+  'virtualization.imageCache.peers[0].podLabels.app=registry' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=https' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=0' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=65536' \
+  'virtualization.imageCache.peers[0].namespace=Registry,virtualization.imageCache.peers[0].podLabels.app=registry,virtualization.imageCache.peers[0].ports[0]=443' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=5000,virtualization.imageCache.peers[0].ports[0]=443' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.tier=true,virtualization.imageCache.peers[0].ports[0]=443' \
+  'controller.gatewayEgress.clusterDns=null' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=-bad-,virtualization.imageCache.peers[0].ports[0]=443' \
+  "virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels.app=$(printf 'a%.0s' {1..64}),virtualization.imageCache.peers[0].ports[0]=443" \
+  'controller.gatewayEgress.clusterDns.namespace=Kube-System' \
+  'controller.gatewayEgress.clusterDns.podLabels.k8s-app=-bad-' \
+  'controller.gatewayEgress.clusterDns.ports[0]=0' \
+  'controller.gatewayEgress.peers[0].namespace=Registry' \
+  'virtualization.imageCache.egressCidrs[0]=0.0.0.0/00' \
+  'controller.gatewayEgress.extraCidrs[0]=::/00' \
+  'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels=app=registry,virtualization.imageCache.peers[0].ports[0]=443' \
+  'controller.gatewayEgress.extraCidrs[0]=2001:::1/64' \
   'virtualization.runner.seccomp=permissive'; do
-  extra=(--set "$refused")
-  case "$refused" in
-    *seccomp*) extra+=(--set virtualization.imageCache.hostPath=/var/lib/platform-images) ;;
-    *egressCidrs*) extra+=(--set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32') ;;
-    *clusterDns*) extra+=(--set virtualization.runner.dnsPolicy=ClusterFirst) ;;
-  esac
-  if helm template platform . "${COMMON[@]}" "${VM[@]}" "${extra[@]}" >/dev/null 2>&1; then
-    echo "a render setting $refused succeeded, but it leaves the runner's DNS or metadata open" >&2
+  if helm template platform . "${COMMON[@]}" "${VM[@]}" --set "$refused" >/dev/null 2>&1; then
+    echo "a render setting $refused succeeded, but it leaves the runners no image cache, no reachable registry or no seccomp filter" >&2
     exit 1
   fi
 done
+# A prefix length written with a leading zero is octal to Helm's integer
+# conversion and refused outright by the controller's own parser: `/07` passed
+# the render as prefix 7, and the controller then would not start. (`/08` is no
+# octal number, so Helm read it as 0 and the opens-every-range rule refused it
+# whichever grammar the chart kept.) The refusal has to be this one, since the
+# loop above takes any failure, and `/07` fails there for no other reason.
+for leading in 'virtualization.imageCache.egressCidrs[0]=10.0.0.0/07' \
+  'virtualization.imageCache.egressCidrs[0]=2001:db8::/064' \
+  'controller.gatewayEgress.extraCidrs[0]=10.0.0.0/07'; do
+  if out=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --set "$leading" 2>&1 >/dev/null); then
+    echo "a render setting $leading succeeded, but the controller's parser refuses a prefix with a leading zero" >&2
+    exit 1
+  fi
+  case "$out" in
+    *'written without a leading zero'*) ;;
+    *) echo "a render setting $leading failed for another reason: $out" >&2; exit 1 ;;
+  esac
+done
+# The node image cache service fetches from registries and reaches nothing
+# else: its own policy admits the public internet minus every range the
+# cluster owns — the metadata endpoints among them — the cluster DNS pods, an
+# in-cluster registry's pods on their ports, and an outside mirror's range. It
+# selects the cache pod itself, by the labels that pod carries.
+cache=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set 'virtualization.imageCache.egressCidrs[0]=10.20.0.0/24' \
+  --set 'virtualization.imageCache.egressCidrs[1]=2001:db8::/32' \
+  --set virtualization.imageCache.peers[0].namespace=registry \
+  --set virtualization.imageCache.peers[0].podLabels.app=registry \
+  --set virtualization.imageCache.peers[0].ports[0]=5000 \
+  --show-only templates/controller/vm-image-cache.yaml | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "DaemonSet"))[0].spec.template.metadata.labels) as $pod
+  | (map(select(.kind == "NetworkPolicy"))[0]) as $np
+  | [$np.spec.egress[] | .to[]? | select(.ipBlock) | {cidr: .ipBlock.cidr, except: (.ipBlock.except // [])}] as $blocks
+  | ($blocks | map(select(.cidr == "0.0.0.0/0"))[0].except) as $v4
+  | ($blocks | map(select(.cidr == "::/0"))[0].except) as $v6
+  | ($np.spec.podSelector.matchLabels == ($pod | del(.["istio.io/dataplane-mode"])))
+  and $v4 == ["0.0.0.0/8", "10.0.0.0/8", "100.64.0.0/10", "127.0.0.0/8", "169.254.0.0/16", "172.16.0.0/12", "192.168.0.0/16"]
+  and $v6 == ["::1/128", "fc00::/7", "fe80::/10"]
+  and any($np.spec.egress[]; any(.to[]?; .ipBlock.cidr == "10.20.0.0/24"))
+  and any($np.spec.egress[]; any(.to[]?; .ipBlock.cidr == "2001:db8::/32"))
+  and any($np.spec.egress[]; .to[0].podSelector.matchLabels == {"k8s-app": "kube-dns"})
+  and any($np.spec.egress[]; .to[0].podSelector.matchLabels == {"app": "registry"}
+    and .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "registry"
+    and any(.ports[]; .port == 5000))' <<<"$cache" >/dev/null ||
+  { echo "the node image cache\'s egress policy is not the registry-only one: $cache" >&2; exit 1; }
+# A selector the API server takes renders as written, so the grammar check
+# costs no real install its registry: a label under a DNS prefix, a namespace
+# and ports all reach the policy untouched.
+policy=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set-json 'controller.gatewayEgress.clusterDns.podLabels={"dns.operator.openshift.io/daemonset-dns":"default"}' \
+  --set controller.gatewayEgress.clusterDns.namespace=openshift-dns \
+  --set controller.gatewayEgress.clusterDns.ports[0]=5353 \
+  --set controller.gatewayEgress.peers[0].namespace=llm \
+  --set controller.gatewayEgress.peers[0].podLabels.app=vllm \
+  --set controller.gatewayEgress.peers[0].ports[0]=8443 \
+  --set-json 'virtualization.imageCache.peers=[{"namespace":"openshift-image-registry","podLabels":{"registry":"image-registry"},"ports":[5000]}]' \
+  --show-only templates/controller/vm-image-cache.yaml | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "NetworkPolicy"))[0].spec) as $np
+  | any($np.egress[]; .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "openshift-dns"
+      and .to[0].podSelector.matchLabels["dns.operator.openshift.io/daemonset-dns"] == "default"
+      and any(.ports[]; .port == 5353))
+  and any($np.egress[]; .to[0].namespaceSelector.matchLabels["kubernetes.io/metadata.name"] == "openshift-image-registry"
+      and .to[0].podSelector.matchLabels.registry == "image-registry"
+      and any(.ports[]; .port == 5000))' <<<"$policy" >/dev/null ||
+  { echo "a render with a prefixed label and a namespaced registry did not reach the cache policy: $policy" >&2; exit 1; }
+# A cache that resolves through the node instead is a supported install: it
+# names no cluster DNS pods, and its egress policy admits the resolver by range.
+helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.dnsPolicy=Default --set controller.gatewayEgress.clusterDns=null \
+  --show-only templates/controller/vm-image-cache.yaml >/dev/null \
+  || { echo "a render with dnsPolicy=Default and no cluster DNS pods failed, but that install admits its resolver by range" >&2; exit 1; }
+# The cache directory is the install's own by construction: the value is a root
+# and the chart names this install inside it, so no two installs can be given
+# one directory — the pair it is named after is the one the cluster keeps
+# unique. The controller hands the same directory to every runner.
+cache=$(helm template platform . "${COMMON[@]}" "${VM[@]}" | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "DaemonSet")) | map(.spec.template.spec)) as $pods
+  | (map(select(.kind == "Deployment")) | map(.spec.template.spec.containers)
+      | add | map(.env // []) | add | map(select(.name == "AGENT_VM")) | .[0].value | fromjson
+      | .runner.imageCacheHostPath) as $runnerDir
+  | ($pods | map(.volumes[]) | map(select(.name == "image-cache")) | .[0].hostPath.path) as $cacheDir
+  | $cacheDir == "/var/lib/platform-images/default/platform" and $runnerDir == $cacheDir' <<<"$cache" >/dev/null ||
+  { echo "the cache directory is not this install's own root subdirectory, or a runner is pointed at another: $cache" >&2; exit 1; }
+# One segment each for namespace and release name, so the two installs a dash
+# join would merge keep their own directories: namespace `a-b` with release `c`
+# and namespace `a` with release `b-c` both derived `a-b-c`.
+collide_dir() {
+  helm template "$2" . "${COMMON[@]}" "${VM[@]}" --namespace "$1" | yq -o=json \
+    | jq -rs 'map(select(.kind == "DaemonSet"))[0].spec.template.spec.volumes
+        | map(select(.name == "image-cache"))[0].hostPath.path'
+}
+dashed=$(collide_dir a-b c)
+sliced=$(collide_dir a b-c)
+[ "$dashed" = "/var/lib/platform-images/a-b/c" ] && [ "$sliced" = "/var/lib/platform-images/a/b-c" ] ||
+  { echo "the derived cache directory is not one segment per namespace and release name: $dashed, $sliced" >&2; exit 1; }
+# Moving that directory strands the runner of a busy owner for up to
+# runner.rollout.idleWait: it goes on mounting and dialing the directory the
+# previous release gave it. With the window open, a second cache service
+# answers on that socket out of that directory — preloading nothing, so the
+# window costs no second copy of the harness images — while the install serves
+# its own and every runner is pointed at it.
+window=$(helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.imageCache.hostPath=/var/lib/vm-images \
+  --set virtualization.imageCache.legacyPath=/var/lib/platform-images | yq -o=json)
+jq -e -s '
+  (map(select(.kind == "DaemonSet"))[0].spec.template.spec) as $pod
+  | ($pod.containers | map(select(.name == "vm-image-cache"))[0]) as $own
+  | ($pod.containers | map(select(.name == "vm-image-cache-legacy"))[0]) as $legacy
+  | ($pod.volumes | map(select(.name == "image-cache"))[0].hostPath.path) as $ownerDir
+  | ($pod.volumes | map(select(.name == "image-cache-legacy"))[0].hostPath.path) as $legacyDir
+  | ($pod.volumes | map(select(.name == "image-cache-legacy"))[0].hostPath.type) as $legacyType
+  | ($pod.containers | map(.volumeMounts) | add | map(select(.name == "image-cache-legacy"))[0]) as $legacyMount
+  | (map(select(.kind == "Deployment")) | map(.spec.template.spec.containers)
+      | add | map(.env // []) | add | map(select(.name == "AGENT_VM")) | .[0].value | fromjson
+      | .runner.imageCacheHostPath) as $runnerDir
+  | $ownerDir == "/var/lib/vm-images/default/platform"
+  and $legacyDir == "/var/lib/platform-images" and $legacyType == "DirectoryOrCreate"
+  and $runnerDir == $ownerDir
+  and ($own.args | index("--socket=/var/lib/platform/images/.cache.sock")) != null
+  and ($own.args | index("--image-dir=/var/lib/platform/images")) != null
+  and ($legacy.args | index("--socket=/var/lib/platform/images-legacy/.cache.sock")) != null
+  and ($legacy.args | index("--image-dir=/var/lib/platform/images-legacy")) != null
+  and ([$legacy.args[] | select(startswith("--images="))] | length) == 0
+  and $legacyMount.mountPath == "/var/lib/platform/images-legacy" and ($legacyMount.readOnly // false) == false
+  and $legacy.securityContext == $own.securityContext' <<<"$window" >/dev/null ||
+  { echo "the upgrade window does not keep a cache service on the directory an unrolled runner still dials: $window" >&2; exit 1; }
 # An unquoted `seccomp: off` in a values file arrives as a boolean, and must
 # still mean no filter rather than the default.
-helm template platform . "${COMMON[@]}" "${VM[@]}" \
-  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
-  --set virtualization.runner.seccomp=false | grep '\\"seccomp\\":\\"off\\"' >/dev/null ||
+seccomp=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --set virtualization.runner.seccomp=false)
+grep '\\"seccomp\\":\\"off\\"' <<<"$seccomp" >/dev/null ||
   { echo "a render with seccomp=false did not give the runners seccomp off" >&2; exit 1; }
-# A runner on the node cache resolves nothing, so it needs no resolver named.
-helm template platform . "${COMMON[@]}" "${VM[@]}" \
-  --set virtualization.imageCache.hostPath=/var/lib/platform-images >/dev/null
+# The Mac's host runner runs outside the cluster on images the install stages
+# for it, so it needs no node cache, and none is rendered for it.
+# A host runner also names no cluster DNS pods: it runs no cache service, so the
+# demand that a ClusterFirst cache name them is not about this install.
+host=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --set virtualization.imageCache.hostPath= \
+  --set virtualization.runner.hostAddress=192.168.5.2 --set controller.gatewayEgress.clusterDns=null)
+! grep -q 'component: vm-image-cache' <<<"$host" ||
+  { echo "a render for the host runner rendered the node image cache" >&2; exit 1; }
+# A node short of disk turns away every pod but a critical one, and among the
+# pods it evicts it takes those over their ephemeral-storage request first,
+# then the lowest priority: the cache pod had neither, so a pressured node
+# refused it on arrival and reached it first when it reclaimed — and the cache
+# is in the boot path. Both settings must render, and no ephemeral-storage
+# limit beside the request, since a pod over its limit is evicted first too.
+cache=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --show-only templates/controller/vm-image-cache.yaml |
+  yq -o=json 'select(.kind == "DaemonSet") | .spec.template.spec')
+jq -e '.priorityClassName == "system-node-critical"
+  and .containers[0].resources.requests["ephemeral-storage"] == "128Mi"
+  and .containers[0].resources.limits["ephemeral-storage"] == null' <<<"$cache" >/dev/null ||
+  { echo "the node image cache is the first pod a node short of disk would evict: $cache" >&2; exit 1; }
+# Runner pods take a new runner image only from the node's release directory,
+# so an install that clears it fails the render.
+if helm template platform . "${COMMON[@]}" "${VM[@]}" \
+  --set virtualization.runner.releaseHostPath= >/dev/null 2>&1; then
+  echo "a render with runner pods and no releaseHostPath succeeded, but no runner could take a new release" >&2
+  exit 1
+fi
 # Virtualization keys the chart no longer reads fail the render rather than
 # being dropped without a word.
 for removed in 'virtualization.imageCache.preload.enabled=false' \
+  'virtualization.runner.releaseSameRuntimeOnly=true' \
+  'virtualization.runner.dnsPolicy=Default' \
+  'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' \
+  'virtualization.runner.clusterDns.namespace=kube-system' \
+  'virtualization.runner.imageArchiveHostPath=/var/lib/platform-vm-images' \
+  'virtualization.runner.egressCidrs[0]=0.0.0.0/0' \
+  'virtualization.runner.egressExceptCidrs[0]=10.0.0.0/8' \
   'virtualization.runner.ingressCidrs[0]=10.0.0.0/8' \
   'virtualization.runner.canaryImage=quay.io/x/vm-runner:canary'; do
   if helm template platform . "${COMMON[@]}" --set "$removed" >/dev/null 2>&1; then
@@ -133,22 +313,20 @@ helm template platform . "${COMMON[@]}" \
   --set apiServer.oauthAppDefaults.githubEnterprise.clientId=c --set apiServer.oauthAppDefaults.githubEnterprise.clientSecret=s \
   --set apiServer.oauthAppDefaults.slack.clientId=c --set apiServer.oauthAppDefaults.slack.clientSecret=s \
   | "${KUBECONFORM[@]}" "$@"
-# A GitHub token for the harness tools installer adds its Secret and the
-# installer's env, which no other render reaches.
-helm template platform . "${COMMON[@]}" --set harnessTools.githubToken=t \
-  | "${KUBECONFORM[@]}" "$@"
 # The VM pool alerts render only where the cluster serves prometheus-operator's
 # API; the render must hold both, and kubeconform has no schema for its kinds.
 MONITORING=(--set monitoring.enabled=true --set clickstack.enabled=true --set virtualization.enabled=true
-  --set virtualization.runner.resources.limits.memory=8Gi --set 'virtualization.runner.egressCidrs[0]=0.0.0.0/0'
-  --set 'virtualization.runner.dnsCidrs[0]=10.0.2.3/32' --set virtualization.runner.scc=hostmount-anyuid --set agentNamespace=platform-agents)
+  --set virtualization.runner.resources.limits.memory=8Gi
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images
+  --set virtualization.runner.scc=hostmount-anyuid --set agentNamespace=platform-agents)
 rendered=$(helm template platform . "${COMMON[@]}" "${MONITORING[@]}" \
   --api-versions monitoring.coreos.com/v1/ServiceMonitor --api-versions monitoring.coreos.com/v1/PrometheusRule)
 grep -q '^kind: PrometheusRule$' <<<"$rendered" && grep -q '^kind: ServiceMonitor$' <<<"$rendered" \
   || { echo "monitoring.enabled with prometheus-operator's API rendered no PrometheusRule or ServiceMonitor" >&2; exit 1; }
 # A second -skip would replace the first, so the operator kinds join its list.
 "${KUBECONFORM[@]:0:3}" -skip "${KUBECONFORM[4]},ServiceMonitor,PrometheusRule" "$@" <<<"$rendered"
-! helm template platform . "${COMMON[@]}" "${MONITORING[@]}" | grep -Eq '^kind: (PrometheusRule|ServiceMonitor)$' \
+unmonitored=$(helm template platform . "${COMMON[@]}" "${MONITORING[@]}")
+! grep -Eq '^kind: (PrometheusRule|ServiceMonitor)$' <<<"$unmonitored" \
   || { echo "monitoring.enabled without prometheus-operator's API rendered its kinds" >&2; exit 1; }
 # The Postgres health checks take their timing from values: by default liveness
 # waits 10s per check and kills only after 6 misses, and an override reaches the
@@ -177,3 +355,32 @@ jq -e '(.containers[0].env[] | select(.name == "PLATFORM_PROVIDER_CA_FILE") | .v
   and any(.volumes[]; .name == "platform-provider-ca" and .configMap.name == "openshift-service-ca.crt"
     and .configMap.items == [{"key": "service-ca.crt", "path": "ca.crt"}])' <<<"$ca" >/dev/null ||
   { echo "apiServer.platformProvider.caConfigMap did not mount the CA file the api-server reads: $ca" >&2; exit 1; }
+# The node-loss alert counts one installation's runners only. Two installations
+# sharing a Prometheus would otherwise share one sum, so an affected one would
+# fire the other's alert as well, and the alert would name no installation.
+node_lost_expr() {
+  helm template platform . "${COMMON[@]}" "${MONITORING[@]}" --namespace "$1" \
+    --api-versions monitoring.coreos.com/v1/PrometheusRule \
+    --show-only templates/monitoring/prometheusrule.yaml |
+    yq -r '.spec.groups[].rules[] | select(.alert == "VMRunnerNodeLost") | .expr'
+}
+for ns in platform-a platform-b; do
+  expr=$(node_lost_expr "$ns")
+  grep -q 'sum by (namespace)' <<<"$expr" && [ "$(grep -o 'namespace="[^"]*"' <<<"$expr")" = "namespace=\"$ns\"" ] \
+    || { echo "VMRunnerNodeLost in $ns does not count that installation alone: $expr" >&2; exit 1; }
+done
+[ "$(node_lost_expr platform-a)" != "$(node_lost_expr platform-b)" ] \
+  || { echo "the node-loss alert reads the same in two installations, so one fires on the other's runners" >&2; exit 1; }
+# The controller watches nodes for readiness, so its read-only node role must
+# let it watch as well as list: with list alone the watch fails, and the cache
+# is then refreshed only when the reflector relists after a failed watch.
+nodes_verbs=$(helm template platform . "${COMMON[@]}" --set virtualization.enabled=true \
+  --set virtualization.runner.resources.limits.memory=8Gi \
+  --set virtualization.imageCache.hostPath=/var/lib/platform-images \
+  --set virtualization.runner.scc=hostmount-anyuid --set agentNamespace=platform-agents \
+  --show-only templates/controller/rbac.yaml |
+  yq -o=json '.' |
+  jq -s '[.[] | select(.kind == "ClusterRole" and (.metadata.name | test("-vm-nodes-read$")))
+    | .rules[] | select(.resources == ["nodes"]) | .verbs[]]')
+jq -e 'index("list") != null and index("watch") != null' <<<"$nodes_verbs" >/dev/null \
+  || { echo "the controller's node ClusterRole does not let it watch nodes: $nodes_verbs" >&2; exit 1; }

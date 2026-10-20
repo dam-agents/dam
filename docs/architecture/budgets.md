@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-15
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -105,8 +105,8 @@ Hovering a held slot names the agent behind it, its size and state, and offers a
 The multiples and copy live in the UI budgets module.
 A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room; the settings picker warns inline when the chosen Size needs more free slots than remain.
 First-time users with no agents see none of it.
-The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage the image cache, the copies runtime migrations still hold, and logs and system — as the last.
-Once storage reaches the warning level, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, then the image cache, which the runner sheds once storage runs short, the migration copies, which go when each move ends or is cancelled, a failed one keeping its copy until a retry or an abort, and what is left.
+The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage the copies runtime migrations still hold, and logs and system — as the last.
+Once storage reaches the warning level, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, then the migration copies, which go when each move ends or is cancelled, a failed one keeping its copy until a retry or an abort, and what is left.
 CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
 The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — disable agents not in use, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are put to sleep for memory, and new VM agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
 Each vm agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
@@ -142,7 +142,7 @@ Four rules bound it:
 - **An idle floor** (3 minutes) beneath which nothing is reclaimed.
   Besides sparing an agent its user may be moments from returning to, the floor is what makes reclaim **non-recursive**: an agent admitted this way carries fresh activity and so cannot be the next start's victim, which is what stops A-evicting-B-evicting-A from cycling.
 - **Provably sufficient, or nothing.** The candidates' summed Sizes must cover the shortfall in both dimensions before any of them is touched, so no agent is ever hibernated for a start that was going to be refused regardless.
-  The one exception is a vm runner's own memory pressure signal, which hibernates what it can rather than nothing, since an OOM kill would take every machine of the owner ([vm-memory](vm-memory.md)).
+  The one exception is a vm runner's own memory pressure signal, which hibernates what it can rather than nothing, since an OOM kill would take a machine down ([vm-memory](vm-memory.md)).
 - **A reclaimed agent stays down.** Its activity stamp is still inside its own timeout — that is the premise of reclaiming it early — so it is marked as having *spent* that stamp and only a **newer** activity bump revives it, back through the gate like any other start.
   Without that, the victim's own next reconcile would take the room straight back.
   The mark is self-clearing: a deliberate touch outdates it.
@@ -172,7 +172,7 @@ Reserved is computed from live state and never persisted, so a hibernate or dele
 
 ## Resource alerts
 
-A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 98% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 95% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
 Each message gives the figures or the agents affected, and what to do.
 Lower levels show only in the web app.
 
@@ -182,7 +182,7 @@ An out-of-memory kill is seen on the agents the controller marks with it, collec
 
 Messages are limited so an owner near a threshold is not messaged at every reading:
 
-- **Storage** sends once per rise past the level last told, at most once a day, except one escalation from 90% to 98% inside the day; the level holds between 80% and 90%, and a reading under 80% re-arms it.
+- **Storage** sends once per rise past the level last told, at most once a day, except one escalation from 90% to 95% inside the day; the level holds between 80% and 90%, and a reading under 80% re-arms it.
 - **Out of memory** sends once per episode, which ends when no agent carries the mark, and again only six hours after the last message, so a runner killed in a loop sends one.
 
 Each alert's state is a Postgres row per owner and kind.

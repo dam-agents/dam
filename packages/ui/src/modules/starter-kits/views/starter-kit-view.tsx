@@ -1,4 +1,10 @@
-import { ArrowLeft, Launch, Meter, PlayFilledAlt } from "@carbon/icons-react";
+import {
+  ArrowLeft,
+  DataEnrichmentAdd,
+  Launch,
+  Meter,
+  PlayFilledAlt,
+} from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
@@ -19,6 +25,7 @@ import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
+import { Tooltip } from "@/components/ui/tooltip";
 
 import { ListSkeleton } from "../../../components/list-skeleton.js";
 import { emitToast } from "../../../lib/toast.js";
@@ -39,7 +46,7 @@ import {
 import { ConnectionCatalogModal } from "../../connections/components/connection-catalog-modal.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useFeatures } from "../../features/api/queries.js";
-import { useVmForced } from "../../features/hooks/use-vm-forced.js";
+import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import { routeToPath } from "../../platform/lib/routes.js";
 import { useSetupForm } from "../../sandboxes/hooks/use-setup-form.js";
@@ -55,7 +62,6 @@ import {
   EGRESS_PRESET_LABEL,
   kitEgressPreset,
   kitRunsOnVm,
-  VM_BACKEND_LABEL,
 } from "../lib/catalog-cards.js";
 import {
   buildStarterKitApplyInput,
@@ -303,8 +309,8 @@ function KitDetail({
   const selectAgent = useStore((s) => s.selectAgent);
   const templates = useConnectionTemplates();
   const budget = useBudgetReserved();
-  const vmForced = useVmForced();
-  const vm = kitRunsOnVm(kit, vmForced);
+  const { answered, vm: installVm } = useVmRuntime();
+  const runsOnVm = kitRunsOnVm(kit, answered ? installVm : undefined);
   const connections = useAppConnections();
   const agents = useAgents().data?.list;
   const apply = useApplyStarterKit();
@@ -402,12 +408,12 @@ function KitDetail({
   };
 
   const size = useMemo(() => {
-    if (!kit.resources || !budget.data || vm !== false) return null;
+    if (!kit.resources || !budget.data || runsOnVm !== false) return null;
     const unit = slotUnitOf(budget.data);
     const mi = sizeInMi(kit.resources);
     if (mi.cpuMilli === 0 && mi.memoryMi === 0) return null;
     return { label: formatSizeLabel(mi, unit) };
-  }, [kit.resources, vm, budget.data]);
+  }, [kit.resources, runsOnVm, budget.data]);
 
   const skillCount = kit.skillsInKit.length + kit.skills.length;
   const kbSeed = kit.knowledgeBase ? kit.seed : undefined;
@@ -443,11 +449,6 @@ function KitDetail({
                 {skillCount} {skillCount === 1 ? "skill" : "skills"}
               </Badge>
             )}
-            {vm === true && (
-              <Badge variant="muted" size="sm">
-                {VM_BACKEND_LABEL}
-              </Badge>
-            )}
           </div>
         </DialogHeader>
 
@@ -475,15 +476,17 @@ function KitDetail({
                 title={`${kit.name} knowledge base skills`}
                 detail="Installed by the kit's own bootstrap from its repository, so they are not listed under Skills."
                 action={
-                  <a
-                    href={kbSeed.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open the ${kit.name} repository`}
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Launch size={16} />
-                  </a>
+                  <Tooltip content="Open repository">
+                    <a
+                      href={kbSeed.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open the ${kit.name} repository`}
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  </Tooltip>
                 }
               />
             </Section>
@@ -541,15 +544,17 @@ function KitDetail({
                     : ""
                 } before the first session`}
                 action={
-                  <a
-                    href={kit.seed.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label="Open the repository"
-                    className="text-muted-foreground hover:text-foreground"
-                  >
-                    <Launch size={16} />
-                  </a>
+                  <Tooltip content="Open repository">
+                    <a
+                      href={kit.seed.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label="Open the repository"
+                      className="text-muted-foreground hover:text-foreground"
+                    >
+                      <Launch size={16} />
+                    </a>
+                  </Tooltip>
                 }
               />
             </Section>
@@ -673,6 +678,7 @@ function KitDetail({
             <ArrowLeft size={16} /> Back
           </Button>
           <Button onClick={() => void create()} disabled={!canCreate}>
+            <DataEnrichmentAdd size={16} aria-hidden />
             {apply.isPending ? "Creating…" : "Use this starter kit"}
           </Button>
         </DialogFooter>

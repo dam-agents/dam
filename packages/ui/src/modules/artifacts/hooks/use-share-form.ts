@@ -39,7 +39,7 @@ export function useShareForm(artifact: LibraryArtifact, onClose: () => void) {
     resetOptions: { keepDirtyValues: true },
   });
 
-  const submit = (opts?: { closeOnSuccess?: boolean }) =>
+  const submit = () =>
     form.handleSubmit((values) => {
       const sendViewers = !sameViewers(values.viewers, committed.viewers);
       sharing.mutate(
@@ -58,8 +58,7 @@ export function useShareForm(artifact: LibraryArtifact, onClose: () => void) {
               kind: "success",
               message: SAVED_MESSAGE[saved.visibility],
             });
-            if (saved.visibility === "private" || opts?.closeOnSuccess)
-              onClose();
+            if (saved.visibility === "private") onClose();
           },
         },
       );

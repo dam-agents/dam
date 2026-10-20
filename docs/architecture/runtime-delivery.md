@@ -1,6 +1,6 @@
 # Runtime delivery and the runtime channel
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -57,6 +57,8 @@ Each event carries an `id` of the form `<key>:<epoch-ms>` (stable across redeliv
 The kinds today are **trigger** (fire a scheduled task, optionally continuing or starting fresh, and optionally gated by the schedule's Precheck — see [schedules](schedules.md#precheck)), **schedule-reset** (clear a schedule's state), **workspace-seed** (bring a repository into the work directory or the agent's home — a create's `gitRepo` or a kit's `seed`; on a branch pinned to a commit and tracking its origin, or a tag or commit detached; in place, never by clearing it), **workspace-command** (run a one-shot shell command in the workspace — a starter kit's or a spawned sub-agent's install bootstrap), **initialization** (open the agent's first chat session with the turn the platform composed at create — a kit's briefing or its onboarding command; queued behind the create's workspace events, so it opens once the workspace is ready), **satellite-outcome** and **sub-agent-outcome** (open or continue a session with the result of a [satellite](satellites.md) job or a sub-agent that outlived its turn), and **harness-config** (set/clear the agent's model/mode/config defaults in the harness's own config file).
 Exact payload shapes live in the [runtime contract types](../../packages/agent-runtime-api/src/modules/runtime/).
 
+A workspace-mutating event runs with the agent's runtime env, the same env its harness and terminal shells get, not the runtime's bare process env.
+Its git and `gh` calls therefore carry the agent's Connection placeholders — on an agent that [requires addresses](connections.md#addressing-a-connection), the only thing that makes the gateway inject a credential — and find git's credential helper already set up, because a delivery's contributions are applied, and the helper set up from them, before its events run.
 While a workspace-mutating event (`workspace-seed`, `workspace-command`) is pending for an agent, the agent surfaces as *preparing workspace* rather than running, so chat waits for the mutation to settle instead of racing it.
 The events queued behind it wait too: a workspace mutation whose handler fails **halts the rest of that agent's events** until it settles — an initialization session never opens on a seed or install that has not happened — and the runtime **reports the failure with its reason** over the event report, so the row carries "refusing to seed a non-empty work directory" rather than a bare attempt count.
 The report is announced as an agent change the moment it lands — through the outcome-handler seam the schedules share, which isolates each kind's reactions so one that fails cannot silence the rest — so a watching UI shows the failure while the platform is still retrying, not only once it has given up.

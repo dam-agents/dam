@@ -47,7 +47,6 @@ export interface CreateAgentInput {
   importEntries?: BundleEntry[];
   importRawBundle?: File;
   size?: { cpu?: string; memory?: string };
-  vm?: boolean;
 }
 
 export function useCreateAgent() {
@@ -133,7 +132,7 @@ export function useDeleteAgent() {
   });
 }
 
-export function useUpdateAgent() {
+export function useUpdateAgent({ inlineError = false } = {}) {
   return useMutation({
     ...trpc.agents.update.mutationOptions(),
     onSettled: (_agent, error, vars) => {
@@ -143,6 +142,7 @@ export function useUpdateAgent() {
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Couldn't update agent",
+      suppressErrorToast: inlineError,
     },
   });
 }

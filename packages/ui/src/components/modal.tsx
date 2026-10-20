@@ -1,6 +1,13 @@
 import { Close } from "@carbon/icons-react";
 import type { ReactNode, RefObject } from "react";
-import { createContext, useContext, useEffect, useId, useRef } from "react";
+import {
+  createContext,
+  useContext,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -152,6 +159,7 @@ export function DialogHeader({
                   onClick={onClose}
                   disabled={closeDisabled}
                   aria-label="Close"
+                  tooltip="Close"
                   data-dialog-close
                   data-testid={closeTestId}
                   className="shrink-0 text-muted-foreground"
@@ -176,7 +184,7 @@ export function DialogBody({
   return (
     <div
       className={cn(
-        "flex-1 min-h-0 overflow-y-auto py-5 md:py-6",
+        "flex-1 min-h-0 overflow-y-auto [scrollbar-gutter:stable] py-5 md:py-6",
         !flush && "px-5 md:px-6",
         className,
       )}
@@ -270,10 +278,12 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
 }
 
 export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
+  const [previouslyFocused] = useState(
+    () => document.activeElement as HTMLElement | null,
+  );
   useEffect(() => {
     const container = containerRef.current;
     if (!container) return;
-    const previouslyFocused = document.activeElement as HTMLElement | null;
 
     let grabRaf = 0;
     const reassertUntil = performance.now() + 500;
@@ -320,7 +330,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
       container.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };
-  }, [containerRef]);
+  }, [containerRef, previouslyFocused]);
 }
 
 const openModalIds: string[] = [];

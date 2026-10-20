@@ -12,13 +12,15 @@ export function useFileTree(selectedAgent: string | null) {
   const setOpenFilePath = useStore((s) => s.setOpenFilePath);
   const setOpenFileEdit = useStore((s) => s.setOpenFileEdit);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setFilesSectionOpen = useStore((s) => s.setFilesSectionOpen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const confirmDiscard = useDockDraftGuard();
 
   const revealFiles = useCallback(() => {
     setSidePanelTab("files");
+    setFilesSectionOpen(true);
     setMobileScreen("files");
-  }, [setSidePanelTab, setMobileScreen]);
+  }, [setSidePanelTab, setFilesSectionOpen, setMobileScreen]);
 
   const openFileHandler = useCallback(
     async (path: string, opts?: { edit?: boolean }) => {

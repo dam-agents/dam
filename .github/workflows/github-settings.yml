@@ -1,0 +1,43 @@
+name: GitHub settings
+
+# Compares the repository's live GitHub settings with .github/settings and
+# fails on drift: a setting changed in the web UI, or a settings change merged
+# and not yet applied. Not a required check, so drift never blocks a merge.
+# An admin applies the files with `mise run github:settings -- apply`. The
+# GITHUB_TOKEN reads only some settings (the rulesets without their bypass
+# actors, the topics, the public repository fields); the task names what it
+# skipped. No admin token is stored here, by design.
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - .github/settings/**
+      - .mise/tasks/github/settings
+      - .github/workflows/github-settings.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  drift:
+    name: settings drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: ./.github/actions/setup-mise # zizmor: ignore[self-repository]
+        with:
+          install_args: gh jq yq usage
+      - env:
+          GH_TOKEN: ${{ github.token }}
+        run: .mise/tasks/github/settings check

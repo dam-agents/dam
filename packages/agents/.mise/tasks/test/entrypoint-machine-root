@@ -1,0 +1,50 @@
+#!/usr/bin/env node
+//MISE description="Test that on a machine the entrypoint gives root a moved home's ssh config"
+//MISE sources=["base/rootfs/usr/local/bin/agent-entrypoint", ".mise/tasks/test/entrypoint-machine-root"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { chownSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { fileURLToPath } from "node:url";
+
+const entrypoint = fileURLToPath(new URL("../../../base/rootfs/usr/local/bin/agent-entrypoint", import.meta.url));
+const dir = mkdtempSync(join(tmpdir(), "entrypoint-machine-root-"));
+const [home, bin] = ["home", "bin"].map((d) => join(dir, d));
+const calls = join(dir, "calls");
+writeFileSync(
+  join(dir, "agent-entrypoint"),
+  readFileSync(entrypoint, "utf8")
+    .replaceAll("uid=$(id -u)", "uid=0")
+    .replaceAll("/run/sshd", join(dir, "sshd"))
+    .replaceAll("/run/platform", join(dir, "run"))
+    .replaceAll("/etc/platform/ca", join(dir, "ca"))
+    .replaceAll("/etc/rancher/k3s/config.yaml", join(dir, "k3s-config.yaml"))
+    .replaceAll("/var/lib/rancher/k3s", join(dir, "k3s"))
+    .replaceAll("/platform/runc", join(dir, "platform-runc"))
+    .replaceAll("/app/working-dir", join(dir, "working-dir")),
+);
+mkdirSync(bin);
+writeFileSync(join(bin, "chown"), `#!/bin/sh\necho "chown $*" >>${calls}\n`, { mode: 0o755 });
+writeFileSync(join(bin, "platform-ca-bundle"), "#!/bin/sh\n", { mode: 0o755 });
+const boot = () => {
+  rmSync(calls, { force: true });
+  execFileSync("/bin/sh", [join(dir, "agent-entrypoint"), "true"], {
+    env: { PATH: `${bin}:${process.env.PATH}`, HOME: home },
+    stdio: ["ignore", "pipe", "pipe"],
+  });
+  return existsSync(calls) ? readFileSync(calls, "utf8").trim().split("\n") : [];
+};
+
+try {
+  mkdirSync(home);
+  // TEST_SCENARIO: ssh refuses a config another uid owns, so a config a moved agent's home keeps with the container's uid is given to root, the uid ssh runs as on a machine.
+  mkdirSync(join(home, ".ssh"));
+  writeFileSync(join(home, ".ssh/config"), "Host *\n");
+  // TEST_OVERVIEW: run as root, the config is root's already, so it is given to the container's uid first.
+  if (process.getuid() === 0) chownSync(join(home, ".ssh/config"), 65532, 0);
+  assert.deepEqual(boot(), [`chown 0:0 ${join(home, ".ssh/config")}`]);
+} finally {
+  rmSync(dir, { recursive: true, force: true });
+}

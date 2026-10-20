@@ -12,22 +12,21 @@ import type {
   sessionDirectoryEntrySchema,
   sessionListCursorSchema,
   sessionListInputSchema,
-  sessionSpendInputSchema,
-  sessionSpendSchema,
   sessionSettingsInputSchema,
   setSessionTitleInputSchema,
 } from "./schemas.js";
+import type { SubAgentHarnessConfig } from "../harness-config/session-settings.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: a runtime older than platform sub-agent settings answers with the settings alone, so the harness and the inherited config may be absent.
+export interface SessionSubAgentContext {
+  settings: Record<string, string>;
+  harness?: string;
+  inherited?: SubAgentHarnessConfig;
+}
 
 export type PodSessionMode = z.infer<typeof podSessionModeSchema>;
 export type PodSessionType = z.infer<typeof podSessionTypeSchema>;
 export type PodSession = z.infer<typeof podSessionSchema>;
-export type SessionSpend = z.infer<typeof sessionSpendSchema>;
-export type SessionSpendInput = z.infer<typeof sessionSpendInputSchema>;
-
-export interface SessionSpendTotal extends SessionSpend {
-  sessions: number;
-}
-
 export type PodSessionNotice = z.infer<typeof podSessionNoticeSchema>;
 export type SessionCategory = z.infer<typeof sessionCategorySchema>;
 export type SessionListCursor = z.infer<typeof sessionListCursorSchema>;
@@ -60,13 +59,13 @@ export interface SessionsService {
     opts?: Pick<SessionHistoryInput, "tail">,
   ): Promise<SessionHistory>;
   setTitle(input: SetSessionTitleInput): Promise<boolean>;
-  // UNIT_BOUNDARY_DESCRIPTION: null for a session the platform does not track; read by the api-server so a platform sub-agent spawned from the session defaults to its subagent model.
-  settings(input: SessionSettingsInput): Promise<Record<string, string> | null>;
+  // UNIT_BOUNDARY_DESCRIPTION: null for a session the platform does not track; read by the api-server when the session spawns a platform sub-agent, which follows the session's platform sub-agent settings and, on the session's own harness, takes the session's model and settings.
+  settings(input: SessionSettingsInput): Promise<SessionSubAgentContext | null>;
+  byRef(ref: string): Promise<string | null>;
   storeDelegationFrames(
     input: StoreDelegationFramesInput,
   ): Promise<{ truncated: boolean }>;
   delegationFrames(invocationId: string): Promise<DelegationFrames | null>;
-  spend(input: SessionSpendInput): Promise<SessionSpendTotal | null>;
 }
 
 export type SessionDirectoryEntry = z.infer<typeof sessionDirectoryEntrySchema>;

@@ -16,8 +16,8 @@ import {
   type Thread,
   type StateAdapter,
 } from "chat";
-import { createTelegramAdapter } from "@chat-adapter/telegram";
 import { ChannelType, SessionType, type AgentsService } from "api-server-api";
+import { TelegramConversationAdapter } from "./telegram-conversation-adapter.js";
 import type { PostMessageOptions } from "../services/channel-manager.js";
 import {
   AcpSessionLoadError,
@@ -33,11 +33,13 @@ import { securityLog } from "../../../core/security-log.js";
 import {
   isAgentStoppedError,
   isAgentWakeTimeoutError,
+  telegramChatOf,
   wakeFailureReasonToken,
 } from "../../agents/index.js";
 import { wakeFailureUserCopy } from "./wake-failure-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { channelNetworkAccessGuidance } from "./network-access-copy.js";
+import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
 import {
   spendHoldUserCopy,
   telegramResetTime,
@@ -244,7 +246,7 @@ export function createTelegramMessageHandler(deps: {
     thread: ThreadLike,
     text: string,
     author: TelegramInboundMessage["author"],
-  ) => Promise<void>;
+  ) => void;
 }) {
   async function denyNonAdmin(
     thread: ThreadLike,
@@ -273,7 +275,8 @@ export function createTelegramMessageHandler(deps: {
   async function handleBind(thread: ThreadLike, telegramUserId: string) {
     if (await denyNonAdmin(thread, telegramUserId, "bind")) return;
 
-    const binding = await deps.conversations.findAgentByConversation(thread.id);
+    const chat = telegramChatOf(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(chat);
     if (binding) {
       await thread.post(
         "This chat is already connected to an agent. Send `/unbind` first to reconnect.",
@@ -285,7 +288,7 @@ export function createTelegramMessageHandler(deps: {
     const { state: oauthState, codeVerifier, codeChallenge } = generatePkce();
     await deps.pendingOAuthFlows.set(oauthState, {
       telegramUserId,
-      threadId: thread.id,
+      threadId: chat,
       codeVerifier,
       chatTitle,
       createdAt: Date.now(),
@@ -310,12 +313,13 @@ export function createTelegramMessageHandler(deps: {
   async function handleUnbind(thread: ThreadLike, telegramUserId: string) {
     if (await denyNonAdmin(thread, telegramUserId, "unbind")) return;
 
-    const binding = await deps.conversations.findAgentByConversation(thread.id);
+    const chat = telegramChatOf(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(chat);
     if (!binding) {
       await thread.post("This chat isn't connected to an agent.");
       return;
     }
-    await deps.conversations.unbind(thread.id);
+    await deps.conversations.unbind(chat);
     securityLog("info", "channel.chat_unbound", {
       category: "authz-list",
       actor: null,
@@ -323,7 +327,7 @@ export function createTelegramMessageHandler(deps: {
       surface: "telegram",
       agentId: binding.agentId,
       result: "success",
-      detail: { conversationId: thread.id, byTelegramUserId: telegramUserId },
+      detail: { conversationId: chat, byTelegramUserId: telegramUserId },
     });
     await thread.post("Chat disconnected. Send `/bind` to connect it again.");
   }
@@ -347,7 +351,9 @@ export function createTelegramMessageHandler(deps: {
       return;
     }
 
-    const binding = await deps.conversations.findAgentByConversation(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(
+      telegramChatOf(thread.id),
+    );
     if (!binding) {
       securityLog("warn", "channel.inbound.unauthorized", {
         category: "channel",
@@ -391,7 +397,7 @@ export function createTelegramMessageHandler(deps: {
       return;
     }
     if (subscribe) await thread.subscribe();
-    await deps.relay(binding.agentId, thread, message.text, message.author);
+    deps.relay(binding.agentId, thread, message.text, message.author);
   };
 }
 
@@ -485,7 +491,7 @@ export function createTelegramWorker(deps: {
 
   let bot: {
     chat: Chat;
-    adapter: ReturnType<typeof createTelegramAdapter>;
+    adapter: TelegramConversationAdapter;
   } | null = null;
   let username: string | null = deps.configuredBotUsername ?? null;
   const lastThread = new Map<string, Thread>();
@@ -534,14 +540,15 @@ export function createTelegramWorker(deps: {
         : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; stay quiet when the conversation isn't for you.`
     ).concat(who ? ` ${who}` : "");
 
-    const freshPrompt = [
+    const prompt = [
       `You are participating in a Telegram conversation (chatId="${thread.id}").`,
       context,
       `To reply, call the \`${OUTBOUND_TOOL_PREFIX}send_channel_message\` tool with channel="telegram" and chatId="${thread.id}".`,
       "IMPORTANT: Your text output is NOT delivered to Telegram — only tool calls reach the user.",
       `To deliberately stay silent — a group message that isn't for you, or one already handled — call \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\` instead of replying.`,
-      "These instructions apply to messages that arrive from Telegram, not to this conversation as a whole. A message that arrives without them came from somewhere else: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
+      "These instructions apply to the message they arrive with, not to this conversation as a whole — a later Telegram message carries its own. A message that arrives without them didn't come from Telegram: answer it where it arrived, in plain text, and post to Telegram for it only if you're asked to.",
       channelNetworkAccessGuidance(brandName),
+      channelPermissionCheckGuidance,
       "",
       `Message: ${text}`,
     ].join("\n");
@@ -557,7 +564,7 @@ export function createTelegramWorker(deps: {
       if (existing) {
         try {
           onSession?.(existing.sessionId);
-          await acp.sendPrompt(text, { resumeSessionId: existing.sessionId });
+          await acp.sendPrompt(prompt, { resumeSessionId: existing.sessionId });
           outcome = "success";
           return;
         } catch (err) {
@@ -567,7 +574,7 @@ export function createTelegramWorker(deps: {
           );
         }
       }
-      await acp.sendPrompt(freshPrompt, {
+      await acp.sendPrompt(prompt, {
         platformMeta: {
           type: SessionType.ChannelTelegram,
           threadTs: thread.id,
@@ -659,14 +666,14 @@ export function createTelegramWorker(deps: {
     thread: ThreadLike,
     text: string,
     author: TelegramInboundMessage["author"],
-  ): Promise<void> {
+  ): void {
     const key = `${agentId}|${thread.id}`;
     let queue = telegramQueues.get(key);
     if (!queue) {
       queue = createChatQueue(key, agentId, thread.id);
       telegramQueues.set(key, queue);
     }
-    return queue.submit({ text, author, thread });
+    void queue.submit({ text, author, thread });
   }
 
   function emitTurn(
@@ -700,9 +707,12 @@ export function createTelegramWorker(deps: {
 
     async start() {
       if (bot) return;
-      let adapter: ReturnType<typeof createTelegramAdapter> | null = null;
+      let adapter: TelegramConversationAdapter | null = null;
       try {
-        const polling = createTelegramAdapter({ botToken, mode: "polling" });
+        const polling = new TelegramConversationAdapter({
+          botToken,
+          mode: "polling",
+        });
         adapter = polling;
         const handleMessage = createTelegramMessageHandler({
           conversations: deps.conversations,
@@ -792,8 +802,9 @@ export function createTelegramWorker(deps: {
         : text;
 
       if (conversationId) {
-        const binding =
-          await deps.conversations.findAgentByConversation(conversationId);
+        const binding = await deps.conversations.findAgentByConversation(
+          telegramChatOf(conversationId),
+        );
         if (!binding || binding.agentId !== agentId)
           return { error: "conversation is not connected to this agent" };
         try {

@@ -22,12 +22,13 @@ Available:
   Its one browser is the one the user sees in the browser panel beside the chat, so the user watches what you do and shares its sign-ins: run it without `--session` or `--profile`, which would start another browser the user cannot see, and without `set viewport`, which squeezes the page into part of the panel.
   To show the user a page, open it and put a button for it in your reply; see the `agent-browser` skill
 - Playwright (`playwright`, `npx playwright`), sharing agent-browser's bundled Chromium in the read-only `/opt/ms-playwright`; a project's own Playwright of another version needs its browsers in the home: set `PLAYWRIGHT_BROWSERS_PATH=~/.local/share/ms-playwright` for both its `playwright install` and its runs
-- `mise` to install extra software: tools it installs are lost on restart, so declare them in a `mise.toml` in a folder of your own under `~/work` (`mise use <tool>` there), run them there with `mise exec -- <command>` or after `eval "$(mise env)"`, and run `mise install` in that folder again after a restart
+- `mise` to install extra software: `mise use -g <tool>@<version>` installs into your home and keeps it across restarts (plain `mise use -g <tool>` keeps the image's version when it has one); a project's tools go in a `mise.toml` in its folder under `~/work` (`mise use <tool>` there), run with `mise exec -- <command>` or after `eval "$(mise env)"`
 
 Additionally available if running in a root VM:
 
-- `docker`, with `docker buildx` and `docker compose`: start the daemon with `dockerd >/var/log/dockerd.log 2>&1 &`, stops on restart; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy and trust its CA, `/etc/platform/ca/ca.crt`, through `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `GIT_SSL_CAINFO`, which name a copy of the image's own bundle with it appended; a tool that reads none of them, such as a Java keystore or GnuTLS-based wget and apt, still needs it added
-- `k3s`: start with `k3s server >/var/log/k3s.log 2>&1 &`, use `k3s kubectl`, stops on restart; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
+- `docker`, with `docker buildx` and `docker compose`: start the daemon with `rc-service docker start` (log in `/var/log/dockerd.log`); `rc-update add docker default` starts it at every boot; images are kept in `~/.local/share/docker`; containers and builds get the gateway as their proxy and trust its CA, `/etc/platform/ca/ca.crt`, through `SSL_CERT_FILE`, `CURL_CA_BUNDLE`, `REQUESTS_CA_BUNDLE`, `NODE_EXTRA_CA_CERTS` and `GIT_SSL_CAINFO`, which name a copy of the image's own bundle with it appended; a tool that reads none of them, such as a Java keystore or GnuTLS-based wget and apt, still needs it added
+- `k3s`: start with `rc-service k3s start` (log in `/var/log/k3s.log`), use `k3s kubectl`; `rc-update add k3s default` starts it at every boot; cluster state is kept in `~/.local/share/k3s`; pods trust the gateway's CA the same way
+- openrc for services of your own: an `openrc-run` script in `/etc/init.d`, started with `rc-service`; a service gets only `PATH` and the gateway's proxy and CA variables of your environment
 - `apt-get` to install extra software
 
 Long jobs: work you start keeps running after the user leaves, but stops when the agent hibernates.

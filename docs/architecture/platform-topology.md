@@ -1,6 +1,6 @@
 # Platform topology
 
-Last verified: 2026-10-15
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -87,6 +87,7 @@ Events are non-durable and advisory by contract — nothing may depend on one ar
 Their only consumers are sagas running in the emitting process: the audit trail, usage rollups, the public-profile projection and Slack worker registration, and two that reach across replicas by forwarding a *signal* over the shared Redis bus — never the event itself.
 One wakes egress-approval holds parked on other replicas; the other projects events into thin per-owner invalidation hints (a topic plus ids, never entity state) feeding each browser tab's single live-events subscription.
 A hint means "re-read this over the query path"; every (re)subscribed stream opens with a *sync* hint meaning "re-read everything", so reconnects heal by refetch rather than replay.
+A reconnect or a tab return re-reads the mutable families no stream carries, and a reconnect also marks every other query stale, so its next reader re-reads it; a Session Transcript is re-read by its chat over its own ACP path, not by a mounted query.
 State the platform cannot observe from a write site or the cluster API — the session list, the workspace directories a client has open, the file it has open, a provider's refreshed model list — is hinted by the pod that owns it instead, over the agent's own tRPC surface.
 A client-scoped watch exists only while a subscriber is attached: a tab viewing one agent watches that agent.
 Session lists are watched by one lease-elected watcher across every awake agent, which records what it reads for [home-feed](home-feed.md); browsers hold no session subscription of their own.
@@ -103,7 +104,6 @@ There is no server-side mode-change side effect, and the notice carries no paylo
 The UI's session *list*, though, is no longer an ACP read: agent-runtime composes it on its own tRPC surface, unioning what the harness reports with its own metadata store — so a session it has recorded but the harness has not yet persisted is listed with no title, rather than being invisible until its first turn lands.
 A title the platform stores — from a [schedule](schedules.md#session-continuity), the user, or the agent renaming its own session — wins over the harness's until cleared, and the harness is never told.
 A harness that mints its own id for a terminal session's conversation (Codex, Bob) pins that id in a directory its runtime manifest names (`terminalSessionPins`), one file per terminal session; the union lists the pinned conversation once, under the terminal session's id and with the harness's title, so opening it resumes the conversation rather than starting an empty terminal under the harness's id.
-A harness that keeps its own cost per conversation (Bob, in Bobcoins) declares a command for it in its runtime manifest (`sessionSpend`), and the read carries each session's cost in that unit; a failed command costs the list only that figure.
 The read is paged, newest activity first: a client asks for one page, optionally narrowed to session categories, one schedule or a single session, and follows a cursor for older ones; the pod filters before it cuts, so a narrowed page is full of matches.
 Behind it the pod gathers the harness's whole listing and reuses it until a session change or short expiry drops it.
 A read waits briefly for a starting harness, then answers from the platform's records, marked incomplete so no reader takes a missing session as gone.
@@ -157,7 +157,7 @@ See [`packages/agent-runtime/`](../../packages/agent-runtime/) and [`packages/ag
 
 The pods behind the `vm` Backend: **one runner per owner**, a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent, created and removed by the controller; a local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
 Each vm Agent is a persistent machine on its owner's runner, published through the agent's Service so the api-server dials it like a pod; the runner is the Backend's trust boundary, per owner rather than per Agent.
-A change to the runner pod reboots that owner's machines, so the controller rolls it across owners a few at a time, and a new runner release can be handed the machines inside the pod instead.
+A change to the runner pod reboots that owner's machines, so the controller rolls it across owners a few at a time, and a new runner release can be handed the machines inside the pod instead, unless it declares another reboot key than the pod runs, which rolls the pod to reboot them (a pod whose own release declares no key takes it in place).
 [vm-runner](vm-runner.md) owns the runner in depth: its gates, machine API, image cache and guest; [upgrades](vm-runner-upgrades.md) owns its rolls and hand-offs.
 
 ### gateway
@@ -166,6 +166,7 @@ A per-agent Envoy pod paired with the agent-runtime pod.
 Mounts the owner's credential Secrets, the cert-manager-issued leaf TLS material, and the rendered Envoy bootstrap ConfigMap.
 Terminates the agent's egress TLS, injects credentials on the wire, and gates each credentialed request through the api-server's ext_authz handler.
 A per-pair NetworkPolicy admits ingress to its proxy port only from the paired agent pod and, for a vm Agent, the owner's VM runner, which it also admits to the machine's resolver ([vm-runner](vm-runner.md)).
+With `virtualization.gateway.perOwner` on, vm Agents share one gateway pod per owner instead, a Deployment beside the owner's runner with one listener per agent behind each agent's own gateway Service ([credential-gateway](credential-gateway.md#owner-gateway)).
 See [security-and-credentials](security-and-credentials.md).
 
 ### ui

@@ -3,7 +3,7 @@ use std::time::{Duration, SystemTime};
 use crate::api::{MachineSpec, State};
 use crate::state::is_image_ref;
 
-// UNIT_BOUNDARY_DESCRIPTION: the next thing the runner does to bring one machine to the spec it was asked for, and nothing about doing it. The controller sends the whole desired spec on every reconcile, so this decision is made again and again against a machine that is already in some state. It is pure so that a wrong decision can be found without a hypervisor, before it restarts every agent once a minute.
+// UNIT_BOUNDARY_DESCRIPTION: the next thing the runner does to bring one machine to the spec it was asked for, and nothing about doing it. The controller sends the whole desired spec on every reconcile, so this decision is made again and again against a machine that is already in some state. It is pure so that a wrong decision can be found without a hypervisor, before it restarts every agent on every reconcile.
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine that once answered may stay quiet before it is restarted, while the boot it runs now has not answered yet, or soon after it was last restarted for going quiet. A machine that has never answered is still booting, and one that answered a moment ago is between checks, so both halves of the condition are needed.
 pub const UNHEALTHY_RESTART: Duration = Duration::from_secs(10 * 60);
@@ -83,6 +83,9 @@ impl Health {
         self.ever_ready && now.duration_since(since).is_ok_and(|quiet| quiet > limit)
     }
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a boot that copies a disk before its first answer may stay quiet: one that restores a runtime migration's seed. The guest copies the whole home before it serves, and a restart would start the copy again from nothing, so a home that takes longer than UNHEALTHY_RESTART to copy would never boot. The controller reads the status reason REASON_COPYING_DISK as such a boot and leaves its bound to this one.
+pub const COPYING_RESTART: Duration = Duration::from_secs(6 * 3600);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a machine may stay quiet before the runner restarts it. A foreign machine gets FOREIGN_UNHEALTHY_RESTART. A boot that has answered gets STALLED_RESTART, unless the runner restarted the machine for going quiet less than UNHEALTHY_RESTART ago: a guest that stalls again so soon is not cured by a reboot, so it is restarted at most once per UNHEALTHY_RESTART instead of every minute. A boot that has not answered is a slow boot, and gets UNHEALTHY_RESTART.
 pub fn quiet_limit(
@@ -259,7 +262,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the reconcile sends the same spec about once a minute, so the usual answer must be nothing. Acting on a machine that is already right restarts every agent once a minute.
+    // TEST_SCENARIO: the reconcile sends the same spec again and again, on every machine change and on every drift sweep, so the usual answer must be nothing. Acting on a machine that is already right restarts its agent.
     #[test]
     fn a_machine_that_is_already_what_it_should_be_is_left_alone() {
         let applied = running_spec();
@@ -296,7 +299,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: a running machine asked to stop is stopped, and one already down is left alone, or the runner stops the same machine every minute.
+    // TEST_SCENARIO: a running machine asked to stop is stopped, and one already down is left alone, or the controller's stop, sent with every reconcile, stops it again and again.
     #[test]
     fn a_stop_reaches_a_running_machine_and_leaves_a_stopped_one_alone() {
         let stop = MachineSpec {
@@ -725,7 +728,7 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one every reconcile. If that difference were a change, every machine that pulls with credentials would restart once a minute.
+    // TEST_SCENARIO: the stored spec never keeps the registry credential, and the controller sends one every reconcile. If that difference were a change, every machine that pulls with credentials would restart at each reconcile.
     #[test]
     fn a_registry_credential_is_never_a_reason_to_restart() {
         let desired = MachineSpec {

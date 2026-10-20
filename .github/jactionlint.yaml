@@ -1,0 +1,18 @@
+# jactionlint's config. It reads actionlint's file of the same shape, and the
+# default profile (actionlint's checks, zizmor's audits, the policy rules).
+rules:
+  # zizmor reports a matrix, step-output or github.actor expansion in a script
+  # under its regular persona; here it is the pedantic option of the rule, off
+  # by default. The zizmor task this file replaced reported them, so they stay
+  # on: check:actions keeps a counterexample of the matrix case and fails if it
+  # stops being found.
+  template-injection:
+    pedantic: true
+
+paths:
+  # The cache keys build.yml and e2e.yml share are anchored in both under one
+  # name, so check:workflow-anchors can compare them, though one file may
+  # never alias its copy.
+  .github/workflows/{build,e2e}.yml:
+    ignore:
+      - 'anchor ".+" is defined but not used'

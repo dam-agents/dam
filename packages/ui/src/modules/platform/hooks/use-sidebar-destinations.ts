@@ -1,7 +1,7 @@
 import {
   Book,
-  Box,
   type CarbonIconType,
+  Gift,
   Home,
   Settings,
 } from "@carbon/icons-react";
@@ -9,6 +9,7 @@ import {
 import { DOCS_URL } from "../../../constants.js";
 import { useStore } from "../../../store.js";
 import { ArtifactIcon } from "../../artifacts/lib/artifact-icon.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 
 export interface SidebarDestination {
   label: string;
@@ -23,22 +24,34 @@ export function useSidebarDestinations() {
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
+  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
+  const setMobileScreen = useStore((s) => s.setMobileScreen);
+  const setArtifactsSectionOpen = useStore((s) => s.setArtifactsSectionOpen);
+  const newLayout = useNewLayout();
+  const classicChat = view === "chat" && !newLayout;
+  const artifactsOpen = useStore((s) =>
+    classicChat ? s.artifactsSectionOpen : s.sidePanelTab === "artifacts",
+  );
 
   const home: SidebarDestination = {
     label: "Home",
     icon: Home,
-    active: view === "home",
+    active: view === "home" && !artifactsOpen,
     navigate: () => setView("home"),
   };
   const artifacts: SidebarDestination = {
     label: "Artifacts",
     icon: ArtifactIcon,
-    active: view === "artifacts",
-    navigate: () => setView("artifacts"),
+    active: artifactsOpen,
+    navigate: () => {
+      setSidePanelTab("artifacts");
+      setArtifactsSectionOpen(true);
+      setMobileScreen("files");
+    },
   };
   const starterKits: SidebarDestination = {
     label: "Starter kits",
-    icon: Box,
+    icon: Gift,
     active: view === "starter-kit" || kitBrowserOpen,
     navigate: () => setKitBrowserOpen(true),
   };

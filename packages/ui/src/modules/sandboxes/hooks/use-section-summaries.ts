@@ -19,12 +19,6 @@ import {
   useSkillsState,
 } from "../../agents/api/skills.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
-import { useBudgetReserved } from "../../budgets/api/queries.js";
-import {
-  formatSizeLabel,
-  sizeInMi,
-  slotUnitOf,
-} from "../../budgets/lib/slots.js";
 import {
   useAppConnections,
   useConnectionTemplates,
@@ -39,7 +33,11 @@ import { useProviderConnections } from "../../sessions/api/session-pair.js";
 import { useAgentSpendStatus } from "../../spend/api/queries.js";
 import { agentLimitOf } from "../../spend/lib/agent-limit.js";
 import { agentLimitCoverage } from "../../spend/lib/coverage.js";
-import { formatSpend, formatSpendOf } from "../../spend/lib/format.js";
+import {
+  formatSpend,
+  formatSpendOf,
+  formatSpent,
+} from "../../spend/lib/format.js";
 import { useTelegramChats } from "../../telegram/api/queries.js";
 
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
@@ -105,14 +103,7 @@ export function useSectionSummaries(agent: AgentView | null): {
     agent?.id ?? null,
   );
 
-  const { data: budget } = useBudgetReserved();
-  const setup = agent?.vm
-    ? agent.requireConnectionAddress
-      ? "Credentials: addressed only"
-      : "Credentials: every request"
-    : agent && budget
-      ? formatSizeLabel(sizeInMi(agent.size), slotUnitOf(budget))
-      : undefined;
+  const setup = "Manage this agent";
 
   const { data: currentPreset } = useCurrentPreset(agent?.id ?? null);
   const network = currentPreset ? PRESET_SUMMARY[currentPreset] : undefined;
@@ -147,11 +138,14 @@ export function useSectionSummaries(agent: AgentView | null): {
         (s) => agentId !== undefined && s.grantedAgentIds.includes(agentId),
       )
       .map((s) => s.name);
-    return (
+    const names =
       formatNameList([...new Set(titles), ...satelliteNames]) ??
-      "No connections added"
-    );
+      "No connections added";
+    return agent?.requireConnectionAddress
+      ? `${names} · addressed only`
+      : names;
   }, [
+    agent?.requireConnectionAddress,
     connectionsQuery.data,
     apps,
     providerAppIds,
@@ -227,7 +221,7 @@ export function useSectionSummaries(agent: AgentView | null): {
           : []),
       ...spendStatus.spent
         .filter((total) => total.unit !== "usd" && total.costMicros > 0)
-        .map((total) => formatSpend(total.costMicros, total.unit)),
+        .map((total) => formatSpent(total.costMicros, total.unit)),
     ];
     return parts.length > 0 ? `${parts.join(" · ")} today` : "No spend today";
   }, [

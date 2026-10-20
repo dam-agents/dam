@@ -38,6 +38,7 @@ function row(
     transcriptCaptured: false,
     transcriptTruncated: false,
     harnessConfig: null,
+    driverSessionId: null,
     ...overrides,
   };
 }

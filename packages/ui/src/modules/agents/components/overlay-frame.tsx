@@ -16,6 +16,7 @@ export function OverlayFrame({
         variant="ghost"
         size="icon"
         aria-label="Back"
+        tooltip="Back"
         onClick={onBack}
         className="absolute left-1 top-0 text-muted-foreground hover:bg-transparent md:hidden"
       >

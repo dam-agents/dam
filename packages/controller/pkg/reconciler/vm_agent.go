@@ -33,12 +33,14 @@ const vmBackendEnv = "PLATFORM_BACKEND"
 const (
 	// UNIT_BOUNDARY_DESCRIPTION: how soon an agent is reconciled again when
 	// UNIT_BOUNDARY_DESCRIPTION: its runner could not be reached, which only a
-	// UNIT_BOUNDARY_DESCRIPTION: full reconcile can fix, and how often every
-	// UNIT_BOUNDARY_DESCRIPTION: vm agent is reconciled anyway. A machine on
-	// UNIT_BOUNDARY_DESCRIPTION: its way up is watched by a long poll on its
-	// UNIT_BOUNDARY_DESCRIPTION: runner instead; the health poll is the
-	// UNIT_BOUNDARY_DESCRIPTION: backstop, and the only thing that notices a
-	// UNIT_BOUNDARY_DESCRIPTION: ready guest going quiet.
+	// UNIT_BOUNDARY_DESCRIPTION: full reconcile can fix, and how often a vm
+	// UNIT_BOUNDARY_DESCRIPTION: agent that is not ready is reconciled anyway. A
+	// UNIT_BOUNDARY_DESCRIPTION: machine's status, on its way up, failed, or
+	// UNIT_BOUNDARY_DESCRIPTION: running and ready, is watched by a long poll on
+	// UNIT_BOUNDARY_DESCRIPTION: its runner instead, so a settled agent is
+	// UNIT_BOUNDARY_DESCRIPTION: reconciled only when something changes; the
+	// UNIT_BOUNDARY_DESCRIPTION: health poll is the backstop for what has not
+	// UNIT_BOUNDARY_DESCRIPTION: reached a status a watch can hold.
 	vmReadinessPoll   = 3 * time.Second
 	vmNotReadyPollMax = time.Minute
 	vmHealthPoll      = time.Minute
@@ -65,7 +67,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	lock.Lock()
 	defer lock.Unlock()
 	// UNIT_BOUNDARY_DESCRIPTION: the pool is cached and the memory pass reads it again only for owners with something running, so a pool changed while every machine slept would size this start from the old one, and a size reaches a machine only at its next start: the reconcile that starts a machine reads the UserBudget again.
+	// UNIT_BOUNDARY_DESCRIPTION: when the agent began running is kept beside the flag, because a kill of the runner pod explains only the agents that were already running when it happened: one woken afterwards inside the same episode was not taken down by it.
 	if was, _ := r.vmRunning.Swap(name, running); running && was != true {
+		r.vmRunningSince.Store(name, time.Now())
 		r.refreshVMPool(ctx, owner)
 	}
 	demand, err := r.ownerRunnerDemand(ctx, owner, agent, running)
@@ -85,6 +89,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		func() error { sec, secErr = r.ownedSecretRef(ctx, agent); return nil },
 		func() error {
 			leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, EnvoyLeafSecretName(name), metav1.GetOptions{})
+			if k8serrors.IsNotFound(leafErr) && r.config.VM.Enabled {
+				leaf, leafErr = r.client.CoreV1().Secrets(r.config.Namespace).Get(ctx, ownerGatewayName(r.config.ReleaseName, owner)+ownerGatewayLeafSuffix, metav1.GetOptions{})
+			}
 			return nil
 		},
 		func() error {
@@ -105,6 +112,14 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			msg += "; this install cannot run VM runners as configured: " + problems
 		}
 		return vmrunner.MachineStatus{Reason: reason, Message: msg}, false, nil
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: the owner gateway is rendered after the runner call, still under the owner's lock: a machine reaches its gateway through its own Service's address whichever pod that selects, so a start never waits for the owner's render, a few reads and writes per agent of the owner.
+	if r.ownerGatewayServes(spec) {
+		defer func() {
+			if _, err := r.ensureOwnerGateway(ctx, owner); err != nil {
+				slog.Warn("owner gateway: not applied", "owner", owner, "agent", name, "error", err)
+			}
+		}()
 	}
 	defaults := r.config.AgentTemplateDefaults
 
@@ -157,11 +172,16 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	if pullErr != nil {
 		return vmrunner.MachineStatus{}, false, pullErr
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: a machine that should stop is sized from its spec when the pool cannot be read. A stop acts on no size, and refusing it would leave a machine up that the controller asked to stop, holding everything the stop releases.
+	memoryMiB, err := r.machineMemoryMiB(ctx, owner, spec)
+	if err != nil && running {
+		return vmrunner.MachineStatus{}, false, fmt.Errorf("sizing the machine: %w", err)
+	}
 
 	machine := vmrunner.MachineSpec{
 		Image:           spec.Image,
 		CPUs:            max(r.config.VM.Runner.MachineCPUs, 1),
-		MemoryMiB:       r.machineMemoryMiB(ctx, owner, spec),
+		MemoryMiB:       memoryMiB,
 		StorageGiB:      storageGiB,
 		Env:             env,
 		CACert:          machineTrustedCAs(string(leaf.Data["ca.crt"]), r.config),
@@ -180,6 +200,16 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	}
 	st, err := runner.Ensure(ctx, name, machine)
 	r.stallRunnerHandoffOnEnsure(ctx, owner, err)
+	if err == nil && running {
+		// UNIT_BOUNDARY_DESCRIPTION: the answer is kept whether it refused or admitted the machine: the Agent's status carries a refusal one reconcile late, and a machine that is still booting is not yet a live machine to count by.
+		r.vmAnswers.Store(name, refusedAnswer(st))
+		if refusedAnswer(st) {
+			// UNIT_BOUNDARY_DESCRIPTION: a refusal leaves the machine holding nothing, so the pod is sized for what the owner holds and not for the start the runner refused, or the next reconcile of any other agent would raise it again.
+			if held, heldErr := r.heldRunnerDemand(ctx, owner, agent, running); heldErr == nil {
+				demand = held
+			}
+		}
+	}
 	if err == nil && st.DiskGiB > 0 {
 		r.vmDiskGrows.Store(name, true)
 	}
@@ -201,7 +231,10 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			return st, false, fmt.Errorf("applying agent service: %w", err)
 		}
 	}
-	if running && !st.Ready && (st.Reason == "" || st.Reason == vmrunner.ReasonNotReady) || !running && !machineStopped(st) {
+	// UNIT_BOUNDARY_DESCRIPTION: a machine the kernel or its seccomp filter killed is watched as a boot, its reason saying why it went down rather than that the attempt failed: the runner's next boot of it moves the status, and that read is what the agent waits for.
+	// UNIT_BOUNDARY_DESCRIPTION: a running machine is watched by its long poll whether or not it is ready: a ready guest going quiet or being restarted by the runner moves the machine's status, and that read is what notices it, so the backstop of reconciling every running agent every minute is not needed to find out. A machine that should run but reports a failure is left off the watch and to the health poll, because the runner answers a failed attempt with a new status version, and a watch on it would reconcile the agent as fast as it fails; on its way up it is watched, since its guest can answer before the start call returns. A machine that should not run is watched until it stops.
+	watched := st.Ready || st.Reason == "" || st.Reason == vmrunner.ReasonNotReady || st.Reason == vmrunner.ReasonCopyingDisk || st.Reason == vmrunner.ReasonOOMKilled || st.Reason == vmrunner.ReasonSeccompKilled
+	if running && watched || !running && !machineStopped(st) {
 		r.watchMachine(runner, name, st.Version)
 	} else {
 		r.unwatchMachine(name)
@@ -295,8 +328,8 @@ func (r *AgentReconciler) applyHostRunnerEndpoints(ctx context.Context, svc *cor
 	return err
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long a runner that cannot be reached, and whose owner has no Agent of any kind, is kept before the sweep removes it anyway. Only an agent's reconcile creates a runner, so such a runner serves nobody; the grace covers a runner that is merely restarting while its owner's Agents are being recreated.
-const orphanRunnerGrace = 30 * time.Minute
+// UNIT_BOUNDARY_DESCRIPTION: how long a runner that cannot be reached, and whose owner has no Agent of any kind, is kept before the sweep removes it anyway. Only an agent's reconcile creates a runner, so such a runner serves nobody; the grace covers a runner that is merely restarting while its owner's Agents are being recreated. A machine that no Agent claims waits the same grace before the sweep collects it, since a List that reads empty comes and goes, and an Agent's workspace has no backup.
+const orphanGrace = 30 * time.Minute
 
 func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	if !r.config.VM.Enabled {
@@ -317,7 +350,7 @@ func (r *AgentReconciler) ReconcileOrphanMachines(ctx context.Context) {
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the whole pass over one runner holds the owner's lock, which an agent's reconcile also holds while it builds the runner and ensures its machine. What the sweep reads — the owner's Agents in a fresh List and in the informer cache, and the runner's own machine list — therefore cannot change under it through this controller, and a runner is removed only when all of them still say it serves nobody. A machine is collected when no Agent of this owner has its name: an Agent of the same name that belongs to someone else says nothing about this runner.
+// UNIT_BOUNDARY_DESCRIPTION: the whole pass over one runner holds the owner's lock, which an agent's reconcile also holds while it builds the runner and ensures its machine. What the sweep reads — the owner's Agents in a fresh List and in the informer cache, and the runner's own machine list — therefore cannot change under it through this controller, and a runner is removed only when all of them still say it serves nobody. A machine is collected when no Agent of this owner has its name and no sweep has seen one with it for the grace: an Agent of the same name that belongs to someone else says nothing about this runner.
 func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 	owner := runner.owner
 	lock := r.ownerLock(owner)
@@ -340,28 +373,17 @@ func (r *AgentReconciler) sweepRunner(ctx context.Context, runner runnerRef) {
 		return
 	}
 	r.ownerless.Delete(owner)
-	claimed, abandoned := machineClaims(agents.Items)
-	for _, id := range ids {
-		if claimed[id] {
-			continue
-		}
-		if err := runner.client.Delete(ctx, id); err != nil {
-			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
-			delete(abandoned, id)
-			continue
-		}
-		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id, "owner", owner)
-	}
-	r.forgetLeftMachines(ctx, abandoned)
+	r.sweepMachines(ctx, owner, ids, agents.Items, runner.client.Delete)
 	if anyVMAgent(agents.Items) || r.cachedOwnerAgents(ctx, owner, true) > 0 {
 		return
 	}
+	r.deleteOwnerGateway(ctx, owner)
 	left, err := runner.client.List(ctx)
 	if err != nil || len(left) > 0 {
 		slog.Info("orphan machine GC: runner kept, it is not empty", "owner", owner, "machines", len(left), "error", err)
 		return
 	}
-	r.deleteRunner(ctx, owner)
+	r.deleteRunner(ctx, owner, false)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: an install switched from runner pods to the host runner keeps the per-owner runner Deployments it made before, and nothing else looks at them in host mode, so their pods stay Pending for want of a KVM device. Only the Deployment goes: its claim holds the disks of the machines it ran, the one copy of those homes, and switching back to runner pods remakes the Deployment on that same claim. A runner is recognized by its owner label and the per-owner name, never by the label alone, and is deleted only as it was listed.
@@ -404,19 +426,71 @@ func (r *AgentReconciler) sweepHostRunner(ctx context.Context) {
 		slog.Warn("orphan machine GC: listing agents failed", "error", err)
 		return
 	}
-	claimed, abandoned := machineClaims(agents.Items)
+	r.sweepMachines(ctx, "", ids, agents.Items, runner.Delete)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an Agent's workspace has no backup, and a live List of the owner's Agents can read empty for a while on a cluster that shares its CRDs, so a machine one sweep finds unclaimed may be live. The informer cache is a second opinion beside that List, and time is the third: a machine is deleted only when both name no Agent for it and no sweep has found one for the grace. The first sweep that finds it unclaimed records when, and a sweep that finds it claimed forgets that, so a machine claimed again waits the whole grace. Anything an Agent names as a machine an aborted migration left keeps its mark until the machine is gone. With no owner, the machines are those of the host runner, which serves every owner.
+func (r *AgentReconciler) sweepMachines(ctx context.Context, owner string, ids []string, agents []unstructured.Unstructured, deleteMachine func(context.Context, string) error) {
+	claimed, abandoned := machineClaims(agents)
+	cached := r.cachedMachineClaims(owner)
+	if cached == nil {
+		slog.Warn("orphan machine GC: the agent cache cannot be read, no machine is collected this pass", "owner", owner)
+		return
+	}
+	maps.Copy(claimed, cached)
+	live := make(map[string]bool, len(ids))
 	for _, id := range ids {
+		live[id] = true
+		key := owner + "/" + id
 		if claimed[id] {
-			continue
-		}
-		if err := runner.Delete(ctx, id); err != nil {
-			slog.Warn("orphan machine GC: delete failed", "machine", id, "error", err)
+			r.orphanMachines.Delete(key)
 			delete(abandoned, id)
 			continue
 		}
-		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id)
+		first, seen := r.orphanMachines.LoadOrStore(key, time.Now())
+		if !seen || time.Since(first.(time.Time)) < orphanGrace {
+			delete(abandoned, id)
+			continue
+		}
+		if err := deleteMachine(ctx, id); err != nil {
+			slog.Warn("orphan machine GC: delete failed", "machine", id, "owner", owner, "error", err)
+			delete(abandoned, id)
+			continue
+		}
+		r.orphanMachines.Delete(key)
+		slog.Info("orphan machine GC: deleted machine for missing agent", "machine", id, "owner", owner)
 	}
+	r.orphanMachines.Range(func(k, _ any) bool {
+		key, _ := k.(string)
+		if id, ok := strings.CutPrefix(key, owner+"/"); ok && !live[id] {
+			r.orphanMachines.Delete(key)
+		}
+		return true
+	})
 	r.forgetLeftMachines(ctx, abandoned)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: which machines the informer cache's Agents say are theirs, read as the second opinion beside a sweep's live List: on a cluster that shares its CRDs the List can read empty for a while, and a machine deleted on it alone costs the owner every disk of their runner. A cache that cannot be read answers nothing at all, which keeps every machine, as the cache does for the runner. With no owner, every Agent in the namespace claims, since the host runner serves them all.
+func (r *AgentReconciler) cachedMachineClaims(owner string) map[string]bool {
+	claimed := map[string]bool{}
+	if r.agentCache == nil {
+		return claimed
+	}
+	selector := labels.Everything()
+	if owner != "" {
+		selector = labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner})
+	}
+	items, err := r.agentCache.ByNamespace(r.config.Namespace).List(selector)
+	if err != nil {
+		return nil
+	}
+	for _, obj := range items {
+		if u, ok := obj.(*unstructured.Unstructured); ok {
+			c, _ := machineClaims([]unstructured.Unstructured{*u})
+			maps.Copy(claimed, c)
+		}
+	}
+	return claimed
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: which machine names the listed Agents claim, and which of them an aborted migration left behind. Such an Agent runs as a container again and no longer claims its machine, unless a new migration was requested since, which removes the machine itself before it builds a fresh one.
@@ -442,7 +516,7 @@ func (r *AgentReconciler) forgetLeftMachines(ctx context.Context, left map[strin
 	}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed with whatever its disk still holds — it is reported at error level, because that is the one path where the platform deletes a claim it could not see into.
+// UNIT_BOUNDARY_DESCRIPTION: a runner the sweep cannot ask what it holds is kept while its owner has any Agent at all. One whose owner has none is kept for the grace, then removed without its claim: nobody could see what the claim holds, and an empty List of Agents can be a CRD event rather than an owner who left, so the claim stays for the owner's next vm Agent to build its runner on.
 func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner string, listed int, cause error) {
 	if listed > 0 || r.cachedOwnerAgents(ctx, owner, false) > 0 {
 		r.ownerless.Delete(owner)
@@ -451,12 +525,12 @@ func (r *AgentReconciler) collectUnreachableRunner(ctx context.Context, owner st
 	}
 	first, _ := r.ownerless.LoadOrStore(owner, time.Now())
 	since := time.Since(first.(time.Time))
-	if since < orphanRunnerGrace {
-		slog.Warn("orphan machine GC: a VM runner that cannot be reached serves no agent; it is removed if that lasts", "owner", owner, "for", since.Round(time.Second), "grace", orphanRunnerGrace, "error", cause)
+	if since < orphanGrace {
+		slog.Warn("orphan machine GC: a VM runner that cannot be reached serves no agent; it is removed if that lasts", "owner", owner, "for", since.Round(time.Second), "grace", orphanGrace, "error", cause)
 		return
 	}
-	slog.Error("orphan machine GC: removing a VM runner that cannot be reached and whose owner has no agents; its claim is deleted unseen", "owner", owner, "for", since.Round(time.Second), "error", cause)
-	r.deleteRunner(ctx, owner)
+	slog.Warn("orphan machine GC: removing a VM runner that cannot be reached and whose owner has no agents; its claim is kept, with every disk on it", "owner", owner, "claim", r.runnerName(owner), "for", since.Round(time.Second), "error", cause)
+	r.deleteRunner(ctx, owner, true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the owner's Agents as the informer sees them, counted as a second opinion beside a fresh List: either one knowing of an Agent keeps the runner.
@@ -597,13 +671,17 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		msg = "machine is " + st.State
 	}
 	if r.requeue != nil {
-		poll := vmHealthPoll
 		if runnerReached {
 			r.notReadyPolls.Delete(agent.Name)
-		} else {
-			poll = r.nextNotReadyPoll(agent.Name)
 		}
-		r.requeue(agent.Name, poll)
+		// UNIT_BOUNDARY_DESCRIPTION: a ready machine is not requeued: its watch on the runner requeues the Agent the moment the machine's status moves, so nothing would come of reconciling a settled agent minute after minute. Everything short of ready is looked at again, on the readiness poll while the runner is out of reach and on the health poll otherwise, which is what notices a start that never completes and a machine that fails as fast as the runner retries it.
+		if !st.Ready {
+			poll := vmHealthPoll
+			if !runnerReached {
+				poll = r.nextNotReadyPoll(agent.Name)
+			}
+			r.requeue(agent.Name, poll)
+		}
 	}
 	reason := st.Reason
 	switch reason {
@@ -611,10 +689,30 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 		reason = vmrunner.ReasonNotReady
 	case vmrunner.ReasonHomeFull:
 		reason = apiv1.ReasonHomeVolumeFull
+	case vmrunner.ReasonImageCacheUnreachable:
+		// UNIT_BOUNDARY_DESCRIPTION: the runner sees its own mount of the cache directory, and two runners on one node directory and on a stale copy of it refuse with the same socket, so the Agent's own failure names the node directory this runner mounts. That is the fact an operator compares with the one the cache service writes, and it is here because a start that fails without a pending runner change writes no roll Event to carry it.
+		if src := r.runnerImageCacheSourceOf(ctx, agent.Labels[envoyOwnerLabel]); src != "" {
+			msg += " (this runner mounts the node's " + src + " as its image cache)"
+		}
 	}
+	ready := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionAgentPodReady)
 	running, _ := r.vmRunning.Load(agent.Name)
+	startedAt := func() time.Time {
+		v, _ := r.vmRunningSince.Load(agent.Name)
+		at, _ := v.(time.Time)
+		return at
+	}
+	recoveredAt := func() time.Time {
+		v, _ := r.vmRecoveredAt.Load(agent.Name)
+		at, _ := v.(time.Time)
+		return at
+	}
+	if st.Ready {
+		r.vmRecoveredAt.Store(agent.Name, time.Now())
+	}
 	killedAt := func() time.Time { return r.runnerOOMKilledAt(ctx, agent.Labels[envoyOwnerLabel]) }
-	if reason == vmrunner.ReasonNotReady && runnerOOMTookDown(apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionAgentPodReady), running == true, st.Ready, killedAt) {
+	// UNIT_BOUNDARY_DESCRIPTION: the kill is published over whatever the runner says about this agent afterwards, so an agent the restarted runner refused room, one a reclaim put to sleep, and one whose boot the restart broke all name the kill that took their machine, not the consequence they wear now.
+	if runnerOOMTookDown(ready, running == true, st.Ready, startedAt, recoveredAt, killedAt) {
 		reason = apiv1.ReasonRunnerOutOfMemory
 		msg = "Your VM agents ran out of memory together, so the ones that were running restarted. Disable agents you aren't using to free memory."
 	}
@@ -633,38 +731,40 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
 		func(s *apiv1.AgentStatus) {
 			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
-			if runnerReached {
-				homeRepairedCondition(s, st, agent.Generation)
-			}
 			r.runnerCapacityCondition(s, agent)
 			if runnerReached {
 				setStartFailure(s, failure, agent.Generation)
 			}
+			// UNIT_BOUNDARY_DESCRIPTION: the kill's reason is timed from the reconcile that first published it, not from the condition's status flip: `apimeta.SetStatusCondition` moves `LastTransitionTime` only when the status changes, so an agent that was already down before the kill kept the older flip's time and the episode would be over on its first read, publishing the kill on one reconcile and its own reason on the next.
+			if reason == apiv1.ReasonRunnerOutOfMemory && (ready == nil || ready.Reason != apiv1.ReasonRunnerOutOfMemory) {
+				if c := apimeta.FindStatusCondition(s.Conditions, apiv1.ConditionAgentPodReady); c != nil {
+					c.LastTransitionTime = metav1.NewTime(time.Now())
+				}
+			}
 		})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the runner's OOM kill is what keeps this agent down: it should run and is not ready, and it was ready at or before the kill, or already carries the reason, which then lasts through the runner's restart and the machine's boot. An agent woken after the kill was not taken down by it. The caller asks only while nothing more specific explains the wait: a reason of the runner's own, such as a failed boot, or a runner the scheduler cannot place, wins over the kill. The runner pod is read only when a ready agent goes down, so a booting agent costs no read.
-func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, killedAt func() time.Time) bool {
+// UNIT_BOUNDARY_DESCRIPTION: how long after an OOM kill of an owner's runner the kill is still what its agents' machines read as down: a boot after one takes seconds, but a restarted runner refuses room to some machines and a reclaim puts others to sleep, and those consequences of the kill land minutes later, on a remade runner pod that still carries the kill in its last termination. Past it the kill explains nothing the agent reads now, so the agent falls back to its own reason, which a boot that keeps failing needs in order to be seen as the failure it is.
+const runnerOOMEpisode = 10 * time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner's OOM kill is what keeps this agent down: it should be running, it is not ready, and the kill is one of the episode that follows it, either because the agent already names it — a reason once published lasts through the runner's own restart, which replaces the pod record of the kill, and through a controller's restart, which knows no start time, and the publish carries the time it was first said, so the episode runs from the kill even on an agent that was down before it — or because the agent was already running when the kill happened. Every machine of the owner lived in the killed runner pod, so the kill took all of them down together, and whatever the restarted runner reports of this one afterwards — a boot that failed on the restart, a refused start for room, a machine's own kill reason — is that same taking down, not a fault of its own. One woken inside the episode was not running at the kill and carries nothing: a start the controller has not seen behind it is no evidence that the kill took it down, so it is left out rather than guessed at. An agent that is up again, one asleep at the kill, and one that never published readiness carry nothing either: the notice, the alert and the history all read a reason published while the agent is down, so none of them can show a machine that is up. A boot's own failure still reaches the owner on the start failure condition, which this does not touch, and a boot that keeps failing names itself once the episode is over.
+func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, startedAt, recoveredAt, killedAt func() time.Time) bool {
 	if !running || ready || prev == nil {
 		return false
 	}
-	if prev.Reason == apiv1.ReasonRunnerOutOfMemory {
-		return true
-	}
-	if prev.Status != metav1.ConditionTrue {
+	at := killedAt()
+	// UNIT_BOUNDARY_DESCRIPTION: a guest that answered after the kill has ended the taking down it caused, and whatever comes after that — a seccomp kill, a boot that failed — is its own: the kill is not read again for an agent that has been up since, though the runner pod still carries it in its last termination for the rest of the episode.
+	if recovered := recoveredAt(); !recovered.IsZero() && recovered.After(at) {
 		return false
 	}
-	at := killedAt()
-	return !at.IsZero() && !prev.LastTransitionTime.After(at)
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: tells the owner that the machine's last boot repaired the filesystem on its disk, from what the runner reports, and drops the condition once a boot finds the disk clean. A runner not reached leaves it as it was, since its silence says nothing about the disk.
-func homeRepairedCondition(s *apiv1.AgentStatus, st vmrunner.MachineStatus, generation int64) {
-	if st.HomeRepaired == "" {
-		apimeta.RemoveStatusCondition(&s.Conditions, apiv1.ConditionHomeRepaired)
-		return
+	if prev.Reason == apiv1.ReasonRunnerOutOfMemory {
+		return time.Since(prev.LastTransitionTime.Time) <= runnerOOMEpisode
 	}
-	setStatusCondition(s, apiv1.ConditionHomeRepaired, true, apiv1.ReasonHomeRepaired, "", st.HomeRepaired, generation)
+	if at.IsZero() || time.Since(at) > runnerOOMEpisode {
+		return false
+	}
+	started := startedAt()
+	return !started.IsZero() && !started.After(at)
 }
 
 func wantsNesting(agent *apiv1.Agent, defaults config.AgentTemplateDefaults) bool {

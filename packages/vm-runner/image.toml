@@ -8,14 +8,11 @@
 # crate, fetches the smolvm release smolvm.pin names and crane, and copies them
 # in.
 
-# tar unpacks image archives, e2fsprogs makes and grows machine disks, zstd
-# expands the ext4 templates onto the runner's claim, once per release, so the
-# first agent created after a roll does not wait for it. crane fetches images
-# over TLS, against the system trust store.
+# tar unpacks image archives, zstd expands each new machine's btrfs disk from
+# its template. crane fetches images over TLS, against the system trust store.
 [bootstrap.packages]
 "apt:ca-certificates" = "latest"
 "apt:catatonit" = "latest"
-"apt:e2fsprogs" = "latest"
 "apt:tar" = "latest"
 "apt:util-linux" = "latest"
 "apt:zstd" = "latest"

@@ -68,6 +68,7 @@ export function OpenAIForm({
           data-lpignore="true"
           data-form-type="other"
           placeholder="sk-…"
+          aria-label="OpenAI API key"
           {...register("value")}
         />
         <Button type="submit" disabled={submitDisabled} className="shrink-0">

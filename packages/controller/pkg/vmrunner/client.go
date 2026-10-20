@@ -108,6 +108,16 @@ func (c *Client) List(ctx context.Context) ([]string, error) {
 	return ids, json.Unmarshal(raw, &ids)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node's image cache service now. One connect on the runner's side, answered at once; the roll's gate asks it before it holds a changed pod back for a busy agent, since a runner without its cache boots only the trees its own machines already hold.
+func (c *Client) ImageCache(ctx context.Context) (RunnerImageCache, error) {
+	var cache RunnerImageCache
+	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/image-cache", nil)
+	if err != nil {
+		return cache, fmt.Errorf("VM runner: image cache: %w", err)
+	}
+	return cache, json.Unmarshal(raw, &cache)
+}
+
 func (c *Client) Release(ctx context.Context) (RunnerRelease, error) {
 	var release RunnerRelease
 	raw, err := c.call(ctx, c.HTTP, http.MethodGet, "/release", nil)
@@ -115,6 +125,18 @@ func (c *Client) Release(ctx context.Context) (RunnerRelease, error) {
 		return release, fmt.Errorf("VM runner: release: %w", err)
 	}
 	return release, json.Unmarshal(raw, &release)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: names the release the pod's loader should hand the machines to. The runner answers once it has written the name where the loader reads it; the hand-off itself follows within seconds, and Release reports it.
+func (c *Client) NameRelease(ctx context.Context, release string) error {
+	body, err := json.Marshal(RunnerReleaseName{Release: release})
+	if err != nil {
+		return err
+	}
+	if _, err := c.call(ctx, c.HTTP, http.MethodPost, "/release", body); err != nil {
+		return fmt.Errorf("VM runner: name release: %w", err)
+	}
+	return nil
 }
 
 func (c *Client) Delete(ctx context.Context, id string) error {

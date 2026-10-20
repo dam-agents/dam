@@ -66,6 +66,7 @@ describe("createSessionsService", () => {
     const { caller, listCalls } = pagedHarness();
     const changes = createSessionChanges(0);
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => caller,
       sessionMetadata: fakeStore(),
       isRunning: () => false,
@@ -98,6 +99,7 @@ describe("createSessionsService", () => {
       pullRequest: { number: 7, url: "https://github.com/acme/app/pull/7" },
     };
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => caller,
       sessionMetadata: fakeStore(),
       isRunning: () => false,
@@ -145,6 +147,7 @@ describe("createSessionsService", () => {
       },
     });
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => caller,
       sessionMetadata: store,
       isRunning: () => false,
@@ -183,6 +186,7 @@ describe("createSessionsService", () => {
       s1: { meta: { mode: "chat", ref: "ref-1" }, createdAt: "2026-10-08" },
     };
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => pagedHarness().caller,
       sessionMetadata: {
         ...fakeStore(),
@@ -212,13 +216,13 @@ describe("createSessionsService", () => {
     expect(entries.s1?.meta).toEqual({ mode: "chat", ref: "ref-1" });
     expect(await service.setTitle({ ref: "gone", title: "x" })).toBe(false);
 
-    // TEST_SCENARIO: the api-server reads a session's settings by its ref so a platform sub-agent spawned from it defaults to its subagent model; a session with none answers empty, an untracked ref null.
-    expect(await service.settings({ ref: "ref-1" })).toEqual({});
+    // TEST_SCENARIO: the api-server reads a session's settings by its ref when the session spawns a platform sub-agent; a session with none answers empty settings, an untracked ref null.
+    expect((await service.settings({ ref: "ref-1" }))?.settings).toEqual({});
     entries.s1 = {
       ...entries.s1!,
       meta: { ...entries.s1!.meta, settings: { subagentModel: "ibm/gpt-5.5" } },
     };
-    expect(await service.settings({ ref: "ref-1" })).toEqual({
+    expect((await service.settings({ ref: "ref-1" }))?.settings).toEqual({
       subagentModel: "ibm/gpt-5.5",
     });
     expect(await service.settings({ ref: "gone" })).toBeNull();
@@ -228,6 +232,7 @@ describe("createSessionsService", () => {
   it("renames a session only the harness lists, and refuses an unknown one", async () => {
     const entries: Record<string, SessionMetaEntry> = {};
     const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
       openCaller: () => pagedHarness().caller,
       sessionMetadata: {
         ...fakeStore(),

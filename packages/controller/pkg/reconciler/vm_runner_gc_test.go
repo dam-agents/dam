@@ -3,6 +3,7 @@ package reconciler
 
 import (
 	"context"
+	stderrors "errors"
 	"testing"
 	"time"
 
@@ -14,10 +15,12 @@ import (
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
+	"k8s.io/client-go/tools/cache"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -223,7 +226,7 @@ func TestTheRolloutSweepDoesNotBringBackARemovedRunner(t *testing.T) {
 	}
 }
 
-// TEST_SCENARIO: a runner nobody can reach — its TLS Secret is gone — whose owner has no Agent of any kind. It is kept through the grace, since only an agent's reconcile creates a runner and one may be on its way, and removed after it even though nobody could ask it what it holds.
+// TEST_SCENARIO: a runner nobody can reach — its TLS Secret is gone — whose owner has no Agent of any kind. It is kept through the grace, since only an agent's reconcile creates a runner and one may be on its way, and removed after it, but its claim is kept and marked: nobody could ask the runner what it holds.
 func TestAnUnreachableRunnerOfNoAgentIsRemovedAfterTheGrace(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -239,8 +242,214 @@ func TestAnUnreachableRunnerOfNoAgentIsRemovedAfterTheGrace(t *testing.T) {
 	r.ReconcileOrphanMachines(ctx)
 	assert.True(t, runnerClaimExists(t, r, testOwner), "the runner is kept through the grace")
 
-	r.ownerless.Store(testOwner, time.Now().Add(-orphanRunnerGrace-time.Minute))
+	r.ownerless.Store(testOwner, time.Now().Add(-orphanGrace-time.Minute))
 	r.ReconcileOrphanMachines(ctx)
 	assert.False(t, runnerDeploymentExists(t, r, testOwner))
-	assert.False(t, runnerClaimExists(t, r, testOwner))
+	require.True(t, runnerClaimExists(t, r, testOwner), "a claim nobody could see into is never deleted")
+	claim, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Contains(t, claim.Annotations, annRunnerClaimKept)
+}
+
+// TEST_SCENARIO: on a cluster that shares its CRDs, a CRD event or a stale informer can make the owner's Agents read as none for a while, both in the cache and in a live List. An unreachable runner removed in that window must lose no disk: its claim is kept, and the Agent that shows up again builds its runner on that same claim, which drops the mark.
+func TestAnEmptyListNeverCostsAnUnreachableRunnerItsDisks(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.client.CoreV1().Secrets("test-agents").Delete(ctx, r.runnerTLSName(testOwner), metav1.DeleteOptions{}))
+	endpoint := r.runnerEndpoint
+	r.runnerEndpoint = nil
+	before, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+
+	r.WithAgentCache(cache.NewGenericLister(cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc}), AgentsGVR.GroupResource()))
+	r.ownerless.Store(testOwner, time.Now().Add(-orphanGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.True(t, runnerDeploymentExists(t, r, testOwner), "an empty cache beside a live List that has the Agent removes nothing")
+	assert.True(t, runnerClaimExists(t, r, testOwner))
+
+	dyn := r.dynamic.(interface {
+		PrependReactor(verb, resource string, reaction k8stesting.ReactionFunc)
+	})
+	dyn.PrependReactor("list", "agents", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.UnstructuredList{}, nil
+	})
+	r.ownerless.Store(testOwner, time.Now().Add(-orphanGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.False(t, runnerDeploymentExists(t, r, testOwner), "the runner itself goes")
+	require.True(t, runnerClaimExists(t, r, testOwner), "the claim does not")
+
+	r.agentCache, r.runnerEndpoint = nil, endpoint
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, runnerTLSSecret(), metav1.CreateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	after, err := r.client.CoreV1().PersistentVolumeClaims("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, before.UID, after.UID, "the runner is built again on the same claim")
+	assert.NotContains(t, after.Annotations, annRunnerClaimKept)
+	assert.True(t, runnerDeploymentExists(t, r, testOwner))
+}
+
+// TEST_SCENARIO: on a cluster that shares its CRDs a live List of the owner's Agents can read empty for a while, and an Agent's workspace has no backup. A machine the informer cache's Agent still names is kept, and one both the List and the cache miss goes only after the grace, not on the sweep after the first empty List.
+func TestAnEmptyListNeverCostsAMachineItsDisk(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, node.specs, "my-agent")
+
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, indexer.Add(stored))
+	r.WithAgentCache(cache.NewGenericLister(indexer, AgentsGVR.GroupResource()))
+
+	r.dynamic.(interface {
+		PrependReactor(verb, resource string, reaction k8stesting.ReactionFunc)
+	}).PrependReactor("list", "agents", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.UnstructuredList{}, nil
+	})
+
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "the machine the cache's Agent names is kept")
+
+	require.NoError(t, indexer.Delete(stored))
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "the first sweep to find the machine unclaimed only records it")
+
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "a later sweep within the grace does not delete it either")
+
+	r.orphanMachines.Store(testOwner+"/my-agent", time.Now().Add(-orphanGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.Equal(t, []string{"my-agent"}, node.deleted, "past the grace it goes")
+}
+
+// TEST_SCENARIO: the host runner serves every owner and its sweep reads the same List of Agents, so the same empty List must not cost a machine its disk there either: the machine goes only after the grace.
+func TestTheHostRunnerSweepKeepsTheMachineTheFirstSweepFindsUnclaimed(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, node.specs, "my-agent")
+
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	for name, sec := range map[string]*corev1.Secret{r.runnerName(""): runnerSecret(), r.runnerTLSName(""): runnerTLSSecret()} {
+		sec.Name = name
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	r.dynamic.(interface {
+		PrependReactor(verb, resource string, reaction k8stesting.ReactionFunc)
+	}).PrependReactor("list", "agents", func(k8stesting.Action) (bool, runtime.Object, error) {
+		return true, &unstructured.UnstructuredList{}, nil
+	})
+
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "the first sweep to find the machine unclaimed only records it")
+
+	r.orphanMachines.Store("/my-agent", time.Now().Add(-orphanGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.Equal(t, []string{"my-agent"}, node.deleted, "past the grace it goes")
+}
+
+// TEST_SCENARIO: the grace runs from the last sweep that found a machine unclaimed, not from the first one ever. A machine an Agent claims again — a delete and a create under one name, mid-grace — starts over, or the next empty List would delete a machine that is live.
+func TestAMachineClaimedAgainWaitsTheGraceAgain(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+
+	r.ReconcileOrphanMachines(ctx)
+	r.orphanMachines.Store(testOwner+"/my-agent", time.Now().Add(-orphanGrace-time.Minute))
+
+	u, err := agentToUnstructured(agent)
+	require.NoError(t, err)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Create(ctx, u, metav1.CreateOptions{})
+	require.NoError(t, err)
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "a machine a sweep finds claimed is kept, however long it was unclaimed before")
+
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	r.ReconcileOrphanMachines(ctx)
+	assert.Empty(t, node.deleted, "and the grace runs from the claim, so the next unclaimed sweep keeps it")
+
+	r.orphanMachines.Store(testOwner+"/my-agent", time.Now().Add(-orphanGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.Equal(t, []string{"my-agent"}, node.deleted, "past the grace from the claim it goes")
+}
+
+// TEST_SCENARIO: the sweep remembers an unclaimed machine by name until the grace passes. A machine the runner no longer holds must not stay in that record for the life of the process, and one the runner still holds must keep its time.
+func TestTheSweepForgetsTheMachinesTheRunnerNoLongerHolds(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	r.orphanMachines.Store(testOwner+"/gone", time.Now().Add(-orphanGrace-time.Minute))
+
+	r.ReconcileOrphanMachines(ctx)
+
+	_, held := r.orphanMachines.Load(testOwner + "/gone")
+	assert.False(t, held, "a machine the runner does not hold is forgotten")
+	first, kept := r.orphanMachines.Load(testOwner + "/my-agent")
+	require.True(t, kept, "the machine the runner still holds keeps its time")
+	assert.WithinDuration(t, time.Now(), first.(time.Time), time.Minute)
+	assert.Empty(t, node.deleted)
+}
+
+// TEST_SCENARIO: an aborted migration marks the machine it could not delete as left, and that mark is the only record of a machine the Agent no longer claims. The informer cache can still hold the copy from before the abort, so a sweep that keeps the machine on that copy's word must keep the mark too, or the machine is never collected.
+func TestASweepKeepsTheMarkOfAMachineItKept(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, node.specs, "my-agent")
+
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	indexer := cache.NewIndexer(cache.MetaNamespaceKeyFunc, cache.Indexers{cache.NamespaceIndex: cache.MetaNamespaceIndexFunc})
+	require.NoError(t, indexer.Add(stored.DeepCopy()))
+	ann := stored.GetAnnotations()
+	ann[annRuntimeMigrationMachineLeft] = "true"
+	stored.SetAnnotations(ann)
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	r.WithAgentCache(cache.NewGenericLister(indexer, AgentsGVR.GroupResource()))
+
+	r.ReconcileOrphanMachines(ctx)
+
+	assert.NotContains(t, node.deleted, "my-agent", "the cache's copy before the abort still names the machine")
+	after, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, "true", after.GetAnnotations()[annRuntimeMigrationMachineLeft], "so the mark stays until the machine goes")
+}
+
+type unreadableAgentCache struct{}
+
+var errUnreadableCache = stderrors.New("the agent cache cannot be read")
+
+func (unreadableAgentCache) List(labels.Selector) ([]runtime.Object, error) {
+	return nil, errUnreadableCache
+}
+func (unreadableAgentCache) Get(string) (runtime.Object, error) { return nil, errUnreadableCache }
+func (unreadableAgentCache) ByNamespace(string) cache.GenericNamespaceLister {
+	return unreadableAgentCache{}
+}
+
+// TEST_SCENARIO: the informer cache is the second opinion beside the sweep's live List, and the only one that survives a List that reads empty. A cache that cannot be read must therefore keep every machine, as it keeps the runner, rather than leave the List alone to decide.
+func TestASweepThatCannotReadTheCacheCollectsNoMachine(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	r.WithAgentCache(unreadableAgentCache{})
+	require.NoError(t, r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Delete(ctx, "my-agent", metav1.DeleteOptions{}))
+	r.orphanMachines.Store(testOwner+"/my-agent", time.Now().Add(-orphanGrace-time.Minute))
+
+	r.ReconcileOrphanMachines(ctx)
+
+	assert.Empty(t, node.deleted, "no machine goes on a List the cache could not second")
 }

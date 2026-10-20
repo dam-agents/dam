@@ -7,7 +7,6 @@ use anyhow::Context;
 use smolvm::storage::STORAGE_DISK_FILENAME;
 
 use crate::api::{MachineSpec, State};
-use crate::guest::INIT_PATH;
 use crate::launch::ImageLaunch;
 
 // UNIT_BOUNDARY_DESCRIPTION: what the runner asks of the hypervisor, and the rules that do not depend on which one answers. The server drives machines through this trait, so it can be tested without KVM against a fake, and the embedded smolvm implementation is the only code that talks to the VMM. Everything here is the hypervisor-independent half: how a machine's workload is assembled, how its env is updated, when its disk grows, and how a VMM that outlived its stop is found and taken down.
@@ -16,31 +15,27 @@ pub trait Runtime: Send + Sync {
     fn state(&self, id: &str) -> anyhow::Result<State>;
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()>;
     fn update(&self, id: &str, update: &Update<'_>) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: boots a stopped machine with `boot_mib` of guest RAM, which may be less than its size; `grow` adds the rest once the guest is up.
-    fn start(&self, id: &str, boot_mib: i32) -> anyhow::Result<()>;
+    // UNIT_BOUNDARY_DESCRIPTION: boots a stopped machine with `boot_mib` of guest RAM, which may be less than its size `memory_mib`; `grow` adds the rest once the guest is up.
+    fn start(&self, id: &str, boot_mib: i32, memory_mib: i32) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: adds guest RAM to a running machine until it has `memory_mib`, and has the guest put it to use. A runtime that cannot grow a machine fails, and the machine boots at its size from then on.
     fn grow(&self, _id: &str, _memory_mib: i32) -> anyhow::Result<()> {
         anyhow::bail!("this runtime cannot grow a running machine")
     }
     fn stop(&self, id: &str) -> anyhow::Result<()>;
     fn delete(&self, id: &str) -> anyhow::Result<()>;
-    // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged archive, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
+    // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged tree, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
     fn image_present(&self, id: &str) -> anyhow::Result<bool>;
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()
     }
-    // UNIT_BOUNDARY_DESCRIPTION: every line of the machine's console in this boot that holds `needle`, as printable text, unredacted. A line written early in a boot can be gone from the tail by the time the guest answers, and this reads the whole boot.
-    fn console_lines(&self, id: &str, needle: &str) -> String {
-        self.console_tail(id)
-            .lines()
-            .filter(|line| line.contains(needle))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
     // UNIT_BOUNDARY_DESCRIPTION: how much host memory the machine's VMM holds now, or nothing when no VMM runs or the runtime cannot tell. Guests hand freed memory back to the host, so this is what the machine uses, well below its size, and what admission and the runner's memory request count it at.
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         None
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: whether a VMM process holds the machine's directory now. It is the only evidence that a machine nothing has looked at is up, and its launch record cannot be read: only the process that booted it says whether it runs. A runtime that cannot look says yes, since a failed look has not shown that no VMM holds the machine, and reading it as stopped hands a live machine's room to the next start.
+    fn holds_vmm(&self, _id: &str) -> bool {
+        false
     }
     // UNIT_BOUNDARY_DESCRIPTION: the CPU time the machine's VMM has used since it started, in microseconds, or nothing when no VMM runs or the runtime cannot tell. Two readings a probe apart give the machine's share of the runner's CPU.
     fn cpu_usec(&self, _id: &str) -> Option<u64> {
@@ -54,9 +49,18 @@ pub trait Runtime: Send + Sync {
     fn nests(&self) -> bool {
         false
     }
+    // UNIT_BOUNDARY_DESCRIPTION: the process of the machine's running VMM, or nothing when no VMM runs or the runtime keeps none. The runner reaps that process itself, so it learns the signal that ended it — a seccomp filter's kill or the kernel's — where smolvm's own sweep over its children discards the status.
+    fn vmm_pid(&self, _id: &str) -> Option<i32> {
+        None
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pid the machine's own record names, whether or not that process is still the one the record meant: a VMM the loader reaped is gone, so its start time cannot be checked any more, and the pid is the only link to the exit the loader recorded. Read only to match such a record, never to reap.
+    fn vmm_record_pid(&self, _id: &str) -> Option<i32> {
+        None
+    }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged archive, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
+// UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged tree, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
 pub struct Machine<'a> {
     pub spec: &'a MachineSpec,
     pub image: &'a str,
@@ -80,9 +84,6 @@ pub const GATEWAY_HOST_PORT_FILE: &str = "platform-gateway-host-port";
 // UNIT_BOUNDARY_DESCRIPTION: the file in a machine's smolvm directory naming the guest agent root its VMM boots, which lies in the runtime the runner booted it on. The runner writes it before each start, beside the boot config the VMM deletes once read, so it lasts as long as the VMM; the loader reads it to keep that runtime in the pod (see release::booted_from).
 pub const AGENT_ROOTFS_FILE: &str = "platform-agent-rootfs";
 
-// UNIT_BOUNDARY_DESCRIPTION: the largest image archive a machine may boot from. smolvm refuses archives over 8 GiB by default, and agent images with their toolchains are bigger than that.
-pub const MAX_IMAGE_BYTES: u64 = 16 << 30;
-
 // UNIT_BOUNDARY_DESCRIPTION: how long a stopped machine's VMM may keep its disks. Long enough for the guest to checkpoint its journal and let go, short enough that a VMM which will never exit is killed rather than waited on.
 pub const VMM_EXIT_WAIT: Duration = Duration::from_secs(10);
 
@@ -100,9 +101,6 @@ pub const STALE_RUNTIME_FILES: [&str; 5] = [
     "vm.lock",
     "agent.pid",
 ];
-
-// UNIT_BOUNDARY_DESCRIPTION: the root overlay of smolvm's guest agent in both of the forms smolvm writes it — a qcow2 over the shipped template, or a raw disk whenever smolvm cannot overlay the template — and the marker that says it was formatted. All three go, so the next boot formats a fresh root whichever form this one had.
-pub const OVERLAY_FILES: [&str; 3] = ["overlay.qcow2", "overlay.raw", "overlay.formatted"];
 
 // UNIT_BOUNDARY_DESCRIPTION: what the guest runs and with what, as the create hands it to smolvm.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -130,12 +128,10 @@ pub fn workload(spec: &MachineSpec, launch: &ImageLaunch) -> anyhow::Result<Work
     if image_command.is_empty() {
         anyhow::bail!(IMAGE_LAUNCH_UNKNOWN);
     }
-    let mut command = vec![INIT_PATH.to_string()];
-    command.extend(image_command);
     Ok(Workload {
         env: env.into_iter().collect(),
         workdir: (!launch.working_dir.is_empty()).then(|| launch.working_dir.clone()),
-        command,
+        command: image_command,
     })
 }
 
@@ -171,7 +167,7 @@ fn image_values(image_env: &[String]) -> BTreeMap<String, String> {
         .collect()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the env the image a machine boots names, read from the launch record beside the tree it boots — a cache entry or a staged tree, whose `rootfs` sits next to that record. A machine booted from an archive has no record beside its image, and gives nothing.
+// UNIT_BOUNDARY_DESCRIPTION: the env the image a machine boots names, read from the launch record beside the tree it boots — a cache entry or a staged tree, whose `rootfs` sits next to that record.
 pub fn image_env_beside(rootfs: &Path) -> Option<Vec<String>> {
     crate::launch::read_launch(rootfs.parent()?)
         .ok()
@@ -201,38 +197,51 @@ pub fn redact<'a>(text: &str, secrets: impl IntoIterator<Item = &'a str>) -> Str
     out
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the processes still holding a machine's directory. Every VMM smolvm spawns names its machine's directory on its command line, so this finds a VMM a previous runner process left behind as well as one of ours. The trailing slash keeps a machine from matching another whose directory name it prefixes.
-pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> Vec<i32> {
+// UNIT_BOUNDARY_DESCRIPTION: the processes still holding a machine's directory. Every VMM smolvm spawns names its machine's directory on its command line, so this finds a VMM a previous runner process left behind as well as one of ours. The trailing slash keeps a machine from matching another whose directory name it prefixes. A scan that could not look answers with an error rather than with an empty list, since an empty list says no VMM holds the machine: only a process that exited mid-scan, leaving no command line at all, is that clean answer.
+pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> anyhow::Result<Vec<i32>> {
     let dir = vm_dir.to_string_lossy();
     if dir.is_empty() {
-        return Vec::new();
+        return Ok(Vec::new());
     }
     let needle = format!("{dir}/");
-    let Ok(entries) = fs::read_dir(proc_root) else {
-        #[cfg(target_os = "macos")]
-        return darwin::pids_with_arg(&needle);
-        #[cfg(not(target_os = "macos"))]
-        return Vec::new();
+    let entries = fs::read_dir(proc_root);
+    #[cfg(target_os = "macos")]
+    let Ok(entries) = entries
+    else {
+        return Ok(darwin::pids_with_arg(&needle));
     };
-    let mut pids: Vec<i32> = entries
-        .filter_map(Result::ok)
-        .filter_map(|e| {
-            let pid: i32 = e.file_name().to_str()?.parse().ok()?;
-            let cmdline = fs::read(e.path().join("cmdline")).ok()?;
-            String::from_utf8_lossy(&cmdline)
-                .contains(&needle)
-                .then_some(pid)
-        })
-        .collect();
+    #[cfg(not(target_os = "macos"))]
+    let entries = entries.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
+    let mut pids: Vec<i32> = Vec::new();
+    for entry in entries {
+        let entry = entry.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
+        let Some(pid) = entry
+            .file_name()
+            .to_str()
+            .and_then(|name| name.parse::<i32>().ok())
+        else {
+            continue;
+        };
+        let cmdline = match fs::read(entry.path().join("cmdline")) {
+            Ok(cmdline) => cmdline,
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(e) => {
+                return Err(e).with_context(|| format!("reading the command line of process {pid}"))
+            }
+        };
+        if String::from_utf8_lossy(&cmdline).contains(&needle) {
+            pids.push(pid);
+        }
+    }
     pids.sort_unstable();
-    pids
+    Ok(pids)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: waits up to `limit` for the VMMs holding the machine's directory to exit, and returns the ones still there: those its command line names, and those in `seen`, found before a stop. A VMM's command line goes blank the moment it starts exiting, while its threads still hold its disks and published ports until the last of them exits — so a VMM the runner killed itself, or whose stop it went past, is only found through `seen`. smolvm's own stop waits for every thread since 1.18. A start issued before then is refused in a way that looks like a machine that can never start, or cannot bind the machine's port. A machine that is really stopped answers at once.
 pub fn vmms_left(proc_root: &Path, vm_dir: &Path, mut seen: Vec<i32>, limit: Duration) -> Vec<i32> {
     let deadline = Instant::now() + limit;
     loop {
-        seen.extend(orphan_pids(proc_root, vm_dir));
+        seen.extend(orphan_pids(proc_root, vm_dir).unwrap_or_default());
         seen.sort_unstable();
         seen.dedup();
         seen.retain(|&pid| !exited(proc_root, pid));
@@ -391,7 +400,7 @@ pub(crate) mod darwin {
 }
 
 pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
-    for pid in orphan_pids(proc_root, vm_dir) {
+    for pid in orphan_pids(proc_root, vm_dir).unwrap_or_default() {
         // SAFETY: kill(2) takes no pointers; a pid that has already exited returns ESRCH, which is ignored.
         unsafe {
             libc::kill(pid, libc::SIGKILL);
@@ -399,37 +408,36 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: throws away the machine's root overlay, which is the root of smolvm's own guest agent and not the image's. The image's root is an overlay on the storage disk that smolvm keeps, and platform-init replaces it with a fresh one on every boot; that is what keeps a machine to HOME and nothing else. Discarding this one still means every boot starts the guest agent from the shipped template, so an agent root that was left corrupt, or written by an older runner, is never booted again. It runs after a stop and again before a start, because a machine that died with its runner never got the stop. Nothing is removed while a VMM still holds the disks.
-pub fn discard_overlay(id: &str, proc_root: &Path, vm_dir: &Path, vmms: Vec<i32>) {
-    if !vm_dir.is_dir() {
-        return;
+// UNIT_BOUNDARY_DESCRIPTION: what one read of a child's exit status says. The read happens once and the caller keeps the answer: a second read gets ECHILD, and the status is gone with it, which is why the reaper collects before it decides anything. A VMM is a child of the process that spawned it, so a machine handed over to a new runner release reads as `Gone` here — the loader reaps those and records the signal for the runner that adopted them.
+pub enum Ended {
+    Running,
+    Signalled(i32),
+    Exited,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what waitpid(2) says of a pid: `Running` covers both a live process and one this process never was the parent of, which the caller tells apart by the record the loader leaves.
+pub fn ended(pid: i32) -> Ended {
+    let mut status = 0;
+    // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
+    if unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } != pid {
+        return Ended::Running;
     }
-    if !vmms_left(proc_root, vm_dir, vmms, VMM_EXIT_WAIT).is_empty() {
-        tracing::warn!(
-            machine = id,
-            "machine still has a VMM holding its disks; leaving the root overlay in place"
-        );
-        return;
-    }
-    for file in OVERLAY_FILES {
-        match fs::remove_file(vm_dir.join(file)) {
-            Ok(()) => {}
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-            Err(e) => {
-                tracing::warn!(machine = id, file, error = %e, "could not discard the root overlay")
-            }
-        }
+    match libc::WIFSIGNALED(status) {
+        true => Ended::Signalled(libc::WTERMSIG(status)),
+        false => Ended::Exited,
     }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
 const EXT4_MAGIC_OFFSET: u64 = 1024 + 56;
+// UNIT_BOUNDARY_DESCRIPTION: where btrfs keeps its magic: the primary superblock starts 64 KiB into the disk, and its magic, `_BHRfS_M`, is 64 bytes into the superblock.
+const BTRFS_MAGIC_OFFSET: u64 = 0x10000 + 0x40;
 
-// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 superblock was formatted whatever its marker says, so it is marked here. Only a disk that holds no filesystem yet, the sparse file a create makes, is left for smolvm to format.
+// UNIT_BOUNDARY_DESCRIPTION: marks a storage disk that holds a filesystem as formatted when its marker is missing, so smolvm never copies its template over it. smolvm copies the template over any storage disk without the marker at every start, and it writes the marker only once that copy has also been resized to the size asked for. A resize that fails — on a host without resize2fs, every disk smaller than the template — leaves a disk without the marker, and every later start then replaced it, and the agent's home on it, with the template. A disk with an ext4 or btrfs superblock was formatted whatever its marker says, so it is marked here. A disk with no filesystem never reaches a start: a create whose disk cannot be made fails.
 fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
     let disk = vm_dir.join(STORAGE_DISK_FILENAME);
     let marker = disk.with_extension("formatted");
-    if marker.exists() || !holds_ext4(&disk)? {
+    if marker.exists() || !holds_filesystem(&disk)? {
         return Ok(());
     }
     tracing::warn!(
@@ -439,25 +447,28 @@ fn keep_formatted_storage(id: &str, vm_dir: &Path) -> anyhow::Result<()> {
     fs::write(&marker, "1").with_context(|| format!("marking {} formatted", disk.display()))
 }
 
-fn holds_ext4(disk: &Path) -> anyhow::Result<bool> {
+fn holds_filesystem(disk: &Path) -> anyhow::Result<bool> {
     use std::os::unix::fs::FileExt;
     let file = match fs::File::open(disk) {
         Ok(file) => file,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
         Err(e) => return Err(e).with_context(|| format!("reading {}", disk.display())),
     };
-    let mut magic = [0; 2];
-    match file.read_exact_at(&mut magic, EXT4_MAGIC_OFFSET) {
-        Ok(()) => Ok(magic == [0x53, 0xEF]),
-        Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
-        Err(e) => Err(e).with_context(|| format!("reading {}", disk.display())),
-    }
+    let magic_at = |offset, magic: &[u8]| {
+        let mut read = vec![0; magic.len()];
+        match file.read_exact_at(&mut read, offset) {
+            Ok(()) => Ok(read == magic),
+            Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => Ok(false),
+            Err(e) => Err(e).with_context(|| format!("reading {}", disk.display())),
+        }
+    };
+    Ok(magic_at(EXT4_MAGIC_OFFSET, &[0x53, 0xEF])? || magic_at(BTRFS_MAGIC_OFFSET, b"_BHRfS_M")?)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a VMM killed with SIGKILL may take to be gone. A process leaves at once unless it is stuck in the kernel, and one stuck there keeps the disks open however long it is waited on.
 pub const KILLED_EXIT_WAIT: Duration = Duration::from_secs(1);
 
-// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, the overlay is discarded, a storage disk that holds a filesystem is marked formatted, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
+// UNIT_BOUNDARY_DESCRIPTION: prepares a machine's directory for a fresh boot: any VMM still holding it is waited out for `wait` and then killed, the files a dead VMM leaves are removed, a storage disk that holds a filesystem is marked formatted, and the console an earlier boot wrote is emptied. A VMM that outlives even SIGKILL — stuck in uninterruptible sleep on its disk — fails the start instead: its lock and sockets are what keep a second VMM off the same storage disk, and a second VMM writing that disk under the first corrupts the agent's home.
 pub fn clear_for_start(
     id: &str,
     proc_root: &Path,
@@ -481,7 +492,6 @@ pub fn clear_for_start(
     for file in STALE_RUNTIME_FILES {
         let _ = fs::remove_file(vm_dir.join(file));
     }
-    discard_overlay(id, proc_root, vm_dir, Vec::new());
     keep_formatted_storage(id, vm_dir)?;
     crate::console::clear_console(id, vm_dir);
     Ok(())
@@ -535,13 +545,20 @@ mod tests {
             .unwrap();
         let pid = i32::try_from(vmm.id()).unwrap();
         let proc_root = Path::new("/proc");
-        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so the first scan can miss a process that has just started.
+        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so a scan can miss a process that has just started; a Mac's own process-table read can also answer with nothing for a moment under load. So a scan that finds no process is repeated until the deadline, while one that names a process must name the stand-in alone at once: `kill_orphans` signals every pid a scan names.
         let deadline = Instant::now() + Duration::from_secs(5);
-        while orphan_pids(proc_root, &vm_dir).is_empty() && Instant::now() < deadline {
+        let mut found = Vec::new();
+        while Instant::now() < deadline {
+            found = orphan_pids(proc_root, &vm_dir).unwrap_or_default();
+            if !found.is_empty() {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert_eq!(orphan_pids(proc_root, &vm_dir), vec![pid]);
-        assert!(orphan_pids(proc_root, &dir.path().join("m")).is_empty());
+        assert_eq!(found, vec![pid], "the scan names the stand-in alone");
+        assert!(orphan_pids(proc_root, &dir.path().join("m"))
+            .unwrap()
+            .is_empty());
 
         kill_orphans(proc_root, &vm_dir);
         vmm.wait().unwrap();
@@ -580,11 +597,11 @@ mod tests {
             &launch(&["/entry", "-x"], &["serve"], &[], "/app"),
         )
         .unwrap();
-        assert_eq!(w.command, vec![INIT_PATH, "/entry", "-x", "serve"]);
+        assert_eq!(w.command, vec!["/entry", "-x", "serve"]);
         assert_eq!(w.workdir.as_deref(), Some("/app"));
 
         let bare = workload(&spec_with_env(&[]), &launch(&[], &["run"], &[], "")).unwrap();
-        assert_eq!(bare.command, vec![INIT_PATH, "run"]);
+        assert_eq!(bare.command, vec!["run"]);
         assert_eq!(
             bare.workdir, None,
             "an image with no working directory states none"
@@ -693,10 +710,6 @@ mod tests {
             image_env_beside(&dir.path().join("rootfs")),
             Some(vec!["PATH=/bin".to_string()])
         );
-        assert_eq!(
-            image_env_beside(&dir.path().join("archives/archive.tar")),
-            None
-        );
     }
 
     // TEST_SCENARIO: a disk can grow and cannot shrink, so an update names a storage size only when the request is larger than the disk actually is. Anything else would either fail the update or, worse, look like a shrink that silently did nothing. The disk's own size decides, so a disk a lost spec or a failed grow left smaller than its spec claims still grows.
@@ -788,6 +801,27 @@ mod tests {
         );
     }
 
+    // TEST_SCENARIO: a scan that cannot read a process's command line is not a scan that found no VMM. Read as one, a live machine whose launch record no longer decodes counts as zero at handoff and its storage share waits for no guest: an unknown scan must never answer "nothing holds this machine". A process that exited mid-scan leaves no command line at all, which is that clean answer, not a failure.
+    #[test]
+    fn a_scan_that_cannot_read_a_command_line_is_not_a_clean_none_found() {
+        let proc = TempDir::new("orphans-unreadable");
+        let dir = PathBuf::from("/home/smolvm/.cache/smolvm/vms/abc123");
+        fs::create_dir_all(proc.path().join("100").join("cmdline")).unwrap();
+        let scanned = orphan_pids(proc.path(), &dir);
+        assert!(
+            scanned.is_err(),
+            "an unreadable command line read as no VMM: {scanned:?}"
+        );
+
+        let proc = TempDir::new("orphans-exited");
+        fs::create_dir_all(proc.path().join("100")).unwrap();
+        assert_eq!(
+            orphan_pids(proc.path(), &dir).unwrap(),
+            Vec::<i32>::new(),
+            "a process that exited mid-scan read as a failed scan"
+        );
+    }
+
     // TEST_SCENARIO: a machine's VMM is found by its directory on the command line. Of three processes only the one naming this machine's directory is its VMM — not one for a machine whose directory name merely starts the same way, and not the runner itself.
     #[test]
     fn a_vmm_is_found_by_its_machines_directory_and_no_other() {
@@ -806,8 +840,8 @@ mod tests {
         fs::create_dir_all(proc.path().join("self")).unwrap();
         fs::write(proc.path().join("self/cmdline"), "vm-runner").unwrap();
 
-        assert_eq!(orphan_pids(proc.path(), &dir), vec![100]);
-        assert!(orphan_pids(proc.path(), Path::new("")).is_empty());
+        assert_eq!(orphan_pids(proc.path(), &dir).unwrap(), vec![100]);
+        assert!(orphan_pids(proc.path(), Path::new("")).unwrap().is_empty());
     }
 
     // TEST_SCENARIO: a start issued while the previous VMM still holds the disks is refused, which looks exactly like a machine that can never start. The wait is what breaks that, and a machine that is really stopped must not pay for it — both halves are asserted, since a wait that always returned true would pass the second alone.
@@ -859,28 +893,7 @@ mod tests {
         assert!(vmms_left(proc.path(), &dir, vec![100], wait).is_empty());
     }
 
-    // TEST_SCENARIO: the root overlay is discarded in whichever form smolvm wrote it, and only once no VMM holds it. The storage disk, which is the agent's home, is never touched.
-    #[test]
-    fn the_overlay_goes_and_the_storage_disk_stays() {
-        let proc = TempDir::new("discard-proc");
-        let vm = TempDir::new("discard-vm");
-        for file in OVERLAY_FILES.iter().chain(&["storage.raw"]) {
-            fs::write(vm.path().join(file), "x").unwrap();
-        }
-        discard_overlay("m1", proc.path(), vm.path(), Vec::new());
-        for file in OVERLAY_FILES {
-            assert!(
-                !vm.path().join(file).exists(),
-                "{file} survived the discard"
-            );
-        }
-        assert!(
-            vm.path().join("storage.raw").exists(),
-            "the agent's disk was discarded"
-        );
-    }
-
-    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears and what a discard removes is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
+    // TEST_SCENARIO: a machine's directory outlives the runner process that made it, and a VMM that died with its runner leaves its sockets, lock and pid file in it. What a start clears is pinned to the names smolvm writes, so a renamed entry here does not leave a stale socket in place and the next boot believing the machine is still up.
     #[test]
     fn a_start_clears_the_files_a_vmm_leaves_behind() {
         assert_eq!(
@@ -893,18 +906,13 @@ mod tests {
                 "agent.pid",
             ]
         );
-        assert_eq!(
-            OVERLAY_FILES,
-            ["overlay.qcow2", "overlay.raw", "overlay.formatted"]
-        );
     }
 
-    // TEST_SCENARIO: the windows and sizes machines are run to. A shorter VMM wait kills a guest mid-checkpoint, a smaller archive cap refuses an image that booted before, and the guest agent's port is where every machine's guest listens; each is pinned so a change to it is deliberate.
+    // TEST_SCENARIO: the windows and sizes machines are run to. A shorter VMM wait kills a guest mid-checkpoint, and the guest agent's port is where every machine's guest listens; each is pinned so a change to it is deliberate.
     #[test]
     fn the_waits_and_caps_are_pinned() {
         assert_eq!(VMM_EXIT_WAIT, Duration::from_secs(10));
         assert_eq!(SLOW_OP, Duration::from_secs(2));
-        assert_eq!(MAX_IMAGE_BYTES, 16 * 1024 * 1024 * 1024);
         assert_eq!(GUEST_AGENT_PORT, 8080);
     }
 
@@ -912,5 +920,50 @@ mod tests {
         let dir = proc.path().join(pid.to_string());
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("cmdline"), cmdline).unwrap();
+    }
+
+    // TEST_SCENARIO: a VMM killed by a signal is told apart from one that exited on its own, and from one this process cannot read at all — a machine another runner release booted, whose VMM is nobody's child here. Only the kill carries a signal, which is what the machine's status reports.
+    #[test]
+    fn a_vmm_the_kernel_killed_reports_its_signal() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        assert!(matches!(ended(pid), Ended::Running), "a running VMM exited");
+        // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+        unsafe { libc::kill(pid, libc::SIGSYS) };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let signal = loop {
+            if let Ended::Signalled(signal) = ended(pid) {
+                break signal;
+            }
+            assert!(Instant::now() < deadline, "the VMM never exited");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(signal, libc::SIGSYS);
+        assert!(
+            matches!(ended(pid), Ended::Running),
+            "a VMM whose status was already read is not read again"
+        );
+        let _ = child.wait();
+    }
+
+    // TEST_SCENARIO: a VMM that exits on its own is told apart from one a signal ended, so a machine that stopped itself is not reported as a kill.
+    #[test]
+    fn a_vmm_that_exits_on_its_own_is_not_a_kill() {
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match ended(pid) {
+                Ended::Exited => break,
+                _ => {
+                    assert!(Instant::now() < deadline, "the VMM never exited");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+        }
+        let _ = child.wait();
     }
 }

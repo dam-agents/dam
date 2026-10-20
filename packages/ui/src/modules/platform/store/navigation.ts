@@ -11,12 +11,13 @@ import {
   type View,
 } from "../lib/routes.js";
 
-type ParameterlessView = "home" | "terms" | "artifacts" | "analytics";
+type ParameterlessView = "home" | "terms" | "analytics";
 
 export interface NavigationSlice {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
+  usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
@@ -24,7 +25,11 @@ export interface NavigationSlice {
   hydrateRoute: () => void;
   setView: (v: ParameterlessView) => void;
   navigateBack: () => void;
-  navigateToSettings: (tab?: SettingsTab) => void;
+  navigateToSettings: (
+    tab?: SettingsTab,
+    options?: { period?: string },
+  ) => void;
+  setUsagePeriod: (period: string) => void;
   navigateToSandboxHome: (agentId: string, section?: SandboxSection) => void;
   navigateToStarterKit: (catalog: string, kitId: string) => void;
   setKitBrowserOpen: (open: boolean) => void;
@@ -57,50 +62,85 @@ function initialPath(): string {
   return restored;
 }
 
+function leaveView(get: () => PlatformStore, navigate: () => void): void {
+  if (get().view === "chat") get().leaveChatContext(navigate);
+  else navigate();
+}
+
 export const createNavigationSlice: StateCreator<
   PlatformStore,
   [],
   [],
   NavigationSlice
 > = (set, get) => ({
-  ...routeToNavigationState(parseRoute(initialPath())),
+  ...routeToNavigationState(parseRoute(initialPath(), window.location.search)),
   kitBrowserOpen: false,
   hydrateRoute: () =>
-    set(routeToNavigationState(parseRoute(window.location.pathname))),
-  setView: (v) => {
-    history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
-    set(routeToNavigationState({ view: v }));
-  },
+    set(
+      routeToNavigationState(
+        parseRoute(window.location.pathname, window.location.search),
+      ),
+    ),
+  setView: (v) =>
+    leaveView(get, () => {
+      history.pushState(IN_APP_ENTRY, "", routeToPath({ view: v }));
+      set(routeToNavigationState({ view: v }));
+    }),
   navigateBack: () => {
     if (history.state === IN_APP_ENTRY) history.back();
     else get().setView("home");
   },
-  navigateToSettings: (tab) => {
-    const settingsTab = tab ?? "account";
-    history.pushState(null, "", routeToPath({ view: "settings", settingsTab }));
-    set({ view: "settings", settingsTab, agentId: null });
-  },
-  navigateToSandboxHome: (agentId, section = "setup") => {
-    history.pushState(
-      null,
+  navigateToSettings: (tab, options) =>
+    leaveView(get, () => {
+      const settingsTab = tab ?? "account";
+      const period = options?.period ?? null;
+      history.pushState(
+        null,
+        "",
+        routeToPath({
+          view: "settings",
+          settingsTab,
+          ...(period ? { period } : {}),
+        }),
+      );
+      set({
+        view: "settings",
+        settingsTab,
+        usagePeriod: period,
+        agentId: null,
+      });
+    }),
+  setUsagePeriod: (period) => {
+    history.replaceState(
+      history.state,
       "",
-      routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
+      routeToPath({ view: "settings", settingsTab: "usage", period }),
     );
-    set({ view: "sandbox-home", agentId, sandboxSection: section });
+    set({ usagePeriod: period });
   },
-  navigateToStarterKit: (catalog, kitId) => {
-    history.pushState(
-      null,
-      "",
-      routeToPath({ view: "starter-kit", catalog, kit: kitId }),
-    );
-    set({
-      view: "starter-kit",
-      starterKitCatalog: catalog,
-      starterKitId: kitId,
-      agentId: null,
-    });
-  },
+  navigateToSandboxHome: (agentId, section = "setup") =>
+    leaveView(get, () => {
+      history.pushState(
+        null,
+        "",
+        routeToPath({ view: "sandbox-home", agentId, sandboxSection: section }),
+      );
+      set({ view: "sandbox-home", agentId, sandboxSection: section });
+    }),
+  navigateToStarterKit: (catalog, kitId) =>
+    leaveView(get, () => {
+      history.pushState(
+        null,
+        "",
+        routeToPath({ view: "starter-kit", catalog, kit: kitId }),
+      );
+      set({
+        view: "starter-kit",
+        starterKitCatalog: catalog,
+        starterKitId: kitId,
+        agentId: null,
+      });
+    }),
   setKitBrowserOpen: (open) => set({ kitBrowserOpen: open }),
   mobileScreen: "chat",
   setMobileScreen: (screen) => set({ mobileScreen: screen }),

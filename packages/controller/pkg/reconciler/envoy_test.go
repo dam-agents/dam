@@ -680,8 +680,8 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsAttributionOnAllEgress(t *testi
 		"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 	}}, rc["request_headers_to_add"],
 		"every request the gateway forwards carries the gateway's own agent id")
-	assert.Equal(t, []any{"x-platform-invocation-id"}, rc["request_headers_to_remove"],
-		"a non-target may not smuggle an invocation id on any route")
+	assert.Equal(t, []any{"x-platform-invocation-id", "x-platform-session", "x-platform-harness"}, rc["request_headers_to_remove"],
+		"a non-target may not smuggle an invocation id on any route, and the router's stamps never reach a plain-http host")
 }
 
 // TEST_SCENARIO: an Invocation target attributes to its root Driver, so the id the gateway stamps is the Driver's and the target's own id rides alongside it. The outer listener must carry that same pairing, not the plain non-target stamp.
@@ -700,7 +700,7 @@ func TestRenderEnvoyBootstrap_OuterListenerStampsInvocationIDForTarget(t *testin
 			"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
 		},
 	}, rc["request_headers_to_add"])
-	assert.NotContains(t, rc, "request_headers_to_remove",
+	assert.Equal(t, []any{"x-platform-session", "x-platform-harness"}, rc["request_headers_to_remove"],
 		"a target stamps its invocation id rather than removing it")
 }
 
@@ -713,7 +713,7 @@ func TestRenderEnvoyBootstrap_OuterListenerAndCollectorChainStampAlike(t *testin
 		rc := outerRouteConfig(t, doc)
 		route := collectorChainRoute(t, doc)
 		assert.Equal(t, route["request_headers_to_add"], rc["request_headers_to_add"], ids[0])
-		assert.Equal(t, route["request_headers_to_remove"], rc["request_headers_to_remove"], ids[0])
+		assert.Subset(t, rc["request_headers_to_remove"], route["request_headers_to_remove"], ids[0])
 	}
 }
 
@@ -725,8 +725,115 @@ func TestRenderEnvoyBootstrap_OuterListenerStripsAttributionWithoutTelemetry(t *
 	require.NotNil(t, rc)
 	assert.NotContains(t, rc, "request_headers_to_add",
 		"nothing to attribute to, so nothing is disclosed")
-	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id"},
+	assert.Equal(t, []any{"x-platform-agent-id", "x-platform-invocation-id", "x-platform-session", "x-platform-harness"},
 		rc["request_headers_to_remove"])
+}
+
+func outerRouteWithPrefix(t *testing.T, doc map[string]any, prefix string) map[string]any {
+	t.Helper()
+	rc := outerRouteConfig(t, doc)
+	require.NotNil(t, rc)
+	vhosts, _ := rc["virtual_hosts"].([]any)
+	vh, _ := vhosts[0].(map[string]any)
+	routes, _ := vh["routes"].([]any)
+	for _, r := range routes {
+		rm, _ := r.(map[string]any)
+		match, _ := rm["match"].(map[string]any)
+		if match["prefix"] == prefix {
+			return rm
+		}
+	}
+	return nil
+}
+
+// TEST_SCENARIO: Claude Code sends its logs, metrics and traces through one proxy agent with one socket, and a request that waits behind another is dropped when its export times out — most of the per-call log records, the spend, never arrive. A request to the gateway's own address with no proxy avoids that agent. So the plain-HTTP side of the proxy listener takes the reserved OTLP path, before the open forward that takes every other plain request. It goes to the pinned collector with the prefix stripped, and it has no egress check, as the collector's CONNECT route has none: it can reach only the platform's collector.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathForwardsToTheCollector(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", telemetryTestCfg(), nil, false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+
+	route := outerRouteWithPrefix(t, doc, "/__platform_otlp/")
+	require.NotNil(t, route, "telemetry on: the gateway takes OTLP on its own address")
+	assert.Equal(t, map[string]any{
+		"cluster":              "otel_collector",
+		"prefix_rewrite":       "/",
+		"host_rewrite_literal": "platform-clickstack-collector.platform.svc.cluster.local",
+		"timeout":              "0s",
+	}, route["route"], "only the pinned collector, whatever host the request names")
+	assert.Equal(t, true, route["typed_per_filter_config"].(map[string]any)["envoy.filters.http.ext_authz"].(map[string]any)["disabled"])
+
+	rc := outerRouteConfig(t, doc)
+	routes := rc["virtual_hosts"].([]any)[0].(map[string]any)["routes"].([]any)
+	otlpAt, fallthroughAt := -1, -1
+	for i, r := range routes {
+		switch r.(map[string]any)["match"].(map[string]any)["prefix"] {
+		case "/__platform_otlp/":
+			otlpAt = i
+		case "/":
+			if _, headers := r.(map[string]any)["match"].(map[string]any)["headers"]; !headers {
+				fallthroughAt = i
+			}
+		}
+	}
+	assert.Less(t, otlpAt, fallthroughAt, "the OTLP path must match before the open forward")
+}
+
+// TEST_SCENARIO: the OTLP path is on the outer listener, so the route config's own stamp is what attributes it, the same stamp every other route out gets. A target's export must arrive under its Driver's id with its own invocation id, and a non-target's must not carry an invocation id it set itself.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathCarriesTheAttributionStamp(t *testing.T) {
+	for _, ids := range [][2]string{{"inst-1", ""}, {"target-1", "driver-root"}} {
+		got, err := renderEnvoyBootstrap(ids[0], ids[1], telemetryTestCfg(), nil, false)
+		require.NoError(t, err)
+		doc := mustParseBootstrap(t, got)
+		route := outerRouteWithPrefix(t, doc, "/__platform_otlp/")
+		require.NotNil(t, route)
+		assert.NotContains(t, route, "request_headers_to_add", "a route-level stamp would replace the route config's, not add to it")
+		assert.NotContains(t, route, "request_headers_to_remove")
+		assert.Equal(t, collectorChainRoute(t, doc)["request_headers_to_add"], outerRouteConfig(t, doc)["request_headers_to_add"], ids[0])
+	}
+}
+
+// TEST_SCENARIO: with no telemetry backend there is no collector cluster to forward to, and an agent's request to the reserved path is an ordinary plain request, held to the egress check like any other.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathNeedsTelemetry(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, nil, false)
+	require.NoError(t, err)
+	assert.Nil(t, outerRouteWithPrefix(t, mustParseBootstrap(t, got), "/__platform_otlp/"))
+	assert.NotContains(t, got, "__platform_otlp")
+}
+
+// TEST_SCENARIO: Claude Code posts each signal once a second, so a logged OTLP post would be most of a gateway's egress access log, and so most of what the gateway writes to the telemetry store. Successful posts on the OTLP route are left out; a failed one is still logged, and every other request is logged as before. The filter keys on the route's name, which the agent cannot set: the path is already rewritten when the log is written, and a header such as the original path is one the agent could send itself to hide a request from the log.
+func TestRenderEnvoyBootstrap_GatewayOTLPPathLogsOnlyFailures(t *testing.T) {
+	got, err := renderEnvoyBootstrap("inst-1", "", otelTelemetryCfg(), nil, false)
+	require.NoError(t, err)
+	doc := mustParseBootstrap(t, got)
+	assert.Equal(t, "gateway_otlp", outerRouteWithPrefix(t, doc, "/__platform_otlp/")["name"])
+	sr := doc["static_resources"].(map[string]any)
+	var hcm map[string]any
+	for _, l := range sr["listeners"].([]any) {
+		if l.(map[string]any)["name"] == "agent_egress" {
+			chains := l.(map[string]any)["filter_chains"].([]any)
+			hcm = chains[len(chains)-1].(map[string]any)["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+		}
+	}
+	require.NotNil(t, hcm)
+	logs, _ := hcm["access_log"].([]any)
+	require.Len(t, logs, 2)
+	for _, l := range logs {
+		ext := l.(map[string]any)["filter"].(map[string]any)["extension_filter"].(map[string]any)
+		assert.Equal(t, "envoy.access_loggers.extension_filters.cel", ext["name"])
+		assert.Equal(t, "xds.route_name != 'gateway_otlp' || response.code >= 400 || response.flags != 0u",
+			ext["typed_config"].(map[string]any)["expression"])
+	}
+
+	plain, err := renderEnvoyBootstrap("inst-1", "", otelCfg("http://otel.platform.svc:4318"), nil, false)
+	require.NoError(t, err)
+	assert.NotContains(t, plain, "extension_filters.cel", "no OTLP route, no filter on the egress log")
+}
+
+func otelTelemetryCfg() *config.Config {
+	c := otelCfg("http://otel.platform.svc:4318")
+	c.TelemetryCollectorHost = "platform-clickstack-collector.platform.svc.cluster.local"
+	c.TelemetryCollectorPort = 4318
+	return c
 }
 
 func TestChainsFromSecrets_ConnectionSecretFansIntoNChains(t *testing.T) {

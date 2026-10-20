@@ -4,13 +4,13 @@ use std::process::ExitStatus;
 use std::time::{Duration, Instant};
 
 use clap::{Parser, Subcommand};
-use tokio::process::{Child, Command};
+use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_RUNTIME, HELD_UNSTAGED};
 use vm_runner::release::{self, Choice, Releases, RUNNER};
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner pod's entrypoint, and the node's stager. The pod's image is fixed for as long as the pod lives, and the runner's machines are processes of the pod, so a new runner release would otherwise reboot every machine with the pod. Run, the loader supervises one runner process and replaces it with the release the controller names, which the stager has copied onto the node; the machines outlive the runner process and the next one adopts them. Stage, it is the DaemonSet that does that copying.
+// UNIT_BOUNDARY_DESCRIPTION: the runner pod's entrypoint, and the node's stager. The pod's image is fixed for as long as the pod lives, and the runner's machines are processes of the pod, so a new runner release would otherwise reboot every machine with the pod. Run, the loader supervises one runner process and replaces it with the release the controller names over the runner's machine API, which the stager has copied onto the node; the machines outlive the runner process and the next one adopts them. Stage, it is the DaemonSet that does that copying.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-runner-loader",
@@ -51,8 +51,8 @@ enum Mode {
     },
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the controller names. The kubelet refreshes a mounted ConfigMap within about a minute, so a faster read buys nothing. VM_RUNNER_LOADER_POLL_MS overrides it so the hand-off test does not wait out five seconds per release.
-const POLL: Duration = Duration::from_secs(5);
+// UNIT_BOUNDARY_DESCRIPTION: how often the loader reads the release the runner wrote into the loader directory when the controller named it. The file is local, so a read costs nothing and a hand-off starts within this of the controller's call. VM_RUNNER_LOADER_POLL_MS overrides it so the hand-off test does not wait out a second per release.
+const POLL: Duration = Duration::from_secs(1);
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a runner that took over must keep running before the loader trusts the release. One that exits sooner is a broken release, and the loader goes back to the one it replaced rather than restarting the broken one in a loop.
 const SETTLE: Duration = Duration::from_secs(60);
@@ -69,9 +69,23 @@ fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the loader holds every machine of its owner as their parent, and the kernel weighs a victim by memory plus its own adjustment: one it inherits from the container runtime ties with a VMM at the maximum as soon as it holds a few pages. It asks for the lowest score the kernel allows it, as the runner does, and a kernel that refuses leaves the inherited one in place, which is said on the console.
+fn lower_own_oom_score_adj() {
+    const PATH: &str = "/proc/self/oom_score_adj";
+    if std::fs::write(PATH, "-1000").is_ok() {
+        return;
+    }
+    if let Err(e) = std::fs::write(PATH, "0") {
+        tracing::warn!(path = PATH, error = %e, "could not lower the loader's own OOM score; the kernel may weigh it against a machine");
+    }
+}
+
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().json().init();
+    if cfg!(target_os = "linux") {
+        lower_own_oom_score_adj();
+    }
     match Args::parse().command {
         Mode::Stage {
             builtin,
@@ -104,6 +118,8 @@ async fn main() -> anyhow::Result<()> {
                     .exec()
                     .into());
             }
+            become_the_reaper_of_every_machine();
+            let exits = exit_records(&args);
             let loader_dir = PathBuf::from(env(release::LOADER_DIR_ENV));
             let copies = loader_dir.join("releases");
             let runtimes = loader_dir.join("runtimes");
@@ -116,15 +132,15 @@ async fn main() -> anyhow::Result<()> {
                     builtin_runtime,
                     builtin_release: env(release::BUILTIN_RELEASE_ENV),
                     staged: PathBuf::from(staged),
-                    same_runtime_only: env(release::SAME_RUNTIME_ONLY_ENV) == "true",
                 },
                 args,
-                target_file: PathBuf::from(env(release::RELEASE_FILE_ENV)),
+                target_file: release::target_file(&loader_dir),
                 status_file: release::status_file(&loader_dir),
                 copies,
                 runtimes,
                 failed: None,
                 unloadable: None,
+                exits,
             }
             .run()
             .await?;
@@ -142,6 +158,8 @@ struct Loader {
     runtimes: PathBuf,
     failed: Option<String>,
     unloadable: Option<(String, String)>,
+    // UNIT_BOUNDARY_DESCRIPTION: where a reaped VMM's signal is recorded for the runner that adopted its machine, which is the only way a kill is still named after a hand-off: the machine outlives the runner process, and the next runner is not its VMM's parent. The loader inherits those VMMs because it asks to be the pod's subreaper, so this process is the one that reads their status.
+    exits: PathBuf,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a release the loader can run: its name, the directory of its binaries and the runtime it runs against, both in the pod.
@@ -154,7 +172,8 @@ struct Release {
 
 struct Running {
     release: Release,
-    child: Child,
+    // UNIT_BOUNDARY_DESCRIPTION: the runner's pid rather than a handle to wait on: the loader reaps every child itself, because after a hand-off the machines' VMMs are its children too and a death it does not read is a death nothing records — the next runner is not their parent and cannot read their status. The runner is started with `std::process::Command`, not tokio's, whose dropped handle reaps the child in the background and would read the very status this reap waits for.
+    pid: i32,
     started: Instant,
     replaced: Option<Release>,
 }
@@ -164,9 +183,7 @@ const LOAD_CHECK: Duration = Duration::from_secs(10);
 
 impl Loader {
     fn target(&self) -> String {
-        std::fs::read_to_string(&self.target_file)
-            .map(|t| t.trim().to_string())
-            .unwrap_or_default()
+        release::read_target(&self.target_file)
     }
 
     fn builtin(&self) -> Release {
@@ -235,7 +252,7 @@ impl Loader {
 
     fn spawn(&self, release: Release, replaced: Option<Release>) -> anyhow::Result<Running> {
         let builtin = self.builtin();
-        let child = Command::new(release.dir.join(RUNNER))
+        let child = std::process::Command::new(release.dir.join(RUNNER))
             .args(release::args_for(
                 &self.args,
                 &[
@@ -244,10 +261,12 @@ impl Loader {
                 ],
             ))
             .spawn()?;
-        tracing::info!(release = release.name, dir = %release.dir.display(), runtime = %release.runtime.display(), "started the runner");
+        let pid = i32::try_from(child.id())
+            .map_err(|e| anyhow::anyhow!("the runner's pid is not one: {e}"))?;
+        tracing::info!(release = release.name, dir = %release.dir.display(), runtime = %release.runtime.display(), pid, "started the runner");
         Ok(Running {
             release,
-            child,
+            pid,
             started: Instant::now(),
             replaced,
         })
@@ -334,28 +353,11 @@ impl Loader {
         );
         loop {
             tokio::select! {
-                exited = running.child.wait() => {
-                    let exited = exited?;
-                    let ran = running.started.elapsed();
-                    running = match running.replaced.take() {
-                        Some(replaced) if ran < SETTLE => {
-                            tracing::error!(release = running.release.name, status = %exited, "the runner release exited right after it took over; going back to the one it replaced");
-                            self.failed = Some(running.release.name.clone());
-                            self.spawn(replaced, None)?
-                        }
-                        _ => {
-                            backoff = if ran < SETTLE { (backoff * 2).min(RESTART_BACKOFF_MAX) } else { Duration::from_secs(1) };
-                            tracing::warn!(release = running.release.name, status = %exited, backoff_secs = backoff.as_secs(), "the runner exited; starting it again");
-                            tokio::select! {
-                                () = tokio::time::sleep(backoff) => {}
-                                () = stopping.cancelled() => {}
-                            }
-                            self.spawn(running.release.clone(), None)?
-                        }
-                    };
-                }
-                () = stopping.cancelled() => return stop(&mut running.child).await,
                 _ = tick.tick() => {
+                    if let Some(exited) = reap_children(running.pid, &self.exits) {
+                        running = self.after_exit(running, exited, &mut backoff, &stopping).await?;
+                        continue;
+                    }
                     if running.started.elapsed() >= SETTLE {
                         running.replaced = None;
                     }
@@ -368,7 +370,7 @@ impl Loader {
                         Ok(_) if stopping.is_cancelled() => {}
                         Ok(release) => {
                             tracing::info!(from = running.release.name, to = release.name, "handing the machines off to another runner release");
-                            hand_off(&mut running.child).await;
+                            hand_off(running.pid, &self.exits).await;
                             let replaced = running.release.clone();
                             running = self.take_over(release, replaced)?;
                             self.prune(&running);
@@ -377,57 +379,144 @@ impl Loader {
                         Err(held) => self.report(&running, &target, Some(held)),
                     }
                 }
+                () = stopping.cancelled() => return stop(running.pid, &self.exits).await,
+            }
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what runs in place of a runner that exited: the release it replaced, where the new one did not last its settle window, and otherwise the same one again after a backoff that grows while a release keeps failing on start. A stop that arrives during the backoff ends the wait, and the next runner is started with the stop already waiting for it.
+    async fn after_exit(
+        &mut self,
+        mut running: Running,
+        exited: ExitStatus,
+        backoff: &mut Duration,
+        stopping: &CancellationToken,
+    ) -> anyhow::Result<Running> {
+        let ran = running.started.elapsed();
+        match running.replaced.take() {
+            Some(replaced) if ran < SETTLE => {
+                tracing::error!(release = running.release.name, status = %exited, "the runner release exited right after it took over; going back to the one it replaced");
+                self.failed = Some(running.release.name.clone());
+                self.spawn(replaced, None)
+            }
+            _ => {
+                *backoff = if ran < SETTLE {
+                    (*backoff * 2).min(RESTART_BACKOFF_MAX)
+                } else {
+                    Duration::from_secs(1)
+                };
+                tracing::warn!(release = running.release.name, status = %exited, backoff_secs = backoff.as_secs(), "the runner exited; starting it again");
+                tokio::select! {
+                    () = tokio::time::sleep(*backoff) => {}
+                    () = stopping.cancelled() => {}
+                }
+                self.spawn(running.release.clone(), None)
             }
         }
     }
 }
 
-fn signal_child(child: &Child, signal: i32) {
-    if let Some(pid) = child.id().and_then(|pid| i32::try_from(pid).ok()) {
-        // SAFETY: kill(2) takes plain integers and touches no memory of this process.
-        unsafe { libc::kill(pid, signal) };
+// UNIT_BOUNDARY_DESCRIPTION: the pod's only reaper. A VMM is a child of whichever runner process spawned it, and that process leaves its machines running when it hands off or is replaced, so from then on the VMMs are this loader's children: a death it does not read here stays a zombie, and its signal is the one fact about how a machine went down that no later runner can recover. The runner's own exit goes back to supervision, and any other child's signal is written where the runner that adopted the machine reads it.
+fn reap_children(runner: i32, exits: &Path) -> Option<ExitStatus> {
+    let mut runner_status = None;
+    loop {
+        let mut status = 0;
+        // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
+        let pid = unsafe { libc::waitpid(-1, &raw mut status, libc::WNOHANG) };
+        if pid <= 0 {
+            break;
+        }
+        if pid == runner {
+            runner_status = Some(ExitStatus::from_raw(status));
+            continue;
+        }
+        if libc::WIFSIGNALED(status) {
+            if let Err(e) = std::fs::create_dir_all(exits).and_then(|()| {
+                std::fs::write(
+                    exits.join(pid.to_string()),
+                    libc::WTERMSIG(status).to_string(),
+                )
+            }) {
+                tracing::warn!(pid, error = %e, "recording a machine's VMM exit for the next runner");
+            }
+        }
+    }
+    runner_status
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the directory the runner reads a handed-over machine's exit from: its own state directory, which the loader sees in the arguments it passes on. The runner falls back to the same default when it names none.
+fn exit_records(args: &[String]) -> PathBuf {
+    let state = args
+        .iter()
+        .position(|arg| arg == "--state-dir")
+        .and_then(|at| args.get(at + 1))
+        .cloned()
+        .unwrap_or_else(|| "/var/lib/platform/machines".to_string());
+    PathBuf::from(state).join(vm_runner::state::EXIT_RECORDS)
+}
+
+fn signal_child(pid: i32, signal: i32) {
+    // SAFETY: kill(2) takes plain integers and touches no memory of this process.
+    unsafe { libc::kill(pid, signal) };
+}
+
+async fn hand_off(pid: i32, exits: &Path) {
+    signal_child(pid, libc::SIGUSR1);
+    let deadline = Instant::now() + HAND_OFF_WAIT;
+    while Instant::now() < deadline {
+        if reap_children(pid, exits).is_some() {
+            return;
+        }
+        tokio::time::sleep(CATCH_POLL).await;
+    }
+    tracing::warn!(
+        "the runner did not close within the hand-off window; killing it, its machines stay up"
+    );
+    signal_child(pid, libc::SIGKILL);
+    while reap_children(pid, exits).is_none() {
+        tokio::time::sleep(CATCH_POLL).await;
     }
 }
 
-async fn hand_off(child: &mut Child) {
-    signal_child(child, libc::SIGUSR1);
-    if tokio::time::timeout(HAND_OFF_WAIT, child.wait())
-        .await
-        .is_err()
-    {
+// UNIT_BOUNDARY_DESCRIPTION: makes this loader the process the kernel hands a machine to when the runner that booted it goes away. The pod's init is catatonit, which inherits every orphan and reaps it without a word: the VMM's signal is the one fact about how a machine went down that nothing else records, and it would be gone before the loader could read it. A kernel that refuses leaves the pod's init to reap them, which is said on the console. Linux only, since the loader runs only in a Linux pod.
+fn become_the_reaper_of_every_machine() {
+    #[cfg(target_os = "linux")]
+    // SAFETY: prctl(2) with PR_SET_CHILD_SUBREAPER takes a flag and no pointers.
+    if unsafe { libc::prctl(libc::PR_SET_CHILD_SUBREAPER, 1, 0, 0, 0) } != 0 {
         tracing::warn!(
-            "the runner did not close within the hand-off window; killing it, its machines stay up"
+            error = %std::io::Error::last_os_error(),
+            "could not become the subreaper of this pod's machines; a VMM that outlives its runner is reaped by the pod's init, which records no signal"
         );
-        let _ = child.kill().await;
     }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: passes the pod's stop to the runner once it catches SIGTERM. A runner just started has not set up its stop yet, and a SIGTERM before that kills it by default with every machine left running, which the pod's end then powers off.
-async fn stop(child: &mut Child) -> anyhow::Result<i32> {
-    while !catches_term(child) {
-        tokio::select! {
-            exited = child.wait() => return Ok(exit_code(exited?)),
-            () = tokio::time::sleep(CATCH_POLL) => {}
+async fn stop(pid: i32, exits: &Path) -> anyhow::Result<i32> {
+    while !catches_term(pid) {
+        if let Some(exited) = reap_children(pid, exits) {
+            return Ok(exit_code(exited));
         }
+        tokio::time::sleep(CATCH_POLL).await;
     }
-    signal_child(child, libc::SIGTERM);
-    Ok(exit_code(child.wait().await?))
+    signal_child(pid, libc::SIGTERM);
+    loop {
+        if let Some(exited) = reap_children(pid, exits) {
+            return Ok(exit_code(exited));
+        }
+        tokio::time::sleep(CATCH_POLL).await;
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the child has a SIGTERM handler, from the caught-signal mask Linux shows in its status. The spawn returns only once the child has exec'd, so the mask is the runner's own and not the loader's it was forked from. Elsewhere there is no such mask to read, and the loader runs only in a Linux pod.
-fn catches_term(child: &Child) -> bool {
+fn catches_term(#[cfg_attr(not(target_os = "linux"), allow(unused_variables))] pid: i32) -> bool {
     #[cfg(target_os = "linux")]
-    if let Some(status) = child
-        .id()
-        .and_then(|pid| std::fs::read_to_string(format!("/proc/{pid}/status")).ok())
-    {
+    if let Ok(status) = std::fs::read_to_string(format!("/proc/{pid}/status")) {
         return status
             .lines()
             .find_map(|line| line.strip_prefix("SigCgt:"))
             .and_then(|mask| u64::from_str_radix(mask.trim(), 16).ok())
             .is_some_and(|mask| mask & (1 << (libc::SIGTERM - 1)) != 0);
     }
-    let _ = child;
     true
 }
 
@@ -440,6 +529,66 @@ fn exit_code(status: ExitStatus) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // TEST_SCENARIO: after a hand-off the machine's VMM is this loader's child, and no later runner can read its status: the loader reaps it and writes the signal where the runner that adopted the machine reads it, one file per pid. A child that is not the runner is never taken for it, and a normal exit leaves nothing to report.
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn a_machine_that_dies_while_no_runner_is_its_parent_leaves_a_record() {
+        let dir = std::env::temp_dir().join(format!("vmr-exits-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let exits = dir.join(vm_runner::state::EXIT_RECORDS);
+        let mut vmm = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+        unsafe { libc::kill(pid, libc::SIGSYS) };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !exits.join(pid.to_string()).exists() {
+            assert!(Instant::now() < deadline, "the loader never reaped the VMM");
+            reap_children(-1, &exits);
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            std::fs::read_to_string(exits.join(pid.to_string())).unwrap(),
+            libc::SIGSYS.to_string(),
+            "the VMM's signal is what the next runner names the kill by"
+        );
+        let _ = vmm.wait();
+
+        // TEST_SCENARIO: a child that exits on its own has no signal to record.
+        let mut quiet = std::process::Command::new("true").spawn().unwrap();
+        let quiet_pid = i32::try_from(quiet.id()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while reap_children(quiet_pid, &exits).is_none() {
+            assert!(
+                Instant::now() < deadline,
+                "the loader never reaped the child"
+            );
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert!(
+            !exits.join(quiet_pid.to_string()).exists(),
+            "a child that exited on its own left a kill record"
+        );
+        let _ = quiet.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // TEST_SCENARIO: the loader reads the runner's state directory out of the arguments it passes on, since that is where the runner it starts looks for a handed-over machine's exit; an argument list with none leaves the runner's own default.
+    #[test]
+    fn the_exit_records_sit_where_the_runner_reads_them() {
+        let named = vec!["--state-dir".to_string(), "/srv/state".to_string()];
+        assert_eq!(
+            exit_records(&named),
+            PathBuf::from("/srv/state").join(vm_runner::state::EXIT_RECORDS)
+        );
+        assert_eq!(
+            exit_records(&[]),
+            PathBuf::from("/var/lib/platform/machines").join(vm_runner::state::EXIT_RECORDS),
+        );
+    }
 
     // TEST_SCENARIO: the chart runs the stager from this binary with the flags its DaemonSet template names, and the image runs the loader with the words of its ENTRYPOINT. A flag either names that this binary does not know is a pod that exits on start rather than a failed build.
     #[test]

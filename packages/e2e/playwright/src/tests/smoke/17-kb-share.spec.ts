@@ -5,11 +5,7 @@ import { expect, test } from "@playwright/test";
 import { createApiClient, createWsApiClient } from "../../lib/api-client.js";
 import { waitForAgentRunning } from "../../lib/agents.js";
 import { acceptTerms, getAccessToken } from "../../lib/auth.js";
-import {
-  bootTimeoutMs,
-  mutateAgentFiles,
-  onLaneBackend,
-} from "../../lib/backend.js";
+import { mutateAgentFiles } from "../../lib/backend.js";
 import { baseUrl } from "../../config.js";
 import { harnessName } from "../../lib/fixtures.js";
 
@@ -116,7 +112,7 @@ async function callTool(
 }
 
 test("share a knowledge base and read it over the share-host MCP endpoint", async () => {
-  test.setTimeout(bootTimeoutMs(360_000));
+  test.setTimeout(300_000);
   const token = await getAccessToken();
   const httpApi = createApiClient(token);
   await acceptTerms(httpApi);
@@ -125,13 +121,11 @@ test("share a knowledge base and read it over the share-host MCP endpoint", asyn
   try {
     let agentId = "";
     await test.step("create the knowledge base and seed its wiki", async () => {
-      await api.agents.create.mutate(
-        onLaneBackend({
-          name: KB_NAME,
-          templateId: harnessName,
-          kbShareRoots: ["wiki"],
-        }),
-      );
+      await api.agents.create.mutate({
+        name: KB_NAME,
+        templateId: harnessName,
+        kbShareRoots: ["wiki"],
+      });
       agentId = await waitForAgentRunning(httpApi, KB_NAME);
       const ownToken = () => Promise.resolve(token);
       await mutateAgentFiles(ownToken, agentId, "mkdir", { path: "work/wiki" });

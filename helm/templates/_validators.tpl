@@ -10,20 +10,21 @@ add it to the include list in `platform.validate`.
 
 {{- define "platform.validate" -}}
 {{- include "platform.validate.anyuidCapNetRequiresAgentNamespace" . -}}
-{{- include "platform.validate.harnessToolsScc" . -}}
 {{- include "platform.validate.vmRunnerNeedsAMemoryLimit" . -}}
-{{- include "platform.validate.vmRunnerNeedsAnEgressDecision" . -}}
-{{- include "platform.validate.vmRunnerReachesOnlyItsResolver" . -}}
 {{- include "platform.validate.openShiftSccForPrivilegedVMPieces" . -}}
-{{- include "platform.validate.oneBackingForTheRunnerImages" . -}}
+{{- include "platform.validate.vmRunnersHaveANodeImageCache" . -}}
+{{- include "platform.validate.vmImageCachePathIsItsOwn" . -}}
+{{- include "platform.validate.vmImageCacheLegacyPath" . -}}
+{{- include "platform.validate.vmImageCacheEgress" . -}}
 {{- include "platform.validate.vmValuesTheControllerCanUse" . -}}
+{{- include "platform.validate.vmRunnerPodsNeedAReleaseDirectory" . -}}
 {{- include "platform.validate.vmValuesThisChartNoLongerReads" . -}}
 {{- include "platform.validate.egressLockdownModeExclusive" . -}}
 {{- include "platform.validate.termsRequired" . -}}
 {{- include "platform.validate.signUps" . -}}
 {{- include "platform.validate.enterpriseGitHubNeedsBothHostAndToken" . -}}
 {{- include "platform.validate.unenforcedMeshOnlyOnALocalCluster" . -}}
-{{- include "platform.validate.gatewayEgressCidrs" . -}}
+{{- include "platform.validate.controllerGatewayEgress" . -}}
 {{- include "platform.validate.featureModes" . -}}
 {{- include "platform.validate.monitoringNeedsTheCollector" . -}}
 {{- end -}}
@@ -94,20 +95,35 @@ boolean is taken as the mode it was written as.
 {{- end -}}
 
 {{/*
-controller.gatewayEgress.extraCidrs opens private ranges to every agent
-gateway. The controller renders them into each gateway's NetworkPolicy, which
-Kubernetes rejects outright when an entry is not a CIDR — and a rejected policy
-fails every agent's reconcile. A /0 entry would reopen every private range the
-policy exists to close.
+controller.gatewayEgress opens private ranges and the cluster DNS pods to every
+agent gateway, and the node image cache renders the same DNS rule and the same
+peers shape into its own policy. The controller renders them into each
+gateway's NetworkPolicy, which Kubernetes rejects outright when an entry is not
+a CIDR or a selector is not one it can use — and a rejected policy fails every
+agent's reconcile. A /0 entry would reopen every private range the policy
+exists to close.
 */}}
-{{- define "platform.validate.gatewayEgressCidrs" -}}
-{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
-{{- range ((.Values.controller.gatewayEgress | default dict).extraCidrs | default list) -}}
-{{- if not (regexMatch $cidr (toString .)) -}}
-{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q is not a CIDR (address/prefix, e.g. 10.20.0.0/16)." (toString .)) -}}
+{{- define "platform.validate.controllerGatewayEgress" -}}
+{{- $egress := .Values.controller.gatewayEgress | default dict -}}
+{{- range ($egress.extraCidrs | default list) -}}
+{{- $entry := toString . -}}
+{{- include "platform.validate.cidr" (dict "name" "controller.gatewayEgress.extraCidrs" "value" $entry) -}}
+{{- if eq (int (last (splitList "/" $entry))) 0 -}}
+{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q opens every private range to agent gateways, which is what their egress policy closes. Name the enterprise service's own range instead." $entry) -}}
 {{- end -}}
-{{- if hasSuffix "/0" (toString .) -}}
-{{- fail (printf "controller.gatewayEgress.extraCidrs entry %q opens every private range to agent gateways, which is what their egress policy closes. Name the enterprise service's own range instead." (toString .)) -}}
+{{- end -}}
+{{- $dns := $egress.clusterDns | default dict -}}
+{{- if $dns -}}
+{{- include "platform.validate.selector" (dict "name" "controller.gatewayEgress.clusterDns" "namespace" $dns.namespace "labels" ($dns.podLabels | default dict)) -}}
+{{- range ($dns.ports | default list) -}}
+{{- include "platform.validate.port" (dict "name" "controller.gatewayEgress.clusterDns" "value" .) -}}
+{{- end -}}
+{{- end -}}
+{{- range ($egress.peers | default list) -}}
+{{- $namespace := .namespace -}}
+{{- include "platform.validate.selector" (dict "name" "controller.gatewayEgress.peers" "namespace" $namespace "labels" (.podLabels | default dict)) -}}
+{{- range (.ports | default list) -}}
+{{- include "platform.validate.port" (dict "name" (printf "controller.gatewayEgress.peers (namespace %q)" (toString $namespace)) "value" .) -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
@@ -160,17 +176,6 @@ The anyuid-cap-net RoleBinding is namespaced to `agentNamespace` and
 grants SCC access via the `system:serviceaccounts:<agentNamespace>`
 group. Both are meaningless if `agentNamespace` is empty.
 */}}
-{{- /*
-On OpenShift the harness tools installer runs as uid 0 and spc_t to label the
-node directory for the confined pods that read it, which no SCC the chart
-renders admits.
-*/ -}}
-{{- define "platform.validate.harnessToolsScc" -}}
-{{- if and .Values.openshift.scc.anyuidCapNet.enabled .Values.harnessTools.hostPath (not (.Values.harnessTools.scc | default .Values.virtualization.runner.scc)) -}}
-{{- fail "on OpenShift, harnessTools.hostPath needs harnessTools.scc (or virtualization.runner.scc): an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), for the installer that runs as uid 0 and spc_t. Without the tools, the harness Templates' default image cannot run." -}}
-{{- end -}}
-{{- end -}}
-
 {{- define "platform.validate.anyuidCapNetRequiresAgentNamespace" -}}
 {{- if .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- if not (.Values.agentNamespace | default "" | trim) -}}
@@ -230,65 +235,6 @@ first evicted — taking every machine with it.
 {{- end -}}
 
 {{/*
-A machine's egress allowlist is enforced by smolvm inside the very process an
-escaped guest would own. The runner's own NetworkPolicy is the kernel gate on
-where such a guest may go (each gateway's ingress policy separately decides whose
-credentials it can reach), and it cannot default to closed because the runner
-pulls agent images — so an install has to say, rather than inherit an open pod
-by omission.
-*/}}
-{{- define "platform.validate.vmRunnerNeedsAnEgressDecision" -}}
-{{- if .Values.virtualization.enabled -}}
-{{- if not .Values.virtualization.runner.egressCidrs -}}
-{{- fail "virtualization.enabled=true requires virtualization.runner.egressCidrs — the only kernel gate behind a guest's own egress allowlist. See virtualization.runner.egressCidrs in values.yaml for what to set; to leave the runner unconfined, say so out loud with [0.0.0.0/0] and no exceptions." -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
-A confined runner reaches DNS only at the resolver it uses, because port 53
-open to every address is a two-way channel from an escaped guest to any host
-listening there. Only a runner that caches images on its own claim resolves
-anything, so only it needs one named: the node's resolver by address under
-`Default`, the cluster DNS pods by label under `ClusterFirst`. A resolver
-range of /0 would reopen exactly what this closes. The metadata endpoint is
-link-local on every cloud; the controller subtracts it from any wider entry,
-so an egress entry lying inside link-local can only mean the endpoint itself.
-*/}}
-{{- define "platform.validate.vmRunnerReachesOnlyItsResolver" -}}
-{{- if .Values.virtualization.enabled -}}
-{{- $v := .Values.virtualization -}}
-{{- $r := $v.runner -}}
-{{- $ownCache := and (not ($v.imageCache | default dict).hostPath) (not $r.imageArchiveHostPath) -}}
-{{- if and $r.egressCidrs $ownCache -}}
-{{- if eq ($r.dnsPolicy | default "Default") "ClusterFirst" -}}
-{{- $dns := $r.clusterDns | default dict -}}
-{{- if or (not $dns.namespace) (not $dns.podLabels) -}}
-{{- fail "virtualization.runner.dnsPolicy=ClusterFirst on a runner that caches images on its own claim needs virtualization.runner.clusterDns.namespace and .podLabels — the cluster DNS pods it may resolve through. Without them the runner cannot resolve its registry." -}}
-{{- end -}}
-{{- else if not $r.dnsCidrs -}}
-{{- fail "virtualization.runner.dnsCidrs is required when the runner caches images on its own claim (no imageCache.hostPath, no imageArchiveHostPath) — it resolves its registry through the node's resolver, and the runner may reach only the resolver named here. Set it to the nodes' nameserver (e.g. [169.254.169.253/32] on AWS), or set imageCache.hostPath so runners resolve nothing." -}}
-{{- end -}}
-{{- end -}}
-{{- range ($r.dnsCidrs | default list) -}}
-{{- if hasSuffix "/0" (toString .) -}}
-{{- fail (printf "virtualization.runner.dnsCidrs entry %q admits DNS to every address, which is the channel this list exists to close. Name the nodes' resolver instead." (toString .)) -}}
-{{- end -}}
-{{- end -}}
-{{- range ($r.egressCidrs | default list) -}}
-{{- $parts := splitList "/" (toString .) -}}
-{{- if eq (len $parts) 2 -}}
-{{- $addr := lower (first $parts) -}}
-{{- $bits := atoi (last $parts) -}}
-{{- if or (and (hasPrefix "169.254." $addr) (ge $bits 16)) (and (hasPrefix "fe80:" $addr) (ge $bits 10)) -}}
-{{- fail (printf "virtualization.runner.egressCidrs entry %q lies inside link-local, where every cloud serves the node's metadata endpoint and its credentials. The runner never reaches it; name the resolver there in dnsCidrs if that is what it is." (toString .)) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-
-{{/*
 On OpenShift the chart's own SCC is the only one the runner gets, and it
 admits no hostPath volume. Without a built-in SCC bound as well, admission
 refuses the pod. `openshift.scc.anyuidCapNet.enabled` is the chart's existing
@@ -297,43 +243,230 @@ signal that this is an OpenShift cluster.
 {{- define "platform.validate.openShiftSccForPrivilegedVMPieces" -}}
 {{- if and .Values.virtualization.enabled .Values.openshift.scc.anyuidCapNet.enabled -}}
 {{- $v := .Values.virtualization -}}
-{{- if and $v.runner.imageArchiveHostPath (not $v.runner.scc) -}}
-{{- fail "on OpenShift, virtualization.runner.imageArchiveHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume that value mounts. Set an SCC that admits a hostPath, or drop imageArchiveHostPath and give the runner a registry to pull from." -}}
+{{- if and $v.runner.releaseHostPath (not $v.runner.hostAddress) (not $v.runner.scc) -}}
+{{- fail "on OpenShift, virtualization.runner.releaseHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the runners and the release stager mount, and the stager labels the directory as spc_t. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny)." -}}
 {{- end -}}
-{{- if and $v.runner.releaseHostPath (not $v.runner.scc) -}}
-{{- fail "on OpenShift, virtualization.runner.releaseHostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the runners and the release stager mount, and the stager labels the directory as spc_t. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), or leave releaseHostPath empty so every new runner image rolls the runner pods." -}}
-{{- end -}}
-{{- if and ($v.imageCache | default dict).hostPath (not $v.runner.scc) -}}
-{{- fail "on OpenShift, virtualization.imageCache.hostPath needs virtualization.runner.scc — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume the node cache mounts. Set an SCC that admits a hostPath, or clear imageCache.hostPath and let each runner cache on its own claim." -}}
+{{- if and (not $v.runner.hostAddress) (not $v.runner.scc) -}}
+{{- fail "on OpenShift, virtualization.runner.scc is required — the chart's own agent SCC sets allowHostDirVolumePlugin=false, so it refuses the hostPath volume of the node image cache (virtualization.imageCache.hostPath), which every runner and the image cache service mount. Set an SCC that admits a hostPath and leaves the SELinux type to the pod (seLinuxContext RunAsAny), such as hostmount-anyuid." -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
-Both values back the same directory in the runner — the node cache the runners
-on a node write to, the archive path a read-only directory staged on the host —
-and only one volume can be mounted there. Rather than silently preferring one,
-say so.
+The node image cache is the only place a runner pod gets an image from: its
+service is the only writer of the node directory, and the runners mount it
+read-only. With no directory named there is no cache and no runner can boot
+anything. The Mac's host runner runs outside the cluster with a cache of its own.
 */}}
-{{- define "platform.validate.oneBackingForTheRunnerImages" -}}
-{{- if .Values.virtualization.enabled -}}
+{{- define "platform.validate.vmRunnersHaveANodeImageCache" -}}
 {{- $v := .Values.virtualization -}}
-{{- if and ($v.imageCache | default dict).hostPath $v.runner.imageArchiveHostPath -}}
-{{- fail "virtualization.imageCache.hostPath and virtualization.runner.imageArchiveHostPath both back the runner's image directory, and only one can be mounted there. Keep the node cache the runners fetch into, or keep the read-only archives staged for an install with no registry." -}}
+{{- if and $v.enabled (not $v.runner.hostAddress) (not ($v.imageCache | default dict).hostPath) -}}
+{{- fail "virtualization.enabled=true requires virtualization.imageCache.hostPath — the node directory tree the image cache service unpacks every image into, and the only place a runner gets an image from. Set it to a root on the runner nodes, such as /var/lib/platform-images; the chart appends this install's own subdirectory (imageCache.hostPath/<release namespace>/<release name>), which on OpenShift sits under the directory etc/openshift-node-config creates." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+Nodes are shared, and a node directory is either the install's own or it is a
+collision: the image cache service is the only writer of the directory it
+serves, so an install given another's unlinks its socket and serves its trees,
+and the release stager prunes every entry in the directory it stages into. The
+chart derives the directory from the install's name, so two installs cannot be
+given one; what is left to check is that the value is a path on the node and
+that the derived directory stays out of the release directory's tree. Both
+comparisons run on `clean`ed paths: `a//b`, `a/./b` and `a/x/../b` name the
+same directory as `a/b`.
+*/}}
+{{- define "platform.validate.vmImageCachePathIsItsOwn" -}}
+{{- $v := .Values.virtualization -}}
+{{- $root := (($v.imageCache | default dict).hostPath | default "") | toString -}}
+{{- if and $v.enabled (not $v.runner.hostAddress) $root -}}
+{{- if not (hasPrefix "/" $root) -}}
+{{- fail (printf "virtualization.imageCache.hostPath %q is not an absolute path: it is a directory on every runner node, so it starts at /." $root) -}}
+{{- end -}}
+{{- $dir := include "platform.vmImageCache.dir" . | clean -}}
+{{- $release := include "platform.vmRunner.releaseDir" . -}}
+{{- if $release -}}
+{{- $release = printf "%s/" ($release | clean) -}}
+{{- if or (hasPrefix $release (printf "%s/" $dir)) (hasPrefix (printf "%s/" $dir) $release) -}}
+{{- fail (printf "virtualization.imageCache.hostPath %q puts this install's cache directory %q in the release directory %q: the release stager prunes every entry there that is not one of its own releases, which would delete the cached trees a machine is booting from. Give the cache a root outside it." $root $dir ($release | trimSuffix "/")) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+An upgrade that moves the cache directory reaches every runner that rolls,
+and the rollout waits out a busy owner's turn — `runner.rollout.idleWait`, a
+day by default — so for that long a runner still mounts the directory the
+previous release gave it. That directory's socket is gone once the service
+serves the new one, and a runner that dials it boots only the trees its own
+machines already hold. `imageCache.legacyPath` is that old directory, kept
+alive by a second cache service over it until the roll reaches every runner.
+It has to be the whole host directory a previous release served, and share no
+directory with this install's own: one service over a directory that holds the
+other's trees evicts them as its own least recently written.
+*/}}
+{{- define "platform.validate.vmImageCacheLegacyPath" -}}
+{{- $v := .Values.virtualization -}}
+{{- $legacy := (($v.imageCache | default dict).legacyPath | default "") | toString -}}
+{{- if and $v.enabled (not $v.runner.hostAddress) $legacy -}}
+{{- if not (hasPrefix "/" $legacy) -}}
+{{- fail (printf "virtualization.imageCache.legacyPath %q is not an absolute path: it is the host directory a previous release served on every runner node, so it starts at /." $legacy) -}}
+{{- end -}}
+{{- $dir := include "platform.vmImageCache.dir" . | clean -}}
+{{- if $dir -}}
+{{- $old := printf "%s/" ($legacy | clean) -}}
+{{- $new := printf "%s/" $dir -}}
+{{- if or (eq ($legacy | clean) $dir) (hasPrefix $new $old) (hasPrefix $old $new) -}}
+{{- fail (printf "virtualization.imageCache.legacyPath %q shares a directory with the cache directory %q this install serves: the window runs a second service over the legacy directory, and one over a directory that holds the other's trees evicts them as its own least recently written. Name the old directory alone, outside %q." $legacy $dir $dir) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+An address/prefix, either family. Kubernetes rejects the whole NetworkPolicy
+on an entry it cannot parse, and a rejected policy leaves the pod it names
+ungated until the next apply lands, so an entry is judged here rather than by
+the API server: four decimal octets and a prefix up to 32, or an RFC 4291
+group form — hex fields, at most one `::`, an optional dotted IPv4 tail in the
+last two, and no more fields than the shape holds, which the pattern this
+replaces let through (`2001:::1/64`). The prefix is decimal with no leading
+zero, because Helm reads a leading zero as octal: `10.0.0.0/07` rendered as
+prefix 7 and `2001:db8::/064` as 52, while `netip.ParsePrefix` refuses a leading
+zero outright, so a `controller.gatewayEgress` range written that way passed the
+render and the controller then refused to start. A range a policy carries
+reaches consumers with parsers of their own. (`10.0.0.0/08` is no octal number,
+so Helm read it as 0 and the opens-every-range rule refused it for another
+reason.)
+*/}}
+{{- define "platform.validate.cidr" -}}
+{{- $value := toString .value -}}
+{{- $parts := splitList "/" $value -}}
+{{- $octet := "(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])" -}}
+{{- $v4 := printf "^%s(\\.%s){3}$" $octet $octet -}}
+{{- $valid := false -}}
+{{- if eq (len $parts) 2 -}}
+{{- $addr := index $parts 0 -}}
+{{- $prefix := index $parts 1 -}}
+{{- if regexMatch $v4 $addr -}}
+{{- $valid = and (regexMatch "^(0|[1-9][0-9]?)$" $prefix) (le (int $prefix) 32) -}}
+{{- else if contains ":" $addr -}}
+{{- $head := $addr -}}
+{{- $tail := last (splitList ":" $addr) -}}
+{{- if contains "." $tail -}}
+{{- $head = "" -}}
+{{- if regexMatch $v4 $tail -}}{{- $head = printf "%s0:0" (trimSuffix $tail $addr) -}}{{- end -}}
+{{- end -}}
+{{- if and $head (regexMatch "^(0|[1-9][0-9]{0,2})$" $prefix) (le (int $prefix) 128) -}}
+{{- $halves := splitList "::" $head -}}
+{{- $left := index $halves 0 -}}
+{{- $right := "" -}}
+{{- if eq (len $halves) 2 -}}{{- $right = index $halves 1 -}}{{- end -}}
+{{- $compressed := eq (len $halves) 2 -}}
+{{- $fields := 0 -}}
+{{- $bad := or (gt (len $halves) 2) (hasPrefix ":" $left) (hasSuffix ":" $left) (hasPrefix ":" $right) (hasSuffix ":" $right) -}}
+{{- range $g := (splitList ":" (ternary (printf "%s:%s" $left $right) $left $compressed)) -}}
+{{- if $g -}}
+{{- if not (regexMatch "^[0-9a-fA-F]{1,4}$" $g) -}}{{- $bad = true -}}{{- end -}}
+{{- $fields = add1 $fields -}}
+{{- end -}}
+{{- end -}}
+{{- if not $bad -}}{{- $valid = ternary (le $fields 7) (eq $fields 8) $compressed -}}{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+{{- if not $valid -}}
+{{- fail (printf "%s entry %q is not an address/prefix — four decimal octets and a prefix up to 32, or hex groups and a prefix up to 128, the prefix written without a leading zero. Kubernetes rejects the whole NetworkPolicy on one entry its parser cannot read, which leaves the pod it names ungated until the next apply, and the controller will not start on a `controller.gatewayEgress` range its own parser refuses." .name $value) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A pod selector the API server takes. It rejects the whole NetworkPolicy on a
+label outside the label grammar — a space in it, an empty name, an over-long
+value — and a rejected policy leaves the pod it names ungated until the next
+apply lands. The namespace is matched through `kubernetes.io/metadata.name`, so
+its name is checked as the label value it is rendered as.
+*/}}
+{{- define "platform.validate.selector" -}}
+{{- if not (kindIs "map" .labels) -}}
+{{- fail (printf "%s podLabels must be a map of label keys to values, got the %s %v: a selector rendered from anything else matches no pod the policy admits, or is rejected whole." .name (kindOf .labels) .labels) -}}
+{{- end -}}
+{{- $namespace := toString .namespace -}}
+{{- if not (and (regexMatch "^[a-z0-9]([-a-z0-9]*[a-z0-9])?$" $namespace) (le (len $namespace) 63)) -}}
+{{- fail (printf "%s namespace %q is not a namespace name — lower-case alphanumerics and dashes, at most 63, beginning and ending with an alphanumeric. Kubernetes rejects the whole NetworkPolicy it is rendered into, which leaves the pod it names ungated until the next apply lands." .name $namespace) -}}
+{{- end -}}
+{{- $label := `^[A-Za-z0-9]([-A-Za-z0-9_.]*[A-Za-z0-9])?$` -}}
+{{- $prefix := `^[a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*$` -}}
+{{- range $key, $value := (.labels | default dict) -}}
+{{- if not (and (kindIs "string" $key) (kindIs "string" $value)) -}}
+{{- fail (printf "%s label %v: %v has to be a string on both sides — a YAML number or boolean renders as one, and Kubernetes refuses the whole NetworkPolicy whose matchLabels holds it, which leaves the pod it names ungated until the next apply lands." $.name $key $value) -}}
+{{- end -}}
+{{- $parts := splitList "/" (toString $key) -}}
+{{- $field := last $parts -}}
+{{- $ok := and (le (len $parts) 2) (regexMatch $label $field) (le (len $field) 63) -}}
+{{- if eq (len $parts) 2 -}}
+{{- $ok = and $ok (regexMatch $prefix (index $parts 0)) (le (len (index $parts 0)) 253) -}}
+{{- end -}}
+{{- $text := toString $value -}}
+{{- if or (not $ok) (and $text (not (and (regexMatch $label $text) (le (len $text) 63)))) -}}
+{{- fail (printf "%s label %q: %q is not a label the API server takes — a key is a name of at most 63 alphanumerics, dashes, underscores and dots beginning and ending alphanumeric, optionally under a DNS prefix and a /; a value is the same or empty. Kubernetes rejects the whole NetworkPolicy on one it cannot use, which leaves the pod it names ungated until the next apply lands." $.name (toString $key) $text) -}}
+{{- end -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+A port the API server takes, for the same reason: it rejects the whole policy
+on `0`, and on anything past 65535, which a policy rendered as text does not
+notice.
+*/}}
+{{- define "platform.validate.port" -}}
+{{- $value := toString .value -}}
+{{- if not (and (regexMatch "^[0-9]{1,5}$" $value) (ge (int $value) 1) (le (int $value) 65535)) -}}
+{{- fail (printf "%s port %s is not a port number between 1 and 65535. Kubernetes rejects the whole NetworkPolicy on one it cannot parse, which leaves the pod it names ungated until the next apply lands." .name $value) -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
+The image cache service's egress policy admits the public internet minus the
+ranges the cluster owns, and the cluster DNS pods. A registry inside the
+cluster is a peers entry, which Kubernetes rejects without a namespace or a
+port and which an empty podLabels on makes every pod in the namespace; a
+mirror outside it is a range, which has to be a real block, since a /0 would
+reopen every range the policy exists to close.
+*/}}
+{{- define "platform.validate.vmImageCacheEgress" -}}
+{{- if .Values.virtualization.enabled -}}
+{{- $cache := .Values.virtualization.imageCache | default dict -}}
+{{- $dns := (.Values.controller.gatewayEgress | default dict).clusterDns | default dict -}}
+{{- if and (eq ($cache.dnsPolicy | default "ClusterFirst") "ClusterFirst") (not .Values.virtualization.runner.hostAddress) (not (and $dns.namespace $dns.podLabels)) -}}
+{{- fail "virtualization.imageCache.dnsPolicy is ClusterFirst but controller.gatewayEgress.clusterDns names no namespace and podLabels, so the cache policy admits no DNS pod: every registry lookup fails, and a machine boots only the trees the cache already holds. Name the cluster DNS pods, or set imageCache.dnsPolicy=Default and admit the node's resolver in imageCache.egressCidrs." -}}
+{{- end -}}
+{{- range ($cache.egressCidrs | default list) -}}
+{{- $entry := toString . -}}
+{{- include "platform.validate.cidr" (dict "name" "virtualization.imageCache.egressCidrs" "value" $entry) -}}
+{{- if eq (int (last (splitList "/" $entry))) 0 -}}
+{{- fail (printf "virtualization.imageCache.egressCidrs entry %q opens every range to the node image cache service, which is what its egress policy closes — it already reaches the public internet. Name the mirror's own range instead." $entry) -}}
+{{- end -}}
+{{- end -}}
+{{- range ($cache.peers | default list) -}}
+{{- $namespace := .namespace -}}
+{{- if or (not $namespace) (not .podLabels) (not .ports) -}}
+{{- fail (printf "virtualization.imageCache.peers entry %v needs a namespace, the registry pod's podLabels and its ports. Kubernetes rejects a policy entry without a namespace or a port, and an entry with an empty podLabels admits every pod in that namespace." .) -}}
+{{- end -}}
+{{- include "platform.validate.selector" (dict "name" "virtualization.imageCache.peers" "namespace" $namespace "labels" (.podLabels | default dict)) -}}
+{{- range .ports -}}
+{{- include "platform.validate.port" (dict "name" (printf "virtualization.imageCache.peers (namespace %q)" $namespace) "value" .) -}}
+{{- end -}}
 {{- end -}}
 {{- end -}}
 {{- end -}}
 
 {{/*
 Values the controller would otherwise take in and fail on later, one agent at a
-time: a range that is not a CIDR makes Kubernetes reject the runner's
-NetworkPolicy on every reconcile, and an exception that is not one is dropped
-without a word, leaving the range it was meant to close open. A DNS policy
-other than the two the runner supports is silently read as `Default`, and a
-seccomp mode smolvm does not know installs no filter. A budget
-that is not a positive quantity refuses every runner. `0.0.0.0/0` with no
-exceptions is not refused here: the values name it as the way to leave the
-runner unconfined on purpose, and the controller warns about it at startup.
+time: a DNS policy the image cache service does not take is refused by
+Kubernetes, and a seccomp mode smolvm does not know installs no filter. A budget
+that is not a positive quantity refuses every runner.
 */}}
 {{- define "platform.validate.vmValuesTheControllerCanUse" -}}
 {{- if .Values.virtualization.enabled -}}
@@ -341,17 +474,9 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- if ($v.devicePlugin | default dict).enabled -}}
 {{- fail "virtualization.devicePlugin is gone: the chart no longer ships a KVM device plugin, because a plugin is per node and a cluster runs one for every install on it. Run one on the cluster (e.g. squat's generic-device-plugin, as helm/extra/kvm-device-plugin.yaml does for local dev), set virtualization.runner.devices to the resource it publishes (squat.ai/kvm: \"1\"), and drop virtualization.devicePlugin." -}}
 {{- end -}}
-{{- $cidr := `^(((25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])\.){3}(25[0-5]|2[0-4][0-9]|1[0-9][0-9]|[1-9]?[0-9])/([0-9]|[12][0-9]|3[0-2])|[0-9a-fA-F:.]*:[0-9a-fA-F:.]*/([0-9]|[1-9][0-9]|1[01][0-9]|12[0-8]))$` -}}
-{{- range $field := list "egressCidrs" "egressExceptCidrs" "dnsCidrs" -}}
-{{- range (index $v.runner $field | default list) -}}
-{{- if not (regexMatch $cidr (toString .)) -}}
-{{- fail (printf "virtualization.runner.%s entry %q is not a CIDR (address/prefix, e.g. 10.128.0.0/14). The controller renders these into the runner's NetworkPolicy, which Kubernetes rejects outright — and an exception it cannot read is dropped, leaving open the range it was meant to close." $field (toString .)) -}}
-{{- end -}}
-{{- end -}}
-{{- end -}}
-{{- $dns := $v.runner.dnsPolicy | default "Default" -}}
+{{- $dns := ($v.imageCache | default dict).dnsPolicy | default "Default" -}}
 {{- if not (has $dns (list "Default" "ClusterFirst")) -}}
-{{- fail (printf "virtualization.runner.dnsPolicy %q is not one the runner supports — use `Default` (the node's resolver) or `ClusterFirst`. See the comment on it in values.yaml for which one." $dns) -}}
+{{- fail (printf "virtualization.imageCache.dnsPolicy %q is not one the image cache service supports — use `Default` (the node's resolver) or `ClusterFirst`. See the comment on it in values.yaml for which one." $dns) -}}
 {{- end -}}
 {{- $seccomp := include "platform.vmRunner.seccomp" . -}}
 {{- if not (has $seccomp (list "audit" "enforce" "off")) -}}
@@ -359,7 +484,7 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- end -}}
 {{- $budget := toString (($v.imageCache | default dict).budget | default "") -}}
 {{- if not (regexMatch `^[0-9]+(\.[0-9]+)?([eE][+-]?[0-9]+)?(Ki|Mi|Gi|Ti|Pi|Ei|k|M|G|T|P|E)?$` $budget) -}}
-{{- fail (printf "virtualization.imageCache.budget %q is not a byte quantity (e.g. 50Gi). It is required: the controller refuses to create a runner without a bound on what its cached images may occupy." $budget) -}}
+{{- fail (printf "virtualization.imageCache.budget %q is not a byte quantity (e.g. 50Gi). It is required: the controller refuses to create a runner without a bound on what the node's cached images may occupy." $budget) -}}
 {{- end -}}
 {{- if regexMatch `^0*(\.0*)?([eE][+-]?[0-9]+)?[A-Za-z]*$` $budget -}}
 {{- fail (printf "virtualization.imageCache.budget %q leaves the cached images no room at all, so no runner can fetch an image. Give it a positive size well under the disk it sits on." $budget) -}}
@@ -368,24 +493,52 @@ runner unconfined on purpose, and the controller warns about it at startup.
 {{- end -}}
 
 {{/*
+A runner pod takes a new runner image only as a hand-off from the node
+directory the release stager writes, so an install with runner pods must name
+one. The host runner of a local Mac cluster runs outside any pod and needs
+none.
+*/}}
+{{- define "platform.validate.vmRunnerPodsNeedAReleaseDirectory" -}}
+{{- $v := .Values.virtualization -}}
+{{- if and $v.enabled (not $v.runner.hostAddress) (not $v.runner.releaseHostPath) -}}
+{{- fail "virtualization.runner.releaseHostPath is required with virtualization.enabled: the release stager copies each runner release there, and every runner pod's loader takes a new runner image from it without rebooting a machine (unless that release declares another reboot key than the pod's release, which rolls the pods and reboots them; a pod whose release declares no key takes it in place). Set it to a node directory such as /var/lib/platform-vm-runner-releases; each install stages into its own subdirectory of it." -}}
+{{- end -}}
+{{- end -}}
+
+{{/*
 Virtualization values the chart no longer reads. Helm keeps a value nothing
 reads without a word, so an install that still sets one would be quietly given
 something else: the node image cache service can no longer be switched off and
 runs where the runners do, the runner admits sources by its NetworkPolicy
-alone, and every owner's runner runs `runner.image`. Fail at render instead,
-naming what took each one's place.
+alone, every owner's runner runs `runner.image`, and a runner neither caches
+on its own claim, resolves any name, nor reaches anything but its gateways.
+Fail at render instead, naming what took each one's place.
 */}}
 {{- define "platform.validate.vmValuesThisChartNoLongerReads" -}}
 {{- $v := .Values.virtualization | default dict -}}
 {{- $cache := $v.imageCache | default dict -}}
 {{- $runner := $v.runner | default dict -}}
 {{- if hasKey $cache "preload" -}}
-{{- fail "virtualization.imageCache.preload is no longer read. The node image cache service is the only writer of imageCache.hostPath, so it always runs where that is set, on the runners' own nodeSelector and tolerations; its interval is virtualization.imageCache.preloadInterval and its resources virtualization.imageCache.resources. Remove the preload block." -}}
+{{- fail "virtualization.imageCache.preload is no longer read. The node image cache service is the only writer of the directory it serves, so it always runs where imageCache.hostPath is set, on the runners' own nodeSelector and tolerations; its interval is virtualization.imageCache.preloadInterval and its resources virtualization.imageCache.resources. Remove the preload block." -}}
 {{- end -}}
 {{- if hasKey $runner "ingressCidrs" -}}
 {{- fail "virtualization.runner.ingressCidrs is no longer read. The runner's NetworkPolicy is the only gate on its published ports, admitting the api-server and the controller. Remove the key." -}}
 {{- end -}}
-{{- if or (hasKey $runner "canaryImage") (hasKey $runner "canary") -}}
+{{- if hasKey $runner "releaseSameRuntimeOnly" -}}
+{{- fail "virtualization.runner.releaseSameRuntimeOnly is no longer read: a runner release built against another VM runtime is handed off in place (unless it declares another reboot key than the pod's release, which rolls the pods instead; a pod whose release declares no key takes it in place), and a machine whose runtime errors, or whose guest goes quiet, is rebooted onto the runner's own runtime. To leave the new runtime, configure the previous runner image again. Remove the key." -}}
+{{- end -}}
+{{- if or (hasKey $runner "dnsCidrs") (hasKey $runner "clusterDns") -}}
+{{- fail "virtualization.runner.dnsCidrs and virtualization.runner.clusterDns are no longer read. A runner never resolves a name: the node image cache service (virtualization.imageCache) fetches every image, so the runner's NetworkPolicy admits no resolver. Remove the keys." -}}
+{{- end -}}
+{{- if hasKey $runner "dnsPolicy" -}}
+{{- fail "virtualization.runner.dnsPolicy is no longer read. A runner never resolves a name; the image cache service, which fetches every image, takes virtualization.imageCache.dnsPolicy instead. Move the value there." -}}
+{{- end -}}
+{{- if or (hasKey $runner "egressCidrs") (hasKey $runner "egressExceptCidrs") -}}
+{{- fail "virtualization.runner.egressCidrs and virtualization.runner.egressExceptCidrs are no longer read. A runner dials nothing but its owner's gateways, so its NetworkPolicy admits those alone, always. Remove the keys." -}}
+{{- end -}}
+{{- if hasKey $runner "imageArchiveHostPath" -}}
+{{- fail "virtualization.runner.imageArchiveHostPath is no longer read. Staged image trees live in the node image cache directory the chart derives from virtualization.imageCache.hostPath, beside the trees its service fetches; `mise run image:stage-vm` stages there. Remove the key, or move its directory to imageCache.hostPath." -}}
+{{- end -}}{{- if or (hasKey $runner "canaryImage") (hasKey $runner "canary") -}}
 {{- fail "virtualization.runner.canaryImage and virtualization.runner.canary are no longer read: every runner runs virtualization.runner.image, rolled across owners by virtualization.runner.rollout. Remove the keys." -}}
 {{- end -}}
 {{- end -}}

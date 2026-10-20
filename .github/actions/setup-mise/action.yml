@@ -27,9 +27,10 @@ runs:
     # failed a whole build. arm64 has no tool cache below, and x64's misses on
     # every mise.lock change. Keyed by the maven version mise.lock pins and by
     # this file, which pins mise, whose install layout the entry holds; per
-    # arch, with no older entry to fall back on, so a hit installs from the
-    # entry alone and reaches no download host. Only main writes it, at the
-    # end, for the reason the tool cache gives.
+    # arch. A change to this file falls back on the same maven version's older
+    # entry: the exact key missed in every merge group between such a change
+    # and main's next save, and each miss downloaded maven again. Only main
+    # writes it, at the end, for the reason the tool cache gives.
     - id: maven-version
       if: inputs.install_args == ''
       shell: bash
@@ -40,6 +41,9 @@ runs:
         echo "version=$maven" >> "$GITHUB_OUTPUT"
     # mise names a version's directory by a hash of what it installed and
     # links the version to it, so the entry holds both.
+    # A release restores only what reviewed code wrote: main is this entry's
+    # one writer (the save below).
+    # jactionlint ignore=cache-poisoning
     - id: maven-cache
       if: inputs.install_args == ''
       uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -48,6 +52,15 @@ runs:
           ~/.local/share/mise/installs/maven
           ~/.local/share/mise/installs/maven-*
         key: mise-maven-${{ runner.os }}-${{ runner.arch }}-${{ steps.maven-version.outputs.version }}-${{ hashFiles('.github/actions/setup-mise/action.yml') }}
+        restore-keys: mise-maven-${{ runner.os }}-${{ runner.arch }}-${{ steps.maven-version.outputs.version }}-
+    # mise's download limits, for this install and every later step, the
+    # same as install-harness-tools': a file that trickles fails after 5
+    # minutes, not mise's default 30, and a stall is retried 6 times. A zig
+    # download at 20 kB/s once held the install until the job was cancelled.
+    - shell: bash
+      run: |
+        echo "MISE_HTTP_RETRIES=6" >> "$GITHUB_ENV"
+        echo "MISE_HTTP_DOWNLOAD_TIMEOUT=5m" >> "$GITHUB_ENV"
     # Builds are reproducible per commit: every image this job builds carries
     # the checked-out commit's time as its creation date, and the same commit
     # always gives the same date. A fixed date instead ages every image, and
@@ -63,7 +76,13 @@ runs:
     # Only the full install is cached, on x64 alone: a subset installs in
     # seconds without one (mirror-images: 3 s), and on arm64 only
     # build-images installs everything, on main.
-    - uses: jdx/mise-action@2d8d4cafcbd33be2ea37d2b6f5ad595363d1f1ca # v5.1.1
+    # cache_save is off for a pull request and a merge group, so those saves
+    # never reach this cache. The writers left are the default-branch schedules
+    # and dispatches, pushes of main, and the ref's own pushes and dispatches;
+    # GitHub scopes a non-default ref's entry to that ref, so a release reads
+    # main's entry and its own tag's, and nothing else.
+    # jactionlint ignore=cache-poisoning
+    - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
       with:
         version: "2026.10.5"
         install_args: ${{ inputs.install_args }}

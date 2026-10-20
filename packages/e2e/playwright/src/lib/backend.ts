@@ -9,27 +9,6 @@ import { type Backend, laneBackend } from "./lane.js";
 
 export { type Backend, laneBackend };
 
-export function onLaneBackend<T extends object>(input: T): T & { vm?: true } {
-  return laneBackend === "vm" ? { ...input, vm: true } : input;
-}
-
-export function bootTimeoutMs(containerMs: number): number {
-  return laneBackend === "vm" ? containerMs * 3 : containerMs;
-}
-
-export async function setVmSandboxes(
-  api: ApiClient,
-  enabled: boolean,
-): Promise<void> {
-  const flags = await api.features.setFlag.mutate({
-    feature: "vm-sandboxes",
-    enabled,
-  });
-  expect(flags["vm-sandboxes"], "the vm-sandboxes experiment flag").toBe(
-    enabled,
-  );
-}
-
 const tokenMaxAgeMs = 120_000;
 
 export function refreshingToken(): () => Promise<string> {
@@ -51,12 +30,13 @@ export async function requireBackend(
   api: ApiClient,
   backend: Backend,
 ): Promise<void> {
-  if (backend !== "vm") return;
   const install = await api.features.install.query();
   expect(
     install.virtualization,
-    "a vm project runs only against an install with virtualization.enabled; reinstall with E2E_VIRTUALIZATION=1",
-  ).toBe(true);
+    backend === "vm"
+      ? "a vm project runs only against an install with virtualization.enabled; reinstall with E2E_VIRTUALIZATION=1"
+      : "a container project runs only against an install without virtualization.enabled; reinstall without E2E_VIRTUALIZATION=1",
+  ).toBe(backend === "vm");
 }
 
 export async function createAgentOn(
@@ -69,7 +49,7 @@ export async function createAgentOn(
   const created = await api.agents.create.mutate({
     name,
     templateId,
-    ...(backend === "vm" ? { vm: true } : {}),
+    vm: backend === "vm",
     ...(neverIdle ? { hibernationTimeoutMin: 0 } : {}),
   });
   expect(created.vm, `agent ${name} landed on the wrong backend`).toBe(
@@ -83,7 +63,7 @@ export async function waitAgentState(
   agentId: string,
   state: AgentState,
   {
-    timeoutMs = 600_000,
+    timeoutMs = 240_000,
     failOnError = true,
   }: { timeoutMs?: number; failOnError?: boolean } = {},
 ): Promise<void> {
@@ -301,6 +281,56 @@ export function runnerGrows(
   });
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from.
+function runnerPod(agentId: string): string {
+  return kubectl(
+    "-n",
+    AGENT_NS,
+    "get",
+    "pod",
+    "-l",
+    hostSelector(agentId, "vm"),
+    "-o",
+    "jsonpath={.items[0].metadata.name}",
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root on the agent's VM runner, as an operator with the pod would: the owner's claim is $HOME, and a machine's VMM is a `_boot-vm` child of the runner.
+export function onRunnerHost(agentId: string, script: string): string {
+  return kubectl(
+    "-n",
+    AGENT_NS,
+    "exec",
+    runnerPod(agentId),
+    "-c",
+    "vm-runner",
+    "--",
+    "sh",
+    "-c",
+    script,
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
+export function inGuest(agentId: string, script: string): string {
+  const pod = runnerPod(agentId);
+  return kubectl(
+    "-n",
+    AGENT_NS,
+    "exec",
+    pod,
+    "-c",
+    "vm-runner",
+    "--",
+    "/usr/local/libexec/vm-runner/vm-runner",
+    "exec",
+    agentId,
+    "--",
+    "sh",
+    "-c",
+    script,
+  );
+}
 export async function deleteBackendHost(
   agentId: string,
   backend: Backend,
@@ -333,7 +363,7 @@ export async function deleteBackendHost(
         }
       },
       {
-        timeout: 600_000,
+        timeout: 240_000,
         intervals: [3_000],
         message: `no replacement pod for agent ${agentId} became ready`,
       },

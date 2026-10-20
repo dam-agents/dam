@@ -11,12 +11,8 @@ export const podSessionTypeSchema = z.enum([
   "schedule_cron",
   "schedule_once",
   "cli_run",
+  "invocation",
 ]);
-
-export const sessionSpendSchema = z.object({
-  unit: z.string().min(1),
-  cost: z.number(),
-});
 
 export const podSessionSchema = z.object({
   sessionId: z.string().min(1),
@@ -37,7 +33,6 @@ export const podSessionSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   settings: sessionSettingsSchema.optional(),
-  spend: sessionSpendSchema.optional(),
   repositories: z.array(sessionRepositorySchema).optional(),
 });
 
@@ -88,10 +83,7 @@ export const sessionSettingsInputSchema = z.object({
   ref: z.string().min(1),
 });
 
-export const sessionSpendInputSchema = z.object({
-  from: z.string().datetime({ offset: true }),
-  to: z.string().datetime({ offset: true }),
-});
+export const sessionByRefInputSchema = z.object({ ref: z.string().min(1) });
 
 const SESSION_HISTORY_TAIL_MAX = 10_000;
 

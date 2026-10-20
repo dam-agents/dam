@@ -1,10 +1,10 @@
 # Credential gateway
 
-Last verified: 2026-10-14
+Last verified: 2026-10-19
 
 ## Overview
 
-The credential gateway is the Envoy proxy in each Agent's paired gateway pod: every HTTPS request the agent makes exits through it, and for the hosts the agent's Connections cover it adds the real credential on the wire — injected into a header or query parameter, or, for S3-compatible storage, by signing the request with keys the agent never holds — from Secrets mounted on the gateway pod only.
+The credential gateway is the Envoy proxy in each Agent's paired gateway pod, or, for vm Agents on an install that turns it on, in the owner's one gateway pod ([owner gateway](#owner-gateway)): every HTTPS request the agent makes exits through it, and for the hosts the agent's Connections cover it adds the real credential on the wire — injected into a header or query parameter, or, for S3-compatible storage, by signing the request with keys the agent never holds — from Secrets mounted on the gateway pod only.
 This page owns the mechanics of that path — how a host gets an intercepting chain, how credentials are injected, how requests are signed, and what keeps the gateway bootable when a Secret goes bad.
 The trust model it enforces — who holds credentials, the pod and mesh boundaries, and the ext_authz HITL gate every forwarded request passes — lives on [security-and-credentials](security-and-credentials.md).
 Model calls reach it through the agent-side [Model Router](harness-config.md#the-model-router), which sends each call with the target Connection's placeholder in the header the Connection claims here and holds no credential.
@@ -18,6 +18,7 @@ On the wire:
 
 1. Agent sets `HTTPS_PROXY=http://<agent>-gateway:<envoyPort>`; the per-Agent gateway Service routes to the paired gateway pod.
    TLS egress arrives as HTTP CONNECT, plain HTTP in absolute form, forwarded without interception.
+   With a telemetry backend, plain HTTP to the gateway's own address on a reserved OTLP path goes to the collector instead, with no egress check, since it reaches nothing else (see [observability](observability.md#agent-export)).
 2. Envoy's outer listener (reach gated by NetworkPolicy) stamps the trusted attribution header on every request it forwards, or strips it where no telemetry backend is configured; either way the agent cannot supply its own (see [observability](observability.md)).
    CONNECT it terminates, routing the inner stream into an internal listener that reads SNI.
 3. Per-host filter chains terminate TLS with the leaf cert, run the credential injector(s) to add the configured header(s) (or rewrite `?<param>=<value>` into the URL — see below), then forward to a per-chain cluster pinned to the host (explicit upstream SNI, SAN-bound TLS validation).
@@ -63,9 +64,11 @@ Only hard failures count: a gateway that is starting, rolling, hibernated or par
 **Rotation.** A credential rewritten in place — a rotation, or a refreshed OAuth token — needs no roll: Envoy watches the mounted SDS and credentials files and swaps the new value in.
 The kubelet, though, rewrites a mounted Secret only when it syncs the pod, which on its own happens about once a minute.
 So the controller watches the credential Secrets the api-server writes, keeping their metadata only, and on a change reconciles that owner's Agents.
-The reconcile stamps the gateway pod with an annotation derived from the resource versions of the credential Secrets it mounts; a changed annotation makes the kubelet sync the pod at once, and the new value is in use within seconds.
-The annotation carries no credential, the pod's spec and its StatefulSet's template stay unchanged so nothing restarts, and the gateway gains no access to the API.
-If the stamp fails, or the kubelet syncs before its own copy of the Secret has caught up, the periodic sync still delivers the value within about a minute.
+The reconcile stamps the gateway pod with an annotation derived from the resource versions of the credential Secrets it mounts; a changed annotation makes the kubelet sync the pod at once.
+That sync can come before the kubelet's own copy of the Secret has the new version, so the reconcile comes back about five seconds later and stamps a second annotation with the same revision, which syncs the pod once more.
+The new value is therefore in use within about ten seconds.
+The annotations carry no credential, the pod's spec and its StatefulSet's template stay unchanged so nothing restarts, and the gateway gains no access to the API.
+If both stamps fail, the periodic sync still delivers the value within about a minute and a half, the upper bound of the pickup time.
 
 A host's L7 chain can opt into HTTP/2 so credential injection also covers gRPC request streams (e.g. Modal); hosts default to HTTP/1.1 unchanged.
 
@@ -97,7 +100,8 @@ A request naming no Connection on a contested scope is refused by that same step
 The gate reads the path with the prefix removed, so egress rules and approvals keep naming real paths.
 
 **Model-provider chains.** A chain whose credential comes from a model-provider Connection also carries the spend meter, directly after the address step and before the gate.
-On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, and sends a spend record per call to the api-server.
+On such a chain the gateway gives each call an id the agent cannot set, removes the request's compression offer so that the reply stays readable, reads the usage in the reply without changing it, records the session and harness that the Model Router stamped, and sends a spend record per call to the api-server.
+On every chain, the gateway removes that stamp before the request leaves.
 The depth is on [spend-limits](spend-limits.md).
 
 ## Request signing
@@ -128,3 +132,43 @@ The profiles the platform writes already carry that setting ([connections](conne
 Rotation needs no roll: the signing step watches the mounted credentials file, and a key pair rewritten in place by the Connections context — after it has re-proven the new keys against the endpoint — is in use within seconds, as any credential rewritten in place is (**Rotation**, above), with the agent's placeholders untouched.
 Adding or removing the credentials file is a configuration change and rolls the gateway, as an SDS key appearing or vanishing does.
 A credentials file the descriptor names but the Secret lacks, or a signing entry without its region or service, degrades the host to allow-only with a warning rather than rendering an unbootable gateway — the same answer a missing SDS file gets.
+
+## Owner gateway
+
+With `virtualization.gateway.perOwner` on, one gateway pod per owner serves every vm Agent of that owner in place of a gateway pod each.
+It is off by default, and container Agents always keep their own gateway, so everything above holds for both kinds; this section says what differs.
+The trust model it rests on lives on [security-and-credentials](security-and-credentials.md#owner-gateway-identity).
+
+**Identity is the agent's own Service.** Each vm Agent keeps its own gateway Service and ClusterIP, which its machine's allowlist and resolver name, so moving an agent changes no machine spec.
+The controller gives each agent a slot on the owner gateway, a proxy port and a resolver port recorded on that Service, and the Service maps every port it declares onto that slot alone.
+A ClusterIP carries nothing on a port it does not declare (measured on OVN-Kubernetes and k3s), so a guest pinned to its own address reaches only its own listener.
+
+**One Envoy, one listener per agent.** The owner gateway's bootstrap holds only what its agents share: the harness, object store, dynamic forward proxy and collector clusters.
+Each agent's listener, internal listener and clusters, every name suffixed with the agent, are files Envoy watches beside it, along with the Lua bodies the chains read and the leaf's file source.
+Each listener carries exactly that agent's chains, credentials, egress checks, spend meter, attribution and ext_authz destination, rendered as above.
+A change to one agent replaces only its own listener, which drains only its own connections; a file that does not load leaves the last good one serving.
+The whole set must fit one ConfigMap of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
+
+**Harness guard.** The mesh sees one principal for all of the owner's agents, so it cannot keep one agent off a sibling's harness paths.
+Each agent's listener sends the harness authority, by CONNECT or plain HTTP, into a guard that admits only that agent's own path prefix, normalizing the path and refusing escaped slashes first, and refuses anything else with a 403.
+What it admits leaves stamped with the agent's name in a header that every other route of the owner gateway strips, and the agent's harness policy admits the owner principal only with that header naming the agent.
+A request that reaches the harness address by another spelling, outside the guard, therefore carries no name and is refused at the waypoint.
+
+**Credentials and leaf.** The controller copies the keys the gateway reads, from every Secret granted to any of the owner's vm Agents, into one per-owner Secret, each key prefixed with its Secret's name; a Secret not granted, or another owner's, never enters it.
+The controller writes it only when its content changes, so a grant, a revocation or a rotation reaches the mounted files without a restart.
+Its pod is stamped twice per content hash of that Secret, as an agent's own gateway pod is per revision (**Rotation**, above), so a rotation is in use as soon.
+One leaf names every host any of the agents intercepts, from the same issuer, so a machine's CA is unchanged.
+The resolver is one CoreDNS with one block per agent's resolver port, each answering with that agent's ClusterIP and reading its file again on change.
+
+**Readiness.** An agent's listener answers the gateway health path with a revision of what was rendered for it.
+An agent moves onto the owner gateway only once the owner pod answers its revision; after the move its gateway readiness is that probe through its own Service, a stale listener reads as starting, and a failing owner pod gives every agent it serves that pod's failure.
+Once moved, the agent's own gateway pod and the objects around it are removed.
+Turning the flag off, or a refused owner, renders them again, and each agent moves back once its own gateway pod is ready.
+Until then its policies still admit the owner gateway and the owner gateway still renders it, so its grants stay current; the owner gateway goes once no agent is left on it.
+The controller renders the owner gateway after the runner call, so a machine's start never waits for it.
+
+**Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
+The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.
+The old pod sleeps out most of its grace before Envoy is signalled, serving the streams it holds while the new one takes new connections.
+Only a template change (an image, the install's trust settings) rolls it, paced across owners by the same roll width as runner rolls (`rollout.maxConcurrent` runners, or `rollout.maxConcurrentPercent` of them); listener, credential and leaf changes never do.
+A gateway already mid-roll holds one of the width's places, so a later template change replaces its stuck target in the place it holds rather than taking another: a fleet that shrinks under a stalled roll — owners removed, the share falling below the gateways stuck on it — still takes a corrective change, where counting its peers alone would leave every one of them blocked.

@@ -62,7 +62,7 @@ export function SandboxSetupSection({ agent }: { agent: AgentView }) {
               !(await showConfirm(
                 "Changing the size restarts the agent — in-flight work is interrupted.",
                 "Restart agent?",
-                { confirmLabel: "Resize & restart" },
+                { confirmLabel: "Resize and restart" },
               ))
             )
               return;

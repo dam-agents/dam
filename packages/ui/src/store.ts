@@ -20,10 +20,6 @@ import {
 } from "./modules/features/store.js";
 import { createFilesSlice, type FilesSlice } from "./modules/files/store.js";
 import {
-  createGettingStartedSlice,
-  type GettingStartedSlice,
-} from "./modules/getting-started/store.js";
-import {
   createInvocationsSlice,
   type InvocationsSlice,
 } from "./modules/invocations/store.js";
@@ -65,6 +61,7 @@ import {
   createSidePanelSlice,
   type SidePanelSlice,
 } from "./modules/sessions/store/side-panel.js";
+import { createSpendSlice, type SpendSlice } from "./modules/spend/store.js";
 
 export type PlatformStore = DialogSlice &
   A2uiSlice &
@@ -82,7 +79,7 @@ export type PlatformStore = DialogSlice &
   ProcessesSlice &
   ChangesSlice &
   SidePanelSlice &
-  GettingStartedSlice;
+  SpendSlice;
 
 export const useStore = create<PlatformStore>()((...a) => ({
   ...createDialogSlice(...a),
@@ -101,7 +98,7 @@ export const useStore = create<PlatformStore>()((...a) => ({
   ...createProcessesSlice(...a),
   ...createChangesSlice(...a),
   ...createSidePanelSlice(...a),
-  ...createGettingStartedSlice(...a),
+  ...createSpendSlice(...a),
 }));
 
 let draftSyncStarted = false;

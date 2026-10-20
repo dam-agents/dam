@@ -37,7 +37,9 @@ The tools are the way to delegate: for one hand-off, for a fan-out, and for any 
 
 1. **Choose what it runs on — do not guess.** Call `list_harnesses` and `list_connections` and show the human what is available.
    If it is not obvious which to use, **ask them**.
-   The model needs nothing: the sub-agent runs on the subagent model the user set for this session (a `model` you pass is then ignored), else on *your* model provider.
+   `list_harnesses` names the provider each harness would run on, or the provider this agent lacks for it: tell the user what to attach rather than spawning there.
+   The model needs nothing: a sub-agent on your own harness runs on this session's model and settings, any other on the harness's default model.
+   When the user set this session's platform sub-agents to a harness, model, mode or effort, those bind: a `harness` you omit is that one, another is refused, and the spawn result names what was set.
 2. **Spawn.** Call `spawn_subagent` with `needs` (from step 1), `prompt`, `schema` (JSON Schema, e.g. `{"type": "integer"}`) and `harness`, plus any setup option from the table below and, to pick the model, `model`, `mode` and `configOptions` as in "Choose the model per spawn".
    Never pick a model through `env`: the platform then records no harness config and runs none of its checks.
    It returns the sub-agent id at once.
@@ -75,7 +77,7 @@ Examples below are Python; the JS names are the camelCase equivalents (`listImag
 - **Look first** — run `d.list_images()` and `d.list_connections()` and show the human what is available, as with the tools.
 - **What it runs on** — `harness=` one of `claude-code`, `codex`, `pi`, `bob`, on that harness's default image and size.
   `image="<full ref>"` runs a custom image instead, with `harness` saying which harness is inside it; prefer `seed` and `install` below over building an image.
-- **Model** — your model provider, which the harness must be able to run on, and the harness's default model unless you pick one (see "Choose the model per spawn").
+- **Model** — one of your model providers that the harness runs on, and the harness's default model unless you pick one (see "Choose the model per spawn").
 - **Connections** — only your own grants, for what the task needs beyond the model; its network access follows your egress rules, so what you can reach, it can reach.
 
 ## Quickstart: a sub-agent that returns a single integer
@@ -161,7 +163,7 @@ Tier names such as `haiku` or `sonnet` are not models and are refused.
 
 - **A model the harness does not list on this agent is refused before the sub-agent exists**, naming the listed ones.
   A provider that serves no model to the target harness (the Anthropic subscription on `codex`) is refused the same way.
-- **When the session has a subagent model setting, every sub-agent runs on it**, whatever the spawn names; a harness that cannot run it is refused, so spawn on one that lists it or clear the setting.
+- **When the user set a model for this session's platform sub-agents, every sub-agent runs on it**, whatever the spawn names; if the harness does not list it, ask the user to change the setting.
 - **Check the model the sub-agent reports** when the choice matters, for example when you compare models or cost.
   Try a new name with a short `ttl_ms`.
 - **Leave `mode` unset** unless you know the harness.

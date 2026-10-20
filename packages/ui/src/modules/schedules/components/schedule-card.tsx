@@ -1,10 +1,4 @@
-import {
-  ChevronDown,
-  ChevronUp,
-  Launch,
-  Time,
-  WarningAlt,
-} from "@carbon/icons-react";
+import { ChevronDown, ChevronUp, Time, WarningAlt } from "@carbon/icons-react";
 
 import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
@@ -26,7 +20,7 @@ import {
 import { useScheduleEditGuard } from "../hooks/use-schedule-edit-guard.js";
 import { scheduleOnceState } from "../lib/once-schedule.js";
 import {
-  lastRunStatus,
+  cardOutcome,
   precheckAlert,
   runNowConfirmText,
   runNowStartedText,
@@ -64,10 +58,7 @@ export function ScheduleCard({
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
   const stopReason = enabled ? status?.stopReason : undefined;
   const onceState = scheduleOnceState(schedule);
-  const onceOutcome =
-    onceState && onceState !== "pending"
-      ? lastRunStatus(status?.lastResult)
-      : null;
+  const outcome = cardOutcome(schedule);
 
   const handleEdit = () => void guardEdit(schedule, sandboxName, onEdit);
 
@@ -75,7 +66,7 @@ export function ScheduleCard({
     if (
       await showConfirm(
         "It stops running and cannot be recovered.",
-        `Delete ${name}?`,
+        `Delete “${name}”?`,
         { kind: "destructive", confirmLabel: "Delete schedule" },
       )
     )
@@ -154,11 +145,14 @@ export function ScheduleCard({
                 </span>
               </>
             )}
-            {onceOutcome && (
+            {outcome && (
               <>
                 <span aria-hidden>·</span>
-                <span className={cn("truncate", onceOutcome.className)}>
-                  {onceOutcome.label}
+                <span
+                  className={cn("truncate", outcome.className)}
+                  title={outcome.label}
+                >
+                  {outcome.label}
                 </span>
               </>
             )}
@@ -191,7 +185,7 @@ export function ScheduleCard({
         </div>
 
         <Button variant="outline" size="sm" onClick={onViewResults}>
-          <Launch size={14} /> View results
+          View results
         </Button>
 
         {onceState === null && (
@@ -200,7 +194,7 @@ export function ScheduleCard({
             onCheckedChange={(checked) =>
               toggleSchedule.mutate({ id, enabled: checked })
             }
-            label={enabled ? "Disable schedule" : "Enable schedule"}
+            label="Schedule enabled"
           />
         )}
 

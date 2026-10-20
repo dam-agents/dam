@@ -32,13 +32,12 @@ export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 export type Route =
   | { view: "home" }
   | { view: "chat"; agent: string; session?: string }
-  | { view: "settings"; settingsTab: SettingsTab }
+  | { view: "settings"; settingsTab: SettingsTab; period?: string }
   | { view: "terms" }
   | { view: "telegram-bind" }
   | { view: "slack-bind" }
   | { view: "sandbox-home"; agentId: string; sandboxSection: SandboxSection }
   | { view: "starter-kit"; catalog: string; kit: string }
-  | { view: "artifacts" }
   | { view: "analytics" }
   | { view: "not-found"; path: string };
 
@@ -73,6 +72,7 @@ export const RETIRED_PATHS = new Set([
   "/experiments/new",
   "/agents/new",
   "/starter-kits",
+  "/artifacts",
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
@@ -80,7 +80,14 @@ const sandboxHomeRe = new RegExp(
   `^/sandboxes/([^/]+)(?:/(${sandboxSectionPattern}))?$`,
 );
 
-export function parseRoute(path: string): Route {
+const PERIOD_PARAM = "period";
+
+function usagePeriodOf(search: string): { period?: string } {
+  const period = new URLSearchParams(search).get(PERIOD_PARAM);
+  return period ? { period } : {};
+}
+
+export function parseRoute(path: string, search = ""): Route {
   if (path === "/") return { view: "home" };
   const chatMatch = path.match(/^\/chat\/([^/]+)(?:\/([^/]+))?\/?$/);
   if (chatMatch) {
@@ -94,13 +101,18 @@ export function parseRoute(path: string): Route {
   const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
   if (settingsMatch) {
     const tab = settingsTabSchema.safeParse(settingsMatch[1]);
-    if (tab.success) return { view: "settings", settingsTab: tab.data };
+    if (tab.success) {
+      return {
+        view: "settings",
+        settingsTab: tab.data,
+        ...(tab.data === "usage" ? usagePeriodOf(search) : {}),
+      };
+    }
   }
   if (path === "/terms") return { view: "terms" };
   if (path === "/telegram/bind") return { view: "telegram-bind" };
   if (path === "/slack/bind") return { view: "slack-bind" };
   if (RETIRED_PATHS.has(path)) return { view: "home" };
-  if (path === "/artifacts") return { view: "artifacts" };
   if (path === "/analytics") return { view: "analytics" };
   const sandboxHomeMatch = path.match(sandboxHomeRe);
   if (sandboxHomeMatch) {
@@ -134,10 +146,13 @@ export function routeToPath(route: Route): string {
         ? `${base}/${encodeURIComponent(route.session)}`
         : base;
     }
-    case "settings":
-      return route.settingsTab === "account"
-        ? "/settings"
-        : `/settings/${route.settingsTab}`;
+    case "settings": {
+      if (route.settingsTab === "account") return "/settings";
+      const base = `/settings/${route.settingsTab}`;
+      return route.settingsTab === "usage" && route.period
+        ? `${base}?${new URLSearchParams({ [PERIOD_PARAM]: route.period })}`
+        : base;
+    }
     case "terms":
       return "/terms";
     case "telegram-bind":
@@ -152,8 +167,6 @@ export function routeToPath(route: Route): string {
     }
     case "starter-kit":
       return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
-    case "artifacts":
-      return "/artifacts";
     case "analytics":
       return "/analytics";
     case "not-found":
@@ -169,6 +182,7 @@ export function routeToNavigationState(route: Route): {
   view: View;
   agentId: string | null;
   settingsTab: SettingsTab;
+  usagePeriod: string | null;
   sandboxSection: SandboxSection;
   starterKitCatalog: string | null;
   starterKitId: string | null;
@@ -179,6 +193,7 @@ export function routeToNavigationState(route: Route): {
     starterKitCatalog: route.view === "starter-kit" ? route.catalog : null,
     starterKitId: route.view === "starter-kit" ? route.kit : null,
     settingsTab: route.view === "settings" ? route.settingsTab : "account",
+    usagePeriod: route.view === "settings" ? (route.period ?? null) : null,
     sandboxSection:
       route.view === "sandbox-home" ? route.sandboxSection : "setup",
   };

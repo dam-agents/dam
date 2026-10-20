@@ -1,8 +1,7 @@
-import { Bot, Close, Locked } from "@carbon/icons-react";
+import { Bot, Locked } from "@carbon/icons-react";
 import type { DelegationNode } from "api-server-api";
 import { useMemo } from "react";
 
-import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
@@ -10,6 +9,8 @@ import { framesToMessages } from "../../acp/frames-to-messages.js";
 import { useAgentsList } from "../../agents/api/queries.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { ChatMessage } from "../../sessions/components/chat-message.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
+import { useTurnSpend } from "../../spend/api/queries.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import {
   useDelegationTranscript,
@@ -62,15 +63,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => close(null)}
-        >
-          <Close size={16} />
-        </Button>
+        <SidePanelCloseButton onClose={() => close(null)} />
       </div>
       {node ? (
         <PanelBody
@@ -106,9 +99,11 @@ function PanelBody({
     driverAgentId,
     ids,
     telemetryEnabled,
-    node.status === "running",
+    [node],
   );
   const turn = telemetry?.available ? telemetry.turns[node.id] : undefined;
+  const spendTurns = useMemo(() => (turn ? [turn] : []), [turn]);
+  const { data: turnSpend } = useTurnSpend(node.id, null, spendTurns);
   const finished = node.status !== "running";
   const transcript = useDelegationTranscript(
     driverAgentId,
@@ -130,6 +125,7 @@ function PanelBody({
             agentId={driverAgentId}
             invocationId={node.id}
             turn={turn}
+            spend={turnSpend?.get(turn.turnId)}
             className="w-full"
           />
         )}

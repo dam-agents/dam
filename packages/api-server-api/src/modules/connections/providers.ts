@@ -46,7 +46,6 @@ function liteLlmEnvMappings(
   return [
     { envName: "ANTHROPIC_AUTH_TOKEN", placeholder: "sk-dummy-placeholder" },
     { envName: "ANTHROPIC_BASE_URL", placeholder: baseUrl },
-    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "OPENAI_PROXY_URL", placeholder: baseUrl },
     ...Object.entries(proxy).map(([key, placeholder]) => ({
       envName: `OPENAI_PROXY_${key}`,
@@ -100,6 +99,7 @@ export function curveBenderEnvMappings(): EnvMapping[] {
       envName: "ANTHROPIC_DEFAULT_SONNET_MODEL",
       placeholder: "rits/nvidia/NVIDIA-Nemotron-3-Ultra-550B-A55B-NVFP4",
     },
+    { envName: "CLAUDE_CODE_DISABLE_EXPERIMENTAL_BETAS", placeholder: "1" },
     { envName: "CLAUDE_CODE_AUTO_MODE_SERVER", placeholder: "0" },
     { envName: "ENABLE_TOOL_SEARCH", placeholder: "false" },
     { envName: "CLAUDE_CODE_MAX_CONTEXT_TOKENS", placeholder: "256000" },
@@ -228,13 +228,13 @@ export const PROVIDERS = {
     modes: [
       {
         key: "oauth",
-        label: "OAuth Token",
+        label: "OAuth token",
         templateId: "anthropic-oauth",
         tokenPrefix: "sk-ant-oat",
       },
       {
         key: "api-key",
-        label: "API Key",
+        label: "API key",
         templateId: "anthropic",
         tokenPrefix: "sk-ant-api",
         isDefault: true,
@@ -245,32 +245,32 @@ export const PROVIDERS = {
     id: "ibm-litellm",
     alias: "ibm",
     displayName: "IBM ETE LiteLLM Proxy",
-    modes: [{ key: "api-key", label: "API Token", templateId: "ibm-litellm" }],
+    modes: [{ key: "api-key", label: "API token", templateId: "ibm-litellm" }],
   },
   "curve-bender": {
     id: "curve-bender",
     alias: "cb",
     displayName: "IBM ETE LiteLLM CurveBender",
-    modes: [{ key: "api-key", label: "API Token", templateId: "curve-bender" }],
+    modes: [{ key: "api-key", label: "API token", templateId: "curve-bender" }],
   },
   openai: {
     id: "openai",
     alias: "openai",
     displayName: "OpenAI",
-    modes: [{ key: "api-key", label: "API Key", templateId: "openai" }],
+    modes: [{ key: "api-key", label: "API key", templateId: "openai" }],
   },
   bob: {
     id: "bob",
     alias: "bob",
     displayName: "Bob Shell",
-    modes: [{ key: "api-key", label: "API Key", templateId: "bob" }],
+    modes: [{ key: "api-key", label: "API key", templateId: "bob" }],
   },
   bedrock: {
     id: "bedrock",
     alias: "bedrock",
     displayName: "AWS Bedrock",
     modes: [
-      { key: "api-key", label: "API Key", templateId: BEDROCK_TEMPLATE_ID },
+      { key: "api-key", label: "API key", templateId: BEDROCK_TEMPLATE_ID },
     ],
   },
   platform: {

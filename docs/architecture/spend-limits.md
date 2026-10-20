@@ -1,16 +1,16 @@
 # Spend limits
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
 DAM measures the spend of each model call in the agent's own gateway, for every harness and every provider dialect.
 This number is Metered Spend: the agent cannot change it, because the meter runs only in parts that the agent does not control.
-The spend that a harness reports through telemetry ([metrics](metrics.md)) stays for display only.
+Every spend figure on the screens and in an agent's own cost report reads it; the spend that a harness reports through telemetry ([metrics](metrics.md)) serves only the earlier estimates.
 
 The parts:
 
-- **The meter**, in the agent's paired gateway pod ([credential-gateway](credential-gateway.md)), reads the usage in each provider reply and sends one spend record per call to the api-server.
+- **The meter**, in the agent's paired gateway pod, or in its own listener on an [owner gateway](credential-gateway.md#owner-gateway), reads the usage in each provider reply and sends one spend record per call to the api-server.
 - **The api-server** receives the records on the same per-agent port that answers the gateway's ext_authz checks, so a record is tied to its agent the same way a check is ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
 The api-server prices each record when it arrives ([Prices](#prices)) and keeps the daily ledger ([Ledger](#ledger)).
@@ -42,6 +42,8 @@ The Connection is the one that the request named, else the chain's only model-pr
 An address that names no Connection of the chain counts as no address, so a false address cannot hide a call.
 When the chain has several model-provider Connections and the request names none, the meter names all their providers and no Connection.
 The meter keeps these facts in the call's gateway metadata, out of the agent's reach, and the gateway hands them to the ext_authz check, so the gate and the ledger see the same call.
+The meter also copies the session and the harness that the [Model Router](harness-config.md#the-model-router) stamps on the call, when each is at most 128 characters of printable ASCII.
+The stamp comes from the agent's pod, so it serves display only; the gateway removes it before the provider, on every chain.
 The meter also removes the request's compression offer, because a compressed reply cannot be read as it passes.
 It notes the path without the query and without a Connection address prefix, the API dialect of the path, and whether the path is billable.
 Billable paths are the model calls: Anthropic Messages, OpenAI Chat Completions, legacy Completions, Responses and Embeddings, and the Bedrock invoke and converse calls, streamed or not.
@@ -59,7 +61,7 @@ It keeps the raw counts with the dialect and leaves their meaning to pricing: in
 
 **The record.** The gateway sends spend records over a gRPC access log to the agent's ext-authz Service, the address that only this agent's gateway can reach.
 A record names the payer, which is the root driver for an Invocation target, and the Connection and providers that the meter named on the request.
-It carries the reply size, the proxy's own cost figure when the reply has one, and whether the reply ended with its format's end event.
+It carries the session and the harness of the stamp, the call's duration, the reply size, the proxy's own cost figures when the reply has them, and whether the reply ended with its format's end event.
 A reply that stops early keeps the counts read so far and is not marked complete.
 
 **Periodic records.** While a call runs, the gateway also sends a periodic record of the same call every 2 seconds, with the counts so far.
@@ -97,7 +99,9 @@ On the Anthropic API, fast mode and US-only inference multiply the token prices 
 Costs are whole micro-units of the Connection's unit, rounded up.
 
 **When a cost is fixed.** DAM prices a call when its record arrives and stores that cost, so a later price change alters neither the history nor a limit.
-When a reply carries a proxy cost figure above zero, DAM compares it with its own cost and logs a large difference, which shows an operator price that is wrong or old.
+DAM compares its cost with the proxy's own cost of a call and logs a large difference, which shows an operator price that is wrong or old.
+The proxy's cost is IBM LiteLLM's response cost when it is above zero, else its original cost less the discount plus the margin, the order in which LiteLLM applies them.
+Only a completed dollar call with no cache read and no cache write is compared, because the proxy's figure leaves out cached tokens.
 
 **Updating prices.** The Anthropic table changes only through a reviewed update to a newer pinned version of LiteLLM's list, which the regular dependency update proposes.
 The update stops when a copied price lacks one of its token prices, so a broken upstream list never reaches DAM.
@@ -114,8 +118,35 @@ A call without a Connection keeps its cost under an unknown Connection, so it st
 **Who pays.** A call counts for its payer and the payer's owner, on the UTC day the call started.
 So a sub-agent's calls count for its root driver.
 
-**Daily rollup.** Postgres keeps one row per day, payer, Connection and model: the cost, the token counts, the web searches, the counts of calls, estimated calls and refused calls, and the most expensive single call.
+**Daily rollup.** Postgres keeps one row per day, payer, Connection, model, Session and calling agent: the cost, the token counts, the web searches, the model time, the counts of calls, estimated calls and refused calls, and the most expensive single call.
+The calling agent is the agent whose gateway sent the record, so a sub-agent's calls count for its root driver and still show as its own.
 A row outlives its agent, so the spend of a deleted agent still counts for its owner.
+
+**Session check.** The Session comes from the stamp in the agent's pod, so it serves display only, and no total and no limit depends on it.
+A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
+Bob sends no `X-Task-Id` on the first call of a new task, which asks for the model `background`, so the Model Router stamps no Session on that call and it counts as no Session.
+The totals and the limits of that call stay correct, because they do not read the Session.
+The agent's own pod writes the directory, so the check stops stray and wrong ids, not a deliberate agent: such rows stay under that agent's own spend.
+The check keeps a Session that it found for ten minutes and never keeps a miss, because a new Session's report can arrive after its first call.
+
+**Call rows.** Postgres also keeps one row per call: the calling agent, the Session, the start time, the unit and the cost.
+The ingest writes it once, when the call is settled by its final record or by an estimate, and a real record that arrives later overwrites the estimate.
+It serves only the cost of each turn, in the chat and in `dam telemetry`, which sums the calls of a Session that start inside the turn; no total and no limit reads it.
+A periodic job deletes rows older than 30 days, the window from which the chat and `dam telemetry` read turns.
+
+**Measuring start.** Postgres keeps one moment, T: the start of the measured spend on this deployment.
+A migration sets it once and never changes it.
+When the rollup already has rows, T is 00:00 UTC of the first day in it; else T is the time of the upgrade.
+The screens read T to say since when the spend is measured, to mark the days before T as not measured, and to show the notice about the change for 30 days after T.
+The api-server reads T once and keeps it.
+
+**Grouped read.** The screens read the rollup grouped by day, payer, Connection, model, Session, calling agent and unit, for at most 366 days.
+The api-server folds the rows into totals per unit, the model time, and spend by day, agent, model, Connection, session type and calling agent.
+A call whose calling agent is not its payer counts as a sub-agent's; other calls take their Session's kind from the directory.
+The read for one agent counts the calls that it pays for, so a driver's figures include its sub-agents; for a sub-agent, it counts the calls that the sub-agent made.
+
+**Spend per Session.** For one agent, the api-server sums the calls that the agent made per Session, newest first, and adds to each Session the calls of the sub-agents spawned from it at any depth, also as a part of its own.
+A sub-agent whose spawn recorded no Session ([invocations](invocations.md)) adds its spend to no Session.
 
 **Day counters.** Redis keeps the day's totals per payer and unit, per owner and unit, and per payer and Connection, so the limit check reads no database.
 A missing counter, for example after a Redis restart, is rebuilt from the rollup, and a counter that fails to update is dropped so that the next read rebuilds it.
@@ -138,6 +169,8 @@ DAM counts high and marks a call estimated when its usage is missing or unsure:
   The gate notes each metered call when it starts.
   Sixty minutes later, a periodic sweep finishes a call that has only periodic records from its last counts, and counts a call with no record as the payer's most expensive call on that Connection that day, else in the last seven days, else at nothing with a warning.
   A real record that arrives later corrects the estimate.
+
+An estimated call keeps the Session and the calling agent of its stamp, and the gate's own row for a refused call keeps them too.
 
 **Shutdown.** A stopping api-server takes no new streams, ends every open record stream with a success status so that each gateway reconnects to another replica and loses no record, and gives the open calls twenty seconds before it closes the port.
 
@@ -258,23 +291,66 @@ It has no tool to set, clear or continue a limit.
 
 ## Screens
 
-The owner sets each limit where the work happens, and each limit shows its metered spend, what is left, and a meter:
+The owner sets each limit where the work happens.
+The agent limit and the own limit each show in a "Daily spend limit" card.
+A help tip on its title tells which calls the limit counts.
+A button opens a small dialog to set the limit or remove it: "Set a limit" when no limit is set, else "Change".
+Without a limit, the card gives today's paid spend and "No limit".
+With a limit, it gives the spend against the limit, what is left, and a meter.
+A line under the meter shows only when it matters: when the spend is close to the limit, when the limit is reached and until when paid calls stop, and how often the owner continued today.
+The last line gives the local time at which the day resets.
+A Connection limit uses the same parts in the Connection's unit: a title with a help tip, the button, the spend against the limit or "No limit", the meter and state line, and the reset time.
+The screens:
 
-- **The agent's page:** the Usage section sets the agent limit and shows today's Metered Spend and when the day resets, in the user's own time.
+- **The agent's page:** the Usage section starts with the card for the agent limit, which counts the paid calls of the agent and its sub-agents.
+  The card also gives today's spend in the other units and how many calls are high estimates.
   When the own limit or the ceiling stops the agent first, it says so.
-  It tells the user which of the agent's providers the agent limit does not count, and an agent with only the Claude subscription or Bob gets no agent limit field, only a pointer to its Providers section.
+  It tells the user which of the agent's providers the agent limit does not count.
+  An agent with only the Claude subscription or Bob gets no button: its card gives today's spend in that unit and points to its Providers section.
   The agent's summary shows today's spend in each unit and the limit.
+  Below the card, the section shows the same measured view as the Settings tab, for the spend that the agent pays, so the spend of the sub-agents that it started is included.
+  A sub-agent's card shows only the note about its root driver.
 - **The agent's Providers section:** each granted Connection that takes a limit sets its Connection limit there, in the Connection's unit, next to today's spend on that Connection.
   It explains the subscription value and Bobcoins, and that only this limit stops calls on such a Connection; a Connection that takes no limit says why.
-- **Settings, Usage tab:** the same spend view as on Home, the own limit, and the ceiling with its state when one applies.
-- **Home:** the spend widget shows the dollar Metered Spend of today or of the last 7, 30 or 365 UTC days, the top agents, and today's own limit when one is set.
-  It does not need the telemetry store.
+- **Settings, Usage tab:** the card for the own limit comes first, under the metering notice.
+  When the user has a ceiling, the card also shows it as the spend ceiling, without a button, and says until when paid calls stop when it is reached.
+  Below the card, a period picker keeps its period in the URL.
+  It has presets, arrows that step one period of the same kind, and a calendar with week numbers for a custom range of up to 366 UTC days; the days before T are struck out.
+  The calendar gives the local time at which a day starts.
+  Below it are the paid Metered Spend with the same date range as on Home, the spend by day (by week above 62 days), the counts of calls and tokens, the sum of call times, and the spend by agent, model and provider.
+  Under the total, a line gives the subscription value when the checkbox is on, and a line tells when the subscriptions covered more than the user paid.
+  Bobcoins get their own line, which says that they are not in the total.
+  A provider without a price shows "Not priced", and a free provider shows "No cost".
+  For 30 days after T, and only when the telemetry store is on, a link opens the earlier estimates: the old view of the spend that each agent reported about itself.
+- **Home:** the spend card shows the paid Metered Spend in dollars for Today, This month or Last month, in UTC days.
+  Its help text gives the local time at which a day starts.
+  The date range under the total starts at T when the period starts before T.
+  While the period runs, the range ends at today and says "so far".
+  A period wholly before T shows no total.
+  The card keeps one height for each period and checkbox state, so it has one reserved line under the range.
+  When the checkbox "Show what subscriptions cover" is on, this line gives the subscription value at API prices.
+  When the checkbox is off, this line tells when the subscriptions covered more than the user paid.
+  The checkbox also adds the subscription value to the bars of the top agents, never to the total.
+  The browser keeps the choice for Home and for the Usage pages.
+  The card shows no own limit and no Bobcoins; Settings › Usage shows both.
+  "Usage details" opens Settings › Usage with the same period.
+  The card does not need the telemetry store.
+- **The metering notice:** for 30 days after T, a user who had an agent before T sees a notice about the change.
+  It shows above the cards on Home and at the top of Settings › Usage.
+  When the user hides it, it goes from both places, in that browser only.
+  The tooltip of its close button says so, and says that the earlier estimates stay on Settings › Usage while they are open.
 
 A meter takes the warning colour at 80% of its limit and the danger colour when the limit is reached.
 A sub-agent's page sets no limit: its spend counts for its root driver, so the page names the root driver instead.
 A spend-limit question shows on Home with "Continue" and "Stop for today"; Home's "Deny all" leaves it out, because a deny there stops the agent for the day.
-Every surface uses the same names: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, and the spend ceiling that the operator sets.
-The Claude subscription's unit shows as "subscription value", in dollars.
+The surfaces name four limits: the agent spend limit, the user's spend limit for all agents, a Connection's spend limit, and the spend ceiling that the operator sets.
+Every surface calls the ceiling the spend ceiling; its help tip says that the operator sets it.
+The Claude subscription's unit shows in dollars as "covered", for example "covered by subscriptions today" in a Connection limit; the help tips call it the subscription value at API prices.
 In the chat, a refused call shows as "Spend limit reached" or "Spend ceiling reached" with what to do and the local reset time; the harness's own error text stays below it as detail.
 Every text that a person reads gives the reset in that person's own time, on the screens, in the CLI and in the channel notices; texts for agents give it in UTC.
-The rest of the Usage pages still shows the spend that the harnesses report ([metrics](metrics.md)).
+**Per Session and per turn.** Each Session in the sidebar shows its Metered Spend: paid dollars, else the plan use as "covered", else Bobcoins.
+The figure includes the sub-agents spawned from that Session, and its tooltip names their part.
+The Usage pages also show the sum of call times and the spend by session type, with a "Sub-agents" row for the calls of sub-agents and a "No session" row for calls with no Session.
+A driver's Usage section lists the driver and each sub-agent that spent in the period, and a sub-agent's own Usage section shows the calls that it made.
+The line under each chat turn shows the measured cost of the calls that started in that turn, from the call rows.
+Its tooltip tells that the agent reports the time, calls and tokens without cached tokens, and that DAM measures the cost with cached tokens and without sub-agents.

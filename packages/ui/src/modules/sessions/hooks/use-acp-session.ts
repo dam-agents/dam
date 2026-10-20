@@ -43,12 +43,14 @@ import {
 } from "../api/queries.js";
 import { draftKey } from "../lib/draft-key.js";
 import { createPromptDelivery } from "../lib/prompt-delivery.js";
+import { rewrittenThread } from "../lib/rewrite-messages.js";
 import { readUndelivered } from "../lib/undelivered-store.js";
 import type { RewriteMode } from "../store/sessions.js";
 import { useAcpConnection } from "./use-acp-connection.js";
 import { type SendPromptOptions, useAcpPrompt } from "./use-acp-prompt.js";
 import { useAcpSessionEngagement } from "./use-acp-session-engagement.js";
 import { useAcpUpdateHandler } from "./use-acp-update-handler.js";
+import { useTakeBackPrompt } from "./use-take-back-prompt.js";
 
 async function classifyResumeFailure(
   agentId: string,
@@ -372,23 +374,7 @@ export function useAcpSession(
       )) as { sessionId: string };
       bindEngagement(result.sessionId);
       setSessionId(result.sessionId);
-      setMessages((prev) => [
-        ...prev.slice(0, at),
-        {
-          id: promptId,
-          role: "user",
-          parts,
-          streaming: false,
-          at: new Date().toISOString(),
-        },
-        {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          parts: [],
-          streaming: true,
-          promptId,
-        },
-      ]);
+      setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
       useStore.getState().setRewriting(null);
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(selectedAgent),
@@ -396,6 +382,13 @@ export function useAcpSession(
     },
     [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
   );
+
+  const takeBackPrompt = useTakeBackPrompt({
+    selectedAgent,
+    stopAgent,
+    ensureLive,
+    bindEngagement,
+  });
 
   const sendPrompt = useCallback(
     (
@@ -415,6 +408,7 @@ export function useAcpSession(
     loadOlderMessages,
     sendPrompt,
     rewriteFrom,
+    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
     configureSession,

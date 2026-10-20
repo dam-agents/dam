@@ -3,6 +3,7 @@ import { Time } from "@carbon/icons-react";
 import { Callout } from "@/components/ui/callout";
 import { SectionLabel } from "@/components/ui/section-label";
 import { formatDateTime, timeUntil } from "@/lib/format-time";
+import { cn } from "@/lib/utils";
 
 import type { Schedule } from "../../../types.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
@@ -20,7 +21,7 @@ import {
   clampText,
   declinedSummary,
   formatRunTime,
-  lastRunStatus,
+  runOutcomeLine,
 } from "../lib/schedule-format.js";
 
 function DetailCard({
@@ -56,7 +57,7 @@ export function ScheduleDetails({
         : stopReason
           ? "Stopped"
           : "Paused";
-  const lastStatus = lastRunStatus(status?.lastResult);
+  const outcome = runOutcomeLine(schedule);
   const declined = precheck ? declinedSummary(status ?? undefined) : null;
 
   return (
@@ -114,8 +115,10 @@ export function ScheduleDetails({
                 {declined ? "(never ran)" : "Never run"}
               </span>
             )}
-            {lastStatus && (
-              <span className={lastStatus.className}>{lastStatus.label}</span>
+            {outcome?.resultText && (
+              <span className={cn("break-words", outcome.className)}>
+                {outcome.resultText}
+              </span>
             )}
           </div>
         </DetailCard>

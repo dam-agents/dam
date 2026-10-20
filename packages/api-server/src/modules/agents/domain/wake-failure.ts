@@ -34,22 +34,29 @@ export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.ContainerTerminated,
   TerminationCode.MachineBootFailed,
   TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineImageCacheUnreachable,
   TerminationCode.MachineRunnerUnschedulable,
+  TerminationCode.MachineRunnerNodeLost,
   TerminationCode.RunnerOutOfMemory,
   TerminationCode.MachineStorageFull,
-  TerminationCode.MachineHomeDamaged,
 ]);
 
 export const GATEWAY_FAILURE_REASONS = new Set([
   ...POD_FAILURE_REASONS,
   "StuckOnSupersededRevision",
 ]);
-// UNIT_BOUNDARY_DESCRIPTION: the runner's refusals of a vm machine's start that a wait cannot outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, the guest did not boot, or the disk check at boot refused a damaged disk. A wake fails on one at once rather than at its timeout. An unschedulable runner is left out, because a node can free up or be added while the wake waits. A pull or boot still in progress reads MachineNotReady, so it never matches.
+// UNIT_BOUNDARY_DESCRIPTION: the refusals of a vm machine's start that this wake will not outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, the runner cannot reach the node's image cache, the guest did not boot, or the node holding the owner's runner is gone. A wake fails on one at once rather than at its timeout, the cache refusal with them: it is a member because no wait of this wake's brings the machine up, and a cache that comes back is met by the controller's retry and the next wake, not by this one's waiting. An unschedulable runner is left out, because a node can free up or be added while the wake waits. A pull or boot still in progress reads MachineNotReady, so it never matches.
 export const REFUSED_START_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
   TerminationCode.MachineImageUnavailable,
+  TerminationCode.MachineImageCacheUnreachable,
   TerminationCode.MachineBootFailed,
-  TerminationCode.MachineHomeDamaged,
+  TerminationCode.MachineRunnerNodeLost,
+]);
+
+// UNIT_BOUNDARY_DESCRIPTION: the refusals that come from the node a machine runs on rather than from the image it was asked to boot: the runner cannot reach the node's image cache service, so it boots only the trees its machines already hold and refuses every other image. An image update that meets one holds the upgrade and says so: moving the Agent back would convict an image that starts fine on every other node, and silently drop the upgrade the owner is waiting for.
+export const NODE_FAULT_REASONS: ReadonlySet<string> = new Set([
+  TerminationCode.MachineImageCacheUnreachable,
 ]);
 
 export function classifyWakeFailure(
@@ -147,16 +154,18 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "the agent image reference is invalid";
         case "MachineImageUnavailable":
           return "the agent image is not available";
+        case "MachineImageCacheUnreachable":
+          return "the server running its owner's agents cannot reach its image cache — tell an admin";
         case "MachineBootFailed":
           return "its VM didn't boot";
         case "MachineRunnerUnschedulable":
           return "no server can run it right now — tell an admin";
+        case "MachineRunnerNodeLost":
+          return "the server running its owner's agents is down — tell an admin";
         case "RunnerOutOfMemory":
-          return "its owner's VM agents ran out of memory together and all restarted — disabling agents that aren't in use frees memory";
+          return "its owner's VM agents ran out of memory together and the ones that were running restarted — disabling agents that aren't in use frees memory";
         case "MachineStorageFull":
           return storageFullMessage();
-        case "MachineHomeDamaged":
-          return "its disk has file system errors the check at start could not repair — starting it again may repair them, and its owner can find what else to do on the agent's page";
         default:
           return "the agent crashed while starting";
       }

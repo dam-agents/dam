@@ -39,6 +39,11 @@ import {
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
 import {
+  providerEgressScopes,
+  scopeCovers,
+  type ProviderEgressRequest,
+} from "./domain/provider-egress-scopes.js";
+import {
   createOAuthRefreshLoop,
   type OAuthRefreshLoop,
 } from "./services/oauth-refresh.js";
@@ -142,6 +147,33 @@ export function createGrantedConnectionTemplates(db: Db): {
     async templateOf(agentId, connectionId) {
       const granted = await repo.listConnectionsForAgent(agentId);
       return granted.find((c) => c.id === connectionId)?.templateId ?? null;
+    },
+  };
+}
+
+export function createProviderEgressScopes(db: Db): {
+  covers(agentId: string, request: ProviderEgressRequest): Promise<boolean>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async covers(agentId, request) {
+      const granted = await repo.listConnectionsForAgent(agentId);
+      return providerEgressScopes(granted).some((scope) =>
+        scopeCovers(scope, request),
+      );
+    },
+  };
+}
+
+export function createConnectionNames(db: Db): {
+  namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
+} {
+  const repo = createConnectionsRepository(db);
+  return {
+    async namesOf(ownerSub) {
+      return new Map(
+        (await repo.listByOwner(ownerSub)).map((c) => [c.id, c.name]),
+      );
     },
   };
 }

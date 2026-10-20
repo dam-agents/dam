@@ -15,6 +15,8 @@ import {
   doublePrecision,
   customType,
   unique,
+  smallint,
+  check,
 } from "drizzle-orm/pg-core";
 
 const bytea = customType<{ data: Buffer }>({ dataType: () => "bytea" });
@@ -142,6 +144,7 @@ export const egressRules = pgTable(
       .notNull(),
     status: text("status").notNull().default("active"),
     source: text("source").notNull().default("manual"),
+    presetSource: text("preset_source"),
   },
   (table) => [
     uniqueIndex("egress_rules_lookup_idx")
@@ -749,8 +752,8 @@ export const avatarUnlocks = pgTable(
   ],
 );
 
-export const sidebarAgentPins = pgTable(
-  "sidebar_agent_pins",
+export const sidebarAgentOrder = pgTable(
+  "sidebar_agent_order",
   {
     owner: text("owner").notNull(),
     agentId: text("agent_id").notNull(),
@@ -758,21 +761,7 @@ export const sidebarAgentPins = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.owner, table.agentId] }),
-    index("sidebar_agent_pins_agent_idx").on(table.agentId),
-  ],
-);
-
-export const sidebarSessionPins = pgTable(
-  "sidebar_session_pins",
-  {
-    owner: text("owner").notNull(),
-    agentId: text("agent_id").notNull(),
-    sessionId: text("session_id").notNull(),
-    position: integer("position").notNull(),
-  },
-  (table) => [
-    primaryKey({ columns: [table.owner, table.agentId, table.sessionId] }),
-    index("sidebar_session_pins_agent_idx").on(table.agentId),
+    index("sidebar_agent_order_agent_idx").on(table.agentId),
   ],
 );
 
@@ -945,6 +934,7 @@ export const invocations = pgTable(
       .default(false),
     harnessConfig: jsonb("harness_config"),
     origin: text("origin").notNull().default("script"),
+    driverSessionId: text("driver_session_id"),
     awaitedUntil: timestamp("awaited_until", { withTimezone: true }),
     claimedUntil: timestamp("claimed_until", { withTimezone: true }),
     deliveredAt: timestamp("delivered_at", { withTimezone: true }),
@@ -1017,6 +1007,7 @@ export const attentionRecords = pgTable(
     title: text("title"),
     scheduleId: text("schedule_id"),
     threadTs: text("thread_ts"),
+    harness: text("harness"),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull(),
     activityAt: timestamp("activity_at", { withTimezone: true }),
     seenAt: timestamp("seen_at", { withTimezone: true }),
@@ -1084,6 +1075,8 @@ export const spendDaily = pgTable(
     payerAgentId: text("payer_agent_id").notNull(),
     connectionId: text("connection_id").notNull(),
     model: text("model").notNull(),
+    sessionId: text("session_id").notNull().default(""),
+    callingAgentId: text("calling_agent_id").notNull().default(""),
     ownerSub: text("owner_sub").notNull(),
     providerTemplate: text("provider_template").notNull(),
     unit: text("unit").notNull(),
@@ -1107,6 +1100,7 @@ export const spendDaily = pgTable(
     calls: integer("calls").notNull().default(0),
     estimatedCalls: integer("estimated_calls").notNull().default(0),
     refusedCalls: integer("refused_calls").notNull().default(0),
+    durationMs: bigint("duration_ms", { mode: "number" }).notNull().default(0),
     maxCallCostMicros: bigint("max_call_cost_micros", { mode: "number" })
       .notNull()
       .default(0),
@@ -1116,10 +1110,57 @@ export const spendDaily = pgTable(
   },
   (table) => [
     primaryKey({
-      columns: [table.day, table.payerAgentId, table.connectionId, table.model],
+      name: "spend_daily_pk",
+      columns: [
+        table.day,
+        table.payerAgentId,
+        table.connectionId,
+        table.model,
+        table.sessionId,
+        table.callingAgentId,
+      ],
     }),
     index("spend_daily_owner_day_idx").on(table.ownerSub, table.day),
+    index("spend_daily_calling_agent_day_idx").on(
+      table.callingAgentId,
+      table.day,
+    ),
   ],
+);
+
+export const spendCalls = pgTable(
+  "spend_calls",
+  {
+    callingAgentId: text("calling_agent_id").notNull(),
+    callId: text("call_id").notNull(),
+    ownerSub: text("owner_sub").notNull(),
+    payerAgentId: text("payer_agent_id").notNull(),
+    sessionId: text("session_id").notNull().default(""),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+    unit: text("unit").notNull(),
+    costMicros: bigint("cost_micros", { mode: "number" }).notNull(),
+  },
+  (table) => [
+    primaryKey({
+      name: "spend_calls_pk",
+      columns: [table.callingAgentId, table.callId],
+    }),
+    index("spend_calls_session_started_idx").on(
+      table.callingAgentId,
+      table.sessionId,
+      table.startedAt,
+    ),
+    index("spend_calls_started_idx").on(table.startedAt),
+  ],
+);
+
+export const spendMetering = pgTable(
+  "spend_metering",
+  {
+    id: smallint("id").primaryKey().default(1),
+    startedAt: timestamp("started_at", { withTimezone: true }).notNull(),
+  },
+  (table) => [check("spend_metering_single_row", sql`${table.id} = 1`)],
 );
 
 export const spendLimits = pgTable(

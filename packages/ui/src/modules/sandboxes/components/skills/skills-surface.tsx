@@ -15,10 +15,11 @@ import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
 import { useSkillsSurface } from "../../hooks/use-skills-surface.js";
+import { AgentDisabledNotice } from "./agent-disabled-notice.js";
 import { LocalSkillsGroup } from "./local-skills-group.js";
 import { PlatformSkillsGroup } from "./platform-skills-group.js";
 import { SkillDriftBanner } from "./skill-drift-banner.js";
-import { SkillSourcesSection } from "./skill-sources-section.js";
+import { AddSourceRow, SkillSourcesSection } from "./skill-sources-section.js";
 import { type SkillsModal, SkillsModals } from "./skills-modals.js";
 import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
@@ -30,11 +31,13 @@ import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
 export function SkillsSurface({
   agentId,
   agentState,
+  agentDisabled = false,
   readOnly,
   comingUp,
 }: {
   agentId: string | null;
   agentState: AgentState | undefined;
+  agentDisabled?: boolean;
   readOnly: boolean;
   comingUp?: boolean;
 }) {
@@ -73,23 +76,24 @@ export function SkillsSurface({
     snapshotOnCount,
   } = derived;
 
+  const openAddSource = () =>
+    setOpenModal({ kind: "add-source", mode: "github", files: [] });
   const addSourceButton = (
-    <Button
-      variant="outline"
-      size="sm"
-      onClick={() =>
-        setOpenModal({ kind: "add-source", mode: "github", files: [] })
-      }
-    >
+    <Button variant="outline" size="sm" onClick={openAddSource}>
       <Add size={16} /> Add source
     </Button>
   );
+  const addSourceRow = <AddSourceRow onClick={openAddSource} />;
 
   const manageConnections = agentId
     ? () => navigateToSandboxHome(agentId, "connections")
     : undefined;
 
   const ran = hasRun || surface.standaloneSnapshot !== undefined;
+  const disabledNotice =
+    agentDisabled && agentId ? (
+      <AgentDisabledNotice agentId={agentId} />
+    ) : undefined;
 
   const stoppedPanel = (
     <SkillsStoppedPanel
@@ -102,9 +106,10 @@ export function SkillsSurface({
       loadingBySource={surface.loadingBySource}
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
-      addSourceButton={addSourceButton}
+      addSourceRow={addSourceRow}
+      disabledNotice={disabledNotice}
       callout={
-        staleModel.stale && staleModel.model ? (
+        !agentDisabled && staleModel.stale && staleModel.model ? (
           <StaleModelNotice
             model={staleModel.model}
             comingUp={!!comingUp}
@@ -156,6 +161,8 @@ export function SkillsSurface({
       revalidatingBySource={surface.revalidatingBySource}
       errorBySource={surface.errorBySource}
       addSourceButton={addSourceButton}
+      addSourceRow={addSourceRow}
+      disabledNotice={disabledNotice}
       comingUp={!!comingUp}
       onStart={() => agentId && wakeAgent.wake(agentId)}
       onRescan={(src) => void surface.refreshSource(src.id)}

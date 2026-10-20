@@ -21,6 +21,11 @@ const UNIT_SUFFIXES: Readonly<Record<SpendUnit, string>> = {
   free: "",
 };
 
+const SPENT_SUFFIXES: Readonly<Record<SpendUnit, string>> = {
+  ...UNIT_SUFFIXES,
+  usd_list: " covered",
+};
+
 export const UNIT_NAMES: Readonly<Record<SpendUnit, string>> = {
   usd: "USD",
   usd_list: "USD value",
@@ -54,16 +59,16 @@ export function formatSpend(micros: number, unit: SpendUnit): string {
   return `${bareSpend(micros, unit)}${UNIT_SUFFIXES[unit]}`;
 }
 
+export function formatSpent(micros: number, unit: SpendUnit): string {
+  return `${bareSpend(micros, unit)}${SPENT_SUFFIXES[unit]}`;
+}
+
 export function formatSpendOf(
   spentMicros: number,
   limitMicros: number,
   unit: SpendUnit,
 ): string {
   return `${bareSpend(spentMicros, unit)} of ${bareSpend(limitMicros, unit)}${UNIT_SUFFIXES[unit]}`;
-}
-
-export function formatDailyAmount(micros: number, unit: SpendUnit): string {
-  return `${formatSpend(micros, unit)} a day`;
 }
 
 export function amountText(micros: number): string {
@@ -76,7 +81,11 @@ export function microsToUsd(micros: number): number {
 
 export function localResetTime(resetsAt: string | Date): string {
   return new Date(resetsAt).toLocaleTimeString([], {
-    hour: "2-digit",
+    hour: "numeric",
     minute: "2-digit",
   });
+}
+
+export function localDayStart(utcDay: string): string {
+  return localResetTime(`${utcDay}T00:00:00Z`);
 }

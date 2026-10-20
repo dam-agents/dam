@@ -79,6 +79,20 @@ function bedrockThinking(body: Json, alias: ProviderAlias): Json {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: Claude Code sends its persisted effort level as
+ * `output_config.effort`, which vLLM hands to DeepSeek's chat template as
+ * `reasoning_effort`; that template knows low, high, xhigh, max or an integer
+ * and refuses the whole call on the `medium` Claude Code persists by default,
+ * so it becomes the nearest level the template does.
+ */
+function deepseekEffort(body: Json, upstreamId: string): Json {
+  if (!/deepseek/i.test(upstreamId)) return body;
+  const outputConfig = body.output_config;
+  if (!isObject(outputConfig) || outputConfig.effort !== "medium") return body;
+  return { ...body, output_config: { ...outputConfig, effort: "high" } };
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: makes a conversation produced on one model
  * replayable on another, by target, since the router cannot know which model
  * wrote a history. A Claude target verifies thinking signatures, so earlier
@@ -93,7 +107,10 @@ export function applyReplayRules(
 ): Json {
   switch (target.dialect) {
     case "anthropic-messages": {
-      body = bedrockThinking(body, target.alias);
+      body = deepseekEffort(
+        bedrockThinking(body, target.alias),
+        target.upstreamId,
+      );
       if (!/claude/i.test(target.upstreamId)) return body;
       const messages = body.messages;
       if (!Array.isArray(messages)) return body;

@@ -4,6 +4,7 @@ import { match } from "ts-pattern";
 
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Collapse } from "@/components/ui/collapse";
 import { SectionLabel } from "@/components/ui/section-label";
 import { cn } from "@/lib/utils";
 
@@ -144,14 +145,17 @@ function ExpandRow({
         <RowText {...text} />
         <RowChevron
           icon={ChevronDown}
-          className={cn("transition-transform", open && "rotate-180")}
+          className={cn(
+            "transition-transform duration-200 ease-out motion-reduce:transition-none",
+            open && "rotate-180",
+          )}
         />
       </button>
-      {open && (
+      <Collapse open={open}>
         <div id={contentId} className="px-4 pb-4 sm:pl-12">
           {content}
         </div>
-      )}
+      </Collapse>
     </div>
   );
 }

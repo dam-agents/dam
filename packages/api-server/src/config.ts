@@ -242,6 +242,9 @@ const configSchema = z.object({
   telegramBotUsername: z.string().nullable().default(null),
   e2eEnabled: z.coerce.boolean().default(false),
   virtualizationEnabled: z.stringbool().default(false),
+  // UNIT_BOUNDARY_DESCRIPTION: the pool each owner's VM runner is created at, as the chart sizes it, read before any runner exists to ask. The storage is the claim every machine disk shares; a memory the install does not set leaves the runner sized by the owner's UserBudget alone, whose own absence refuses nothing.
+  vmPoolStorage: z.string().default("100Gi"),
+  vmPoolMemory: z.string().default(""),
   featureModes: featureModesSchema,
   platformProvider: platformProviderSchema,
   runtimeMigrationRetentionMs: z
@@ -394,9 +397,6 @@ const validatedConfigSchema = configSchema
 export function agentsInstallSettings(config: Config) {
   return {
     virtualizationEnabled: config.virtualizationEnabled,
-    vmForced:
-      config.virtualizationEnabled &&
-      config.featureModes["vm-sandboxes"] === "on",
     defaultHarness: config.harnesses.default,
     telemetry: Object.values(config.harnesses.catalog).some(
       (h) => h.telemetryEnv.length > 0,
@@ -440,6 +440,8 @@ export function loadConfig(): Config {
     telegramBotUsername: process.env.TELEGRAM_BOT_USERNAME,
     e2eEnabled: process.env.E2E_ENABLED,
     virtualizationEnabled: process.env.VIRTUALIZATION_ENABLED,
+    vmPoolStorage: process.env.VM_POOL_STORAGE,
+    vmPoolMemory: process.env.VM_POOL_MEMORY,
     featureModes: {
       named: process.env.FEATURE_MODES,
       fallback: process.env.FEATURE_DEFAULT_MODE,

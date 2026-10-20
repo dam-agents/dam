@@ -101,8 +101,11 @@ export interface SessionsSlice {
     sessionId: string,
     undelivered: PlatformUndeliveredPrompt[],
   ) => Promise<void>;
+  discardSessionToDraft: (sessionId: string, text: string) => Promise<void>;
 
   resetChatContext: () => void;
+  confirmDockDiscard: () => Promise<boolean>;
+  leaveChatContext: (navigate: () => void) => void;
 }
 
 export const createSessionsSlice: StateCreator<
@@ -304,6 +307,30 @@ export const createSessionsSlice: StateCreator<
         chatRequest: null,
       }),
 
+    confirmDockDiscard: async () => {
+      const { openArtifactDirty, openFileDirty, showConfirm } = get();
+      if (!openArtifactDirty && !openFileDirty) return true;
+      return showConfirm("Your edits are lost.", "Discard unsaved changes?", {
+        kind: "destructive",
+        confirmLabel: "Discard",
+        cancelLabel: "Keep editing",
+      });
+    },
+
+    leaveChatContext: (navigate) => {
+      const leave = () => {
+        get().resetChatContext();
+        navigate();
+      };
+      const { openArtifactDirty, openFileDirty } = get();
+      if (!openArtifactDirty && !openFileDirty) return leave();
+      void get()
+        .confirmDockDiscard()
+        .then((ok) => {
+          if (ok) leave();
+        });
+    },
+
     deleteSession: async (
       sessionId,
       agentId = get().selectedAgent ?? undefined,
@@ -336,6 +363,14 @@ export const createSessionsSlice: StateCreator<
             ? "The agent stopped before it saved this conversation. Your message is back in a new chat."
             : "The agent stopped before it saved this conversation, so it was removed.",
       });
+    },
+
+    discardSessionToDraft: async (sessionId, text) => {
+      const agentId = get().selectedAgent;
+      if (!agentId) return;
+      await deleteAgentSession(agentId, sessionId);
+      await forgetSession(agentId, sessionId);
+      get().appendNewSessionDraft(agentId, text);
     },
   };
 };

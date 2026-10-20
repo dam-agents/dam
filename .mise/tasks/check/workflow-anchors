@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="A YAML anchor that several workflow files define has the same value in each"
+# An anchor cannot reach another file, so a cache key that build.yml saves and
+# e2e.yml restores is anchored in both under one name. A key that differs
+# restores nothing and fails nothing, so this compares them.
+set -euo pipefail
+yq -o=json -I=0 '.. | select(anchor != "") | [anchor, filename, .]' .github/workflows/*.yml |
+  jq -rs 'group_by(.[0])[] | select((map(.[2]) | unique | length) > 1) | "\(.[0][0]) differs between \(map(.[1]) | join(", "))"' |
+  { ! grep .; }

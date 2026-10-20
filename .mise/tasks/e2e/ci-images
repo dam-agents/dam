@@ -1,15 +1,26 @@
 #!/usr/bin/env bash
-#MISE description="CI only: build or fetch this run's amd64 images as the dist/oci tars the e2e cluster loads"
+#MISE description="CI only: build or fetch this run's amd64 images in the form the e2e cluster loads: an agent's OCI layout, every other component's dist/oci tar"
 #MISE hide=true
 # Writes ok|fail to the file named by its argument.
-# cd.yml's e2e job starts with the run instead of after the builds, because
+# A lane runs it once per image family, because a family waits only for its
+# own inputs: the platform images block the chart install and need no harness
+# tool, and the agent images need the tools layer (agent-tools) and block no
+# chart. CI_IMAGES_FAMILY narrows one run to one family, CI_BUILD_READY_DIR is
+# the ready directory they share, and the run a lane names in CI_IMAGES_STATUS
+# waits for the others' status files (CI_IMAGES_WAIT) before it reports ok, so
+# that file still means every image of the run is ready.
+# e2e.yml's lanes start with the run instead of after the builds, because
 # bringing the cluster up (k3s, cert-manager, Istio) needs no image. It runs
 # this in the background, and cluster:install waits on the status file
 # (CI_IMAGES_STATUS) right before it loads the images into k3s.
 #
 # An image whose effective source is already published (image:resolve says
-# REUSE) is pulled right away. The rest are built on this runner on a PR
-# (CI_IMAGES_BUILD=1), while the cluster comes up; see image:ci-build. A
+# REUSE) is pulled right away; in a merge group, so is one an earlier group's
+# build-images pushed to its cache tag. A merge group does not wait for that
+# push: the groups of a queue start together, and the group building it
+# takes as long to push it as this runner takes to build it. The rest are
+# built on this runner on a PR (CI_IMAGES_BUILD=1), while the cluster comes
+# up; see image:ci-build. A
 # separate build job would first wait for a runner of its own, and then e2e
 # would pull what it pushed. On every other run they come from this run's
 # build jobs, which build the same set: the `changes` job resolves it the same
@@ -28,7 +39,26 @@ set -uo pipefail
 
 status_file="${1:?usage: ci-images <status-file>}"
 result=fail
-trap 'echo "$result" > "$status_file"' EXIT
+# A failed family reports at once; a successful one waits for the families it
+# reports, so the status file a lane's cluster:install reads is final.
+finish() {
+  local f until
+  until=$(($(date +%s) + ${CI_IMAGES_TIMEOUT:-2400}))
+  if [ "$result" = ok ]; then
+    for f in ${CI_IMAGES_WAIT:-}; do
+      while [ ! -s "$f" ] && [ "$(date +%s)" -lt "$until" ]; do sleep 5; done
+      if [ ! -s "$f" ]; then
+        echo "timed out waiting for $f" >&2
+        result=fail
+      elif [ "$(cat "$f")" != ok ]; then
+        echo "$f reports $(cat "$f")" >&2
+        result=fail
+      fi
+    done
+  fi
+  echo "$result" > "$status_file"
+}
+trap finish EXIT
 set -e
 
 : "${GITHUB_REPOSITORY:?}" "${GITHUB_RUN_ID:?}" "${IMAGE_PREFIX:?}"
@@ -37,9 +67,29 @@ resolve=.mise/tasks/image/resolve
 LOADED="controller api-server ui keycloak mock"
 [ -z "${E2E_VIRTUALIZATION:-}" ] || LOADED="$LOADED vm-runner default"
 
-# Each image's file lands in the ready directory once its tar is complete,
-# for cluster:install to import it while the rest still build.
-ready="$status_file.ready"
+# The agent images are the ones image.toml makes, as image:ci-build's
+# package_of decides it; every other image is a platform image. Classified
+# here rather than listed by the lane, so an image added to LOADED joins its
+# family without a second place to name it.
+agent_image() { [ -f "packages/agents/$1/image.toml" ] || [ -f "packages/e2e/agents/$1/image.toml" ]; }
+case "${CI_IMAGES_FAMILY:-}" in
+  "" | agents | platform) ;;
+  *) echo "ci-images: CI_IMAGES_FAMILY must be agents or platform" >&2; exit 2 ;;
+esac
+if [ -n "${CI_IMAGES_FAMILY:-}" ]; then
+  family=()
+  for c in $LOADED; do
+    if agent_image "$c"; then kind=agents; else kind=platform; fi
+    [ "$kind" = "$CI_IMAGES_FAMILY" ] || continue
+    family+=("$c")
+  done
+  LOADED="${family[*]}"
+fi
+
+# Each image's file lands in the ready directory once its image is complete,
+# for cluster:install to import it while the rest still build. It is one
+# directory for every family: the lane names it.
+ready="${CI_BUILD_READY_DIR:-$status_file.ready}"
 mkdir -p "$ready"
 export CI_BUILD_READY_DIR="$ready"
 pull() { .mise/tasks/image/pull "$2" "$($resolve tar-path "$1")" "platform-$1:latest" && touch "$ready/$1"; }
@@ -67,12 +117,13 @@ if [ "${CI_IMAGES_BUILD:-}" = 1 ]; then
   exit 0
 fi
 
-# The jobs that build what is stale, by their cd.yml names: CI_IMAGES_IMAGES_JOB
-# builds controller, api-server, ui, keycloak and the vm-runner;
-# CI_IMAGES_MOCK_JOB the mock; CI_IMAGES_AGENTS_JOB the default image.
-# `detect stale images` is always waited on: when it fails, the build jobs that
-# need it never start under their names, and nothing else would end the wait.
-JOBS=("detect stale images")
+# The jobs that build what is stale, by the names the jobs API gives them:
+# CI_IMAGES_IMAGES_JOB builds controller, api-server, ui, keycloak and the
+# vm-runner; CI_IMAGES_MOCK_JOB the mock; CI_IMAGES_AGENTS_JOB the default
+# image. CI_IMAGES_CHANGES_JOB, which detects the stale images, is always
+# waited on: when it fails, the build jobs that need it never start under
+# their names, and nothing else would end the wait.
+JOBS=("${CI_IMAGES_CHANGES_JOB:?}")
 for c in ${stale[@]+"${stale[@]}"}; do
   case "$c" in
     mock) JOBS+=("${CI_IMAGES_MOCK_JOB:?}") ;;

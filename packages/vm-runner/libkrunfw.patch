@@ -1,0 +1,89 @@
+diff --git i/config-libkrunfw_aarch64 w/config-libkrunfw_aarch64
+index f0a01ca..274ea58 100644
+--- i/config-libkrunfw_aarch64
++++ w/config-libkrunfw_aarch64
+@@ -812,7 +812,8 @@ CONFIG_COREDUMP=y
+ #
+ # Memory Management options
+ #
+-# CONFIG_SWAP is not set
++CONFIG_SWAP=y
++# CONFIG_ZSWAP is not set
+ 
+ #
+ # Slab allocator options
+@@ -1362,7 +1363,10 @@ CONFIG_OF_OVERLAY=y
+ # CONFIG_PARPORT is not set
+ CONFIG_BLK_DEV=y
+ # CONFIG_BLK_DEV_NULL_BLK is not set
+-# CONFIG_ZRAM is not set
++CONFIG_ZRAM=y
++CONFIG_ZRAM_BACKEND_ZSTD=y
++# CONFIG_ZRAM_WRITEBACK is not set
++# CONFIG_ZRAM_MULTI_COMP is not set
+ CONFIG_BLK_DEV_LOOP=y
+ CONFIG_BLK_DEV_LOOP_MIN_COUNT=0
+ # CONFIG_BLK_DEV_DRBD is not set
+@@ -2406,7 +2410,12 @@ CONFIG_FS_MBCACHE=y
+ # CONFIG_JFS_FS is not set
+ # CONFIG_XFS_FS is not set
+ # CONFIG_GFS2_FS is not set
+-# CONFIG_BTRFS_FS is not set
++CONFIG_BTRFS_FS=y
++# CONFIG_BTRFS_FS_POSIX_ACL is not set
++# CONFIG_BTRFS_FS_RUN_SANITY_TESTS is not set
++# CONFIG_BTRFS_DEBUG is not set
++# CONFIG_BTRFS_ASSERT is not set
++# CONFIG_BTRFS_EXPERIMENTAL is not set
+ # CONFIG_NILFS2_FS is not set
+ # CONFIG_F2FS_FS is not set
+ # CONFIG_BCACHEFS_FS is not set
+@@ -2880,6 +2889,8 @@ CONFIG_CRC64=y
+ # CONFIG_CRC4 is not set
+ # CONFIG_CRC7 is not set
+ CONFIG_LIBCRC32C=y
++CONFIG_RAID6_PQ=y
++# CONFIG_RAID6_PQ_BENCHMARK is not set
+ # CONFIG_CRC8 is not set
+ CONFIG_XXHASH=y
+ CONFIG_AUDIT_ARCH_COMPAT_GENERIC=y
+diff --git i/config-libkrunfw_x86_64 w/config-libkrunfw_x86_64
+index 9996698..8ecba2f 100644
+--- i/config-libkrunfw_x86_64
++++ w/config-libkrunfw_x86_64
+@@ -715,7 +715,8 @@ CONFIG_COREDUMP=y
+ #
+ # Memory Management options
+ #
+-# CONFIG_SWAP is not set
++CONFIG_SWAP=y
++# CONFIG_ZSWAP is not set
+ 
+ #
+ # SLAB allocator options
+@@ -1075,7 +1076,10 @@ CONFIG_ARCH_MIGHT_HAVE_PC_PARPORT=y
+ # CONFIG_PARPORT is not set
+ CONFIG_BLK_DEV=y
+ # CONFIG_BLK_DEV_NULL_BLK is not set
+-# CONFIG_ZRAM is not set
++CONFIG_ZRAM=y
++CONFIG_ZRAM_BACKEND_ZSTD=y
++# CONFIG_ZRAM_WRITEBACK is not set
++# CONFIG_ZRAM_MULTI_COMP is not set
+ CONFIG_BLK_DEV_LOOP=y
+ CONFIG_BLK_DEV_LOOP_MIN_COUNT=0
+ # CONFIG_BLK_DEV_DRBD is not set
+@@ -1616,7 +1620,12 @@ CONFIG_FS_MBCACHE=y
+ # CONFIG_JFS_FS is not set
+ # CONFIG_XFS_FS is not set
+ # CONFIG_GFS2_FS is not set
+-# CONFIG_BTRFS_FS is not set
++CONFIG_BTRFS_FS=y
++# CONFIG_BTRFS_FS_POSIX_ACL is not set
++# CONFIG_BTRFS_FS_RUN_SANITY_TESTS is not set
++# CONFIG_BTRFS_DEBUG is not set
++# CONFIG_BTRFS_ASSERT is not set
++# CONFIG_BTRFS_EXPERIMENTAL is not set
+ # CONFIG_NILFS2_FS is not set
+ # CONFIG_F2FS_FS is not set
+ CONFIG_FS_DAX=y

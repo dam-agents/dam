@@ -1,6 +1,7 @@
 import { Power, Restart, TrashCan } from "@carbon/icons-react";
 import { useEffect } from "react";
 
+import { emitToast } from "../../../lib/toast.js";
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
 import {
@@ -47,9 +48,29 @@ export function AgentManagementActions({
     setDisabled.mutate({ id: agent.id, disabled: !agent.disabled });
   };
 
+  const onRestart = async () => {
+    if (
+      await showConfirm(
+        "In-flight work is interrupted and the agent starts fresh.",
+        "Restart agent?",
+        { confirmLabel: "Restart" },
+      )
+    )
+      restart(agent.id);
+  };
+
   const onDelete = async () => {
     if (!(await confirmDelete(agent))) return;
-    deleteAgent.mutate({ id: agent.id });
+    deleteAgent.mutate(
+      { id: agent.id },
+      {
+        onSuccess: () =>
+          emitToast({
+            kind: "success",
+            message: `Agent “${agent.name}” deleted`,
+          }),
+      },
+    );
     setView("home");
   };
 
@@ -73,11 +94,18 @@ export function AgentManagementActions({
       kind: "button",
       icon: <Restart />,
       title: "Restart agent",
-      description: "Interrupt in-flight work and start the agent fresh.",
+      description:
+        display.powerAction === "restart"
+          ? "Interrupt in-flight work and start the agent fresh."
+          : agent.disabled
+            ? "The agent is disabled. Enable it to restart it."
+            : display.powerAction === "start"
+              ? "The agent is not running. It starts fresh when it wakes."
+              : "The agent is starting. You can restart it once it runs.",
       button: {
         label: "Restart",
         disabled: display.powerAction !== "restart",
-        onClick: () => restart(agent.id),
+        onClick: () => void onRestart(),
       },
     },
     {

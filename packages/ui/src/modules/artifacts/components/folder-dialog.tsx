@@ -38,7 +38,7 @@ export function FolderDialog({ folder, onClose }: Props) {
       <DialogHeader
         closeDisabled={pending}
         onClose={onClose}
-        title={folder ? "Edit folder" : "New folder"}
+        title={folder ? "Rename folder" : "New folder"}
       />
       <DialogBody>
         <div className="flex flex-col gap-4">

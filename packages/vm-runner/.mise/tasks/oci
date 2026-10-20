@@ -78,7 +78,7 @@ mkdir -p "$cache"
 fetch() {
   local f="$cache/$2"
   if ! echo "$2  $f" | sha256sum -c --status - 2>/dev/null; then
-    curl -fsSL "$1" -o "$f.part"
+    curl -fsSL --retry 5 --retry-delay 5 --retry-all-errors "$1" -o "$f.part"
     echo "$2  $f.part" | sha256sum -c --quiet - || { rm -f "$f.part"; exit 1; }
     mv "$f.part" "$f"
   fi
@@ -87,8 +87,9 @@ fetch() {
 
 # The smolvm release is refused unless it has the digest smolvm.pin records for
 # this architecture. It is already the layout the runner reads — the launcher,
-# with its libraries, the guest agent's rootfs and the compressed disk
-# templates beside it — so only those are unpacked, and the release's
+# with its libraries and the guest agent's rootfs beside it — so only those
+# are unpacked; its ext4 disk templates go unused, since the runner makes
+# every disk btrfs and its machines have no overlay disk, and the release's
 # Kubernetes shim, which the runner does not use, is left out.
 version="$(sed -n 's/^tag=v//p' smolvm.pin)"
 sha="$(sed -n "s/^sha256-linux-${arch}=//p" smolvm.pin)"
@@ -96,8 +97,7 @@ sha="$(sed -n "s/^sha256-linux-${arch}=//p" smolvm.pin)"
 release="smolvm-${version}-linux-${arch}"
 tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${version}/${release}.tar.gz" "$sha")" \
   -C "$b/opt/smolvm" --strip-components=1 --no-same-owner \
-  "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs" \
-  "${release}/storage-template.ext4.zst" "${release}/overlay-template.ext4.zst"
+  "${release}/smolvm" "${release}/smolvm-bin" "${release}/lib" "${release}/agent-rootfs"
 
 # libkrun is the release's own, rebuilt from the commit smolvm.pin names with
 # libkrun.patch applied: fixes for guest-reachable bugs in its virtio devices
@@ -109,8 +109,13 @@ tar -xzf "$(fetch "https://github.com/smol-machines/smolvm/releases/download/v${
 # Drop this once a smolvm release ships these fixes, but for the MADV_HUGEPAGE
 # call on guest RAM, which upstream leaves out and nested hosts need (a busy
 # dam-cl node filled 4 GiB in 4.1 s with it and 8.3 s without).
-# musl-tools: musl-gcc, for the C in the guest agent's ring (see below).
-lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev musl-tools"
+# musl-tools and the musl target: libkrun's init.krun, which it builds static
+# against musl and serves as the guest's /init.krun. Without them its build
+# only warns and links it against glibc, which the agent rootfs lacks, so every
+# guest kernel panics on "Requested init /init.krun failed (error -2)".
+# bc to python3-pyelftools: the guest kernel's build; btrfs-progs: the btrfs
+# disk template.
+lk_deps="clang libclang-dev patchelf pkg-config libvirglrenderer-dev libepoxy-dev libdrm-dev libgbm-dev musl-tools bc bison flex libelf-dev libssl-dev python3-pyelftools btrfs-progs"
 lk_missing=$(for p in $lk_deps; do dpkg -s "$p" >/dev/null 2>&1 || echo "$p"; done)
 # Unattended and bounded: CI runs this in the background beside a starting k3s,
 # where a debconf or needrestart prompt waits on stdin for good, a needrestart
@@ -140,13 +145,73 @@ krun_symbols() { nm -D --defined-only "$1" | awk '$3 ~ /^krun_/ {print $3}' | so
   { echo "patched libkrun exports other krun_* symbols than the release's" >&2; diff <(krun_symbols "$lk_so") <(krun_symbols "$b/opt/smolvm/lib/libkrun.so") >&2; exit 1; }
 install -m 755 "$lk_so" "$b/opt/smolvm/lib/libkrun.so"
 
-# The guest agent is rebuilt from the pinned source with smolvm.patch applied,
-# as the release builds it (static musl, release-small), in place of the
-# release's: smolvm-agent formats a storage disk it cannot mount, which erases
-# a home a passing I/O error kept from mounting, and the patch refuses that.
-# Drop this once a smolvm release ships the fix.
-env "CC_$(uname -m)_unknown_linux_musl=musl-gcc" cargo build --locked --manifest-path .smolvm/Cargo.toml --target-dir "$target" --profile release-small -p smolvm-agent --target "$(uname -m)-unknown-linux-musl"
-install -m 755 "$target/$(uname -m)-unknown-linux-musl/release-small/smolvm-agent" "$b/opt/smolvm/agent-rootfs/usr/local/bin/smolvm-agent"
+# The guest kernel is the release's own libkrunfw, rebuilt from the commit
+# smolvm.pin names with libkrunfw.patch applied: the release's kernel has no
+# btrfs, which every storage disk is, nor swap and zram, which every guest
+# swaps to. The
+# build takes minutes, so the library is kept in the cache under the commit and
+# the patch it was built from, and only a moved pin or a changed patch builds it
+# again. One whose kernel is not the release's version is refused. Drop this
+# once a smolvm release ships a kernel with CONFIG_BTRFS_FS, CONFIG_SWAP and
+# CONFIG_ZRAM.
+fw_commit="$(sed -n 's/^libkrunfw-commit=//p' smolvm.pin)"
+[ -n "$fw_commit" ] || { echo "smolvm.pin names no libkrunfw-commit" >&2; exit 1; }
+fw_so="$cache/libkrunfw-$fw_commit-$(git hash-object libkrunfw.patch).so"
+if [ ! -f "$fw_so" ]; then
+  fw="$cache/libkrunfw"
+  if [ "$(git -C "$fw" rev-parse HEAD 2>/dev/null)" != "$fw_commit" ]; then
+    rm -rf "$fw"
+    git init -q "$fw"
+    timeout 600 git -C "$fw" fetch -q --depth 1 https://github.com/smol-machines/libkrunfw "$fw_commit"
+    git -C "$fw" checkout -q FETCH_HEAD
+  fi
+  # The Makefile downloads its kernel as a snapshot git.kernel.org generates on
+  # the fly, with no checksum, and keeps whatever arrived in tarballs/, so one
+  # truncated download fails every later build. The same release comes from
+  # kernel.org's static tarball instead, checked against smolvm.pin; tar reads
+  # it whatever the Makefile's file name says.
+  kv="$(sed -n 's/^KERNEL_VERSION = //p' "$fw/Makefile")"
+  ksha="$(sed -n 's/^libkrunfw-kernel-sha256=//p' smolvm.pin)"
+  [ -n "$kv" ] && [ -n "$ksha" ] || { echo "no kernel version in libkrunfw's Makefile, or no libkrunfw-kernel-sha256 in smolvm.pin" >&2; exit 1; }
+  kmajor="${kv#linux-}"
+  ktar="$(fetch "https://cdn.kernel.org/pub/linux/kernel/v${kmajor%%.*}.x/$kv.tar.xz" "$ksha")"
+  git -C "$fw" checkout -q -- .
+  git -C "$fw" clean -qfdx
+  mkdir -p "$fw/tarballs"
+  cp "$ktar" "$fw/tarballs/$kv.tar.xz"
+  git -C "$fw" apply "$pkg/libkrunfw.patch"
+  # The Makefile and the kernel's take ARCH as the guest's architecture, and
+  # cd.yml's build-images exports ARCH=amd64, which neither knows.
+  env -u ARCH make -C "$fw" --no-print-directory -j"$(nproc)" >/dev/null
+  # The same arm64 kernel, wrapped for macOS, is what the Mac host runner
+  # compiles as its libkrunfw (cluster:host-runner). CI has no Mac to use it.
+  [ "$(uname -m)" != aarch64 ] || [ -n "${CI:-}" ] ||
+    python3 "$fw/bin2cbundle.py" --os Darwin -t Image "$fw"/linux-*/arch/arm64/boot/Image "${fw_so%.so}-darwin.c"
+  mv "$fw/libkrunfw.so.5.5.0" "$fw_so"
+fi
+fw_version() { LC_ALL=C grep -aom1 'Linux version [0-9.]*' "$1"; }
+[ "$(fw_version "$fw_so")" = "$(fw_version "$b/opt/smolvm/lib/libkrunfw.so.5.5.0")" ] ||
+  { echo "patched libkrunfw is $(fw_version "$fw_so"), the release's $(fw_version "$b/opt/smolvm/lib/libkrunfw.so.5.5.0")" >&2; exit 1; }
+install -m 755 "$fw_so" "$b/opt/smolvm/lib/libkrunfw.so.5.5.0"
+
+# The btrfs storage disk template the runner expands over a new machine's disk
+# (BTRFS_TEMPLATE in src/embedded.rs). Its block groups are mixed (-M): data
+# and metadata share one pool of space, as on ext4. With them apart, the guard
+# file platform-init preallocates to hold a guest to its grant takes every
+# unallocated chunk for data, and the next file the guest creates fails with
+# ENOSPC while the guard still leaves room. Single profiles, not mkfs's
+# default DUP, which would store every metadata block twice on one device.
+truncate -s 256M "$work/storage-template.btrfs"
+mkfs.btrfs -q -M -d single -m single -L smolvm --nodiscard "$work/storage-template.btrfs"
+zstd -q -19 --rm "$work/storage-template.btrfs" -o "$b/opt/smolvm/storage-template.btrfs.zst"
+# The guest's init is platform-init, not smolvm's guest agent: smolvm boots
+# the runner's machines on /sbin/platform-init of the agent rootfs, which is
+# only the first stage, mounting the share and executing the share's
+# platform-init, the runner release's (boot/vm.rs). That first stage does the
+# same in every release, so the runtime's copy need not match the release a
+# machine boots. smolvm's own /sbin/init, its guest agent, stays for the
+# machines the smolvm CLI starts.
+install -m 755 "$target/$host/release/platform-init" "$b/opt/smolvm/agent-rootfs/sbin/platform-init"
 
 # smolvm's guest rootfs ships a crane built with Go 1.21.6 and go-containerregistry
 # v0.19-era deps (docker/docker v24, x/sys v0.8.0) — 3 critical + 54 lesser CVEs, all
@@ -174,13 +239,19 @@ find "$b" \( -type d -exec chmod u+rwx {} + \) -o \( -type f -exec chmod u+r {} 
 # mise is isolated from the repo.
 from="$(mise config get -f "$repo/.mise/config.toml" vars.base_image_debian)"
 # What a runner release is built against and a running pod cannot change: the
-# smolvm release with its guest agent, the guest kernel, the patched libkrun
+# smolvm release with platform-init as its init, the patched guest kernel and libkrun
 # and crane, and the base image's libc the runner links. All but the base and
-# crane are named in smolvm.pin, and the guest agent's patch in smolvm.patch. A loader hands its machines only to a
+# crane are named in smolvm.pin, and their patches in smolvm.patch, libkrun.patch
+# and libkrunfw.patch. A loader hands its machines only to a
 # release whose id matches. It hashes those inputs, not the built bytes: a
 # libkrun rebuilt from the same sources need not be byte-identical, and an id
 # that moved on every build would roll every pod.
-{ echo "$from" "$crane_version" "$crane_sha"; cat smolvm.pin smolvm.patch libkrun.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
+{ echo "$from" "$crane_version" "$crane_sha"; cat smolvm.pin smolvm.patch libkrun.patch libkrunfw.patch; } | sha256sum | cut -d' ' -f1 > "$rel/runtime-id"
+# What the release changes in what a machine booted, which a hand-off cannot
+# take in place: a release declaring another key than the pod's is refused, and
+# the pod rolls, which reboots its machines. Bumped by the change that needs the
+# reboot, as an agent image declares its root generation.
+install -m 644 reboot-id "$rel/reboot-id"
 project="$work/project"
 mkdir -p "$project" "$work"/{data,cache,state,config}
 cp image.toml "$project/mise.toml"

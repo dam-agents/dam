@@ -46,15 +46,16 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: its image isn't available. " +
             "Check the agent's page or contact its owner."
           );
+        case "MachineImageCacheUnreachable":
+          return (
+            "This agent failed to start: the server that runs its owner's " +
+            "agents can't reach its image cache. Ask an admin to check the " +
+            "server's image cache."
+          );
         case "MachineBootFailed":
           return (
             "This agent failed to start: its VM didn't boot. " +
             "Check the agent's page or contact its owner."
-          );
-        case "MachineHomeDamaged":
-          return (
-            "This agent failed to start: its disk has errors that could " +
-            "not be repaired. Contact its owner."
           );
         case "MachineStorageFull":
           return (
@@ -65,6 +66,11 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
           return (
             "This agent failed to start: no server can run it right now. " +
             "Tell an admin."
+          );
+        case "MachineRunnerNodeLost":
+          return (
+            "This agent can't start right now: the server running its owner's " +
+            "agents is down. Tell an admin."
           );
         case "RunnerOutOfMemory":
           return (

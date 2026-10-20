@@ -65,9 +65,22 @@ pub fn is_sha256(text: &str) -> bool {
 pub const GUEST_CA_DIR: &str = "/etc/platform/ca";
 pub const GUEST_CA_FILE: &str = "/etc/platform/ca/ca.crt";
 
-// UNIT_BOUNDARY_DESCRIPTION: DISK_DEVICE_PATH is where smolvm attaches the storage disk, which is a property of the VMM and not a path anything should write to. platform-init moves it to DISK_PATH, whose name is not "workspace" — which in this platform means the directory inside an agent's HOME. smolvm also binds the whole disk at /storage; the root platform-init boots the image on leaves that bind behind, so the image reaches the disk only here and through HOME.
-pub const DISK_DEVICE_PATH: &str = "/workspace";
+// UNIT_BOUNDARY_DESCRIPTION: DISK_PATH is where platform-init puts the platform's part of the storage disk in the image's root while it boots, a name that is not "workspace" — which in this platform means the directory inside an agent's HOME. DISK_ROOT_DIR is the directory smolvm's guest agent gave containers, the platform's root on a disk from before the subvolume layout; a disk that holds it at its top is refused. The rest of the disk never reaches the image: the image reaches the disk only here and through HOME.
 pub const DISK_PATH: &str = "/mnt/platform";
+pub const DISK_ROOT_DIR: &str = "workspace";
+
+// UNIT_BOUNDARY_DESCRIPTION: where /sbin/init in the agent rootfs, platform-init in its first stage, mounts the share before it executes the share's init, which is the platform-init of the runner release. The agent rootfs is read-only and /mnt is its empty directory, so the release's platform-init starts with the share already there.
+pub const STAGE0_SHARE: &str = "/mnt";
+
+// UNIT_BOUNDARY_DESCRIPTION: what the guest runs: the image's command, its env with the platform's on top, and its working directory. The runner writes it into the share before every boot, from the machine's record, and platform-init reads it as the guest's init: no smolvm guest agent stands between them to hand them over.
+pub const LAUNCH_FILE: &str = "launch.json";
+
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct Launch {
+    pub command: Vec<String>,
+    pub env: Vec<(String, String)>,
+    pub workdir: Option<String>,
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the one guest path a machine keeps. It is fixed rather than configured — the image bakes this home into its user and the controller sets it as HOME on both backends — which is what lets the whole storage model be a constant instead of a plan the runner has to write and the guest has to parse.
 pub const AGENT_HOME: &str = "/home/agent";
@@ -79,9 +92,10 @@ pub const SYSTEM_DIR: &str = "system";
 // UNIT_BOUNDARY_DESCRIPTION: the system store that holds the upper and work layers of the root the image boots on. platform-init keeps the upper layer while the machine boots the same image, and empties it when the image changes or is unknown, so what the image writes outside HOME lasts as long as that image, and an old image's changes never lie over a new one. The work layer is overlayfs scratch and is emptied on every boot.
 pub const ROOTFS_DIR: &str = "rootfs";
 
-// UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a later layout change can upgrade a disk in place at boot, from the version it reads, instead of guessing from what the disk happens to hold. A disk from before the file existed is in the first layout, the only one there has been, and is marked as such on its next boot.
+// UNIT_BOUNDARY_DESCRIPTION: the system store file that says which layout the disk is in: one decimal version on one line. Every disk carries one from its first boot, so a boot reads which layout a disk is in, instead of guessing from what the disk happens to hold. A disk from before the file existed that the storage mount boots is in LAYOUT_VERSION, and is marked as such on its next boot.
 pub const LAYOUT_FILE: &str = "layout";
-pub const LAYOUT_VERSION: u32 = 1;
+// UNIT_BOUNDARY_DESCRIPTION: the one layout platform-init boots, version 2: the root is the whole btrfs filesystem, and AGENT_DIR and SYSTEM_DIR are subvolumes. The root's layers under ROOTFS_DIR stay plain directories of SYSTEM_DIR: overlayfs renames from its work layer into its upper one, which btrfs refuses across subvolumes. Version 1, the platform's root as DISK_ROOT_DIR with plain directories, is refused.
+pub const LAYOUT_VERSION: u32 = 2;
 
 pub fn agent_store(root: &Path) -> PathBuf {
     root.join(AGENT_DIR)

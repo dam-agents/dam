@@ -6,12 +6,13 @@
 #USAGE flag "--set <key=val>" var=#true
 #USAGE flag "--no-restart"
 #USAGE flag "--no-mesh"
-# With --set=virtualization.enabled=true vm-backend agents run as microVMs: on
-# a Mac on one VM runner on the Mac's own hypervisor (cluster:host-runner),
-# elsewhere on the chart's VM runner pods, which on a lima VM needs nested
-# virtualization (Apple silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a
-# Mac too). In a sandbox (IS_SANDBOX) that can open /dev/kvm it is on unless
-# the values or --set=virtualization.enabled=false say otherwise.
+# vm-backend agents run as microVMs (virtualization.enabled): on a Mac on one
+# VM runner on the Mac's own hypervisor (cluster:host-runner), elsewhere on the
+# chart's VM runner pods, which on a lima VM needs nested virtualization (Apple
+# silicon M3+; PLATFORM_NESTED_VIRT=1 picks that on a Mac too). Outside CI they
+# are on by default on an Apple silicon Mac and in a sandbox (IS_SANDBOX) that
+# can open /dev/kvm, and off with a warning elsewhere; the values or
+# --set=virtualization.enabled=true|false decide either way.
 # SKIP_IMAGE_BUILD reuses the image tars already in dist/oci, SKIP_IMAGE_LOAD
 # also skips importing them. --no-mesh (local-only, refused under CI) installs
 # no Istio dataplane, so AuthorizationPolicies exist but nothing enforces
@@ -94,15 +95,6 @@ if [ -n "${IS_SANDBOX:-}" ] && [ -f "$OUTER_GATEWAY_CA" ]; then
     HELM_EXTRA_ARGS+=("--set=controller.gatewayEgress.extraCidrs[0]=$OUTER_GATEWAY_IP/32")
   fi
 fi
-# CI hands the harness tools installer its job token, so the installer's GitHub
-# lookups do not share the runner address's anonymous limit. Through a file, so
-# the token stays off helm's command line.
-if [ -n "${HARNESS_TOOLS_GITHUB_TOKEN:-}" ]; then
-  token_file=$(mktemp)
-  trap 'rm -f "$token_file"' EXIT
-  printf '%s' "$HARNESS_TOOLS_GITHUB_TOKEN" >"$token_file"
-  HELM_EXTRA_ARGS+=("--set-file=harnessTools.githubToken=$token_file")
-fi
 NO_RESTART="${usage_no_restart:-false}"
 DEV_VALUES="helm/values-dev.yaml"
 
@@ -119,7 +111,7 @@ AGENT_VALUE_FLAGS=()
 AGENT_VALUE_FLAGS+=("${HELM_EXTRA_ARGS[@]}")
 
 # virtualization.enabled drives extra provisioning below (nested virt on the
-# k3s VM, the vm image archive loaded onto the VM runner pod) — resolve it
+# k3s VM, the vm images staged on the node for the VM runners) — resolve it
 # from the values file + --set flags (chart default is false) so one flag
 # configures the whole stack.
 VIRT_ENABLED=""
@@ -138,15 +130,34 @@ for arg in "${HELM_EXTRA_ARGS[@]}"; do
 done
 # Probe by opening: the node can exist while the device cgroup still denies it.
 kvm_usable() { python3 -c 'import os; os.close(os.open("/dev/kvm", os.O_RDWR))' 2>/dev/null; }
-# A sandbox is already the node. When it can open /dev/kvm — a platform vm
-# agent whose runner's node allows nesting — vm agents run here too, so the
-# install turns them on unless the values or a --set chose either way.
-if [ -z "$VIRT_CHOSEN" ] && [ -n "${IS_SANDBOX:-}" ] && kvm_usable; then
-  echo "/dev/kvm is usable here: enabling vm-backend agents (--set=virtualization.enabled=false turns them off)"
+# A local install runs vm agents wherever this host can: on an Apple silicon
+# Mac's own hypervisor, or in a sandbox that is the node and can open
+# /dev/kvm, such as a platform vm agent whose runner's node allows nesting.
+# Elsewhere it leaves them off and says why. The values or a --set decide
+# either way, and CI is not local: e2e:install chooses for each lane.
+VIRT_DEFAULTED=""
+VIRT_OFF_NOTE=""
+if [ -z "$VIRT_CHOSEN" ] && [ -z "${CI:-}${GITHUB_ACTIONS:-}" ]; then
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    if kvm_usable; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="this sandbox cannot open /dev/kvm"; fi
+  elif [ "$(uname -s)" = Darwin ]; then
+    if [ "$(uname -m)" = arm64 ]; then VIRT_DEFAULTED=1; else VIRT_OFF_NOTE="the Mac's VM runner needs Apple silicon"; fi
+  else
+    # Ceiling: the lima VM is created with nested virtualization only on a Mac
+    # (vz); a qemu VM on a KVM host that nests could run them too.
+    VIRT_OFF_NOTE="outside a sandbox, a Linux host's k3s VM gets no /dev/kvm from this install"
+  fi
+fi
+virt_off_warning() {
+  [ -z "$VIRT_OFF_NOTE" ] || echo "WARN: vm-backend agents are off: $VIRT_OFF_NOTE (--set=virtualization.enabled=true to try anyway)." >&2
+}
+if [ -n "$VIRT_DEFAULTED" ]; then
+  echo "vm-backend agents are on, the local default (--set=virtualization.enabled=false turns them off)"
   VIRT_ENABLED=1
   HELM_EXTRA_ARGS+=(--set=virtualization.enabled=true)
   AGENT_VALUE_FLAGS+=(--set=virtualization.enabled=true)
 fi
+virt_off_warning
 # On a Mac the VM runner runs on the Mac itself, on its own hypervisor, rather
 # than as pods in the k3s VM on a hypervisor nested inside it: a nested guest
 # boots several times slower, and only M3 and later nest at all.
@@ -167,6 +178,14 @@ if [ -n "$VIRT_ENABLED" ] && [ -n "${IS_SANDBOX:-}" ] && ! kvm_usable; then
   exit 1
 fi
 
+# k3s writes the kubeconfig before the node registers, and OpenRC's `rc-service
+# restart` returns before the API answers: waiting for a node is what gives the
+# `kubectl wait --all` below something to wait for, since on none it errors out
+# at once with "no matching resources found".
+wait_for_nodes() {
+  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+}
+
 # 1. Provision cluster and set KUBECONFIG
 if [ -n "${IS_SANDBOX:-}" ]; then
   # A running systemd, not an installed systemctl: containers often ship the
@@ -183,8 +202,14 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     if [ ! -f "$KUBECONFIG" ]; then
       echo "Provisioning k3s on host (sandbox mode)..."
       "$MISE_CONFIG_ROOT/.mise/tasks/cluster/provision-host" "$LIMA_TEMPLATE"
+    elif ! k3s_running; then
+      # cluster:stop leaves the kubeconfig behind, so the provision above never
+      # runs again and nothing would start k3s: the wait below would then time
+      # out against an API that is not there.
+      echo "Starting the k3s service..."
+      k3s_service start
     fi
-  elif ! pgrep -x k3s-server >/dev/null; then
+  elif ! k3s_running; then
     # With no supervisor nothing restarts k3s, so a kubeconfig left by an
     # earlier run says nothing about whether it is serving: key on the process.
     echo "Starting k3s as a plain process (no supervisor to install it under)..."
@@ -230,7 +255,7 @@ if [ -n "${IS_SANDBOX:-}" ]; then
   fi
   echo "Waiting for k3s to be ready..."
   for _ in $(seq 1 60); do [ -f "$KUBECONFIG" ] && break; sleep 2; done
-  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+  wait_for_nodes
 else
   if ! limactl list -q 2>/dev/null | grep -qx "$LIMA_INSTANCE"; then
     echo "Creating k3s VM ($LIMA_INSTANCE)..."
@@ -260,7 +285,15 @@ else
     limactl start "$LIMA_INSTANCE"
   fi
   # Pre-existing VM without nested virt (create-time only): the VM runner
-  # pod would have no /dev/kvm — stop early with the fix.
+  # pod would have no /dev/kvm — stop early with the fix, or, when only the
+  # local default asked for vm agents, leave them off.
+  if [ -n "$VIRT_DEFAULTED" ] && [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
+    VIRT_ENABLED=""
+    VIRT_OFF_NOTE="VM '$LIMA_INSTANCE' has no /dev/kvm (nested virtualization is create-time only: cluster:delete, then reinstall)"
+    HELM_EXTRA_ARGS+=(--set=virtualization.enabled=false)
+    AGENT_VALUE_FLAGS+=(--set=virtualization.enabled=false)
+    virt_off_warning
+  fi
   if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ] && ! limactl shell "$LIMA_INSTANCE" test -e /dev/kvm; then
     echo "FATAL: VM '$LIMA_INSTANCE' has no /dev/kvm; the VM runner needs it." >&2
     echo "Recreate it: mise run cluster:delete, then rerun this install with virtualization.enabled=true" >&2
@@ -268,11 +301,8 @@ else
     exit 1
   fi
   echo "Waiting for k3s to be ready..."
-  for _ in $(seq 1 60); do kubectl get nodes -o name 2>/dev/null | grep -q . && break; sleep 2; done
+  wait_for_nodes
 fi
-# k3s writes kubeconfig before the node registers; the for-loop above
-# ensures ≥1 node exists, otherwise `kubectl wait --all` would error
-# immediately with "no matching resources found".
 kubectl wait --for=condition=Ready node --all --timeout=120s
 
 # 1b. Ensure k3s container-log rotation is configured (issue #244 upgrade
@@ -293,11 +323,14 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     echo "Configuring k3s container log rotation (issue #244)..."
     as_root mkdir -p "$(dirname "$K3S_LOGROT_DROPIN")"
     printf '%s' "$K3S_CONFIG_YAML" | as_root tee "$K3S_LOGROT_DROPIN" >/dev/null
-    if [ -d /run/systemd/system ]; then
-      as_root systemctl restart k3s
-      kubectl wait --for=condition=Ready node --all --timeout=120s
-    else
+    if ! k3s_has_service; then
       echo "No service manager here — container log rotation applies the next time k3s starts."
+    else
+      rc=0
+      k3s_service restart || rc=$?
+      [ "$rc" = 0 ] || { echo "FATAL: k3s did not restart (rc=$rc); container log rotation is not applied." >&2; exit 1; }
+      wait_for_nodes
+      kubectl wait --for=condition=Ready node --all --timeout=120s
     fi
   fi
 else
@@ -307,6 +340,19 @@ else
     printf '%s' "$K3S_CONFIG_YAML" | limactl shell "$LIMA_INSTANCE" sudo tee "$K3S_LOGROT_DROPIN" >/dev/null
     limactl shell "$LIMA_INSTANCE" sudo systemctl restart k3s
     kubectl wait --for=condition=Ready node --all --timeout=120s
+  fi
+fi
+
+# VM runner pods run in a user namespace, where the runtime bind-mounts
+# /dev/kvm with its host owner unmapped: a 0660 root:kvm device, Ubuntu's
+# mode, opens for nobody in the pod. Open it to all, as systemd's own rule
+# does; the udev rule keeps the mode across a reboot of the lima VM.
+if [ -n "$VIRT_ENABLED" ] && [ -z "$HOST_RUNNER" ]; then
+  KVM_RULE='KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"'
+  if [ -n "${IS_SANDBOX:-}" ]; then
+    as_root chmod 0666 /dev/kvm
+  else
+    limactl shell "$LIMA_INSTANCE" sudo sh -c "echo '$KVM_RULE' > /etc/udev/rules.d/99-kvm-all.rules && chmod 0666 /dev/kvm"
   fi
 fi
 
@@ -355,14 +401,17 @@ export -f pull_one as_root
 prepull_images > >(sed -u 's/^/[prepull] /') 2>&1 &
 PREPULL_PID=$!
 
-# Step 6b's staging, which runs beside the chart install (see step 1d).
+# Step 6b's staging, which runs beside the chart install (see step 1d). It
+# marks nothing with no vm image to stage: the container lane stages none, and
+# a phase that did nothing would read as an instant one in its timings.
 stage_vm_images() {
   local image comp
+  [ ${#VM_IMAGES[@]} -gt 0 ] || return 0
   e2e_mark "vm images staging started"
   for image in ${VM_IMAGES[@]+"${VM_IMAGES[@]}"}; do
     echo "Staging $image for the VM runners..."
     comp="${image##*/}"; comp="${comp%%:*}"
-    mise run image:stage-vm -- "$(.mise/tasks/image/resolve tar-path "${comp#platform-}")" || return 1
+    mise run image:stage-vm -- "$(.mise/tasks/image/resolve import-path "${comp#platform-}")" || return 1
   done
   e2e_mark "vm images staging done"
 }
@@ -370,7 +419,7 @@ stage_vm_images() {
 # 1d. Load images into k3s (built at the top, or out-of-band in CI).
 # SKIP_IMAGE_LOAD skips the containerd import — cluster:helm reuses the SHAs
 # already loaded, so pods keep their pinned images. SKIP_IMAGE_BUILD alone (CI)
-# does NOT skip the load: e2e:ci-images wrote the tars out-of-band, and they
+# does NOT skip the load: e2e:ci-images wrote the images out-of-band, and they
 # still have to be imported into k3s's containerd.
 if [ -n "${SKIP_IMAGE_LOAD:-}" ]; then
   echo "Skipping image load (SKIP_IMAGE_LOAD set)"
@@ -384,6 +433,14 @@ else
   # kit on a published image is left for the node to pull.
   RENDERED=$(helm template platform helm \
       -f helm/values-local.yaml "${AGENT_VALUE_FLAGS[@]}")
+  # image:stage-vm renders the chart itself to learn the directory every runner
+  # mounts the node image cache in, and this render knows the values it cannot:
+  # hand it the directory derived here, so an overlay or a --set that moves
+  # imageCache.hostPath cannot leave every staged tree where no runner looks.
+  VM_IMAGE_DIR=$(printf '%s\n' "$RENDERED" | yq -r 'select(.kind == "Deployment")
+      | .spec.template.spec.containers[].env[] | select(.name == "AGENT_VM") | .value | fromjson
+      | .runner.imageCacheHostPath')
+  export VM_IMAGE_DIR
   AGENTS_RENDERED=$(printf '%s\n' "$RENDERED" \
     | yq -r 'select(.kind == "ConfigMap") | select(.metadata.name | test("-harness-templates$"))
              | .data | to_entries | .[] | .key + "\t" + (.value | from_yaml | .image)')
@@ -432,23 +489,26 @@ else
   # imported while the rest are still on their way, so only the last to land
   # is imported after the wait.
   load_images() {
-    local c remaining=("$@") left tars=()
+    local c remaining=("$@") left images=()
     if [ -n "${CI_IMAGES_STATUS:-}" ]; then
+      # e2e:ci-images writes each image's file here, as CI_BUILD_READY_DIR:
+      # e2e.yml sets that to this same directory, since one run of it builds
+      # only one family of the images.
       echo "Waiting for this run's images (e2e:ci-images): ${remaining[*]}"
       while [ ${#remaining[@]} -gt 0 ]; do
-        left=() tars=()
+        left=() images=()
         for c in "${remaining[@]}"; do
           if [ -e "$CI_IMAGES_STATUS.ready/$c" ]; then
-            tars+=("$(.mise/tasks/image/resolve tar-path "$c")")
+            images+=("$(.mise/tasks/image/resolve import-path "$c")")
           else
             left+=("$c")
           fi
         done
-        if [ ${#tars[@]} -gt 0 ]; then
-          echo "Loading into k3s: ${tars[*]}"
-          mise run cluster:import -- "${tars[@]}" || return 1
+        if [ ${#images[@]} -gt 0 ]; then
+          echo "Loading into k3s: ${images[*]}"
+          mise run cluster:import -- "${images[@]}" || return 1
         fi
-        tars=()
+        images=()
         remaining=(${left[@]+"${left[@]}"})
         if [ ${#remaining[@]} -gt 0 ] && [ -s "$CI_IMAGES_STATUS" ]; then
           [ "$(cat "$CI_IMAGES_STATUS")" = ok ] || { echo "FATAL: fetching this run's images failed; see the e2e job's image fetch log" >&2; return 1; }
@@ -459,8 +519,8 @@ else
     fi
     [ ${#remaining[@]} -gt 0 ] || return 0
     echo "Loading images into k3s: ${remaining[*]}"
-    for c in "${remaining[@]}"; do tars+=("$(.mise/tasks/image/resolve tar-path "$c")"); done
-    mise run cluster:import -- "${tars[@]}" || return 1
+    for c in "${remaining[@]}"; do images+=("$(.mise/tasks/image/resolve import-path "$c")"); done
+    mise run cluster:import -- "${images[@]}" || return 1
   }
   # Both loads run beside the mesh install below, which spends most of its time
   # waiting, and the chart install waits only for the platform images: no pod
@@ -971,7 +1031,10 @@ if [ -n "${STAGE_VM_PID:-}" ]; then
 else
   stage_vm_images
 fi
-[ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images staged"
+# This mark is when this install stopped waiting, not when the staging ended:
+# the staging started at step 1d, beside the chart install, and the two rarely
+# end together. The staging's own span is the "vm images staging" pair.
+[ ${#VM_IMAGES[@]} -eq 0 ] || e2e_mark "vm images waited"
 [ -z "$HOST_RUNNER" ] || SKIP_IMAGE_BUILD="${RUNNER_IMAGE_BUILT:-}" mise run cluster:host-runner
 
 # HyperDX's MongoDB driver can wedge if it starts before Mongo/ztunnel are ready (its
@@ -995,6 +1058,7 @@ wait "$PREPULL_PID" 2>/dev/null || true
 echo ""
 echo "=== Cluster ready ==="
 no_mesh_warning
+virt_off_warning
 echo "KUBECONFIG=$KUBECONFIG"
 echo ""
 kubectl get pods

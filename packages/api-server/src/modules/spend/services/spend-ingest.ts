@@ -9,6 +9,7 @@ import {
   isZero,
   mapAmounts,
   utcDay,
+  NO_SESSION,
   UNKNOWN_CONNECTION,
   UNKNOWN_MODEL,
   type CallAmounts,
@@ -24,6 +25,10 @@ export interface AgentOwners {
   ownerOf(agentId: string): Promise<string | null>;
 }
 
+export interface SessionOwnership {
+  has(agentId: string, sessionId: string): Promise<boolean>;
+}
+
 export type StartedCall = CallMeta & { readonly callId: string };
 
 export interface SpendIngest {
@@ -37,12 +42,36 @@ const UNRECORDED_BATCH = 500;
 const REFERENCE_DAYS = 7;
 const PROXY_COST_TOLERANCE = 0.05;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the stamp comes from the agent's pod, so a
+ * Session counts only when the calling agent reported it to the Session
+ * directory; any other stamp, or a failed check, counts as no Session. The
+ * split is for display only, so the check never loses a call's spend.
+ */
+export async function checkedSession(
+  sessions: SessionOwnership,
+  agentId: string,
+  sessionId: string | null,
+): Promise<string> {
+  if (!agentId || !sessionId) return NO_SESSION;
+  try {
+    return (await sessions.has(agentId, sessionId)) ? sessionId : NO_SESSION;
+  } catch (err) {
+    getLogger().warn(
+      { agentId, sessionId, reason: formatError(err) },
+      "spend.session_check_failed",
+    );
+    return NO_SESSION;
+  }
+}
+
 export function createSpendIngest(deps: {
   priceBook: PriceBook;
   calls: CallStates;
   ledger: SpendLedger;
   counters: DayCounters;
   owners: AgentOwners;
+  sessions: SessionOwnership;
 }): SpendIngest {
   const log = () => getLogger();
 
@@ -64,11 +93,36 @@ export function createSpendIngest(deps: {
     }
   };
 
+  const putCall = (
+    callId: string,
+    row: SpendRow,
+    costMicros: number,
+    startedAt: Date,
+  ) =>
+    deps.ledger
+      .putCall({
+        callId,
+        callingAgentId: row.callingAgentId,
+        ownerSub: row.ownerSub,
+        payer: row.payer,
+        sessionId: row.sessionId,
+        startedAt,
+        unit: row.unit,
+        costMicros,
+      })
+      .catch((err: unknown) =>
+        log().warn(
+          { callId, reason: formatError(err) },
+          "spend.call_row_not_written",
+        ),
+      );
+
   const settle = async (
     callId: string,
     row: SpendRow,
     amounts: CallAmounts,
     final: boolean,
+    startedAt: Date,
   ) => {
     const applied = await deps.calls.apply(callId, row, amounts, final);
     if (!applied) return;
@@ -82,7 +136,9 @@ export function createSpendIngest(deps: {
       }
       if (delta.costMicros !== 0) await countDay(applied.row, delta.costMicros);
     }
-    if (final) await deps.calls.release(callId);
+    if (!final) return;
+    await deps.calls.release(callId);
+    await putCall(callId, applied.row, amounts.costMicros, startedAt);
   };
 
   const referenceCost = async (row: SpendRow) => {
@@ -129,6 +185,7 @@ export function createSpendIngest(deps: {
         state.row,
         { ...state.amounts, estimatedCalls: 1 },
         true,
+        state.meta?.startedAt ?? new Date(`${state.row.day}T00:00:00Z`),
       );
       return;
     }
@@ -140,6 +197,12 @@ export function createSpendIngest(deps: {
       ownerSub: state.meta.ownerSub,
       connectionId: state.meta.connectionId ?? UNKNOWN_CONNECTION,
       model: UNKNOWN_MODEL,
+      sessionId: await checkedSession(
+        deps.sessions,
+        state.meta.agentId,
+        state.meta.sessionId,
+      ),
+      callingAgentId: state.meta.agentId,
       provider,
       unit: unitOf(provider),
     };
@@ -151,7 +214,7 @@ export function createSpendIngest(deps: {
           ? 1
           : 0,
     );
-    await settle(callId, row, estimate, true);
+    await settle(callId, row, estimate, true, state.meta.startedAt);
   };
 
   return {
@@ -187,16 +250,38 @@ export function createSpendIngest(deps: {
         ownerSub,
         connectionId: record.connectionId ?? UNKNOWN_CONNECTION,
         model: measure.model,
+        sessionId: await checkedSession(
+          deps.sessions,
+          record.agentId,
+          record.sessionId,
+        ),
+        callingAgentId: record.agentId,
         provider: measure.provider,
         unit: measure.unit,
       };
       const amounts = measure.needsReferenceCost
         ? { ...measure.amounts, costMicros: await referenceCost(row) }
         : measure.amounts;
-      await settle(record.callId, row, amounts, record.final);
+      await settle(record.callId, row, amounts, record.final, record.startedAt);
+      if (record.final)
+        log().debug(
+          {
+            callId: record.callId,
+            agentId: record.agentId,
+            sessionId: record.sessionId,
+            harness: record.harness,
+            durationMs: record.durationMs,
+          },
+          "spend.call_recorded",
+        );
 
+      const uncached =
+        amounts.cacheReadTokens +
+          amounts.cacheWrite5mTokens +
+          amounts.cacheWrite1hTokens ===
+        0;
       const difference =
-        record.final && measure.unit === "usd"
+        record.final && measure.unit === "usd" && uncached
           ? proxyCostDifference(amounts.costMicros, record.proxyCost)
           : null;
       if (difference !== null && difference > PROXY_COST_TOLERANCE) {
@@ -205,7 +290,12 @@ export function createSpendIngest(deps: {
             provider: measure.provider,
             model: measure.model,
             costMicros: amounts.costMicros,
-            proxyCost: record.proxyCost,
+            proxyCost: record.proxyCost.cost,
+            proxyCostOriginal: record.proxyCost.original,
+            proxyCostDiscount: record.proxyCost.discount,
+            proxyCostMargin: record.proxyCost.margin,
+            uncachedInputTokens: amounts.uncachedInputTokens,
+            outputTokens: amounts.outputTokens,
           },
           "spend.proxy_cost_mismatch",
         );

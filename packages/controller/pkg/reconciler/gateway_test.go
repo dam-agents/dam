@@ -3,6 +3,7 @@ package reconciler
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -34,7 +35,7 @@ func TestBuildGatewayStatefulSet_Shape(t *testing.T) {
 	require.Len(t, ss.Spec.Template.Spec.Containers, 1, "gateway pod has exactly one Envoy container")
 	envoy := ss.Spec.Template.Spec.Containers[0]
 	assert.Equal(t, "envoy", envoy.Name)
-	assert.Equal(t, "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.3", envoy.Image)
+	assert.Equal(t, "mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4", envoy.Image)
 
 	mountPaths := map[string]string{}
 	for _, m := range envoy.VolumeMounts {
@@ -108,33 +109,81 @@ func TestRefreshGatewayCredentials_AnnotatesOnRotationOnly(t *testing.T) {
 	allowOnly := credSecret("platform-cred-bbb", "allow.example.com")
 	allowOnly.Labels[envoySecretTypeLabel] = envoySecretTypeAllowOnly
 	allowOnly.ResourceVersion = "1"
-
-	annotation := func() string {
-		pod, err := client.CoreV1().Pods(testConfig.Namespace).Get(ctx, "a-gateway-0", metav1.GetOptions{})
+	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
+	refresh := func(at time.Time, secrets ...corev1.Secret) time.Duration {
+		recheck, err := r.refreshGatewayCredentials(ctx, "a-gateway", secrets, at)
 		require.NoError(t, err)
-		return pod.Annotations[annGatewayCredentialsRev]
-	}
-	patches := func() int {
-		n := 0
-		for _, a := range client.Actions() {
-			if a.GetVerb() == "patch" {
-				n++
-			}
-		}
-		return n
+		return recheck
 	}
 
-	require.NoError(t, r.refreshGatewayCredentials(ctx, "a-gateway", []corev1.Secret{cred, allowOnly}))
-	first := annotation()
+	refresh(now, cred, allowOnly)
+	first := gatewayPodAnnotations(t, client, "a-gateway-0")[annGatewayCredentialsRev]
 	require.NotEmpty(t, first)
+	refresh(now.Add(time.Minute), cred, allowOnly)
+	settled := patchCount(client)
 
 	allowOnly.ResourceVersion = "2"
-	require.NoError(t, r.refreshGatewayCredentials(ctx, "a-gateway", []corev1.Secret{cred, allowOnly}))
-	assert.Equal(t, 1, patches(), "an unchanged mounted set must not write the pod")
+	assert.Zero(t, refresh(now.Add(2*time.Minute), cred, allowOnly))
+	assert.Equal(t, settled, patchCount(client), "an unchanged mounted set must not write the pod")
 
 	cred.ResourceVersion = "2"
-	require.NoError(t, r.refreshGatewayCredentials(ctx, "a-gateway", []corev1.Secret{cred, allowOnly}))
-	assert.NotEqual(t, first, annotation(), "a rotated credential must change the annotation")
+	refresh(now.Add(3*time.Minute), cred, allowOnly)
+	assert.NotEqual(t, first, gatewayPodAnnotations(t, client, "a-gateway-0")[annGatewayCredentialsRev], "a rotated credential must change the annotation")
 
-	require.NoError(t, r.refreshGatewayCredentials(ctx, "b-gateway", []corev1.Secret{cred}), "a hibernated gateway has no pod to refresh")
+	_, err := r.refreshGatewayCredentials(ctx, "b-gateway", []corev1.Secret{cred}, now)
+	require.NoError(t, err, "a hibernated gateway has no pod to refresh")
+}
+
+// TEST_SCENARIO: the sync one annotation change causes can run before the kubelet's own copy of the Secret has the new version, and the old key then stays mounted until the periodic sync, a minute later. So a rotation must sync the pod a second time once the kubelet's copy has caught up: the first change asks to come back after the wait, an early return writes nothing and asks again for the time left, and the return after the wait changes a second annotation. Both done, the revision is settled and writes nothing more. A pod with no revision yet mounted its Secrets when it started, so it takes both at once and nothing comes back for it.
+func TestRefreshGatewayCredentials_SyncsTwiceForAStaleKubeletCopy(t *testing.T) {
+	ctx := context.Background()
+	client := fake.NewSimpleClientset(&corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "a-gateway-0", Namespace: testConfig.Namespace}})
+	r := NewAgentReconciler(client, nil, testConfig)
+	cred := credSecret("platform-cred-aaa", "api.example.com")
+	cred.ResourceVersion = "7"
+	now := time.Date(2026, 10, 19, 18, 4, 12, 0, time.UTC)
+	refresh := func(at time.Time) time.Duration {
+		recheck, err := r.refreshGatewayCredentials(ctx, "a-gateway", []corev1.Secret{cred}, at)
+		require.NoError(t, err)
+		return recheck
+	}
+
+	assert.Zero(t, refresh(now), "a pod with no revision yet mounted its Secrets when it started")
+	assert.Equal(t, 1, patchCount(client))
+	ann := gatewayPodAnnotations(t, client, "a-gateway-0")
+	assert.Equal(t, ann[annGatewayCredentialsRev], ann[annGatewayCredentialsResync])
+
+	cred.ResourceVersion = "8"
+	assert.Equal(t, gatewayCredentialsResyncWait, refresh(now), "the first sync after a rotation asks to come back for the second")
+	assert.Equal(t, 2, patchCount(client))
+	ann = gatewayPodAnnotations(t, client, "a-gateway-0")
+	assert.NotEqual(t, ann[annGatewayCredentialsRev], ann[annGatewayCredentialsResync], "the second sync is still due")
+
+	assert.Equal(t, gatewayCredentialsResyncWait-2*time.Second, refresh(now.Add(2*time.Second)), "an early return waits for the time left")
+	assert.Equal(t, 2, patchCount(client), "an early return writes nothing")
+
+	assert.Zero(t, refresh(now.Add(gatewayCredentialsResyncWait)))
+	assert.Equal(t, 3, patchCount(client), "the second sync is a second write")
+	ann = gatewayPodAnnotations(t, client, "a-gateway-0")
+	assert.Equal(t, ann[annGatewayCredentialsRev], ann[annGatewayCredentialsResync])
+
+	assert.Zero(t, refresh(now.Add(time.Minute)))
+	assert.Equal(t, 3, patchCount(client), "a settled revision writes nothing")
+}
+
+func gatewayPodAnnotations(t *testing.T, client *fake.Clientset, pod string) map[string]string {
+	t.Helper()
+	p, err := client.CoreV1().Pods(testConfig.Namespace).Get(context.Background(), pod, metav1.GetOptions{})
+	require.NoError(t, err)
+	return p.Annotations
+}
+
+func patchCount(client *fake.Clientset) int {
+	n := 0
+	for _, a := range client.Actions() {
+		if a.GetVerb() == "patch" {
+			n++
+		}
+	}
+	return n
 }

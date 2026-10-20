@@ -1,11 +1,4 @@
-import {
-  ArrowDown,
-  ArrowLeft,
-  Document,
-  Renew,
-  TrashCan,
-  Warning,
-} from "@carbon/icons-react";
+import { ArrowDown, Renew, TrashCan, Warning } from "@carbon/icons-react";
 import { routesSessionPairs } from "agent-runtime-api";
 import {
   SessionMode,
@@ -13,7 +6,6 @@ import {
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
 import {
-  type CSSProperties,
   Fragment,
   type ReactNode,
   useCallback,
@@ -31,12 +23,7 @@ import { Callout } from "@/components/ui/callout";
 import { Spinner } from "@/components/ui/spinner";
 import { cn } from "@/lib/utils";
 
-import { ResizeHandle } from "../../../components/resize-handle.js";
 import { useNow } from "../../../hooks/use-now.js";
-import {
-  readPersistedNumber,
-  writePersistedNumber,
-} from "../../../lib/persisted-prefs.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import type { AgentView, Message } from "../../../types.js";
@@ -50,7 +37,11 @@ import {
   COMPOSER_LOCKED_REASON,
   composerLocked,
 } from "../../a2ui/lib/composer-lock.js";
-import { isQueuedSend, rewritePointsOf } from "../../acp/session-projection.js";
+import {
+  conversationEmpty,
+  isQueuedSend,
+  rewritePointsOf,
+} from "../../acp/session-projection.js";
 import {
   useHarnessConfigCurrent,
   useHarnessConfigStatus,
@@ -96,13 +87,12 @@ import { DockedChangesPanel } from "../../changes/components/docked-changes-pane
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { DockedFilePanel } from "../../files/components/docked-file-panel.js";
 import { FilesPanel } from "../../files/components/files-panel.js";
 import { HomeVolumeBar } from "../../files/components/home-volume-bar.js";
 import { ImportInProgressBadge } from "../../files/components/import-in-progress-badge.js";
 import { useFileTree } from "../../files/hooks/use-file-tree.js";
-import { GettingStartedDock } from "../../getting-started/components/getting-started-dock.js";
-import { ApprovalsButton } from "../../home/components/approvals-button.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -117,11 +107,10 @@ import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
-import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
+import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
 import { OnboardingBar } from "../../starter-kits/components/onboarding-bar.js";
 import { useTurns } from "../../telemetry/api/queries.js";
-import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { matchTurnsToReplies } from "../../telemetry/lib/align-turns.js";
 import { useSessionBackgroundWork } from "../api/background-work.js";
 import { acpSessionsKeys } from "../api/keys.js";
@@ -131,11 +120,15 @@ import {
   useAgentSession,
 } from "../api/queries.js";
 import { useProviderConnections } from "../api/session-pair.js";
+import { AppSidePanelButtons } from "../components/app-side-panel.js";
 import { BackgroundWorkIndicator } from "../components/background-work-indicator.js";
 import { ChatColumn } from "../components/chat-column.js";
 import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
+import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
+import { ClassicChatLayout } from "../components/classic-chat-layout.js";
 import { ModelIndicator } from "../components/model-indicator.js";
+import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
 import {
@@ -145,11 +138,17 @@ import {
 import { SessionPairOutdatedNotice } from "../components/session-pair-outdated-notice.js";
 import { SessionPairPicker } from "../components/session-pair-picker.js";
 import { SessionPairPlaceholder } from "../components/session-pair-placeholder.js";
-import { SidePanelBar } from "../components/side-panel-bar.js";
-import { SidePanelEdgeTab } from "../components/side-panel-edge-tab.js";
+import { SetupInstructionsCard } from "../components/setup-instructions-card.js";
+import {
+  appSidePanelTabs,
+  SIDE_PANEL_TABS,
+  SidePanelTabButtons,
+} from "../components/side-panel-bar.js";
+import { SidePanelShell } from "../components/side-panel-shell.js";
 import { Terminal } from "../components/terminal.js";
 import type { ConnectionState } from "../hooks/use-acp-connection.js";
 import { useAcpSession } from "../hooks/use-acp-session.js";
+import { useAppSidePanelTabs } from "../hooks/use-app-side-panel-tabs.js";
 import { useChatArtifactPrompt } from "../hooks/use-chat-artifact-prompt.js";
 import { useChatFormPrompt } from "../hooks/use-chat-form-prompt.js";
 import { useDeleteUndelivered } from "../hooks/use-delete-undelivered.js";
@@ -160,20 +159,26 @@ import {
   useSessionUrlSync,
 } from "../hooks/use-session-url-sync.js";
 import { useSessionWatch } from "../hooks/use-session-watch.js";
+import { useTakeBack } from "../hooks/use-take-back.js";
+import {
+  classicAppTab,
+  classicDockToggle,
+  classicPanel,
+} from "../lib/classic-chat-layout.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
   type DockedItems,
   dockedItemTab,
+  hiddenSidePanelTabs,
   maximizableView,
   selectSidePanelTab,
-  shownSidePanelWidth,
-  sidePanelMinWidth,
   type SidePanelTab,
   visibleSidePanelTab,
 } from "../lib/side-panel.js";
 import {
   dividerLabel,
+  setupMessageOf,
   threadItems,
   timeProps,
   userRunsOf,
@@ -181,9 +186,6 @@ import {
 import { clearUndelivered } from "../lib/undelivered-store.js";
 import type { SessionError } from "../store/sessions.js";
 
-const FILE_PANEL_WIDTH_KEY = "platform-file-w";
-const CHAT_MIN_W = 320;
-const SIDE_PANEL_BAR_W = 44;
 const TELEMETRY_SETTLE_MS = 5 * 60_000;
 
 // UNIT_BOUNDARY_DESCRIPTION: a sent message lands in the transcript a render or two after the send, so the jump to the end repeats once it is laid out and once more after this wait.
@@ -254,6 +256,7 @@ export function ChatView() {
     s.openBrowserAgentId === s.selectedAgent ? s.openBrowserAgentId : null,
   );
   const openBrowser = useOpenBrowser();
+  const closeBrowser = useStore((s) => s.setOpenBrowser);
   const openChangesAgentId = useStore((s) =>
     s.openChangesAgentId === s.selectedAgent ? s.openChangesAgentId : null,
   );
@@ -264,6 +267,7 @@ export function ChatView() {
       : null,
   );
   const processesEnabled = useProcessesEnabled();
+  const newLayout = useNewLayout();
   const storedProcessOutputKey = useStore((s) => s.openProcessOutputKey);
   const openProcessOutputKey = processesEnabled ? storedProcessOutputKey : null;
   useProcessesLiveUpdates(selectedAgent, processesEnabled);
@@ -274,30 +278,12 @@ export function ChatView() {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const sidePanelTab = useStore((s) => s.sidePanelTab);
   const setSidePanelTab = useStore((s) => s.setSidePanelTab);
-  const sidePanelMaximized = useStore((s) => s.sidePanelMaximized);
-  const setSidePanelMaximized = useStore((s) => s.setSidePanelMaximized);
   const draftDocked = useStore((s) => s.openFileDirty || s.openArtifactDirty);
   const hasPendingPermission = useHasPendingPermission();
-  const mobileScreen = useStore((s) => s.mobileScreen);
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
 
-  const [rightW, setRightW] = useState<number | null>(() =>
-    readPersistedNumber(FILE_PANEL_WIDTH_KEY, null),
-  );
-  const rightWRef = useRef(rightW);
-  const [columnsEl, setColumnsEl] = useState<HTMLDivElement | null>(null);
-  const [columnsW, setColumnsW] = useState<number | null>(null);
-  useEffect(() => {
-    if (!columnsEl) return;
-    const ro = new ResizeObserver(([entry]) =>
-      setColumnsW(entry.contentRect.width),
-    );
-    ro.observe(columnsEl);
-    return () => ro.disconnect();
-  }, [columnsEl]);
-  const filePanelRef = useRef<HTMLDivElement>(null);
   const terminalFreshRef = useRef(false);
   const messagesRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -308,6 +294,7 @@ export function ChatView() {
     loadOlderMessages,
     sendPrompt,
     rewriteFrom,
+    takeBackPrompt,
     stopAgent,
     chooseSessionModel,
     configureSession,
@@ -398,22 +385,46 @@ export function ChatView() {
       sessionTurns.data?.available === true ? sessionTurns.data.turns : [];
     return matchTurnsToReplies(rows, messages);
   }, [sessionTurns.data, messages]);
+  const shownTurns = useMemo(
+    () => [...turnForMessage.values()],
+    [turnForMessage],
+  );
+  const { data: turnSpend } = useTurnSpend(
+    selectedAgent ?? null,
+    sessionId ?? null,
+    shownTurns,
+  );
 
   const harnessForks = useStore((s) => s.harnessForks);
-  const queueEmpty = useStore((s) => s.queuedPrompts.length === 0);
+  const queuedPrompts = useStore((s) => s.queuedPrompts);
+  const queueEmpty = queuedPrompts.length === 0;
   const { data: sessionView } = useAgentSession(selectedAgent, sessionId);
-  const canRewrite =
-    harnessForks &&
+  const rewritable =
     sessionView?.mode === SessionMode.Chat &&
     sessionView.type === SessionType.Regular &&
     !sessionView.threadTs &&
     !sessionView.scheduleId &&
     !sessionView.initialization;
+  const canRewrite = harnessForks && rewritable;
+  const setupMessageId = sessionView?.initialization
+    ? setupMessageOf(shown)
+    : undefined;
   const arrivalsRef = useRef(newLiveArrivals(sessionId));
   if (arrivalsRef.current.sessionId !== sessionId)
     arrivalsRef.current = newLiveArrivals(sessionId);
   const arrived = noteArrivals(arrivalsRef.current, shown, loadingSession);
   const rewritePoints = useMemo(() => rewritePointsOf(shown), [shown]);
+  const takeBack = useTakeBack({
+    shown,
+    rewritePoints,
+    sessionId,
+    rewritable: rewritable === true,
+    harnessForks,
+    queuedPrompts,
+    title: sessionView?.title ?? null,
+    takeBackPrompt,
+    stop: stopAgent,
+  });
   const rewriting = useStore((s) => s.rewriting);
   const rewriteIndex = rewriting
     ? shown.findIndex((m) => m.id === rewriting.messageId)
@@ -679,20 +690,50 @@ export function ChatView() {
     browser: openBrowserAgentId !== null && canOpenBrowser,
     delegation: openDelegation !== null,
   };
-  const activeTab = visibleSidePanelTab(sidePanelTab, docked, {
+  const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
+  const hiddenTabs = hiddenSidePanelTabs({
+    agent: true,
     canOpenBrowser,
     processesEnabled,
+    gettingStarted,
   });
+  const activeTab = visibleSidePanelTab(sidePanelTab, docked, hiddenTabs);
   const dockedTab = dockedItemTab(docked);
   const dockedShown = dockedTab !== null && dockedTab === activeTab;
   const dockedKept = dockedTab !== null && (dockedShown || draftDocked);
-  const sidePanelOpen = activeTab !== null;
-  const mobileOnPanel = sidePanelOpen && mobileScreen === "files";
-  const mobilePanelOpen = mobileOnPanel || (sidePanelOpen && dockedShown);
-  const hiddenTabs = new Set<SidePanelTab>([
-    ...(canOpenBrowser ? [] : (["browser"] as const)),
-    ...(processesEnabled ? [] : (["processes"] as const)),
-  ]);
+  const classicTab = classicAppTab(sidePanelTab, hiddenTabs);
+  const shownClassicPanel = classicPanel(
+    sidePanelTab,
+    hiddenTabs,
+    dockedTab !== null,
+  );
+  const dockedItem =
+    dockedTab &&
+    [
+      dockedTab,
+      openBrowserAgentId,
+      openDelegation?.id,
+      openFilePath,
+      openArtifactId,
+      openChangesAgentId,
+      openProcessOutputKey,
+    ].join("\n");
+  const [phoneHiddenDock, setPhoneHiddenDock] = useState<string | null>(null);
+  const dockHiddenOnPhone =
+    phoneHiddenDock !== null && phoneHiddenDock === dockedItem;
+  const revealDock = () => {
+    setPhoneHiddenDock(null);
+    if (classicTab !== null) setSidePanelTab(null);
+  };
+  const classicToggle = (item: "browser" | "changes") =>
+    classicDockToggle({
+      docked: docked[item],
+      front: dockedTab === item,
+      panel: shownClassicPanel,
+      hiddenOnPhone: dockHiddenOnPhone,
+    });
+  const browserToggle = classicToggle("browser");
+  const changesToggle = classicToggle("changes");
   const onSidePanelTab = (tab: SidePanelTab) => {
     const selection = selectSidePanelTab(tab, activeTab, docked);
     if (selection.kind === "collapse") setSidePanelTab(null);
@@ -702,19 +743,6 @@ export function ChatView() {
       void toggleChanges(selectedAgent);
     else void openBrowser(selectedAgent);
   };
-  const maximizable = maximizableView(activeTab, dockedShown, openFilePath);
-  const maximized = maximizable !== null && sidePanelMaximized === maximizable;
-  const sidePanelMinW = sidePanelMinWidth(activeTab);
-  const columnsDoNotFit =
-    columnsW !== null &&
-    columnsW < CHAT_MIN_W + sidePanelMinW + SIDE_PANEL_BAR_W;
-  const sidePanelFills = maximized || (sidePanelOpen && columnsDoNotFit);
-  const sidePanelMaxW =
-    columnsW === null ? null : columnsW - CHAT_MIN_W - SIDE_PANEL_BAR_W;
-  const sidePanelW =
-    rightW === null
-      ? null
-      : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
   const handleConfigureSandbox = useCallback(() => {
     if (!selectedAgent) return;
     navigateToSandboxHome(selectedAgent);
@@ -733,6 +761,395 @@ export function ChatView() {
   const statusLineInThread =
     lastMessage?.role === "assistant" && !lastMessage.notice;
 
+  const dock =
+    openBrowserAgentId && canOpenBrowser ? (
+      <DockedBrowserPanel
+        key={openBrowserAgentId}
+        agentId={openBrowserAgentId}
+        agentName={selectedAgentName ?? openBrowserAgentId}
+      />
+    ) : openDelegation ? (
+      <DockedDelegationPanel
+        key={openDelegation.id}
+        driverAgentId={openDelegation.driverAgentId}
+        id={openDelegation.id}
+      />
+    ) : openFilePath ? (
+      <DockedFilePanel onOpenFile={openFileHandler} />
+    ) : openArtifactId ? (
+      <DockedArtifactPanel
+        key={openArtifactId}
+        agentId={selectedAgent}
+        onSendPrompt={sendArtifactPrompt}
+      />
+    ) : openChangesAgentId ? (
+      <DockedChangesPanel
+        key={`${openChangesAgentId}:${sessionId ?? ""}`}
+        agentId={openChangesAgentId}
+        sessionId={sessionId}
+      />
+    ) : openProcessOutputKey && selectedAgent ? (
+      <DockedProcessOutputPanel
+        key={openProcessOutputKey}
+        agentId={selectedAgent}
+        outputKey={openProcessOutputKey}
+      />
+    ) : null;
+
+  const notices = (
+    <>
+      {runtimeOutdated && <RuntimeOutdatedNotice agentId={selectedAgent} />}
+      <ContributionGapNotice agentId={selectedAgent} />
+      <WorkspaceFailureNotice agentId={selectedAgent} />
+    </>
+  );
+
+  const conversation =
+    sessionMode === SessionMode.Terminal && selectedAgent && sessionId ? (
+      <div className="flex min-h-0 flex-1 flex-col">
+        <Terminal
+          key={sessionId}
+          agentId={selectedAgent}
+          sessionId={sessionId}
+          fresh={terminalFreshRef.current}
+          autoConnect={!terminalPaused && agentOperable}
+          onConnected={() => {
+            terminalFreshRef.current = false;
+            setTerminalPaused(false);
+          }}
+          onFirstSubmit={() => {
+            optimisticInsertSession(
+              selectedAgent,
+              sessionId,
+              SessionMode.Terminal,
+              true,
+            );
+            queryClient.invalidateQueries({
+              queryKey: acpSessionsKeys.agent(selectedAgent),
+            });
+          }}
+          onSubmit={() => setSessionRunning(selectedAgent, sessionId, true)}
+          onSessionMoved={setSessionId}
+        />
+      </div>
+    ) : (
+      <>
+        <div className="@container relative flex flex-1 flex-col min-h-0">
+          <div ref={messagesRef} className="flex-1 overflow-y-auto">
+            <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
+              {!historyShown && (
+                <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
+                  <Spinner size={20} />
+                  Loading session…
+                </div>
+              )}
+              {loadingSession && startNotice && (
+                <div className="flex justify-center">{startNotice}</div>
+              )}
+              {!loadingSession && sessionError && (
+                <SessionErrorCard
+                  error={sessionError}
+                  onRetry={() => resumeSession(sessionError.sessionId)}
+                  onDelete={async () => {
+                    if (!(await deleteSession(sessionError.sessionId))) return;
+                    setSessionError(null);
+                  }}
+                />
+              )}
+              {!loadingSession &&
+                !sessionError &&
+                conversationEmpty(messages, queuedPrompts) && (
+                  <div className="flex flex-1 flex-col items-center justify-center text-center">
+                    <h2 aria-label={selectedAgentName ?? undefined}>
+                      <button
+                        type="button"
+                        onClick={handleConfigureSandbox}
+                        aria-label={`Configure ${selectedAgentName ?? "agent"}`}
+                        className="group mb-2 flex cursor-pointer flex-col items-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                      >
+                        {agentView && (
+                          <AgentAvatar
+                            name={agentView.name}
+                            avatar={agentView.avatar}
+                            size={96}
+                            mood={avatarMood(agentDisplay?.state, agentView)}
+                            className="transition-opacity group-hover:opacity-80"
+                          />
+                        )}
+                        <span className="mt-3 text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
+                          {selectedAgentName}
+                        </span>
+                      </button>
+                    </h2>
+                    <p className="text-sm text-muted-foreground">
+                      Send a message to begin or open a new session in:
+                    </p>
+                    {agentView && (
+                      <NewSessionLauncher
+                        agent={agentView}
+                        onNewTerminal={handleNewTerminal}
+                      />
+                    )}
+                    {startNotice && <div className="mt-6">{startNotice}</div>}
+                  </div>
+                )}
+              <A2uiActionProvider value={sendFormPrompt}>
+                <A2uiConversationProvider value={a2uiConversation}>
+                  <DelegationOwnersProvider value={delegationOwners}>
+                    {items.map((item) => {
+                      if (item.kind === "divider") {
+                        return (
+                          <div
+                            key={item.key}
+                            className="flex items-center gap-3 py-2"
+                          >
+                            <span className="h-px flex-1 bg-border/60" />
+                            <span className="text-2xs text-muted-foreground">
+                              {dividerLabel(item, now)}
+                            </span>
+                            <span className="h-px flex-1 bg-border/60" />
+                          </div>
+                        );
+                      }
+                      if (userRuns.inner.has(item.message.id)) return null;
+                      const turn = turnForMessage.get(item.message.id);
+                      const members = userRuns.runs.get(item.message.id) ?? [
+                        item.message,
+                      ];
+                      const lastIndex = item.index + members.length - 1;
+                      const chatMessage = (actions?: ReactNode) => {
+                        const bubbles = members.map((m, k) =>
+                          m.id === setupMessageId ? (
+                            <SetupInstructionsCard key={m.id} message={m} />
+                          ) : (
+                            <ChatMessage
+                              key={m.id}
+                              message={m}
+                              continued={k > 0}
+                              arriving={arrived.has(m.id)}
+                              avatarAgent={agentView ?? undefined}
+                              onAgentClick={handleConfigureSandbox}
+                              footer={
+                                k === members.length - 1 ? actions : undefined
+                              }
+                              isLast={item.index + k === shown.length - 1}
+                              showModel={runStarts.length > 0}
+                              {...timeProps(m.at, now)}
+                              hasPendingPermission={hasPendingPermission}
+                              pendingNotice={
+                                item.index + k === shown.length - 1
+                                  ? startNotice
+                                  : undefined
+                              }
+                              onRetry={sendPrompt}
+                              onFileClick={openFileHandler}
+                              onDelete={deleteMessage}
+                              onLoadOlder={loadOlderKeepingScroll}
+                              turn={turn}
+                              turnSpend={
+                                turn ? turnSpend?.get(turn.turnId) : undefined
+                              }
+                              agentId={selectedAgent ?? undefined}
+                              sessionId={sessionId ?? undefined}
+                            />
+                          ),
+                        );
+                        return members.length === 1 ? (
+                          bubbles[0]
+                        ) : (
+                          <div className="flex flex-col gap-5">{bubbles}</div>
+                        );
+                      };
+                      const runMessage: Message =
+                        members.length === 1
+                          ? item.message
+                          : {
+                              ...item.message,
+                              parts: members.flatMap((m) =>
+                                m.parts.filter((p) => p.kind === "text"),
+                              ),
+                            };
+                      const upTo = rewritePoints.get(item.message.id);
+                      const editingHere =
+                        rewriting?.messageId === item.message.id;
+                      const doomed =
+                        rewriting?.mode === "rewind" &&
+                        rewriteIndex !== -1 &&
+                        item.index > rewriteIndex;
+                      const content =
+                        canRewrite && rewritePoints.has(item.message.id) ? (
+                          <RewritableMessage
+                            message={runMessage}
+                            enabled={queueEmpty && !busy}
+                            onRewrite={(mode, text) =>
+                              rewriteFrom({
+                                messageId: item.message.id,
+                                upToMessageId: upTo,
+                                mode,
+                                text,
+                                title: sessionView?.title ?? null,
+                              })
+                            }
+                          >
+                            {chatMessage}
+                          </RewritableMessage>
+                        ) : (
+                          chatMessage()
+                        );
+                      return (
+                        <Fragment key={item.message.id}>
+                          {doomed ? (
+                            <div className="opacity-30 grayscale">
+                              {content}
+                            </div>
+                          ) : (
+                            content
+                          )}
+                          {editingHere && rewriting && (
+                            <RewriteMarker
+                              mode={rewriting.mode}
+                              following={shown.length - 1 - lastIndex}
+                            />
+                          )}
+                        </Fragment>
+                      );
+                    })}
+                  </DelegationOwnersProvider>
+                </A2uiConversationProvider>
+              </A2uiActionProvider>
+              {selectedAgent && (
+                <LiveDelegationBlock
+                  driverAgentId={selectedAgent}
+                  sessionId={sessionId}
+                  busy={busy}
+                  claimed={delegationOwners}
+                />
+              )}
+              <QueuedPrompts onFileClick={openFileHandler} />
+              {telemetryEnabled && sessionTurns.isError && (
+                <p className="py-1 text-2xs text-muted-foreground/70">
+                  Telemetry for this session could not be read.
+                </p>
+              )}
+              {turnsUnavailable && (
+                <p className="py-1 text-2xs text-muted-foreground/70">
+                  {turnsUnavailable}
+                </p>
+              )}
+              {turnsTruncated && (
+                <p className="py-1 text-2xs text-muted-foreground/70">
+                  Older turns in this session are past the telemetry display cap
+                  and are not shown.
+                </p>
+              )}
+              {!statusLineInThread && <PermissionStatusLine />}
+            </ChatColumn>
+          </div>
+
+          {showJump && (
+            <button
+              onClick={scrollToBottom}
+              className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised hidden @[11rem]:inline-flex items-center whitespace-nowrap gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-sm font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
+            >
+              <ArrowDown size={16} />
+              Jump to latest
+            </button>
+          )}
+        </div>
+
+        <div className="pb-4">
+          <OnboardingBar
+            key={selectedAgent ?? "none"}
+            agentId={selectedAgent}
+          />
+          <KitUpdateBar agentId={selectedAgent} />
+          <HomeVolumeBar agentId={selectedAgent} />
+          <ChatInputArea
+            textareaRef={textareaRef}
+            busy={busy}
+            loadingSession={loadingSession}
+            onSend={sendWithA2uiData}
+            onStop={stopAgent}
+            onTakeBack={takeBack}
+            blockedReason={
+              noGrantedProvider
+                ? "No LLM provider connected to this agent."
+                : formLocksComposer
+                  ? COMPOSER_LOCKED_REASON
+                  : null
+            }
+          />
+          {!hasPendingPermission && pickable && (
+            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+              <ChatColumn>
+                <SessionPairPicker
+                  {...pickable}
+                  open={pairPickerOpen}
+                  onOpenChange={setPairPickerOpen}
+                  onConnectProviders={() => setProvidersModal(true)}
+                />
+              </ChatColumn>
+            </div>
+          )}
+          {!hasPendingPermission && pendingPairAgent && (
+            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+              <ChatColumn>
+                <SessionPairPlaceholder
+                  agentId={pendingPairAgent}
+                  agentHarness={agentView?.harness}
+                  open={pairPickerOpen}
+                  onOpenChange={setPairPickerOpen}
+                  onConnectProviders={() => setProvidersModal(true)}
+                />
+              </ChatColumn>
+            </div>
+          )}
+          {!hasPendingPermission && !pickable && !pendingPairAgent && (
+            <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
+              <ChatColumn>
+                {selectedAgent && pairOutdated ? (
+                  <SessionPairOutdatedNotice agentId={selectedAgent} />
+                ) : selectedAgent && currentSession?.harness ? (
+                  <div className="flex min-w-0 items-center justify-between gap-3">
+                    <ModelIndicator
+                      agentId={selectedAgent}
+                      harness={currentSession.harness}
+                      provider={currentSession.provider ?? null}
+                      model={currentSession.model ?? null}
+                      settings={currentSession.settings}
+                      carried={harnessStatus?.harnesses ?? []}
+                      routed={harnessStatus?.modelRouter ?? false}
+                      turnRunning={busy}
+                      onChoose={(value) => void chooseSessionModel(value)}
+                      onConfigure={(change) => void configureSession(change)}
+                      onNewSession={() => handleNewSession(true)}
+                    />
+                    <SessionPullRequests
+                      repositories={currentSession.repositories}
+                    />
+                  </div>
+                ) : selectedAgent ? (
+                  <Button
+                    variant="link"
+                    size="inline"
+                    tone="muted"
+                    className="pl-3 text-sm"
+                    onClick={() =>
+                      navigateToSandboxHome(selectedAgent, "setup")
+                    }
+                  >
+                    {harnessCurrent?.model
+                      ? `${harnessCurrent.model} · Configure defaults`
+                      : "Configure defaults"}
+                  </Button>
+                ) : null}
+              </ChatColumn>
+            </div>
+          )}
+        </div>
+      </>
+    );
+
   return (
     <div className="flex flex-col h-dvh bg-background relative overflow-hidden">
       {}
@@ -743,11 +1160,60 @@ export function ChatView() {
         />
       )}
       {}
-      <div ref={setColumnsEl} className="flex flex-1 min-h-0">
-        {}
-        <div
-          className={`@container/chat relative flex flex-1 flex-col min-w-0 ${mobileOnPanel ? "hidden md:flex" : "flex"} ${sidePanelFills ? "md:!hidden" : ""}`}
+      {newLayout ? (
+        <SidePanelShell
+          mainClassName="@container/chat"
+          activeTab={activeTab}
+          hiddenTabs={hiddenTabs}
+          onSelectTab={onSidePanelTab}
+          icons={appTabs.icons}
+          badges={{
+            ...appTabs.badges,
+            ...(runningProcesses && {
+              processes: {
+                count: runningProcesses.running,
+                label: `Processes, ${String(runningProcesses.running)} running`,
+              },
+            }),
+          }}
+          dockedShown={dockedShown}
+          dockedKept={dockedKept}
+          mobileTitle={selectedAgentName}
+          mobileBackLabel="Back to chat"
+          panel={
+            <>
+              {!dockedShown && activeTab === "files" && (
+                <FilesPanel
+                  open
+                  className="flex-1"
+                  onOpenFile={openFileHandler}
+                />
+              )}
+              {activeTab === "artifacts" && (
+                <ChatArtifactsPanel
+                  key={selectedAgent}
+                  agentId={selectedAgent}
+                  open
+                  className={cn("flex-1", dockedShown && "hidden")}
+                />
+              )}
+              {!dockedShown && activeTab === "processes" && (
+                <ProcessesPanel
+                  agentId={selectedAgent}
+                  alwaysOn={agentView?.hibernationTimeoutMin === 0}
+                  open
+                  className="flex-1"
+                />
+              )}
+            </>
+          }
+          dock={dock}
         >
+          <h1 className="sr-only">
+            {[selectedAgentName, sessionView?.title]
+              .filter(Boolean)
+              .join(" · ")}
+          </h1>
           <header className="@container flex shrink-0 items-center gap-2 px-4 max-md:h-[52px] max-md:border-b max-md:border-border md:hidden md:py-2 md:has-[[data-chat-status]>*]:flex">
             <div className="flex min-w-0 flex-1 items-center gap-3 md:hidden">
               <MobileMenuButton />
@@ -774,8 +1240,15 @@ export function ChatView() {
                     className="@max-[149px]:hidden"
                   />
                 )}
-                <span className="truncate text-sm font-bold text-foreground">
-                  {selectedAgentName}
+                <span className="flex min-w-0 flex-col items-start text-left">
+                  <span className="max-w-full truncate text-sm font-bold text-foreground">
+                    {selectedAgentName}
+                  </span>
+                  {sessionView?.title && (
+                    <span className="max-w-full truncate text-2xs text-muted-foreground">
+                      {sessionView.title}
+                    </span>
+                  )}
                 </span>
               </button>
               {agentView && (
@@ -800,550 +1273,102 @@ export function ChatView() {
                 processesEnabled={processesEnabled}
               />
             </div>
-            <div className="flex shrink-0 items-center gap-2 md:hidden">
+            <div className="flex shrink-0 items-center gap-1 md:hidden">
               {processesEnabled && (
                 <ProcessesIndicator agentId={selectedAgent} />
               )}
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                aria-label="Files and artifacts"
-                data-testid="open-agent-files"
-                className="md:hidden"
-                onClick={() => {
-                  if (!sidePanelOpen) setSidePanelTab("files");
+              <SidePanelTabButtons
+                tabs={SIDE_PANEL_TABS.filter(
+                  ({ tab }) => tab === "artifacts" || tab === "files",
+                )}
+                active={null}
+                onSelect={(tab) => {
+                  setSidePanelTab(tab);
                   setMobileScreen("files");
                 }}
-              >
-                <Document size={16} />
-              </Button>
-              <div className="flex items-center gap-1 md:hidden">
-                <GettingStartedDock placement="header" />
-                <ApprovalsButton />
-              </div>
+                placement="top-bar"
+              />
+              <AppSidePanelButtons />
             </div>
           </header>
-          <div className="empty:hidden">
-            {runtimeOutdated && (
-              <RuntimeOutdatedNotice agentId={selectedAgent} />
-            )}
-            <ContributionGapNotice agentId={selectedAgent} />
-            <WorkspaceFailureNotice agentId={selectedAgent} />
-          </div>
-          {}
-          {sessionMode === SessionMode.Terminal &&
-          selectedAgent &&
-          sessionId ? (
-            <div className="flex min-h-0 flex-1 flex-col">
-              <Terminal
-                key={sessionId}
-                agentId={selectedAgent}
-                sessionId={sessionId}
-                fresh={terminalFreshRef.current}
-                autoConnect={!terminalPaused && agentOperable}
-                onConnected={() => {
-                  terminalFreshRef.current = false;
-                  setTerminalPaused(false);
-                }}
-                onFirstSubmit={() => {
-                  optimisticInsertSession(
-                    selectedAgent,
-                    sessionId,
-                    SessionMode.Terminal,
-                    true,
-                  );
-                  queryClient.invalidateQueries({
-                    queryKey: acpSessionsKeys.agent(selectedAgent),
-                  });
-                }}
-                onSubmit={() =>
-                  setSessionRunning(selectedAgent, sessionId, true)
-                }
-                onSessionMoved={setSessionId}
-              />
-            </div>
-          ) : (
-            <>
-              <div className="@container relative flex flex-1 flex-col min-h-0">
-                <div ref={messagesRef} className="flex-1 overflow-y-auto">
-                  <ChatColumn className="px-2 @xs/chat:px-4 @xl/chat:px-8 py-8 flex flex-col gap-8 min-h-full">
-                    {!historyShown && (
-                      <div className="py-20 flex items-center justify-center gap-3 text-sm text-muted-foreground">
-                        <Spinner size={20} />
-                        Loading session…
-                      </div>
-                    )}
-                    {loadingSession && startNotice && (
-                      <div className="flex justify-center">{startNotice}</div>
-                    )}
-                    {!loadingSession && sessionError && (
-                      <SessionErrorCard
-                        error={sessionError}
-                        onRetry={() => resumeSession(sessionError.sessionId)}
-                        onDelete={async () => {
-                          if (!(await deleteSession(sessionError.sessionId)))
-                            return;
-                          setSessionError(null);
-                        }}
-                      />
-                    )}
-                    {!loadingSession &&
-                      !sessionError &&
-                      messages.length === 0 && (
-                        <div className="flex flex-1 flex-col items-center justify-center text-center">
-                          {agentView && (
-                            <AgentAvatar
-                              name={agentView.name}
-                              avatar={agentView.avatar}
-                              size={96}
-                              mood={avatarMood(agentDisplay?.state, agentView)}
-                            />
-                          )}
-                          <h2 className="mt-3 mb-2 text-xl font-bold text-foreground">
-                            {selectedAgentName}
-                          </h2>
-                          <p className="text-sm text-muted-foreground">
-                            Send a message to begin or open a new session in:
-                          </p>
-                          {agentView && (
-                            <div className="mt-5 w-full max-w-[640px] text-left">
-                              <AgentUsageActions
-                                agent={agentView}
-                                showChat={false}
-                                onNewTerminal={handleNewTerminal}
-                              />
-                            </div>
-                          )}
-                          {startNotice && (
-                            <div className="mt-6">{startNotice}</div>
-                          )}
-                        </div>
-                      )}
-                    <A2uiActionProvider value={sendFormPrompt}>
-                      <A2uiConversationProvider value={a2uiConversation}>
-                        <DelegationOwnersProvider value={delegationOwners}>
-                          {items.map((item) => {
-                            if (item.kind === "divider") {
-                              return (
-                                <div
-                                  key={item.key}
-                                  className="flex items-center gap-3 py-2"
-                                >
-                                  <span className="h-px flex-1 bg-border/60" />
-                                  <span className="text-2xs text-muted-foreground">
-                                    {dividerLabel(item, now)}
-                                  </span>
-                                  <span className="h-px flex-1 bg-border/60" />
-                                </div>
-                              );
-                            }
-                            if (userRuns.inner.has(item.message.id))
-                              return null;
-                            const turn = turnForMessage.get(item.message.id);
-                            const members = userRuns.runs.get(
-                              item.message.id,
-                            ) ?? [item.message];
-                            const lastIndex = item.index + members.length - 1;
-                            const chatMessage = (actions?: ReactNode) => {
-                              const bubbles = members.map((m, k) => (
-                                <ChatMessage
-                                  key={m.id}
-                                  message={m}
-                                  continued={k > 0}
-                                  arriving={arrived.has(m.id)}
-                                  avatarAgent={agentView ?? undefined}
-                                  onAgentClick={handleConfigureSandbox}
-                                  footer={
-                                    k === members.length - 1
-                                      ? actions
-                                      : undefined
-                                  }
-                                  isLast={item.index + k === shown.length - 1}
-                                  showModel={runStarts.length > 0}
-                                  {...timeProps(m.at, now)}
-                                  hasPendingPermission={hasPendingPermission}
-                                  pendingNotice={
-                                    item.index + k === shown.length - 1
-                                      ? startNotice
-                                      : undefined
-                                  }
-                                  onRetry={sendPrompt}
-                                  onFileClick={openFileHandler}
-                                  onDelete={deleteMessage}
-                                  onLoadOlder={loadOlderKeepingScroll}
-                                />
-                              ));
-                              return members.length === 1 ? (
-                                bubbles[0]
-                              ) : (
-                                <div className="flex flex-col gap-5">
-                                  {bubbles}
-                                </div>
-                              );
-                            };
-                            const runMessage: Message =
-                              members.length === 1
-                                ? item.message
-                                : {
-                                    ...item.message,
-                                    parts: members.flatMap((m) =>
-                                      m.parts.filter((p) => p.kind === "text"),
-                                    ),
-                                  };
-                            const upTo = rewritePoints.get(item.message.id);
-                            const editingHere =
-                              rewriting?.messageId === item.message.id;
-                            const doomed =
-                              rewriting?.mode === "rewind" &&
-                              rewriteIndex !== -1 &&
-                              item.index > rewriteIndex;
-                            const content =
-                              canRewrite &&
-                              rewritePoints.has(item.message.id) ? (
-                                <RewritableMessage
-                                  message={runMessage}
-                                  enabled={queueEmpty && !busy}
-                                  onRewrite={(mode, text) =>
-                                    rewriteFrom({
-                                      messageId: item.message.id,
-                                      upToMessageId: upTo,
-                                      mode,
-                                      text,
-                                      title: sessionView?.title ?? null,
-                                    })
-                                  }
-                                >
-                                  {chatMessage}
-                                </RewritableMessage>
-                              ) : (
-                                chatMessage()
-                              );
-                            return (
-                              <Fragment key={item.message.id}>
-                                {doomed ? (
-                                  <div className="opacity-30 grayscale">
-                                    {content}
-                                  </div>
-                                ) : (
-                                  content
-                                )}
-                                {editingHere && rewriting && (
-                                  <RewriteMarker
-                                    mode={rewriting.mode}
-                                    following={shown.length - 1 - lastIndex}
-                                  />
-                                )}
-                                {selectedAgent && sessionId && turn && (
-                                  <TurnTelemetry
-                                    agentId={selectedAgent}
-                                    sessionId={sessionId}
-                                    turn={turn}
-                                  />
-                                )}
-                              </Fragment>
-                            );
-                          })}
-                        </DelegationOwnersProvider>
-                      </A2uiConversationProvider>
-                    </A2uiActionProvider>
-                    {selectedAgent && (
-                      <LiveDelegationBlock
-                        driverAgentId={selectedAgent}
-                        busy={busy}
-                        claimed={delegationOwners}
-                      />
-                    )}
-                    <QueuedPrompts onFileClick={openFileHandler} />
-                    {telemetryEnabled && sessionTurns.isError && (
-                      <p className="py-1 text-2xs text-muted-foreground/70">
-                        Telemetry for this session could not be read.
-                      </p>
-                    )}
-                    {turnsUnavailable && (
-                      <p className="py-1 text-2xs text-muted-foreground/70">
-                        {turnsUnavailable}
-                      </p>
-                    )}
-                    {turnsTruncated && (
-                      <p className="py-1 text-2xs text-muted-foreground/70">
-                        Older turns in this session are past the telemetry
-                        display cap and are not shown.
-                      </p>
-                    )}
-                    {!statusLineInThread && <PermissionStatusLine />}
-                  </ChatColumn>
-                </div>
-
-                {showJump && (
-                  <button
-                    onClick={scrollToBottom}
-                    className="absolute left-1/2 -translate-x-1/2 bottom-3 z-raised hidden @[11rem]:inline-flex items-center whitespace-nowrap gap-1.5 h-[35px] rounded-full border border-border bg-background px-3 text-sm font-normal text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.08)] hover:bg-muted transition-colors"
-                  >
-                    <ArrowDown size={16} />
-                    Jump to latest
-                  </button>
-                )}
-              </div>
-
-              <div className="pb-4">
-                <OnboardingBar
-                  key={selectedAgent ?? "none"}
-                  agentId={selectedAgent}
-                />
-                <KitUpdateBar agentId={selectedAgent} />
-                <HomeVolumeBar agentId={selectedAgent} />
-                <ChatInputArea
-                  textareaRef={textareaRef}
-                  busy={busy}
-                  loadingSession={loadingSession}
-                  onSend={sendWithA2uiData}
-                  onStop={stopAgent}
-                  blockedReason={
-                    noGrantedProvider
-                      ? "No LLM provider connected to this agent."
-                      : formLocksComposer
-                        ? COMPOSER_LOCKED_REASON
-                        : null
-                  }
-                />
-                {!hasPendingPermission && pickable && (
-                  <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-                    <ChatColumn>
-                      <SessionPairPicker
-                        {...pickable}
-                        open={pairPickerOpen}
-                        onOpenChange={setPairPickerOpen}
-                        onConnectProviders={() => setProvidersModal(true)}
-                      />
-                    </ChatColumn>
-                  </div>
-                )}
-                {!hasPendingPermission && pendingPairAgent && (
-                  <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-                    <ChatColumn>
-                      <SessionPairPlaceholder
-                        agentId={pendingPairAgent}
-                        agentHarness={agentView?.harness}
-                        open={pairPickerOpen}
-                        onOpenChange={setPairPickerOpen}
-                        onConnectProviders={() => setProvidersModal(true)}
-                      />
-                    </ChatColumn>
-                  </div>
-                )}
-                {!hasPendingPermission && !pickable && !pendingPairAgent && (
-                  <div className="px-2 @xs/chat:px-4 @xl/chat:px-8">
-                    <ChatColumn>
-                      {selectedAgent && pairOutdated ? (
-                        <SessionPairOutdatedNotice agentId={selectedAgent} />
-                      ) : selectedAgent && currentSession?.harness ? (
-                        <div className="flex min-w-0 items-center justify-between gap-3">
-                          <ModelIndicator
-                            agentId={selectedAgent}
-                            harness={currentSession.harness}
-                            provider={currentSession.provider ?? null}
-                            model={currentSession.model ?? null}
-                            settings={currentSession.settings}
-                            carried={harnessStatus?.harnesses ?? []}
-                            routed={harnessStatus?.modelRouter ?? false}
-                            turnRunning={busy}
-                            onChoose={(value) => void chooseSessionModel(value)}
-                            onConfigure={(change) =>
-                              void configureSession(change)
-                            }
-                            onNewSession={() => handleNewSession(true)}
-                          />
-                          <SessionPullRequests
-                            repositories={currentSession.repositories}
-                          />
-                        </div>
-                      ) : selectedAgent ? (
-                        <Button
-                          variant="link"
-                          size="inline"
-                          tone="muted"
-                          className="pl-3 text-sm"
-                          onClick={() =>
-                            navigateToSandboxHome(selectedAgent, "setup")
-                          }
-                        >
-                          {harnessCurrent?.model
-                            ? `${harnessCurrent.model} · Configure defaults`
-                            : "Configure defaults"}
-                        </Button>
-                      ) : null}
-                    </ChatColumn>
-                  </div>
-                )}
-              </div>
-            </>
-          )}
-        </div>
-
-        {}
-        {sidePanelOpen && !sidePanelFills && (
-          <div className="hidden md:flex">
-            <ResizeHandle
-              side="right"
-              onResize={(d) => {
-                const max = sidePanelMaxW ?? window.innerWidth - 500;
-                const base = shownSidePanelWidth(
-                  rightWRef.current ?? filePanelRef.current?.offsetWidth ?? 0,
-                  sidePanelMinW,
-                  max,
-                );
-                const v = Math.max(sidePanelMinW, Math.min(max, base + d));
-                rightWRef.current = v;
-                writePersistedNumber(FILE_PANEL_WIDTH_KEY, v);
-                setRightW(v);
+          <div className="empty:hidden">{notices}</div>
+          {conversation}
+        </SidePanelShell>
+      ) : (
+        <ClassicChatLayout
+          identity={
+            <ClassicChatIdentity
+              agent={agentView}
+              agentId={selectedAgent}
+              name={selectedAgentName}
+              display={agentDisplay}
+              canOpenBrowser={canOpenBrowser}
+              browserOpen={browserToggle.pressed}
+              changesOpen={changesToggle.pressed}
+              onToggleBrowser={() => {
+                if (!selectedAgent) return;
+                if (browserToggle.click === "close") closeBrowser(null);
+                else if (browserToggle.click === "open")
+                  void openBrowser(selectedAgent);
+                else revealDock();
               }}
+              onToggleChanges={() => {
+                if (!selectedAgent) return;
+                if (changesToggle.click === "close") void toggleChanges(null);
+                else if (changesToggle.click === "open")
+                  void toggleChanges(selectedAgent);
+                else revealDock();
+              }}
+              onConfigure={handleConfigureSandbox}
             />
-          </div>
-        )}
-        <div
-          data-testid="side-panel"
-          className={cn(
-            "flex bg-background relative z-content max-md:fixed max-md:inset-0 max-md:z-overlay",
-            !mobilePanelOpen && "max-md:hidden",
-            sidePanelFills
-              ? "md:flex-1 md:min-w-0"
-              : sidePanelOpen && sidePanelW === null
-                ? "md:flex-1 md:basis-0 md:min-w-0"
-                : "md:shrink-0",
-          )}
+          }
+          status={
+            <>
+              {processesEnabled && (
+                <ProcessesIndicator agentId={selectedAgent} />
+              )}
+              <ChatHeaderStatus
+                selectedAgent={selectedAgent}
+                agents={agents}
+                busy={busy}
+                connectionState={connectionState}
+                sessionId={sessionId}
+                processesEnabled={processesEnabled}
+              />
+              <SidePanelTabButtons
+                tabs={appSidePanelTabs(hiddenTabs)}
+                active={classicTab}
+                onSelect={(tab) =>
+                  setSidePanelTab(tab === classicTab ? null : tab)
+                }
+                placement="top-bar"
+                {...appTabs}
+              />
+            </>
+          }
+          notices={notices}
+          agentId={selectedAgent}
+          agentName={selectedAgentName}
+          alwaysOn={agentView?.hibernationTimeoutMin === 0}
+          processesEnabled={processesEnabled}
+          onOpenFile={openFileHandler}
+          panel={shownClassicPanel}
+          dockHiddenOnPhone={dockHiddenOnPhone}
+          dock={dock}
+          maximizable={
+            shownClassicPanel === "dock"
+              ? maximizableView(dockedTab, true, openFilePath, openArtifactId)
+              : null
+          }
+          onClosePanel={() => {
+            setPhoneHiddenDock(dockedItem);
+            setSidePanelTab(null);
+            setMobileScreen("chat");
+          }}
         >
-          {(sidePanelOpen || dockedKept) && (
-            <div
-              ref={filePanelRef}
-              style={
-                {
-                  "--file-min-w": `${sidePanelMinW}px`,
-                  ...(sidePanelW !== null && { "--file-w": `${sidePanelW}px` }),
-                } as CSSProperties
-              }
-              className={cn(
-                "flex flex-col min-w-0 overflow-hidden max-md:flex-1",
-                !sidePanelFills && "md:min-w-[var(--file-min-w)]",
-                !sidePanelOpen && "hidden",
-                sidePanelFills || sidePanelW === null
-                  ? "md:flex-1"
-                  : "md:shrink-0 md:w-[var(--file-w)]",
-                "md:border-l md:border-border",
-              )}
-            >
-              <div className="flex h-[52px] shrink-0 items-center gap-2 border-b border-border px-3 md:hidden">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Back to chat"
-                  onClick={() => {
-                    setSidePanelTab(null);
-                    setMobileScreen("chat");
-                  }}
-                >
-                  <ArrowLeft size={16} />
-                </Button>
-                <span className="truncate text-sm font-bold text-foreground">
-                  {selectedAgentName}
-                </span>
-              </div>
-              {!dockedShown && activeTab === "files" && (
-                <FilesPanel
-                  open
-                  className="flex-1"
-                  onOpenFile={openFileHandler}
-                />
-              )}
-              {!dockedShown && activeTab === "artifacts" && (
-                <ChatArtifactsPanel
-                  agentId={selectedAgent}
-                  open
-                  className="flex-1"
-                />
-              )}
-              {!dockedShown && activeTab === "processes" && (
-                <ProcessesPanel
-                  agentId={selectedAgent}
-                  alwaysOn={agentView?.hibernationTimeoutMin === 0}
-                  open
-                  className="flex-1"
-                />
-              )}
-              {dockedKept && (
-                <div
-                  className={cn(
-                    "flex flex-1 min-h-0 flex-col",
-                    !dockedShown && "hidden",
-                  )}
-                >
-                  {openBrowserAgentId && canOpenBrowser ? (
-                    <DockedBrowserPanel
-                      key={openBrowserAgentId}
-                      agentId={openBrowserAgentId}
-                      agentName={selectedAgentName ?? openBrowserAgentId}
-                    />
-                  ) : openDelegation ? (
-                    <DockedDelegationPanel
-                      key={openDelegation.id}
-                      driverAgentId={openDelegation.driverAgentId}
-                      id={openDelegation.id}
-                    />
-                  ) : openFilePath ? (
-                    <DockedFilePanel onOpenFile={openFileHandler} />
-                  ) : openArtifactId ? (
-                    <DockedArtifactPanel
-                      key={openArtifactId}
-                      agentId={selectedAgent}
-                      onSendPrompt={sendArtifactPrompt}
-                    />
-                  ) : openChangesAgentId ? (
-                    <DockedChangesPanel
-                      key={`${openChangesAgentId}:${sessionId ?? ""}`}
-                      agentId={openChangesAgentId}
-                      sessionId={sessionId}
-                    />
-                  ) : openProcessOutputKey && selectedAgent ? (
-                    <DockedProcessOutputPanel
-                      key={openProcessOutputKey}
-                      agentId={selectedAgent}
-                      outputKey={openProcessOutputKey}
-                    />
-                  ) : null}
-                </div>
-              )}
-            </div>
-          )}
-          {sidePanelOpen && maximizable && (maximized || !columnsDoNotFit) && (
-            <SidePanelEdgeTab
-              maximized={maximized}
-              onToggle={() =>
-                setSidePanelMaximized(maximized ? null : maximizable)
-              }
-            />
-          )}
-          <SidePanelBar
-            active={activeTab}
-            hidden={hiddenTabs}
-            onSelect={onSidePanelTab}
-            badges={
-              runningProcesses
-                ? {
-                    processes: {
-                      count: runningProcesses.running,
-                      label: `Processes, ${String(runningProcesses.running)} running`,
-                    },
-                  }
-                : undefined
-            }
-            footer={
-              <div className="flex flex-col items-center gap-1">
-                <GettingStartedDock placement="rail" />
-                <ApprovalsButton />
-              </div>
-            }
-          />
-        </div>
-      </div>
+          {conversation}
+        </ClassicChatLayout>
+      )}
 
       {leavingForPublicPage ? (
         <AgentInaccessibleOverlay onLeave={goBack} />

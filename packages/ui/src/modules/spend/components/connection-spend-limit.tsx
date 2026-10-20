@@ -1,27 +1,37 @@
 import { connectionLimitRule } from "api-server-api";
 
+import { useAgentDisplayName } from "../../agents/api/queries.js";
 import { useAgentSpendStatus } from "../api/queries.js";
 import {
-  formatSpend,
+  CONNECTION_LIMIT_TITLE,
+  connectionLimitHelp,
+  resetsAtLine,
+} from "../lib/copy.js";
+import {
+  localResetTime,
   NO_LIMIT_REASONS,
   UNIT_EXPLANATIONS,
 } from "../lib/format.js";
-import { SpendLimitField } from "./spend-limit-field.js";
-import { SpendLimitMeter } from "./spend-limit-meter.js";
+import { DailyLimitMeter } from "./daily-limit-meter.js";
+import { HelpTip } from "./help-tip.js";
+import { SpendLimitButton } from "./spend-limit-button.js";
 
 interface Props {
   agentId: string;
   connectionId: string;
+  connectionName: string;
   templateId: string;
 }
 
 export function ConnectionSpendLimit({
   agentId,
   connectionId,
+  connectionName,
   templateId,
 }: Props) {
   const rule = connectionLimitRule(templateId);
   const { data: status } = useAgentSpendStatus(rule.limitable ? agentId : null);
+  const agentName = useAgentDisplayName(agentId);
   if (!rule.limitable) {
     return (
       <p className="border-t border-border pt-3 text-xs text-muted-foreground">
@@ -43,37 +53,34 @@ export function ConnectionSpendLimit({
         total.connectionId === connectionId && total.unit === rule.unit,
     )
     .reduce((sum, total) => sum + total.costMicros, 0);
-  const explanation = UNIT_EXPLANATIONS[rule.unit];
+  const subject = `${agentName} on ${connectionName}`;
 
   return (
     <div className="flex flex-col gap-3 border-t border-border pt-3">
-      <SpendLimitField
-        label="Spend limit"
-        help={explanation}
-        scope={{ kind: "connection", agentId, connectionId }}
-        unit={rule.unit}
-        amountMicros={limit?.amountMicros ?? null}
-      />
-      {limit ? (
-        <SpendLimitMeter
-          label="Spend limit"
+      <div className="flex items-center justify-between gap-3">
+        <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+          {CONNECTION_LIMIT_TITLE}
+          <HelpTip
+            content={connectionLimitHelp(UNIT_EXPLANATIONS[rule.unit])}
+          />
+        </p>
+        <SpendLimitButton
+          scope={{ kind: "connection", agentId, connectionId }}
+          subject={subject}
+          amountMicros={limit?.amountMicros ?? null}
           unit={rule.unit}
-          spentMicros={limit.spentMicros}
-          limitMicros={limit.effectiveMicros}
-          state={limit.state}
-          extensions={limit.extensions}
         />
-      ) : (
-        <p className="text-xs text-muted-foreground">
-          {formatSpend(spentMicros, rule.unit)} today
-        </p>
-      )}
-      {explanation && (
-        <p className="text-xs text-muted-foreground">
-          Only this limit stops calls on this provider. The agent spend limit
-          and your spend limit do not count them.
-        </p>
-      )}
+      </div>
+      <DailyLimitMeter
+        spentMicros={spentMicros}
+        limit={limit}
+        resetsAt={status.resetsAt}
+        subject={subject}
+        unit={rule.unit}
+      />
+      <p className="text-xs text-muted-foreground">
+        {resetsAtLine(localResetTime(status.resetsAt))}
+      </p>
     </div>
   );
 }

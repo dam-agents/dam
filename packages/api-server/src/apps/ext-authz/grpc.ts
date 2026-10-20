@@ -114,6 +114,7 @@ export async function startExtAuthzGrpcApp(
             payer: spend.payer,
             connectionId: spend.connectionId,
             providers: spend.providers,
+            sessionId: spend.sessionId,
             dialect: spend.dialect,
           },
         });
@@ -205,8 +206,11 @@ function checkResponseOf(decision: ExtAuthzDecision): CheckResponse {
       deniedResponse: undefined,
     }))
     .with("deny", () => denied("policy denied"))
-    .with({ verdict: "refuse" }, ({ response }) => ({
-      status: { code: GRPC_STATUS_PERMISSION_DENIED, message: "spend limit" },
+    .with({ verdict: "refuse" }, ({ basis, response }) => ({
+      status: {
+        code: GRPC_STATUS_PERMISSION_DENIED,
+        message: basis === "spend" ? "spend limit" : "policy denied",
+      },
       deniedResponse: {
         status: { code: response.status },
         headers: Object.entries(response.headers).map(([key, value]) => ({

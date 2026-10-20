@@ -17,7 +17,7 @@ export function registerChatFormTools(
 ): void {
   server.tool(
     "check_chat_form",
-    `Check an A2UI chat form before you send it to the user's web chat. Pass the reply text with its <a2ui-json> blocks, or the JSON of one block, and the attempt number: 1 for the first check of a form, one more after each failed check. Returns ok, or the problems the chat would report, including forms that go against the user's chat form preferences. A surface the reply updates without creating is taken to come from an earlier reply, and only the shape of its components is checked. Fix every problem and check again. If attempt ${MAX_CHAT_FORM_CHECKS} fails, do not send the form: ask the user in plain text instead.`,
+    `Check an A2UI chat form before you send it to the user's web chat. Call it before every reply that contains an <a2ui-json> block, and send only a reply it answered ok for, exactly as checked. Pass the reply text with its <a2ui-json> blocks, or the JSON of one block, and the attempt number: 1 for the first check of a form, one more after each failed check. Returns ok, or the problems the chat would report, including forms that go against the user's chat form preferences. A surface the reply updates without creating is taken to come from an earlier reply, and only the shape of its components is checked. Fix every problem and check again. If attempt ${MAX_CHAT_FORM_CHECKS} fails, do not send the form: ask the user in plain text instead.`,
     {
       reply: z
         .string()

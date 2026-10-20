@@ -361,7 +361,12 @@ func TestAnAbortWithTheRunnerUnreachableBringsTheContainerBack(t *testing.T) {
 
 	r.runnerEndpoint, r.runners = reachable, nil
 	r.ReconcileOrphanMachines(ctx)
-	assert.Contains(t, node.deleted, "my-agent", "the sweep removes the machine the abort left")
+	assert.NotContains(t, node.deleted, "my-agent", "the first sweep to find the machine unclaimed only records it")
+	assert.Contains(t, reloaded(t, r, agent).Annotations, annRuntimeMigrationMachineLeft, "so the Agent keeps its mark until the machine goes")
+
+	r.orphanMachines.Store(testOwner+"/my-agent", time.Now().Add(-orphanGrace-time.Minute))
+	r.ReconcileOrphanMachines(ctx)
+	assert.Contains(t, node.deleted, "my-agent", "past the grace the sweep removes the machine the abort left")
 	assert.NotContains(t, reloaded(t, r, agent).Annotations, annRuntimeMigrationMachineLeft)
 }
 
@@ -982,7 +987,7 @@ func TestAnAbortClearsTheRecordedSeed(t *testing.T) {
 
 // TEST_SCENARIO: the owner's runner admits its own migration Jobs to the machine API and nothing else new: not the published agent ports, and not a Job of another owner.
 func TestTheRunnerAdmitsItsOwnersMigrationJobToTheMachineAPIOnly(t *testing.T) {
-	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", 10000, nil, nil, nil)
+	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", 10000)
 	var found bool
 	for _, rule := range np.Spec.Ingress {
 		for _, peer := range rule.From {

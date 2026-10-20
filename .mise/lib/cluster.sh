@@ -10,8 +10,39 @@ else
   export KUBECONFIG="${LIMA_HOME:-$HOME/.lima}/$LIMA_INSTANCE/copied-from-guest/kubeconfig.yaml"
 fi
 
+# The supervisor k3s runs under: OpenRC where the host installed its service
+# (k3s's own installer prefers it when openrc-run exists), systemd where it is
+# running, and neither in a sandbox that has no init system — cluster:install
+# starts k3s as a plain process there. Ask k3s_has_service first: a return code
+# cannot tell that case apart from a supervisor that failed, since a missing
+# rc-service exits 127 too.
+k3s_has_service() { [ -x /etc/init.d/k3s ] || [ -d /run/systemd/system ]; }
+k3s_service() { # start|stop|restart
+  if [ -x /etc/init.d/k3s ]; then
+    as_root rc-service k3s "$1"
+  elif [ -d /run/systemd/system ]; then
+    as_root systemctl "$1" k3s
+  else
+    echo "FATAL: no init system owns k3s here; test k3s_has_service first." >&2
+    return 1
+  fi
+}
+
+# Whether k3s is up, as its supervisor reports it. `pgrep -x k3s-server` is not
+# that question: a container on the same host runs its own k3s under the same
+# process name, so a host k3s that is stopped would read as up.
+k3s_running() {
+  if [ -x /etc/init.d/k3s ]; then
+    as_root rc-service k3s status >/dev/null 2>&1
+  elif [ -d /run/systemd/system ]; then
+    as_root systemctl is-active --quiet k3s
+  else
+    pgrep -x k3s-server >/dev/null
+  fi
+}
+
 # e2e_mark <phase>: appends "<epoch seconds>\t<phase>" to the file E2E_TIMINGS
-# names, and does nothing without it. CI's vm lane sets it, and e2e:timings
+# names, and does nothing without it. CI's two lanes set it, and e2e:timings
 # turns the marks into the job's per-phase timing summary.
 e2e_mark() {
   [ -z "${E2E_TIMINGS:-}" ] || printf '%s\t%s\n' "$(date +%s)" "$1" >> "$E2E_TIMINGS"

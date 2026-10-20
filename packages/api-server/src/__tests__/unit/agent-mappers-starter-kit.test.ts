@@ -29,7 +29,11 @@ function agentView(annotations: Record<string, string>) {
     {} as RuntimeFeatures,
     [],
     [],
-    { virtualizationEnabled: false, defaultMounts: [] },
+    {
+      virtualizationEnabled: false,
+      defaultMounts: [],
+      defaultStorageSize: "10Gi",
+    },
   );
 }
 

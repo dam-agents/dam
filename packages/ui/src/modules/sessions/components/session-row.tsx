@@ -1,6 +1,7 @@
 import {
   Download,
   Edit,
+  Pen,
   Pin,
   PinFilled,
   Terminal,
@@ -11,19 +12,23 @@ import {
   type BackgroundWorkItemView,
   ChannelType,
   SessionMode,
-  type SessionRuntime,
   SessionType,
   type SessionView,
+  type SpendSessionRow,
 } from "api-server-api";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  type ReactNode,
+  useCallback,
+  useEffect,
+  useId,
+  useRef,
+  useState,
+} from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
-import { clickableProps } from "@/lib/clickable";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
@@ -32,11 +37,11 @@ import { onboardingBadge } from "../../agents/utils/agent-kind.js";
 import { SessionRepositoryBadges } from "../../changes/components/session-repository-badges.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import {
-  formatHarnessSpend,
-  formatTokens,
-  formatUsdCell,
-} from "../../metrics/lib/format.js";
+  amountsLabel,
+  sessionSpendTitle,
+} from "../../spend/lib/amounts-label.js";
 import { runTimeLabel } from "../lib/run-time.js";
+import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -53,10 +58,10 @@ interface Props {
   needsApproval: boolean;
   unread?: boolean;
   draft?: boolean;
-  provisional?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
-  cost?: SessionRuntime;
+  cost?: SpendSessionRow;
   conversation?: string;
+  leading?: ReactNode;
   pinned?: boolean;
   onTogglePin?: () => void;
   onResume: () => void;
@@ -74,10 +79,10 @@ export function SessionRow({
   needsApproval,
   unread = false,
   draft = false,
-  provisional = false,
   backgroundWork = NO_WORK,
   cost,
   conversation,
+  leading,
   pinned = false,
   onTogglePin,
   onResume,
@@ -90,16 +95,17 @@ export function SessionRow({
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const didLongPress = useRef(false);
   const [menuOpen, setMenuOpen] = useState(false);
-  const menuRef = useRef<HTMLDivElement>(null);
+  const mainRef = useRef<HTMLButtonElement>(null);
+  const metaId = useId();
+  const afterMenu = useRef<(() => void) | null>(null);
 
   const startPress = useCallback(() => {
     didLongPress.current = false;
-    if (provisional) return;
     timerRef.current = setTimeout(() => {
       didLongPress.current = true;
       setMenuOpen(true);
     }, LONG_PRESS_MS);
-  }, [provisional]);
+  }, []);
 
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startDwell = useCallback(() => {
@@ -124,24 +130,10 @@ export function SessionRow({
       didLongPress.current = false;
       return;
     }
-    if (menuOpen) {
-      setMenuOpen(false);
-      return;
-    }
     onResume();
-  }, [onResume, menuOpen]);
+  }, [onResume]);
 
-  useEffect(() => {
-    if (!menuOpen) return;
-    const handler = (e: MouseEvent) => {
-      if (menuRef.current && !menuRef.current.contains(e.target as Node))
-        setMenuOpen(false);
-    };
-    document.addEventListener("mousedown", handler);
-    return () => document.removeEventListener("mousedown", handler);
-  }, [menuOpen]);
-
-  const titleLabel = s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
+  const titleLabel = sessionTitleLabel(s);
   const titleClass = !s.title
     ? "text-muted-foreground italic"
     : unread
@@ -157,6 +149,7 @@ export function SessionRow({
   const onboarding =
     s.initialization === true && agent ? onboardingBadge(agent) : null;
   const runTime = scheduled ? runTimeLabel(s) : null;
+  const costLabel = cost ? amountsLabel(cost.amounts) : null;
   const terminal = s.mode === SessionMode.Terminal;
   const messenger =
     s.type === SessionType.ChannelSlack
@@ -172,11 +165,11 @@ export function SessionRow({
       data-active={active ? "true" : "false"}
       className={cn(
         "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
+        "has-[[data-row-main]:focus-visible]:outline-2 has-[[data-row-main]:focus-visible]:-outline-offset-2 has-[[data-row-main]:focus-visible]:outline-accent",
         active ? "bg-muted" : "hover:bg-muted/60",
         className,
       )}
-      {...clickableProps(handleClick)}
-      aria-keyshortcuts={onTogglePin ? "Alt+ArrowUp Alt+ArrowDown" : undefined}
+      onClick={handleClick}
       onPointerEnter={startDwell}
       onPointerLeave={endDwell}
       onFocus={onPrefetch}
@@ -184,30 +177,48 @@ export function SessionRow({
       onTouchEnd={endPress}
       onTouchCancel={endPress}
       onContextMenu={(e) => {
-        if (provisional) return;
         e.preventDefault();
         setMenuOpen(true);
       }}
     >
+      {leading}
       <div className="flex-1 min-w-0 flex flex-col gap-0.5">
         <div className="flex items-center gap-1.5">
-          <span className={`text-sm min-w-0 truncate ${titleClass}`}>
-            {titleLabel}
-          </span>
+          <button
+            ref={mainRef}
+            type="button"
+            data-row-main
+            title={titleLabel}
+            aria-current={active ? "page" : undefined}
+            aria-describedby={metaId}
+            className="flex min-w-0 items-center gap-1.5 text-left outline-none"
+          >
+            <span className={`text-sm min-w-0 truncate ${titleClass}`}>
+              {titleLabel}
+            </span>
+            {onboarding && (
+              <Badge
+                variant={onboarding.variant}
+                size="sm"
+                className="shrink-0"
+              >
+                {onboarding.label}
+              </Badge>
+            )}
+          </button>
           {pinned && (
             <PinFilled
               size={12}
               aria-label="Pinned"
-              data-testid="session-pinned"
-              className="shrink-0 text-muted-foreground"
+              className="ml-auto shrink-0 text-muted-foreground"
             />
           )}
-          {onboarding && (
-            <Badge variant={onboarding.variant} size="sm" className="shrink-0">
-              {onboarding.label}
-            </Badge>
-          )}
-          <div className="ml-auto flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]">
+          <div
+            className={cn(
+              "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
+              pinned ? "ml-1" : "ml-auto",
+            )}
+          >
             <SessionIndicators
               scheduled={scheduled}
               terminal={terminal}
@@ -216,36 +227,47 @@ export function SessionRow({
               working={working}
               draft={draft}
               backgroundWork={backgroundWork}
-              harness={s.harness ?? null}
+              unread={unread}
             />
             <div
               className={cn(
-                "flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
+                "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
                 HOVER_ACTION,
               )}
             >
               {onTogglePin && (
                 <button
                   type="button"
-                  aria-label={pinned ? "Unpin session" : "Pin session"}
-                  title={pinned ? "Unpin session" : "Pin session"}
+                  aria-label={pinned ? "Unpin session" : "Pin to top"}
+                  aria-pressed={pinned}
                   data-testid="session-pin-button"
                   onClick={(event) => {
                     event.stopPropagation();
                     onTogglePin();
                   }}
-                  className="flex size-6 shrink-0 items-center justify-center rounded-md text-muted-foreground hover:bg-background hover:text-foreground"
+                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
                 >
                   {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
                 </button>
               )}
-              {}
               <RowActionsMenu
                 label="More actions"
                 testId="session-menu-button"
                 dense
                 stopPropagation
-                contentProps={{ onClick: (event) => event.stopPropagation() }}
+                open={menuOpen}
+                onOpenChange={setMenuOpen}
+                contentProps={{
+                  onClick: (event) => event.stopPropagation(),
+                  onCloseAutoFocus: (event) => {
+                    const act = afterMenu.current;
+                    if (!act) return;
+                    afterMenu.current = null;
+                    event.preventDefault();
+                    mainRef.current?.focus();
+                    act();
+                  },
+                }}
               >
                 {onExportTimeline && (
                   <DropdownMenuItem
@@ -257,16 +279,18 @@ export function SessionRow({
                 )}
                 <DropdownMenuItem
                   data-testid="session-rename-button"
-                  disabled={provisional}
-                  onSelect={onRename}
+                  onSelect={() => {
+                    afterMenu.current = onRename;
+                  }}
                 >
                   <Edit size={14} /> Rename session
                 </DropdownMenuItem>
                 <DropdownMenuItem
                   data-testid="session-delete-button"
-                  disabled={provisional}
                   tone="danger"
-                  onSelect={onDelete}
+                  onSelect={() => {
+                    afterMenu.current = onDelete;
+                  }}
                 >
                   <TrashCan size={14} /> Delete session
                 </DropdownMenuItem>
@@ -274,7 +298,7 @@ export function SessionRow({
             </div>
           </div>
         </div>
-        <span className="text-2xs text-muted-foreground truncate">
+        <span id={metaId} className="text-2xs text-muted-foreground truncate">
           {conversation ? `${conversation} · ` : ""}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}
@@ -285,19 +309,14 @@ export function SessionRow({
               {runTime}
             </span>
           )}
-          {cost && (
+          {costLabel && cost && (
             <span
               className="tabular-nums"
-              title={`${cost.calls} API calls · ${formatTokens(cost.inputTokens + cost.cacheReadTokens + cost.cacheCreationTokens)} in / ${formatTokens(cost.outputTokens)} out · $${cost.costUsd.toFixed(4)}`}
+              data-testid="session-spend"
+              title={sessionSpendTitle(cost)}
             >
               {" · "}
-              {formatUsdCell(cost.costUsd)}
-            </span>
-          )}
-          {!cost && s.spend && (
-            <span className="tabular-nums" data-testid="session-spend">
-              {" · "}
-              {formatHarnessSpend(s.spend)}
+              {costLabel}
             </span>
           )}
         </span>
@@ -305,39 +324,6 @@ export function SessionRow({
           <SessionRepositoryBadges repositories={s.repositories} />
         )}
       </div>
-      {}
-      {menuOpen && (
-        <div
-          ref={menuRef}
-          className="absolute right-3 top-2 z-popover rounded-lg border border-border bg-popover py-1 anim-scale-in shadow-md"
-        >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="w-full justify-start"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-              onRename();
-            }}
-          >
-            <Edit size={14} /> Rename session
-          </Button>
-          <Button
-            variant="ghost"
-            tone="danger"
-            size="sm"
-            className="w-full justify-start"
-            onClick={(e) => {
-              e.stopPropagation();
-              setMenuOpen(false);
-              onDelete();
-            }}
-          >
-            <TrashCan size={14} /> Delete session
-          </Button>
-        </div>
-      )}
     </div>
   );
 }
@@ -350,7 +336,7 @@ function SessionIndicators({
   working,
   draft,
   backgroundWork,
-  harness,
+  unread,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -359,7 +345,7 @@ function SessionIndicators({
   working: boolean;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
-  harness: string | null;
+  unread: boolean;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -370,11 +356,13 @@ function SessionIndicators({
     !working &&
     !hasBackgroundWork &&
     !draft &&
-    !harness
+    !unread
   )
     return null;
   return (
-    <span className={cn("flex shrink-0 items-center gap-2 pl-2", HOVER_YIELD)}>
+    <span
+      className={cn("flex shrink-0 items-center gap-2.5 pl-2", HOVER_YIELD)}
+    >
       {terminal && (
         <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}
@@ -409,15 +397,17 @@ function SessionIndicators({
           title="Has a draft"
           className="inline-flex text-muted-foreground shrink-0"
         >
-          <Edit size={16} />
+          <Pen size={16} />
         </span>
-      ) : harness ? (
-        <span
-          data-testid="session-harness"
-          className="inline-flex shrink-0 text-muted-foreground"
-        >
-          <HarnessIcons harnesses={[harness]} size="xs" />
-        </span>
+      ) : unread ? (
+        <IndicatorBox>
+          <span
+            data-testid="session-unread-dot"
+            role="img"
+            aria-label="Unread"
+            className="size-2 rounded-full bg-accent"
+          />
+        </IndicatorBox>
       ) : null}
       {messenger && !working && (
         <ConnectionIcon

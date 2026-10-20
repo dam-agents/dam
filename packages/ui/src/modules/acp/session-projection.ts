@@ -38,6 +38,7 @@ const PLUMBING_TAGS = [
   "turn-interrupted",
   "system-reminder",
   "task-notification",
+  "agent-message",
   "command-name",
   "command-message",
   "command-args",
@@ -47,7 +48,7 @@ const PLUMBING_TAGS = [
   "user-prompt-submit-hook",
 ];
 const PLUMBING_RE = new RegExp(
-  `<(${PLUMBING_TAGS.join("|")})>[\\s\\S]*?<\\/\\1>`,
+  `<(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*(?<!/))?>[\\s\\S]*?<\\/\\1>`,
   "g",
 );
 function stripPlumbing(raw: string): string {
@@ -338,6 +339,19 @@ export function sendWaits(
       (m) => isQueuedSend(m) || (m.role === "assistant" && m.streaming),
     )
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether the session has nothing yet, so the chat
+ * shows the new-session hero. A send the runtime queues leaves the transcript
+ * for the queue below it (`platform/queueChanged`); a new session's first
+ * prompt waits there while its harness settings apply, and it still counts.
+ */
+export function conversationEmpty(
+  messages: readonly Message[],
+  queue: readonly QueuedPrompt[],
+): boolean {
+  return messages.length === 0 && queue.length === 0;
 }
 
 export function withoutQueuedSends(

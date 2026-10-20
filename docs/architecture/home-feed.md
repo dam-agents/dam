@@ -1,10 +1,12 @@
 # Home feed
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
-Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
+Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
+The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, a panel like the Artifacts panel beside it, that takes its room from the page.
+In an Agent's chat with the new layout off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
 
 ## What Home reads
 
@@ -22,7 +24,7 @@ Waking every Agent to render a list would be absurd — it would defeat hibernat
 ## The record and its boundary
 
 One row per session, filed under the owner who should see it.
-The row carries enough to render a feed card and to decide whether it is unread: when the session was last active, when it was last seen, whether it was working at capture time, how it was started, and the thread key that names the Slack channel or Telegram chat it came from.
+The row carries enough to render a feed card and to decide whether it is unread: when the session was last active, when it was last seen, whether it was working at capture time, how it was started, which harness ran it, and the thread key that names the Slack channel or Telegram chat it came from.
 The card resolves that key to a name on the client, from the channel list every Agent already carries and the Telegram chats of the Agents on the feed, so the record stores no channel names that could go stale.
 
 The boundary matters more than the contents.
@@ -32,24 +34,50 @@ A missing row therefore means only one thing: nobody was told about that session
 It never means the session is gone.
 
 One reader outside Home shows the rows: an Agent's session list, while that Agent cannot answer for itself — asleep, or still waking.
-It shows its owner the rows filed for that Agent as a **provisional** list, display-only, and replaces it with the Agent's own list the moment the Agent answers.
+It shows its owner the rows filed for that Agent as a **provisional** list, and replaces it with the Agent's own list the moment the Agent answers.
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
-The sidebar shows the record's rows the same way under every Agent that is not open, three at most unless more are pinned, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page), asks for more, or has pinned one of its Sessions while it is awake.
+Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
+The sidebar's Agents section lists the Sessions of an Agent only while the user has it open: a click on the Agent opens or closes its list in place, and the Agent whose chat or configuration page is shown is open.
+An open Agent that is not the shown one lists the record's rows, three at most; the shown Agent lists its own list, and so does any Agent once the user asks for more.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
+Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 
-The user's **pins** order the sidebar on top of that.
-Pinned Agents come first, and so do pinned Sessions within their own Agent, in the order the user dragged them into or moved them to with Alt+Up and Alt+Down; everything else keeps the recency order.
-The Agent the user has open, in its chat or on its configuration page, comes before all of them, so it is easy to find however old its last activity is; once another Agent is open, it goes back to its place, and opening an Agent moves nothing else.
-The move waits until the pointer leaves the list, so no row moves under the cursor, and then the list scrolls to its top.
-The api-server keeps the pins per user, so the order follows the user to every browser, and drops an Agent's pins when the Agent is deleted.
-An Agent with pinned Sessions shows all of them, even past three, and asks for each one its own list did not return.
-A sleeping Agent shows only the pinned Sessions the record holds, because the sidebar never wakes an Agent to draw it; the rest show once it is awake.
-A pin is only an id: it never decides that an Agent or a Session exists, and a pin that names nothing the Agent knows shows nothing.
+The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
+An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
+Hibernated Agents fold under **See all (N hibernating)**, unless the user has one open or its chat or configuration page is shown; closing the shown Agent's Sessions keeps its row in place.
+An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and a ⋮ menu: Configure agent, and Add to Slack channel or Telegram chat where the installation has them.
+A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
+The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
+The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
+
+The Sessions of each Agent are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
+A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
+
+The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's name and its time.
+Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
+The divider between the two sections drags, and the browser keeps its place.
+The record's rows and the Agent's own list are both newest first, and each More appends an older page, so the rows already shown keep their places.
 
 That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
 It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) that the session directory belongs to — the session directory is kept because spend must stay attributable, while the attention record is a convenience that may be thrown away.
+
+## The new layout
+
+The **new layout** [experimental feature](features.md) replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
+The sidebar becomes two columns: a strip of Agent avatars, and a list of Sessions beside it.
+Each avatar carries a badge that counts its unread Sessions and its waiting approvals; the strip's Home tile carries the total.
+With Home selected, the list shows the record's rows for every Agent: the unread ones under **Needs you**, then the rest by latest activity; a Session with an approval waiting on the user shows the approval dot on its row, as in every Session list, and counts in its Agent's avatar badge.
+With an Agent selected, the list is that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
+Both column headers carry one session filter, by state and by Session type, and share it: a filter set under Home also narrows an Agent's own list, and the control shows a mark while a filter is on.
+The avatar strip keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
+A Session can be **pinned**: a pinned Session shows in its own section above the rest; in the Home list an unread pinned Session stays under Needs you until it is read.
+Pins are kept in the browser, so they do not follow the user to another device.
+The Home list shows a pinned Session only while it is in the record; an Agent's own list loads further pages until its pinned Sessions appear, and deleting a Session drops its pin.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
+Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
+With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.
 
 ## The producer
 

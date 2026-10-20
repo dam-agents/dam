@@ -21,7 +21,7 @@ import { filesRouter } from "./modules/files/router.js";
 import { gettingStartedRouter } from "./modules/getting-started/router.js";
 import { harnessConfigRouter } from "./modules/harness-config/router.js";
 import { schedulesRouter } from "./modules/schedules/router.js";
-import { sidebarPinsRouter } from "./modules/sidebar-pins/router.js";
+import { sidebarOrderRouter } from "./modules/sidebar-order/router.js";
 import { skillsRouter } from "./modules/skills/router.js";
 import { spendRouter } from "./modules/spend/router.js";
 import { starterKitsRouter } from "./modules/starter-kits/router.js";
@@ -52,7 +52,7 @@ export const appRouter = t.router({
   chatForms: chatFormsRouter,
   files: filesRouter,
   gettingStarted: gettingStartedRouter,
-  sidebarPins: sidebarPinsRouter,
+  sidebarOrder: sidebarOrderRouter,
   links: linksRouter,
   metrics: metricsRouter,
   telemetry: telemetryRouter,

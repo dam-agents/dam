@@ -5,7 +5,11 @@ import { queryClient } from "../../../query-client.js";
 import { type PlatformStore, useStore } from "../../../store.js";
 import { trpc } from "../../../trpc.js";
 import type { AgentState, AgentView } from "../../../types.js";
-import { agentReadiness, untilAgentReady } from "../lib/agent-start.js";
+import {
+  type AgentReadiness,
+  agentReadiness,
+  untilAgentReady,
+} from "../lib/agent-start.js";
 import { vanishedAgentIds } from "../lib/deleted-agent.js";
 
 export const agentsKeys = {
@@ -122,28 +126,30 @@ export function useIsAgentAnswerableSoon(agentId: string | null): boolean {
   );
 }
 
+export function agentReadinessNow(agentId: string): AgentReadiness {
+  const agent = queryClient
+    .getQueryData<{ list: readonly AgentView[] }>(agentsKeys.listWithChannels())
+    ?.list.find((a) => a.id === agentId);
+  const store = useStore.getState();
+  return agentReadiness(
+    agent,
+    operableIn(store, agentId, agent?.state),
+    store.restartingAgents.has(agentId),
+  );
+}
+
 export function untilAgentOperable(agentId: string): Promise<void> | null {
-  const read = () => {
-    const agent = queryClient
-      .getQueryData<{ list: readonly AgentView[] }>(
-        agentsKeys.listWithChannels(),
-      )
-      ?.list.find((a) => a.id === agentId);
-    const store = useStore.getState();
-    return agentReadiness(
-      agent,
-      operableIn(store, agentId, agent?.state),
-      store.restartingAgents.has(agentId),
-    );
-  };
-  return untilAgentReady(read, (onChange) => {
-    const offQueries = queryClient.getQueryCache().subscribe(onChange);
-    const offStore = useStore.subscribe(onChange);
-    return () => {
-      offQueries();
-      offStore();
-    };
-  });
+  return untilAgentReady(
+    () => agentReadinessNow(agentId),
+    (onChange) => {
+      const offQueries = queryClient.getQueryCache().subscribe(onChange);
+      const offStore = useStore.subscribe(onChange);
+      return () => {
+        offQueries();
+        offStore();
+      };
+    },
+  );
 }
 
 function isDeniedAgentRead(error: unknown): boolean {

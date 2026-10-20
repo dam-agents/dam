@@ -11,7 +11,7 @@ import type {
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
 import { noticeStream } from "../../core/notice-stream.js";
-import type { LeaseEnvReader } from "../../core/runtime-env.js";
+import { mergedSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   contributionDrivers,
   eventDrivers,
@@ -88,6 +88,7 @@ export interface ComposeRuntimeChannelOpts {
   envStale?: () => string | undefined;
   catalog?: ModelCatalog;
   modelRouter?: boolean;
+  onContributionsApplied?: ApplyStateDeps["onContributionsApplied"];
   onSnapshotProcessed?: ApplyStateDeps["onSnapshotProcessed"];
 }
 
@@ -168,9 +169,12 @@ export async function composeRuntimeChannel(
       ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
     }),
   );
-  registry.register(createWorkspaceSeedPlugin({ workDir: opts.workDir, log }));
+  const spawnEnv = () => mergedSpawnEnv(opts.envReader);
   registry.register(
-    createWorkspaceCommandPlugin({ workDir: opts.workDir, log }),
+    createWorkspaceSeedPlugin({ workDir: opts.workDir, spawnEnv, log }),
+  );
+  registry.register(
+    createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
   );
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
@@ -277,6 +281,9 @@ export async function composeRuntimeChannel(
         harnessConfigCurrentByHarness: await harnessConfigByHarness(),
       }),
     }),
+    ...(opts.onContributionsApplied
+      ? { onContributionsApplied: opts.onContributionsApplied }
+      : {}),
     ...(opts.onSnapshotProcessed
       ? { onSnapshotProcessed: opts.onSnapshotProcessed }
       : {}),
@@ -337,6 +344,7 @@ export async function composeRuntimeChannel(
             sessionModel: plugin?.sessionModel ?? false,
             ...(plugin?.sessionSettings && {
               sessionSettings: plugin.sessionSettings,
+              platformSubagentSettings: true,
             }),
             ...(nativeTemplates?.length && { nativeTemplates }),
           };
@@ -345,7 +353,8 @@ export async function composeRuntimeChannel(
         liveUpdates: true,
         modelRouter: opts.modelRouter === true,
       };
-      for (let delay = 1_000; ; delay = Math.min(delay * 2, 30_000)) {
+      // UNIT_BOUNDARY_DESCRIPTION: the first retry comes fast because the usual first failure is a wake's own: the agent's gateway starts beside the guest and is often still coming up when the runtime first says hello, and a 1 s wait put that whole second on the agent's wake.
+      for (let delay = 100; ; delay = Math.min(delay * 2, 30_000)) {
         const harnessConfigCurrent = await harnessConfigPlugin?.readCurrent({
           discover: false,
         });

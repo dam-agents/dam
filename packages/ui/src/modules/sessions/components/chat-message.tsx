@@ -1,4 +1,5 @@
 import { StopFilledAlt } from "@carbon/icons-react";
+import type { SpendAmount, TurnSummary } from "api-server-api";
 import {
   memo,
   type ReactNode,
@@ -17,6 +18,7 @@ import { partKey } from "../../a2ui/lib/collect-blocks.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
+import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { activityItems } from "../lib/activity-groups.js";
 import { modelDisplayName } from "../lib/model-name.js";
 import type { MessageTime } from "../lib/thread-items.js";
@@ -49,6 +51,10 @@ interface BaseProps {
   onFileClick: (path: string) => void;
   onDelete: (id: string) => void;
   onLoadOlder?: (before: string) => Promise<LoadOlderOutcome>;
+  turn?: TurnSummary;
+  turnSpend?: readonly SpendAmount[] | undefined;
+  agentId?: string;
+  sessionId?: string;
 }
 
 function LoadOlderMarker({
@@ -122,6 +128,10 @@ export const ChatMessage = memo(function ChatMessage({
   onFileClick,
   onDelete,
   onLoadOlder,
+  turn,
+  turnSpend,
+  agentId,
+  sessionId,
 }: Props) {
   const isFanOut = useIsFanOutChip();
   const items = useMemo(
@@ -161,9 +171,10 @@ export const ChatMessage = memo(function ChatMessage({
           name={avatarAgent.name}
           avatar={avatarAgent.avatar}
           size={32}
+          className="shrink-0"
         />
       )}
-      <span className="text-sm font-semibold text-foreground">
+      <span className="truncate text-sm font-semibold text-foreground">
         {avatarAgent?.name ?? "Agent"}
       </span>
     </>
@@ -186,18 +197,18 @@ export const ChatMessage = memo(function ChatMessage({
       )}
     >
       {speaker && !continued && (
-        <div className="mb-0.5 flex">
+        <div className="mb-0.5 flex max-w-full">
           {onAgentClick ? (
             <button
               type="button"
               onClick={onAgentClick}
               aria-label={`Configure ${avatarAgent?.name ?? "agent"}`}
-              className="flex items-center gap-2 rounded-md hover:opacity-80"
+              className="flex min-w-0 items-center gap-2 rounded-md text-left hover:opacity-80"
             >
               {speaker}
             </button>
           ) : (
-            <div className="flex items-center gap-2">{speaker}</div>
+            <div className="flex min-w-0 items-center gap-2">{speaker}</div>
           )}
         </div>
       )}
@@ -283,6 +294,15 @@ export const ChatMessage = memo(function ChatMessage({
           rawError={error.message}
           interrupted={hasAgentContent(message)}
           quiet={!isLast}
+        />
+      )}
+      {turn && agentId !== undefined && sessionId !== undefined && (
+        <TurnTelemetry
+          agentId={agentId}
+          sessionId={sessionId}
+          turn={turn}
+          spend={turnSpend}
+          className="self-stretch"
         />
       )}
       {(timeLabel !== undefined || footer) && (
