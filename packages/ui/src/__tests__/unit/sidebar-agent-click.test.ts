@@ -21,7 +21,7 @@ const fake = vi.hoisted(() => {
   return {
     runState: "running",
     loading: false,
-    recordRead: false,
+    failed: false,
     attention: {} as Record<string, unknown>,
   };
 });
@@ -50,7 +50,9 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     operable: false,
     loading: fake.loading,
     provisional: false,
-    recordRead: fake.recordRead,
+    failed: fake.failed,
+    retrying: false,
+    retry: () => {},
     hasNextPage: false,
     isFetchingNextPage: false,
     fetchNextPageFailed: false,
@@ -121,17 +123,27 @@ describe("a click on an Agent with no Sessions in the attention record", () => {
   it("shows the Agent's own list when the record cannot answer", () => {
     fake.runState = "running";
     fake.loading = false;
-    fake.recordRead = false;
+    fake.failed = false;
     const out = openedAgent(false);
     expect(out).toContain('data-testid="sidebar-agent-sessions"');
     expect(out).toContain("No sessions yet.");
   });
 
-  // TEST_SCENARIO: the Agent is hibernated, so its own list cannot load until it wakes; the row says so and is not busy, instead of a skeleton that never ends.
+  // TEST_SCENARIO: the Agent's own list fails its first read too; the row offers a retry and does not claim the Agent has no Sessions.
+  it("offers a retry, not No sessions yet, when the Agent's own list fails", () => {
+    fake.runState = "running";
+    fake.loading = false;
+    fake.failed = true;
+    const out = openedAgent(false);
+    expect(out).toContain('data-testid="sidebar-agent-sessions-failed"');
+    expect(out).not.toContain("No sessions yet.");
+    fake.failed = false;
+  });
+
+  // TEST_SCENARIO: the Agent is hibernated, so its own list cannot load until it wakes, whether or not the lookup of its last known Sessions answered; the row says so and is not busy, instead of a skeleton that never ends.
   it("says a hibernated Agent's Sessions show when it wakes", () => {
     fake.runState = "hibernated";
     fake.loading = true;
-    fake.recordRead = true;
     const out = openedAgent(false);
     expect(out).toContain("Its sessions show when it wakes.");
     expect(out).toContain('aria-busy="false"');

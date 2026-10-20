@@ -49,6 +49,7 @@ An open Agent that is not the shown one lists the record's rows, three at most; 
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
 An open Agent with no row in a whole, loaded record shows "No sessions yet."; while the record is cut off, loading or unreadable, it lists its own list instead.
 That list says a hibernated Agent's Sessions show when it wakes, instead of loading until then.
+When that list's own first read fails, it offers a retry instead of "No sessions yet."
 Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 
 The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.

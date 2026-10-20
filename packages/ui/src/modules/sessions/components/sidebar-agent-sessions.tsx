@@ -201,9 +201,7 @@ function AgentSessionList({
   const list = useAgentSessionList(agentId);
   const runState = useAgentRunState(agentId);
   const asleep =
-    list.loading &&
-    list.recordRead &&
-    (runState === "hibernated" || runState === "hibernating");
+    list.loading && (runState === "hibernated" || runState === "hibernating");
   const openSession = useOpenSession();
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
   const telemetryBackend =
@@ -262,7 +260,22 @@ function AgentSessionList({
       ) : (
         list.loading && <SessionListSkeleton />
       )}
-      {!list.loading && rows.length === 0 && !hasNextPage && (
+      {list.failed && (
+        <button
+          type="button"
+          onClick={() => void list.retry()}
+          disabled={list.retrying}
+          data-testid="sidebar-agent-sessions-failed"
+          className={cn(
+            TREE_GUIDE,
+            "flex h-[30px] items-center gap-1 rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+          )}
+        >
+          Couldn't load sessions. Retry
+          {list.retrying && <Spinner />}
+        </button>
+      )}
+      {!list.loading && !list.failed && rows.length === 0 && !hasNextPage && (
         <ListNote>No sessions yet.</ListNote>
       )}
       {visible.map(({ session: s, state }) => (
