@@ -3222,28 +3222,50 @@ mod tests {
         let held_before_move = guard.held();
         let reachable = before_move.saturating_add(held_before_move);
         let writing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let stop = writing.clone();
-        let top_for_writer = top.clone();
+        let moving = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let during = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let (stop, mid_move) = (writing.clone(), moving.clone());
+        let (in_move, first, top_for_writer) = (during.clone(), started.clone(), top.clone());
         let writer = std::thread::spawn(move || {
             let mut kept: Vec<File> = Vec::new();
+            let mut tries = 0usize;
             while stop.load(std::sync::atomic::Ordering::Relaxed) {
-                let path = top_for_writer.join(format!("racing-{}", kept.len()));
-                let Ok(file) = File::create(&path) else {
-                    continue;
-                };
-                match preallocate(&file, POOL_GUARD_STEP) {
-                    Ok(()) => kept.push(file),
+                let path = top_for_writer.join(format!("racing-{tries}"));
+                tries += 1;
+                if mid_move.load(std::sync::atomic::Ordering::Relaxed) {
+                    in_move.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
+                match File::create(&path)
+                    .and_then(|file| preallocate(&file, POOL_GUARD_STEP).map(|()| file))
+                {
+                    Ok(file) => kept.push(file),
                     Err(_) => {
                         let _ = fs::remove_file(&path);
                         std::thread::yield_now();
                     }
                 }
+                // UNIT_BOUNDARY_DESCRIPTION: the writer reports its first attempt, so spawning it is not enough for the move to overlap a writer: the test waits for that attempt before it moves the guard, and fails the overlap check below rather than passing with an empty result.
+                first.store(true, std::sync::atomic::Ordering::Release);
             }
             kept
         });
-        guard.size(&dir, 32 << 20).unwrap();
+        while !started.load(std::sync::atomic::Ordering::Acquire) {
+            std::thread::yield_now();
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: the move is taken a step at a time with a yield between, so the writer gets a turn inside the window however the scheduler divides the cores: the overlap is what the bound below is about, and a move too short to overlap an allocation would pass it for nothing.
+        moving.store(true, std::sync::atomic::Ordering::Relaxed);
+        for left in (2..=18u64).rev() {
+            std::thread::yield_now();
+            let _ = guard.size(&dir, left * POOL_GUARD_STEP);
+        }
+        moving.store(false, std::sync::atomic::Ordering::Relaxed);
         writing.store(false, std::sync::atomic::Ordering::Relaxed);
         let racing = writer.join().unwrap();
+        assert!(
+            during.load(std::sync::atomic::Ordering::Relaxed) > 0,
+            "no writer attempted to allocate while the guard moved"
+        );
         let taken = racing.len() as u64 * POOL_GUARD_STEP;
         assert!(
             taken + guard.held() <= reachable.saturating_add(POOL_GUARD_STEP),
