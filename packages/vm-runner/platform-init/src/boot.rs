@@ -1778,7 +1778,9 @@ fn guard_pool(dir: File) {
             guard.held()
         };
         let was = guest_state();
-        publish(was.granted, was.room, held);
+        if !publish_while_running(was.granted, was.room, held) {
+            return;
+        }
         let grant = fs::read_to_string(guest::STORAGE_ROOM_PATH)
             .ok()
             .as_deref()
@@ -1814,11 +1816,13 @@ fn guard_pool(dir: File) {
             continue;
         };
         // UNIT_BOUNDARY_DESCRIPTION: the room and the grant are published as one value with the guard's blocks, in a single store a reader cannot see half of: without a grant the room is nothing, since the disk's own room is not what the guard file holds back, and a room left from an earlier grant would read as an agent out of room.
-        publish(
+        if !publish_while_running(
             grant.is_some(),
             if grant.is_some() { room } else { 0 },
             held,
-        );
+        ) {
+            return;
+        }
         let mark = room_of(room, marked);
         let since = marked_at.map_or(std::time::Duration::ZERO, |at| at.elapsed());
         let due = mark_due(marked, mark, since);
@@ -1873,7 +1877,9 @@ fn guard_pool(dir: File) {
         }
         let held = sized_held;
         let state = guest_state();
-        publish(state.granted, state.room, held);
+        if !publish_while_running(state.granted, state.room, held) {
+            return;
+        }
         if let (true, Some(e)) = (warn, error) {
             logf!("WARNING: sizing the storage guard to {want} bytes, it holds {held}: {e}");
         }
@@ -1905,10 +1911,24 @@ fn keeping_progress(progress: &mut impl FnMut(), work: impl FnOnce() + Send) {
 const PROGRESS_SILENCE: std::time::Duration = std::time::Duration::from_millis(200);
 
 // UNIT_BOUNDARY_DESCRIPTION: takes the guard out of the slot on a clean stop, so it is detached from it and cannot regrow, and reports progress while a guard move holds the mutex. The caller releases it under `keeping_progress`: an unnamed file's blocks are freed when the filesystem gets to it, which on btrfs once lasted 35 s into the next boot, holding that boot's guest to room it did not have.
+// UNIT_BOUNDARY_DESCRIPTION: publishes what a look saw only while the guard is still in its slot, and reports whether it did. A stop takes the set out of the slot and publishes the stopped state, so a look that read its blocks before the take would otherwise store a live grant over the stopped state afterwards, and an eviction thread could see a stopped guest as granted until the disk is frozen. The slot's own lock orders the stop's clear with every publication, and is held across the check and the store and nothing more, so a stop still never waits on a trim or a sync.
+fn publish_while_running(granted: bool, room: u64, held: u64) -> bool {
+    let slot = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
+    if slot.is_none() {
+        return false;
+    }
+    publish(granted, room, held);
+    true
+}
+
 fn take_pool_guard(mut progress: impl FnMut()) -> Option<Guard> {
     let taken = loop {
         match POOL_GUARD.try_lock() {
-            Ok(mut slot) => break slot.take(),
+            Ok(mut slot) => {
+                let taken = slot.take();
+                publish(false, 0, 0);
+                break taken;
+            }
             // UNIT_BOUNDARY_DESCRIPTION: a guard move holds the mutex across a preallocation, which is unbounded work on a loaded disk, and the host cuts a machine down after 5 s without a progress frame, so the stop reports progress while it waits instead of waiting silently.
             Err(std::sync::TryLockError::WouldBlock) => {
                 progress();
@@ -1919,7 +1939,6 @@ fn take_pool_guard(mut progress: impl FnMut()) -> Option<Guard> {
             }
         }
     };
-    publish(false, 0, 0);
     taken
 }
 
@@ -3188,6 +3207,7 @@ mod tests {
         let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         // TEST_SCENARIO: the stop publishes an empty state, so this test keeps out of the way of the ones that read the published state.
         let _state = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
+        holds_publication_lock();
         let disk = TempDir::new("guard-stop");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
@@ -3210,6 +3230,53 @@ mod tests {
         );
         released.release();
         drop(probe);
+    }
+
+    // TEST_SCENARIO: a look that read the guard's blocks before a clean stop takes the set publishes nothing after it, so the stopped state a stop wrote is still the state a reader sees. Without the slot's own lock over the check and the store, the look stores its live grant over the stop's clear, and an eviction thread reads a stopped guest as granted until the disk is frozen. Each of the three places a look publishes is driven here, because each reads its blocks at a different point in the look: the pre-look snapshot, the look itself, and the post-size sync.
+    #[test]
+    fn a_look_a_clean_stop_overtook_publishes_nothing() {
+        let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let _state = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
+        let disk = TempDir::new("guard-stopped");
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let dir = guard_dir(disk.path()).expect("the disk's own directory");
+        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap());
+        let taken = take_pool_guard(|| {}).expect("the guard the stop takes");
+        let stopped = guest_state();
+        assert_eq!(
+            stopped,
+            GuestState {
+                granted: false,
+                room: 0,
+                held: 0
+            }
+        );
+        assert!(
+            !publish_while_running(true, 512 << 20, 64 << 20),
+            "a look published after the stop took the guard"
+        );
+        assert_eq!(
+            guest_state(),
+            stopped,
+            "a look a stop overtook left a live grant over the stopped state"
+        );
+        drop(taken);
+    }
+
+    // TEST_SCENARIO: every test that runs a stop holds PUBLISHED, so the stop's clear cannot erase the state another test published to steer its own reading of the host's filesystem. The check is the lock itself: a thread that holds PUBLISHED cannot take it again, so a test that lost the lock fails here before its stop runs, and a suite of parallel tests cannot see one test's stop land in another's measurement.
+    fn holds_publication_lock() {
+        assert!(
+            PUBLISHED.try_lock().is_err(),
+            "a test that runs a stop must hold PUBLISHED, or its stop clears another test's state"
+        );
+    }
+
+    #[test]
+    fn a_test_that_runs_a_stop_holds_the_publication_lock() {
+        let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let _state = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
+        holds_publication_lock();
     }
 
     // TEST_SCENARIO: the guard's files have no names, so no older platform-init, image or agent can find them, and the filesystem frees them once the guest stops; a disk where they cannot be made boots without a guard.
@@ -3321,6 +3388,9 @@ mod tests {
     #[test]
     fn a_stop_reports_progress_while_a_move_holds_the_guard() {
         let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        // TEST_SCENARIO: the stop publishes the stopped state, so this test keeps out of the way of the ones that read it.
+        let _state = PUBLISHED.lock().unwrap_or_else(|e| e.into_inner());
+        holds_publication_lock();
         let disk = TempDir::new("guard-progress");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
@@ -3342,6 +3412,15 @@ mod tests {
         drop(holding);
         let taken = stop.join().unwrap();
         assert!(taken.is_some(), "the stop found no guard to release");
+        assert_eq!(
+            guest_state(),
+            GuestState {
+                granted: false,
+                room: 0,
+                held: 0
+            },
+            "the stop left a live state published"
+        );
         assert!(POOL_GUARD
             .lock()
             .unwrap_or_else(|e| e.into_inner())
