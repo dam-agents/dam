@@ -76,6 +76,7 @@ function makeFakeRepo(): FakeRepo {
     resolvePending: async () => true,
     resolveExpired: async () => false,
     markDelivered: async () => {},
+    correctResolvedVerdict: async () => false,
     listResolvedUndelivered: async () => [],
     expirePending: async (id) => {
       expirePendingCalls.push(id);

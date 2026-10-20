@@ -16,7 +16,7 @@ A spend-limit question is an approval too, but it belongs to no session: its car
 A tool approval — the harness asking to run a tool — is written by two paths into one row.
 The chat relay mirrors the prompt while a client engages the session, and the agent-runtime reports it over the runtime channel when no client does, so a request in a session nobody has open is on Home as soon as the agent asks.
 Both use the same row id, so a client that engages later joins the row and it keeps the time the agent asked.
-The runtime reports the end too: an answer resolves the row with the chosen verdict, and a request the runtime dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.
+The runtime reports the end of every permission request it held, watched or not: an answer settles the row on the verdict the harness actually got — the runtime accepts one answer, so it, not the path that wrote the row, decides what the record says — and a request it dropped unanswered — its ten-minute wait ran out, or the session was reset ([sessions](sessions.md)) — expires it.
 **Live agent state** says which Agents are awake right now, and comes from the same Agent watch that feeds every other surface.
 **Sessions** come from the attention record — a per-owner, server-side account of the sessions that have asked for attention.
 

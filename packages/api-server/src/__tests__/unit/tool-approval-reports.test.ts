@@ -24,6 +24,36 @@ function makeRepo() {
   const rows: PendingApprovalRow[] = [];
   const repo = {
     insertPending: async (row) => {
+      const existing = rows.find((r) => r.id === row.id);
+      if (existing) {
+        if (
+          existing.status !== "expired" &&
+          !(existing.status === "resolved" && existing.deliveredAt !== null)
+        )
+          return false;
+        Object.assign(existing, {
+          payload: row.payload,
+          createdAt: new Date(),
+          status: "pending",
+          verdict: null,
+          decidedBy: null,
+          resolvedAt: null,
+          deliveredAt: null,
+        });
+        return true;
+      }
+      rows.push({
+        ...row,
+        createdAt: new Date(),
+        resolvedAt: null,
+        verdict: null,
+        decidedBy: null,
+        status: "pending",
+        deliveredAt: null,
+      });
+      return true;
+    },
+    insertIfAbsent: async (row) => {
       if (rows.some((r) => r.id === row.id)) return false;
       rows.push({
         ...row,
@@ -38,10 +68,21 @@ function makeRepo() {
     },
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     listPendingForInstance: async () => [],
-    resolvePending: async (id, verdict, decidedBy) => {
+    resolvePending: async (id, verdict, decidedBy, opts) => {
       const row = rows.find((r) => r.id === id && r.status === "pending");
       if (!row) return false;
-      Object.assign(row, { status: "resolved", verdict, decidedBy });
+      Object.assign(row, {
+        status: "resolved",
+        verdict,
+        decidedBy,
+        ...(opts?.markDelivered && { deliveredAt: new Date() }),
+      });
+      return true;
+    },
+    correctResolvedVerdict: async (id, verdict) => {
+      const row = rows.find((r) => r.id === id && r.status === "resolved");
+      if (!row || row.verdict === verdict) return false;
+      row.verdict = verdict;
       return true;
     },
     expirePending: async (id) => {
@@ -174,5 +215,82 @@ describe("tool approval reports", () => {
       status: "resolved",
       verdict: "allow_once",
     });
+  });
+
+  // TEST_SCENARIO: the viewer left, a late report was queued, the viewer came back and answered in chat before the report landed. The delayed write of the same request must not reopen the row: Home would offer a decision the tool already acted on, and nothing would close it again.
+  it("leaves a resolved row resolved when its report arrives late", async () => {
+    const { rows, relay, waiting } = setup();
+    await waiting();
+    await relay.resolveAcpNativeFromInSession(ROW, {
+      outcome: "selected",
+      optionId: "no",
+    });
+
+    await waiting();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "deny_once",
+    });
+  });
+
+  // TEST_SCENARIO: the runtime gave up on a request and its row expired, then a last report for that same request arrives. It must stay expired rather than come back as a pending decision nobody can act on.
+  it("leaves an expired row expired when its report arrives late", async () => {
+    const { rows, reports, waiting } = setup();
+    await waiting();
+    await reports.ended(AGENT, { sessionId: SESSION, rpcId: RPC });
+
+    await waiting();
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.status).toBe("expired");
+  });
+
+  // TEST_SCENARIO: a watched request is the relay's row, so the runtime never reported it as waiting. When the session resets, or the pod tears the request down, the runtime reports the end: the row must expire, or Home keeps offering a decision that reaches nothing.
+  it("expires a relay-written row when the runtime reports its end", async () => {
+    const { rows, relay, reports } = setup();
+    await relay.recordAcpNativePending({
+      agentId: AGENT,
+      sessionId: SESSION,
+      rpcId: RPC,
+      ownerSub: "owner-1",
+      toolName: "Write /tmp/a",
+      toolCallId: "tc-7",
+      args: { path: "/tmp/a" },
+      options: OPTIONS,
+    });
+
+    await reports.ended(AGENT, { sessionId: SESSION, rpcId: RPC });
+
+    expect(rows[0]?.status).toBe("expired");
+  });
+
+  // TEST_SCENARIO: the chat and Home disagreed — Home recorded a denial while the harness had already taken an allow from the chat. The runtime accepted that allow, so its report must settle the row on it: the record may never claim a decision the tool did not act on.
+  it("settles a decided row on the answer the runtime accepted", async () => {
+    const { rows, relay, reports, waiting } = setup();
+    await waiting();
+    await relay.resolveAcpNativeFromInSession(ROW, {
+      outcome: "selected",
+      optionId: "no",
+    });
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: { outcome: "selected", optionId: "allow" },
+    });
+
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "allow_once",
+    });
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: EventType.ApprovalResolved,
+        approvalId: ROW,
+        resolution: "allow_once",
+      }),
+    );
   });
 });

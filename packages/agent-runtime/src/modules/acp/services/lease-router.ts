@@ -224,16 +224,24 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     report: AgentRequestObserver,
   ): AgentRequestObserver {
     const routed = new Map<unknown, string>();
+    const clientIdOf = (id: unknown): string => {
+      const known = routed.get(id);
+      if (known !== undefined) return known;
+      const made = routedId(lease(), id);
+      routed.set(id, made);
+      return made;
+    };
     const settled = (id: unknown): string | undefined => {
       const clientId = routed.get(id);
       routed.delete(id);
       return clientId;
     };
     return {
+      held(id) {
+        clientIdOf(id);
+      },
       waiting(id, sessionId, line) {
-        const clientId = routedId(lease(), id);
-        routed.set(id, clientId);
-        report.waiting(clientId, sessionId, line);
+        report.waiting(clientIdOf(id), sessionId, line);
       },
       answered(id, sessionId, result) {
         const clientId = settled(id);

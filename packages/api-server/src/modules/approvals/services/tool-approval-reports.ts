@@ -8,8 +8,10 @@ import type { ApprovalsRelayService } from "./approvals-relay-service.js";
  * not first when someone opens the session. The row is the one the ACP relay
  * writes for a watched session, under the same id, so a client that engages
  * later joins it and the row keeps the time the agent asked. The runtime
- * reports the end too: an answer resolves the row with the verdict of the
- * chosen option, and a request it dropped unanswered expires it.
+ * reports the end too, and it is the arbiter of the answer the harness got:
+ * its verdict settles the row even when another path recorded a different
+ * one, so the record never claims a decision the tool did not act on. A
+ * request it dropped unanswered expires the row.
  */
 export function createToolApprovalReports(deps: {
   relay: ApprovalsRelayService;
@@ -32,7 +34,9 @@ export function createToolApprovalReports(deps: {
     async ended(agentId, input) {
       const rowId = acpNativeRowId(agentId, input.sessionId, input.rpcId);
       if (input.outcome)
-        await deps.relay.resolveAcpNativeFromInSession(rowId, input.outcome);
+        await deps.relay.resolveAcpNativeFromInSession(rowId, input.outcome, {
+          authoritative: true,
+        });
       else await deps.relay.expireAcpNative(rowId);
     },
   };

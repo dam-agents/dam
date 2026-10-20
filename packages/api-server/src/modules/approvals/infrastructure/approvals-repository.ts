@@ -1,9 +1,10 @@
-import { and, asc, desc, eq, isNull, lt, sql, type Db } from "db";
+import { and, asc, desc, eq, isNull, lt, ne, sql, type Db } from "db";
 import { pendingApprovals } from "db";
 import type {
   ApprovalPayload,
   ApprovalStatus,
   ApprovalType,
+  ApprovalVerdict,
 } from "api-server-api";
 import type { PendingApprovalRow } from "../domain/types.js";
 
@@ -61,6 +62,10 @@ export interface ApprovalsRepository {
     decidedBy: string,
   ): Promise<boolean>;
   markDelivered(id: string): Promise<void>;
+  correctResolvedVerdict(
+    id: string,
+    verdict: ApprovalVerdict,
+  ): Promise<boolean>;
   listResolvedUndelivered(opts: {
     staleMs: number;
     limit: number;
@@ -299,6 +304,21 @@ export function createApprovalsRepository(db: Db): ApprovalsRepository {
             isNull(pendingApprovals.deliveredAt),
           ),
         );
+    },
+
+    async correctResolvedVerdict(id, verdict) {
+      const rows = await db
+        .update(pendingApprovals)
+        .set({ verdict, resolvedAt: new Date() })
+        .where(
+          and(
+            eq(pendingApprovals.id, id),
+            eq(pendingApprovals.status, "resolved"),
+            ne(pendingApprovals.verdict, verdict),
+          ),
+        )
+        .returning({ id: pendingApprovals.id });
+      return rows.length > 0;
     },
 
     async listResolvedUndelivered({ staleMs, limit }) {

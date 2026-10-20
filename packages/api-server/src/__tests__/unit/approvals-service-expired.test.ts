@@ -60,6 +60,7 @@ function makeService(seed: PendingApprovalRow) {
       return true;
     },
     markDelivered: async () => {},
+    correctResolvedVerdict: async () => false,
     listResolvedUndelivered: async () => [],
     expirePending: async () => false,
     expireOverdue: async () => [],

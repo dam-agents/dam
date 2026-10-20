@@ -391,6 +391,7 @@ async function resolveAndDeliverAcpNative(
   const outcome: ApprovalActionOutcome = casWon
     ? { outcome: "applied", type: row.type, rule: null }
     : NOT_ACTIONABLE;
+  if (!casWon) return outcome;
   const rpcId = row.payload.rpcId;
   if (rpcId === undefined || rpcId === null) return outcome;
   const optionId = pickOptionId(row.payload.options ?? [], verdict);

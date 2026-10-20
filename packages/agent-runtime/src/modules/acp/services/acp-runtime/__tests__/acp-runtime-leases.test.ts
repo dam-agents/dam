@@ -342,6 +342,7 @@ describe("acp-runtime: one harness process per harness", () => {
     const world = createLeaseWorld({
       providers: ["conn-a"],
       agentRequests: {
+        held: () => {},
         waiting: (id) => heard.push(id),
         answered: () => {},
         abandoned: () => {},
@@ -366,6 +367,7 @@ describe("acp-runtime: one harness process per harness", () => {
   it("drops an answer under an id from before a restart", () => {
     const heard: unknown[] = [];
     const observer: AgentRequestObserver = {
+      held: () => {},
       waiting: (id) => heard.push(id),
       answered: () => {},
       abandoned: () => {},

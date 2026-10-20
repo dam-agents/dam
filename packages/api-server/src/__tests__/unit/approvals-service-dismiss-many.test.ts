@@ -54,6 +54,7 @@ function makeService(rows: PendingApprovalRow[]) {
     },
     resolveExpired: async () => false,
     markDelivered: async () => {},
+    correctResolvedVerdict: async () => false,
     listResolvedUndelivered: async () => [],
     expirePending: async () => false,
     expireOverdue: async () => [],

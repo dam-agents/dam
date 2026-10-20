@@ -29,6 +29,7 @@ export interface PendingAgentRequestsDeps {
 }
 
 export interface AgentRequestObserver {
+  held(id: JsonRpcId, sessionId: string, line: string): void;
   waiting(id: JsonRpcId, sessionId: string, line: string): void;
   answered(id: JsonRpcId, sessionId: string, result: unknown): void;
   abandoned(id: JsonRpcId, sessionId: string): void;
@@ -45,9 +46,11 @@ export interface AgentRequestObserver {
  * expires. Forgetting a session drops its requests the same way, because the
  * session id is reused after a reset: a question left open must not follow
  * that id into the next conversation, and must not keep the runtime busy.
- * The observer hears of a request the first time no channel can answer it,
- * so the platform can record it while nobody watches the session, and hears
- * how such a request ended, answered or dropped, so that record ends too.
+ * The observer hears of every held request, of the first moment no channel
+ * can answer it — so the platform can record it while nobody watches the
+ * session — and of how each request ended, answered or dropped. The end
+ * matters even for a request a client mirrored itself: the platform settles
+ * its record on the answer the runtime accepted, whoever wrote the record.
  */
 export function createPendingAgentRequests(
   deps: PendingAgentRequestsDeps,
@@ -85,8 +88,7 @@ export function createPendingAgentRequests(
   }
 
   function abandoned(id: JsonRpcId, req: PendingRequest): void {
-    if (req.unwatched && req.sessionId !== null)
-      deps.observer?.abandoned(id, req.sessionId);
+    if (req.sessionId !== null) deps.observer?.abandoned(id, req.sessionId);
   }
 
   function updateExpiryTimer(sessionId: string): void {
@@ -131,6 +133,7 @@ export function createPendingAgentRequests(
   return {
     onAgentRequest(id, sessionId, line) {
       pending.set(id, { sessionId, line, unwatched: false });
+      if (sessionId !== null) deps.observer?.held(id, sessionId, line);
       const out = rewriteAuthError(line);
       for (const channel of deps.channelsFor(sessionId)) {
         if (channel.isOpen()) channel.send(out);
@@ -144,7 +147,7 @@ export function createPendingAgentRequests(
       pending.delete(frame.id);
       if (req.sessionId !== null) updateExpiryTimer(req.sessionId);
       deps.sendToAgent(frame);
-      if (req.unwatched && req.sessionId !== null)
+      if (req.sessionId !== null)
         deps.observer?.answered(frame.id, req.sessionId, frame.result);
       return true;
     },

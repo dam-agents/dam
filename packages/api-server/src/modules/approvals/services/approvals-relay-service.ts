@@ -32,6 +32,7 @@ export interface ApprovalsRelayService {
   resolveAcpNativeFromInSession(
     rowId: string,
     outcome: { outcome?: unknown; optionId?: unknown },
+    opts?: { authoritative?: boolean },
   ): Promise<void>;
   expireAcpNative(rowId: string): Promise<void>;
   subscribeFrameInjects(
@@ -109,7 +110,7 @@ export function createApprovalsRelayService(
           kind: o.kind,
         })),
       };
-      const written = await deps.repo.insertPending({
+      const written = await deps.repo.insertIfAbsent({
         id: rowId,
         type: "acp_native",
         agentId: input.agentId,
@@ -138,26 +139,25 @@ export function createApprovalsRelayService(
       return rowId;
     },
 
-    async resolveAcpNativeFromInSession(rowId, outcome) {
+    async resolveAcpNativeFromInSession(rowId, outcome, opts) {
       const row = await deps.repo.getPending(rowId);
-      if (!row || row.status !== "pending" || row.payload.kind !== "acp_native")
-        return;
+      if (!row || row.payload.kind !== "acp_native") return;
       const verdict = verdictOfOutcome(row.payload.options ?? [], outcome);
-      const casWon = await deps.repo.resolvePending(
-        row.id,
-        verdict,
-        "in-session",
-        { markDelivered: true },
-      );
-      if (casWon) {
-        emit({
-          type: EventType.ApprovalResolved,
-          approvalId: row.id,
-          agentId: row.agentId,
-          ownerSub: row.ownerSub,
-          resolution: verdict,
-        });
-      }
+      const settled =
+        row.status === "pending"
+          ? await deps.repo.resolvePending(row.id, verdict, "in-session", {
+              markDelivered: true,
+            })
+          : opts?.authoritative === true &&
+            (await deps.repo.correctResolvedVerdict(row.id, verdict));
+      if (!settled) return;
+      emit({
+        type: EventType.ApprovalResolved,
+        approvalId: row.id,
+        agentId: row.agentId,
+        ownerSub: row.ownerSub,
+        resolution: verdict,
+      });
     },
 
     async expireAcpNative(rowId) {

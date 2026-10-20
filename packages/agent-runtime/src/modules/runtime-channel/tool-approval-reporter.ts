@@ -2,6 +2,7 @@ import type { HarnessClient } from "./harness-client.js";
 import type { AgentRequestObserver } from "../acp/index.js";
 
 const ATTEMPTS = 3;
+const ATTEMPT_TIMEOUT_MS = 5_000;
 const RETRY_DELAY_MS = 2_000;
 const TOOL_NAME_MAX = 4096;
 
@@ -36,27 +37,51 @@ function outcomeOf(
   };
 }
 
+function bounded(sent: Promise<unknown>): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(
+      () => reject(new Error("report timed out")),
+      ATTEMPT_TIMEOUT_MS,
+    );
+    sent.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (err: unknown) => {
+        clearTimeout(timer);
+        reject(err instanceof Error ? err : new Error(String(err)));
+      },
+    );
+  });
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Tells the api-server about a tool approval that
  * no client can answer, as soon as that is so, and about how it ended. The
  * api-server records such a request only from the ACP relay, which sees it
  * only while a client engages the session, so without this report a request
- * in an unwatched session shows nowhere until it expires. Reports go out one
- * at a time, in order, so an end never overtakes the request it ends.
+ * in an unwatched session shows nowhere until it expires. The end is reported
+ * for every permission request the runtime held, watched or not: the runtime
+ * accepts the answer the harness got, so its report is what the platform's
+ * record settles on.
+ * Each attempt is bounded, and one request's reports wait only on that
+ * request, so a stalled call cannot hold another request's decision window.
+ * A request's own reports stay in order, so its end never overtakes it.
  */
 export function createToolApprovalReporter(opts: {
   client: HarnessClient;
   log: (msg: string) => void;
 }): AgentRequestObserver {
-  let queue: Promise<void> = Promise.resolve();
-  const reported = new Set<string>();
+  const chains = new Map<string, Promise<void>>();
+  const approvable = new Set<string>();
   const key = (id: unknown, sessionId: string) =>
     JSON.stringify([sessionId, id]);
 
   async function attempt(what: string, send: () => Promise<unknown>) {
     for (let n = 1; n <= ATTEMPTS; n++) {
       try {
-        await send();
+        await bounded(send());
         return;
       } catch (err) {
         if (n === ATTEMPTS) {
@@ -69,22 +94,36 @@ export function createToolApprovalReporter(opts: {
     }
   }
 
-  function enqueue(what: string, send: () => Promise<unknown>): void {
-    queue = queue.then(() => attempt(what, send));
+  function enqueue(
+    key: string,
+    what: string,
+    send: () => Promise<unknown>,
+  ): void {
+    const chain = (chains.get(key) ?? Promise.resolve()).then(() =>
+      attempt(what, send),
+    );
+    chains.set(key, chain);
+    void chain.then(() => {
+      if (chains.get(key) === chain) chains.delete(key);
+    });
   }
 
   return {
+    held(id, sessionId, line) {
+      if (permissionRequestIn(line)) approvable.add(key(id, sessionId));
+    },
+
     waiting(id, sessionId, line) {
       const frame = permissionRequestIn(line);
       if (!frame) return;
+      approvable.add(key(id, sessionId));
       const toolCall = frame.params?.toolCall ?? {};
-      reported.add(key(id, sessionId));
       const rawOptions: unknown = frame.params?.options;
       const options = (Array.isArray(rawOptions) ? rawOptions : []).filter(
         (o): o is { optionId: string; kind?: unknown } =>
           typeof (o as { optionId?: unknown } | null)?.optionId === "string",
       );
-      enqueue(`approval ${String(id)}`, () =>
+      enqueue(key(id, sessionId), `approval ${String(id)}`, () =>
         opts.client.approvals.v1.waiting.mutate({
           sessionId,
           rpcId: id,
@@ -105,9 +144,9 @@ export function createToolApprovalReporter(opts: {
     },
 
     answered(id, sessionId, result) {
-      if (!reported.delete(key(id, sessionId))) return;
+      if (!approvable.delete(key(id, sessionId))) return;
       const outcome = outcomeOf(result);
-      enqueue(`approval ${String(id)} answer`, () =>
+      enqueue(key(id, sessionId), `approval ${String(id)} answer`, () =>
         opts.client.approvals.v1.ended.mutate({
           sessionId,
           rpcId: id,
@@ -117,8 +156,8 @@ export function createToolApprovalReporter(opts: {
     },
 
     abandoned(id, sessionId) {
-      if (!reported.delete(key(id, sessionId))) return;
-      enqueue(`approval ${String(id)} end`, () =>
+      if (!approvable.delete(key(id, sessionId))) return;
+      enqueue(key(id, sessionId), `approval ${String(id)} end`, () =>
         opts.client.approvals.v1.ended.mutate({ sessionId, rpcId: id }),
       );
     },
