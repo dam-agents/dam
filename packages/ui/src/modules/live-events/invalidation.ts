@@ -19,8 +19,8 @@ function cachedSessionAgents(): string[] {
   const ids = queryClient
     .getQueryCache()
     .findAll({ queryKey: acpSessionsKeys.all })
-    .map((query) => query.queryKey[1]);
-  return [...new Set(ids)].filter((id): id is string => typeof id === "string");
+    .map((query) => acpSessionsKeys.agentIdOf(query.queryKey));
+  return [...new Set(ids)].filter((id) => id !== null);
 }
 
 const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
@@ -40,13 +40,28 @@ const invalidations: Record<Topic, (agentId?: string) => readonly QueryKey[]> =
       trpc.attention.pathKey(),
       ...(agentId ? [agentId] : cachedSessionAgents()).flatMap((id) => [
         acpSessionsKeys.pages(id),
-        [...acpSessionsKeys.agent(id), "session"],
+        acpSessionsKeys.sessions(id),
       ]),
     ],
     gettingStarted: () => [trpc.gettingStarted.pathKey()],
   };
 
 const refreshing = new Map<string, { again: boolean }>();
+
+const REFRESH_CONCURRENCY = 8;
+
+async function inParallel(
+  families: readonly QueryKey[],
+  limit: number,
+): Promise<void> {
+  const queue = [...families];
+  await Promise.all(
+    Array.from({ length: Math.min(limit, queue.length) }, async () => {
+      for (let key = queue.shift(); key; key = queue.shift())
+        await refresh(key);
+    }),
+  );
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: a burst of hints for one query family runs one refetch, and at most one more after it. A hint that arrives while the family refetches only asks for that next pass, so the data is as fresh as the last hint, and the same fetch is not cancelled and sent again for every hint in the burst.
 async function refresh(queryKey: QueryKey): Promise<void> {
@@ -72,5 +87,5 @@ export function invalidateForLiveEvent(event: LiveEvent): Promise<unknown> {
       : invalidations[event.topic](
           "agentId" in event ? event.agentId : undefined,
         );
-  return Promise.all(families.map(refresh));
+  return inParallel(families, REFRESH_CONCURRENCY);
 }

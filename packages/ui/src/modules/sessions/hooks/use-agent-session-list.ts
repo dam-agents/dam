@@ -34,7 +34,9 @@ export function useAgentSessionList(agentId: string) {
     hasNextPage,
     isFetchingNextPage,
     isFetchNextPageError,
+    isError,
     fetchNextPage,
+    refetch,
   } = useSessionPages(agentId, sessionFilter, {
     enabled: answerableSoon,
     activeSessionId: sessionId,
@@ -93,6 +95,8 @@ export function useAgentSessionList(agentId: string) {
     loading,
     provisional,
     recordRead: lastKnown !== undefined,
+    failed: listed === undefined && !provisional && isError && !isFetching,
+    retry: refetch,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPageFailed: isFetchNextPageError,

@@ -8,6 +8,7 @@ import {
 
 import { HARNESS_ICONS } from "@/components/harness-icons";
 
+import { acpSessionsKeys } from "../../sessions/api/keys.js";
 import { modelDisplayName } from "../../sessions/lib/model-name.js";
 
 export type ActivityTone =
@@ -70,6 +71,14 @@ export function offFeedPins(
           sessionId: key.slice(agentId.length + 1),
         })),
     );
+}
+
+export function pinActivityQuery(agentId: string, sessionId: string) {
+  return {
+    queryKey: acpSessionsKeys.session(agentId, sessionId),
+    enabled: false,
+    select: (s: SessionView | null) => s?.updatedAt ?? s?.createdAt,
+  };
 }
 
 export function splitPinned<T>(

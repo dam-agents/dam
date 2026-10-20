@@ -216,7 +216,10 @@ export function SessionRow({
             <PinFilled
               size={12}
               aria-label="Pinned"
-              className="ml-auto shrink-0 text-muted-foreground group-has-[[data-row-actions]_:focus-visible]:hidden group-has-[[data-row-actions]_[data-state=open]]:hidden hover-capable:group-hover:hidden"
+              className={cn(
+                "ml-auto shrink-0 text-muted-foreground group-has-[[data-row-actions]_:focus-visible]:hidden group-has-[[data-row-actions]_[data-state=open]]:hidden hover-capable:group-hover:hidden",
+                onTogglePin && "[@media(hover:none)]:hidden",
+              )}
             />
           )}
           <div

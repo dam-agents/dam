@@ -81,7 +81,20 @@ export function AgentSessionList({
       ) : (
         list.loading && <SessionListSkeleton />
       )}
-      {!list.loading && rows.length === 0 && !hasNextPage && (
+      {list.failed && (
+        <button
+          type="button"
+          data-testid="sidebar-agent-sessions-failed"
+          onClick={() => void list.retry()}
+          className={cn(
+            "flex h-[30px] items-center rounded-lg pl-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            FOCUS_RING,
+          )}
+        >
+          Couldn't load sessions. Retry
+        </button>
+      )}
+      {!list.loading && !list.failed && rows.length === 0 && !hasNextPage && (
         <p className="py-1.5 pl-2 text-xs text-muted-foreground">
           {isFiltered(filters)
             ? "No sessions match the filter."

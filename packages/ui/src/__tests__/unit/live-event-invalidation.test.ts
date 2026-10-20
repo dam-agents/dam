@@ -16,7 +16,7 @@ afterEach(() => {
   queryClient.clear();
 });
 
-async function watch(queryKey: QueryKey, queryFn: () => Promise<number>) {
+async function watch(queryKey: QueryKey, queryFn: () => Promise<unknown>) {
   unsubscribes.push(
     new QueryObserver(queryClient, { queryKey, queryFn }).subscribe(() => {}),
   );
@@ -99,4 +99,67 @@ it("refreshes cached session pages and pin lookups on sync, not histories", asyn
   await invalidateForLiveEvent({ topic: "sync" });
 
   expect([pagesA.calls(), pinB.calls(), historyA.calls()]).toEqual([2, 2, 1]);
+});
+
+// TEST_SCENARIO: the sidebar's Pinned section watches an old pin's lookup only to read its activity time for ordering, beside the pin row's own lookup. With both watching (the ordering one set last, as its effect runs after the row's), a sync or a named hint must still run the row's real lookup and replace the cached Session; an ordering watcher that installs its own empty query function would make every refresh fail with "Missing queryFn".
+it("still runs an old pin's lookup while the ordering watcher reads it", async () => {
+  const { acpSessionsKeys } =
+    await import("../../modules/sessions/api/keys.js");
+  const { pinActivityQuery } =
+    await import("../../modules/platform/lib/sidebar-tree.js");
+  let title = "January notes";
+  const lookup = vi.fn(() =>
+    Promise.resolve({
+      sessionId: "old",
+      agentId: "A",
+      title,
+      createdAt: "2026-01-01T00:00:00Z",
+      updatedAt: "2026-01-02T00:00:00Z",
+    }),
+  );
+  await watch(acpSessionsKeys.session("A", "old"), lookup);
+  unsubscribes.push(
+    new QueryObserver(queryClient, pinActivityQuery("A", "old")).subscribe(
+      () => {},
+    ),
+  );
+
+  title = "Renamed elsewhere";
+  await invalidateForLiveEvent({ topic: "sync" });
+  await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
+
+  expect(lookup).toHaveBeenCalledTimes(3);
+  const query = queryClient
+    .getQueryCache()
+    .find({ queryKey: acpSessionsKeys.session("A", "old") });
+  expect(query?.state.error).toBeNull();
+  expect((query?.state.data as { title: string }).title).toBe(
+    "Renamed elsewhere",
+  );
+});
+
+// TEST_SCENARIO: a sync after a stream overflow repairs every cached agent's lists and pin lookups; with many agents it must not send all those reads at once, so at most a bounded number of query families refetch together.
+it("bounds how many families a sync refetches at once", async () => {
+  const { acpSessionsKeys } =
+    await import("../../modules/sessions/api/keys.js");
+  let inFlight = 0;
+  let peak = 0;
+  const slow = () => {
+    inFlight++;
+    peak = Math.max(peak, inFlight);
+    return new Promise<number>((resolve) =>
+      setTimeout(() => {
+        inFlight--;
+        resolve(1);
+      }, 1),
+    );
+  };
+  for (let i = 0; i < 30; i++)
+    await watch(acpSessionsKeys.pagesOf(`agent-${i}`, ["chats"]), slow);
+  peak = 0;
+
+  await invalidateForLiveEvent({ topic: "sync" });
+
+  expect(peak).toBeGreaterThan(1);
+  expect(peak).toBeLessThanOrEqual(8);
 });

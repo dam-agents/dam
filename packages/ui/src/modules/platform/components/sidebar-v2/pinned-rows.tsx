@@ -1,5 +1,7 @@
 import { useMemo } from "react";
 
+import { cn } from "@/lib/utils";
+
 import { useStore } from "../../../../store.js";
 import type { AgentView, SessionView } from "../../../../types.js";
 import {
@@ -22,6 +24,7 @@ import {
 import { useSessionConversations } from "../../../sessions/lib/use-session-conversations.js";
 import { useSessionSpend } from "../../../spend/api/queries.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
+import { FOCUS_RING } from "./add-row.js";
 import { TreeSessionRow } from "./tree-session-row.js";
 
 export function FeedPinnedRow({
@@ -50,7 +53,7 @@ export function FeedPinnedRow({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: A pinned Session that the owner's bounded attention feed does not hold, read by its id from its Agent while the Agent can answer, so an old pin needs one lookup and not its Agent's whole history. The lookup refreshes on the Agent's attention hint. A pin whose Session is gone shows nothing and stays stored.
+ * UNIT_BOUNDARY_DESCRIPTION: A pinned Session that the owner's bounded attention feed does not hold, read by its id from its Agent while the Agent can answer, so an old pin needs one lookup and not its Agent's whole history. The lookup refreshes on the Agent's attention hint. A failed first lookup offers a retry rather than hiding the pin; a pin whose Session is gone shows nothing and stays stored.
  */
 export function OffFeedPinnedRow({
   agent,
@@ -62,9 +65,12 @@ export function OffFeedPinnedRow({
   onNavigate?: () => void;
 }) {
   const answerable = useIsAgentAnswerableSoon(agent.id);
-  const { data: session } = useAgentSession(agent.id, sessionId, {
-    enabled: answerable,
-  });
+  const {
+    data: session,
+    isError,
+    isFetching,
+    refetch,
+  } = useAgentSession(agent.id, sessionId, { enabled: answerable });
   const conversationOf = useSessionConversations(agent.id);
   const filters = useStore((s) => s.sidebarActivityFilters);
   const open = useStore(
@@ -73,7 +79,22 @@ export function OffFeedPinnedRow({
       s.selectedAgent === agent.id &&
       s.sessionId === sessionId,
   );
-  if (!session) return null;
+  if (!session)
+    return isError && !isFetching ? (
+      <div data-pin-key={`${agent.id}:${sessionId}`}>
+        <button
+          type="button"
+          data-testid="sidebar-pin-failed"
+          onClick={() => void refetch()}
+          className={cn(
+            "flex h-[30px] w-full items-center rounded-lg px-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+            FOCUS_RING,
+          )}
+        >
+          Couldn't load a pinned session of {agent.name}. Retry
+        </button>
+      </div>
+    ) : null;
   const working = !!session.running;
   const unread = isUnreadSession(session, { open });
   if (!matchesActivityFilters({ session, working, unread }, filters))

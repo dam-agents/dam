@@ -7,7 +7,7 @@ import {
   Tools,
   TrashCan,
 } from "@carbon/icons-react";
-import { skipToken, useQueries } from "@tanstack/react-query";
+import { useQueries } from "@tanstack/react-query";
 import { type ReactNode, useId, useMemo, useState } from "react";
 
 import {
@@ -23,7 +23,7 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
-import type { AgentView, SessionView } from "../../../../types.js";
+import type { AgentView } from "../../../../types.js";
 import { useDeleteAgent } from "../../../agents/api/mutations.js";
 import { useAgentsList } from "../../../agents/api/queries.js";
 import {
@@ -41,7 +41,6 @@ import { ActivityFilterMenu } from "../../../home/components/activity-filter-men
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
-import { acpSessionsKeys } from "../../../sessions/api/keys.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
@@ -49,6 +48,7 @@ import {
   awaitsApproval,
   isExpanded,
   offFeedPins,
+  pinActivityQuery,
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
@@ -107,11 +107,9 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
       .map((agent) => ({ agent, sessionId })),
   );
   const offFeedAt = useQueries({
-    queries: offFeed.map(({ agent, sessionId }) => ({
-      queryKey: acpSessionsKeys.session(agent.id, sessionId),
-      queryFn: skipToken,
-      select: (s: SessionView | null) => s?.updatedAt ?? s?.createdAt,
-    })),
+    queries: offFeed.map(({ agent, sessionId }) =>
+      pinActivityQuery(agent.id, sessionId),
+    ),
   });
   const pinRows = newestFirst(
     [
