@@ -78,7 +78,7 @@ function AccessListEditor({ agentId }: { agentId: string }) {
         caption={
           emails.length === 0
             ? "Only you can open this agent's Environments."
-            : `${emails.length} people may open this agent's Environments.`
+            : `${emails.length} ${emails.length === 1 ? "person" : "people"} may open this agent's Environments.`
         }
       />
       {dirty && (
