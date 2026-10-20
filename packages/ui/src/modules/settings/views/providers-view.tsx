@@ -1,7 +1,5 @@
-import { Badge } from "@/components/ui/badge";
 import { Card } from "@/components/ui/card";
 import { PageHeader } from "@/components/ui/page-header";
-import { Switch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 
 import { useInstantStart } from "../../instant-start/context.js";
@@ -18,12 +16,11 @@ function CurveBenderProviderCard() {
   const ctx = useInstantStart();
   if (!ctx) return null;
 
-  const { freeBudget, budgetExhausted, curveBenderEnabled, setCurveBenderEnabled } = ctx;
-  const active = curveBenderEnabled && !budgetExhausted;
+  const { freeBudget, budgetExhausted } = ctx;
   const pct = Math.min((freeBudget.used / freeBudget.limit) * 100, 100);
 
   return (
-    <Card className={cn("relative px-4 py-4", !curveBenderEnabled && "opacity-60")}>
+    <Card className="px-4 py-4">
       <div className="flex items-start gap-3">
         <div className="flex size-[38px] shrink-0 items-center justify-center rounded-lg bg-muted">
           <img
@@ -33,12 +30,7 @@ function CurveBenderProviderCard() {
           />
         </div>
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <p className="text-base font-medium text-foreground">CurveBender</p>
-            <Badge variant={active ? "success" : "default"}>
-              {budgetExhausted ? "Exhausted" : curveBenderEnabled ? "Active" : "Paused"}
-            </Badge>
-          </div>
+          <p className="text-base font-medium text-foreground">CurveBender</p>
           <p className="text-sm text-muted-foreground">
             {budgetExhausted
               ? `${formatUsd(freeBudget.limit)} free budget used up`
@@ -48,20 +40,12 @@ function CurveBenderProviderCard() {
             <div
               className={cn(
                 "h-full transition-all duration-500",
-                active ? "bg-primary" : "bg-foreground",
+                budgetExhausted ? "bg-foreground" : "bg-primary",
               )}
               style={{ width: `${pct}%` }}
             />
           </div>
         </div>
-      </div>
-      <div className="absolute right-3 top-3">
-        <Switch
-          checked={curveBenderEnabled}
-          onCheckedChange={setCurveBenderEnabled}
-          disabled={budgetExhausted}
-          label="Toggle CurveBender budget"
-        />
       </div>
     </Card>
   );

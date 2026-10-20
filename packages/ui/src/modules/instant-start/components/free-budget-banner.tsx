@@ -1,10 +1,11 @@
 import { useState } from "react";
 
-import { ArrowRight } from "@carbon/icons-react";
+import { ArrowRight, Checkmark } from "@carbon/icons-react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { PROVIDERS } from "../../../types.js";
 import { useStore } from "../../../store.js";
 import { ConfigureProviderModal } from "./configure-provider-modal.js";
 import { useInstantStart } from "../context.js";
@@ -31,8 +32,40 @@ export function FreeBudgetBanner() {
   const [showModal, setShowModal] = useState(false);
   if (!ctx) return null;
 
-  const { freeBudget, budgetExhausted } = ctx;
+  const { freeBudget, budgetExhausted, connectedProviderType } = ctx;
   const pct = Math.min((freeBudget.used / freeBudget.limit) * 100, 100);
+
+  if (connectedProviderType) {
+    const providerName = PROVIDERS[connectedProviderType].displayName;
+    return (
+      <>
+        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+          <div className="flex items-center gap-3 px-4 py-3">
+            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary">
+              <Checkmark size={16} className="text-primary-foreground" />
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-foreground">
+                Using {providerName}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                CurveBender free budget paused — you can re-enable it in Providers settings.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => setShowModal(true)}
+              className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+            >
+              Change provider
+              <ArrowRight size={16} />
+            </button>
+          </div>
+        </div>
+        {showModal && <ConfigureProviderModal onClose={() => setShowModal(false)} />}
+      </>
+    );
+  }
 
   return (
     <>
