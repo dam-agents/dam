@@ -67,7 +67,7 @@ export function SidebarAgentRow({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-[34px] min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg pr-2 pl-2.5 text-left select-none",
+            "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
             selected
               ? ACTIONS_PADDING[actionCount].shown
               : ACTIONS_PADDING[actionCount].hover,
@@ -81,7 +81,7 @@ export function SidebarAgentRow({
           <AgentAvatar
             name={agent.name}
             avatar={agent.avatar}
-            size={20}
+            size={24}
             mood={mood}
             className="shrink-0"
           />

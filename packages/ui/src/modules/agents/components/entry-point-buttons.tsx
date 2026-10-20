@@ -1,4 +1,4 @@
-import { Add, DataEnrichmentAdd } from "@carbon/icons-react";
+import { Add, Gift } from "@carbon/icons-react";
 import type { EntryPointChoice } from "api-server-api";
 
 import { Button } from "@/components/ui/button";
@@ -35,7 +35,7 @@ export function EntryPointButtons() {
         onClick={() => enter(BROWSE_KITS)}
         data-testid="entry-point-second"
       >
-        <DataEnrichmentAdd size={16} aria-hidden />
+        <Gift size={16} aria-hidden />
         {BROWSE_KITS.label}
       </Button>
       <Button

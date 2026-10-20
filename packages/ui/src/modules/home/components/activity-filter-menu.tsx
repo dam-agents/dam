@@ -34,9 +34,11 @@ const inlineActionClassName =
 export function ActivityFilterMenu({
   filters,
   onChange,
+  className,
 }: {
   filters: ActivityFilters;
   onChange: (filters: ActivityFilters) => void;
+  className?: string;
 }) {
   const filtered = isFiltered(filters);
   const label = filtered ? "Filter sessions (filtered)" : "Filter sessions";
@@ -53,6 +55,7 @@ export function ActivityFilterMenu({
             className={cn(
               "relative flex size-6 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
               filtered ? "text-primary" : "text-muted-foreground",
+              className,
             )}
           >
             <Filter size={14} />
