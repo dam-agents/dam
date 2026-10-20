@@ -434,7 +434,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 			}
 			plan.adopt(r.ownerGatewayOffersFor(owner), files)
 			r.refreshOwnerGatewayCredentials(ctx, owner, files.Annotations[annOwnerCredentialsHash], names, r.clockNow())
-			return r.settleLegacyOwnerGatewayFiles(ctx, files.Name, legacy, legacyKeys, onIt)
+			return r.settleLegacyOwnerGatewayFiles(ctx, files.Name, legacy, legacyKeys, vmNames)
 		},
 		func() error {
 			return r.applyCertificate(ctx, buildOwnerLeafCertificate(owner, r.config, leafAgents, refs))
@@ -635,7 +635,7 @@ func (r *AgentReconciler) settleLegacyOwnerGatewayFiles(ctx context.Context, nam
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the health revisions the layout just applied answers for, registered so a live pod on it reads as ready. A pod of that layout hashes its resources against the old credential root, so its answer is a different string from the canonical one; the two layouts publish separately and a canonical write proves nothing about a legacy pod's credential volume, which is why this only ever answers readiness and never a repair. Only this owner's members are touched: an owner without a legacy layout retires its own registrations and leaves every other owner's alone, since another owner's old pod may still be the one serving.
+// UNIT_BOUNDARY_DESCRIPTION: the health revisions the layout just applied answers for, registered so a live pod on it reads as ready. A pod of that layout hashes its resources against the old credential root, so its answer is a different string from the canonical one; the two layouts publish separately and a canonical write proves nothing about a legacy pod's credential volume, which is why this only ever answers readiness and never a repair. `members` is the owner's whole membership, not the set still served: a member that moved back keeps no listener in the applied layout, and a registration it left behind would let a retired answer carry it back through cutover when it rejoins. Every other owner's registrations are untouched, since their old pods may still be the ones serving.
 func (r *AgentReconciler) forgetLegacyOwnerGatewayRevisions(members []string, revisions map[string]string) {
 	for _, name := range members {
 		if _, ok := revisions[name]; !ok {

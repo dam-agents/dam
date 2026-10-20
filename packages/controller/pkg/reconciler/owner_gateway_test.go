@@ -1623,3 +1623,94 @@ func TestOwnerGateway_ACanonicalOwnerDoesNotClearALegacyOne(t *testing.T) {
 	require.NoError(t, r.settleLegacyOwnerGatewayFiles(ctx, ownerGatewayName("platform", testOwner), &ownerRender{}, nil, []string{"my-agent"}))
 	assert.Equal(t, "legacy-of-another-owner", r.ownerGatewayLegacyRevisionOf("other-owner-agent"), "a canonical owner's render leaves the legacy owner's registration intact")
 }
+
+// TEST_SCENARIO: the normal move-back: the agent's own gateway is rendered and ready, and its Service selects that gateway again.
+func moveAgentBackToOwnGateway(t *testing.T, r *AgentReconciler, name string) {
+	t.Helper()
+	ctx := context.Background()
+	live, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, name, metav1.GetOptions{})
+	require.NoError(t, err)
+	agent, err := FromCacheObject[apiv1.Agent](live)
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, agent), "its own gateway is rendered")
+	markGatewayPodReady(t, r, name)
+	require.NoError(t, r.Reconcile(ctx, agent), "and its Service moves back once that gateway is ready")
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, GatewayName(name), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.Empty(t, svc.Annotations[annOwnerGatewayServed], "the agent is back on its own gateway")
+}
+
+// TEST_SCENARIO: a member that moved back to its own gateway is no longer served by the owner's legacy layout, so the registration it left behind must go with it. Otherwise that retired answer is still accepted for the member, and on rejoin it would carry the member onto the owner gateway although nothing this owner published any more contains its listener.
+func TestOwnerGateway_ADepartureRetiresItsLegacyRevision(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := servedVMReconciler(t)
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", true)
+	ownerTwoSigningSecrets(t, r)
+
+	// TEST_SCENARIO: both members are on the old layout, which registers a revision for each.
+	ownerPod := ownerGatewayPod("10.42.0.9")
+	ownerPod.Spec.Volumes = legacyOwnerGatewayVolumes()
+	_, err := r.client.CoreV1().Pods("test-agents").Update(ctx, ownerPod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Spec.Template.Spec.Volumes = legacyOwnerGatewayVolumes()
+	_, err = r.client.AppsV1().Deployments("test-agents").Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	require.NotEmpty(t, r.ownerGatewayLegacyRevisionOf("agent-b"), "the layout it is served by registers its revision")
+
+	// TEST_SCENARIO: agent-b's own gateway becomes ready with the flag off, so the normal move-back clears its served mark and the next render stops serving it from the legacy layout.
+	r.config.VM.Gateway.PerOwner = false
+	moveAgentBackToOwnGateway(t, r, "agent-b")
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+
+	legacy, err := r.client.CoreV1().ConfigMaps("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotContains(t, legacy.Data[ownerGatewayLDSKey], "agent-b", "the applied legacy layout no longer carries it")
+	assert.Empty(t, r.ownerGatewayLegacyRevisionOf("agent-b"), "so the revision it used to answer with is retired")
+	assert.NotEmpty(t, r.ownerGatewayLegacyRevisionOf("my-agent"), "and the member still served keeps its own")
+}
+
+// TEST_SCENARIO: the same departure, followed by a rejoin while the old pod still answers the retired revision. Nothing this owner publishes contains that member's listener, so its stale answer must not authorise the cutover: it keeps its own gateway until the owner really serves it again.
+func TestOwnerGateway_ARejoinDoesNotCutOverOnARetiredLegacyAnswer(t *testing.T) {
+	ctx := context.Background()
+	r, _, _ := servedVMReconciler(t)
+	ownerSecondAgent(t, r, "agent-b", "10.96.42.43", true)
+	ownerTwoSigningSecrets(t, r)
+	ownerPod := ownerGatewayPod("10.42.0.9")
+	ownerPod.Spec.Volumes = legacyOwnerGatewayVolumes()
+	_, err := r.client.CoreV1().Pods("test-agents").Update(ctx, ownerPod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, ownerGatewayName("platform", testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Spec.Template.Spec.Volumes = legacyOwnerGatewayVolumes()
+	_, err = r.client.AppsV1().Deployments("test-agents").Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	retired := r.ownerGatewayLegacyRevisionOf("agent-b")
+	require.NotEmpty(t, retired)
+
+	// TEST_SCENARIO: agent-b moves back, and the render that follows stops serving it.
+	r.config.VM.Gateway.PerOwner = false
+	moveAgentBackToOwnGateway(t, r, "agent-b")
+	_, err = r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+
+	// TEST_SCENARIO: it is eligible to rejoin, its canonical rendering has moved, and the old pod still answers the retired revision.
+	r.config.VM.Gateway.PerOwner = true
+	r.ownerProbeClient = answeringGateway(retired)
+	members, err := r.ensureOwnerGateway(ctx, testOwner)
+	require.NoError(t, err)
+	m, ok := members["agent-b"]
+	require.True(t, ok, "the render still knows the member")
+	require.False(t, m.served, "it is not served yet")
+	r.cutOverToOwnerGateway(ctx, testOwner, map[string]ownerGatewayMember{"agent-b": m})
+
+	svc, err := r.client.CoreV1().Services("test-agents").Get(ctx, GatewayName("agent-b"), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, svc.Annotations[annOwnerGatewayServed], "a retired answer does not carry the member onto the owner gateway")
+}
