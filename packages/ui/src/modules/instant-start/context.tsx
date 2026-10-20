@@ -19,6 +19,8 @@ export interface InstantStartState {
   setProviderAdded: (v: boolean) => void;
   agentCreated: boolean;
   setAgentCreated: (v: boolean) => void;
+  firstLanding: boolean;
+  setFirstLanding: (v: boolean) => void;
 }
 
 const INITIAL_BUDGET: FreeBudget = {
@@ -61,6 +63,7 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
   const [budgetExhausted, setBudgetExhausted] = useState(false);
   const [providerAdded, setProviderAdded] = useState(false);
   const [agentCreated, setAgentCreated] = useState(false);
+  const [firstLanding, setFirstLanding] = useState(false);
 
   const state = useMemo<InstantStartState>(
     () => ({
@@ -72,8 +75,10 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
       setProviderAdded,
       agentCreated,
       setAgentCreated,
+      firstLanding,
+      setFirstLanding,
     }),
-    [approach, budgetExhausted, providerAdded, agentCreated],
+    [approach, budgetExhausted, providerAdded, agentCreated, firstLanding],
   );
 
   if (!approach) return <>{children}</>;

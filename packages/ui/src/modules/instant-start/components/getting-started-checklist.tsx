@@ -68,7 +68,7 @@ export function GettingStartedChecklist() {
   return (
     <section
       aria-label="Get started"
-      className="flex w-[min(340px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl"
+      className="fixed bottom-16 right-4 z-40 flex w-[min(340px,calc(100vw-2rem))] flex-col overflow-hidden rounded-lg border border-border bg-card shadow-xl"
     >
       <div className="flex items-center gap-3 px-4 pt-3.5 pb-3">
         <ProgressIndicator done={done} total={total} />

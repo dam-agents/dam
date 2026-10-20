@@ -120,7 +120,6 @@ import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { Terminal } from "../components/terminal.js";
 import { BudgetExhaustedNotice } from "../../instant-start/components/budget-exhausted-notice.js";
 import { FreeBudgetBanner } from "../../instant-start/components/free-budget-banner.js";
-import { GettingStartedChecklist } from "../../instant-start/components/getting-started-checklist.js";
 import {
   KitSuggestionsEmpty,
   KitSuggestionsCompact,
@@ -755,10 +754,19 @@ export function ChatView() {
                           </p>
                         </div>
                       ) : isMock ? (
-                        <div className="flex flex-1 flex-col items-center justify-center">
-                          {(instantStart?.approach === 1 ||
-                            instantStart?.approach === 3) && (
-                            <GettingStartedChecklist />
+                        <div className="flex flex-1 flex-col items-center justify-center text-center">
+                          <p className="text-base font-bold text-foreground mb-2">
+                            Start a new session
+                          </p>
+                          <p className="text-sm text-muted-foreground">
+                            Send a message to begin or open a new session in:
+                          </p>
+                          {selectedAgent && (
+                            <NewSessionLauncher
+                              agentId={selectedAgent}
+                              agentName={selectedAgentName ?? ""}
+                              onNewTerminal={handleNewTerminal}
+                            />
                           )}
                         </div>
                       ) : (
@@ -844,7 +852,7 @@ export function ChatView() {
                     loadingSession={loadingSession}
                     onSend={sendPrompt}
                     onStop={stopAgent}
-                    rotatingPlaceholder={rotatingPlaceholder}
+                    rotatingPlaceholder={instantStart ? undefined : rotatingPlaceholder}
                     onConfigureSection={
                       selectedAgent ? setConfigureSection : undefined
                     }

@@ -19,18 +19,11 @@ export function InstantStartDebugControls() {
         {ctx.budgetExhausted ? "Budget: exhausted" : "Budget: active"}
       </Button>
       <Button
-        variant={ctx.providerAdded ? "default" : "outline"}
+        variant={ctx.firstLanding ? "default" : "outline"}
         size="sm"
-        onClick={() => ctx.setProviderAdded(!ctx.providerAdded)}
+        onClick={() => ctx.setFirstLanding(!ctx.firstLanding)}
       >
-        {ctx.providerAdded ? "Own provider: yes" : "Own provider: no"}
-      </Button>
-      <Button
-        variant={ctx.agentCreated ? "default" : "outline"}
-        size="sm"
-        onClick={() => ctx.setAgentCreated(!ctx.agentCreated)}
-      >
-        {ctx.agentCreated ? "Agent: created" : "Agent: creating…"}
+        {ctx.firstLanding ? "First landing: on" : "First landing: off"}
       </Button>
     </div>
   );

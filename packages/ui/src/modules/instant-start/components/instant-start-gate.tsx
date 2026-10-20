@@ -5,9 +5,8 @@ import { useStore } from "../../../store.js";
 import { useCreateAgent } from "../../agents/api/mutations.js";
 import { useInstantStart } from "../context.js";
 import { Approach2Modal } from "./approach-2-modal.js";
-import { CreatingAgentOverlay } from "./creating-agent-overlay.js";
 import { InstantStartDebugControls } from "./debug-controls.js";
-
+import { GettingStartedChecklist } from "./getting-started-checklist.js";
 
 export function InstantStartGate({ children }: { children: ReactNode }) {
   const ctx = useInstantStart();
@@ -20,13 +19,13 @@ export function InstantStartGate({ children }: { children: ReactNode }) {
       {ctx.approach === 2 && <Approach2Boot />}
       {ctx.approach === 3 && <Approach3Boot />}
       {children}
+      {ctx.firstLanding && <GettingStartedChecklist />}
       <InstantStartDebugControls />
     </>
   );
 }
 
 function Approach1Boot() {
-  const ctx = useInstantStart()!;
   const createAgent = useCreateAgent();
   const createdRef = useRef(false);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -34,7 +33,6 @@ function Approach1Boot() {
   useEffect(() => {
     if (createdRef.current) return;
     createdRef.current = true;
-    ctx.setAgentCreated(false);
     createAgent
       .mutateAsync({
         name: "agent",
@@ -43,14 +41,11 @@ function Approach1Boot() {
       })
       .then((agent) => {
         selectAgent(agent.id);
-        ctx.setAgentCreated(true);
       })
-      .catch(() => {
-        ctx.setAgentCreated(true);
-      });
+      .catch(() => {});
   }, []);
 
-  return <CreatingAgentOverlay visible={!ctx.agentCreated} />;
+  return null;
 }
 
 function Approach2Boot() {
@@ -68,7 +63,6 @@ function Approach2Boot() {
 }
 
 function Approach3Boot() {
-  const ctx = useInstantStart()!;
   const createAgent = useCreateAgent();
   const createdRef = useRef(false);
   const selectAgent = useStore((s) => s.selectAgent);
@@ -76,7 +70,6 @@ function Approach3Boot() {
   useEffect(() => {
     if (createdRef.current) return;
     createdRef.current = true;
-    ctx.setAgentCreated(false);
     createAgent
       .mutateAsync({
         name: "agent",
@@ -85,12 +78,9 @@ function Approach3Boot() {
       })
       .then((agent) => {
         selectAgent(agent.id);
-        ctx.setAgentCreated(true);
       })
-      .catch(() => {
-        ctx.setAgentCreated(true);
-      });
+      .catch(() => {});
   }, []);
 
-  return <CreatingAgentOverlay visible={!ctx.agentCreated} />;
+  return null;
 }
