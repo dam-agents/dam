@@ -70,11 +70,9 @@ export function AgentSessionList({
   const filtered = isFiltered(filters);
   const readableNext = hasNextPage && list.answerable;
   const canFetch = readableNext && !isFetchingNextPage && !fetchNextPageFailed;
-  const emptyText = !filtered
-    ? "No sessions yet."
-    : hasNextPage
-      ? "No loaded sessions match the filter."
-      : "No sessions match the filter.";
+  const emptyText = hasNextPage
+    ? "No loaded sessions match the filter."
+    : "No sessions match the filter.";
   const endRef = useLoadOnReach(
     canFetch && !filtered,
     () => void fetchNextPage(),
@@ -105,14 +103,11 @@ export function AgentSessionList({
           onRetry={() => void list.retry()}
         />
       )}
-      {!list.loading &&
-        !list.failed &&
-        rows.length === 0 &&
-        (!hasNextPage || filtered) && (
-          <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
-            {emptyText}
-          </p>
-        )}
+      {!list.loading && !list.failed && rows.length === 0 && filtered && (
+        <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
+          {emptyText}
+        </p>
+      )}
       {rest.map(({ session, state }) => (
         <TreeSessionRow
           key={session.sessionId}

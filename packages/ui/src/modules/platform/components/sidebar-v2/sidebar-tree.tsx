@@ -1,8 +1,9 @@
 import {
   Add,
-  AddComment,
+  type CarbonIconType,
   ChevronRight,
   DataEnrichmentAdd,
+  Home,
   Settings,
   Tools,
   TrashCan,
@@ -127,6 +128,8 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
   const defaultAgent = useCreateDefaultAgent();
+  const homeOpen = useStore((s) => s.view === "home");
+  const setView = useStore((s) => s.setView);
 
   return (
     <div className="flex min-h-0 min-w-0 flex-1 flex-col">
@@ -134,6 +137,18 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-2 pb-3"
         data-testid="sidebar-tree"
       >
+        <div className="mb-2">
+          <NavRow
+            icon={Home}
+            label="Home"
+            current={homeOpen}
+            testId="sidebar-home-row"
+            onClick={() => {
+              setView("home");
+              onNavigate?.();
+            }}
+          />
+        </div>
         {(pinned.length > 0 || offFeed.length > 0) && (
           <section
             aria-label="Pinned"
@@ -338,7 +353,7 @@ function AgentNode({
                 FOCUS_RING,
               )}
             >
-              <AddComment size={16} />
+              <Add size={16} />
             </button>
           </Tooltip>
           <RowActionsMenu
@@ -372,7 +387,7 @@ function AgentNode({
         <div className="pt-px" id={listId}>
           <AgentSessionList agentId={agent.id} onNavigate={onNavigate} />
           <AddRow
-            icon={AddComment}
+            icon={Add}
             label="New session"
             ariaLabel={`New session with ${agent.name}`}
             testId="sidebar-new-session-row"
@@ -427,26 +442,50 @@ function SettingsFooter({ onNavigate }: { onNavigate?: () => void }) {
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   return (
     <div className="shrink-0 border-t border-border p-2">
-      <button
-        type="button"
-        aria-current={settingsOpen ? "page" : undefined}
+      <NavRow
+        icon={Settings}
+        label="Settings"
+        current={settingsOpen}
         onClick={() => {
           navigateToSettings();
           onNavigate?.();
         }}
-        className={cn(
-          "flex h-[34px] w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium transition-colors",
-          FOCUS_RING,
-          settingsOpen
-            ? "bg-muted text-foreground"
-            : "text-muted-foreground hover:bg-muted hover:text-foreground",
-        )}
-      >
-        <span className={TREE_LEADING}>
-          <Settings size={16} />
-        </span>
-        Settings
-      </button>
+      />
     </div>
+  );
+}
+
+function NavRow({
+  icon: Icon,
+  label,
+  current,
+  testId,
+  onClick,
+}: {
+  icon: CarbonIconType;
+  label: string;
+  current: boolean;
+  testId?: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      type="button"
+      aria-current={current ? "page" : undefined}
+      data-testid={testId}
+      onClick={onClick}
+      className={cn(
+        "flex h-[34px] w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium transition-colors",
+        FOCUS_RING,
+        current
+          ? "bg-muted text-foreground"
+          : "text-muted-foreground hover:bg-muted hover:text-foreground",
+      )}
+    >
+      <span className={TREE_LEADING}>
+        <Icon size={16} />
+      </span>
+      {label}
+    </button>
   );
 }

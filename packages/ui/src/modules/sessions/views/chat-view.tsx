@@ -137,7 +137,7 @@ import {
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
 import { ModelIndicator } from "../components/model-indicator.js";
-import { NewSessionLauncher } from "../components/new-session-launcher.js";
+import { NewSessionOptions } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
 import {
@@ -935,8 +935,9 @@ export function ChatView() {
                       Send a message to begin or open a new session in:
                     </p>
                     {agentView && (
-                      <NewSessionLauncher
+                      <NewSessionOptions
                         agent={agentView}
+                        newLayout={newLayout}
                         onNewTerminal={handleNewTerminal}
                       />
                     )}

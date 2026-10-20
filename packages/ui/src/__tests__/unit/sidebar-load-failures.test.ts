@@ -108,7 +108,7 @@ beforeEach(() => {
   };
 });
 
-// TEST_SCENARIO: the first page of an awake Agent's list failed after its retries, with nothing cached; the list must offer a retry and must not claim the Agent has no Sessions.
+// TEST_SCENARIO: the first page of an awake Agent's list failed after its retries, with nothing cached; the list must offer a retry and must not claim the Agent has no Sessions. Once it loads empty, it shows no empty-state text at all.
 it("offers a retry for a failed list, not an empty one", () => {
   const html = renderToStaticMarkup(
     createElement(AgentSessionList, { agentId: "a" }),
@@ -120,7 +120,7 @@ it("offers a retry for a failed list, not an empty one", () => {
   list.failed = false;
   expect(
     renderToStaticMarkup(createElement(AgentSessionList, { agentId: "a" })),
-  ).toContain("No sessions yet.");
+  ).not.toContain("<p");
 });
 
 // TEST_SCENARIO: an Agent that is starting is not operable yet, so its list still counts as loading, but its first page already failed; the list must show the retry alone, not a loading skeleton above it, and must not report itself busy.
