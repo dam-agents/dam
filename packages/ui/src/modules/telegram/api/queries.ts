@@ -11,6 +11,7 @@ export function telegramChatsQueryOptions(agentId: string) {
   return {
     ...trpc.agents.listTelegramChats.queryOptions({ agentId }),
     staleTime: 60_000,
+    refetchOnReconnect: "always" as const,
   };
 }
 
@@ -18,6 +19,7 @@ export function useTelegramBot() {
   return useQuery({
     ...trpc.channels.telegramBot.queryOptions(),
     staleTime: Infinity,
+    refetchOnReconnect: "always" as const,
   });
 }
 

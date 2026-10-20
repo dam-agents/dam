@@ -4,7 +4,6 @@ import {
   onlineManager,
   type QueryKey,
   QueryObserver,
-  type QueryObserverOptions,
 } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -14,6 +13,8 @@ const { queryClient } = await import("../../query-client.js");
 const { acpSessionsKeys } = await import("../../modules/sessions/api/keys.js");
 const { onFetchError, onFetchSuccess } =
   await import("../../lib/api-health.js");
+const { telegramChatsQueryOptions } =
+  await import("../../modules/telegram/api/queries.js");
 
 const unsubscribes: (() => void)[] = [];
 
@@ -23,16 +24,13 @@ afterEach(() => {
   focusManager.setFocused(undefined);
 });
 
-function watch(
-  queryKey: QueryKey,
-  options: Partial<QueryObserverOptions> = {},
-) {
+function watch<O extends { queryKey: QueryKey }>(options: O) {
+  const { queryKey } = options;
   let calls = 0;
   unsubscribes.push(
     new QueryObserver(queryClient, {
-      queryKey,
-      queryFn: () => Promise.resolve(++calls),
       ...options,
+      queryFn: () => Promise.resolve(++calls),
     }).subscribe(() => {}),
   );
   return {
@@ -47,8 +45,11 @@ function watch(
 // TEST_SCENARIO: a tab comes back into view. A stale query on screen must keep the data it has and not fetch again, while a query that asks for a focus refetch still runs one, which proves the focus event reached the observers.
 it("refetches nothing on window focus unless the query asks for it", async () => {
   queryClient.mount();
-  const quiet = watch(["focus-quiet"], { staleTime: 0 });
-  const asked = watch(["focus-asked"], { refetchOnWindowFocus: "always" });
+  const quiet = watch({ queryKey: ["focus-quiet"], staleTime: 0 });
+  const asked = watch({
+    queryKey: ["focus-asked"],
+    refetchOnWindowFocus: "always",
+  });
   await quiet.loaded();
   await asked.loaded();
 
@@ -62,10 +63,11 @@ it("refetches nothing on window focus unless the query asks for it", async () =>
 // TEST_SCENARIO: the API connection drops and comes back a moment later, while the ACP Session data is still fresh by its 5 s staleTime. That data must refetch anyway, because no live-event stream resyncs it and the session watch replays nothing; an unrelated stale query must keep reading what it has until something asks for it again.
 it("refetches the ACP Session data on reconnect even while it is fresh, and leaves the rest stale", async () => {
   queryClient.mount();
-  const sessions = watch(acpSessionsKeys.pagesOf("agent-a", []), {
+  const sessions = watch({
+    queryKey: acpSessionsKeys.pagesOf("agent-a", []),
     staleTime: 5_000,
   });
-  const other = watch(["reconnect-other"], { staleTime: 0 });
+  const other = watch({ queryKey: ["reconnect-other"], staleTime: 0 });
   await sessions.loaded();
   await other.loaded();
 
@@ -83,7 +85,8 @@ it("refetches the ACP Session data on reconnect even while it is fresh, and leav
 // TEST_SCENARIO: the connection goes down and comes straight back, with no stale marking in between. A fresh ACP Session query must still refetch, so the heal cannot rest on the order of the stale marking and the online transition in the same listener.
 it("refetches a fresh ACP Session query on an online transition", async () => {
   queryClient.mount();
-  const sessions = watch(acpSessionsKeys.pagesOf("agent-a", []), {
+  const sessions = watch({
+    queryKey: acpSessionsKeys.pagesOf("agent-a", []),
     staleTime: 5_000,
   });
   await sessions.loaded();
@@ -92,4 +95,16 @@ it("refetches a fresh ACP Session query on an online transition", async () => {
   onlineManager.setOnline(true);
 
   await vi.waitFor(() => expect(sessions.calls()).toBe(2));
+});
+
+// TEST_SCENARIO: a family whose data changes outside this screen, and which carries no stream and no poll, must re-read itself on a reconnect. Telegram chats keep their own refetch-on-reconnect option, because the reconnected stream carries no topic for them.
+it("refetches a family with no stream on reconnect", async () => {
+  queryClient.mount();
+  const chats = watch(telegramChatsQueryOptions("agent-a"));
+  await chats.loaded();
+
+  onlineManager.setOnline(false);
+  onlineManager.setOnline(true);
+
+  await vi.waitFor(() => expect(chats.calls()).toBe(2));
 });
