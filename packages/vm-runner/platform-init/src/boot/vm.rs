@@ -804,20 +804,32 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
         }
     }
     drop(stopped);
-    release_pool_guard(|| {
+    let mut stopping = || {
         let progress = AgentResponse::Progress {
             message: "stopping the workload".into(),
             percent: None,
             layer: None,
         };
         let _ = send(conn, &progress);
+    };
+    let guard = take_pool_guard(&mut stopping);
+    let frozen = std::sync::Mutex::new(None);
+    keeping_progress(&mut stopping, || {
+        if let Some(mut guard) = guard {
+            guard.release();
+        }
+        // SAFETY: sync(2) takes no arguments.
+        unsafe { libc::sync() };
+        let result = File::open(guest::AGENT_HOME).and_then(|home| {
+            // SAFETY: FIFREEZE takes no pointed-to payload, and `home` keeps its descriptor open for the call.
+            succeeded(unsafe { libc::ioctl(home.as_raw_fd(), FIFREEZE as _, 0) } == 0)
+        });
+        *frozen.lock().unwrap_or_else(|e| e.into_inner()) = Some(result);
     });
-    // SAFETY: sync(2) takes no arguments.
-    unsafe { libc::sync() };
-    let frozen = File::open(guest::AGENT_HOME).and_then(|home| {
-        // SAFETY: FIFREEZE takes no pointed-to payload, and `home` keeps its descriptor open for the call.
-        succeeded(unsafe { libc::ioctl(home.as_raw_fd(), FIFREEZE as _, 0) } == 0)
-    });
+    let frozen = frozen
+        .into_inner()
+        .unwrap_or_else(|e| e.into_inner())
+        .unwrap_or_else(|| Err(io::Error::other("the storage disk was not frozen")));
     match frozen {
         Ok(()) => AgentResponse::Ok {
             data: Some(serde_json::json!({"filesystems_quiesced": true})),

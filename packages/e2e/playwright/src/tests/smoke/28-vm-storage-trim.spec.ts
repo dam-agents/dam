@@ -228,7 +228,7 @@ test("the guard gives a machine the room its share gains, and takes it back", as
   ).toBeLessThanOrEqual(2 * MOVE_MIB);
 });
 
-// TEST_SCENARIO: a guest that writes past its share is refused by the guest, having reached its share and not the claim's last block: the refusal names no space, the claim is then within a few floors of its ceiling and not a third empty, every other agent of the owner still writes, and the refused guest writes again once a machine stops and its share grows, which is exactly what a wedge does not do. The fill is random bytes, because the machine's disk is compressed and zeros would never fill it, and it syncs before the claim is read, since the claim pays for it only once the guest's writes reach the disk. What the guest writes is what the claim pays, on the node's own disk, so E2E_DISK_FILL_GIB is the most GiB the fill may write and unset skips the case; a cap the guest reaches before it is full skips too, since a guest that still has room proves nothing about the ceiling. The fill goes in chunks that each wake the machine, since a machine idle for 5 minutes is stopped and a fill of a few GiB outlasts that.
+// TEST_SCENARIO: a guest that writes past its share is refused by the guest, having reached its share and not the claim's last block: the refusal names no space, the claim is then within a few floors of its ceiling and not a third empty, every other agent of the owner still writes and its write is still there after a sync, and the refused guest writes again once a machine stops and its share grows, which is exactly what a wedge does not do. The fill is random bytes, because the machine's disk is compressed and zeros would never fill it, and it syncs before the claim is read, since the claim pays for it only once the guest's writes reach the disk. A refusal that a renewed grant lifts is not the wedge this case is for, so the fill keeps writing after a refusal and only stops once the guest has been refused on three chunks running with its free space at the floor; a fill that stops on its cap fails rather than passes, since a guest with room proves nothing about the ceiling. What the guest writes is what the claim pays, on the node's own disk, so E2E_DISK_FILL_GIB is the most GiB the fill may write, and a cap the guest reaches before it is refused skips the case, because no guest can be filled beyond it.
 test("a writing agent stops at its share, not at the claim", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
@@ -246,21 +246,18 @@ test("a writing agent stops at its share, not at the claim", async () => {
   );
   const diskBefore = machineDisks().get(probeDisk) ?? 0;
   let availMiB = Number.POSITIVE_INFINITY;
-  let refused = false;
+  let refusedOn = 0;
+  let refusal = "";
   inGuest(probeId, "mkdir -p /tmp/e2e-fill");
   try {
-    // UNIT_BOUNDARY_DESCRIPTION: the fill goes in chunks with a wake of both machines between them, because the lane stops a machine whose harness reports idle for 5 minutes and a fill of a few GiB outlasts that, and the sibling must be up at the end, where the claim is past 95% and the runner starts no machine; the free space is read at each chunk so a cap the guest reaches early ends the fill there.
-    for (
-      let done = 0;
-      done < capMiB && availMiB > GUARD_FLOOR_MIB + SLACK_MIB;
-      done += FILL_CHUNK_MIB
-    ) {
+    // UNIT_BOUNDARY_DESCRIPTION: the fill goes in chunks with a wake of both machines between them, because the lane stops a machine whose harness reports idle for 5 minutes and a fill of a few GiB outlasts that, and the sibling must be up at the end, where the claim is past 95% and the runner starts no machine. The refusal is read from `dd`'s own status and its own error file, never from the file it appends to: a redirect that sends the error into the data loses it exactly when the disk is full.
+    for (let done = 0; done < capMiB && refusedOn < 3; done += FILL_CHUNK_MIB) {
       await keepAwake(probeId);
       await keepAwake(siblingId);
       const out = inGuest(
         probeId,
         [
-          `dd if=/dev/urandom bs=1M count=${Math.min(FILL_CHUNK_MIB, capMiB - done)} >> /tmp/e2e-fill/fill 2>&1 || true`,
+          `if dd if=/dev/urandom bs=1M count=${Math.min(FILL_CHUNK_MIB, capMiB - done)} of=/tmp/e2e-fill/fill oflag=append conv=notrunc 2>/tmp/e2e-fill/dd.err; then echo "dd=wrote"; else echo "dd=refused"; cat /tmp/e2e-fill/dd.err 2>/dev/null; fi`,
           "sync",
           `echo "avail=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`,
         ].join("\n"),
@@ -270,35 +267,46 @@ test("a writing agent stops at its share, not at the claim", async () => {
         Number.isFinite(availMiB),
         `the guest did not report its free space: ${out}`,
       ).toBe(true);
-      refused = /No space left on device/.test(out);
+      if (/dd=refused/.test(out)) {
+        refusal = out;
+        // UNIT_BOUNDARY_DESCRIPTION: a refusal only counts once the guest has nothing left to write: a grant that renews room hands the guest more, and the fill carries on.
+        refusedOn = availMiB <= GUARD_FLOOR_MIB + SLACK_MIB ? refusedOn + 1 : 0;
+      } else {
+        refusedOn = 0;
+      }
     }
-    // UNIT_BOUNDARY_DESCRIPTION: the case needs a guest the guest itself refused: a fill that stopped on its cap proves nothing, and a guest refused anywhere but at its share is the wedge this case is for.
-    test.skip(refused !== true, "the guest was not refused at its share");
     expect(
-      availMiB,
-      `the guest was refused with ${availMiB} MiB it could still write`,
-    ).toBeLessThanOrEqual(GUARD_FLOOR_MIB + SLACK_MIB);
+      refusedOn,
+      `the guest had ${availMiB} MiB left and was never refused at its share within ${capMiB} MiB: ${refusal}`,
+    ).toBeGreaterThanOrEqual(3);
     await keepAwake(siblingId);
     const claim = claimKb();
     const running = await runningMachines();
-    // UNIT_BOUNDARY_DESCRIPTION: a refused guest whose owner's claim is a third empty is the defect this case exists for: the guard held room the guest could not write, and the claim never came near its ceiling. So the claim has to reach the ceiling, not merely stay under it.
+    // UNIT_BOUNDARY_DESCRIPTION: a refused guest whose owner's claim is a third empty is the defect this case exists for: the guard held room the guest could not write, and the claim never came near its ceiling. So the claim has to reach the ceiling, not merely stay under it, and btrfs counts an allocation in the free space statvfs reports only at its next commit, so the read is waited for.
+    const used = await waitFor(
+      () => claimKb().used,
+      (kb) => kb >= Math.round(0.94 * claim.capacity),
+      "the claim never reached the 94% a guest refused at its share must have reached",
+    );
     expect(
-      claim.used,
-      `the claim holds ${claim.used} KiB of its ${claim.capacity}, short of the 94% a guest refused at its share must have reached`,
-    ).toBeGreaterThanOrEqual(Math.round(0.94 * claim.capacity));
-    expect(
-      claim.used,
-      `the claim holds ${claim.used} KiB of its ${claim.capacity}, past the 95% ceiling and the floor of ${running} machines`,
+      used,
+      `the claim holds ${used} KiB of its ${claim.capacity}, past the 95% ceiling and the floor of ${running} machines`,
     ).toBeLessThanOrEqual(
       Math.round(0.95 * claim.capacity) + running * GUARD_FLOOR_MIB * 1024,
     );
+    // UNIT_BOUNDARY_DESCRIPTION: the floor's room is the owner's other agents' room, so it has to be room a write can land in and find again after a sync, not room the runner merely allows: the sibling writes beside the refused guest, syncs, reads its file back, and the claim is still its own capacity and no more.
     expect(
       inGuest(
         siblingId,
-        "head -c 8M /dev/urandom > /tmp/e2e-still-writes && echo wrote",
-      ),
+        "head -c 8M /dev/urandom > /tmp/e2e-still-writes && sync && wc -c < /tmp/e2e-still-writes",
+      ).trim(),
       "the claim must stay writable for the owner's other agents",
-    ).toBe("wrote");
+    ).toBe(String(8 * 1024 * 1024));
+    const after = claimKb();
+    expect(
+      after.used,
+      `a concurrent writer took the claim to ${after.used} KiB of its ${after.capacity}`,
+    ).toBeLessThanOrEqual(after.capacity);
     // UNIT_BOUNDARY_DESCRIPTION: the agent refused at its share must write again once its share grows, which a wedged one does not: it keeps the answer to its last refusal however much room the owner frees.
     const beforeRenew = guestAvailMiB();
     await api.agents.delete.mutate({ id: siblingId });
