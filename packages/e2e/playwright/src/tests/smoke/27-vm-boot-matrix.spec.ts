@@ -106,7 +106,7 @@ function emptyLayoutMark(): string {
   return emptied;
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that waits for one of the given lines on this machine's console, then SIGKILLs the VMM holding the machine's disk, and writes one line for the test: the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console is emptied at every start, so waiting for it to read empty first keeps a line of the boot before from firing this one. The call answers only once the watcher is watching, so the wake that follows cannot empty the console before it does. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
+// UNIT_BOUNDARY_DESCRIPTION: starts on the runner a watcher that waits for one of the given lines on this machine's console, then SIGKILLs the VMM holding the machine's disk, and writes one line for the test: the process that died and how long after the line it died, or why no kill came. With no line to wait for it kills at once, which is the case of a running guest. The console keeps the boot before until the next start empties it, and a VMM writes its first lines before the kernel's, so the watcher removes that record before it is ready: a line it then reads belongs to the boot this start makes. The call answers only once the watcher is watching, so the wake that follows cannot write that line before it does. The watcher gives up after a minute, so one that never fired does not outlive the case that asked for it.
 function watchForKill(id: string, tag: string, lines: readonly string[]): void {
   const out = `/tmp/boot-matrix-kill-${tag}`;
   const script = `/tmp/boot-matrix-watch-${tag}.sh`;
@@ -116,10 +116,7 @@ function watchForKill(id: string, tag: string, lines: readonly string[]): void {
       ? []
       : [
           "log=$vm/agent-startup-error.log",
-          'while [ -s "$log" ]; do',
-          '  [ "$(now)" -lt "$deadline" ] || { echo "the console of the start stayed written" >> $out; exit 0; }',
-          "  sleep 0.02",
-          "done",
+          'rm -f "$log"',
           `while ! grep -qF ${lines.map((line) => `-e '${line}'`).join(" ")} -- "$log" 2>/dev/null; do`,
           '  [ "$(now)" -lt "$deadline" ] || { echo "no boot line of platform-init in a minute" >> $out; exit 0; }',
           "  sleep 0.02",
