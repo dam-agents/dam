@@ -26,12 +26,14 @@ import { awaitsApproval } from "../../lib/sidebar-tree.js";
 import { RetryRow } from "./add-row.js";
 import { TreeSessionRow } from "./tree-session-row.js";
 
-export function FeedPinnedRow({
+export function FeedSessionRow({
   item,
+  pinned,
   conversation,
   onNavigate,
 }: {
   item: AgentActivitySession;
+  pinned: boolean;
   conversation?: string;
   onNavigate?: () => void;
 }) {
@@ -40,9 +42,10 @@ export function FeedPinnedRow({
     [item.session],
   );
   return (
-    <PinnedSessionRow
+    <AgentSessionRow
       agent={item.agent}
       session={session}
+      pinned={pinned}
       working={item.working}
       unread={item.unread}
       conversation={conversation}
@@ -97,9 +100,10 @@ export function OffFeedPinnedRow({
   )
     return null;
   return (
-    <PinnedSessionRow
+    <AgentSessionRow
       agent={agent}
       session={session}
+      pinned
       working={working}
       unread={unread}
       conversation={conversationOf(session)}
@@ -108,9 +112,10 @@ export function OffFeedPinnedRow({
   );
 }
 
-function PinnedSessionRow({
+function AgentSessionRow({
   agent,
   session,
+  pinned,
   working,
   unread,
   conversation,
@@ -118,6 +123,7 @@ function PinnedSessionRow({
 }: {
   agent: AgentView;
   session: SessionView;
+  pinned: boolean;
   working: boolean;
   unread: boolean;
   conversation?: string;
@@ -158,8 +164,8 @@ function PinnedSessionRow({
         conversation,
       }}
       operable={operable}
-      pinned
-      pinnedAgent={agent}
+      pinned={pinned}
+      withAgent={agent}
       onNavigate={onNavigate}
     />
   );

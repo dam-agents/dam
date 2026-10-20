@@ -923,10 +923,19 @@ export function ChatView() {
                             avatar={agentView.avatar}
                             size={96}
                             mood={avatarMood(agentDisplay?.state, agentView)}
-                            className="transition-opacity group-hover:opacity-80"
+                            className={cn(
+                              !newLayout &&
+                                "transition-opacity group-hover:opacity-80",
+                            )}
                           />
                         )}
-                        <span className="mt-3 text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
+                        <span
+                          className={cn(
+                            "mt-3 text-xl font-bold text-foreground",
+                            !newLayout &&
+                              "underline-offset-4 group-hover:underline",
+                          )}
+                        >
                           {selectedAgentName}
                         </span>
                       </button>

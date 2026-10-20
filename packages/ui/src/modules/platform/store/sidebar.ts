@@ -16,11 +16,15 @@ const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 const SIDEBAR_V2_PINNED_STORAGE_KEY = "platform-sidebar-v2-pinned";
 
+export type SidebarGroupBy = "agents" | "all";
+
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
+  sidebarGroupBy: SidebarGroupBy;
+  setSidebarGroupBy: (groupBy: SidebarGroupBy) => void;
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgentOpen: Readonly<Record<string, boolean>>;
@@ -54,6 +58,8 @@ export const createSidebarSlice: StateCreator<
       keepFirstSessionPages();
     set({ sidebarActivityFilters: filters });
   },
+  sidebarGroupBy: "agents",
+  setSidebarGroupBy: (groupBy) => set({ sidebarGroupBy: groupBy }),
   sidebarShowHibernating: readPersistedFlag(
     SIDEBAR_HIBERNATING_STORAGE_KEY,
     false,

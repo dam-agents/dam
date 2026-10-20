@@ -4,6 +4,7 @@ import {
   ChevronRight,
   DataEnrichmentAdd,
   Home,
+  ListTree,
   Settings,
   Tools,
   TrashCan,
@@ -15,6 +16,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
@@ -42,6 +45,7 @@ import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
+import { isFiltered } from "../../../home/lib/activity-filter.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
@@ -54,10 +58,14 @@ import {
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
+import type { SidebarGroupBy } from "../../store/sidebar.js";
 import { AgentCue } from "./activity-dot.js";
 import { AddRow, TREE_LEADING } from "./add-row.js";
 import { AgentSessionList } from "./agent-session-list.js";
-import { FeedPinnedRow, OffFeedPinnedRow } from "./pinned-rows.js";
+import { FeedSessionRow, OffFeedPinnedRow } from "./pinned-rows.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: the flat list pages the owner's attention feed, which holds at most ATTENTION_FEED_LIMIT Sessions; older ones show only under their Agent. Paging the server would lift that ceiling.
+const FLAT_PAGE = 20;
 
 const REVEAL =
   "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
@@ -83,18 +91,25 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   );
   const approvals = useApprovalsForOwner().data;
 
-  const pinned = useMemo(
+  const groupBy = useStore((s) => s.sidebarGroupBy);
+  const setGroupBy = useStore((s) => s.setSidebarGroupBy);
+  const [flatShown, setFlatShown] = useState(FLAT_PAGE);
+  const [pinned, unpinned] = useMemo(
     () =>
       splitPinned(filterActivitySessions(activity.items, filters), (item) =>
         pins.has(item.id),
-      )[0],
+      ),
     [activity.items, filters, pins],
   );
-  const pinnedSessions = useMemo(
-    () => pinned.map((item) => item.session),
-    [pinned],
+  const flat = useMemo(
+    () => (groupBy === "all" ? unpinned.slice(0, flatShown) : []),
+    [groupBy, unpinned, flatShown],
   );
-  const conversationOf = useActivityConversations(pinnedSessions, allAgents);
+  const shownSessions = useMemo(
+    () => [...pinned, ...flat].map((item) => item.session),
+    [pinned, flat],
+  );
+  const conversationOf = useActivityConversations(shownSessions, allAgents);
   const inFeed = useMemo(
     () => new Set(activity.items.map((item) => item.id)),
     [activity.items],
@@ -158,9 +173,10 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             <div className="flex flex-col gap-px">
               {pinRows.map((row) =>
                 "item" in row ? (
-                  <FeedPinnedRow
+                  <FeedSessionRow
                     key={row.key}
                     item={row.item}
+                    pinned
                     conversation={conversationOf(row.item.session)}
                     onNavigate={onNavigate}
                   />
@@ -176,58 +192,160 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             </div>
           </section>
         )}
-        <section aria-label="Agents">
+        <section aria-label={groupBy === "all" ? "Sessions" : "Agents"}>
           <ListLabel
             actions={
               <>
-                <ActivityFilterMenu filters={filters} onChange={setFilters} />
+                <ActivityFilterMenu
+                  filters={filters}
+                  onChange={(next) => {
+                    setFilters(next);
+                    setFlatShown(FLAT_PAGE);
+                  }}
+                />
+                <GroupByMenu
+                  value={groupBy}
+                  onChange={(next) => {
+                    setGroupBy(next);
+                    setFlatShown(FLAT_PAGE);
+                  }}
+                />
                 <CreateAgentMenu defaultAgent={defaultAgent} />
               </>
             }
           >
-            Agents
+            {groupBy === "all" ? "Sessions" : "Agents"}
           </ListLabel>
           {activity.unreadable && (
             <p className="px-2 py-1.5 text-xs text-muted-foreground">
               Recent sessions can't be loaded right now.
             </p>
           )}
-          <ul className="flex flex-col gap-px">
-            {agents.map((agent) => (
-              <AgentNode
-                key={agent.id}
-                agent={agent}
-                expanded={isExpanded(toggled, agent.id, openAgentId)}
-                current={agent.id === openAgentId && !sessionOpen}
-                cue={
-                  awaitsApproval(approvals ?? [], agent.id)
-                    ? "approval"
-                    : unreadAgentIds.has(agent.id)
-                      ? "unread"
-                      : null
-                }
-                onToggle={() =>
-                  setToggled((prev) =>
-                    toggleExpanded(prev, agent.id, openAgentId),
-                  )
-                }
-                order={orderActions}
-                shownIds={shownIds}
-                onNavigate={onNavigate}
-              />
-            ))}
-          </ul>
-          <AddRow
-            icon={Add}
-            label="New agent"
-            testId="sidebar-new-agent-row"
-            disabled={!defaultAgent.ready}
-            onClick={() => void defaultAgent.create()}
-          />
+          {groupBy === "all" && (
+            <>
+              {!activity.loading &&
+                unpinned.length === 0 &&
+                isFiltered(filters) && (
+                  <p className="px-2 py-1.5 text-xs text-muted-foreground">
+                    No sessions match the filter.
+                  </p>
+                )}
+              <div
+                className="flex flex-col gap-px"
+                data-testid="sidebar-flat-sessions"
+              >
+                {flat.map((item) => (
+                  <FeedSessionRow
+                    key={item.id}
+                    item={item}
+                    pinned={false}
+                    conversation={conversationOf(item.session)}
+                    onNavigate={onNavigate}
+                  />
+                ))}
+              </div>
+              {unpinned.length > flatShown && (
+                <button
+                  type="button"
+                  data-testid="sidebar-flat-more"
+                  onClick={() => setFlatShown(flatShown + FLAT_PAGE)}
+                  className={cn(
+                    "mt-px flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+                    FOCUS_RING,
+                  )}
+                >
+                  View more
+                </button>
+              )}
+            </>
+          )}
+          {groupBy === "agents" && (
+            <ul className="flex flex-col gap-px">
+              {agents.map((agent) => (
+                <AgentNode
+                  key={agent.id}
+                  agent={agent}
+                  expanded={isExpanded(toggled, agent.id, openAgentId)}
+                  current={agent.id === openAgentId && !sessionOpen}
+                  cue={
+                    awaitsApproval(approvals ?? [], agent.id)
+                      ? "approval"
+                      : unreadAgentIds.has(agent.id)
+                        ? "unread"
+                        : null
+                  }
+                  onToggle={() =>
+                    setToggled((prev) =>
+                      toggleExpanded(prev, agent.id, openAgentId),
+                    )
+                  }
+                  order={orderActions}
+                  shownIds={shownIds}
+                  onNavigate={onNavigate}
+                />
+              ))}
+            </ul>
+          )}
+          {groupBy === "agents" && (
+            <AddRow
+              icon={Add}
+              label="New agent"
+              testId="sidebar-new-agent-row"
+              disabled={!defaultAgent.ready}
+              onClick={() => void defaultAgent.create()}
+            />
+          )}
         </section>
       </div>
       <SettingsFooter onNavigate={onNavigate} />
     </div>
+  );
+}
+
+const GROUP_BY_LABELS: Record<SidebarGroupBy, string> = {
+  all: "All sessions",
+  agents: "Group by agents",
+};
+
+function GroupByMenu({
+  value,
+  onChange,
+}: {
+  value: SidebarGroupBy;
+  onChange: (value: SidebarGroupBy) => void;
+}) {
+  return (
+    <DropdownMenu>
+      <Tooltip content="Group by" side="bottom">
+        <DropdownMenuTrigger asChild>
+          <button
+            type="button"
+            aria-label={`Group by: ${GROUP_BY_LABELS[value]}`}
+            data-testid="sidebar-group-by"
+            className={cn(
+              "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
+              FOCUS_RING,
+            )}
+          >
+            <ListTree size={14} />
+          </button>
+        </DropdownMenuTrigger>
+      </Tooltip>
+      <DropdownMenuContent align="end">
+        <DropdownMenuRadioGroup
+          value={value}
+          onValueChange={(next) => {
+            if (next === "all" || next === "agents") onChange(next);
+          }}
+        >
+          {(["all", "agents"] as const).map((option) => (
+            <DropdownMenuRadioItem key={option} value={option}>
+              {GROUP_BY_LABELS[option]}
+            </DropdownMenuRadioItem>
+          ))}
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 

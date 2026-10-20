@@ -1,7 +1,7 @@
 import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import { type ComponentProps, useState } from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
+import { HARNESS_ICONS, HarnessIcons } from "@/components/harness-icons";
 import { cn } from "@/lib/utils";
 
 import { queryClient } from "../../../../query-client.js";
@@ -36,6 +36,7 @@ import { TREE_LEADING } from "./add-row.js";
 
 type RowState = Omit<
   ComponentProps<typeof SessionRow>,
+  | "conversation"
   | "session"
   | "onResume"
   | "onRename"
@@ -44,7 +45,7 @@ type RowState = Omit<
   | "leading"
   | "titleIcon"
   | "activityIndicators"
->;
+> & { conversation?: string };
 
 export const TREE_ROW_CLASS = "min-w-0 gap-2.5 rounded-lg border-b-0 px-2 py-2";
 
@@ -109,7 +110,7 @@ export function TreeSessionRow({
   state,
   operable,
   pinned,
-  pinnedAgent,
+  withAgent,
   onNavigate,
 }: {
   agentId: string;
@@ -117,7 +118,7 @@ export function TreeSessionRow({
   state: RowState;
   operable: boolean;
   pinned: boolean;
-  pinnedAgent?: AgentView;
+  withAgent?: AgentView;
   onNavigate?: () => void;
 }) {
   const actWhenAwake = useActWhenAwake(agentId);
@@ -136,7 +137,11 @@ export function TreeSessionRow({
     backgroundWork: state.backgroundWork,
     draft: state.draft,
   });
-  const context = sessionContext(s, state.conversation);
+  const harnessIcon = !!s.harness && s.harness in HARNESS_ICONS;
+  const context = sessionContext(
+    harnessIcon ? { ...s, harness: null } : s,
+    state.conversation,
+  );
   const dot = (
     <ActivityDot
       tone={tone}
@@ -144,7 +149,7 @@ export function TreeSessionRow({
         state.backgroundWork && {
           label: backgroundWorkLabel(state.backgroundWork),
         })}
-      className={pinnedAgent && "rounded-full bg-chrome"}
+      className={withAgent && "rounded-full bg-chrome"}
     />
   );
 
@@ -154,16 +159,27 @@ export function TreeSessionRow({
         session={s}
         {...state}
         conversation={
-          pinnedAgent ? `${pinnedAgent.name} · ${context}` : context
+          <>
+            {withAgent && `${withAgent.name} · `}
+            {harnessIcon && (
+              <HarnessIcons
+                harnesses={[s.harness!]}
+                size="xs"
+                focusable={false}
+                className="mr-1 inline-flex align-[-2px]"
+              />
+            )}
+            {context}
+          </>
         }
         leading={
-          pinnedAgent ? (
+          withAgent ? (
             <span className={cn(TREE_LEADING, "relative -mt-0.5 self-start")}>
               <AgentAvatar
-                name={pinnedAgent.name}
-                avatar={pinnedAgent.avatar}
+                name={withAgent.name}
+                avatar={withAgent.avatar}
                 size={24}
-                mood={avatarMood(pinnedAgent.state, pinnedAgent)}
+                mood={avatarMood(withAgent.state, withAgent)}
               />
               <span className="absolute -right-1 -bottom-1">{dot}</span>
             </span>
@@ -173,12 +189,8 @@ export function TreeSessionRow({
             </span>
           )
         }
-        titleIcon={
-          s.harness && (
-            <HarnessIcons harnesses={[s.harness]} size="xs" focusable={false} />
-          )
-        }
         activityIndicators={false}
+        quietPin
         className={TREE_ROW_CLASS}
         pinned={pinned}
         onTogglePin={() => togglePinKeepingFocus(key, agentId, s)}

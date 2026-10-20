@@ -60,11 +60,12 @@ interface Props {
   draft?: boolean;
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SpendSessionRow;
-  conversation?: string;
+  conversation?: ReactNode;
   leading?: ReactNode;
   titleIcon?: ReactNode;
   activityIndicators?: boolean;
   pinned?: boolean;
+  quietPin?: boolean;
   onTogglePin?: () => void;
   onResume: () => void;
   onPrefetch?: () => void;
@@ -88,6 +89,7 @@ export function SessionRow({
   titleIcon,
   activityIndicators = true,
   pinned = false,
+  quietPin = false,
   onTogglePin,
   onResume,
   onPrefetch,
@@ -215,7 +217,7 @@ export function SessionRow({
               </Badge>
             )}
           </button>
-          {pinned && (
+          {pinned && !quietPin && (
             <PinFilled
               size={12}
               aria-label="Pinned"
@@ -228,7 +230,7 @@ export function SessionRow({
           <div
             className={cn(
               "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
-              pinned ? "ml-1" : "ml-auto",
+              pinned && !quietPin ? "ml-1" : "ml-auto",
             )}
           >
             <SessionIndicators
@@ -248,6 +250,8 @@ export function SessionRow({
               className={cn(
                 "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
                 HOVER_ACTION,
+                quietPin &&
+                  "hover-capable:group-has-[:focus-visible]:w-auto group-has-[:focus-visible]:opacity-100",
               )}
             >
               {onTogglePin && (
@@ -314,7 +318,7 @@ export function SessionRow({
           </div>
         </div>
         <span id={metaId} className="text-2xs text-muted-foreground truncate">
-          {conversation ? `${conversation} · ` : ""}
+          {conversation && <>{conversation} · </>}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}
           </span>

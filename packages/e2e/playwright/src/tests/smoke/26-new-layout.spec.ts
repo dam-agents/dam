@@ -77,7 +77,7 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and a New agent row after them, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list with a New session row at its end, and that row opens the Agent's chat, whose empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so its open list says its Sessions show when it wakes instead of claiming it has none. The Home row at the top of the tree goes back to the dashboard.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and a New agent row after them, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list with a New session row at its end, and that row opens the Agent's chat, whose empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so its open list says its Sessions show when it wakes instead of claiming it has none. The Home row at the top of the tree goes back to the dashboard, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
@@ -119,6 +119,17 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   await home.click();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(home).toHaveAttribute("aria-current", "page");
+
+  const groupBy = tree.getByTestId("sidebar-group-by");
+  await groupBy.focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("menuitemradio", { name: "All sessions" }).focus();
+  await page.keyboard.press("Enter");
+  await expect(tree.getByTestId("sidebar-flat-sessions")).toBeVisible();
+  await expect(agentNode(page, AGENTS[0])).toHaveCount(0);
+  await groupBy.click();
+  await page.getByRole("menuitemradio", { name: "Group by agents" }).click();
+  await expect(agentNode(page, AGENTS[0])).toBeVisible();
 });
 
 // TEST_SCENARIO: with the experiment off, an Agent's chat keeps the layout from before the side panel: a top bar with the Agent's tools, the Files and Artifacts sections in a column beside the conversation, and no icon bar. Turning the experiment on in the Experimental features tab, which the spec reveals the way the About tab does, and going back to the chat by in-app navigation, with no reload, swaps that for the side panel's icon bar, and the bar's Files icon opens the Files tab in the panel; turning it off brings the sections back.

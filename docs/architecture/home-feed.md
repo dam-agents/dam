@@ -78,11 +78,14 @@ While the new layout is on (the saved preference decides until the flags load), 
 A closed Agent row shows a mark for a waiting approval, or else for an unread Session, with a text equivalent; its New session and actions buttons show on hover or keyboard focus, and at all times on a device without hover; a New session row ends its open list and a New agent row ends the tree.
 A Home row at the top of the tree opens the dashboard.
 An Agent's open list with no Sessions shows only its New session row; a filter that leaves it empty says so.
-An Agent's empty chat lists the ways into the Agent as on its General page: the CLI, editor and messenger rows open in place, from the pointer or the keyboard, and the opening does not animate under reduced motion.
+An Agent's empty chat shows the Agent's avatar and name with no hover effect, and lists the ways into the Agent as on its General page: the CLI, editor and messenger rows open in place, from the pointer or the keyboard, and the opening does not animate under reduced motion.
 The rows are a list of disclosure buttons, not an ARIA tree: Tab moves between them, and each Agent row names the list it opens.
 Each Session row has an activity dot: orange for a waiting approval, a spinning blue ring while working, a green ring for background work, green for unread, a pen for a draft and gray when idle; unlike the current layout's blue unread dot, unread is green here, and a line naming its harness, model and source; a Session from the record alone has no model.
-A Session row keeps its harness icon before the title and its schedule, terminal and messenger icons; a pinned row leads with its Agent's avatar under the activity dot, since the Pinned section mixes Agents.
+A Session row shows its harness icon in place of the harness name in its context line, and keeps its schedule, terminal and messenger icons; a pinned row leads with its Agent's avatar under the activity dot, since the Pinned section mixes Agents.
+A pinned row shows no pin mark, since its section says it is pinned; its unpin button shows with its other actions, on hover or while the row holds keyboard focus.
 The tree's Agents header carries one session filter, by state and by Session type: it narrows the Pinned section and every Agent's list, and the control shows a mark while a filter is on.
+Beside it, a Group by menu offers All sessions or Group by agents, the tree; like the filter, the choice lasts until the page reloads.
+All sessions replaces the Agents with one list of the unpinned Sessions in the owner's attention record, newest activity first, each row led by its Agent's avatar and name, twenty at a time with View more; a Session older than the record shows only under its Agent.
 The filter narrows the pages already loaded, so while it is on an Agent's list loads a further page only when the user clicks **Load more**; when the filter is removed, every Agent's list keeps its first page only.
 The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list; pinning from the keyboard keeps focus on the moved row, or on its Agent's row when that Agent is closed.
