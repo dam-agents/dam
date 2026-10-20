@@ -52,7 +52,7 @@ Once the list is expanded, each More asks the Agent for one more page of its lis
 The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
 An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
 Hibernated Agents fold under **See all (N hibernating)**, unless the user has one open or its chat or configuration page is shown; closing the shown Agent's Sessions keeps its row in place.
-An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and a ⋮ menu: Configure agent, and Add to Slack channel or Telegram chat where the installation has them.
+An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.

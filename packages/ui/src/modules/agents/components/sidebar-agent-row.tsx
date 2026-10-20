@@ -20,8 +20,15 @@ interface Props {
   onStep: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
   actions: ReactNode;
+  /** How many icons `actions` shows, so the name stops short of them. */
+  actionCount: 2 | 3;
   children?: ReactNode;
 }
+
+const ACTIONS_PADDING = {
+  2: { shown: "pr-[60px]", hover: "group-hover/agent:pr-[60px]" },
+  3: { shown: "pr-[86px]", hover: "group-hover/agent:pr-[86px]" },
+} as const;
 
 export function SidebarAgentRow({
   agent,
@@ -34,6 +41,7 @@ export function SidebarAgentRow({
   onStep,
   onSelect,
   actions,
+  actionCount,
   children,
 }: Props) {
   const mood = avatarMood(agent.state, agent);
@@ -61,7 +69,9 @@ export function SidebarAgentRow({
           data-testid="sidebar-agent-row"
           className={cn(
             "flex h-[34px] min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg pr-2 pl-2.5 text-left select-none",
-            selected ? "pr-[60px]" : "group-hover/agent:pr-[60px]",
+            selected
+              ? ACTIONS_PADDING[actionCount].shown
+              : ACTIONS_PADDING[actionCount].hover,
             open
               ? "text-foreground"
               : mood !== "awake"
