@@ -262,7 +262,7 @@ test("the guard gives a machine the room its share gains, and takes it back", as
   ).toBeLessThanOrEqual(2 * MOVE_MIB);
 });
 
-// TEST_SCENARIO: a guest that writes past its share is refused by the guest, at its share and not at the claim's last block, and it is not wedged there: a renewal window later it sits on its share plus the one floor every agent keeps to get back in and no more, it writes real bytes into that floor, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is marked with one preallocation, which the guest's own filesystem counts as used and the claim does not pay for, so the case costs a disk of the size the install already gives it and works on any pool. The refusal is read from the guest's own status and its own error file, never from a redirect into the data, which loses the error exactly when the disk is full.
+// TEST_SCENARIO: a guest that writes past its share is refused by the guest, at its share and not at the claim's last block, and it is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is marked with one preallocation, which the guest's own filesystem counts as used and the claim does not pay for, so the case costs a disk of the size the install already gives it and works on any pool. The refusal is read from the guest's own status and its own error file, never from a redirect into the data, which loses the error exactly when the disk is full.
 test("a writing agent stops at its share, and writes again when its share grows", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
@@ -365,24 +365,37 @@ test("a writing agent stops at its share, and writes again when its share grows"
       afterFill - diskBefore,
       `a marked fill took ${afterFill - diskBefore} MiB of the probe's disk on the claim`,
     ).toBeLessThanOrEqual(SLACK_MIB);
-    // UNIT_BOUNDARY_DESCRIPTION: the refusal is the defect only if it lasts, and it is a wedge only if the machine is stuck rather than merely busy: a renewal window later the guest is refused the same way, asking for every block it says it has and a fixed few MiB more. The runner renews every grant on its 30 s look and the guard may move once per 30 s backoff, so a guard that means to move has moved, and the refusal past a moved guard is the one the user reports. It is not the wedge while the agent can still get in: the guard gives back one floor past the share for exactly that, so the guest writes real bytes here and reads them back, which a machine keeping its last refusal could not do.
+    // UNIT_BOUNDARY_DESCRIPTION: a renewal window later the guest is back on its share, and that is the design rather than a leak: the runner writes a new grant at every look, and the guard counts one from what the guest had written when it came, so a fill the claim never paid for — which line 364 checks it did not — is room the guest is given again. The bound is therefore the renewed grant the runner published, not the floor: below it the agent has been left less than its share (the defect a user reports, a refusal at three quarters of the claim with the claim a third empty), and above it by more than one floor the guard released more than the grant it was told to hold.
     await new Promise((resolve) => setTimeout(resolve, RENEWAL_MS));
     await keepAwake(probeId);
-    const resettled = guestAvailMiB();
+    let renewed = Number.NaN;
+    const resettled = await waitFor(
+      () => {
+        renewed = readGrant().mib;
+        return guestAvailMiB();
+      },
+      (mib) => mib >= renewed - SLACK_MIB - GUARD_STEP_MIB,
+      "the guest never got its share back after marking its own room, which no renewal gave it either: an agent that cannot write its share is the wedge this case is for",
+    );
+    expect(
+      Number.isFinite(renewed),
+      "the runner published no grant to compare the guest's room with",
+    ).toBe(true);
     expect(
       resettled,
-      `a renewal window after marking its room the guest was left ${resettled} MiB, past the ${GUARD_FLOOR_MIB} MiB floor every agent keeps on top of its share: the guard gave back room the claim is still holding for it`,
-    ).toBeLessThanOrEqual(GUARD_FLOOR_MIB + SLACK_MIB + GUARD_STEP_MIB);
+      `a renewal window after marking its room the guest was left ${resettled} MiB of the ${renewed} MiB grant the runner published: the guard gave back room past the grant it was told to hold`,
+    ).toBeLessThanOrEqual(renewed + GUARD_FLOOR_MIB + SLACK_MIB);
     expect(
       await request(),
       "the guest must be refused everything past the room it reports, or the figure it reports is not what it can write",
     ).toMatch(/probe=refused/);
+    // UNIT_BOUNDARY_DESCRIPTION: and the room the renewal gave back is room a real write lands in: a machine that kept the answer to its last refusal, however much room the claim gave it, fails here, and no arithmetic about its free space can stand in for the write.
     expect(
       inGuest(
         probeId,
         "head -c 32M /dev/urandom > /tmp/e2e-fill/back-in && sync && wc -c < /tmp/e2e-fill/back-in",
       ).trim(),
-      "an agent refused at its share must still be able to write the floor it keeps to delete its own files",
+      `an agent refused at its share must write again once a renewal gives the room back, and it reported ${resettled} MiB`,
     ).toBe(String(32 * 1024 * 1024));
     // UNIT_BOUNDARY_DESCRIPTION: the refused guest's refusal must be its share and not the claim: another agent of the owner writes real bytes beside it, syncs them, and finds them again, and the claim is still within its own capacity.
     expect(
