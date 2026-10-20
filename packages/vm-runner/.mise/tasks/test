@@ -13,5 +13,8 @@
 set -euo pipefail
 cargo test --locked "$@"
 # The guest agent is rebuilt from smolvm.patch for the image (see oci), so the
-# patch's own tests run too.
-cargo test --locked --manifest-path .smolvm/Cargo.toml -p smolvm-agent platform_patch
+# patch's own tests run too: the launch-exit record a failed launch leaves, and
+# the signal a reaped child keeps for the embedder that did not reap it.
+cargo test --locked --manifest-path .smolvm/Cargo.toml -p smolvm --lib -- \
+    a_failed_launch_record_names_the_pid_and_the_signal \
+    a_reaped_child_keeps_its_signal_for_the_embedder_once

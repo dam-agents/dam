@@ -2569,7 +2569,13 @@ fn boot_and_grow(
     }
     tracing::warn!(machine = id, error = %format!("{e:#}"), boot_mib = boot, memory_mib = size, "the guest could not grow to its size; booting it again whole");
     runtime.stop(id)?;
-    runtime.start(id, size, size)?;
+    // UNIT_BOUNDARY_DESCRIPTION: the reboot is a boot of its own and can fail on its own, and the kill this grow read is what explains why the machine had to boot again at all: it rides in the error the reboot returns, as a boot's own launch kill does, so a failed reboot still names the death it was restarted for rather than reading as a boot that broke.
+    if let Err(e) = runtime.start(id, size, size) {
+        return Err(match killed {
+            Some((pid, signal)) => e.context(crate::runtime::VmmKilled { pid, signal }),
+            None => e,
+        });
+    }
     Ok(Booted {
         whole: true,
         killed,
