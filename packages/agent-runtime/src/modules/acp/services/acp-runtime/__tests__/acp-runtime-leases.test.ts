@@ -259,7 +259,8 @@ describe("acp-runtime: one harness process per harness", () => {
   });
 
   /** TEST_SCENARIO: A client's initialize is answered from the manifest's
-   * declared capabilities with no harness running, and the process a session
+   * declared capabilities with no harness running, plus the runtime's own
+   * `runEnded` capability that `dam run` waits on, and the process a session
    * later needs is told about the client the same way, so it answers with the
    * same client capabilities while its own initialize answer never reaches
    * the client a second time. */
@@ -276,6 +277,7 @@ describe("acp-runtime: one harness process per harness", () => {
       protocolVersion: 1,
       agentCapabilities: { loadSession: true },
       authMethods: [],
+      _meta: { platform: { runEnded: true } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
     client.send(newSessionOn(2, { harness: "codex" }));
