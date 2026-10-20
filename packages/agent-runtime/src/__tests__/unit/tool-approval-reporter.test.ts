@@ -459,4 +459,36 @@ describe("tool approval reporter", () => {
       },
     });
   });
+
+  // TEST_SCENARIO: a harness can distinguish two ids that differ only beyond the recording route's character bound. The runtime holds the whole request, so the answer's kind comes from its full id; only the id on the wire is shaped, and the row records the refusal.
+  it("reports a refusal whose id the recording bound would shorten into an allow", async () => {
+    const { client, sent } = fakeClient();
+    const reporter = createToolApprovalReporter({ client, log: () => {} });
+    const shared = "x".repeat(512);
+    const frame = JSON.stringify({
+      jsonrpc: "2.0",
+      id: 17,
+      method: "session/request_permission",
+      params: {
+        sessionId: "s-1",
+        toolCall: { title: "Run" },
+        options: [
+          { optionId: shared, kind: "allow_once" },
+          { optionId: `${shared}-reject`, kind: "reject_once" },
+        ],
+      },
+    });
+
+    reporter.held(17, "s-1", frame);
+    reporter.answered(17, "s-1", {
+      outcome: { outcome: "selected", optionId: `${shared}-reject` },
+    });
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+
+    expect(sent[0]?.[1]).toEqual({
+      sessionId: "s-1",
+      rpcId: 17,
+      outcome: { outcome: "selected", optionId: shared, kind: "reject_once" },
+    });
+  });
 });

@@ -46,7 +46,7 @@ export function verdictOfOutcome(
 ): ApprovalVerdict {
   if (outcome.outcome === "cancelled") return "deny_once";
   const recorded = options.find((o) => o.optionId === outcome.optionId)?.kind;
-  const kind = recorded ?? outcome.kind;
+  const kind = outcome.kind ?? recorded;
   return kind === "allow_always"
     ? "allow"
     : kind === "reject_once"

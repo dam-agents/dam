@@ -657,7 +657,7 @@ export type {
 export { describeApprovalPayload } from "./modules/approvals/format.js";
 export {
   acpNativeRowId,
-  permissionOptionsOf,
+  permissionOptionKindsOf,
   recordedOptionsOf,
   recordedToolOf,
 } from "./modules/approvals/format.js";

@@ -22,6 +22,10 @@ const OPTIONS = [
 
 function makeRepo() {
   const rows: PendingApprovalRow[] = [];
+  const hooks: {
+    beforeInsertSettled?: () => Promise<void> | void;
+    beforeResolvePending?: () => Promise<void> | void;
+  } = {};
   const repo = {
     insertPending: async (row) => {
       const existing = rows.find((r) => r.id === row.id);
@@ -67,6 +71,7 @@ function makeRepo() {
       return true;
     },
     insertSettled: async (row, settlement) => {
+      await hooks.beforeInsertSettled?.();
       if (rows.some((r) => r.id === row.id)) return false;
       rows.push({
         ...row,
@@ -82,6 +87,7 @@ function makeRepo() {
     getPending: async (id) => rows.find((r) => r.id === id) ?? null,
     listPendingForInstance: async () => [],
     resolvePending: async (id, verdict, decidedBy, opts) => {
+      await hooks.beforeResolvePending?.();
       const row = rows.find((r) => r.id === id && r.status === "pending");
       if (!row) return false;
       Object.assign(row, {
@@ -111,11 +117,11 @@ function makeRepo() {
       if (row) row.deliveredAt = new Date();
     },
   } as Partial<ApprovalsRepository> as ApprovalsRepository;
-  return { rows, repo };
+  return { rows, repo, hooks };
 }
 
 function setup() {
-  const { rows, repo } = makeRepo();
+  const { rows, repo, hooks } = makeRepo();
   const relay = createApprovalsRelayService({ repo, bus: {} as RedisBus });
   const reports = createToolApprovalReports({ relay, ownerSub: "owner-1" });
   const waiting = () =>
@@ -127,7 +133,7 @@ function setup() {
       args: { path: "/tmp/a" },
       options: OPTIONS,
     });
-  return { rows, repo, relay, reports, waiting };
+  return { rows, repo, relay, reports, waiting, hooks };
 }
 
 let events: DomainEvent[] = [];
@@ -412,5 +418,134 @@ describe("tool approval reports", () => {
 
     expect(rows).toHaveLength(1);
     expect(rows[0]).toMatchObject({ status: "resolved", verdict: "deny_once" });
+  });
+
+  // TEST_SCENARIO: the end arrives before anything recorded the request, and the delayed insert lands while it settles. Home can decide that row in between, and its answer reaches a runtime that already took another. The end must still correct the record, or the platform claims a decision the tool never acted on.
+  it("corrects a row another writer inserted while the end was settling it", async () => {
+    const { rows, repo, reports, hooks } = setup();
+    hooks.beforeInsertSettled = async () => {
+      hooks.beforeInsertSettled = undefined;
+      await repo.insertIfAbsent({
+        id: ROW,
+        type: "acp_native",
+        agentId: AGENT,
+        ownerSub: "owner-1",
+        sessionId: SESSION,
+        payload: {
+          kind: "acp_native",
+          toolName: "tool call",
+          rpcId: RPC,
+          options: OPTIONS,
+        },
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+      await repo.resolvePending(ROW, "allow_once", "owner-1");
+    };
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: { outcome: "selected", optionId: "no" },
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ status: "resolved", verdict: "deny_once" });
+  });
+
+  // TEST_SCENARIO: the same race one step later. The settle reads the row as pending, Home decides it first, so the pending update is refused. Refusing the update is not refusing the accepted answer: the record must follow the harness.
+  it("corrects a row Home decided while the end was updating it", async () => {
+    const { rows, repo, reports, hooks } = setup();
+    hooks.beforeInsertSettled = async () => {
+      hooks.beforeInsertSettled = undefined;
+      await repo.insertIfAbsent({
+        id: ROW,
+        type: "acp_native",
+        agentId: AGENT,
+        ownerSub: "owner-1",
+        sessionId: SESSION,
+        payload: {
+          kind: "acp_native",
+          toolName: "tool call",
+          rpcId: RPC,
+          options: OPTIONS,
+        },
+        expiresAt: new Date(Date.now() + 60_000),
+      });
+    };
+    hooks.beforeResolvePending = async () => {
+      hooks.beforeResolvePending = undefined;
+      await repo.resolvePending(ROW, "allow_once", "owner-1");
+    };
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: { outcome: "selected", optionId: "no" },
+    });
+
+    expect(rows[0]).toMatchObject({ status: "resolved", verdict: "deny_once" });
+  });
+
+  // TEST_SCENARIO: Home decided the row, but its answer never reached the runtime, because the wrapper connection failed. The chat answered the still-held request instead and the harness took that answer: the request is over, so nothing may keep queueing its delivery.
+  it("closes delivery when the accepted answer matches the recorded verdict", async () => {
+    const { rows, repo, reports, waiting } = setup();
+    await waiting();
+    await repo.resolvePending(ROW, "deny_once", "owner-1");
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: { outcome: "selected", optionId: "no" },
+    });
+
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "deny_once",
+      deliveredAt: expect.any(Date),
+    });
+  });
+
+  // TEST_SCENARIO: the same failure with the opposite verdict: the chat's answer is the one the harness got, so the record takes it, and the delivery Home never finished must stop as well.
+  it("closes delivery when the accepted answer corrects the recorded verdict", async () => {
+    const { rows, repo, reports, waiting } = setup();
+    await waiting();
+    await repo.resolvePending(ROW, "allow_once", "owner-1");
+
+    await reports.ended(AGENT, {
+      sessionId: SESSION,
+      rpcId: RPC,
+      outcome: { outcome: "selected", optionId: "no" },
+    });
+
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "deny_once",
+      deliveredAt: expect.any(Date),
+    });
+  });
+
+  // TEST_SCENARIO: the runtime dropped the request, and Home decided its row between the read and the expiration, so the expiration is refused. The request is over either way, so its delivery must stop instead of being retried at every sweep.
+  it("closes delivery when the abandonment loses the row to a decision", async () => {
+    const { rows, repo, reports, waiting } = setup();
+    await waiting();
+    repo.expirePending = async (id) => {
+      Object.assign(
+        rows.find((r) => r.id === id)!,
+        {
+          status: "resolved",
+          verdict: "allow_once",
+          decidedBy: "owner-1",
+        },
+      );
+      return false;
+    };
+
+    await reports.ended(AGENT, { sessionId: SESSION, rpcId: RPC });
+
+    expect(rows[0]).toMatchObject({
+      status: "resolved",
+      verdict: "allow_once",
+      deliveredAt: expect.any(Date),
+    });
   });
 });
