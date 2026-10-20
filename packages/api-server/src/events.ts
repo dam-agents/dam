@@ -118,6 +118,7 @@ export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
   agentId: string;
   slackChannelId?: string;
+  ownerSub?: string | null;
 };
 
 export type ChannelTurnRelayed = {

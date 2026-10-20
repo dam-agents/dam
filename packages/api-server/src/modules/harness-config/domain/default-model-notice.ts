@@ -1,6 +1,5 @@
 import { z } from "zod";
 import {
-  ChannelType,
   parseQualifiedModel,
   type DefaultModelNotice,
   type SessionPair,
@@ -32,16 +31,10 @@ export function defaultModelNoticeOf(input: {
   pair: SessionPair | null;
   note: DefaultModelNote | null;
   grantedAliases: ReadonlySet<string>;
-  schedules: readonly { enabled: boolean }[];
-  channels: readonly { type: string }[];
+  runsUnattended: boolean;
 }): DefaultModelNotice | null {
   const { agentId, pair, note } = input;
   if (!input.routed || !pair) return null;
-  const runsUnattended =
-    input.schedules.some((s) => s.enabled) ||
-    input.channels.some(
-      (c) => c.type === ChannelType.Slack || c.type === ChannelType.Telegram,
-    );
   const notice = (state: DefaultModelNotice["state"]): DefaultModelNotice => ({
     id: `${agentId}:${state}`,
     agentId,
@@ -51,7 +44,7 @@ export function defaultModelNoticeOf(input: {
     changedFrom: state === "changed" ? (note?.changedFrom ?? null) : null,
   });
   const stopsRuns = (state: DefaultModelNotice["state"]) =>
-    runsUnattended ? notice(state) : null;
+    input.runsUnattended ? notice(state) : null;
   if (pair.model === null)
     return stopsRuns(
       input.grantedAliases.size === 0 ? "no-provider" : "not-set",

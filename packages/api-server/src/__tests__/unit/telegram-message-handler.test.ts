@@ -8,6 +8,7 @@ import {
 } from "../../modules/channels/infrastructure/telegram.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
+import { EventType, type DomainEvent } from "../../events.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -48,6 +49,7 @@ function harness(opts?: {
   const bind = vi.fn(async () => "bound" as const);
   const setAmbient = vi.fn(async () => {});
   const relay = vi.fn();
+  const emitted: DomainEvent[] = [];
   const agentFor = (conversationId: string) =>
     opts?.bindings ? opts.bindings[conversationId] : opts?.boundTo;
 
@@ -75,6 +77,8 @@ function harness(opts?: {
     oauthConfig,
     pendingOAuthFlows,
     isTermsAccepted: async () => opts?.termsAccepted ?? true,
+    ownerOf: async () => "kc|owner-1",
+    emit: (event) => emitted.push(event),
     uiBaseUrl: "https://app.example",
     brandName: "Platform",
     botUsername: () => "krodo_bot",
@@ -89,6 +93,7 @@ function harness(opts?: {
     bind,
     setAmbient,
     relay,
+    emitted,
   };
 }
 
@@ -132,6 +137,17 @@ describe("telegram message handler", () => {
     expect(posted).toContain("Connect this chat to one of your agents");
     expect(posted).toContain("link-button");
     expect(posted).toContain("https://kc.example");
+  });
+
+  // TEST_SCENARIO: an in-chat unbind removes the Agent's last Telegram run, so its owner's attention query must re-read; the handler therefore sends the owner an attention event naming the Agent.
+  it("tells the owner a chat was unbound", async () => {
+    const h = harness({ boundTo: "agent-1" });
+    await h.handle(makeThread(), { text: "/unbind", author: author() }, true);
+    expect(h.emitted).toContainEqual({
+      type: EventType.AttentionChanged,
+      ownerSub: "kc|owner-1",
+      agentId: "agent-1",
+    });
   });
 
   it("unbinds on `/unbind` from a bound chat", async () => {

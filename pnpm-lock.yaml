@@ -311,6 +311,9 @@ importers:
       dev-config:
         specifier: workspace:*
         version: link:../dev-config
+      drizzle-orm:
+        specifier: ^0.45.4
+        version: 0.45.4(@opentelemetry/api@1.9.1)(@types/pg@8.15.6)(pg@8.20.0)(postgres@3.4.9)
       grpc-tools:
         specifier: ^1.13.1
         version: 1.13.1

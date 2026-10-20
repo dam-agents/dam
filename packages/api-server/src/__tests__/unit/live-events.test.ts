@@ -184,6 +184,29 @@ describe("hintFor", () => {
     ).toEqual({ ownerSub: "u1", hint: { topic: "agents", agentId: "a1" } });
   });
 
+  // TEST_SCENARIO: binding presence decides whether an Agent's default-model notice exists at all, so a Slack connect or disconnect must reach the owner's open tabs whatever tab performed it; the event reaches the attention family exactly when its emitter named the owner.
+  it("projects an attention hint from a Slack binding change", () => {
+    expect(
+      hintFor({
+        type: EventType.SlackConnected,
+        agentId: "a1",
+        slackChannelId: "C1",
+        ownerSub: "u1",
+      }),
+    ).toEqual({ ownerSub: "u1", hint: { topic: "attention", agentId: "a1" } });
+    expect(
+      hintFor({
+        type: EventType.SlackDisconnected,
+        agentId: "a1",
+        slackChannelId: "C1",
+        ownerSub: "u1",
+      }),
+    ).toEqual({ ownerSub: "u1", hint: { topic: "attention", agentId: "a1" } });
+    expect(
+      hintFor({ type: EventType.SlackDisconnected, agentId: "a1" }),
+    ).toBeNull();
+  });
+
   // TEST_SCENARIO: A runtime's hello is what establishes whether the platform may watch its session list. That claim is stored on the Agent, which the K8s watch cannot see change, so the hello must project an agents hint of its own — otherwise an agent that says hello after a subscription is established stays out of the watch set until an unrelated event fires.
   it("projects an agents hint when a runtime says hello", () => {
     expect(

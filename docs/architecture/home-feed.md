@@ -119,6 +119,7 @@ That is harmless — the row is a fresh capture of live state — but it means r
 
 The bell also lists the Agents on the Model Router whose saved default stops a run nobody picks for ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
 That state stops real work only where an Agent runs unattended, so one with no enabled Schedule and no bound Slack or Telegram Channel is not listed for it: nothing of its own fails yet.
+A Slack Channel is a row in `channels`; a Telegram chat is a row in `telegram_conversations`, the table the Telegram bind flow writes, so the reader asks that table rather than looking for Telegram rows among the Channels.
 The conversion's note is not a run that fails, and it is shown whatever the Agent runs.
 An Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
 They are computed on every read from the Agent's saved default, its granted providers, the conversion's note and what it runs unattended, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.
@@ -126,7 +127,9 @@ A pending default, one still being converted, says nothing.
 The same notice puts a line under the chat's model control, a count in the banner on Home, and "Won't run" on the Agent's schedules that name no model.
 Only the bell's card can be dismissed, per Agent and state; the others show every notice that stops runs, and a changed default is shown in the bell alone.
 A dismissal is dropped once its notice no longer holds, so the same state coming back later is shown again, and an Agent's dismissals go with it.
-Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default, and changing an Agent's providers, Schedules or bound Channels refreshes the list in the tab that changed them, since any of them decides whether the notice holds at all.
+Saving a default or converting one sends the owner the attention and harness-config hints, so open tabs re-read both the notice and the default.
+Any change that decides whether a notice holds reaches the owner's open tabs, not only the tab that made it: a Schedule change sends the schedules hint, and a Slack or Telegram binding added or removed — in the UI, in Slack, or in Telegram — sends the attention hint.
+An Agent's providers refresh the list in the tab that changed them.
 
 ## Seen, unread, and dismissed
 
