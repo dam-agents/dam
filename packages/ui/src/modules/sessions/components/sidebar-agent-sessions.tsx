@@ -139,7 +139,12 @@ function SessionPreview({
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  if (sessions.length === 0) return null;
+  if (sessions.length === 0 && complete)
+    return (
+      <p className="py-1.5 pl-9 text-xs text-muted-foreground">
+        No sessions yet.
+      </p>
+    );
   const visible = sidebarSessionWindow(sessions, false, () => false);
   const { more } = sessionListControls({
     total: sessions.length,
