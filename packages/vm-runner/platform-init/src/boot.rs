@@ -3209,77 +3209,88 @@ mod tests {
             held_before >> 20,
             guard.held() >> 20
         );
-        // UNIT_BOUNDARY_DESCRIPTION: every block of the shrink's room is room the guest can take again: the same request the full disk refused lands once the guard holds less, which a guard that released only part of its files cannot show.
-        guard.size(&dir, 64 << 20).unwrap();
+        // UNIT_BOUNDARY_DESCRIPTION: a writer allocates while the guard moves, not only after it: an implementation that released the whole guard and took its new size back would pass every check made after the move, since no writer could reach the room in between. The writer asks the disk for one step at a time from its own thread for as long as the move is open, and what it took plus what the guard still holds may not pass what the two of them held and could reach before the move started.
+        let before_move = free();
+        let held_before_move = guard.held();
+        let reachable = before_move.saturating_add(held_before_move);
+        let writing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let attempts = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let landed = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (stop, tried, took) = (writing.clone(), attempts.clone(), landed.clone());
+        let top_for_writer = top.clone();
+        let writer = std::thread::spawn(move || {
+            let mut kept: Vec<File> = Vec::new();
+            let mut tries = 0usize;
+            while stop.load(std::sync::atomic::Ordering::Acquire) {
+                let path = top_for_writer.join(format!("racing-{tries}"));
+                tries += 1;
+                match File::create(&path)
+                    .and_then(|file| preallocate(&file, POOL_GUARD_STEP).map(|()| file))
+                {
+                    Ok(file) => {
+                        // UNIT_BOUNDARY_DESCRIPTION: the name goes as soon as the room is taken, as the guard's own files are unnamed: the guest gives back everything it took by dropping its descriptors, so the check below measures the guard's release and not the room the writer still holds.
+                        let _ = fs::remove_file(&path);
+                        kept.push(file);
+                        took.fetch_add(1, std::sync::atomic::Ordering::Release);
+                    }
+                    Err(_) => {
+                        let _ = fs::remove_file(&path);
+                        std::thread::yield_now();
+                    }
+                }
+                // UNIT_BOUNDARY_DESCRIPTION: an attempt is counted once it is over, and the move below waits for the next count, so an allocation the test reads is one the move saw: spawning a writer and hoping the scheduler gives it a turn between two resizes fails a correct guard on a loaded host, and one that never ran at all would leave the bound below with nothing to check.
+                tried.fetch_add(1, std::sync::atomic::Ordering::Release);
+            }
+            kept
+        });
+        // UNIT_BOUNDARY_DESCRIPTION: the shrink is held open across a whole allocation of the writer's rather than raced against it: it drops a step, waits, bounded, for the writer's next attempt to finish, and only then drops another. A writer blocked in the filesystem when the wait starts still finishes inside the window, and every step still holds within one file of what it was asked for once that allocation landed, which is the guard's own promise: a move that released the whole guard and let it regrow would have left the guard short of what it was asked for, with the room gone to the writer.
+        let mut tried_at = 0usize;
+        for left in (4..=19u64).rev() {
+            let size = left * POOL_GUARD_STEP;
+            guard.size(&dir, size).unwrap();
+            // UNIT_BOUNDARY_DESCRIPTION: the step's room is committed before the writer is asked to use it, because btrfs frees a dropped file's extents in its next transaction and the writer's own preallocation cannot be given space the filesystem has not released yet.
+            flush_filesystem(&top).unwrap();
+            let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
+            while attempts.load(std::sync::atomic::Ordering::Acquire) <= tried_at {
+                assert!(
+                    std::time::Instant::now() < until,
+                    "the writer finished no allocation attempt while the guard moved to {} MiB",
+                    size >> 20
+                );
+                std::thread::yield_now();
+            }
+            tried_at = attempts.load(std::sync::atomic::Ordering::Acquire);
+            assert!(
+                guard.held() + POOL_GUARD_STEP >= size,
+                "after the move to {} MiB the guard held {} MiB once the writer's allocation landed",
+                size >> 20,
+                guard.held() >> 20
+            );
+        }
+        writing.store(false, std::sync::atomic::Ordering::Release);
+        let racing = writer.join().unwrap();
+        assert!(
+            landed.load(std::sync::atomic::Ordering::Acquire) > 0,
+            "no writer took any room while the guard moved"
+        );
+        let taken = racing.len() as u64 * POOL_GUARD_STEP;
+        assert!(
+            taken + guard.held() <= reachable.saturating_add(POOL_GUARD_STEP),
+            "during a move to 64 MiB the writer took {} MiB and the guard kept {} MiB, more than the {} MiB the two could reach",
+            taken >> 20,
+            guard.held() >> 20,
+            reachable >> 20
+        );
+        // UNIT_BOUNDARY_DESCRIPTION: every block of the shrink's room is room the guest can take again: the guest gives back what it took during the move, the disk is flushed, and the same request the full disk refused lands, which a guard that released only part of its files cannot show.
+        drop(racing);
+        flush_filesystem(&top).unwrap();
         let probe = take("probe-after", PROBE_BYTES);
         assert!(
             probe.is_some(),
             "a guard shrunk from 320 MiB to 64 MiB returned no room a {} MiB request could take on a disk the guest had filled",
             PROBE_BYTES >> 20
         );
-        // UNIT_BOUNDARY_DESCRIPTION: a writer allocates while the guard moves, not only after it: an implementation that released the whole guard and took its new size back would pass every check made after the move, since no writer could reach the room in between. The writer asks the disk for one step at a time from its own thread until it is told to stop, and what it takes plus what the guard still holds may not pass what the two of them held and could reach before the move started.
-        let before_move = free();
-        let held_before_move = guard.held();
-        let reachable = before_move.saturating_add(held_before_move);
-        let writing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
-        let moving = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let during = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
-        let started = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let (stop, mid_move) = (writing.clone(), moving.clone());
-        let (in_move, first, top_for_writer) = (during.clone(), started.clone(), top.clone());
-        let writer = std::thread::spawn(move || {
-            let mut kept: Vec<File> = Vec::new();
-            let mut tries = 0usize;
-            while stop.load(std::sync::atomic::Ordering::Relaxed) {
-                let path = top_for_writer.join(format!("racing-{tries}"));
-                tries += 1;
-                if mid_move.load(std::sync::atomic::Ordering::Relaxed) {
-                    in_move.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-                }
-                match File::create(&path)
-                    .and_then(|file| preallocate(&file, POOL_GUARD_STEP).map(|()| file))
-                {
-                    Ok(file) => kept.push(file),
-                    Err(_) => {
-                        let _ = fs::remove_file(&path);
-                        std::thread::yield_now();
-                    }
-                }
-                // UNIT_BOUNDARY_DESCRIPTION: the writer reports its first attempt, so spawning it is not enough for the move to overlap a writer: the test waits for that attempt before it moves the guard, and fails the overlap check below rather than passing with an empty result.
-                first.store(true, std::sync::atomic::Ordering::Release);
-            }
-            kept
-        });
-        while !started.load(std::sync::atomic::Ordering::Acquire) {
-            std::thread::yield_now();
-        }
-        // UNIT_BOUNDARY_DESCRIPTION: the move is taken a step at a time with a yield between, so the writer gets a turn inside the window however the scheduler divides the cores: the overlap is what the bound below is about, and a move too short to overlap an allocation would pass it for nothing.
-        moving.store(true, std::sync::atomic::Ordering::Relaxed);
-        for left in (2..=18u64).rev() {
-            std::thread::yield_now();
-            let _ = guard.size(&dir, left * POOL_GUARD_STEP);
-        }
-        moving.store(false, std::sync::atomic::Ordering::Relaxed);
-        writing.store(false, std::sync::atomic::Ordering::Relaxed);
-        let racing = writer.join().unwrap();
-        assert!(
-            during.load(std::sync::atomic::Ordering::Relaxed) > 0,
-            "no writer attempted to allocate while the guard moved"
-        );
-        let taken = racing.len() as u64 * POOL_GUARD_STEP;
-        assert!(
-            taken + guard.held() <= reachable.saturating_add(POOL_GUARD_STEP),
-            "during a move to 32 MiB the writer took {} MiB and the guard kept {} MiB, more than the {} MiB the two could reach",
-            taken >> 20,
-            guard.held() >> 20,
-            reachable >> 20
-        );
-        assert!(
-            guard.held() + POOL_GUARD_STEP > 32 << 20,
-            "the writer left the guard holding {} MiB of a 32 MiB guard",
-            guard.held() >> 20
-        );
-        let mut more = racing;
+        let mut more = Vec::new();
         while let Some(file) = take(&format!("later-{}", more.len()), 8 << 20) {
             more.push(file);
         }

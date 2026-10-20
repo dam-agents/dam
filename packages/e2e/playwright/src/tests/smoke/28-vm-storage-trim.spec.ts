@@ -74,16 +74,34 @@ function claimKb(): { used: number; capacity: number } {
   return { used, capacity: used + avail };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine, in MiB, read from the file platform-init reads it from: one line, the id of the look that wrote it and the bytes the guest may still add to the owner's claim. This is the figure the guest's free space is measured against, and not a share this spec works out for itself, because what the guard must do is hold the guest to the grant it was given. Not a number when the runner publishes none, which is what an unmeasured claim looks like.
-function grantMiB(): number {
-  const bytes = Number(
-    inGuest(probeId, "cat /platform/storage-room 2>/dev/null")
-      .trim()
-      .split(/\s+/)[1],
-  );
-  return Number.isFinite(bytes) && bytes > 0
-    ? Math.round(bytes / 1048576)
-    : Number.NaN;
+// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine, read from the file platform-init reads it from: one line, the id of the look that wrote it and the bytes the guest may still add to the owner's claim. This is the figure the guest's free space is measured against, and not a share this spec works out for itself, because what the guard must do is hold the guest to the grant it was given. The id is what tells a renewal from the grant of an earlier look, and no grant at all reads as empty, which is what an unmeasured claim looks like.
+function readGrant(): { id: string; mib: number } {
+  const [id = "", bytes = ""] = inGuest(
+    probeId,
+    "cat /platform/storage-room 2>/dev/null",
+  )
+    .trim()
+    .split(/\s+/);
+  const mib = Number(bytes) / 1048576;
+  return {
+    id,
+    mib: Number.isFinite(mib) && mib > 0 ? Math.round(mib) : Number.NaN,
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waits for the runner's next look to publish a grant of its own, and returns it: the grant bytes are what the guest may still add from the moment of that look, so a grant published before the case's own writes counts them against the guest and a comparison with it would read short for no defect. A runner that publishes no new grant inside the window fails the case rather than leaving the comparison to a figure of unknown age.
+async function renewedGrant(after: string): Promise<number> {
+  const deadline = Date.now() + WAIT_MS;
+  for (;;) {
+    await keepAwake(probeId);
+    const grant = readGrant();
+    if (grant.id !== after) return grant.mib;
+    expect(
+      Date.now(),
+      `the runner published no grant after ${after || "none"} within ${WAIT_MS} ms, so the claim was never measured`,
+    ).toBeLessThan(deadline);
+    await new Promise((resolve) => setTimeout(resolve, 5_000));
+  }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: wakes a machine and waits for it to run before a case reads it. The vm lane's idle sweep stops a machine whose harness reports idle for the chart's vmIdleTimeout, 5 minutes, and the per-agent hibernation timeout a spec can set is a container backend setting the vm backend ignores; a case's own work is guest-side and invisible to the sweep's probe, so each phase wakes its machines first and is bounded well inside that window.
@@ -259,7 +277,8 @@ test("a writing agent stops at its share, and writes again when its share grows"
       `if fallocate -l ${NEXT_WRITE_MIB}M /tmp/e2e-fill/probe-$(date +%s%N) 2>/tmp/e2e-fill/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-fill/probe.err 2>/dev/null; fi`,
     );
   try {
-    // UNIT_BOUNDARY_DESCRIPTION: real bytes through a renewal, always: the guest writes 256 MiB of random bytes into its home, the claim pays for them, the guest's free space falls by them, and the grant the runner publishes is renewed over them. Then they are deleted and the claim must take them back. This is the small bounded half of the case that fills the claim: it costs the host a fixed 256 MiB rather than a whole install, it grows the claim through a renewal as only written blocks can, and a guard that leaked what it released would take the guest below its floor here before the marking below ever runs.
+    // UNIT_BOUNDARY_DESCRIPTION: real bytes through a renewal, always: the guest writes 256 MiB of random bytes into its home, the claim pays for them, and the grant the runner publishes over them is the one the guest's room is then measured against. Then they are deleted and the claim must take them back. This is the small bounded half of the case that fills the claim: it costs the host a fixed 256 MiB rather than a whole install, it grows the claim as only written blocks can, and a guard that leaked what it released would take the guest below its floor here before the marking below ever runs.
+    const granted = readGrant();
     inGuest(
       probeId,
       `head -c ${REAL_MIB}M /dev/urandom > /tmp/e2e-fill/real && sync`,
@@ -269,24 +288,23 @@ test("a writing agent stops at its share, and writes again when its share grows"
       paid,
       `the guest wrote ${REAL_MIB} MiB of real bytes and its disk took ${paid} MiB of the claim`,
     ).toBeGreaterThanOrEqual(REAL_MIB - SLACK_MIB);
-    await new Promise((resolve) => setTimeout(resolve, RENEWAL_MS));
-    await keepAwake(probeId);
-    const published = grantMiB();
+    const published = await renewedGrant(granted.id);
     const availed = guestAvailMiB();
+    // UNIT_BOUNDARY_DESCRIPTION: the claim of the lane that measures a machine's disk is one the runner measures, so a case that found no grant is a case that proved nothing and says so rather than passing on a comparison it skipped. The grant of a claim too small to measure is no grant either, and that is what the disk-size floor below it rules out.
+    expect(
+      Number.isFinite(published),
+      "the runner published no grant for the probe's claim, so the guest's room cannot be compared with it",
+    ).toBe(true);
     // UNIT_BOUNDARY_DESCRIPTION: the guest's own free space is the room its guard left it, and that is the grant the runner published plus at most one floor: a guard that released its whole hold, or moved before the runner could renew, would leave the guest the disk instead. The floor is the allowance every guest keeps whatever its grant says, so the bound allows it once.
-    if (Number.isFinite(published))
-      expect(
-        availed,
-        `the guest may write ${availed} MiB of the ${published} MiB grant the runner published`,
-      ).toBeLessThanOrEqual(published + GUARD_FLOOR_MIB + SLACK_MIB);
-    // UNIT_BOUNDARY_DESCRIPTION: and not below it either: a guest held under the grant the runner published is the defect a user reports — an agent refused at three quarters of its storage with the claim a third empty — and the floor is what a guest keeps when its grant is smaller than one, so the shorter of the two bounds the comparison below.
-    if (Number.isFinite(published))
-      expect(
-        availed,
-        `the guest may write ${availed} MiB of the ${published} MiB grant the runner published`,
-      ).toBeGreaterThanOrEqual(
-        Math.min(published, GUARD_FLOOR_MIB) - SLACK_MIB,
-      );
+    expect(
+      availed,
+      `the guest may write ${availed} MiB of the ${published} MiB grant the runner published`,
+    ).toBeLessThanOrEqual(published + GUARD_FLOOR_MIB + SLACK_MIB);
+    // UNIT_BOUNDARY_DESCRIPTION: and not below it: the grant was published after the case's own 256 MiB landed, and nothing has written in the guest's home since, so the guest may still write the whole of it. A guest held to a fraction of the grant it was given is the defect a user reports — an agent refused at three quarters of its storage with the claim a third empty — and the slack is what the case's two measurements and the guard's own step can account for.
+    expect(
+      availed,
+      `the guest may write ${availed} MiB of the ${published} MiB grant the runner published`,
+    ).toBeGreaterThanOrEqual(published - SLACK_MIB - GUARD_STEP_MIB);
     // UNIT_BOUNDARY_DESCRIPTION: the wedge this case is for is a guest that stops writing and stays stopped, so the renewal is answered with a real write of its own, synced and read back: a machine that keeps the answer to a shortage after the claim has room again fails here, and no arithmetic about its free space can stand in for that.
     expect(
       inGuest(
@@ -302,16 +320,17 @@ test("a writing agent stops at its share, and writes again when its share grows"
       (mib) => mib <= diskBefore + SLACK_MIB,
       "the real bytes the guest deleted across a renewal never left the claim",
     );
-    // UNIT_BOUNDARY_DESCRIPTION: the guest marks its whole remaining room in one file, so the case reaches its share in one call whatever the pool is, and falls back to fixed chunks when the filesystem refuses an allocation it cannot reserve whole: btrfs answers that to a request for the full free space, and a case that read the room figure alone would report the guard as broken when the fill never ran.
+    // UNIT_BOUNDARY_DESCRIPTION: the guest marks its whole remaining room in one file, so the case reaches its share in one call whatever the pool is, and falls back to chunks when the filesystem refuses an allocation it cannot reserve whole: btrfs answers that to a request for the full free space, and a case that read the room figure alone would report the guard as broken when the fill never ran. The chunks go a size at a time and only get smaller, so the room left is under the smallest of them: an allocation is all or nothing, so a refused 256 MiB says nothing about a 64 MiB one, and stopping at the first refusal would leave the guest room the request below is then allowed to take.
     const marking = inGuest(
       probeId,
       [
         ROOM_KB,
         'if fallocate -l "$(( room / 1024 ))M" /tmp/e2e-fill/full 2>/tmp/e2e-fill/full.err; then echo "fill=whole"; else',
         'echo "fill=chunked"',
+        "for size in 256 128 64 32 16 8; do",
         "n=0",
-        'while [ "$n" -lt 4096 ]; do if fallocate -l 256M "/tmp/e2e-fill/part-$n" 2>/tmp/e2e-fill/part.err; then n=$((n+1)); else break; fi; done',
-        'echo "parts=$n"',
+        'while [ "$n" -lt 4096 ] && fallocate -l "${size}M" "/tmp/e2e-fill/part-${size}-$n" 2>/dev/null; do n=$((n+1)); done',
+        "done",
         "fi",
         "sync",
         AVAIL_KB,
