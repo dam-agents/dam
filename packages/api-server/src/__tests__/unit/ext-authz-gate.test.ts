@@ -226,9 +226,15 @@ describe("ext-authz gate", () => {
       ruleMatcher: {
         match: async (agentId: string, host: string) => {
           asked.push(agentId);
-          return host === "registry.example.com" ? { verdict: "allow" } : null;
+          return host === "registry.example.com"
+            ? {
+                verdict: "allow" as const,
+                rule: { host, method: "*", pathPattern: "*" },
+              }
+            : null;
         },
       },
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
