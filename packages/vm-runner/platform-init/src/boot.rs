@@ -4390,17 +4390,24 @@ mod tests {
 
         // UNIT_BOUNDARY_DESCRIPTION: a thread that opens and reads the working file over and over, the way a turn does between two looks of a pass, while the pass lists and then deletes everything it listed.
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-        let running = stop.clone();
+        let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (running, counted) = (stop.clone(), reads.clone());
         let file = s.join("checkout/src/main.rs");
         let reader = std::thread::spawn(move || {
-            let mut reads = 0;
             while !running.load(std::sync::atomic::Ordering::Relaxed) {
                 let mut head = Vec::new();
                 io::Read::read_to_end(&mut File::open(&file).unwrap(), &mut head).unwrap();
-                reads += 1;
+                counted.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             }
-            reads
         });
+        let started = std::time::Instant::now();
+        while reads.load(std::sync::atomic::Ordering::Relaxed) == 0 {
+            assert!(
+                started.elapsed() < std::time::Duration::from_secs(10),
+                "the reader never opened the working file"
+            );
+            std::thread::yield_now();
+        }
         let pass = scratch_entries(
             &roots,
             &HashSet::new(),
@@ -4413,7 +4420,7 @@ mod tests {
             assert!(evict(&entry.path).unwrap());
         }
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
-        assert!(reader.join().unwrap() > 0, "the reader read through");
+        reader.join().unwrap();
         assert_eq!(
             fs::read(s.join("checkout/src/main.rs")).unwrap(),
             b"fn main() {}"
