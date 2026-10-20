@@ -1,5 +1,5 @@
-import type { TranscriptMeta, TranscriptStep } from "./types.js";
 import { msg } from "./helpers.js";
+import type { TranscriptMeta, TranscriptStep } from "./types.js";
 
 export function plainWikiTranscript(): TranscriptMeta {
   const m = [

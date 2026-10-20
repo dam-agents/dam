@@ -209,6 +209,7 @@ export function ChatView() {
     : null;
   const goBack = useStore((s) => s.goBack);
   const selectAgent = useStore((s) => s.selectAgent);
+  const navigateToAgentLanding = useStore((s) => s.navigateToAgentLanding);
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const navigateToKnowledgeBaseConfig = useStore(
     (s) => s.navigateToKnowledgeBaseConfig,
@@ -669,7 +670,7 @@ export function ChatView() {
             onNewChat={
               isMock
                 ? () => {
-                    if (selectedAgent) selectAgent(selectedAgent);
+                    if (selectedAgent) navigateToAgentLanding(selectedAgent);
                   }
                 : undefined
             }

@@ -28,6 +28,7 @@ import { useAcpSessions } from "../../sessions/api/queries.js";
 import { useAgentsList } from "../api/queries.js";
 import type { AgentDisplayState } from "../utils/agent-resolver.js";
 import { resolveAgentDisplay } from "../utils/agent-resolver.js";
+import { AgentAvatar } from "../components/char-avatar.js";
 
 type LandingSession = SessionView & { slackChannel?: string };
 
@@ -112,10 +113,11 @@ function channelIcon(kind: ChannelKind) {
 
 interface SessionRowProps {
   agentId: string;
+  agentName: string;
   session: LandingSession;
 }
 
-function SessionRow({ agentId, session }: SessionRowProps) {
+function SessionRow({ agentId, agentName, session }: SessionRowProps) {
   const openAgentSession = useStore((s) => s.openAgentSession);
   const running = !!session.running;
   const unread =
@@ -163,7 +165,10 @@ function SessionRow({ agentId, session }: SessionRowProps) {
       </div>
 
       <div className="min-w-0 flex-1">
-        <div className="flex items-baseline gap-1 text-sm leading-snug">
+        <div className="flex items-center gap-1.5 text-sm leading-snug">
+          <span className="flex size-5 shrink-0 items-center justify-center rounded-md border border-[#dde1e6] bg-white text-[10px] font-bold text-foreground dark:border-white/10 dark:bg-white/5">
+            {agentInitials(agentName)}
+          </span>
           <p
             className={cn(
               "min-w-0 truncate",
@@ -303,9 +308,11 @@ export function AgentLandingView() {
       </button>
 
       <div className="flex items-start gap-5">
-        <div className="flex size-14 shrink-0 items-center justify-center rounded-2xl border border-[#dde1e6] bg-white text-lg font-bold text-foreground dark:border-white/10 dark:bg-white/5">
-          {agentInitials(agent.name)}
-        </div>
+        <AgentAvatar
+          agentId={agent.id}
+          state={display.state}
+          className="size-14 shrink-0"
+        />
 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-3">
@@ -436,7 +443,12 @@ export function AgentLandingView() {
           ) : (
             <div className="flex flex-col gap-2">
               {filteredSessions.map((s) => (
-                <SessionRow key={s.sessionId} agentId={agent.id} session={s} />
+                <SessionRow
+                  key={s.sessionId}
+                  agentId={agent.id}
+                  agentName={agent.name}
+                  session={s}
+                />
               ))}
             </div>
           )}

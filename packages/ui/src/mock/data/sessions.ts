@@ -181,5 +181,20 @@ export const mockSessions: Record<string, unknown[]> = {
       running: false,
       seenAt: new Date(now - 50 * min).toISOString(),
     },
+    ...generateSessions(AGENT_IDS.codexResearch, 8, {
+      runningCount: 1,
+      slackRatio: 0.15,
+      scheduleRatio: 0.1,
+    }),
   ],
+  [AGENT_IDS.geminiPipeline]: generateSessions(AGENT_IDS.geminiPipeline, 6, {
+    runningCount: 0,
+    slackRatio: 0.3,
+    scheduleRatio: 0.2,
+  }),
+  [AGENT_IDS.knowledgeBase]: generateSessions(AGENT_IDS.knowledgeBase, 7, {
+    runningCount: 1,
+    slackRatio: 0.1,
+    scheduleRatio: 0.15,
+  }),
 };

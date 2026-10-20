@@ -234,9 +234,7 @@ function TopStripPreview() {
             <ContainerSoftware size={14} />
             <span>Sandboxes</span>
             <span className="text-border">/</span>
-            <span className="text-foreground font-medium">
-              ci-pipeline
-            </span>
+            <span className="text-foreground font-medium">ci-pipeline</span>
           </div>
           <div className="flex items-center gap-5">
             <CpuBar value={34} />

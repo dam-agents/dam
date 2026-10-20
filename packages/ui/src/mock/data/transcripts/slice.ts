@@ -1,5 +1,4 @@
 import type { FormPart, Message } from "../../../types.js";
-
 import type { TranscriptMeta } from "./types.js";
 
 export function sliceTranscriptForStep(
