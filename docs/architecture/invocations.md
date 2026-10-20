@@ -95,10 +95,11 @@ The reasons:
 - **Run failed.** A target that can no longer report a result fails at once, with the cause, instead of at its deadline.
   The target's runtime watches the run's session until the result is accepted, which it reads in the answer to `report_result`.
   A run that cannot start, or whose session does not open within two minutes, a turn that fails, the run's prompt when the harness never takes it, and a harness that exits or is recycled under it fail at once; for an exit, the reason carries the harness's spawn error, exit code or signal.
-  A turn that ends without a result, and a model call the provider refused outright with no completed call for a minute after it, go through one check: the run fails only when no turn, model call, tool call, background work or sub-agent of its own still runs, on two reads 30 seconds apart.
+  A turn that ends without a result, and a failed model call with no completed call after it — a minute when the provider refused it outright, five when a retry could succeed — go through one check: the run fails only when no model call, tool call, background work or sub-agent of its own still runs — and, for a turn that ended, no turn — on two reads 30 seconds apart.
+  A failed call fails the run under an open turn, since the harness has gone quiet inside it.
   The second read leaves room for a sub-agent's result or the harness's own next turn, which reach the session a few seconds after the work behind them ends.
   The check repeats every minute while something runs, so work that ends without a further turn fails the run then.
-  A refused call's reason carries its status and body, since a harness such as Codex can go quiet after it without ending the turn.
+  A failed call's reason carries its status and body, since a harness such as Codex can go quiet after it without ending the turn.
 - **Deadline.** The Driver sets a liveness deadline, clamped to about a minute up to six hours; past it the Invocation fails and the target is reaped mid-work.
 - **Restart.** A target pod that restarted cannot resume its one-shot turn, so the liveness sweep fails it at once from the restart count the controller publishes ([platform-topology](platform-topology.md)).
 - **Driver Cascade.** Deleting a Driver fails its running Invocations and reaps their targets, transitively for chains.

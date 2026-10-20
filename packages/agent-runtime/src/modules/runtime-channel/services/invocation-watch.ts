@@ -3,6 +3,7 @@ import type { EventReportInput } from "agent-runtime-api";
 const DETAIL_MAX = 2_000;
 const MODEL_ERROR_MAX = 600;
 const DEFAULT_STALL_MS = 60_000;
+const DEFAULT_RETRIABLE_STALL_MS = 5 * 60_000;
 const DEFAULT_RECHECK_MS = 60_000;
 const DEFAULT_CONFIRM_MS = 30_000;
 
@@ -27,6 +28,7 @@ export interface InvocationWatchDeps {
   localWork: (sessionId: string) => boolean;
   subAgentsRunning: (sessionId: string) => Promise<boolean>;
   stallMs?: number;
+  retriableStallMs?: number;
   recheckMs?: number;
   confirmMs?: number;
   log: (msg: string) => void;
@@ -39,12 +41,14 @@ export interface InvocationWatchDeps {
  * session and reports its trigger event as failed, with the cause, once the
  * run can no longer produce a result. A turn that fails, or a harness that
  * exits under it, fails the run at once. Two causes need a decision first: a
- * turn that ended without a result, and a model call the provider refused
- * outright with no completed call for stallMs after it — Codex, refused its
- * first call, goes quiet without ending the turn. Both go through one
- * decision, which fails the run only when nothing can still report: no turn
- * running (for an ended turn), no model or tool call, no background work, and
- * no sub-agent of its own still running, and only when it finds that twice,
+ * turn that ended without a result, and a model call that failed with no
+ * completed call after it, for stallMs when the provider refused it outright
+ * and retriableStallMs when a retry could succeed — Codex, refused its first
+ * call, goes quiet without ending the turn. Both go through one decision,
+ * which fails the run only when nothing can still report: no model or tool
+ * call, no background work, no sub-agent of its own still running, and, for
+ * an ended turn, no turn running (a failed call fails the run under an open
+ * turn, since the harness has gone quiet inside it), and only when it finds that twice,
  * confirmMs apart: a sub-agent's result, or a harness's own next turn, reaches
  * the session a few seconds after the work behind it ends. The local state is
  * read again after the sub-agent probe, the one await, and a decision that
@@ -57,6 +61,7 @@ export function createInvocationWatch(
   deps: InvocationWatchDeps,
 ): InvocationWatch {
   const stallMs = deps.stallMs ?? DEFAULT_STALL_MS;
+  const retriableStallMs = deps.retriableStallMs ?? DEFAULT_RETRIABLE_STALL_MS;
   const recheckMs = deps.recheckMs ?? DEFAULT_RECHECK_MS;
   const confirmMs = deps.confirmMs ?? DEFAULT_CONFIRM_MS;
   let run: {
@@ -174,6 +179,7 @@ export function createInvocationWatch(
         return;
       }
       current.turnEnded = `the sub-agent's turn ended without a reported result (stop reason: ${stopReason ?? "end_turn"})`;
+      current.idleSeen = false;
       schedule(0);
     },
 
@@ -199,9 +205,9 @@ export function createInvocationWatch(
         0,
         MODEL_ERROR_MAX,
       );
-      if (!permanent || current.refused) return;
+      if (current.refused) return;
       current.refused = true;
-      if (!current.decision) schedule(stallMs);
+      if (!current.decision) schedule(permanent ? stallMs : retriableStallMs);
     },
   };
 }

@@ -283,13 +283,11 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       .envState()
       .providers.find((l) => l.id === entry.connectionId);
     const wire = layer ? upstreamWireOf(entry.template, layer.env) : null;
-    if (!wire)
-      return reply(
-        res,
-        503,
-        dialect,
-        `provider '${entry.alias}' has no endpoint in this pod's env`,
-      );
+    if (!wire) {
+      const text = `provider '${entry.alias}' has no endpoint in this pod's env`;
+      deps.onRefused?.({ session, status: 503, text, permanent: false });
+      return reply(res, 503, dialect, text);
+    }
     const stream = body.stream === true;
     const subagentEffort = handle?.parentSessionId
       ? choiceOf(handle.parentSessionId)?.subagentEffort
