@@ -176,6 +176,7 @@ export function createApprovalsRelayService(
           optionId: o.optionId,
           kind: o.kind,
         })),
+        optionsWhole: true as const,
       };
       const written = await deps.repo.insertIfAbsent({
         id: rowId,

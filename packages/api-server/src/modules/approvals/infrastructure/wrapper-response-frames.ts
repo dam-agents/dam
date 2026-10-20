@@ -1,3 +1,4 @@
+import { TOOL_CALL_ID_MAX } from "api-server-api";
 import type {
   AcpPermissionOption,
   AcpPermissionOptionKind,
@@ -11,7 +12,9 @@ import type {
  * reject option or cancels, because the row's catalog is bounded and the
  * option it lost cannot be told apart from an allow, and an id a catalog
  * recorded twice — once as an allow, once as a shorter reject — is never sent
- * for a denial: the harness knows only one meaning for it. In the other direction
+ * for a denial: the harness knows only one meaning for it. A catalog recorded
+ * before ids were kept whole cannot prove its reject was not shortened, so a
+ * reject at the old character bound is never sent from it either. In the other direction
  * the runtime holds the whole request, so the kind it reports states what an
  * option the row dropped was. That kind decides the verdict only when the
  * runtime reports it: the chat client's own answer travels unvalidated.
@@ -19,6 +22,7 @@ import type {
 export function pickOptionId(
   options: readonly AcpPermissionOption[],
   verdict: ApprovalVerdict,
+  opts?: { idsWhole?: boolean },
 ): string | null {
   const want: AcpPermissionOptionKind =
     verdict === "deny"
@@ -35,7 +39,10 @@ export function pickOptionId(
       .map((o) => o.optionId),
   );
   const answerable = options.filter(
-    (o) => isAllow || !allowIds.has(o.optionId),
+    (o) =>
+      isAllow ||
+      (!allowIds.has(o.optionId) &&
+        (opts?.idsWhole === true || o.optionId.length < TOOL_CALL_ID_MAX)),
   );
   const direct = answerable.find((o) => o.kind === want);
   if (direct) return direct.optionId;

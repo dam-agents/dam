@@ -5,11 +5,15 @@ import {
   recordedOptionsOf,
   TOOL_CALL_ID_MAX,
 } from "api-server-api";
+import type { AcpPermissionOption } from "api-server-api";
 
 import {
   pickOptionId,
   verdictOfOutcome,
 } from "../../modules/approvals/infrastructure/wrapper-response-frames.js";
+import { createDeliverySweeper } from "../../modules/approvals/services/delivery-sweeper.js";
+import type { PendingApprovalRow } from "../../modules/approvals/domain/types.js";
+import type { ApprovalsRepository } from "../../modules/approvals/infrastructure/approvals-repository.js";
 
 const shared = "x".repeat(TOOL_CALL_ID_MAX);
 const aliased = [
@@ -69,4 +73,115 @@ describe("tool approval option identity", () => {
     expect(pickOptionId(legacy, "deny_once")).toBeNull();
     expect(pickOptionId(legacy, "allow_once")).toBe(shared);
   });
+
+  // TEST_SCENARIO: the old mapper shortened ids and then kept only sixteen options, so the allow the shortened reject collides with can be the one it drops. Absence of that allow from the stored catalog proves nothing, and both Home and the delivery sweeper answer from it: a reject at the old character bound is never sent from a catalog that cannot prove its ids whole.
+  it("cancels a legacy denial whose colliding allow fell outside the count cap", () => {
+    const seventeen = [
+      ...Array.from({ length: 15 }, (_, n) => ({
+        optionId: `yes${n}`,
+        kind: "allow_once" as const,
+      })),
+      { optionId: `${shared}-reject`, kind: "reject_once" as const },
+      { optionId: shared, kind: "allow_once" as const },
+    ];
+    const legacyCatalog = legacyRecordedOptionsOf(seventeen);
+
+    expect(legacyCatalog).toHaveLength(16);
+    expect(
+      legacyCatalog.some(
+        (o) => o.kind === "allow_once" && o.optionId === shared,
+      ),
+    ).toBe(false);
+    expect(legacyCatalog.filter((o) => o.optionId === shared)).toHaveLength(1);
+
+    expect(pickOptionId(legacyCatalog, "deny_once")).toBeNull();
+    expect(pickOptionId(legacyCatalog, "deny_once", { idsWhole: true })).toBe(
+      shared,
+    );
+    expect(pickOptionId(legacyCatalog, "allow_once")).toBe("yes0");
+  });
+
+  // TEST_SCENARIO: delivery recovery answers from the same stored catalog as Home, so a legacy row whose reject may be a shortened id must not be retried into the harness as an allow either. The row stays undelivered on purpose, waiting for the runtime's answer instead.
+  it("keeps a legacy denial undelivered rather than sending an ambiguous id", async () => {
+    const legacyCatalog = legacyRecordedOptionsOf([
+      ...Array.from({ length: 15 }, (_, n) => ({
+        optionId: `yes${n}`,
+        kind: "allow_once",
+      })),
+      { optionId: `${shared}-reject`, kind: "reject_once" },
+      { optionId: shared, kind: "allow_once" },
+    ]);
+    const sent: string[] = [];
+    const rows = [
+      {
+        id: "acpnative:a:s:1",
+        type: "acp_native",
+        agentId: "a",
+        ownerSub: "owner-1",
+        sessionId: "s",
+        payload: {
+          kind: "acp_native",
+          toolName: "Run",
+          rpcId: 1,
+          options: legacyCatalog,
+        },
+        createdAt: new Date(),
+        expiresAt: new Date(Date.now() + 60_000),
+        resolvedAt: new Date(),
+        verdict: "deny_once",
+        decidedBy: "owner-1",
+        status: "resolved",
+        deliveredAt: null,
+      },
+    ] as PendingApprovalRow[];
+    const repo = {
+      listResolvedUndelivered: async () => rows,
+      markDelivered: async () => {},
+      expireOverdue: async () => [],
+    } as Partial<ApprovalsRepository> as ApprovalsRepository;
+    const sweeper = createDeliverySweeper({
+      repo,
+      wrapperFrameSender: {
+        send: async (_agentId: string, frame: string) => {
+          sent.push(frame);
+        },
+      },
+      staleMs: 0,
+      batchSize: 50,
+    });
+
+    await sweeper.tick();
+
+    expect(sent).toEqual([
+      JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        result: { outcome: { outcome: "cancelled" } },
+      }),
+    ]);
+  });
 });
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The catalog merged #5468 recorded, kept here as
+ * the reproduction of a row that survives the upgrade: ids shortened to the
+ * character bound, then the count cap keeping one option of each kind first.
+ */
+function legacyRecordedOptionsOf(
+  raw: { optionId: string; kind?: string }[],
+): AcpPermissionOption[] {
+  const kinds = ["allow_once", "allow_always", "reject_once", "reject_always"];
+  const all = raw.map(({ optionId, kind }) => ({
+    optionId: optionId.slice(0, TOOL_CALL_ID_MAX),
+    ...(kinds.includes(kind ?? "") && {
+      kind: kind as AcpPermissionOption["kind"],
+    }),
+  }));
+  const firstOfEachKind = kinds.flatMap(
+    (kind) => all.find((option) => option.kind === kind) ?? [],
+  );
+  return [...firstOfEachKind, ...all]
+    .filter((option, index, list) => list.indexOf(option) === index)
+    .slice(0, 16)
+    .sort((left, right) => all.indexOf(left) - all.indexOf(right));
+}
