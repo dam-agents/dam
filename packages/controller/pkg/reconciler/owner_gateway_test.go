@@ -417,7 +417,6 @@ func TestOwnerGatewayRepairPlan_APodIsOfferedTheFilesItHasAndHasNotRead(t *testi
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", r.ownerGatewayRepairPlan(testOwner, []string{"agent-a"}, now).xdsVersion(), "and once only")
 }
 
-// TEST_SCENARIO: the same through the reconcile loop: a rendering the pod read is offered once more, one Secret update carries it, and every later reconcile with the same rendering and the same answer writes nothing.
 // TEST_SCENARIO: an install that upgrades from the layout with a ConfigMap of the owner gateway's name and a credentials Secret beside it keeps both objects. Nothing refreshes the Secret, so it holds signing keys later rotations retire; the render that writes the files Secret removes them.
 func TestOwnerGateway_TheFilesOfTheLayoutBeforeOneVolumeAreRemoved(t *testing.T) {
 	ctx := context.Background()
@@ -436,6 +435,7 @@ func TestOwnerGateway_TheFilesOfTheLayoutBeforeOneVolumeAreRemoved(t *testing.T)
 	assert.True(t, k8serrors.IsNotFound(err), "and the Secret that held signing keys nothing refreshed")
 }
 
+// TEST_SCENARIO: the same through the reconcile loop: a rendering the pod read is offered once more, one Secret update carries it, and every later reconcile with the same rendering and the same answer writes nothing.
 func TestOwnerGateway_ARenderingIsOfferedOnceThroughTheReconcile(t *testing.T) {
 	ctx := context.Background()
 	r, _, agent := servedVMReconciler(t)
