@@ -12,6 +12,7 @@ import { goDurationToMinutes, parseGoDurationNs } from "../../duration.js";
 
 const contract = (): {
   cases: { duration: string; minutes: number }[];
+  invalid: string[];
 } =>
   JSON.parse(
     readFileSync(
@@ -34,14 +35,14 @@ describe("the idle override projection", () => {
   // TEST_SCENARIO: A fraction longer than a double can hold must not turn a
   // TEST_SCENARIO: finite duration into NaN, which reads as no window at all.
   it("keeps a long fractional term finite and truncates it as Go does", () => {
-    expect(parseGoDurationNs("1." + "0".repeat(320) + "s")).toBe(1e9);
-    expect(parseGoDurationNs("0." + "0".repeat(40) + "1s")).toBe(0);
+    expect(parseGoDurationNs("1." + "0".repeat(320) + "s")).toBe(1000000000n);
+    expect(parseGoDurationNs("0." + "0".repeat(40) + "1s")).toBe(0n);
   });
 
-  it("inherits the default for a value the controller cannot parse", () => {
-    expect(goDurationToMinutes("1d")).toBeNull();
-    expect(goDurationToMinutes("")).toBeNull();
-    expect(goDurationToMinutes("5")).toBeNull();
-    expect(goDurationToMinutes("1..5h")).toBeNull();
-  });
+  it.each(contract().invalid)(
+    "inherits the default for %j, which the controller refuses",
+    (duration) => {
+      expect(goDurationToMinutes(duration)).toBeNull();
+    },
+  );
 });
