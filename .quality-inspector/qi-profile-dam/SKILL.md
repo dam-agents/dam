@@ -14,13 +14,14 @@ The nested install is a fresh platform at `http://localhost:4444` with four test
 
 DAM has no teams or workspaces: every account owns its own agents, connections, schedules and artifacts, and sees another account's work only through what that account shares (an artifact link, a public agent, a shared connection).
 
-| Role        | Account        | May                                                                                                                                    |
-| ----------- | -------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `OWNER`     | `qa-owner`     | everything a user may, plus the usage analytics report (an inspector) and connecting a Slack workspace in Settings (a Slack installer) |
-| `MEMBER`    | `qa-member`    | everything an ordinary user may with their own work; no usage report (a "We are sorry" page), no Slack workspaces tab in Settings      |
-| `INSPECTOR` | `qa-inspector` | what `MEMBER` may, plus the usage analytics report; no Slack workspaces tab                                                            |
-| `OUTSIDER`  | `qa-outsider`  | the same as `MEMBER` — kept apart for checks that someone else cannot see or change the owner's work                                   |
+| Role        | Account        | May                                                                                                  |
+| ----------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| `OWNER`     | `qa-owner`     | everything a user may, plus the usage analytics report (an inspector)                                |
+| `MEMBER`    | `qa-member`    | everything an ordinary user may with their own work; no usage report (a "We are sorry" page)         |
+| `INSPECTOR` | `qa-inspector` | what `MEMBER` may, plus the usage analytics report                                                   |
+| `OUTSIDER`  | `qa-outsider`  | the same as `MEMBER` — kept apart for checks that someone else cannot see or change the owner's work |
 
+No account sees the Slack workspaces tab in Settings: the QA install sets no Slack app.
 None of them can see, open or change another account's agents, connections, schedules or artifacts unless it was shared with them.
 There is no read-only account: any signed-in user may create their own agents, so DAM provides no `VIEWER`.
 Builds published before these accounts were added have only `qa-owner`; there another account cannot sign in, so a check that needs one is `blocked` on such a build, never failed.
