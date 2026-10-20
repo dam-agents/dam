@@ -189,6 +189,36 @@ describe("usage analytics report", () => {
   // TEST_SCENARIO: keeps its event under 4x, the deleted agent's event is dropped, and
   // TEST_SCENARIO: agents are the distinct agents behind the events.
   // TEST_SCENARIO: A vm agent honours its "0s" override, so it counts as always on too (x3).
+  // TEST_SCENARIO: A vm agent's override is a Go duration, so a sub-minute one
+  // TEST_SCENARIO: is not always-on: the controller hibernates it, and this
+  // TEST_SCENARIO: report must agree rather than count it as never sleeping.
+  it("counts a sub-minute vm override as sleeping, not always on", () => {
+    const details = [
+      {
+        agentId: "x1",
+        ownerSub: "u",
+        createdAt: at("2026-09-01"),
+        kitId: null,
+      },
+    ];
+    const live: LiveAgentFact[] = [
+      {
+        id: "x1",
+        cpu: "1",
+        memory: "2Gi",
+        hibernationTimeout: "1ns",
+        vm: true,
+        storageSize: undefined,
+        grantedConnectionIds: [],
+      },
+    ];
+    const r = buildAnalyticsReport(
+      facts({ agentsCreated: details, liveAgents: live }),
+      NOW,
+    );
+    expect(r.agentsNow.sizes.map((s) => s.alwaysOn)).toEqual([0, 0, 0, 0]);
+  });
+
   it("sizes live agents and leaves out agents nobody counted", () => {
     const live = (
       id: string,

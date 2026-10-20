@@ -550,10 +550,17 @@ func (r *AgentReconciler) runnerRollSettled(ctx context.Context, dep *appsv1.Dep
 	return podReady && dep.Annotations[annRunnerAwaiting] == "", false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: settles the owner's own roll once its new pod is ready and every machine that was ready before the roll is ready again, or gone with its agent. It runs on the owner's turn, under the owner's lock and outside the roll lock, so the runner it calls holds up only this owner. It returns the Deployment as it now stands.
+// UNIT_BOUNDARY_DESCRIPTION: settles the owner's own roll once its new pod is ready and every machine that was ready before the roll is ready again, or gone with its agent, and gives the wait up at `rollout.settleTimeout` whether or not any machine comes back. It runs on the owner's turn, under the owner's lock and outside the roll lock, so the runner it calls holds up only this owner. The timeout is checked here and not only where a place in the roll is asked for: a runner already on its configured pod asks for no place, so a wait it never finishes would otherwise outlive the timeout that bounds it — and that wait is what pins its machines awake. It returns the Deployment as it now stands.
 func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, dep *appsv1.Deployment) *appsv1.Deployment {
 	awaiting := dep.Annotations[annRunnerAwaiting]
-	if dep.Annotations[annRunnerRolledAt] == "" || awaiting == "" || !runnerPodRolledOut(dep) {
+	rolledAt, err := time.Parse(time.RFC3339, dep.Annotations[annRunnerRolledAt])
+	if err != nil || awaiting == "" || !runnerPodRolledOut(dep) {
+		return dep
+	}
+	_, timeout := runnerRolloutLimits(r.config.VM.Runner)
+	if time.Since(rolledAt) > timeout {
+		slog.Warn("vm runner: the roll's machines did not all come back in time, the next runner may roll", "owner", owner, "awaiting", awaiting, "timeout", timeout)
+		r.releaseRunnerRoll(ctx, dep, "gave up at the settle timeout, its machines did not all come back")
 		return dep
 	}
 	client, err := r.runnerFor(ctx, owner)
@@ -569,14 +576,22 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 		}
 		return dep
 	}
+	if updated := r.releaseRunnerRoll(ctx, dep, ""); updated != nil {
+		return updated
+	}
+	return dep
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: clears the three annotations that record a roll, in the one write that ends the wait, so the pin a roll holds on its machines lasts exactly as long as the wait. Nothing else clears them on this path: the kept view is dropped beside it, since a runner that stops being mid-roll frees its place.
+func (r *AgentReconciler) releaseRunnerRoll(ctx context.Context, dep *appsv1.Deployment, why string) *appsv1.Deployment {
 	settled := dep.DeepCopy()
 	delete(settled.Annotations, annRunnerRolledAt)
 	delete(settled.Annotations, annRunnerAwaiting)
 	delete(settled.Annotations, annRunnerStalled)
 	updated, err := r.client.AppsV1().Deployments(dep.Namespace).Update(ctx, settled, metav1.UpdateOptions{})
 	if err != nil {
-		slog.Warn("vm runner: clearing a settled roll", "runner", dep.Name, "error", err)
-		return dep
+		slog.Warn("vm runner: clearing a settled roll", "runner", dep.Name, "why", why, "error", err)
+		return nil
 	}
 	if r.runnerDeploys != nil {
 		r.runnerDeploys.Mutation(updated)

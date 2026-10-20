@@ -376,6 +376,7 @@ func TestIdleChecker_SkipsAMachineARunnerRollAwaits(t *testing.T) {
 	staleTime := time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)
 	agent := idleAgentCR("rolled-agent", staleTime, nil)
 	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 	ss := agentStatefulSet("rolled-agent", 1)
 	runner := runnerDeployment(map[string]string{
 		annRunnerRolledAt: time.Now().UTC().Format(time.RFC3339),
@@ -399,6 +400,7 @@ func TestIdleChecker_HibernatesOnceTheRollSettles(t *testing.T) {
 		t.Helper()
 		agent := idleAgentCR("rolled-agent", staleTime, nil)
 		agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+		agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
 		ss := agentStatefulSet("rolled-agent", 1)
 		checker, client := newIdleChecker(t, 1*time.Hour, []*apiv1.Agent{agent}, ss, runnerDeployment(annotations))
 		checker.config.VM.Enabled = true
@@ -443,6 +445,83 @@ func TestIdleChecker_SweepsOnAnInstallWithoutVirtualization(t *testing.T) {
 	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(context.Background(), "idle-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "the sweep hibernates without that read")
+}
+
+// TEST_SCENARIO: A runner roll starts while the sweep is probing the machine it will wait on. The probe is the last thing the sweep does before it hibernates, so a pin read before it would be stale and the machine would be halted under the roll. The sweep must read the pin under the owner's lock, the one a roll start takes, and leave that machine up.
+func TestIdleChecker_RollStartingDuringTheSweepKeepsItsMachineAwake(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	raw, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	raw.SetAnnotations(map[string]string{annLastActivity: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Update(ctx, raw, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
+	require.NoError(t, err)
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithMachineHalt(r.HaltMachine).WithOwnerLock(r.OwnerLock)
+	checker.busyProbe = func(context.Context, string) bool {
+		changeRunnerPod(r)
+		require.NoError(t, r.applyRunnerDeployment(context.Background(), testOwner, r.runnerOwnerRef(context.Background()), true))
+		dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+		require.NoError(t, err)
+		require.Equal(t, "my-agent", dep.Annotations[annRunnerAwaiting])
+		return false
+	}
+
+	checker.check(ctx)
+
+	ss, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Equal(t, int32(1), *ss.Spec.Replicas, "a machine a roll started waiting on is not scaled down")
+	assert.True(t, nodes[testOwner].spec("my-agent").Running, "a machine a roll started waiting on is not halted")
+}
+
+// TEST_SCENARIO: The pin read and the halt must be one decision, taken under the owner's lock, the one a runner roll start takes. A pin read before the probe, or a halt taken outside that lock, lets a roll begin in between and wait on a machine the sweep then stops. This asserts the lock is held at the moment of the halt, which is what closes that window.
+func TestIdleChecker_HaltsUnderTheOwnersLock(t *testing.T) {
+	agent := idleAgentCR("locked-agent", time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339), nil)
+	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
+	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
+	checker, _ := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("locked-agent", 1))
+	checker.config.AgentBase.VMIdleTimeout = config.Duration(time.Hour)
+	lock := checker.lockOf(testOwner)
+	inside := false
+	checker.halt = func(context.Context, string, string) error {
+		inside = !lock.TryLock()
+		if !inside {
+			lock.Unlock()
+		}
+		return nil
+	}
+
+	checker.check(context.Background())
+
+	assert.True(t, inside, "the halt runs inside the owner's lock, so a roll start cannot land between the pin read and the halt")
+}
+
+// TEST_SCENARIO: The last runner of an upgrade is already on the pod it should run, so its turn never asks for a place in the roll, and a machine that never comes back would leave its wait standing for good. The roll's own turn must give the wait up at the settle timeout, and the pin with it, so the machine hibernates again.
+func TestIdleChecker_LastRollReleasesItsPinAtTheSettleTimeout(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, testOwner)
+	nodes[testOwner].specs["my-agent"] = vmrunner.MachineSpec{Running: true}
+	nodes[testOwner].set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStarting})
+	setRolledAt(t, r, testOwner, time.Now().Add(-time.Hour))
+	dep, err := r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	dep.Annotations[annRunnerAwaiting] = "my-agent"
+	_, err = r.client.AppsV1().Deployments(r.config.Namespace).Update(ctx, dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	checker := NewIdleChecker(r.client, r.dynamic, r.config).WithOwnerLock(r.OwnerLock)
+
+	r.ReconcileRunnerRollout(ctx)
+
+	dep, err = r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, dep.Annotations[annRunnerAwaiting], "the last unchanged runner gives its wait up at the settle timeout too")
+	pinned, err := checker.machinesAwaitingRoll(ctx, testOwner)
+	require.NoError(t, err)
+	assert.False(t, pinned["my-agent"], "a wait that timed out pins nothing")
 }
 
 // TEST_SCENARIO: A vm agent reads the chart's vm idle timeout only when it carries no override of its own; one that carries an override honours it as a container agent does, "0s" included, so a starter kit's never-hibernate seed keeps a machine awake.

@@ -190,6 +190,7 @@ Whether an Agent is "idle" is **derived from observed activity, never stored** �
 It runs even when the default is never-hibernate, for the Agents that opt in, and once at start-up, since a restart forgets the shortest window it saw.
 It skips any Agent already at rest — pair observed at zero *and* hibernation published.
 It also skips any machine a [runner roll](vm-runner-upgrades.md#rolls) is waiting on: the roll's `runner-awaiting` list names the machines that were ready before it, and a hibernated machine would never come back ready.
+That check and the scale-down are taken together under the owner's lock, the one a roll start takes, so a roll that begins while the pod is being probed still sees its machine left up.
 For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to scale *up*, so scale-down and scale-up can never disagree.
@@ -230,6 +231,7 @@ The UI offers it as *Sleep after being idle for* a short list of windows or *Nev
 An Agent that never sleeps carries an *Always on* tag.
 **A vm Agent reads the vm default.** It boots in seconds, so the chart carries a separate default for it, and the UI does not offer the setting on a vm Agent.
 An override still counts where one exists — a Template or starter kit seed, or an Agent whose [Backend](vm-runtime-migration.md) moved — and it is read exactly as a container Agent's is, `0` included.
+The override is a Go duration and is read as one, so a positive window under a minute is a timeout rather than `0`: the api-server reads the same value with the same parser, and rounds a positive sub-minute window up to one minute where it shows minutes.
 A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported — a machine the kernel, its seccomp filter or its runner's own OOM kill took down is booting again, and that reason says why the machine went down rather than that it is up to nothing.
 The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
 A boot the runner reports as copying a disk, a conversion or a migration seed's restore, is held for as long as the runner says so, since the runner bounds it at six hours and a hibernation would start the copy again from nothing; reclaim counts it as booting for the same reason.
