@@ -540,13 +540,18 @@ export type {
   ConnectionView,
   ConnectionTemplateView,
   ProviderBalance,
+  ProviderKeyCheck,
+  ProviderKeyRecheck,
   TemplateInput as ConnectionTemplateInput,
   ConnectionCategory,
   AgentConnections,
   AuthConfig as ConnectionAuthConfig,
   AuthKind as ConnectionAuthKind,
 } from "./modules/connections/types.js";
-export { authConfig as connectionAuthConfigSchema } from "./modules/connections/types.js";
+export {
+  authConfig as connectionAuthConfigSchema,
+  providerKeyCheck as providerKeyCheckSchema,
+} from "./modules/connections/types.js";
 export {
   CONNECTION_ENV_NAME_HINT,
   CONNECTION_ENV_NAME_RE,

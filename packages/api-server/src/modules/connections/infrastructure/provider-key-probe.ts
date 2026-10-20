@@ -35,7 +35,7 @@ const MODELS_ENDPOINTS: Record<
   },
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Templates with no model-list check here (Bob, Bedrock) are accepted unchecked.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Templates with no model-list check here (Bob, Bedrock) are accepted, marked unchecked.
 export function createProviderKeyProbe(
   opts: { timeoutMs?: number } = {},
 ): ProviderKeyProbe {
@@ -43,7 +43,7 @@ export function createProviderKeyProbe(
   return {
     async probe(templateId, key) {
       const endpoint = MODELS_ENDPOINTS[templateId];
-      if (!endpoint) return { ok: true };
+      if (!endpoint) return { ok: true, unchecked: true };
       try {
         const res = await fetch(endpoint.url, {
           headers: endpoint.headers(key),
