@@ -88,17 +88,24 @@ async function harness(opts: {
   const adapter = createFakeTelegramAdapter(posts);
   const state = createMemoryState();
   const seen: string[] = [];
+  const addressed: boolean[] = [];
   const handleMessage = createTelegramMessageHandler({
     conversations: {
       findAgentByConversation: async () =>
         opts.boundTo
-          ? { agentId: opts.boundTo, authorizedBy: "kc|owner-1" }
+          ? {
+              agentId: opts.boundTo,
+              authorizedBy: "kc|owner-1",
+              ambient: false,
+            }
           : null,
       bind: vi.fn(async () => "bound" as const),
       listByAgent: async () => [],
       unbind: vi.fn(async () => {}),
+      setAmbient: vi.fn(async () => {}),
     },
     isChatAdmin: async () => opts.isAdmin ?? true,
+    canReadGroupMessages: async () => true,
     decodeChatId: (threadId) => threadId.split(":")[1]!,
     fetchChatTitle: async () => "Team chat",
     oauthConfig,
@@ -113,14 +120,15 @@ async function harness(opts: {
   const chat = createTelegramChat({
     adapter: adapter as never,
     state,
-    handleMessage: async (thread, message, subscribe) => {
+    handleMessage: async (thread, message, isAddressed) => {
       seen.push(message.text);
-      await handleMessage(thread, message, subscribe);
+      addressed.push(isAddressed);
+      await handleMessage(thread, message, isAddressed);
     },
   });
 
   await chat.initialize();
-  return { chat, adapter, state, posts, seen };
+  return { chat, adapter, state, posts, seen, addressed };
 }
 
 const DM_THREAD = "telegram:4242";
@@ -160,8 +168,13 @@ describe("telegram Chat SDK routing", () => {
     expect(posts.join("\n")).toContain("Connect an agent");
   });
 
-  it("stays silent on ordinary chatter in an unbound group", async () => {
-    const { chat, adapter, posts, seen } = await harness({
+  /**
+   * TEST_SCENARIO: Ordinary group chatter reaches the handler marked as not
+   * addressed, so a binding with ambient mode on can read along without a
+   * first mention. In a group no agent is bound to, the bot stays silent.
+   */
+  it("hands group chatter over as not addressed and stays silent in an unbound group", async () => {
+    const { chat, adapter, posts, seen, addressed } = await harness({
       boundTo: null,
       relay: async () => {},
     });
@@ -173,7 +186,8 @@ describe("telegram Chat SDK routing", () => {
     );
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(seen).toEqual([]);
+    expect(seen).toEqual(["howdy"]);
+    expect(addressed).toEqual([false]);
     expect(posts).toEqual([]);
   });
 });

@@ -125,3 +125,50 @@ describe("telegram worker turns", () => {
     }
   });
 });
+
+describe("telegram group turns", () => {
+  /**
+   * TEST_SCENARIO: The reported bug. With Group Privacy on, a reply to the
+   * bot is the one plain message Telegram still delivers, and the worker
+   * dropped it because it carried no mention. A reply to the bot is addressed
+   * to the agent and reaches it while ambient mode is off.
+   */
+  it("answers a reply to the bot while ambient mode is off", async () => {
+    const h = await started(telegramWorkerHarness());
+
+    h.sendGroup(JANE, "yo", { replyToBot: true });
+
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+    expect(h.prompts[0]!.prompt).toContain("mentions you or replies to you");
+    expect(h.prompts[0]!.prompt).toContain("Message: yo");
+  });
+
+  /**
+   * TEST_SCENARIO: With ambient mode off, chatter nobody addressed never
+   * reaches the agent, while a mention right after it does.
+   */
+  it("passes on only the mention while ambient mode is off", async () => {
+    const h = await started(telegramWorkerHarness());
+
+    h.sendGroup(OMAR, "lunch at noon?");
+    h.sendGroup(JANE, "@krodo_bot what is on the agenda?");
+
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+    expect(h.prompts[0]!.prompt).toContain("what is on the agenda?");
+    expect(h.prompts[0]!.prompt).not.toContain("lunch at noon?");
+  });
+
+  /**
+   * TEST_SCENARIO: With ambient mode on, chatter reaches the agent framed as
+   * reading along, so it chimes in only when it can clearly help.
+   */
+  it("reads along with chatter while ambient mode is on", async () => {
+    const h = await started(telegramWorkerHarness({ ambient: true }));
+
+    h.sendGroup(OMAR, "lunch at noon?");
+
+    await vi.waitFor(() => expect(h.prompts).toHaveLength(1));
+    expect(h.prompts[0]!.prompt).toContain("you are reading along");
+    expect(h.prompts[0]!.prompt).toContain("Message: lunch at noon?");
+  });
+});

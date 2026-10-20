@@ -107,6 +107,7 @@ import {
   bindConversation,
   listConversationsByAgent,
   unbindConversation,
+  setConversationAmbient,
   allConversationAgentIds,
   deleteConversationsByAgent,
 } from "./modules/channels/infrastructure/telegram-conversations-repository.js";
@@ -1265,6 +1266,7 @@ export async function bootstrap() {
             bind: bindConversation(db),
             listByAgent: listConversationsByAgent(db),
             unbind: unbindConversation(db),
+            setAmbient: setConversationAmbient(db),
           },
           oauthConfig: {
             keycloakExternalUrl: config.keycloakExternalUrl,

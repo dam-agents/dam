@@ -37,6 +37,7 @@ export function telegramWorkerHarness(
     sessions?: AcpSessionInfo[];
     turn?: () => Promise<unknown>;
     steer?: AcpClient["steer"];
+    ambient?: boolean;
   } = {},
 ) {
   const pending: TelegramUpdate[] = [];
@@ -84,10 +85,12 @@ export function telegramWorkerHarness(
       findAgentByConversation: async () => ({
         agentId: "agent-1",
         authorizedBy: "kc|owner-1",
+        ambient: opts.ambient ?? false,
       }),
       bind: async () => "bound" as const,
       listByAgent: async () => [],
       unbind: async () => {},
+      setAmbient: async () => {},
     },
     oauthConfig: {
       keycloakExternalUrl: "https://kc.example",
@@ -117,5 +120,34 @@ export function telegramWorkerHarness(
     });
   }
 
-  return { worker, botApi, prompts, sendDirect };
+  function sendGroup(
+    from: TelegramUser,
+    text: string,
+    options: { replyToBot?: boolean } = {},
+  ) {
+    const chat = { id: -1001234567890, type: "supergroup" as const };
+    const messageId = (nextId += 1);
+    pending.push({
+      update_id: (nextId += 1),
+      message: {
+        message_id: messageId,
+        date: 0,
+        text,
+        from,
+        chat,
+        ...(options.replyToBot && {
+          message_thread_id: messageId - 1,
+          reply_to_message: {
+            message_id: messageId - 1,
+            date: 0,
+            text: "an earlier answer",
+            from: BOT,
+            chat,
+          },
+        }),
+      },
+    });
+  }
+
+  return { worker, botApi, prompts, sendDirect, sendGroup };
 }

@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -70,7 +70,7 @@ A few observations the diagram glosses over:
   A hard failure (pod crash, bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
   The one message passed through verbatim is a refusal to start: the controller's text names what is full and what to stop, which no copy written here could reproduce; a cause the platform is itself repairing still invites a retry.
   An Agent a [runtime migration](vm-runtime-migration.md) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that it waits on its owner.
-  Telegram replies with the same copy on wake failures (no early notice, no extended wait).
+  Telegram replies with the same copy on wake failures (no early notice, no extended wait), on addressed turns only: an ambient turn fails silently, as on Slack.
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works.
   The relay hands the message to the pod and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
   The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so the agent replies into the right thread without tracking ids.
@@ -159,7 +159,7 @@ A failed status read is unknown and simply polled again; only a session that nev
 Once the work is over, delivery is judged by **how it ended, never by timing**: a turn that ended in-process made its full disposition and is nudged only when it posted and declined nothing — the same verdict a never-abandoned turn gets — while an interrupted turn never completed, so any interim post was a partial and it is nudged unless its silence was deliberate.
 The nudge resumes the session with an undelivered-turn notice and the agent posts its own late answer, or declines — which keeps the invariant that the platform never authors assistant text; the nudge, boot recovery's interruption resume ([agent-lifecycle](agent-lifecycle.md)), the notice that an owner deleted one of the agent's posts ([the Agent Footer](#the-agent-footer)) and a one-time schedule's continuation or reported result ([schedules](schedules.md#one-time-schedules)) are the only platform-authored prompts an agent ever sees — each carries the agent's own words or task, never the platform's.
 A later turn answering on the same session dismisses the watch, so a person who re-asked never gets two answers.
-The watch runs on Slack's addressed turns only: an ambient turn is never nudged — nobody summoned the agent — and Telegram gets the failure copy alone.
+The watch runs on Slack's addressed turns only: an ambient turn is never nudged — nobody summoned the agent — and a Telegram addressed turn gets the failure copy alone.
 
 What counts as answered spans everything the turn gathered, not the batch it opened with: a message steered into a running turn takes its own place in that turn, and the agent's one reply may land against it rather than the message that started things.
 Judging on the opening batch alone reads an answered turn as silent — and then repairs it, which is how a person ends up sent the same answer twice.
