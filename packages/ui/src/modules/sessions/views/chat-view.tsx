@@ -802,8 +802,8 @@ export function ChatView() {
                   </div>
                 )}
                 {instantStart && (
-                  <div className="px-4 md:px-8 mb-3">
-                    <ChatColumn>
+                  <div className="mb-3">
+                    <ChatColumn className="px-4 md:px-8">
                       <FreeBudgetBanner />
                       {instantStart.budgetExhausted && (
                         <div className="mt-3">
