@@ -10,6 +10,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 import {
+  composeSsh,
   createSshService,
   sshDirFor,
   SSH_RUNTIME_DIR,
@@ -41,8 +42,23 @@ describe("createSshService", () => {
       new URL("../../server.ts", import.meta.url),
       "utf8",
     );
-    expect(server).toContain("sshDirFor(existsSync(VM_SHARE_DIR), homeDir)");
+    expect(server.replace(/\s+/g, "")).toContain(
+      "composeSsh(existsSync(VM_SHARE_DIR),homeDir",
+    );
     expect(server).not.toContain('join(homeDir, ".ssh")');
+    expect(server).not.toContain("prepareSshd(");
+  });
+
+  // TEST_SCENARIO: the directory chosen at start reaches both halves of sshd, the registration of a connection's key and the preparation it waits for. Preparation in the home while registration uses the runtime's leaves every test above green, and a full home then cannot prepare the host key and config at all, which is the lockout the fix removes.
+  it("hands the chosen directory to preparation as well as to registration", async () => {
+    const seen: string[] = [];
+    const preparing = async (sshDir: string) => {
+      seen.push(sshDir);
+      return null;
+    };
+    await composeSsh(true, "/home/agent", preparing).prepare(() => {});
+    await composeSsh(false, "/home/agent", preparing).prepare(() => {});
+    expect(seen).toEqual([SSH_RUNTIME_DIR, "/home/agent/.ssh"]);
   });
 
   // TEST_SCENARIO: a full home is the one the owner has to get into to free it, so a connection registers its key with the home's own directory refusing every write: the key lands in the runtime's directory, and nothing is written home.

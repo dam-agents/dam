@@ -54,13 +54,7 @@ import {
   routerEnvFor,
   createModelCallExporter,
 } from "./modules/model-router/index.js";
-import {
-  createSshService,
-  prepareSshd,
-  sshDirFor,
-  spawnSshd,
-  type PreparedSshd,
-} from "./modules/ssh.js";
+import { composeSsh, spawnSshd, type PreparedSshd } from "./modules/ssh.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
   agentBrowserCommand,
@@ -217,8 +211,10 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
   });
 // UNIT_BOUNDARY_DESCRIPTION: sshd's files go outside the agent's home only where nothing else fills that home and /run is writable: a VM guest runs as root over a tmpfs /run with the platform share at /platform, so a full home there cannot lock its owner out of the machine; a container and a dev run keep them in the home, which is the one path their uid may write — a container's /run is root's and it has no share, and its volume no pool guard.
 const VM_SHARE_DIR = "/platform";
-const sshDir = sshDirFor(existsSync(VM_SHARE_DIR), homeDir);
-const sshService = createSshService(sshDir);
+const { service: sshService, prepare: prepareSsh } = composeSsh(
+  existsSync(VM_SHARE_DIR),
+  homeDir,
+);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
@@ -1169,13 +1165,11 @@ server.on("upgrade", (req, socket, head) => {
     );
   } else if (url.pathname === "/api/ssh") {
     startDisplay();
-    preparedSshd ??= prepareSshd(sshDir, homeDir, sshLog).catch(
-      (err: Error) => {
-        sshLog(`could not prepare sshd: ${err.message}`);
-        preparedSshd = undefined;
-        return null;
-      },
-    );
+    preparedSshd ??= prepareSsh(sshLog).catch((err: Error) => {
+      sshLog(`could not prepare sshd: ${err.message}`);
+      preparedSshd = undefined;
+      return null;
+    });
     socket.on("error", () => socket.destroy());
     void preparedSshd.then((prepared) => {
       if (!prepared) {

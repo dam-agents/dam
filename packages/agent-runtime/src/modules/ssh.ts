@@ -28,6 +28,26 @@ export interface PreparedSshd {
   homeDir: string;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the one place the ssh directory is chosen, handing it to both halves of sshd in one value: the keys a connection registers and the host key and config a connection prepares go in the same directory, so a full home can refuse neither. The preparation is a parameter so a test sees the directory it is handed without a machine's sshd.
+export function composeSsh(
+  vmShare: boolean,
+  homeDir: string,
+  prepare: (
+    sshDir: string,
+    homeDir: string,
+    log: (msg: string) => void,
+  ) => Promise<PreparedSshd | null> = prepareSshd,
+): {
+  service: SshService;
+  prepare: (log: (msg: string) => void) => Promise<PreparedSshd | null>;
+} {
+  const sshDir = sshDirFor(vmShare, homeDir);
+  return {
+    service: createSshService(sshDir),
+    prepare: (log) => prepare(sshDir, homeDir, log),
+  };
+}
+
 const ENV_EXCLUDE_EXACT = new Set([
   "TERM",
   "COLORTERM",
