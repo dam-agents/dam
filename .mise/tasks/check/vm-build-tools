@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+#MISE description="Every tool a task runs inside the Lima build VM is one its lima_build installs there"
+# Debian's cloud images carry no jq, and a VM that had one hid the lack until a
+# build needed it. A tool a build script calls and its lima_build list does not
+# name fails the same way, a build in, so this compares the calls with the lists.
+set -euo pipefail
+# Each call names its tools on its lima_build line, quotes and all.
+decl_of() { grep -E '^[[:space:]]*lima_build ' "$1" | tr -s ' "\\' ' '; }
+# The commands the images' Debian base lacks, and the tool each one comes from:
+# a tool besides these (python3, make, zstd, coreutils) is the image's own.
+tools=(jq jq git git yq yq crane crane uv uv pnpm pnpm node node usage usage rust 'cargo|rustc')
+bad=0
+while IFS= read -r f; do
+  grep -q 'lima_build ' "$f" || continue
+  words=" $(decl_of "$f") "
+  for ((i = 0; i < ${#tools[@]}; i += 2)); do
+    tool="${tools[i]}" calls="${tools[i + 1]}"
+    [[ "$words" != *" $tool "* ]] || continue
+    grep -qE "(^|[|;&()]|\$\(|&&|\|\||sudo |exec )($calls)([[:space:]]|$)" "$f" || continue
+    echo "$f runs $calls, which its lima_build list does not install in the VM" >&2
+    bad=1
+  done
+done < <(git ls-files | grep '/.mise/tasks/')
+exit "$bad"

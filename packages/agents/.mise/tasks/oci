@@ -530,8 +530,9 @@ build_apt_base() {
 # layouts.
 . .mise/lib/lima-build.sh
 build_in_vm() {
-  # mise runs the arm64 node it installs, which links libatomic.
-  lima_build libatomic1 "node pnpm usage crane uv" \
+  # mise runs the arm64 node it installs, which links libatomic. jq reads the
+  # OCI manifests, and the Debian cloud images carry none.
+  lima_build libatomic1 "node pnpm usage crane uv jq" \
     sh -c 'AGENT_OCI_OUT="$HOME/platform-agent-oci" exec packages/agents/.mise/tasks/oci --build --no-tar "$@"' _ "$@"
 }
 layout() {
