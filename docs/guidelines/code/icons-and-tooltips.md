@@ -7,28 +7,28 @@ A user who learns an icon on one screen recognizes it on the next.
 
 Icons come from `@carbon/icons-react`.
 
-| Action                                                      | Icon                                           |
-| ----------------------------------------------------------- | ---------------------------------------------- |
-| Rename (agent name, artifact, file, folder, session, skill) | `Edit`                                         |
-| Edit content (artifact, file, queued prompt, env var value) | `RequestQuote`                                 |
-| Draft marker on a session row                               | `Pen`                                          |
-| Delete, and remove an item from a list                      | `TrashCan` (use `RemoveButton` for a row)      |
-| Close a modal, panel, tab or search                         | `Close`                                        |
-| Attach a file in the composer                               | `Attachment`                                   |
-| New session, discuss with agent                             | `AddComment`                                   |
-| Generic add or new                                          | `Add`                                          |
-| Create agent                                                | `Add`                                          |
-| Create agent from a starter kit                             | `DataEnrichmentAdd`                            |
-| Starter kits destination, a starter kit                     | `Gift`                                         |
-| External link, open in new tab                              | `Launch` (only for a link that leaves the app) |
-| Back                                                        | `ArrowLeft`                                    |
-| Restart agent                                               | `Restart`                                      |
-| Retry, update, reload                                       | `Renew`                                        |
-| Files destination                                           | `Folder`                                       |
-| Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders`                                      |
-| More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)  |
-| "About X" hint                                              | `Information`                                  |
-| How-to explainer popover                                    | `Help`                                         |
+| Action                                                      | Icon                                               |
+| ----------------------------------------------------------- | -------------------------------------------------- |
+| Rename (agent name, artifact, file, folder, session, skill) | `Edit`                                             |
+| Edit content (artifact, file, queued prompt, env var value) | `RequestQuote`                                     |
+| Draft marker on a session row                               | `Pen`                                              |
+| Delete, and remove an item from a list                      | `TrashCan` (use `RemoveButton` for a row)          |
+| Close a modal, panel, tab or search                         | `Close`                                            |
+| Attach a file in the composer                               | `Attachment`                                       |
+| New session, discuss with agent                             | `AddComment` (`Add` in the new layout's sidebar)   |
+| Generic add or new                                          | `Add`                                              |
+| Create agent                                                | `Add`                                              |
+| Create agent from a starter kit                             | `DataEnrichmentAdd`                                |
+| Starter kits destination, a starter kit                     | `Gift`                                             |
+| External link, open in new tab                              | `Launch` (only for a link that leaves the app)     |
+| Back                                                        | `ArrowLeft`                                        |
+| Restart agent                                               | `Restart`                                          |
+| Retry, update, reload                                       | `Renew`                                            |
+| Files destination                                           | `Folder`                                           |
+| Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders` (`DocumentAttachment` in the new layout) |
+| More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)      |
+| "About X" hint                                              | `Information`                                      |
+| How-to explainer popover                                    | `Help`                                             |
 
 `TextCreation` and `NewTab` are not used.
 A button that opens something inside the app carries no `Launch` icon.

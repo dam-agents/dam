@@ -20,6 +20,7 @@ Before a session starts, the picker lists every provider the harness accepts in 
 It grays out a harness that no provider the owner holds accepts.
 A web terminal starts from a row of harness buttons on the agent's General page: a button stores its harness, with the first attached provider it accepts, as the next session pair, and the terminal sends that pair when it connects.
 The empty chat's Browser Terminal card opens a web terminal on the pair the session picker holds.
+With the new layout on, the empty chat shows the General page's harness buttons in a Web terminal row instead of that card.
 A harness that only providers the owner holds but has not attached accept opens the attach dialog, then opens on the provider attached; a harness no provider the owner holds accepts is grayed, and its tooltip names the harness and says why.
 The attach dialog, from the picker or a harness button, lists only the owner's unattached providers the harness accepts and the agent can take, leaving out one of a kind the agent already holds, each as the agent's Providers page shows it, with the harnesses it runs.
 Its rows start switched off, except the provider the owner clicked in the picker; nothing is attached until at least one is on and the owner confirms.
