@@ -52,14 +52,13 @@ type bootstrapParams struct {
 	UpstreamTrustedCA      string
 	Suffix                 string
 	HarnessGuardAgent      string
-	RepairGeneration       int
 	HealthBody             string
 	FlatCredentials        bool
 	LeafSDSPath            string
 	LuaDir                 string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's ConfigMap, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
+// UNIT_BOUNDARY_DESCRIPTION: a Lua filter's script is its parameters followed by a fixed body. An owner gateway renders every metered chain of every agent, and the bodies are most of each chain's size, so there the body is a file of the gateway's own directory, read once per Lua state, and the parameters become that state's globals. Every Lua filter has a state of its own, so one chain's globals never reach another's.
 func (p bootstrapParams) luaScript(params, bodyKey, body string) string {
 	if p.LuaDir == "" {
 		return params + body
@@ -366,7 +365,7 @@ func buildInternalListener(p bootstrapParams) ev {
 		chains = append(chains, buildCollectorChain(p))
 	}
 	chains = append(chains, buildL4CatchAllChain(p))
-	listener := ev{
+	return ev{
 		"name":              p.named("tls_inspect_internal"),
 		"internal_listener": ev{},
 		"listener_filters": []any{
@@ -377,10 +376,6 @@ func buildInternalListener(p bootstrapParams) ev {
 		},
 		"filter_chains": chains,
 	}
-	if p.RepairGeneration > 0 {
-		listener["metadata"] = ev{"filter_metadata": ev{"platform": ev{"repair_generation": strconv.Itoa(p.RepairGeneration)}}}
-	}
-	return listener
 }
 
 func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {

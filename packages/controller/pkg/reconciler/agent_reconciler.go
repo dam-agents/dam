@@ -98,7 +98,7 @@ type AgentReconciler struct {
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
 	ownerStaleListeners   sync.Map
-	ownerGatewayRepairs   sync.Map
+	ownerGatewayOffers    sync.Map
 	clock                 func() time.Time
 	ownerGatewayBudget    int
 	ownerProbeClient      *http.Client

@@ -147,7 +147,7 @@ A ClusterIP carries nothing on a port it does not declare (measured on OVN-Kuber
 Each agent's listener, internal listener and clusters, every name suffixed with the agent, are files Envoy watches beside it, along with the Lua bodies the chains read and the leaf's file source.
 Each listener carries exactly that agent's chains, credentials, egress checks, spend meter, attribution and ext_authz destination, rendered as above.
 A change to one agent replaces only its own listener, which drains only its own connections; a file that does not load leaves the last good one serving.
-The whole set must fit one ConfigMap of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
+The whole set, its credentials and its leaf file source live in one Secret of 1 MiB; an owner past it is refused with that reason, and its agents go back to their own gateways as they do with the flag off.
 
 **Harness guard.** The mesh sees one principal for all of the owner's agents, so it cannot keep one agent off a sibling's harness paths.
 Each agent's listener sends the harness authority, by CONNECT or plain HTTP, into a guard that admits only that agent's own path prefix, normalizing the path and refusing escaped slashes first, and refuses anything else with a 403.
@@ -167,15 +167,23 @@ Turning the flag off, or a refused owner, renders them again, and each agent mov
 Until then its policies still admit the owner gateway and the owner gateway still renders it, so its grants stay current; the owner gateway goes once no agent is left on it.
 The controller renders the owner gateway after the runner call, so a machine's start never waits for it.
 
-**A listener the pod did not load.** These files are in-place updates to a running pod, and Envoy applies the resources of one read one at a time: it accepts the listeners whose clusters and files are there, refuses the others, and keeps the last good listener serving.
-Envoy also keeps a listener whose content it has already accepted, so a credentials provider that read its file too early — before the kubelet had projected it — never reads that file again, and the listener answers the health path all the same.
-The two failures are not the same thing: a refused listener is offered again when the file is read again, and an accepted one with a provider that never loaded is only repaired by a listener Envoy recreates.
-Re-rendering unchanged files repairs neither, and the controller writes nothing for a render that changes nothing, so the pod is not handed those files at all.
-So a new rendering of an agent is written, and then applied again on a schedule counted from that write: files that carry an xDS version of their own in place of the template's, and — for an agent that signs requests — a listener generation, so Envoy recreates that listener and its provider reads the file that is there by then.
-An accepted listener has no answer to give, so the attempts are bounded rather than driven by one: three of them, the first past the usual lag of a mounted Secret and the last under a minute, paced per owner, so the one ConfigMap is written no more often than every three seconds however many of the owner's agents are owed one.
-A file that reaches the volume after the last attempt is not repaired: the gateway keeps that listener, its readiness reads the revision rendered before the change, and the next change to that agent's rendering starts another episode.
-The minute is this controller's retry budget, not a property of mounted volumes: a node under pressure can hold a projection longer.
-A later agent of the same owner that hits the same lost load gets its own attempts, so one agent's spent schedule does not silence the repair for the next.
+**One volume for the files and the credentials.** An owner gateway's files are in-place updates to a running pod, and a listener names the credential file its chain signs with, so the two must reach the pod together.
+With one object per kind they do not: the kubelet projects a ConfigMap and a Secret on separate flips, and Envoy can read a listener that names a credential while the other volume still lacks it.
+A credentials provider built then fails its first read, installs no watch, and never reads that file again, and Envoy accepts the listener regardless — so the health path answers the current revision while every request stays unsigned.
+The gateway's bootstrap, listener, cluster and leaf-SDS files, its Lua bodies, its resolver Corefile, its credentials and its upstream CAs are therefore one Secret mounted as one volume.
+The kubelet flips a projected volume once, all keys together, so a file that names a credential and the credential itself become visible at the same moment and no provider is built in between.
+The leaf TLS files stay a Secret of their own: cert-manager writes them, a rotation changes their content rather than their names, and the leaf-SDS file that names them never moves.
+
+**A listener the pod refused.** The files still land in the pod after the controller writes them — usually in a second, but the kubelet's documented fallback for a changed Secret is its sync period plus its cache delay, up to about a minute and a half — and Envoy applies the resources of one read one at a time.
+So it can accept an agent's outer listener, whose clusters it already has, and refuse its internal one, whose upstream cluster is still in the CDS file it has not read; the outer listener answers the current revision meanwhile, so nothing the controller reads says the chains are missing.
+Unchanged files cannot repair that: the controller writes nothing for a render that changes nothing, so the pod is never handed them again.
+The controller therefore decides what to write from what its pod has shown it.
+A pod that answers the revision rendered for an agent has read the files, so the owner writes them once more, with a version of their own in place of the template's: the pod reads them again and everything it refused is offered again with what it names already on disk.
+A pod that answers an older revision has not read them, so the owner writes them again on a wait that doubles from two seconds, up to six times; past it the pod keeps the listener it has and a warning names the agent.
+An offer changes files, not resources: every listener and cluster in them is byte-identical, so Envoy deduplicates what it accepted and no stream is drained for a repair.
+One write carries every agent that is owed one, and no two writes land closer than two seconds, so an owner with many agents is not written once per agent.
+Readiness tells the two apart only partly: a listener Envoy accepted answers the current revision whether or not the provider it built was ever able to read its file, and so does an outer listener whose internal resources were refused, while a container-level rejection or a listener never loaded reads as stale.
+Signing that stays broken after the bounded offers is therefore a healthy-looking gateway, which is what the owner's warning and the agent's unsigned requests are for; a controller restart arms every agent again.
 
 **Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.
