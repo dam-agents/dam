@@ -56,7 +56,7 @@ export function startItemCommand(command: string): string {
     `printf '%s\\n' '#!/sbin/openrc-run' 'command=/bin/sh' ${shellQuote(`command_args="-c ${shellQuote(command).replaceAll('"', '\\"')}"`)} > ${script}`,
     `chmod 755 ${script}`,
     `ln -sfn ${script} ${rc}/runlevels/default/${ENVIRONMENT_START_ITEM}`,
-    `XDG_RUNTIME_DIR=/run/user/0 rc-service --user ${ENVIRONMENT_START_ITEM} start`,
+    `rc-service --user ${ENVIRONMENT_START_ITEM} start`,
   ].join(" && ");
 }
 
