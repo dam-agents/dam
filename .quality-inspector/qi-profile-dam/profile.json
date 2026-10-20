@@ -67,7 +67,7 @@
     { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
     { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
     { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
-    { "host": "*.slack-edge.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary, wss-backup)" }
+    { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" }
   ],
   "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
   "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
