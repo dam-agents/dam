@@ -1,10 +1,9 @@
-import http from "node:http";
 import net from "node:net";
-import { Readable } from "node:stream";
 import type { Duplex } from "node:stream";
 import type { IncomingMessage } from "node:http";
 import type { Context, MiddlewareHandler } from "hono";
 import { deleteCookie, getCookie, setCookie } from "hono/cookie";
+import { proxy } from "hono/proxy";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
@@ -254,74 +253,42 @@ export function createEnvironmentGate(
     });
     headers.set(DECLARED_PORTS_HEADER, declaredPorts(resolved.record));
     const target = deps.upstream(resolved.record.agentId);
-    const outgoing: http.OutgoingHttpHeaders = {};
-    for (const [name, value] of headers) outgoing[name] = value;
-    return new Promise<Response>((done) => {
-      const upstream = http.request(
+    let answer: Response;
+    try {
+      answer = await proxy(
+        `http://${target.host}:${target.port}${upstreamPath(resolved, `${url.pathname}${url.search}`)}`,
         {
-          host: target.host,
-          port: target.port,
           method: c.req.method,
-          path: upstreamPath(resolved, `${url.pathname}${url.search}`),
-          headers: outgoing,
-        },
-        (answer) => {
-          const out = new Headers();
-          for (let i = 0; i < answer.rawHeaders.length; i += 2) {
-            const name = answer.rawHeaders[i]!.toLowerCase();
-            const value = answer.rawHeaders[i + 1]!;
-            if (
-              [
-                "connection",
-                "keep-alive",
-                "transfer-encoding",
-                "cache-control",
-              ].includes(name)
-            )
-              continue;
-            if (
-              name === "set-cookie" &&
-              (value.startsWith(`${SESSION_COOKIE_SECURE}=`) ||
-                value.startsWith(`${SESSION_COOKIE_PLAIN}=`))
-            )
-              continue;
-            out.append(name, value);
-          }
-          out.set("Cache-Control", NO_STORE);
-          const status = answer.statusCode ?? 502;
-          const nullBody =
-            c.req.method === "HEAD" || status === 204 || status === 304;
-          if (nullBody) answer.resume();
-          done(
-            new Response(
-              nullBody ? null : (Readable.toWeb(answer) as ReadableStream),
-              {
-                status,
-                headers: out,
-              },
-            ),
-          );
+          headers,
+          body: c.req.raw.body,
+          redirect: "manual",
         },
       );
-      upstream.on("error", (e) => {
-        getLogger().warn(
-          { agentId: resolved.record.agentId, error: e.message },
-          "environment-gate.upstream.failed",
-        );
-        done(
-          page(
-            c,
-            502,
-            "Not answering",
-            "The Environment did not answer. Try again in a moment.",
-          ),
-        );
-      });
-      const body = c.req.raw.body;
-      if (body && c.req.method !== "GET" && c.req.method !== "HEAD")
-        Readable.fromWeb(body as never).pipe(upstream);
-      else upstream.end();
-    });
+    } catch (e) {
+      getLogger().warn(
+        { agentId: resolved.record.agentId, error: (e as Error).message },
+        "environment-gate.upstream.failed",
+      );
+      return page(
+        c,
+        502,
+        "Not answering",
+        "The Environment did not answer. Try again in a moment.",
+      );
+    }
+    const out = new Headers();
+    for (const [name, value] of answer.headers) {
+      if (name === "cache-control" || name === "set-cookie") continue;
+      out.append(name, value);
+    }
+    for (const cookie of answer.headers.getSetCookie())
+      if (
+        !cookie.startsWith(`${SESSION_COOKIE_SECURE}=`) &&
+        !cookie.startsWith(`${SESSION_COOKIE_PLAIN}=`)
+      )
+        out.append("set-cookie", cookie);
+    out.set("Cache-Control", NO_STORE);
+    return new Response(answer.body, { status: answer.status, headers: out });
   }
 
   const middleware: MiddlewareHandler = async (c, next) => {
