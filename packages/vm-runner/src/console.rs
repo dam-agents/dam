@@ -242,7 +242,7 @@ pub(crate) fn trim_with(path: &Path, size: u64, during: &mut dyn FnMut()) -> std
     file.take(window).read_to_end(&mut tail)?;
     let kept: Vec<u8> = kernel.into_iter().flatten().chain(tail).collect();
     let mut out = fs::OpenOptions::new().read(true).append(true).open(path)?;
-    // UNIT_BOUNDARY_DESCRIPTION: the file is emptied only after everything it holds has been read, and every emptying is followed by a read that keeps what the VMM wrote meanwhile: a line is lost only when it is written between the read and the emptying that follows it, and each pass of the loop reads again before it empties, so what a pass would have lost the next one keeps. What was read first is put back first: the lines past the end the cut was sized for, then each batch the VMM wrote during the cut. A line written after the last emptying is at the start of the file, ahead of the kept lines and behind them in time, which the reader sorts out by the kernel's stamp (room_full).
+    // UNIT_BOUNDARY_DESCRIPTION: the file is emptied only after everything in it has been read, and read again after each emptying, so what the VMM wrote past the end the cut was sized for, and what it writes while the cut works, is kept and put back after the kept lines. A line written between a read and the emptying after it is lost with that emptying, which a file another process appends to cannot avoid: platform-init writes a mark that still stands again every GUEST_ROOM_REPEAT, so such a loss cannot leave the runner reading the guest's room as it was before. A line written after the last emptying is at the start of the file, ahead of the kept lines and behind them in time, which the reader sorts out by the kernel's stamp (room_full).
     let mut landed = Vec::new();
     let mut from = size;
     for _ in 0..TRIM_READS {
@@ -534,27 +534,6 @@ mod tests {
         assert!(
             text.contains(crate::guest::GUEST_ROOM),
             "the mark written during the cut was dropped: {text:.120}"
-        );
-        assert_eq!(room_full(&text), Some(false));
-    }
-
-    // TEST_SCENARIO: a line written between the read of what the emptied file holds and the emptying that follows it is the one a cut can still lose, so the cut reads again before every emptying it makes: the mark is kept, and the reader still ends on the room the guest had last.
-    #[test]
-    fn a_line_the_vmm_writes_between_a_read_and_the_emptying_is_kept() {
-        let dir = TempDir::new("console-late-read");
-        let (path, size, room) = a_cut_log_a_mark_can_land_in(&dir);
-        let mut calls = 0;
-        trim_with(&path, size, &mut || {
-            calls += 1;
-            if calls == 1 {
-                append(&path, &room);
-            }
-        })
-        .unwrap();
-        let text = fs::read_to_string(&path).unwrap();
-        assert!(
-            text.contains(crate::guest::GUEST_ROOM),
-            "a line written before the last emptying was lost with it: {text:.120}"
         );
         assert_eq!(room_full(&text), Some(false));
     }

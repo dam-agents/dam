@@ -1584,12 +1584,15 @@ fn guard_pool() {
             std::sync::atomic::Ordering::Relaxed,
         );
         let mark = room_of(room, marked);
-        let since = marked_at.map_or(std::time::Duration::MAX, |at| at.elapsed());
-        if mark_due(marked, mark, since) {
+        let since = marked_at.map_or(std::time::Duration::ZERO, |at| at.elapsed());
+        let due = mark_due(marked, mark, since);
+        if due {
             announce(&mark.line(room));
-            marked_at = Some(std::time::Instant::now());
         }
         marked = Some(mark);
+        if due || marked_at.is_none() {
+            marked_at = Some(std::time::Instant::now());
+        }
         if want.is_none() {
             continue;
         }
@@ -2914,6 +2917,33 @@ mod tests {
             (EvictionKind::Disk, EVICT_AGES[3]),
             "a disk holding 4 % of itself still evicts"
         );
+    }
+
+    // TEST_SCENARIO: a boot's first look is not news when the guest has room, and is when it starts full; a mark that gets worse is written at once, so a guest running out of room says so; and a mark that still stands is written again every GUEST_ROOM_REPEAT, which is what keeps the runner's reading right where a cut of the console loses the line that changed it.
+    #[test]
+    fn a_mark_that_stands_is_written_again_so_a_cut_cannot_lose_it() {
+        let (full, held_since) = (Room::Full, std::time::Duration::ZERO);
+        assert!(
+            !mark_due(None, Room::Room, held_since),
+            "a boot with room is not news"
+        );
+        assert!(!mark_due(None, Room::Held, held_since));
+        assert!(
+            mark_due(None, Room::Full, held_since),
+            "a boot that starts full says so"
+        );
+        assert!(
+            mark_due(Some(Room::Room), Room::Held, held_since),
+            "a mark that gets worse is made at once"
+        );
+        assert!(mark_due(Some(Room::Held), full, held_since));
+        let stands = GUEST_ROOM_REPEAT - std::time::Duration::from_secs(1);
+        assert!(
+            !mark_due(Some(Room::Room), Room::Room, stands),
+            "a mark that stands is not repeated every look"
+        );
+        assert!(mark_due(Some(Room::Room), Room::Room, GUEST_ROOM_REPEAT));
+        assert!(mark_due(Some(Room::Full), Room::Full, GUEST_ROOM_REPEAT));
     }
 
     // TEST_SCENARIO: a boot step that failed for want of space or inodes says the home is full, which the runner reads to report a full home and its fix; any other failure does not.
