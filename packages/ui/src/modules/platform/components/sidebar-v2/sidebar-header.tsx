@@ -1,10 +1,10 @@
 import { Pin, PinFilled } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { Tooltip } from "@/components/ui/tooltip";
 
 import { getBrand } from "../../../../brand.js";
-import { FOCUS_RING } from "./add-row.js";
 
 interface Props {
   pinned: boolean;

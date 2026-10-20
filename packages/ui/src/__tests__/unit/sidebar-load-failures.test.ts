@@ -65,9 +65,13 @@ vi.mock(
     TreeSessionRow: () => null,
   }),
 );
-vi.mock("../../modules/sessions/components/session-list-skeleton.js", () => ({
-  SessionListSkeleton: () => null,
-}));
+vi.mock(
+  "../../modules/sessions/components/session-list-skeleton.js",
+  async () => {
+    const { createElement: h } = await import("react");
+    return { SessionListSkeleton: () => h("i", { "data-skeleton": "" }) };
+  },
+);
 
 const { AgentSessionList } =
   await import("../../modules/platform/components/sidebar-v2/agent-session-list.js");
@@ -76,6 +80,7 @@ const { OffFeedPinnedRow } =
 
 beforeEach(() => {
   list.failed = true;
+  list.loading = false;
   pin.isError = true;
 });
 
@@ -92,6 +97,22 @@ it("offers a retry for a failed list, not an empty one", () => {
   expect(
     renderToStaticMarkup(createElement(AgentSessionList, { agentId: "a" })),
   ).toContain("No sessions yet.");
+});
+
+// TEST_SCENARIO: an Agent that is starting is not operable yet, so its list still counts as loading, but its first page already failed; the list must show the retry alone, not a loading skeleton above it, and must not report itself busy.
+it("shows the retry without a skeleton while a starting Agent's list failed", () => {
+  list.loading = true;
+  const html = renderToStaticMarkup(
+    createElement(AgentSessionList, { agentId: "a" }),
+  );
+  expect(html).toContain('data-testid="sidebar-agent-sessions-failed"');
+  expect(html).not.toContain("data-skeleton");
+  expect(html).toContain('aria-busy="false"');
+
+  list.failed = false;
+  expect(
+    renderToStaticMarkup(createElement(AgentSessionList, { agentId: "a" })),
+  ).toContain("data-skeleton");
 });
 
 // TEST_SCENARIO: after a reload, an old pin's first lookup failed; the Pinned section must keep a row for it with a retry, under the pin's key, rather than drop it from view.

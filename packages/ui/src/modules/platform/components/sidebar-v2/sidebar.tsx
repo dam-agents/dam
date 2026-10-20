@@ -2,6 +2,7 @@ import { ChevronLeft, Home, Settings } from "@carbon/icons-react";
 import { useEffect, useRef } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -12,7 +13,6 @@ import {
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
-import { FOCUS_RING } from "./add-row.js";
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
 

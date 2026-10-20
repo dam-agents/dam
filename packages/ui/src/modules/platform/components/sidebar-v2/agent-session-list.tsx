@@ -1,5 +1,6 @@
 import { useEffect, useRef } from "react";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -14,7 +15,6 @@ import {
 } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import { splitPinned } from "../../lib/sidebar-tree.js";
-import { FOCUS_RING } from "./add-row.js";
 import { TreeSessionRow } from "./tree-session-row.js";
 
 function useAgentTreeRows(agentId: string) {
@@ -74,7 +74,7 @@ export function AgentSessionList({
       className="flex flex-col gap-px pb-1"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || (list.loading && !asleep)}
+      aria-busy={list.provisional || (list.loading && !asleep && !list.failed)}
     >
       {asleep ? (
         <p
@@ -84,7 +84,7 @@ export function AgentSessionList({
           Its sessions show when it wakes.
         </p>
       ) : (
-        list.loading && <SessionListSkeleton />
+        list.loading && !list.failed && <SessionListSkeleton />
       )}
       {list.failed && (
         <button

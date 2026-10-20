@@ -17,6 +17,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -53,7 +54,7 @@ import {
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
 import { AgentCue } from "./activity-dot.js";
-import { AddRow, FOCUS_RING } from "./add-row.js";
+import { AddRow } from "./add-row.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { FeedPinnedRow, OffFeedPinnedRow } from "./pinned-rows.js";
 

@@ -1,5 +1,6 @@
 import { useMemo } from "react";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -24,7 +25,6 @@ import {
 import { useSessionConversations } from "../../../sessions/lib/use-session-conversations.js";
 import { useSessionSpend } from "../../../spend/api/queries.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
-import { FOCUS_RING } from "./add-row.js";
 import { TreeSessionRow } from "./tree-session-row.js";
 
 export function FeedPinnedRow({

@@ -1,7 +1,6 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 
-export const FOCUS_RING =
-  "focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-accent";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 
 export function AddRow({
   icon: Icon,
