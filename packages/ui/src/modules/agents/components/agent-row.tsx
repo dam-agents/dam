@@ -24,6 +24,7 @@ import {
   formatTemporaryDraw,
   type TemporaryDraw,
 } from "../utils/temporary-sandboxes.js";
+import { AgentAvatar } from "./char-avatar.js";
 import { ContributionFailuresBadge } from "./contribution-failures-badge.js";
 
 export interface AgentRowProps {
@@ -117,8 +118,7 @@ export function AgentRow({
   const slackOverflow = slackChannels.length - visibleSlack.length;
 
   const hasSchedules = (scheduleCount ?? 0) > 0;
-  const hasSlack = slackChannels.length > 0;
-  const hasMeta = hasSchedules || hasSlack;
+  const subtitle = computeSubtitle(agent.size);
 
   return (
     <div
@@ -126,49 +126,49 @@ export function AgentRow({
       {...clickableProps(onSelect)}
       className={cn(
         CARD_SURFACE,
-        "group cursor-pointer anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40",
+        "group flex cursor-pointer items-center justify-between gap-3 anim-in transition-colors hover:not-has-[button:hover]:bg-muted/40",
       )}
     >
-      <div className="flex items-start gap-4 p-5">
+      <div className="flex items-start gap-4 p-4">
+        <AgentAvatar
+          agentId={agent.id}
+          state={display.state}
+          className="!size-16 shrink-0 self-start"
+        />
         <div className="min-w-0 flex-1">
-          <div className="flex min-w-0 items-center gap-2">
-            <h2 className="min-w-0 truncate text-base font-semibold text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1.5">
+            <h2 className="min-w-0 truncate text-base font-medium text-foreground transition-colors [.group:hover:not(:has(button:hover))_&]:text-primary">
               {agent.name}
             </h2>
             <OnboardingTag agentId={agent.id} />
             <ContributionFailuresBadge failures={agent.contributionFailures} />
           </div>
 
-          {(computeSubtitle(agent.size) || hasMeta) && (
-            <div
-              data-testid="attachments-row"
-              className="mt-2 flex flex-wrap items-center gap-2"
-            >
-              {computeSubtitle(agent.size) && (
-                <Badge variant="outline" className="gap-1">
-                  {computeSubtitle(agent.size)}
-                </Badge>
-              )}
+          {subtitle && (
+            <p className="mt-1 truncate text-sm text-muted-foreground">
+              {subtitle}
+            </p>
+          )}
 
-              {hasSlack && (
-                <Badge variant="outline" className="gap-1.5">
+          {(slackChannels.length > 0 || hasSchedules) && (
+            <div className="mt-2 flex flex-wrap items-center gap-2">
+              {slackChannels.length > 0 && (
+                <Badge variant="muted" size="sm" className="gap-1.5">
                   <ConnectionIcon iconSlug="slack" alt="" size={16} />
                   {visibleSlack.map((ch) => ch.slackChannelId).join(", ")}
                   {slackOverflow > 0 && `, +${slackOverflow}`}
                 </Badge>
               )}
-
               {hasSchedules && (
-                <Badge variant="outline">
-                  {scheduleCount} active schedule
-                  {scheduleCount === 1 ? "" : "s"}
+                <Badge variant="muted" size="sm">
+                  {scheduleCount} schedule{scheduleCount === 1 ? "" : "s"}
                 </Badge>
               )}
             </div>
           )}
 
           {temporaryDraw && temporaryDraw.count > 0 && (
-            <div className="mt-3 flex items-center gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+            <p className="mt-2 flex items-center gap-1.5 border-t border-border pt-2 text-sm text-muted-foreground">
               <Chemistry size={16} className="shrink-0 text-accent" />
               <span className="truncate">
                 {temporaryDraw.count} temporary agent
@@ -176,11 +176,11 @@ export function AgentRow({
                 {formatTemporaryDraw(temporaryDraw) &&
                   ` · ${formatTemporaryDraw(temporaryDraw)}`}
               </span>
-            </div>
+            </p>
           )}
         </div>
 
-        <div className="flex shrink-0 items-center gap-1.5">
+        <div className="flex shrink-0 items-center gap-1.5 self-start">
           <span
             title={agent.overBudgetMessage ?? undefined}
             {...(agent.overBudgetMessage
