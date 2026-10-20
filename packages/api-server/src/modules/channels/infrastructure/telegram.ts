@@ -889,10 +889,14 @@ export function createTelegramWorker(deps: {
         const handleMessage = createTelegramMessageHandler({
           conversations: deps.conversations,
           isChatAdmin,
-          canReadGroupMessages: async (chatId) =>
-            !identity ||
-            identity.readsAllGroupMessages ||
-            (await isChatAdmin(chatId, identity.id)),
+          canReadGroupMessages: async (chatId) => {
+            const current = await fetchTelegramBotIdentity(botToken);
+            return (
+              !current ||
+              current.readsAllGroupMessages ||
+              (await isChatAdmin(chatId, current.id))
+            );
+          },
           decodeChatId: (threadId) => polling.decodeThreadId(threadId).chatId,
           fetchChatTitle: (chatId) => fetchTelegramChatTitle(botToken, chatId),
           oauthConfig: deps.oauthConfig,

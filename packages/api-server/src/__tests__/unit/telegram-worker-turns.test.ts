@@ -200,4 +200,25 @@ describe("telegram group turns", () => {
       first.release();
     }
   });
+
+  /**
+   * TEST_SCENARIO: An operator changes Group Privacy in BotFather while the
+   * bot runs. The `/ambient on` heads-up must follow the bot's setting at
+   * that moment, not the one it had when it started.
+   */
+  it("bases the Group Privacy heads-up on the bot's current setting", async () => {
+    const groupPrivacy = { on: true };
+    const h = await started(telegramWorkerHarness({ groupPrivacy }));
+
+    groupPrivacy.on = false;
+    h.sendGroup(JANE, "/ambient on");
+    await vi.waitFor(() => expect(h.posts).toHaveLength(1));
+    expect(h.posts[0]).toContain("Ambient mode turned on");
+    expect(h.posts[0]).not.toContain("Group Privacy");
+
+    groupPrivacy.on = true;
+    h.sendGroup(JANE, "/ambient on");
+    await vi.waitFor(() => expect(h.posts).toHaveLength(2));
+    expect(h.posts[1]).toContain("Group Privacy");
+  });
 });
