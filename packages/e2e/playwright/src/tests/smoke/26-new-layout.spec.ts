@@ -140,8 +140,11 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   await page.keyboard.press("Enter");
   await expect(tree.getByTestId("sidebar-flat-sessions")).toBeVisible();
   await expect(agentNode(page, AGENTS[0])).toHaveCount(0);
-  await groupBy.click();
-  await page.getByRole("menuitemradio", { name: "Group by agents" }).click();
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await groupBy.focus();
+  await page.keyboard.press("Enter");
+  await page.getByRole("menuitemradio", { name: "Group by agents" }).focus();
+  await page.keyboard.press("Enter");
   await expect(agentNode(page, AGENTS[0])).toBeVisible();
 });
 

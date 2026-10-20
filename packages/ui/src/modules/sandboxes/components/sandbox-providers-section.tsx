@@ -142,7 +142,7 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     views,
   ).filter((h) => fitting(h.name).length > 0);
   const routed = status?.modelRouter ?? false;
-  const [draftHarness, setDraftHarness] = useState<string | null>(null);
+  const [draft, setDraft] = useState<SessionPair | null>(null);
   const saved = nextPair(
     null,
     remembered ?? null,
@@ -151,8 +151,8 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     status?.defaultHarness,
   );
   const pair =
-    routed && draftHarness !== null && draftHarness !== saved?.harness
-      ? { harness: draftHarness, provider: null, model: null }
+    routed && draft !== null && draft.harness !== saved?.harness
+      ? draft
       : saved;
   const { data: models } = useProviderModels(
     routed ? null : agentId,
@@ -178,10 +178,9 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
             defaultPair={{
               value: pair,
               onChoose: (next) => {
-                if (routed && next.model === null)
-                  return setDraftHarness(next.harness);
+                if (routed && next.model === null) return setDraft(next);
                 rememberSessionPair(agentId, next);
-                setDraftHarness(null);
+                setDraft(null);
               },
             }}
           />
@@ -239,7 +238,7 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
           value={pair.harness}
           onSelect={(harness) => {
             if (!harness) return;
-            if (routed) setDraftHarness(harness);
+            if (routed) setDraft({ harness, provider: null, model: null });
             else save({ harness, provider: fitting(harness)[0]!, model: null });
           }}
         />
@@ -272,7 +271,7 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
           onSelect={(model) => {
             if (routed && model === null) return;
             save({ ...pair, provider: providerOfModel(model), model });
-            setDraftHarness(null);
+            setDraft(null);
           }}
         />
       </OptionField>
