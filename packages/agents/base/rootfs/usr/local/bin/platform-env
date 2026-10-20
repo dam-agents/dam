@@ -3,7 +3,6 @@
        platform-env wake <name>     wake a sleeping Environment
        platform-env proxy <host>    SSH ProxyCommand for env-<name> (ssh calls it)
        platform-env key             this agent's link key, made on first use
-       platform-env serve           on an Environment: the link's sshd (openrc runs it)
 
 `ssh env-<name>` reaches an Environment you own, with nothing to set up:
 /etc/ssh/ssh_config.d/platform-env.conf points every env-* host here. scp,
@@ -18,48 +17,19 @@ first. While a link is open neither machine hibernates.
 
 import json
 import os
-import re
-import signal
 import socket
 import subprocess
 import sys
-import threading
 import time
 import urllib.request
 
 LINK_PORT = 6100
 HOST_CID = 2
-LINK_VARIABLE = "PLATFORM_LINK"
 HOME = os.path.expanduser("~")
 KEY = os.path.join(HOME, ".ssh", "platform_env_ed25519")
 MCP_ENTRY = os.path.join(HOME, ".platform", "platform-mcp-entry.json")
 WAKE_TIMEOUT_S = 180
 RETRY_S = 2
-# An Environment trusts the key its owning agent sends over the link, and only
-# for the boot: nothing but the owning agent reaches the link.
-LINK_RUN_DIR = "/run/platform-env"
-AUTHORIZED = os.path.join(LINK_RUN_DIR, "authorized_keys")
-SSHD_CONFIG = os.path.join(LINK_RUN_DIR, "sshd_config")
-HOST_KEY = "/etc/ssh/platform_env_host_ed25519_key"
-KEY_LINE = re.compile(
-    r"^(ssh-ed25519|ecdsa-sha2-nistp(256|384|521)|ssh-rsa) [A-Za-z0-9+/]+={0,3}( [^\r\n]*)?$"
-)
-KEY_LINE_MAX = 8192
-FIRST_LINE_TIMEOUT_S = 10
-# What a shell over the link gets of the service's environment: what the image
-# lets an openrc service have (rc_env_allow), so docker and k3s pull through
-# the gateway and trust its CA as they do at boot.
-SESSION_ENV = (
-    "PATH",
-    "HTTPS_PROXY",
-    "HTTP_PROXY",
-    "https_proxy",
-    "http_proxy",
-    "NO_PROXY",
-    "no_proxy",
-    "SSL_CERT_FILE",
-    "SSL_CERT_DIR",
-)
 
 
 def fail(message, code=1):
@@ -108,13 +78,9 @@ def mcp(tool, arguments):
     return json.loads(content[0].get("text", "null"))
 
 
-def environments():
-    return mcp("list_environments", {}) or []
-
-
 def find(host):
     name = host[4:] if host.startswith("env-") else host
-    for env in environments():
+    for env in mcp("list_environments", {}) or []:
         if env["name"] == name or env["id"] == name:
             return env
     fail(f"you own no Environment named {name}; platform-env list shows yours")
@@ -143,56 +109,38 @@ def ensure_key():
         return f.read().strip()
 
 
-def dial(env_id):
-    """One connection through the runner: ok, or the runner's reason."""
+def answer(env_id):
+    """Asks the runner for the link; returns None when it is open, else the reason."""
     conn = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
     try:
         conn.connect((HOST_CID, LINK_PORT))
     except OSError as e:
-        conn.close()
         fail(f"this machine has no Environment Link ({e}); only a vm agent has one")
     conn.sendall(env_id.encode() + b"\n")
-    reply = read_line(conn, 512)
-    if reply == "ok":
-        return conn, None
-    conn.close()
-    return None, (reply or "the runner closed the link").removeprefix("refused ")
-
-
-def read_line(conn, limit):
-    """Reads one line a byte at a time, so nothing past it leaves the socket."""
-    got = b""
-    while len(got) < limit:
+    reply = b""
+    while not reply.endswith(b"\n") and len(reply) < 512:
         chunk = conn.recv(1)
-        if not chunk or chunk == b"\n":
+        if not chunk:
             break
-        got += chunk
-    return got.decode(errors="replace")
+        reply += chunk
+    conn.close()
+    reply = reply.decode(errors="replace").strip()
+    return (
+        None
+        if reply == "ok"
+        else (reply or "the runner closed the link").removeprefix("refused ")
+    )
 
 
 def proxy(host):
-    # Every process of an open link carries PLATFORM_LINK, by which the agent
-    # runtime counts the link as busy and keeps the machine awake.
-    if LINK_VARIABLE not in os.environ:
-        os.execve(
-            sys.executable,
-            [sys.executable, os.path.abspath(__file__), "proxy", host],
-            {**os.environ, LINK_VARIABLE: host},
-        )
     key = ensure_key()
     env = find(host)
+    # The runner answers ok only when the Environment's sshd socket answers;
+    # wake a sleeping one and wait for that before the real connection.
     deadline = time.monotonic() + WAKE_TIMEOUT_S
     woken = False
-    while True:
-        conn, why = dial(env["id"])
-        if conn is not None:
-            conn.sendall(key.encode() + b"\n")
-            first = conn.recv(65536)
-            if first:
-                break
-            conn.close()
-            why = "its sshd is not up yet"
-        elif not why.endswith("is not running"):
+    while (why := answer(env["id"])) is not None:
+        if not why.endswith("is not running"):
             fail(why)
         if not woken:
             sys.stderr.write(f"platform-env: waking {host}...\n")
@@ -201,131 +149,23 @@ def proxy(host):
         if time.monotonic() > deadline:
             fail(f"{host} did not come up within {WAKE_TIMEOUT_S}s: {why}")
         time.sleep(RETRY_S)
-    os.write(1, first)
-
-    def up():
-        try:
-            while data := os.read(0, 65536):
-                conn.sendall(data)
-        except OSError:
-            pass
-        finally:
-            try:
-                conn.shutdown(socket.SHUT_WR)
-            except OSError:
-                pass
-
-    threading.Thread(target=up, daemon=True).start()
-    try:
-        while data := conn.recv(65536):
-            os.write(1, data)
-    except OSError:
-        pass
-
-
-def sshd_config():
-    os.makedirs(LINK_RUN_DIR, mode=0o700, exist_ok=True)
-    os.makedirs("/run/sshd", mode=0o755, exist_ok=True)
-    if not os.path.exists(HOST_KEY):
-        subprocess.run(
-            [
-                "ssh-keygen",
-                "-t",
-                "ed25519",
-                "-N",
-                "",
-                "-q",
-                "-f",
-                HOST_KEY,
-                "-C",
-                "platform-env-host",
-            ],
-            check=True,
-            stdout=subprocess.DEVNULL,
-        )
-    session_env = " ".join(
-        f'{name}="{os.environ[name]}"'
-        for name in SESSION_ENV
-        if name in os.environ and '"' not in os.environ[name]
+    # The link itself is socat: the Environment's name, the runner's answer
+    # line (dropped), the agent's key for the Environment, then SSH both ways.
+    # PLATFORM_LINK marks it, by which the agent-runtime counts the link as busy.
+    first = f"{env['id']}\n"
+    os.execvpe(
+        "sh",
+        [
+            "sh",
+            "-c",
+            '{ printf "%s" "$1"; printf "%s\\n" "$2"; exec cat; } | '
+            'socat - "VSOCK-CONNECT:2:6100" | { IFS= read -r _; exec cat; }',
+            "sh",
+            first,
+            key,
+        ],
+        {**os.environ, "PLATFORM_LINK": host},
     )
-    lines = [
-        f"HostKey {HOST_KEY}",
-        f"AuthorizedKeysFile {AUTHORIZED}",
-        "PubkeyAuthentication yes",
-        "PasswordAuthentication no",
-        "KbdInteractiveAuthentication no",
-        "PermitRootLogin prohibit-password",
-        "StrictModes no",
-        "PrintMotd no",
-        "X11Forwarding no",
-        "AllowTcpForwarding yes",
-        "Subsystem sftp internal-sftp",
-    ]
-    if session_env:
-        lines.append(f"SetEnv {session_env}")
-    with open(SSHD_CONFIG, "w") as f:
-        f.write("\n".join(lines) + "\n")
-
-
-def trust(key):
-    try:
-        with open(AUTHORIZED) as f:
-            keys = [line.strip() for line in f if line.strip()]
-    except FileNotFoundError:
-        keys = []
-    if key in keys:
-        return
-    tmp = AUTHORIZED + ".tmp"
-    with open(tmp, "w") as f:
-        f.write("\n".join([*keys, key]) + "\n")
-    os.chmod(tmp, 0o600)
-    os.replace(tmp, AUTHORIZED)
-
-
-def handle(conn):
-    """One link connection: the owning agent's key on the first line, then SSH."""
-    try:
-        conn.settimeout(FIRST_LINE_TIMEOUT_S)
-        key = read_line(conn, KEY_LINE_MAX)
-        conn.settimeout(None)
-        if not KEY_LINE.match(key):
-            sys.stderr.write("platform-env: a link connection sent no key; closed\n")
-            return
-        trust(key)
-        subprocess.Popen(
-            [sys.executable, os.path.abspath(__file__), "session", SSHD_CONFIG],
-            stdin=conn.fileno(),
-            stdout=conn.fileno(),
-            stderr=subprocess.DEVNULL,
-            env={**os.environ, LINK_VARIABLE: "1"},
-            start_new_session=True,
-        )
-    except OSError as e:
-        sys.stderr.write(f"platform-env: a link connection failed: {e}\n")
-    finally:
-        conn.close()
-
-
-def session(config):
-    """One link's sshd, under a parent that carries PLATFORM_LINK while it runs:
-    sshd-session writes its process title over its own environment, so the
-    runtime cannot read the mark on sshd itself."""
-    sys.exit(subprocess.call(["/usr/sbin/sshd", "-i", "-e", "-f", config]))
-
-
-def serve():
-    sshd_config()
-    listener = socket.socket(socket.AF_VSOCK, socket.SOCK_STREAM)
-    listener.bind((socket.VMADDR_CID_ANY, LINK_PORT))
-    listener.listen(16)
-    sys.stderr.write(
-        f"platform-env: serving the Environment Link on vsock port {LINK_PORT}\n"
-    )
-    # Each sshd is a child nothing waits for, so the kernel reaps it.
-    signal.signal(signal.SIGCHLD, signal.SIG_IGN)
-    while True:
-        conn, _ = listener.accept()
-        threading.Thread(target=handle, args=(conn,), daemon=True).start()
 
 
 def main(argv):
@@ -333,7 +173,7 @@ def main(argv):
     if command in ("-h", "--help"):
         print(__doc__.strip())
     elif command == "list" and len(argv) == 1:
-        for env in environments():
+        for env in mcp("list_environments", {}) or []:
             urls = "  ".join(
                 f"{e['name']}={e.get('url') or ':' + str(e['port'])}"
                 for e in env["endpoints"]
@@ -349,10 +189,6 @@ def main(argv):
         proxy(argv[1])
     elif command == "key" and len(argv) == 1:
         print(ensure_key())
-    elif command == "serve" and len(argv) == 1:
-        serve()
-    elif command == "session" and len(argv) == 2:
-        session(argv[1])
     else:
         fail(__doc__.strip(), 2)
 
