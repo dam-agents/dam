@@ -444,6 +444,8 @@ pub fn ended(pid: i32) -> Ended {
     if unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } != pid {
         return Ended::Running;
     }
+    // UNIT_BOUNDARY_DESCRIPTION: the status word goes to one reader, and a boot still waiting on this VMM is another: a reap here takes the word from smolvm's own wait for the same pid, which would then call the launch failed with nothing saying why it was. The signal is kept where that wait reads it, so whichever of the two reaps, the kill is still named.
+    smolvm::process::note_exit_signal(pid, status);
     match libc::WIFSIGNALED(status) {
         true => Ended::Signalled(libc::WTERMSIG(status)),
         false => Ended::Exited,
@@ -585,6 +587,35 @@ mod tests {
         kill_orphans(proc_root, &vm_dir);
         vmm.wait().unwrap();
         assert!(vmms_left(proc_root, &vm_dir, vec![pid], Duration::from_secs(5)).is_empty());
+    }
+
+    // TEST_SCENARIO: a boot and the reap tick both wait on the same VMM, and the kernel gives its status word to one of them. Whichever reaps, the kill is still named: the reap here leaves the signal where the boot's own wait reads it, so a machine killed as it started is not read as a launch that failed with nothing saying why.
+    #[test]
+    fn a_reap_here_keeps_the_signal_a_boot_is_still_waiting_for() {
+        let mut vmm = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(vmm.id()).unwrap();
+        assert!(matches!(ended(pid), Ended::Running));
+        assert!(
+            smolvm::process::take_exit_signal(pid).is_none(),
+            "a live child has no signal to keep"
+        );
+        // SAFETY: kill(2) takes plain integers and touches no memory here.
+        assert_eq!(unsafe { libc::kill(pid, libc::SIGKILL) }, 0);
+        // UNIT_BOUNDARY_DESCRIPTION: a signal is delivered a moment after the call, so the read below repeats until the child has ended.
+        let deadline = Instant::now() + Duration::from_secs(5);
+        while !matches!(ended(pid), Ended::Signalled(_)) && Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(1));
+        }
+        assert!(matches!(ended(pid), Ended::Running | Ended::Signalled(_)));
+        assert_eq!(
+            smolvm::process::take_exit_signal(pid),
+            Some(libc::SIGKILL),
+            "the boot's wait still finds the signal this reap took"
+        );
+        let _ = vmm.wait();
     }
 
     fn spec_with_env(env: &[(&str, &str)]) -> MachineSpec {

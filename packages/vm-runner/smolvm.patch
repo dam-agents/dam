@@ -122,9 +122,10 @@ index 6851407..48fee7a 100644
          argv.push(std::ptr::null());
  
 diff --git i/src/agent/manager.rs w/src/agent/manager.rs
+index cffe2dd..0e7fb82 100644
 --- i/src/agent/manager.rs
 +++ w/src/agent/manager.rs
-@@ -168,6 +168,9 @@
+@@ -168,6 +168,9 @@ fn open_overlay_disk_for_manager(
      format: DiskFormat,
      access: DiskAccess,
  ) -> Result<OverlayDisk> {
@@ -134,7 +135,25 @@ diff --git i/src/agent/manager.rs w/src/agent/manager.rs
      match (format, access) {
          (DiskFormat::Qcow2, _) => OverlayDisk::open_existing_with_format(path, format),
          (DiskFormat::Raw, DiskAccess::Observe) if path.exists() => {
-@@ -2278,7 +2281,9 @@
+@@ -1123,6 +1126,17 @@ fn console_tail(console: &str, max: usize) -> String {
+         .to_string()
+ }
+ 
++/// The record a launch that failed on a kill leaves for its embedder: the VMM's
++/// pid on the first line, the signal that ended it on the second, written beside
++/// the pid file the failed launch removes. One writer and one reader, so the
++/// shape is pinned rather than agreed.
++fn write_launch_exit(pid_file: &Path, pid: i32, signal: i32) {
++    let _ = std::fs::write(
++        pid_file.with_file_name("launch-exit"),
++        format!("{pid}\n{signal}"),
++    );
++}
++
+ impl AgentManager {
+     /// Create a new agent manager with explicit paths (low-level).
+     ///
+@@ -2278,7 +2292,9 @@ impl AgentManager {
          // A manager opened to observe a never-started machine has no disks to
          // boot from; creating them here would be creating them at a guessed
          // size. Launches go through a manager opened with the machine's sizes.
@@ -145,7 +164,7 @@ diff --git i/src/agent/manager.rs w/src/agent/manager.rs
              let mut inner = self.inner.lock();
              inner.state = AgentState::Stopped;
              return Err(Error::agent(
-@@ -2306,7 +2311,11 @@
+@@ -2306,7 +2322,11 @@ impl AgentManager {
              let overlay_disk = &self.overlay_disk;
              std::thread::scope(|s| {
                  let storage_handle = s.spawn(|| storage_disk.ensure_formatted());
@@ -158,7 +177,7 @@ diff --git i/src/agent/manager.rs w/src/agent/manager.rs
                  if let Err(e) = storage_handle.join().unwrap_or_else(|_| {
                      Err(crate::Error::storage("format storage", "thread panicked"))
                  }) {
-@@ -2357,6 +2366,17 @@
+@@ -2357,6 +2377,14 @@ impl AgentManager {
          if let Err(error) = std::fs::write(&self.pid_file, identity) {
              tracing::warn!(pid, %error, "could not persist failed launch identity; retaining child handle");
          }
@@ -168,14 +187,30 @@ diff --git i/src/agent/manager.rs w/src/agent/manager.rs
 +        // signal this teardown sends afterwards is not one of them: it has not been
 +        // reaped yet, so nothing is noted for it.
 +        if let Some(signal) = process::take_exit_signal(pid) {
-+            let _ = std::fs::write(
-+                self.pid_file.with_file_name("launch-exit"),
-+                format!("{pid}\n{signal}"),
-+            );
++            write_launch_exit(&self.pid_file, pid, signal);
 +        }
          process::stop_vm_process(pid, Duration::ZERO, process::VM_SIGKILL_TIMEOUT)?;
          if process::is_alive(pid) {
              return Err(Error::agent("abort launch", "VMM is still alive"));
+@@ -4176,6 +4204,18 @@ fn boot_failure_reason(
+ 
+ #[cfg(test)]
+ mod tests {
++    #[test]
++    fn a_failed_launch_record_names_the_pid_and_the_signal() {
++        let temp = tempfile::tempdir().unwrap();
++        let pid_file = temp.path().join("agent.pid");
++        super::write_launch_exit(&pid_file, 4242, libc::SIGSYS);
++        assert_eq!(
++            std::fs::read_to_string(temp.path().join("launch-exit")).unwrap(),
++            format!("4242\n{}", libc::SIGSYS),
++            "the embedder reads a pid line, then a signal line"
++        );
++    }
++
+     #[test]
+     fn console_tail_keeps_whole_last_lines() {
+         assert_eq!(super::console_tail("a\nb\n", 100), "a\nb\n");
 diff --git i/src/embedded/handle.rs w/src/embedded/handle.rs
 index fe6c2c1..02c600a 100644
 --- i/src/embedded/handle.rs
@@ -252,9 +287,10 @@ index 9550f0d..03475e9 100644
  
      // Start DNS filter listener if configured
 diff --git i/src/process.rs w/src/process.rs
+index 7928c4c..bbf7bfb 100644
 --- i/src/process.rs
 +++ w/src/process.rs
-@@ -2200,7 +2200,11 @@
+@@ -2200,7 +2200,11 @@ pub fn register_vm_child(pid: i32) {
  pub fn reap_vm_children() {
      let mut guard = vm_children().lock().unwrap();
      guard.retain(|&pid| {
@@ -267,12 +303,10 @@ diff --git i/src/process.rs w/src/process.rs
          match ret {
              // >0 = reaped; drop from tracking.
              r if r > 0 => false,
-@@ -2210,8 +2214,45 @@
-             _ => false,
-         }
+@@ -2212,6 +2216,47 @@ pub fn reap_vm_children() {
      });
-+}
-+
+ }
+ 
 +/// Signals that ended children this process reaped, by pid, kept for an
 +/// embedder that has to know why a process went down: the status word is read
 +/// once, and a reader that only needs the signal would otherwise have to wait
@@ -282,8 +316,12 @@ diff --git i/src/process.rs w/src/process.rs
 +static EXIT_SIGNALS: OnceLock<Mutex<std::collections::HashMap<Pid, i32>>> = OnceLock::new();
 +
 +/// Remember the signal in a wait status, for [`take_exit_signal`].
++///
++/// Public because an embedder that reaps one of these children itself — its own
++/// `waitpid`, for a status word only one reader gets — has to leave the signal
++/// where the code that was waiting for the same child reads it.
 +#[cfg(unix)]
-+fn note_exit_signal(pid: Pid, status: libc::c_int) {
++pub fn note_exit_signal(pid: Pid, status: libc::c_int) {
 +    if libc::WIFSIGNALED(status) {
 +        EXIT_SIGNALS
 +            .get_or_init(Default::default)
@@ -291,8 +329,8 @@ diff --git i/src/process.rs w/src/process.rs
 +            .unwrap()
 +            .insert(pid, libc::WTERMSIG(status));
 +    }
- }
- 
++}
++
 +/// The signal that ended a child this process reaped, offered once: taking it
 +/// removes it. `None` for a child that exited on its own, one that has not been
 +/// reaped here, and one nothing noted.
@@ -313,7 +351,7 @@ diff --git i/src/process.rs w/src/process.rs
  /// No-op on non-Linux: VM scope adoption + the serve supervisor reaper are
  /// Linux-only; nothing registers VM children here.
  #[cfg(not(target_os = "linux"))]
-@@ -2343,6 +2384,7 @@
+@@ -2343,6 +2388,7 @@ pub fn try_wait(pid: Pid) -> Option<i32> {
          let result = unsafe { libc::waitpid(pid, &mut status, libc::WNOHANG) };
  
          if result == pid {
@@ -321,7 +359,7 @@ diff --git i/src/process.rs w/src/process.rs
              // Process exited
              let exit_code = if libc::WIFEXITED(status) {
                  libc::WEXITSTATUS(status)
-@@ -2392,6 +2434,7 @@
+@@ -2392,6 +2438,7 @@ pub fn wait(pid: Pid) -> i32 {
              return -1;
          }
  
@@ -329,11 +367,10 @@ diff --git i/src/process.rs w/src/process.rs
          return if libc::WIFEXITED(status) {
              libc::WEXITSTATUS(status)
          } else if libc::WIFSIGNALED(status) {
-@@ -5331,5 +5374,25 @@
-         let _ = child.kill();
+@@ -5332,4 +5379,24 @@ mod tests {
          let _ = child.wait();
          assert!(!cmdline_contains(pid, &token), "a dead PID must not match");
-+    }
+     }
 +
 +    /// The signal in a child's status word is the one fact about how a process
 +    /// went down, and the status is read once. An embedder that watches the same
@@ -353,5 +390,5 @@ diff --git i/src/process.rs w/src/process.rs
 +        assert_eq!(wait(pid), 128 + libc::SIGKILL);
 +        assert_eq!(take_exit_signal(pid), Some(libc::SIGKILL));
 +        assert_eq!(take_exit_signal(pid), None, "a signal is offered once");
-     }
++    }
  }
