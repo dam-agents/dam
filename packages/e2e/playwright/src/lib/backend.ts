@@ -4,7 +4,7 @@ import type { AgentState } from "api-server-api";
 import { baseUrl } from "../config.js";
 import type { ApiClient } from "./api-client.js";
 import { getAccessToken } from "./auth.js";
-import { AGENT_NS, kubectl } from "./cluster.js";
+import { AGENT_NS, kubectl, kubectlOrEmpty } from "./cluster.js";
 import { type Backend, laneBackend } from "./lane.js";
 
 export { type Backend, laneBackend };
@@ -283,7 +283,7 @@ export function runnerGrows(
 
 // UNIT_BOUNDARY_DESCRIPTION: the pod that hosts a vm agent's machine: its owner's VM runner, where the machine's disks, its share and its VMM are, and which is the only place the host side of a machine can be reached from.
 export function runnerPod(agentId: string): string {
-  return kubectl(
+  return kubectlOrEmpty(
     "-n",
     AGENT_NS,
     "get",

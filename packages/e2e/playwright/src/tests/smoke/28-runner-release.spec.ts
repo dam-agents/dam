@@ -113,7 +113,13 @@ async function rolledOnto(image: string, since: string): Promise<void> {
     timeoutMs: 600_000,
     failOnError: false,
   });
-  expect(runnerImage(), `the runner pod does not run ${image}`).toBe(image);
+  await expect
+    .poll(() => runnerImage(), {
+      timeout: 120_000,
+      intervals: [2_000],
+      message: `the runner pod does not run ${image}`,
+    })
+    .toBe(image);
   expect(
     runnerPod(agentId),
     "the pod that runs the released runner is not a new one",
@@ -153,6 +159,10 @@ test.beforeAll(async () => {
   test.skip(pod === "", "the Mac's host runner runs outside the cluster");
   installImage = runnerImage();
   installRepository = installImage.split("@")[0].replace(/:[^/]*$/, "");
+  expect(
+    installImage.endsWith(`:${secondKey}`),
+    `the install already runs ${secondKey}; put the chart back on its own values before a run`,
+  ).toBe(false);
   machine = { boot: guestBoot(), pod };
   expect(
     machine.boot,
