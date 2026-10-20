@@ -246,6 +246,16 @@ test("a writing agent stops at its share, and writes again when its share grows"
   await keepAwake(probeId);
   await keepAwake(siblingId);
   const diskBefore = machineDisks().get(probeDisk) ?? 0;
+  // UNIT_BOUNDARY_DESCRIPTION: the share the runner publishes: the claim's room below its 95% level, divided among the machines that are running. This is the figure the refusal has to be measured against, since a guest refused at less than its share is the defect — the agent that hits "no space left" at three quarters of the storage — and a case that only compared the guest with itself could not see it. It costs the host nothing, which is why this case runs on every lane while the one that fills the claim does not.
+  const before = claimKb();
+  const shareMiB = Math.round(
+    (0.95 * before.capacity - before.used) / 1024 / (await runningMachines()),
+  );
+  // UNIT_BOUNDARY_DESCRIPTION: the comparison allows one boot's worth of the claim's room, since a machine that started after the runner's last look has written onto the claim since the share was published, and the point of the check is a guest held to a fraction of its share rather than a figure to the MiB.
+  expect(
+    guestAvailMiB(),
+    `the guest may write ${guestAvailMiB()} MiB of a share of ${shareMiB} MiB`,
+  ).toBeGreaterThanOrEqual(shareMiB - GUARD_FLOOR_MIB);
   inGuest(probeId, "mkdir -p /tmp/e2e-fill");
   // UNIT_BOUNDARY_DESCRIPTION: a request of a fixed few MiB, made of a guest whose room is already marked: it is what the agent's next write looks like, and what a field stuck at its share refuses however long the machine runs.
   const request = () =>
@@ -335,17 +345,19 @@ test("a writing agent stops at its share, and writes again when its share grows"
   }
 });
 
-// TEST_SCENARIO: the claim figure a user sees, which needs the claim itself filled: a guest refused at its share must have reached the ceiling the runner holds the claim to, and not been refused at three quarters of it with the claim a third empty. This writes real bytes, since only written blocks count against the claim, so the fill costs the host the room it takes; the budget is the room the claim has left below its ceiling, measured first, and a claim that leaves more of it than E2E_DISK_FILL_GIB allows skips the case with that figure rather than filling the host. A budget that was enough and still left the guest writing fails the case: that is a refusal the fix never produced, not a reason to skip. The sibling writes beside the probe throughout, because a claim at its ceiling refuses new machines and a peer started after the fill could never boot.
+// TEST_SCENARIO: the claim figure a user sees, which needs the claim itself filled: a guest refused at its share must have reached the ceiling the runner holds the claim to, and not been refused at three quarters of it with the claim a third empty. This writes real bytes, since only written blocks count against the claim, so the fill costs the host the room it takes; its budget is reserved before the first byte — the room below the claim's ceiling plus the one floor a refused guest may still write — and a claim whose budget is larger than `E2E_DISK_FILL_GIB` allows skips the case with that figure rather than filling the host. A budget that was enough and still left the guest writing fails the case: that is a refusal the fix never produced, not a reason to skip. A refusal counts only once it survives a renewal window, and the peer writes beside the probe throughout, because a claim at its ceiling refuses new machines and a peer started after the fill could never boot.
 test("a refused agent has filled the claim to its ceiling", async () => {
-  test.setTimeout(900_000);
+  test.setTimeout(1_200_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
   const capMiB = Math.floor(Number(process.env.E2E_DISK_FILL_GIB ?? "") * 1024);
   await keepAwake(probeId);
   const claim = claimKb();
   const needMiB = Math.ceil((0.95 * claim.capacity - claim.used) / 1024);
+  // UNIT_BOUNDARY_DESCRIPTION: the whole budget is reserved before the fill: the room below the claim's ceiling and the one floor a guest refused at its share may still write, so no write the case makes lands outside what it declared. `du` counts the blocks the guest holds, so a write refused part way still counts what it kept.
+  const budgetMiB = needMiB + GUARD_FLOOR_MIB;
   test.skip(
-    !Number.isFinite(capMiB) || capMiB <= 0 || needMiB > capMiB,
-    `filling this claim to its ceiling writes ${needMiB} MiB of real bytes onto the host, and E2E_DISK_FILL_GIB allows ${Number.isFinite(capMiB) ? capMiB : 0} MiB`,
+    !Number.isFinite(capMiB) || capMiB <= 0 || budgetMiB > capMiB,
+    `filling this claim to its ceiling reserves ${budgetMiB} MiB of real bytes on the host, and E2E_DISK_FILL_GIB allows ${Number.isFinite(capMiB) ? capMiB : 0} MiB`,
   );
   // UNIT_BOUNDARY_DESCRIPTION: the sibling is made and woken before the fill, not after it: a claim at its ceiling starts no machine, so a peer created once the claim is full would never reach running and the case would fail on its own setup.
   if (!siblingId)
@@ -358,80 +370,73 @@ test("a refused agent has filled the claim to its ceiling", async () => {
   await keepAwake(siblingId);
   const diskBefore = machineDisks().get(probeDisk) ?? 0;
   inGuest(probeId, "mkdir -p /tmp/e2e-claim-fill");
-  const written = () =>
+  const writtenMiB = () =>
     Math.round(
       Number(
         inGuest(
           probeId,
-          "stat -c %s /tmp/e2e-claim-fill/fill 2>/dev/null || echo 0",
-        ),
-      ) / 1048576,
+          "du -sk /tmp/e2e-claim-fill 2>/dev/null | cut -f1",
+        ).trim() || 0,
+      ) / 1024,
     );
-  // UNIT_BOUNDARY_DESCRIPTION: the fill's write of `chunkMiB`, with its error read from its own status and its own file: a redirect that sends the error into the data loses it exactly when the disk is full.
-  const fill = (chunkMiB: number) =>
+  // UNIT_BOUNDARY_DESCRIPTION: one real write of `chunkMiB` into a file of its own, with `dd`'s error read from its status and its own file: a redirect that sends the error into the data loses it exactly when the disk is full.
+  const fill = (chunkMiB: number, chunk: number) =>
     inGuest(
       probeId,
       [
-        `if dd if=/dev/urandom bs=1M count=${chunkMiB} of=/tmp/e2e-claim-fill/fill oflag=append conv=notrunc 2>/tmp/e2e-claim-fill/dd.err; then echo "dd=wrote"; else echo "dd=refused"; cat /tmp/e2e-claim-fill/dd.err 2>/dev/null; fi`,
+        `if dd if=/dev/urandom bs=1M count=${chunkMiB} of=/tmp/e2e-claim-fill/chunk-${chunk} 2>/tmp/e2e-claim-fill/dd.err; then echo "dd=wrote"; else echo "dd=refused"; cat /tmp/e2e-claim-fill/dd.err 2>/dev/null; fi`,
         "sync",
         AVAIL_KB,
       ].join("\n"),
     );
   try {
-    // UNIT_BOUNDARY_DESCRIPTION: the budget is spent a chunk at a time until the guest refuses, and a refusal the guest recovers from does not end the case: the runner hands a guest more room on its next 30 s look whenever the claim has room, so the fill keeps writing until it is refused with nothing left to write. The renewal deadline is its own, so waiting out a look is not charged to the budget, and the last write is a real request of a whole chunk rather than a self-referential availability check.
+    // UNIT_BOUNDARY_DESCRIPTION: the budget is spent a chunk at a time. A refusal with nothing left to write is not the wedge by itself: the runner republishes every grant on its 30 s look and the guard may move once per 30 s backoff, so the case waits that window out, writes again, and counts the refusal stable only when the write after the window is refused too. Both machines are woken every round, since the lane stops one whose harness reports idle for 5 minutes and a fill of several GiB outlasts that.
     const deadline = Date.now() + CEILING_MS;
     let availMiB = Number.POSITIVE_INFINITY;
-    let refusedAtShare = false;
-    let refusal = "";
-    while (Date.now() < deadline && !refusedAtShare) {
+    let refusalsInARow = 0;
+    for (
+      let chunk = 0;
+      Date.now() < deadline && refusalsInARow < 2;
+      chunk += 1
+    ) {
       await keepAwake(probeId);
-      const leftMiB = needMiB - written();
-      if (leftMiB > 0) {
-        const out = await fill(Math.min(FILL_CHUNK_MIB, leftMiB));
-        availMiB = Math.round(Number(/avail=(\d+)/.exec(out)?.[1]) / 1024);
-        expect(
-          Number.isFinite(availMiB),
-          `the guest did not report its free space: ${out}`,
-        ).toBe(true);
-        if (!/dd=refused/.test(out)) continue;
-        refusal = out;
-      } else {
-        // UNIT_BOUNDARY_DESCRIPTION: the budget is written, so the next request has to be refused: a guest that still writes a chunk after the claim was filled to its ceiling is the defect this case is for.
-        const probe = inGuest(
-          probeId,
-          [
-            `if dd if=/dev/urandom bs=1M count=${FILL_CHUNK_MIB} of=/tmp/e2e-claim-fill/probe 2>/tmp/e2e-claim-fill/probe.err; then echo "dd=wrote"; else echo "dd=refused"; cat /tmp/e2e-claim-fill/probe.err 2>/dev/null; fi`,
-            "sync",
-            AVAIL_KB,
-          ].join("\n"),
-        );
-        availMiB = Math.round(Number(/avail=(\d+)/.exec(probe)?.[1]) / 1024);
-        refusal = probe;
-        if (!/dd=refused/.test(probe)) {
-          const filled = claimKb();
-          expect(
-            written(),
-            `the guest wrote another ${FILL_CHUNK_MIB} MiB past a budget of ${needMiB} MiB, and the claim holds ${filled.used} KiB of its ${filled.capacity}`,
-          ).toBeGreaterThanOrEqual(needMiB * 2);
-          break;
-        }
+      await keepAwake(siblingId);
+      const leftMiB = budgetMiB - writtenMiB();
+      expect(
+        leftMiB,
+        `the fill spent its whole ${budgetMiB} MiB budget while the guest could still write ${availMiB} MiB and the claim held ${claimKb().used} KiB of its ${claimKb().capacity}`,
+      ).toBeGreaterThan(0);
+      const out = await fill(Math.min(FILL_CHUNK_MIB, leftMiB), chunk);
+      availMiB = Math.round(Number(/avail=(\d+)/.exec(out)?.[1]) / 1024);
+      expect(
+        Number.isFinite(availMiB),
+        `the guest did not report its free space: ${out}`,
+      ).toBe(true);
+      if (!/dd=refused/.test(out)) {
+        refusalsInARow = 0;
+        continue;
       }
       expect(
-        refusal,
+        out,
         "the guest must be refused for want of space, not for another reason",
       ).toMatch(/No space left on device/);
-      // UNIT_BOUNDARY_DESCRIPTION: a refusal counts only once the guest has nothing left to write: a renewed grant hands it room again, and the fill carries on.
-      refusedAtShare = availMiB <= GUARD_FLOOR_MIB + SLACK_MIB;
+      if (availMiB > GUARD_FLOOR_MIB + SLACK_MIB) {
+        refusalsInARow = 0;
+        continue;
+      }
+      refusalsInARow += 1;
+      if (refusalsInARow < 2)
+        await new Promise((resolve) => setTimeout(resolve, RENEWAL_MS));
     }
     expect(
-      refusedAtShare,
-      `the fill wrote ${written()} MiB of a budget of ${needMiB} MiB and the guest was never refused with nothing left to write (it reported ${availMiB} MiB)`,
-    ).toBe(true);
+      refusalsInARow,
+      `the fill wrote ${writtenMiB()} MiB of a budget of ${budgetMiB} MiB and the guest was still writing ${availMiB} MiB after a renewal window: the claim holds ${claimKb().used} KiB of its ${claimKb().capacity}, so this is not the ceiling`,
+    ).toBeGreaterThanOrEqual(2);
     // UNIT_BOUNDARY_DESCRIPTION: btrfs counts an allocation in the free space statvfs reports only at its next commit, so the ceiling is waited for rather than read once.
     const use = await waitFor(
       () => claimKb().used,
       (kb) => kb >= Math.round(0.94 * claim.capacity),
-      `the claim never reached the 94% a guest refused after ${written()} MiB must have reached`,
+      `the claim never reached the 94% a guest refused after ${writtenMiB()} MiB must have reached`,
     );
     const after = claimKb();
     expect(
@@ -440,7 +445,7 @@ test("a refused agent has filled the claim to its ceiling", async () => {
     ).toBeLessThanOrEqual(
       Math.round(0.95 * after.capacity) + GUARD_FLOOR_MIB * 1024,
     );
-    // UNIT_BOUNDARY_DESCRIPTION: durable room for the owner's other agents at the ceiling: the sibling that was already running writes real bytes, syncs them, and reads them back.
+    // UNIT_BOUNDARY_DESCRIPTION: durable room for the owner's other agents at the ceiling: the peer that was running throughout writes real bytes, syncs them, and reads them back.
     expect(
       inGuest(
         siblingId,
@@ -454,6 +459,10 @@ test("a refused agent has filled the claim to its ceiling", async () => {
       Number(host[3]),
       `a claim filled to its ceiling left the host ${host[3]} KiB`,
     ).toBeGreaterThanOrEqual(HOST_HEADROOM_MIB * 1024);
+    expect(
+      writtenMiB(),
+      `the fill wrote ${writtenMiB()} MiB, more than the ${budgetMiB} MiB it reserved`,
+    ).toBeLessThanOrEqual(budgetMiB + SLACK_MIB);
   } finally {
     await keepAwake(probeId).catch(() => undefined);
     await Promise.resolve(inGuest(probeId, "rm -rf /tmp/e2e-claim-fill")).catch(

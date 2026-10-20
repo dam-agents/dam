@@ -3217,28 +3217,50 @@ mod tests {
             "a guard shrunk from 320 MiB to 64 MiB returned no room a {} MiB request could take on a disk the guest had filled",
             PROBE_BYTES >> 20
         );
-        // UNIT_BOUNDARY_DESCRIPTION: a writer beside the guard's move takes what the move left and nothing the guard still holds: what the guest gains is at most the room the disk had free plus what the guard gave up, and the guard keeps its new size while the writer fills the rest.
+        // UNIT_BOUNDARY_DESCRIPTION: a writer allocates while the guard moves, not only after it: an implementation that released the whole guard and took its new size back would pass every check made after the move, since no writer could reach the room in between. The writer asks the disk for one step at a time from its own thread until it is told to stop, and what it takes plus what the guard still holds may not pass what the two of them held and could reach before the move started.
         let before_move = free();
         let held_before_move = guard.held();
+        let reachable = before_move.saturating_add(held_before_move);
+        let writing = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(true));
+        let stop = writing.clone();
+        let top_for_writer = top.clone();
+        let writer = std::thread::spawn(move || {
+            let mut kept: Vec<File> = Vec::new();
+            while stop.load(std::sync::atomic::Ordering::Relaxed) {
+                let path = top_for_writer.join(format!("racing-{}", kept.len()));
+                let Ok(file) = File::create(&path) else {
+                    continue;
+                };
+                match preallocate(&file, POOL_GUARD_STEP) {
+                    Ok(()) => kept.push(file),
+                    Err(_) => {
+                        let _ = fs::remove_file(&path);
+                        std::thread::yield_now();
+                    }
+                }
+            }
+            kept
+        });
         guard.size(&dir, 32 << 20).unwrap();
-        let released = held_before_move.saturating_sub(guard.held());
-        let mut more = Vec::new();
-        while let Some(file) = take(&format!("later-{}", more.len()), 8 << 20) {
-            more.push(file);
-        }
-        let taken = more.len() as u64 * (8 << 20);
+        writing.store(false, std::sync::atomic::Ordering::Relaxed);
+        let racing = writer.join().unwrap();
+        let taken = racing.len() as u64 * POOL_GUARD_STEP;
         assert!(
-            taken <= before_move.saturating_add(released).saturating_add(8 << 20),
-            "a guard that gave up {} MiB let the guest take {} MiB with {} MiB free before the move",
-            released >> 20,
+            taken + guard.held() <= reachable.saturating_add(POOL_GUARD_STEP),
+            "during a move to 32 MiB the writer took {} MiB and the guard kept {} MiB, more than the {} MiB the two could reach",
             taken >> 20,
-            before_move >> 20
+            guard.held() >> 20,
+            reachable >> 20
         );
         assert!(
             guard.held() + POOL_GUARD_STEP > 32 << 20,
             "the writer left the guard holding {} MiB of a 32 MiB guard",
             guard.held() >> 20
         );
+        let mut more = racing;
+        while let Some(file) = take(&format!("later-{}", more.len()), 8 << 20) {
+            more.push(file);
+        }
         // UNIT_BOUNDARY_DESCRIPTION: releasing everything returns every block the test itself took, so the disk ends where it started. A file the disk refused kept part of what it asked for, so a refused take is unlinked rather than held.
         for file in filled.iter().chain(more.iter()).chain(probe.iter()) {
             let _ = file.set_len(0);
