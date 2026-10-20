@@ -248,7 +248,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
       const out = inGuest(
         probeId,
         [
-          `if fallocate -l ${FILL_CHUNK_MIB}M /tmp/e2e-fill/fill 2>/tmp/e2e-fill/fill.err; then echo "fill=marked"; else echo "fill=refused"; cat /tmp/e2e-fill/fill.err 2>/dev/null; fi`,
+          `if fallocate -l ${FILL_CHUNK_MIB}M /tmp/e2e-fill/chunk-${chunk} 2>/tmp/e2e-fill/fill.err; then echo "fill=marked"; else echo "fill=refused"; cat /tmp/e2e-fill/fill.err 2>/dev/null; fi`,
           `echo "avail=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`,
         ].join("\n"),
       );
@@ -258,6 +258,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
         `the guest did not report its free space: ${out}`,
       ).toBe(true);
       refused = /fill=refused/.test(out);
+      // UNIT_BOUNDARY_DESCRIPTION: each chunk is its own file, since a length asked of a file that already has it takes no room.
       if (refused)
         expect(
           out,
