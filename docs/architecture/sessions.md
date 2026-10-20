@@ -2,7 +2,6 @@
 
 Last verified: 2026-10-20
 
-
 ## Session inside the pod
 
 agent-runtime holds one harness process, a **Harness Lease**, per harness and set of process-scoped [session settings](harness-config.md#session-settings) its sessions ask for; the provider and model are no fact of a process.
