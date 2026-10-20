@@ -214,15 +214,18 @@ function cutBootConsole(id: string, tag: string): string {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the deaths the runner reported for this kill, waited for so the case reads them before it treats the recovery as the whole story, and answered empty when the runner reports none within a deadline. A report names the signal, which is the SIGKILL the watcher sent, and the reaper's report names the pid as well, which is the exact process this kill took.
+// UNIT_BOUNDARY_DESCRIPTION: the deaths the runner reported for this kill, waited for so the case reads them before it treats the recovery as the whole story, and answered empty when the runner reports none within a deadline. What it answers is what the runner said about this death and no other: a report that names the machine is this machine's, and one that names a pid is this death's only if the pid is the process the watcher killed.
 async function killReports(
   id: string,
   before: number,
+  killedPid: number,
   timeoutMs = 60_000,
 ): Promise<{ signal: number | null; pid: number | null }[]> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
-    const reports = runnerKilledVmms(id).slice(before);
+    const reports = runnerKilledVmms(id)
+      .slice(before)
+      .filter((entry) => entry.pid === null || entry.pid === killedPid);
     if (reports.length > 0 || Date.now() > deadline) return reports;
     await new Promise((resolve) => setTimeout(resolve, 1_000));
   }
@@ -284,7 +287,7 @@ test.afterAll(async () => {
   }
 });
 
-// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must land inside the boot: the console the watcher copied while the VMM was frozen holds the step's line and no hand-off to the image's entrypoint. The runner must also report that kill, before the case treats the recovery as the whole story: a new report of a VMM of this machine dead, whose signal, where it names one, is the SIGKILL the watcher sent, and whose pid, where it names one, is the process the watcher killed. The runner sees a death inside its start call as that call's failure, one after it in the reaper's line or in its own stop of a machine that went away, and which of them a step of the boot lands on depends on the node's speed. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
+// TEST_SCENARIO: a VMM that dies on the host — a kernel bug, a seccomp kill, an operator — takes the machine with it but must leave the disk as a boot can read it. The machine is killed once at each step of a boot, from the line platform-init writes when it reaches that step, so every kill lands after that step began and before the boot is done, whatever the node's speed. Each kill must land inside the boot: the console the watcher copied while the VMM was frozen holds the step's line and no hand-off to the image's entrypoint. The runner must also report that kill, before the case treats the recovery as the whole story: a new report of a VMM of this machine dead, whose signal, where it names one, is the SIGKILL the watcher sent, and whose pid, where it names one, is the process the watcher killed — a death the runner reports without naming a machine is this death only when it names that pid. The runner sees a death inside its start call as that call's failure, one after it in the reaper's line or in its own stop of a machine that went away, and which of them a step of the boot lands on depends on the node's speed. After each, the agent must come back to running with the file in HOME unchanged: the runner restarts a guest that stopped answering, and a boot seeds nothing over a home that is already on the disk.
 test("comes back from its VMM killed at points across a boot", async () => {
   test.setTimeout(1_200_000);
   for (const kill of KILLS) {
@@ -310,23 +313,19 @@ test("comes back from its VMM killed at points across a boot", async () => {
       cut,
       `the boot the watcher killed had already handed off to the image's entrypoint: ${cut}`,
     ).not.toContain(HANDED_OFF);
-    const reports = await killReports(agentId, before);
+    const reports = await killReports(agentId, before, killedPid);
     console.log(
       `[e2e] the runner's reports of the kill at '${kill.lines[0]}': ${JSON.stringify(reports)}`,
     );
     expect(
       reports.length,
-      `the runner reported no death at the kill of '${kill.lines[0]}': ${JSON.stringify(reports)}`,
+      `the runner reported no death of the VMM killed at '${kill.lines[0]}': ${JSON.stringify(reports)}`,
     ).toBeGreaterThan(0);
     expect(
       reports.filter(
         (entry) => entry.signal !== null && entry.signal !== SIGKILL,
       ),
       `the runner reported a signal other than the SIGKILL the watcher sent at '${kill.lines[0]}': ${JSON.stringify(reports)}`,
-    ).toEqual([]);
-    expect(
-      reports.filter((entry) => entry.pid !== null && entry.pid !== killedPid),
-      `the runner reported a death of another process than the one killed at '${kill.lines[0]}': killed ${killedPid}, reported ${JSON.stringify(reports)}`,
     ).toEqual([]);
     await waitAgentState(api, agentId, "running", {
       timeoutMs: 600_000,

@@ -384,7 +384,7 @@ export function onRunnerHost(
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the deaths of this machine's VMMs that the agent's own runner reported, in the order it reported them, each with the number the kernel gives a signal where the report names one — 9 is SIGKILL — and the pid where it names one. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns, the reaper names the signal, or the runner's stop of a machine that went away names the pid alone. A kill lands on either side of that moment depending on how fast the machine boots, so every report is read and each is held to what it names.
+// UNIT_BOUNDARY_DESCRIPTION: the deaths of this machine's VMMs that the agent's own runner reported, in the order it reported them, each with the number the kernel gives a signal where the report names one — 9 is SIGKILL — and the pid where it names one. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns, the reaper names the signal, or the runner's stop of a machine that went away names the pid alone, in a line that names no machine: the pid is what ties that report to a machine, and a caller holding it to the process it killed is what keeps a death of another machine on the same runner out.
 export function runnerKilledVmms(
   agentId: string,
 ): { signal: number | null; pid: number | null }[] {
@@ -404,8 +404,10 @@ export function runnerKilledVmms(
         const { fields } = JSON.parse(line) as {
           fields?: Record<string, unknown>;
         };
-        if (fields?.machine !== agentId) return [];
+        if (!fields) return [];
+        const mine = fields.machine === agentId;
         if (
+          mine &&
           fields.message === "machine action failed" &&
           fields.op === "starting" &&
           typeof fields.error === "string"
@@ -414,6 +416,7 @@ export function runnerKilledVmms(
             ? [{ signal: 9, pid: null }]
             : [];
         if (
+          mine &&
           typeof fields.signal === "number" &&
           typeof fields.message === "string" &&
           fields.message.startsWith("vm runner: a machine's VMM was killed")
