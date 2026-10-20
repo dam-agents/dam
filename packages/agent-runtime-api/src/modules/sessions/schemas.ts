@@ -21,6 +21,8 @@ export const podSessionSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string().nullable(),
   title: z.string().nullable(),
+  customTitle: z.string().nullable().optional(),
+  autoTitle: z.string().nullable().optional(),
   scheduleId: z.string().nullable(),
   initialization: z.boolean().optional(),
   threadTs: z.string().nullable(),

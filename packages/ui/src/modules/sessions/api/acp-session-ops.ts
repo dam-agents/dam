@@ -146,6 +146,8 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     initialization: s.initialization ?? null,
     threadTs: s.threadTs,
     title: s.title,
+    ...(s.customTitle !== undefined && { customTitle: s.customTitle }),
+    ...(s.autoTitle !== undefined && { autoTitle: s.autoTitle }),
     updatedAt: s.updatedAt,
     running: s.running,
     seenAt: s.seenAt,
