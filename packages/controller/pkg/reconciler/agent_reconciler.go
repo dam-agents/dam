@@ -61,6 +61,7 @@ type AgentReconciler struct {
 	lifetime              context.Context
 	podResize             atomic.Int32
 	agentCache            cache.GenericLister
+	agentCacheSynced      cache.InformerSynced
 	podCache              corelisters.PodLister
 	statefulSets          cache.MutationCache
 	runnerDeploys         cache.MutationCache
@@ -101,11 +102,15 @@ type AgentReconciler struct {
 	migrationCopyMu       sync.Mutex
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
-	ownerStaleListeners   sync.Map
-	ownerGatewayOffers    sync.Map
-	clock                 func() time.Time
-	ownerGatewayBudget    int
-	ownerProbeClient      *http.Client
+	ownerGatewayAnswered  sync.Map
+	// UNIT_BOUNDARY_DESCRIPTION: the revision a member's listener carries under the previous two-volume layout, which hashes differently because its credential root does. Readiness and cutover accept either, so a retained old-layout pod is not called stale while it serves; only a canonical answer ever authorises a repair, because the two layouts are separate publications and the canonical one is no receipt for the other.
+	ownerGatewayLegacyRevisions sync.Map
+	// UNIT_BOUNDARY_DESCRIPTION: the arrival epoch the revision the owner last published for an agent encodes. Recorded with the revision and adopted with it, so a probe answer can be matched to the epoch it is evidence about.
+	ownerGatewayEpochs sync.Map
+	ownerGatewayOffers sync.Map
+	clock              func() time.Time
+	ownerGatewayBudget int
+	ownerProbeClient   *http.Client
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
@@ -123,6 +128,17 @@ func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg 
 func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentReconciler {
 	r.agentCache = lister
 	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a cache that has not listed yet reads as an owner with no agents, and that is a different statement from an owner whose agents are gone: rendering on it drains a serving owner's listeners, and tearing down on it deletes a gateway that still serves. So work the controller starts before the caches are synced asks here first and waits.
+func (r *AgentReconciler) WithAgentCacheSynced(synced cache.InformerSynced) *AgentReconciler {
+	r.agentCacheSynced = synced
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent cache can answer at all. A reconciler built without one — the tests — reads agents live, so it can always answer.
+func (r *AgentReconciler) agentCacheReady() bool {
+	return r.agentCache == nil || r.agentCacheSynced == nil || r.agentCacheSynced()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a reconcile reads an agent's pods up to three times, and every change to those pods already requeues the agent through the pod informer, so the informer's cache answers instead of the API server. A reconciler built without the cache — the tests — reads them live.
@@ -730,7 +746,6 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 	if agent.Spec.IsVM() && r.ownerGatewayOn(agent.Labels[envoyOwnerLabel]) {
 		if svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(agent.Name), metav1.GetOptions{}); err == nil && svc.Annotations[annOwnerGatewayServed] == "true" {
 			if ok, msg := r.ownerListenerCurrent(ctx, agent.Name, svc.Spec.ClusterIP, r.config.EnvoyPort); !ok {
-				r.ownerStaleListeners.Store(agent.Name, struct{}{})
 				if r.requeue != nil {
 					r.requeue(agent.Name, ownerListenerRecheck)
 				}
@@ -739,7 +754,10 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 				}
 				return false, apiv1.ReasonOwnerGatewayListenerStale, msg
 			}
-			r.ownerStaleListeners.Delete(agent.Name)
+			// UNIT_BOUNDARY_DESCRIPTION: a listener that answers the current revision still leaves the provider unbuilt if its credential file arrived late, and the repair for it cannot be made while a rollout has two pods; reporting ready here would hide the one case where traffic is unsigned on a gateway that looks healthy.
+			if r.ownerGatewayOwesThisRepair(agent.Labels[envoyOwnerLabel], agent.Name) {
+				return false, apiv1.ReasonOwnerGatewayListenerStale, "the owner gateway has not loaded this agent's credentials yet"
+			}
 			return true, "", ""
 		}
 	}
@@ -874,7 +892,9 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)
 	r.ownerGatewayRevisions.Delete(name)
-	r.ownerStaleListeners.Delete(name)
+	r.ownerGatewayAnswered.Delete(name)
+	r.ownerGatewayLegacyRevisions.Delete(name)
+	r.ownerGatewayEpochs.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)
