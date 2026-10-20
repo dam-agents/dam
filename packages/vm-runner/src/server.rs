@@ -868,7 +868,7 @@ impl Server {
             }
             let _admitting = boots.then(|| locked(&self.admission));
             if boots {
-                if let Err((reason, e)) = self.room_for(id, &spec) {
+                if let Err((reason, e)) = self.room_for(id, &spec, false) {
                     // UNIT_BOUNDARY_DESCRIPTION: a start waiting for the node is not a refusal the alert is about: it is retried at the machine watch's cadence and ends when the node enacts the resize or the room it granted is freed, where an out-of-capacity refusal is the owner's pool being full until agents stop.
                     if reason == REASON_OUT_OF_CAPACITY {
                         self.metrics.refused();
@@ -1192,7 +1192,13 @@ impl Server {
             let (action, asked) = match planned.take() {
                 Some(planned) => planned,
                 None => match self.plan_next(id) {
-                    Ok(next) => next,
+                    Ok((action, asked)) => {
+                        // UNIT_BOUNDARY_DESCRIPTION: an action planned here follows one that has ended, which may have left the machine holding nothing: a boot that failed, or a stop. It is a new operation, so it is admitted on its own merits and against the spec it will run with, rather than inheriting the admission of the action before it. The action in flight keeps the admission it was given, which is why this sits on the planned path only.
+                        if action != Action::Stop && !self.admit(id) {
+                            return;
+                        }
+                        (action, asked)
+                    }
                     Err(seen) => {
                         if settle.settles(&mut locked(&self.machines), Some(seen)) {
                             return;
@@ -1226,6 +1232,25 @@ impl Server {
                 return;
             }
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether the machine may run the action about to be planned for it, refusing it in the machine's own words when the owner's pool or the node's grant has no room for the footprint that action asks for. Under the admission lock, so two machines cannot both be admitted into the same room.
+    fn admit(&self, id: &str) -> bool {
+        let spec = locked(&self.machines)
+            .entries
+            .get(id)
+            .and_then(|entry| entry.desired.clone())
+            .unwrap_or_default();
+        let _admitting = locked(&self.admission);
+        let Err((reason, e)) = self.room_for(id, &spec, true) else {
+            return true;
+        };
+        if reason == REASON_OUT_OF_CAPACITY {
+            self.metrics.refused();
+        }
+        let (_, status) = self.report(id);
+        self.refuse(id, status, reason, e.to_string());
+        false
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the step towards the spec stored while the last action ran, against what the runtime reports now. Nothing to do, or a runtime that cannot be read, answers with the count of specs it planned from, so the worker ends only if no newer spec arrived meanwhile.
@@ -2025,11 +2050,17 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine fits the runner's memory, counting the machines running and the ones being brought up. Running is what the prober last recorded, so admitting one machine costs no probe per machine. The controller also caps admission at the memory the node granted the pod, which is below the limit the runner is held to while an in-place resize waits for room. A machine the cap refuses but the limit would take is refused as waiting for the node, not as the owner's memory being full: the room it lacks is the one the controller is already asking the node for, so no machine is hibernated for it and the controller retries it at once rather than at the parked tick. A machine both bounds refuse reports the limit's shortfall, since the node cannot grant room the runner never had. A restart of a machine the runner counts as running is admitted against the limit alone: its boot replaces memory it already holds, and the request the cap comes from is sized from the use it holds while idle, which is below that boot.
-    fn room_for(&self, id: &str, spec: &MachineSpec) -> Result<(), (&'static str, anyhow::Error)> {
+    fn room_for(
+        &self,
+        id: &str,
+        spec: &MachineSpec,
+        fresh: bool,
+    ) -> Result<(), (&'static str, anyhow::Error)> {
         let mut capacity = self.capacity();
         let limit = capacity.limit_mib;
         // UNIT_BOUNDARY_DESCRIPTION: a restart of a machine already running replaces its own footprint, and boots at the warm-up floor, which is above the idle use the controller's request was sized from: capping it at that request refuses a roll, an image or env change, a CA rotation and a guest gone quiet for good, since the machine's use cannot shrink further to make the request grow. The same holds for a boot already running: both were admitted when they started, and a second verdict on the same operation can only end it, which the controller reads as a start that will not fit and answers by stopping the machine behind it. The exemption therefore lasts as long as the operation does, so an ensure that lands mid-boot, or between the stop and the boot of a restart, is not refused.
-        let admitted = self.known_running(id) || self.boot_admitted(id);
+        // UNIT_BOUNDARY_DESCRIPTION: an action the convergence loop plans after one ended is a new operation whatever the entry still says about the action that returned: it is admitted on the spec it will run with, so a boot that failed cannot leave its admission to the retry that follows it.
+        let admitted = !fresh && (self.known_running(id) || self.boot_admitted(id));
         let capped = !admitted && spec.admit_mib > 0 && (limit == 0 || spec.admit_mib < limit);
         let committing = self.committing();
         let running = |other: &str| self.known_running(other);
@@ -2306,7 +2337,7 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether the machine runs, as last recorded, or as the runtime says when nothing has been recorded yet. The guest is never asked: admission asks this of every machine under its lock, and a silent guest would hold every start for its health timeout. A machine whose state cannot be read counts as running only when something says a VMM may hold it — this runner measured it, or a VMM process holds its directory — because a record that no longer decodes would otherwise hold the whole handout on a stopped machine and refuse every start for its owner.
-    // UNIT_BOUNDARY_DESCRIPTION: whether an admission this runner already made is still carrying out: the boot of a machine that was stopped, or the restart of one that was running, which the worker runs as one action across a stop. Both hold the machine's own memory rather than asking for new room, and both were admitted when they began, so neither is admitted again while it runs.
+    // UNIT_BOUNDARY_DESCRIPTION: whether an admission this runner already made is still carrying out: the boot of a machine that was stopped, or the restart of one that was running, which the worker runs as one action across a stop. Both hold the machine's own memory rather than asking for new room, and both were admitted when they began, so neither is admitted again while it runs. An action planned after one of them ended is not covered: it is admitted where it is planned.
     fn boot_admitted(&self, id: &str) -> bool {
         locked(&self.machines).entries.get(id).is_some_and(|e| {
             e.converging

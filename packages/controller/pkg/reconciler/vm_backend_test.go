@@ -1216,31 +1216,8 @@ func TestAnUnreadableGrantDoesNotStopARunningMachine(t *testing.T) {
 		"a machine that runs was reported as waiting for the node")
 }
 
-// TEST_SCENARIO: a machine that holds memory is admitted while the node's grant cannot be read, and the figure that bounds it is the last one the node reported. Zero would be no ceiling at all: the machine can stop between this read and the ensure, and the runner would then boot a cold start against the whole pool. A positive ceiling is what every runner enforces, so the bound holds while a controller and its runners are rolled out at different times.
-func TestAMachineThatHoldsMemoryIsAdmittedAgainstTheLastGrantTheNodeReported(t *testing.T) {
-	ctx := context.Background()
-	agent := vmAgentCR()
-	r, node, _ := setupVMReconciler(t, agent)
-	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
-	clusterResizesPods(r, true)
-	runnerPod(t, r, "9Gi", "16Gi")
-	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, MemoryMiB: 3072})
-
-	// TEST_SCENARIO: the node reports what it granted, and then stops reporting it.
-	grant, err := r.runnerAdmitMiB(ctx, testOwner)
-	require.NoError(t, err)
-	require.Equal(t, 9216, grant)
-	runnerPodForgetsItsGrant(t, r)
-
-	require.NoError(t, r.Reconcile(ctx, agent))
-
-	held := node.spec("my-agent")
-	assert.True(t, held.Running, "an unreadable grant stopped a machine that was running")
-	assert.Equal(t, 9216, held.AdmitMiB, "the ensure carried no ceiling, so a machine that stopped before it landed would have been booted against the whole pool")
-}
-
-// TEST_SCENARIO: a node that has never reported a grant leaves no figure to fall back on, and the same zero the cluster without in-place resize sends is what a machine that holds memory is admitted with: there is nothing to bound a cold start with but the pool the runner enforces itself.
-func TestAMachineThatHoldsMemoryOnANodeThatNeverReportedIsAdmittedWithoutACeiling(t *testing.T) {
+// TEST_SCENARIO: a machine that holds memory is re-sent while the node reports no grant, and its ceiling authorizes no footprint at all. Zero would be the whole pool: the machine can stop between this read and the ensure, and the runner would then boot a cold start against memory the node never reserved. One MiB is the tightest ceiling the wire carries, and no boot of a machine that holds memory fits under it.
+func TestAMachineThatHoldsMemoryIsRessentWithACeilingThatAuthorizesNothing(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -1252,8 +1229,67 @@ func TestAMachineThatHoldsMemoryOnANodeThatNeverReportedIsAdmittedWithoutACeilin
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
-	assert.True(t, node.spec("my-agent").Running, "an unreadable grant stopped a machine that was running")
-	assert.Zero(t, node.spec("my-agent").AdmitMiB, "a figure the node never reported was invented for the ceiling")
+	held := node.spec("my-agent")
+	assert.True(t, held.Running, "an unreadable grant stopped a machine that was running")
+	assert.Positive(t, held.AdmitMiB, "a zero ceiling is the whole pool: a machine that stopped before this ensure landed would have been booted against memory the node never reserved")
+	assert.Less(t, held.AdmitMiB, held.MemoryMiB, "the ceiling covered a boot, so a machine that stopped before this ensure landed would have started anyway")
+}
+
+// TEST_SCENARIO: nothing the controller remembers about a grant survives to a later decision. A figure the node reported before can be larger than what the node reserves now — the machines warm up, the request falls, the node enacts a smaller allocation — so a ceiling derived from history admits a cold start against memory the node has since released. Every ensure decides on the node's current answer alone.
+func TestAGrantThisControllerReadBeforeIsNeverUsedAgain(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "9Gi", "16Gi")
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+
+	// TEST_SCENARIO: the node reports a 9 GiB grant, which admits the start.
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Equal(t, 9216, node.spec("my-agent").AdmitMiB)
+
+	// TEST_SCENARIO: the same controller, later, on a node that reports nothing: the 9 GiB it read once is not a ceiling it may use again.
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, MemoryMiB: 3072})
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Positive(t, node.spec("my-agent").AdmitMiB, "a grant the node stopped reporting left the ensure with no ceiling at all")
+	assert.Less(t, node.spec("my-agent").AdmitMiB, node.spec("my-agent").MemoryMiB, "a grant the node stopped reporting was reused as the ceiling")
+}
+
+// TEST_SCENARIO: the withdrawal of the ceiling must not depend on which runner is serving. A runner from before the operation exemption answers the ensure of a boot already in flight with the allocation wait, and the controller used to answer that by parking the Agent — which stops the machine the runner was bringing up. Nothing is parked for a machine that is still coming up, so such a boot completes and the next reconcile reads it running.
+func TestABootInFlightAnsweredWithTheAllocationWaitIsNotParked(t *testing.T) {
+	for _, state := range []string{vmrunner.StateCreating, vmrunner.StateStarting, vmrunner.StateRestarting} {
+		t.Run(state, func(t *testing.T) {
+			ctx := context.Background()
+			agent := vmAgentCR()
+			r, node, _ := setupVMReconciler(t, agent)
+			node.set("my-agent", vmrunner.MachineStatus{State: state, Reason: vmrunner.ReasonAwaitingAllocation})
+
+			require.NoError(t, r.Reconcile(ctx, agent))
+
+			assert.True(t, node.spec("my-agent").Running, "%s: the machine behind the answer was stopped", state)
+			cond := readyCondition(t, r, "my-agent")
+			require.NotNil(t, cond)
+			assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, cond.Reason,
+				"%s: a machine still coming up reads as waiting for the node", state)
+		})
+	}
+}
+
+// TEST_SCENARIO: a start that holds nothing is still parked. The exemption is for machines that hold memory, and a stopped one waiting for the node is exactly the start this ceiling exists to hold.
+func TestAStoppedStartAnsweredWithTheAllocationWaitIsParked(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonAwaitingAllocation, cond.Reason, "a start holding nothing is not exempt")
 }
 
 // TEST_SCENARIO: a restart boots its replacement, so while the node's grant is unreadable the machine reads restarting and holds the memory its boot takes again. Halting it stops the restart the ceiling left exempt.
@@ -1277,7 +1313,7 @@ func TestARetryOfAStartWaitingForTheNodeKeepsTheGatewayDown(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
 	r, node, requeued := setupVMReconciler(t, agent)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonAwaitingAllocation}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
 	require.NoError(t, r.Reconcile(ctx, agent))
 	require.Equal(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason)
 
@@ -2046,7 +2082,8 @@ func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *te
 			require.NoError(t, err)
 			r.noteMachineUse(peer, measured(700))
 		}
-		node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: tc.reason}
+		// TEST_SCENARIO: a refused start holds nothing, which is what the runner reports for the machine it did not start.
+		node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: tc.reason}
 
 		require.NoError(t, r.Reconcile(ctx, agent))
 
@@ -2113,7 +2150,7 @@ func TestAStartWaitingOnADeferredResizeFreesWhatTheNodeDidGrant(t *testing.T) {
 	}}
 	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonAwaitingAllocation}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
@@ -2167,7 +2204,7 @@ func TestReclaimForAWaitingStartDoesNotCountTheOtherWaiter(t *testing.T) {
 	}}
 	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
 	require.NoError(t, err)
-	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonAwaitingAllocation}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 

@@ -343,7 +343,6 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 		if grant, ok := runnerPodGrantMiB(pod); ok {
 			// UNIT_BOUNDARY_DESCRIPTION: a node that reports again is not the node that refused the resize, so the mark lapses rather than outliving the fault.
 			r.noNodeResize.Delete(owner)
-			r.grantLast.Store(owner, grant)
 			return grant, nil
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: one node's answer says nothing about another's, and says nothing about a pod that replaced the one it described: a runner whose node cannot carry a resize is admitted against its limit, as every start is on a cluster without the subresource, where every other owner — and every replacement pod of this one — is read again and keeps the ceiling a node that does report grants gives it.
@@ -353,14 +352,6 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 		return 0, fmt.Errorf("%w: %s", errGrantUnknown, pod.Name)
 	}
 	return 0, nil
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the last figure the node reported granting this owner's runner pod, for the one decision that has no current figure: a machine that holds memory is admitted while the grant cannot be read, and the alternative to a figure the node once reported is no ceiling at all, which admits a cold start against the whole pool. A version that does not know a field of this one still enforces a positive ceiling, so the fallback closes the gap while a controller and its runners are being rolled out at different times. Zero is a node that has never reported, the same answer as a cluster that cannot resize.
-func (r *AgentReconciler) lastRunnerGrantMiB(owner string) int {
-	if last, ok := r.grantLast.Load(owner); ok {
-		return last.(int)
-	}
-	return 0
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a running runner pod's container status reports the node holding, or false where it reports neither field: what the node allocated the container, else the requests that status names. Both are the node's own reading, where the pod's spec is the controller's ask.

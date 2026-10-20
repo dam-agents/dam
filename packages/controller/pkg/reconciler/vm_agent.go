@@ -48,6 +48,8 @@ const (
 	grantUnreadableBound = 60 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: how often an unreadable grant is asked about with a resize, since the API server validates one against what the node supports and the answer cannot change between two asks a few seconds apart.
 	grantProbeInterval = 30 * time.Second
+	// UNIT_BOUNDARY_DESCRIPTION: the ceiling sent on an ensure for a machine that already holds memory: enough to authorize nothing, so a runner that is told to boot the machine refuses, and small enough that no boot is ever under it.
+	grantHeldMiB = 1
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 
@@ -193,8 +195,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			// UNIT_BOUNDARY_DESCRIPTION: a failed read is no evidence either way, and acting on it is how a restart in flight becomes a stop: the answer returns without parking, so the Agent keeps its gateway and the restart the runner already performs, and the reconcile is retried.
 			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading the state of %s to admit it against a node that has not reported its grant: %w", name, statusErr)
 		case holdsMemory(live.State):
-			// UNIT_BOUNDARY_DESCRIPTION: the machine holds memory, so this ensure asks for no new footprint and the ceiling must not hold it back — but a machine the runner finds stopped when the ensure lands is a cold start, and no ceiling at all is the whole pool. The last figure the node reported bounds that, and a runner from before this change enforces a positive ceiling as this one does, so the bound holds whichever versions meet.
-			admitMiB = r.lastRunnerGrantMiB(owner)
+			admitMiB = r.holdInFlight(owner, name)
 			r.grantHolds.Delete(name)
 		case live.State == vmrunner.StateUnknown:
 			// UNIT_BOUNDARY_DESCRIPTION: the runner says it cannot read the machine's own record, which is a machine that may still hold its memory: absence of an active state is not proof of a stop, so this is retried rather than held, parked or admitted.
@@ -687,6 +688,12 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 		return fmt.Errorf("%w: it is %s", errMachineStopping, st.State)
 	}
 	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the ceiling a machine the runner is already bringing up is re-sent with, while the node reports no grant. It authorizes no footprint at all — admission needs strictly more than this — so a runner that finds the machine stopped refuses the start instead of booting it, while an operation already admitted is let through by the same runner, and a runner from before that exemption keeps such an operation because this controller no longer parks a boot in flight. Zero would be the whole pool in exactly that stopped case, so the figure is one MiB: the tightest ceiling the wire can carry, and one no boot of a machine that holds memory can be confused with.
+func (r *AgentReconciler) holdInFlight(owner, name string) int {
+	r.holdHeld.Store(name, true)
+	return grantHeldMiB
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what a start held on an unreadable grant reads as once the wait outlasts grantUnreadableBound: the problem named, and the cadence it is retried at, since nothing the owner does frees memory the node has not reported.
