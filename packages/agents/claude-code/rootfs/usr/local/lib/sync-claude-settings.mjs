@@ -1,4 +1,10 @@
-import { mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 
 const REPORT_BACKGROUND_WORK = "node /usr/local/lib/report-background-work.mjs";
@@ -37,8 +43,14 @@ try {
   settings.hooks = hooks;
 
   mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(`${path}.tmp`, JSON.stringify(settings, null, 2));
-  renameSync(`${path}.tmp`, path);
+  const tmp = `${path}.${process.pid}.tmp`;
+  try {
+    writeFileSync(tmp, JSON.stringify(settings, null, 2));
+    renameSync(tmp, path);
+  } catch (err) {
+    rmSync(tmp, { force: true });
+    throw err;
+  }
 } catch (err) {
   process.stderr.write(`sync-claude-settings: ${err.message}\n`);
 }
