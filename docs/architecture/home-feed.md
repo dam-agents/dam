@@ -80,6 +80,7 @@ A Home row at the top of the tree opens the dashboard.
 An Agent's open list with no Sessions shows only its New session row; a filter that leaves it empty says so.
 An Agent's empty chat shows the Agent's avatar and name with no hover effect, and lists the ways into the Agent as on its General page: the CLI, editor and messenger rows open in place, from the pointer or the keyboard, and the opening does not animate under reduced motion.
 The rows are a list of disclosure buttons, not an ARIA tree: Tab moves between them, and each Agent row names the list it opens.
+An Agent's list slides open and closed in 200 ms, but not under reduced motion and not when it is already open as the page loads; a closing list leaves the Tab order at once.
 Each Session row has an activity dot: orange for a waiting approval, a spinning blue ring while working, a green ring for background work, green for unread, a pen for a draft and gray when idle; unlike the current layout's blue unread dot, unread is green here, and a line naming its harness, model and source; a Session from the record alone has no model.
 A Session row shows its harness icon in place of the harness name in its context line, and keeps its schedule, terminal and messenger icons; a pinned row leads with its Agent's avatar under the activity dot, since the Pinned section mixes Agents.
 A pinned row shows no pin mark, since its section says it is pinned; its unpin button shows with its other actions, on hover or while the row holds keyboard focus.

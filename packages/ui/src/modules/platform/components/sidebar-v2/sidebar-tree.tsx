@@ -12,6 +12,7 @@ import {
 import { useQueries } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 
+import { Collapse } from "@/components/ui/collapse";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -412,7 +413,6 @@ function AgentNode({
   const listId = useId();
   return (
     <li
-      className={cn(expanded && "pb-3")}
       data-testid="sidebar-agent"
       data-agent-id={agent.id}
       data-agent-name={agent.name}
@@ -510,8 +510,8 @@ function AgentNode({
         </div>
         <OrderDropIndicator at={drag.indicator} />
       </div>
-      {expanded && (
-        <div className="pt-px" id={listId}>
+      <Collapse open={expanded}>
+        <div className="pt-px pb-3" id={listId}>
           <AgentSessionList agentId={agent.id} onNavigate={onNavigate} />
           <AddRow
             icon={Add}
@@ -522,7 +522,7 @@ function AgentNode({
             onClick={go(() => startSession(agent.id))}
           />
         </div>
-      )}
+      </Collapse>
     </li>
   );
 }
