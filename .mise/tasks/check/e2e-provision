@@ -11,13 +11,19 @@ wait="$(step 'Wait for the background k3s provision')"
   { echo "e2e.yml no longer holds both the provision launch and its wait" >&2; exit 1; }
 
 tmp="$(mktemp -d)"
-[ -s "$tmp/stub.pid" ] || : > "$tmp/stub.pid"
-trap '[ ! -s "$tmp/stub.pid" ] || kill "$(cat "$tmp/stub.pid")" 2>/dev/null; rm -rf "$tmp"' EXIT
+cleanup() {
+  while read -r pid; do kill "$pid" 2>/dev/null || true; done < <(cat "$tmp/stub.pids" 2>/dev/null)
+  # A killed provision's wrapper writes the status on its way out, and it must
+  # not write into the tree below this one being removed.
+  for _ in $(seq 50); do [ -s "$tmp/k3s-provision.status" ] && break; sleep 0.1; done
+  rm -rf "$tmp" || true
+}
+trap cleanup EXIT
 # Two seconds instead of three minutes, no root, and the status, log and repo
 # of the stub under tmp rather than /tmp and this checkout.
 launch="$(printf '%s\n' "$launch" | sed -e '/^sudo sysctl/d' -e "s|/tmp/k3s-provision|$tmp/k3s-provision|g")"
 wait="$(printf '%s\n' "$wait" | sed -e "s|/tmp/k3s-provision|$tmp/k3s-provision|g" -e 's|timeout 180|timeout 2|')"
-printf '%s\n' "$wait" | grep -q 'timeout 2' ||
+grep -q 'timeout 2' <<< "$wait" ||
   { echo "the wait's budget no longer reads 'timeout 180'; teach this check the new one" >&2; exit 1; }
 export GITHUB_ENV="$tmp/env"
 
@@ -36,21 +42,21 @@ provision
 settle || { echo "a provision that failed wrote no status file" >&2; exit 1; }
 [ "$(cat "$tmp/k3s-provision.status")" = 3 ] || { echo "the status file must carry the provision's exit code" >&2; exit 1; }
 out="$(bash -e -c "$wait" 2>&1)" || { echo "a failed provision is not the wait's failure" >&2; exit 1; }
-printf '%s\n' "$out" | grep -q '::warning::.*exited 3' ||
+grep -q '::warning::.*exited 3' <<< "$out" ||
   { echo "the wait must warn which status it read" >&2; printf '%s\n' "$out" >&2; exit 1; }
 ! grep -q E2E_HOST_PROVISIONED "$GITHUB_ENV" ||
   { echo "a failed provision must leave E2E_HOST_PROVISIONED unset" >&2; exit 1; }
 
 # A hung provision: no status file, so the wait is what fails, and the
 # provision's own log is what says why.
-stub 'echo $$ > "'"$tmp"'/stub.pid"; echo "fetching the k3s release tarball"; sleep 30'
+stub 'echo $$ >> "'"$tmp"'/stub.pids"; echo "fetching the k3s release tarball"; exec sleep 5'
 provision
 [ ! -s "$tmp/k3s-provision.status" ] || { echo "a hung provision wrote a status file" >&2; exit 1; }
 rc=0 out="$(bash -e -c "$wait" 2>&1)" || rc=$?
 [ "$rc" != 0 ] || { echo "a provision that writes no status must fail the wait" >&2; exit 1; }
-printf '%s\n' "$out" | grep -qF "fetching the k3s release tarball" ||
+grep -qF 'fetching the k3s release tarball' <<< "$out" ||
   { echo "the wait must print the provision's log when it gives up" >&2; printf '%s\n' "$out" >&2; exit 1; }
-printf '%s\n' "$out" | grep -q '::error::' ||
+grep -q '::error::' <<< "$out" ||
   { echo "the wait must fail with an annotation" >&2; exit 1; }
 
 # A provision that worked: the suite keeps the cluster this run made.
