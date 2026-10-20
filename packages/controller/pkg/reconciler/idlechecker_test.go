@@ -543,14 +543,19 @@ func TestIdleChecker_LastUnreadyPodRollReleasesItsPin(t *testing.T) {
 	dep, err = r.client.AppsV1().Deployments(r.config.Namespace).Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.NotEmpty(t, dep.Annotations[annRunnerStalled], "a pod that never started keeps the release from advancing, marked stalled")
-	agent := idleAgentCR("my-agent", time.Now().UTC().Add(-2*time.Hour).Format(time.RFC3339), nil)
-	agent.Spec.Backend = &apiv1.Backend{Type: "vm"}
-	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
-	checker, client := newIdleChecker(t, time.Hour, []*apiv1.Agent{agent}, agentStatefulSet("my-agent", 1))
-	checker.config.VM.Enabled = true
-	checker.config.AgentBase.VMIdleTimeout = config.Duration(5 * time.Minute)
+	raw, err := r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	raw.SetAnnotations(map[string]string{annLastActivity: time.Now().UTC().Add(-2 * time.Hour).Format(time.RFC3339)})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace(r.config.Namespace).Update(ctx, raw, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.AppsV1().StatefulSets(r.config.Namespace).Create(ctx, agentStatefulSet("my-agent", 1), metav1.CreateOptions{})
+	require.NoError(t, err)
+	checker := NewIdleChecker(r.client, r.dynamic, r.config)
+	checker.busyProbe = func(context.Context, string) bool { return false }
+
 	checker.check(ctx)
-	gotSS, err := client.AppsV1().StatefulSets("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+
+	gotSS, err := r.client.AppsV1().StatefulSets(r.config.Namespace).Get(ctx, "my-agent", metav1.GetOptions{})
 	require.NoError(t, err)
 	assert.Equal(t, int32(0), *gotSS.Spec.Replicas, "a stalled roll pins nothing, so its machine hibernates again")
 }

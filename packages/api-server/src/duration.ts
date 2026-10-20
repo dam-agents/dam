@@ -43,10 +43,9 @@ const GO_DURATION_UNITS_NS: Record<string, number> = {
 
 const NS_PER_MINUTE = 60e9;
 
-// UNIT_BOUNDARY_DESCRIPTION: a duration the controller reads with `time.ParseDuration`, read the same way: an optional sign, then one or more decimal numbers each with a unit. Go accepts forms a digits-then-dot parser drops — a leading dot, an empty fraction, a sign, and both spellings of the microsecond — and it truncates a fractional nanosecond per term, so `0.1ns` is zero. Anything else is null. Values near the int64 nanosecond range are not exact here, which no idle timeout comes near.
+// UNIT_BOUNDARY_DESCRIPTION: a duration the controller reads with `time.ParseDuration`, read the same way: an optional sign, then one or more decimal numbers each with a unit, or a bare zero. Go accepts forms a digits-then-dot parser drops — a leading dot, an empty fraction, a sign, both spellings of the microsecond, and a signed zero with no unit — and it truncates a fractional nanosecond per term, so `0.1ns` is zero. Anything else is null. The whole and the fraction are scaled apart, so a fraction of any length stays finite; a magnitude past the int64 nanoseconds Go holds is null rather than an arithmetic artefact, and no idle timeout comes near it.
 export function parseGoDurationNs(raw: string): number | null {
   const text = raw.trim();
-  if (text === "0") return 0;
   let sign = 1;
   let at = 0;
   if (text[0] === "+" || text[0] === "-") {
@@ -54,6 +53,7 @@ export function parseGoDurationNs(raw: string): number | null {
     at = 1;
   }
   const rest = text.slice(at);
+  if (rest === "0") return 0;
   if (rest === "") return null;
   let total = 0;
   let read = 0;
@@ -66,9 +66,11 @@ export function parseGoDurationNs(raw: string): number | null {
     const whole = dot < 0 ? digits : digits.slice(0, dot);
     const fraction = dot < 0 ? "" : digits.slice(dot + 1);
     if (whole === "" && fraction === "") return null;
-    const scale = 10 ** fraction.length;
-    const value = Number(whole || "0") * scale + Number(fraction || "0");
-    total += Math.trunc((value * unit) / scale);
+    const term =
+      Number(whole || "0") * unit +
+      Math.trunc(Number(`0.${fraction || "0"}`) * unit);
+    if (!Number.isFinite(term)) return null;
+    total += term;
     read += part[0].length;
   }
   return sign * total;
