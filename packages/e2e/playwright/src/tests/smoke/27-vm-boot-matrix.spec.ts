@@ -1,6 +1,16 @@
 // TEST_OVERVIEW: platform-init is a machine's PID 1 and the only holder of its agent's home, so a boot cut short must never cost the owner what is on the disk. This spec breaks a boot the ways a host failure does: it kills the machine's VMM once at each step of a boot that platform-init itself says it reached, and it kills a running guest whose writes are synced into HOME. It also empties the layout mark an unclean stop can leave empty. Each of them must end in one of two ways: the machine boots with the file in HOME readable, or it refuses to boot and says why. Two more cases need room the lane's node cannot spare, a disk with no block left and an owner's claim with none, so a run opts into them by environment, and the second needs a claim with a size of its own, which the lane's provisioner does not give it. Only the vm lane runs it, and the config runs it beside the other specs that boot their own agent.
 import { expect, test } from "@playwright/test";
+import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import {
+  existsSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 
 import {
   type ApiClient,
@@ -278,24 +288,71 @@ test.beforeAll(async () => {
   });
 });
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner-side teardown of the claim fill: it ends every process writing the fill, waits until none is left, and only then removes the file, failing rather than reporting success when any of that did not happen. Four things make this more than a `kill` and an `rm`. A pid is reused, so a process is this filler's only when its command line names the filler script, and, for the recorded pid, when its start time is still the one recorded: a pid now running as something else — another machine's VMM, say — is not ours to kill, and is passed over. The filler forks `fallocate`, so the writers are looked for again on every pass, and the wait ends only after a pass finds none: a child forked after an earlier scan is in the next one. A launch that was given up on before it recorded its pid can still write, so the search is by the script's name in the command line and not only by the recorded pid, which is what finds a writer whose pid was never recorded. Running out of the wait is a failure, so a writer that never ends fails the run instead of passing quietly, and the caller's retry has a real failure to retry. The removal is read back, because `rm` alone is not evidence: a claim remounted read-only leaves the fill, and a shell that does not test `rm` would report success over it.
+// UNIT_BOUNDARY_DESCRIPTION: how the filler group is found, in both the launch and the teardown: from the process group the kernel gave the filler, recorded by the filler itself before it writes anything, and from nothing else. `setsid` puts the filler in a session of its own, so its id is the id of every process the fill starts — `fallocate`, and whatever `fallocate` forks — and one signal ends them all, including a child forked after the signal was sent. The filler reads its own group id from the kernel's record of itself rather than the launcher assuming its own pid is that id, which holds whether or not `setsid` keeps the pid it was given. No process is identified by what its command line says, and that is what makes the teardown safe to run: it is invoked as `sh -c <this whole script>`, so its own command line holds every string this script contains, and any match on those would find and kill the teardown before it removed anything.
+const FILLER_GROUP = [
+  `set -- $(cat ${claimFiller}.pid 2>/dev/null)`,
+  "lp=$1; p=$2; lt=$3",
+].join("\n");
+
+// UNIT_BOUNDARY_DESCRIPTION: what the filler writes when it is called for nothing but its fill: the allocation, a sync so the write is on the claim and not only in the page cache, and the marker the test waits on. It is a default and not the only body, because the teardown is also checked against a filler that forks a process of its own, which is the case a signal sent at the wrong target misses.
+const DEFAULT_FILL = [
+  `fallocate -l "$1"K ${claimFillPath} || true`,
+  "sync",
+  `: > ${claimFiller}.done`,
+].join("\n");
+
+// UNIT_BOUNDARY_DESCRIPTION: starts the filler, in a session of its own, and returns only once the filler has recorded the pid, group and start time it has in the kernel's record of it, because the teardown kills by that group and a call that timed out after the fork would otherwise leave a writer no group names. All three are written by the filler on its first line, before it writes elsewhere, so a file that is there names a process the kernel agrees is still the filler. `setsid` is what gives the filler a group of its own; without it the filler would share the runner's group and signalling that group would kill the runner, so a launch with no `setsid` fails rather than falling back to a group that is not the filler's. The wait for the record is bounded, and a filler that never wrote one is a failed launch.
+function launchFiller(sizeKiB: string, body = DEFAULT_FILL): string {
+  return [
+    `cat > ${claimFiller} <<'FILL'`,
+    "#!/bin/sh",
+    `sz=$1`,
+    `set -- $(sed 's/.*) //' /proc/$$/stat)`,
+    `echo "$$ \${3} \${20}" > ${claimFiller}.pid`,
+    `set -- "$sz"`,
+    body,
+    "FILL",
+    `rm -f ${claimFiller}.done ${claimFiller}.pid`,
+    "command -v setsid >/dev/null || { echo 'no setsid: the filler cannot be given a group of its own' >&2; exit 1; }",
+    `setsid sh ${claimFiller} ${sizeKiB} </dev/null >/dev/null 2>&1 &`,
+    "i=0",
+    `while [ $i -lt 200 ] && [ ! -s ${claimFiller}.pid ]; do sleep 0.05; i=$((i + 1)); done`,
+    `[ -s ${claimFiller}.pid ] || { echo 'the filler recorded no group' >&2; exit 1; }`,
+  ].join("\n");
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runner-side teardown of the claim fill: it ends the filler's whole process group, waits until that group has no member left, and only then removes the file, failing rather than reporting success when any of that did not happen. The group is read from what the filler recorded of itself, and its members are read from the kernel's own records, so nothing is matched by command line and the teardown cannot find itself. Signalling the group on every pass is what catches a child forked between the signal and the scan: the group exists until its last member is gone, so a late `fallocate` is either in this pass's scan or in the next signal. A group id is reused once its last member is gone, so a group is signalled only while it is still proved to be the filler's: while the leader lives, the recorded pid must still be in the recorded group and still be the process that started at the recorded time; once the leader is gone, a group that still has members can only be the leftovers of this one, since the kernel will not hand a group id to a new leader while members still hold it. A group that is no longer the filler's is left alone and the teardown fails rather than signalling a stranger; a group with no members left is done, and only the files are left to remove. Zombies are not members to wait for, since they cannot write and their reaping is their parent's. Running out of the wait is a failure, so a writer that never ends fails the run instead of passing quietly, and the caller's retry has a real failure to retry. The removal is read back, because `rm` alone is not evidence: a claim remounted read-only leaves the fill behind, and a shell that does not test `rm` would report success over it.
 function stopFillerAndClear(): string {
   return [
     'fail() { echo "boot-matrix teardown: $*" >&2; exit 1; }',
-    'writes() { grep -qaF -- "' +
-      claimFiller +
-      '" "/proc/$1/cmdline" 2>/dev/null; }',
-    'alive() { [ -d "/proc/$1" ] && [ "$(sed "s/.*) //" "/proc/$1/stat" 2>/dev/null | cut -d" " -f1)" != "Z" ]; }',
-    'writers() { for c in /proc/[0-9]*; do p=${c#/proc/}; writes "$p" && alive "$p" && echo "$p"; done; }',
+    FILLER_GROUP,
+    '[ -n "$p" ] || fail "no filler group was recorded, so no writer can be named"',
+    '[ "$p" -gt 1 ] 2>/dev/null || fail "the recorded group $p is not a process group this filler could own"',
+    "members() {",
+    "  n=0",
+    "  for c in /proc/[0-9]*; do",
+    '    set -- $(sed "s/.*) //" "$c/stat" 2>/dev/null)',
+    '    [ "$1" != "Z" ] && [ "$3" = "$p" ] && n=$((n + 1))',
+    "  done",
+    '  echo "$n"',
+    "}",
+    "owned() {",
+    '  if [ -d "/proc/$lp" ]; then',
+    '    set -- $(sed "s/.*) //" "/proc/$lp/stat" 2>/dev/null)',
+    '    [ "$3" = "$p" ] && [ "${20}" = "$lt" ]',
+    "    return",
+    "  fi",
+    '  [ "$(members)" -gt 0 ]',
+    "}",
     "i=0",
     "while [ $i -lt 400 ]; do",
-    "  left=$(writers)",
-    '  [ -z "$left" ] && break',
-    "  kill -9 $left 2>/dev/null",
+    '  [ "$(members)" -eq 0 ] && break',
+    '  owned || fail "the group $p the launch recorded is no longer this filler\'s, so it is left alone"',
+    '  kill -9 -"$p" 2>/dev/null',
     "  sleep 0.05",
     "  i=$((i + 1))",
     "done",
-    '[ -z "$(writers)" ] || fail "the fill is still being written by: $(writers | tr "\n" " ")"',
+    '[ "$(members)" -eq 0 ] || fail "the filler group $p still has $(members) process(es) after the wait"',
     `rm -f ${claimFillPath} ${claimFiller} ${claimFiller}.pid ${claimFiller}.done 2>/dev/null`,
     `[ ! -e ${claimFillPath} ] || fail "${claimFillPath} is still on the claim after its removal"`,
     `[ ! -e ${claimFiller} ] || fail "${claimFiller} is still on the runner after its removal"`,
@@ -539,6 +596,68 @@ test("boots on a disk whose layout mark came back empty", async () => {
   ).toBeGreaterThan(0);
 });
 
+// TEST_SCENARIO: the launch and the teardown of the claim fill are run here, as the shell scripts they are, in a directory of this run's own and as `sh -c <script>` — the way the suite runs them on the runner. That is not the same as running the file: `sh -c` puts the whole script in the command line of the process doing the work, so a teardown that found its writers by matching text in a command line would match itself and kill the caller before it removed anything; that is the failure this check exists to keep out, and it only appears in this invocation. The cases are the ones a fill really produces: a fill that is still allocating when the teardown runs, an allocator that forked a process of its own that outlives the process that started it, a launch that died before it recorded anything, and a fill that is already gone. A teardown that is killed by a signal the shell reports as none is a failure here, since that is what a teardown matching its own command line does, and it removes nothing on its way down. Every case asserts the end state and not the wording: the group has no member left, the files are gone, and a launch that recorded nothing exits non-zero and says so.
+test("launches the claim filler and takes it down as the runner would", () => {
+  test.skip(
+    spawnSync("sh", ["-c", "command -v setsid && [ -r /proc/self/stat ]"])
+      .status !== 0,
+    "this host has no setsid or no /proc, which the runner's teardown is built on",
+  );
+  const dir = mkdtempSync(join(tmpdir(), "boot-matrix-teardown-"));
+  const filler = join(dir, "fill");
+  const claim = join(dir, "claim");
+  writeFileSync(claim, "");
+  const locally = (script: string) =>
+    script.split(claimFiller).join(filler).split(claimFillPath).join(claim);
+  const launch = (body: string) =>
+    locally(launchFiller("1", body)).replace("$need", "1");
+  const run = (script: string) =>
+    spawnSync("sh", ["-c", script], { encoding: "utf8", timeout: 60_000 });
+  const members = (group: string) =>
+    spawnSync(
+      "sh",
+      [
+        "-c",
+        `n=0; for c in /proc/[0-9]*; do set -- $(sed "s/.*) //" "$c/stat" 2>/dev/null); [ "$1" != Z ] && [ "$3" = "${group}" ] && n=$((n + 1)); done; echo "$n"`,
+      ],
+      { encoding: "utf8" },
+    ).stdout.trim();
+  try {
+    const started = run(launch([`sleep 60 &`, `sleep 61`].join("\n")));
+    expect(started.status, `the launch failed: ${started.stderr}`).toBe(0);
+    const group = readFileSync(`${filler}.pid`, "utf8").trim().split(" ")[1];
+    const taken = run(locally(stopFillerAndClear()));
+    expect(
+      taken.signal,
+      "the teardown was killed, so it matched its own command line",
+    ).toBe(null);
+    expect(taken.stderr, "the teardown reported a failure").not.toContain(
+      "boot-matrix teardown:",
+    );
+    expect(taken.status, `the teardown failed: ${taken.stderr}`).toBe(0);
+    expect(existsSync(claim), "the fill is still there").toBe(false);
+    expect(existsSync(`${filler}.pid`), "the record is still there").toBe(
+      false,
+    );
+    expect(members(group), "a member of the filler's group survived").toBe("0");
+
+    rmSync(`${filler}.pid`, { force: true });
+    const missing = run(locally(stopFillerAndClear()));
+    expect(missing.status, "a teardown with no recorded group passed").not.toBe(
+      0,
+    );
+    expect(missing.stderr).toContain("no filler group was recorded");
+    writeFileSync(`${filler}.pid`, "1 999999 1");
+    const gone = run(locally(stopFillerAndClear()));
+    expect(
+      gone.status,
+      `a fill that was already gone failed: ${gone.stderr}`,
+    ).toBe(0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 // TEST_SCENARIO: the read the claim-fill guard decides on is classified from its text alone, so the guard that stands between this suite and the node's own disk is checked without a cluster: a claim on the device of a node mount is refused, a claim on a device of its own is allowed, a filesystem that is not one — an overlay, a tmpfs — is refused as no proof, and a read that carries nothing usable is refused for the same reason. Evidence that is only half there is refused as well: one node mount read and the other not says nothing about which filesystem is the node's, and two node mounts that disagree cannot both be it, so neither is proof of a volume of its own. A guard that answered either way on a read it could not understand would either fill a node's disk or skip every install that has a volume of its own, which is the bug this check exists to keep out. The two counts this reads are not the same field: the device is the path's own inode (`stat -c %d`), while `stat -f -c %d` is the number of free inodes, which two directories on one filesystem need not share.
 test("classifies the claim's filesystem against the node's own", () => {
   expect(claimOnNode("claim 66305 virtiofs\nnode 66305\nnode 66305")).toBe(
@@ -586,16 +705,7 @@ test("refuses a start while the owner's claim is full", async () => {
       "  exit 0",
       "fi",
       '[ "$need" -gt 0 ] || need=0',
-      `cat > ${claimFiller} <<'FILL'`,
-      "#!/bin/sh",
-      `fallocate -l "$1"K ${claimFillPath} || true`,
-      "sync",
-      `: > ${claimFiller}.done`,
-      "FILL",
-      `rm -f ${claimFiller}.done`,
-      // UNIT_BOUNDARY_DESCRIPTION: the pid file is written by the shell that starts the filler, before it lets the call return, because teardown reads a recorded pid: a call that timed out after the fork would otherwise leave a writer no pid names. The filler also names itself in its own command line, which is the identity teardown checks and the way it finds a writer whose pid was never recorded.
-      `nohup sh ${claimFiller} "$need" >/dev/null 2>&1 & echo $! > ${claimFiller}.pid || exit 1`,
-      `[ -s ${claimFiller}.pid ] || { echo "no pid recorded"; exit 1; }`,
+      launchFiller("$need"),
       "echo filling",
     ].join("\n"),
     { timeoutMs: 60_000 },
