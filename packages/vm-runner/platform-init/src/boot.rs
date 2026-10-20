@@ -2931,9 +2931,9 @@ mod tests {
         );
     }
 
-    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and the room it gives up has to be room the guest can write again: on btrfs a file shortened in place kept the blocks of the extent it had partly released while its own stat reported the smaller size, so a smaller guard freed nothing and a steadily writing guest filled its disk with room it had been given back. The room is measured by writing into it, since that is what the guest does and what the other tests running on this filesystem in parallel cannot take away: a guard of 128 MiB leaves a 96 MiB write unwritable, and once it is sized to 32 MiB the same write lands. A run of sizes there and back loses nothing to the moves.
+    // TEST_SCENARIO: the guard is sized again whenever the guest frees room or its runner grants it more, and a move lands on what it was asked for: preallocating 128 MiB then sizing to 32 MiB leaves only the files a 32 MiB guard needs, and a run of four shrink-and-grow rounds loses nothing to the moves. That the room such a move gives up is room the guest can write again is a filesystem property, measured on a disk bounded for it in `a_btrfs_guard_move_returns_the_room`, not here: this test's filesystem is the suite's shared temporary one, which has room to spare whatever the guard holds.
     #[test]
-    fn a_smaller_guard_gives_its_room_back() {
+    fn a_smaller_guard_gives_up_its_files() {
         let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
         let disk = TempDir::new("guard-resize");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
@@ -2941,30 +2941,18 @@ mod tests {
         let mut guard = Guard {
             files: vec![pool_guard(&dir).expect("an unnamed file on the disk")],
         };
-        let guest = disk.path().join("guest");
-        // UNIT_BOUNDARY_DESCRIPTION: what the guest can write now, by writing it: `fallocate` asks the filesystem for the room the way a write does but leaves the file empty, and a filesystem that kept the released extent refused it.
-        let writable = |size: u64| {
-            let Ok(file) = File::create(&guest) else {
-                return false;
-            };
-            let ok = preallocate(&file, size).is_ok();
-            drop(file);
-            let _ = fs::remove_file(&guest);
-            ok
-        };
         guard.size(&dir, 128 << 20).unwrap();
+        let held = guard.held();
         assert!(
-            !writable(96 << 20),
-            "a 128 MiB guard left a 96 MiB write room"
+            held >= 120 << 20,
+            "a 128 MiB guard holds {} MiB",
+            held >> 20
         );
         guard.size(&dir, 32 << 20).unwrap();
         assert!(
-            writable(96 << 20),
-            "a guard shrunk by 96 MiB gave back no room a 96 MiB write could take"
-        );
-        assert!(
-            !writable(160 << 20),
-            "the guard of 32 MiB held nothing back"
+            guard.held() <= (32 << 20) + (1 << 20),
+            "a guard shrunk to 32 MiB holds {} MiB",
+            guard.held() >> 20
         );
         for round in 1..=4 {
             guard.size(&dir, 128 << 20).unwrap();
@@ -2972,12 +2960,8 @@ mod tests {
             let blocks = guard.held();
             assert!(
                 blocks <= (32 << 20) + (1 << 20),
-                "round {round} left the guard holding {} MiB of blocks for a 32 MiB guard",
+                "round {round} left the guard holding {} MiB for a 32 MiB guard",
                 blocks >> 20
-            );
-            assert!(
-                writable(96 << 20),
-                "round {round} took the room a 96 MiB write needed"
             );
         }
     }
