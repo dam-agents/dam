@@ -262,7 +262,9 @@ The api-server offers no way to ask, so only someone who can edit Agent resource
 
 ### vm-backend agents (VM runner)
 
-An install that can virtualize creates every new agent on the `vm` Backend, whichever path makes it ([features](architecture/features.md)), and each runs as a smolvm microVM inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
+An install that can virtualize creates every new agent on the `vm` Backend, whichever path makes it ([features](architecture/features.md)).
+In the cluster, each runs as a smolvm microVM inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
+A local install on an Apple silicon Mac has no such pod, unless it keeps the runner pods on nested virtualization: one runner outside the cluster serves every owner from the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
 Such an agent persists the agent's home and nothing else: the rest of the machine is a root overlay discarded every time it stops.
 Turn it on with `virtualization.enabled=true`, which then requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, or the install refuses to render.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).
