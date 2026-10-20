@@ -752,6 +752,10 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 				}
 				return false, apiv1.ReasonOwnerGatewayListenerStale, msg
 			}
+			// UNIT_BOUNDARY_DESCRIPTION: a listener that answers the current revision still leaves the provider unbuilt if its credential file arrived late, and the repair for it cannot be made while a rollout has two pods; reporting ready here would hide the one case where traffic is unsigned on a gateway that looks healthy.
+			if r.ownerGatewayOwesThisRepair(agent.Labels[envoyOwnerLabel], agent.Name) {
+				return false, apiv1.ReasonOwnerGatewayListenerStale, "the owner gateway has not loaded this agent's credentials yet"
+			}
 			return true, "", ""
 		}
 	}
