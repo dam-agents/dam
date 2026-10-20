@@ -3117,7 +3117,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: on a real btrfs disk the guard's moves have to return room the guest can write into, not just a smaller number in the guard's own stat: btrfs keeps the whole physical allocation of a preallocated extent whose tail alone was released, so a guard shortened in place left a steadily writing guest refused while the room it was promised stayed taken. The guest here fills a loop-mounted btrfs until the disk refuses it, so a fixed request is refused; the guard then shrinks and the same request lands, which is room the release returned and not room the disk had spare. Growing the guard back against that writing guest takes the room again, and the disk ends where it started. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored a_btrfs_guard_move_returns_the_room`.
+    // TEST_SCENARIO: on a real btrfs disk the guard's moves have to return room the guest can write into, not just a smaller number in the guard's own stat: btrfs keeps the whole physical allocation of a preallocated extent whose tail alone was released, so a guard shortened in place left a steadily writing guest refused while the room it was promised stayed taken. The guest here fills a loop-mounted btrfs until the disk refuses it, so a fixed request is refused; the guard then shrinks and the same request lands, which is room the release returned and not room the disk had spare. A growth the full disk refuses keeps the hold it had, and a writer takes the room that growth leaves. Every file the test makes is unlinked before it exits, so the disk ends where it started. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored a_btrfs_guard_move_returns_the_room`.
     #[test]
     #[ignore = "needs root and mkfs.btrfs"]
     fn a_btrfs_guard_move_returns_the_room() {
@@ -3160,10 +3160,22 @@ mod tests {
             let (size, avail) = (stat.f_frsize as u64, stat.f_bavail as u64);
             size * avail
         };
-        // UNIT_BOUNDARY_DESCRIPTION: asks the disk for `size` bytes in a file of its own and reports whether it took them, then keeps the file: the guest's disk is filled by holding it, the way a home of files fills.
+        // UNIT_BOUNDARY_DESCRIPTION: asks the disk for `size` bytes under `name` and reports the file, or nothing when the disk refuses: a refused preallocation can keep blocks, so the file is unlinked unless it was taken, and a disk that filled keeps no room the test itself took.
         let take = |name: &str, size: u64| -> Option<File> {
-            let file = File::create(top.join(name)).unwrap();
-            preallocate(&file, size).ok().map(|()| file)
+            let path = top.join(name);
+            let file = File::create(&path).unwrap();
+            match preallocate(&file, size) {
+                Ok(()) => Some(file),
+                Err(e) => {
+                    assert_eq!(
+                        e.raw_os_error(),
+                        Some(libc::ENOSPC),
+                        "a disk expected to be full refused {name} with {e}"
+                    );
+                    let _ = fs::remove_file(&path);
+                    None
+                }
+            }
         };
         let dir = File::open(&top).unwrap();
         let mut guard = Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap();
@@ -3185,6 +3197,18 @@ mod tests {
             "a disk the guest filled took {} MiB more",
             PROBE_BYTES >> 20
         );
+        // UNIT_BOUNDARY_DESCRIPTION: a growth the full disk refuses keeps the hold the guard had: a guard that gave its room up to a refused allocation would leave the guest writing past its share, and the probe below would land twice.
+        let held_before = guard.held();
+        assert!(
+            guard.size(&dir, 512 << 20).is_err(),
+            "a disk the guest filled took a guard grown to 512 MiB"
+        );
+        assert!(
+            guard.held() + POOL_GUARD_STEP > held_before,
+            "a refused growth took the guard from {} MiB to {} MiB",
+            held_before >> 20,
+            guard.held() >> 20
+        );
         // UNIT_BOUNDARY_DESCRIPTION: every block of the shrink's room is room the guest can take again: the same request the full disk refused lands once the guard holds less, which a guard that released only part of its files cannot show.
         guard.size(&dir, 64 << 20).unwrap();
         let probe = take("probe-after", PROBE_BYTES);
@@ -3193,24 +3217,33 @@ mod tests {
             "a guard shrunk from 320 MiB to 64 MiB returned no room a {} MiB request could take on a disk the guest had filled",
             PROBE_BYTES >> 20
         );
-        // UNIT_BOUNDARY_DESCRIPTION: growing the guard back against a guest that holds the disk takes the room again from that guest: the fill it can still place shrinks, so the guard is enforced on a nearly full disk and not only on an empty one.
-        let taken = filled.len() as u64 * (32 << 20);
-        guard.size(&dir, 192 << 20).unwrap();
-        let mut more = 0u64;
-        let mut extra = Vec::new();
-        while let Some(file) = take(&format!("later-{}", extra.len()), 8 << 20) {
-            more += 8 << 20;
-            extra.push(file);
+        // UNIT_BOUNDARY_DESCRIPTION: a writer beside the guard's move takes what the move left and nothing the guard still holds: what the guest gains is at most the room the disk had free plus what the guard gave up, and the guard keeps its new size while the writer fills the rest.
+        let before_move = free();
+        let held_before_move = guard.held();
+        guard.size(&dir, 32 << 20).unwrap();
+        let released = held_before_move.saturating_sub(guard.held());
+        let mut more = Vec::new();
+        while let Some(file) = take(&format!("later-{}", more.len()), 8 << 20) {
+            more.push(file);
         }
+        let taken = more.len() as u64 * (8 << 20);
         assert!(
-            more < 128 << 20,
-            "a guard grown to 192 MiB left the guest {more} MiB to write on a disk the guest had already taken {taken} MiB of"
+            taken <= before_move.saturating_add(released).saturating_add(8 << 20),
+            "a guard that gave up {} MiB let the guest take {} MiB with {} MiB free before the move",
+            released >> 20,
+            taken >> 20,
+            before_move >> 20
         );
-        // UNIT_BOUNDARY_DESCRIPTION: releasing everything returns every block the test itself took, so the disk ends where it started.
-        for file in filled.iter().chain(extra.iter()).chain(probe.iter()) {
+        assert!(
+            guard.held() + POOL_GUARD_STEP > 32 << 20,
+            "the writer left the guard holding {} MiB of a 32 MiB guard",
+            guard.held() >> 20
+        );
+        // UNIT_BOUNDARY_DESCRIPTION: releasing everything returns every block the test itself took, so the disk ends where it started. A file the disk refused kept part of what it asked for, so a refused take is unlinked rather than held.
+        for file in filled.iter().chain(more.iter()).chain(probe.iter()) {
             let _ = file.set_len(0);
         }
-        drop(extra);
+        drop(more);
         drop(probe);
         drop(filled);
         guard.size(&dir, 0).unwrap();
