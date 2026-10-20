@@ -5,6 +5,9 @@
       "mcp__platform-outbound",
       "mcp__knowledge-bases",
       "Read(~/.uploads/**)"
+    ],
+    "deny": [
+      "EnterPlanMode"
     ]
   },
   "crossSessionInbound": "refuse",
