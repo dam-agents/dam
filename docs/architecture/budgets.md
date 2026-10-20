@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -31,7 +31,7 @@ The api-server's role is legibility: it translates the controller's refusal into
   An unfilled spec (a peer awaiting its own reconcile) counts at `legacyAgentSize` — fallback, never zero.
 - **Scaled-up means desired replicas ≥ 1** on the agent StatefulSet — an agent still starting already counts, so two near-simultaneous wakes cannot both slip under the ceiling.
 - **A `vm` Agent is not counted.** It has no Size of its own: its machine draws on its owner's [VM runner](vm-memory.md), whose memory limit is that owner's pool for every vm agent, so neither its start nor a resize meets the Ceiling, and the api-server refuses to set a Size on one.
-  The budget endpoint carries that pool beside the Ceiling instead: the memory the owner's runner admits against and has committed, its storage used and usable, its CPU limit, how often that limit held it back and its CPU pressure — the share of the last minute its agents waited for a CPU — over the last minute, and each of the owner's vm agents' measured memory, CPU and disk share, read from the runner on demand and never stored.
+  The budget endpoint carries that pool beside the Ceiling instead: the memory the owner's runner pool holds and what it has committed, its storage used and usable, its CPU limit, how often that limit held it back and its CPU pressure — the share of the last minute its agents waited for a CPU — over the last minute, and each of the owner's vm agents' measured memory, CPU and disk share, read from the runner on demand and never stored.
   Each pool carries a level, warning from 75% and critical from 90%, defined once so the home dashboard, the create refusal and the resource alerts agree; CPU is never refused on, since a short CPU only slows agents down, so its pressure is named as congestion instead — low, moderate from 20% (the warning level), high from 50% and severe from 75% (both critical) — with a fill that grows with the log of the slowdown and is full at four times slower.
 - **Deliberate exclusions:** the paired gateway pod (uniform per-agent platform overhead — operators price it into default ceilings) and per-command Run pods (a known undercount, unchanged from the original design).
 
@@ -78,9 +78,17 @@ Outcomes:
 - **Overflows** — the pair is scaled to zero (healing a gateway a prior admitted-then-failed reconcile may have left up) and the Agent is **parked**: `Ready=False, reason=OverBudget`, with the reserved/ceiling figures in the condition message.
   `Reconciled` stays true — the render succeeded; the start was refused.
 
-`OverBudget` has a second producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for its own memory is parked the same way, carrying the controller's own sentence — how much of the owner's VM memory is in use and how much more this start needs — instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
-It is published on this condition because the effect on the user is identical — the agent did not start until room is freed — and because the retry that admits it is the same one.
-Consumers must therefore treat the condition message as the explanation, not derive one from the figures.
+`OverBudget` has one producer that is not a budget at all: a vm Agent whose machine the VM runner refuses for the owner's own memory (`MachineOutOfCapacity`).
+It is parked the same way, carrying the controller's own sentence — how much of the owner's VM memory is in use and how much more this start needs — instead of the ceiling figures, and the owner's idle vm agents are hibernated to free the room under the same rules ([vm-memory](vm-memory.md)).
+The parked retry starts it once their machines have stopped.
+A consumer must treat the condition message as the explanation of `OverBudget`, not derive one from the figures.
+
+A machine the runner had room for but the node has not yet granted the runner pod (`MachineAwaitingAllocation`) is not published on this condition.
+The pod's limit is the owner's whole pool, and what the node has allocated the pod follows the machines' use, so a start can wait a few seconds for the resize that covers it ([vm-memory](vm-memory.md)).
+A start still waiting after two minutes is published under `MachineAllocationUnreadable` instead, which names the node that never reported the grant and is retried at the parked tick; no budget is to blame, so the page says so rather than offering a bigger pool.
+It reads as a start in progress, not as a refusal: the Agent carries `AwaitingAllocation` on `Ready` instead, its sentence says the agent is waiting for the node and starts on its own once it does, no refusal is announced, and a wake waits for it the way it waits for any start in progress.
+No idle agent is hibernated while the node is still enacting that resize: nothing the owner disables frees memory the node has not handed over, and the controller asks the node for it in the reconcile that saw the wait.
+A deferred or refused resize lands on nothing, so from then on nothing is pending and the wait ends on its own the way an `OverBudget` park does: the owner's idle agents are hibernated for the room the node did grant, and the start is retried at the machine watch's few seconds with the parked tick under it, so one that outlasts the wait still comes back.
 
 A denial is **remembered per wake attempt** (keyed by the `last-activity` value it was denied under, in leader memory): a parked agent does **not** start by itself when room frees — a spontaneous start would surprise the user and grab the freed room out from under whoever freed it.
 Only a *new deliberate start* (a fresh activity bump: the Start button, opening the sandbox, a schedule fire) retries the gate.
@@ -88,6 +96,7 @@ Two kinds of agent are exempt from the memo and auto-start within ~30s of room f
 A third is an Agent whose [runtime migration](vm-runtime-migration.md) is booting its new machine: only a guest that answered finishes the move, so its boot keeps retrying, with the refusal on its migration message, rather than wait for a start nobody will make.
 A vm Agent whose machine the VM runner refused for its own memory is exempt too, whatever woke it, the Start button included: a runner roll, a controller restart or a schedule retry brings many of an owner's agents back at once with no fresh activity bump, the runner admits as many as the warm-up floor lets warm up together ([vm-memory](vm-memory.md)), and nobody presses Start again for the rest.
 Its retry starts it once the first ones have warmed up or idle agents have been hibernated, as its message tells the owner.
+A start waiting for the node is exempt the same way, and is retried before the parked tick reaches it, so it comes back as soon as the node grants the room ([above](#enforcement)).
 That queue only helps a spawn that *can* fit: a target whose Size alone exceeds the Ceiling would park until its deadline reaped it hours later, so the spawn route rejects it synchronously with both figures — the one admission the api-server refuses up front, because no amount of freed room ever admits it.
 If a parked agent's activity window lapses, the idle checker's sweep restamps plain `Hibernated` and it becomes an ordinary sleeping agent.
 Already-running agents are never re-checked by resyncs or ceiling changes: budget-check reads happen only on a real 0→1 or on a **grown Size** (the live-resize gate below).
@@ -156,7 +165,10 @@ The exposure this adds is hibernation's existing blind spot (unreported work, wh
 
 ## Failure semantics upstream
 
-The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message — the figures plus "disable agents you aren't using to free room" for a ceiling, and for a refused machine the controller's own sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
+The api-server classifies the `OverBudget` condition reason into a typed wake-failure (non-transient, fail-fast — a denied wake errors in about a reconcile round-trip, not a wake-timeout), so the UI, relays and scheduler all inherit the same message, and that message is the producer's own: the figures plus "disable agents you aren't using to free room" for a ceiling.
+For a machine the runner refused for the owner's memory (`MachineOutOfCapacity`) it is the controller's sentence, giving in GiB how much of the pool is in use out of the same total Home shows and how much more the start needs, when the controller can read them, rather than the runner's accounting.
+A machine the node has not granted yet (`MachineAwaitingAllocation`) is not a denial at all: the controller publishes it under its own `AwaitingAllocation` reason, which the api-server reads as a start in progress, so a wake waits for it rather than failing, no scheduled fire is recorded as failed, and a channel reply says nothing about the owner's room.
+Its message names no figures: the pool has room, and the wait ends when the node enacts the resize, or when the room the node did grant is freed from the owner's idle agents.
 A channel reply goes to whoever wrote in, who need not be the owner, so it says only that the owner's agents are using all their room, never the owner's figures or what the owner should do.
 A scheduled fire on an over-budget agent records a failed fire; the trigger event is already durably committed to the outbox, so it redelivers once room frees, or expires when the schedule's next occurrence supersedes it.
 

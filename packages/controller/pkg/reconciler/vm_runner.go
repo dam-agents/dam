@@ -617,6 +617,24 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 			resources.Requests[corev1.ResourceMemory] = *pool.memory
 		}
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: the pod is created with the whole CPU pool as its limit, which is the most the resize path can ever give it, so a runner is bounded from its first second and no guest is ever throttled below its vCPUs, on a cluster that resizes pods in place or one that never applies a resize at all: a limit of one machine's worth, which only a resize could raise, caps every machine of one owner at one machine's vCPUs wherever that resize does not land. Where the install sets no CPU pool of its own the limit comes from the memory pool instead (runnerCPUCeiling), since a runner with no limit is one runaway VMM away from the node's every core. An explicit zero CPU request goes with it, because the API defaults a missing request to the limit, which would reserve every one of those vCPUs on the node and could change the pod's QoS class, which a resize may not do.
+	if _, ok := resources.Requests[corev1.ResourceCPU]; !ok {
+		if resources.Requests == nil {
+			resources.Requests = corev1.ResourceList{}
+		}
+		resources.Requests[corev1.ResourceCPU] = resource.Quantity{Format: resource.DecimalSI}
+	}
+	cpuCeiling, err := r.runnerCPUCeiling(ctx, owner)
+	if err != nil {
+		return err
+	}
+	if cpuCeiling != nil {
+		resources.Limits[corev1.ResourceCPU] = *cpuCeiling
+		// UNIT_BOUNDARY_DESCRIPTION: a request above its limit is a pod the API refuses, so an owner's CPU pool below the install's CPU request would strand their first runner, or the next real roll of it. The request follows the pool down, as the memory request does.
+		if request, ok := resources.Requests[corev1.ResourceCPU]; ok && request.Cmp(*cpuCeiling) > 0 {
+			resources.Requests[corev1.ResourceCPU] = *cpuCeiling
+		}
+	}
 	if _, ok := resources.Requests[corev1.ResourceEphemeralStorage]; !ok {
 		if resources.Requests == nil {
 			resources.Requests = corev1.ResourceList{}
@@ -697,6 +715,7 @@ func (r *AgentReconciler) applyRunnerDeployment(ctx context.Context, owner strin
 				Spec: corev1.PodSpec{
 					DNSPolicy:                     corev1.DNSDefault,
 					HostUsers:                     new(false),
+					PriorityClassName:             spec.PriorityClassName,
 					TerminationGracePeriodSeconds: new(int64(vmRunnerTerminationGraceSeconds)),
 					ServiceAccountName:            spec.ServiceAccountName,
 					AutomountServiceAccountToken:  new(false),

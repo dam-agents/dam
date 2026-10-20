@@ -29,6 +29,22 @@ const READY: Condition[] = [{ type: "Ready", status: "True" }];
 const HIBERNATED: Condition[] = [
   { type: "Ready", status: "False", reason: "Hibernated" },
 ];
+const AWAITING_ALLOCATION: Condition[] = [
+  {
+    type: "Ready",
+    status: "False",
+    reason: "AwaitingAllocation",
+    message:
+      "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does.",
+  },
+  {
+    type: "AgentPodReady",
+    status: "False",
+    reason: "AwaitingAllocation",
+    message:
+      "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does.",
+  },
+];
 const OVER_BUDGET: Condition[] = [
   {
     type: "Ready",
@@ -387,6 +403,17 @@ describe("ensureReady", () => {
     expect(lines.find((l) => l.msg === "agent.wake.rejected")?.cause).toBe(
       "wake-timeout:agent-pod-failed:MachineImageCacheUnreachable",
     );
+  });
+
+  // TEST_SCENARIO: a start the runner's pool has room for but the node has not yet granted memory for is refused by the node's grant, not admitted: it waits for the node's resize, which lands within seconds and needs nothing from the owner. It is not one of the refusals a wake gives up on, so the wake keeps waiting past the grace window and succeeds when the machine boots.
+  it("waits out a start waiting for the node rather than failing fast", async () => {
+    const { repo, store } = harness([agentObj("a1", AWAITING_ALLOCATION)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(30_000);
+    store.set("a1", agentObj("a1", READY));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
   });
 
   // TEST_SCENARIO: an awake agent already in error with a refused start. The first polls may read the previous attempt's refusal, so the wake waits out the short grace, then fails well before its timeout.

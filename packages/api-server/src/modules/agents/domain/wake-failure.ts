@@ -37,6 +37,7 @@ export const POD_FAILURE_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.MachineImageCacheUnreachable,
   TerminationCode.MachineRunnerUnschedulable,
   TerminationCode.MachineRunnerNodeLost,
+  TerminationCode.MachineAllocationUnreadable,
   TerminationCode.RunnerOutOfMemory,
   TerminationCode.MachineStorageFull,
 ]);
@@ -162,6 +163,8 @@ export function describeWakeFailure(c: WakeFailureCause): string {
           return "no server can run it right now — tell an admin";
         case "MachineRunnerNodeLost":
           return "the server running its owner's agents is down — tell an admin";
+        case "MachineAllocationUnreadable":
+          return "the server running its owner's agents has not reported how much memory it gave them — tell an admin";
         case "RunnerOutOfMemory":
           return "its owner's VM agents ran out of memory together and the ones that were running restarted — disabling agents that aren't in use frees memory";
         case "MachineStorageFull":

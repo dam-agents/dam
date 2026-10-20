@@ -89,7 +89,22 @@ func (r *AgentReconciler) runnerCPUCeiling(ctx context.Context, owner string) (*
 			return &q, nil
 		}
 	}
-	return nil, nil
+	// UNIT_BOUNDARY_DESCRIPTION: an install that sets only the memory it gives the runner still needs a CPU bound at creation, or a runaway VMM takes the node until a resize lands, and for ever on a cluster that cannot resize. Every machine the pool can hold costs the warm-up floor of memory, so the machines that fit plus one more for the runner is the most this runner's guests can come to.
+	limitMiB, err := r.runnerLimitMiB(ctx, owner)
+	if err != nil {
+		return nil, err
+	}
+	if limitMiB <= 0 {
+		return nil, nil
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: with no warm-up floor to divide the pool by, two machines is the bound: each takes at most half the pool, so an owner can still run a pair and no single VMM can take the node's every core. One machine would cap a pair below what the pool they were given allows; there is no third, since the figure is derived rather than known.
+	boot := r.config.VM.Runner.BootMiB
+	machines := 2
+	if boot > 0 {
+		machines = limitMiB/boot + 1
+	}
+	cpus := resource.NewQuantity(int64(machines*max(r.config.VM.Runner.MachineCPUs, 1)), resource.DecimalSI)
+	return cpus, nil
 }
 
 func (r *AgentReconciler) runnerStorageCeiling(ctx context.Context, owner string) (resource.Quantity, error) {

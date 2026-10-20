@@ -87,6 +87,7 @@ spec:
                   "imageCacheHostPath" (include "platform.vmImageCache.dir" .) "imageCacheBudget" ($cache.budget | default "" | toString)
                   "nodeSelector" $r.nodeSelector "tolerations" $r.tolerations "affinity" $r.affinity
                   "resources" $r.resources
+                  "priorityClassName" (include "platform.vmRunner.priorityClassName" .)
                   "hostAddress" ($r.hostAddress | default "")
                   "rollout" (dict "maxConcurrent" ($r.rollout.maxConcurrent | default 1 | int) "maxConcurrentPercent" ($r.rollout.maxConcurrentPercent | default 0 | int) "settleTimeout" ($r.rollout.settleTimeout | default "10m") "idleWait" ($r.rollout.idleWait | default "24h")) }}
             - name: AGENT_VM

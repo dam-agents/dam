@@ -38,6 +38,9 @@ pub struct MachineSpec {
     // UNIT_BOUNDARY_DESCRIPTION: asks for this machine alone to get the node's virtualization extensions, so its guest can run KVM itself. The runner grants it only when the install lets it nest and the node's KVM allows it; every other machine on the runner boots without them.
     #[serde(rename = "nestedVirtualization", skip_serializing_if = "is_zero")]
     pub nested_virtualization: bool,
+    // UNIT_BOUNDARY_DESCRIPTION: what admission may commit to this machine, at most, in MiB, as the controller reads it off the runner pod's allocation: the memory the node reserved for the pod, which is below the limit the pod was given while an in-place resize waits for room. It says nothing about the machine's shape, so it moves no status version and restarts nothing: zero admits against the runner's limit alone.
+    #[serde(rename = "admitMiB", skip_serializing_if = "is_zero")]
+    pub admit_mib: i32,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a runtime migration in progress on a machine. It carries nothing yet; its presence is the mark.
@@ -260,6 +263,8 @@ impl std::fmt::Display for State {
 
 pub const REASON_NOT_READY: &str = "MachineNotReady";
 pub const REASON_OUT_OF_CAPACITY: &str = "MachineOutOfCapacity";
+// UNIT_BOUNDARY_DESCRIPTION: a start the runner had room for but the node has not granted the runner pod yet: the controller is asking the node for that memory through an in-place resize, so nothing is hibernated for it and the start is retried at once rather than at the parked tick.
+pub const REASON_AWAITING_ALLOCATION: &str = "MachineAwaitingAllocation";
 pub const REASON_IMAGE_UNAVAILABLE: &str = "MachineImageUnavailable";
 // UNIT_BOUNDARY_DESCRIPTION: a machine refused because this runner cannot reach the node image cache service at all: the node's fault, not the image's. It is a reason of its own so the api-server holds an image update instead of convicting the image, and so an operator is sent to the mount rather than to the registry.
 pub const REASON_CACHE_UNREACHABLE: &str = "MachineImageCacheUnreachable";
@@ -343,6 +348,7 @@ mod tests {
                         .into(),
                 }),
                 nested_virtualization: true,
+                admit_mib: 3072,
             },
         );
         matches_the_contract(
@@ -468,6 +474,7 @@ mod tests {
             serde_json::json!([
                 REASON_NOT_READY,
                 REASON_OUT_OF_CAPACITY,
+                REASON_AWAITING_ALLOCATION,
                 REASON_IMAGE_UNAVAILABLE,
                 REASON_CACHE_UNREACHABLE,
                 REASON_BOOT_FAILED,
