@@ -5,8 +5,7 @@ import { DialogOverlay } from "./components/dialog-overlay.js";
 import { GlobalBanner } from "./components/global-banner.js";
 import { IconRail } from "./components/icon-rail.js";
 import { emitToast } from "./lib/toast.js";
-import { FreeBudgetBanner } from "./modules/instant-start/components/free-budget-banner.js";
-import { InstantStartProvider, useInstantStart } from "./modules/instant-start/context.js";
+import { InstantStartProvider } from "./modules/instant-start/context.js";
 import { InstantStartGate } from "./modules/instant-start/components/instant-start-gate.js";
 import { AgentCardGallery } from "./mock/data/agent-card-gallery.js";
 import { ComponentShowcase } from "./mock/data/component-showcase.js";
@@ -131,7 +130,6 @@ function MainApp() {
       <div className="flex flex-1 min-h-0 overflow-hidden">
         <IconRail />
         <main className="relative z-content flex-1 overflow-y-auto">
-          <GlobalBudgetBanner />
           {view === "agent-landing" ? (
             <div className="mx-auto w-full max-w-[960px] px-4 py-4 pb-20 md:px-[5%] md:py-6 md:pb-10">
               <AgentLandingView />
@@ -191,12 +189,3 @@ function MainApp() {
   );
 }
 
-function GlobalBudgetBanner() {
-  const ctx = useInstantStart();
-  if (!ctx) return null;
-  return (
-    <div className="sticky top-0 z-10 mx-auto w-full max-w-[960px] px-4 pt-3 md:px-[5%]">
-      <FreeBudgetBanner />
-    </div>
-  );
-}

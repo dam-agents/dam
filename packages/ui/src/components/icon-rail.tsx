@@ -57,6 +57,7 @@ import { resolveAgentDisplay } from "../modules/agents/utils/agent-resolver.js";
 import { useNotifications } from "../modules/notifications/api/queries.js";
 import type { NotificationItem } from "../modules/notifications/lib/notification-types.js";
 import { isNeedsYou } from "../modules/notifications/lib/notification-types.js";
+import { SidebarBudget } from "../modules/instant-start/components/free-budget-banner.js";
 import { useStore } from "../store.js";
 import { BrandLogo } from "./brand-logo.js";
 import { stateDotClass, stateLabel } from "./status-indicator.js";
@@ -1152,6 +1153,7 @@ export function IconRail({
 
         <div className="shrink-0 pb-2 pt-1">
           <div className="flex flex-col gap-px px-2">
+            <SidebarBudget expanded={expandedNav} />
             <RailLink
               label="Documentation"
               icon={Help}
