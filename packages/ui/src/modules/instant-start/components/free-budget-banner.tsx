@@ -1,13 +1,9 @@
-import { useState } from "react";
-
-import { ArrowRight, Checkmark } from "@carbon/icons-react";
+import { ArrowRight } from "@carbon/icons-react";
 
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { PROVIDERS } from "../../../types.js";
 import { useStore } from "../../../store.js";
-import { ConfigureProviderModal } from "./configure-provider-modal.js";
 import { useInstantStart } from "../context.js";
 
 function formatUsd(value: number): string {
@@ -27,91 +23,59 @@ function CurveBenderLogo({ className }: { className?: string }) {
   );
 }
 
-export function FreeBudgetBanner() {
+export function FreeBudgetBanner({
+  onConfigureProvider,
+}: {
+  onConfigureProvider?: () => void;
+}) {
   const ctx = useInstantStart();
-  const [showModal, setShowModal] = useState(false);
-  if (!ctx) return null;
+  if (!ctx || ctx.connectedProviderType) return null;
 
-  const { freeBudget, budgetExhausted, connectedProviderType } = ctx;
+  const { freeBudget, budgetExhausted } = ctx;
   const pct = Math.min((freeBudget.used / freeBudget.limit) * 100, 100);
 
-  if (connectedProviderType) {
-    const providerName = PROVIDERS[connectedProviderType].displayName;
-    return (
-      <>
-        <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-          <div className="flex items-center gap-3 px-4 py-3">
-            <div className="flex size-7 shrink-0 items-center justify-center rounded-full bg-primary">
-              <Checkmark size={16} className="text-primary-foreground" />
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-foreground">
-                Using {providerName}
-              </p>
-              <p className="text-sm text-muted-foreground">
-                CurveBender free budget paused — you can re-enable it in Providers settings.
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={() => setShowModal(true)}
-              className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
-            >
-              Change provider
-              <ArrowRight size={16} />
-            </button>
-          </div>
-        </div>
-        {showModal && <ConfigureProviderModal onClose={() => setShowModal(false)} />}
-      </>
-    );
-  }
-
   return (
-    <>
-      <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
-        <div className="flex items-center gap-3 px-4 py-3">
-          <CurveBenderLogo className="size-7 shrink-0" />
-          <div className="min-w-0 flex-1">
-            <p className="text-sm font-semibold text-foreground">
-              {budgetExhausted
-                ? "Free budget used up"
-                : "Free budget from CurveBender"}
-            </p>
-            <p className="text-sm text-muted-foreground">
-              {budgetExhausted
-                ? `${formatUsd(freeBudget.limit)} free budget used up — connect a provider to continue`
-                : `${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`}
-            </p>
-          </div>
-          <button
-            type="button"
-            onClick={() => setShowModal(true)}
-            className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
-          >
-            {budgetExhausted ? "Connect provider" : "Use own provider"}
-            <ArrowRight size={16} />
-          </button>
+    <div className="overflow-hidden rounded-lg border border-border bg-card shadow-sm">
+      <div className="flex items-center gap-3 px-4 py-3">
+        <CurveBenderLogo className="size-7 shrink-0" />
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold text-foreground">
+            {budgetExhausted
+              ? "Free budget used up"
+              : "Free budget from CurveBender"}
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {budgetExhausted
+              ? `${formatUsd(freeBudget.limit)} free budget used up — connect a provider to continue`
+              : `${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`}
+          </p>
         </div>
-        <div className="h-1.5 bg-muted">
-          <div
-            className={cn(
-              "h-full transition-all duration-500",
-              budgetExhausted ? "bg-foreground" : "bg-primary",
-            )}
-            style={{ width: `${pct}%` }}
-          />
-        </div>
+        <button
+          type="button"
+          onClick={onConfigureProvider}
+          className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
+        >
+          {budgetExhausted ? "Connect provider" : "Use own provider"}
+          <ArrowRight size={16} />
+        </button>
       </div>
-      {showModal && <ConfigureProviderModal onClose={() => setShowModal(false)} />}
-    </>
+      <div className="h-1.5 bg-muted">
+        <div
+          className={cn(
+            "h-full transition-all duration-500",
+            budgetExhausted ? "bg-foreground" : "bg-primary",
+          )}
+          style={{ width: `${pct}%` }}
+        />
+      </div>
+    </div>
   );
 }
 
 export function SidebarBudget({ expanded }: { expanded: boolean }) {
   const ctx = useInstantStart();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
-  if (!ctx) return null;
+  if (!ctx || ctx.connectedProviderType) return null;
 
   const { freeBudget, budgetExhausted } = ctx;
   const dollars = budgetExhausted

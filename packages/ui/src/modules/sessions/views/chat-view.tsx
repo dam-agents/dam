@@ -303,6 +303,18 @@ export function ChatView() {
     sendPrompt,
   });
 
+  const wrappedSendPrompt = useCallback(
+    (text: string, attachments?: unknown[]) => {
+      if (instantStart && !instantStart.connectedProviderType) {
+        instantStart.addBudgetUsage(
+          Math.round((0.3 + Math.random() * 0.7) * 100) / 100,
+        );
+      }
+      sendPrompt(text, attachments as never);
+    },
+    [sendPrompt, instantStart],
+  );
+
   const defaultPlaceholder = useRotatingPlaceholder(getDefaultExamples());
 
   const demoPlaceholder = useMemo(() => {
@@ -772,7 +784,7 @@ export function ChatView() {
                         message={m}
                         isLast={mi === messages.length - 1}
                         hasPendingPermission={hasPendingPermission}
-                        onRetry={sendPrompt}
+                        onRetry={wrappedSendPrompt}
                         onFileClick={openFileHandler}
                         onLoadOlder={loadOlderKeepingScroll}
                       />
@@ -796,18 +808,14 @@ export function ChatView() {
                 {agentView && isExperimentSandbox(agentView) && (
                   <div className="px-4 md:px-8">
                     <ChatColumn>
-                      <ExperimentPromptChips busy={busy} onSend={sendPrompt} />
+                      <ExperimentPromptChips busy={busy} onSend={wrappedSendPrompt} />
                     </ChatColumn>
                   </div>
                 )}
                 {instantStart && (
                   <div className="mb-3">
                     <ChatColumn className="px-4 md:px-8">
-                      <FreeBudgetBanner />
-                      {instantStart.approach === 3 &&
-                        messages.length === 0 && (
-                          <KitSuggestionsEmpty />
-                        )}
+                      <FreeBudgetBanner onConfigureProvider={() => setConfigureSection("setup")} />
                     </ChatColumn>
                   </div>
                 )}
@@ -823,7 +831,7 @@ export function ChatView() {
                     textareaRef={textareaRef}
                     busy={busy}
                     loadingSession={loadingSession}
-                    onSend={sendPrompt}
+                    onSend={wrappedSendPrompt}
                     onStop={stopAgent}
                     rotatingPlaceholder={rotatingPlaceholder}
                     onConfigureSection={

@@ -3,8 +3,6 @@ import type { ReactNode } from "react";
 
 import type { ProviderPresetType } from "../../types.js";
 
-export type Approach = 1 | 2 | 3;
-
 export interface FreeBudget {
   used: number;
   limit: number;
@@ -13,7 +11,6 @@ export interface FreeBudget {
 }
 
 export interface InstantStartState {
-  approach: Approach | null;
   freeBudget: FreeBudget;
   budgetExhausted: boolean;
   setBudgetExhausted: (v: boolean) => void;
@@ -27,21 +24,10 @@ export interface InstantStartState {
   setCurveBenderEnabled: (v: boolean) => void;
   connectedProviderType: ProviderPresetType | null;
   setConnectedProviderType: (v: ProviderPresetType | null) => void;
+  addBudgetUsage: (amount: number) => void;
 }
 
-const INITIAL_BUDGET: FreeBudget = {
-  used: 0,
-  limit: 20.0,
-  unit: "usd",
-  resetsAt: null,
-};
-
-const EXHAUSTED_BUDGET: FreeBudget = {
-  used: 20.0,
-  limit: 20.0,
-  unit: "usd",
-  resetsAt: null,
-};
+const BUDGET_LIMIT = 20.0;
 
 const InstantStartContext = createContext<InstantStartState | null>(null);
 
@@ -55,17 +41,8 @@ export function useInstantStartRequired(): InstantStartState {
   return ctx;
 }
 
-function readApproachParam(): Approach | null {
-  const params = new URLSearchParams(window.location.search);
-  const raw = params.get("start");
-  if (raw === "1") return 1;
-  if (raw === "2") return 2;
-  if (raw === "3") return 3;
-  return null;
-}
-
 export function InstantStartProvider({ children }: { children: ReactNode }) {
-  const [approach] = useState(readApproachParam);
+  const [budgetUsed, setBudgetUsed] = useState(0);
   const [budgetExhausted, setBudgetExhausted] = useState(false);
   const [providerAdded, setProviderAdded] = useState(false);
   const [agentCreated, setAgentCreated] = useState(false);
@@ -78,10 +55,27 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
     if (providerAdded) setCurveBenderEnabled(false);
   }, [providerAdded]);
 
+  useEffect(() => {
+    if (budgetUsed >= BUDGET_LIMIT) setBudgetExhausted(true);
+  }, [budgetUsed]);
+
+  const addBudgetUsage = (amount: number) => {
+    setBudgetUsed((prev) => Math.min(prev + amount, BUDGET_LIMIT));
+  };
+
+  const freeBudget: FreeBudget = useMemo(
+    () => ({
+      used: budgetExhausted ? BUDGET_LIMIT : budgetUsed,
+      limit: BUDGET_LIMIT,
+      unit: "usd",
+      resetsAt: null,
+    }),
+    [budgetUsed, budgetExhausted],
+  );
+
   const state = useMemo<InstantStartState>(
     () => ({
-      approach,
-      freeBudget: budgetExhausted ? EXHAUSTED_BUDGET : INITIAL_BUDGET,
+      freeBudget,
       budgetExhausted,
       setBudgetExhausted,
       providerAdded,
@@ -94,11 +88,10 @@ export function InstantStartProvider({ children }: { children: ReactNode }) {
       setCurveBenderEnabled,
       connectedProviderType,
       setConnectedProviderType,
+      addBudgetUsage,
     }),
-    [approach, budgetExhausted, providerAdded, agentCreated, firstLanding, curveBenderEnabled, connectedProviderType],
+    [freeBudget, budgetExhausted, providerAdded, agentCreated, firstLanding, curveBenderEnabled, connectedProviderType],
   );
-
-  if (!approach) return <>{children}</>;
 
   return (
     <InstantStartContext.Provider value={state}>

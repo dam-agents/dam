@@ -8,9 +8,6 @@ export function InstantStartDebugControls() {
 
   return (
     <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-lg">
-      <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">
-        Approach {ctx.approach}
-      </p>
       <Button
         variant={ctx.budgetExhausted ? "destructive" : "outline"}
         size="sm"

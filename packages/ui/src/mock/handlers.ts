@@ -32,7 +32,7 @@ import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
 /** Toggleable mock state — controlled by the floating MockToggle component. */
 export let mockEmpty = false;
-export let mockFirstRun = false;
+export let mockFirstRun = true;
 
 const resolvedApprovalIds = new Set<string>();
 
