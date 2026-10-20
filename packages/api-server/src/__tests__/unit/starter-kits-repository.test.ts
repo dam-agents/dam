@@ -889,6 +889,8 @@ describe("the shipped proof-of-concept catalog", () => {
     ) as { install: { command: string } };
     const home = fs.mkdtempSync(path.join(os.tmpdir(), "spotlights-kit-"));
     const fakeBin = path.join(home, "fake-bin");
+    const wrapperDir = path.join(home, ".local", "share", "aube", "bin");
+    const path_ = `${wrapperDir}:${fakeBin}:${process.env.PATH}`;
     fs.mkdirSync(fakeBin);
     const fake = (name: string, body: string) => {
       const file = path.join(fakeBin, name);
@@ -901,10 +903,18 @@ describe("the shipped proof-of-concept catalog", () => {
     fs.mkdirSync(path.dirname(bundledTable), { recursive: true });
     fs.writeFileSync(
       bundledTable,
-      JSON.stringify({ "anthropic:claude-opus-4-8": { input: 1 } }),
+      JSON.stringify({
+        "anthropic:claude-opus-4-8": {
+          input: 1e-6,
+          output: 1e-5,
+          cache_read: 1e-7,
+          cache_create: 1e-6,
+          unit: "per_token",
+        },
+      }),
     );
 
-    const envLog = at("engine-env");
+    const initMarker = at("init-ran");
     const engineCli = at(".local", "bin", "spotlights-engine");
     fs.mkdirSync(path.dirname(engineCli), { recursive: true });
     fs.writeFileSync(
@@ -916,9 +926,9 @@ describe("the shipped proof-of-concept catalog", () => {
         [
           "unset ANTHROPIC_BASE_URL ANTHROPIC_AUTH_TOKEN ANTHROPIC_API_KEY",
           "unset OPENAI_API_KEY OPENAI_BASE_URL",
-          'case "$1" in init) exit 0 ;; esac',
+          `case "$1" in init) echo ran >> ${initMarker}; exit 0 ;; esac`,
           'printf "%s %s\\n" "$SPOTLIGHTS_MODELS_FILE" "$SPOTLIGHTS_RATES_FILE" >> ' +
-            envLog,
+            at("engine-env"),
           'exec "$@"',
           "",
         ].join("\n"),
@@ -934,34 +944,47 @@ describe("the shipped proof-of-concept catalog", () => {
       "codex",
       `#!/bin/sh\n[ -n "$OPENAI_API_KEY" ] || { echo "Missing environment variable: OPENAI_API_KEY" >&2; exit 1; }\nprintf 'codex %s %s\\n' "$OPENAI_API_KEY" "$*"\n`,
     );
-    const routerListing = at("router.json");
-    fs.writeFileSync(
-      routerListing,
-      JSON.stringify({
-        data: [
-          {
-            model_name: "claude/ibm/aws/claude-opus-5",
-            model_info: { mode: "chat", input_cost_per_token: 3.8e-6 },
-          },
-          {
-            model_name: "ibm/azure/gpt-5.5",
-            model_info: { mode: "chat", input_cost_per_token: 2.5e-6 },
-          },
-        ],
-      }),
+    const listing = (harness: string, model_name: string, info: object) => {
+      const file = at(`router-${harness}.json`);
+      fs.writeFileSync(
+        file,
+        JSON.stringify({ data: [{ model_name, model_info: info }] }),
+      );
+      return file;
+    };
+    const claudeListing = listing(
+      "claude-code",
+      "claude/ibm/aws/claude-opus-5",
+      {
+        mode: "chat",
+        input_cost_per_token: 3.8e-6,
+        output_cost_per_token: 1.9e-5,
+        cache_read_input_token_cost: 3.8e-7,
+        cache_creation_input_token_cost: 4.75e-6,
+      },
     );
-    fake("curl", `#!/bin/sh\ncat ${routerListing}\n`);
+    const codexListing = listing("codex", "ibm/azure/gpt-5.5", {
+      mode: "chat",
+      input_cost_per_token: 2.5e-6,
+      output_cost_per_token: 1.5e-5,
+      cache_read_input_token_cost: 5e-7,
+    });
+    fake(
+      "curl",
+      `#!/bin/sh\ncase "$*" in\n*claude-code*) cat ${claudeListing} ;;\n*codex*) cat ${codexListing} ;;\nesac\n`,
+    );
 
     execFileSync("bash", ["-c", kit.install.command], {
       cwd: home,
       env: {
         HOME: home,
-        PATH: `${fakeBin}:${process.env.PATH}`,
+        PATH: path_,
         PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:24180",
       },
       stdio: "pipe",
     });
 
+    expect(fs.readFileSync(initMarker, "utf8")).toBe("ran\n");
     expect(
       fs.readFileSync(at(".config", "spotlights", "models.yaml"), "utf8"),
     ).toBe("claude: claude/ibm/aws/claude-opus-5\ncodex: ibm/azure/gpt-5.5\n");
@@ -969,17 +992,30 @@ describe("the shipped proof-of-concept catalog", () => {
     const rates = JSON.parse(
       fs.readFileSync(at(".config", "spotlights", "rates.json"), "utf8"),
     );
-    expect(rates).toHaveProperty("anthropic:claude/ibm/aws/claude-opus-5");
-    expect(rates).toHaveProperty("openai:ibm/azure/gpt-5.5");
-    expect(rates["openai:codex"]).toMatchObject({ input: 2.5e-6 });
+    expect(rates["anthropic:claude/ibm/aws/claude-opus-5"]).toMatchObject({
+      input: 3.8e-6,
+      output: 1.9e-5,
+      cache_read: 3.8e-7,
+      cache_create: 4.75e-6,
+      unit: "per_token",
+    });
+    const gptRow = {
+      input: 2.5e-6,
+      output: 1.5e-5,
+      cache_read: 5e-7,
+      cache_create: 0,
+      unit: "per_token",
+    };
+    expect(rates["openai:ibm/azure/gpt-5.5"]).toMatchObject(gptRow);
+    expect(rates["openai:codex"]).toMatchObject(gptRow);
+    expect(rates["anthropic:claude-opus-4-8"]).toMatchObject({ input: 1e-6 });
 
-    const wrapperDir = at(".local", "share", "aube", "bin");
-    fs.rmSync(envLog, { force: true });
+    fs.rmSync(at("engine-env"), { force: true });
     const run = (cli: string, env: Record<string, string> = {}) =>
       execFileSync("sh", [path.join(wrapperDir, "spotlights-engine"), cli], {
         env: {
           HOME: home,
-          PATH: `${wrapperDir}:${fakeBin}:${process.env.PATH}`,
+          PATH: path_,
           PLATFORM_MODEL_ROUTER_SERVES: "1",
           PLATFORM_MODEL_ROUTER_URL: "http://127.0.0.1:24180",
           ...env,
@@ -988,7 +1024,7 @@ describe("the shipped proof-of-concept catalog", () => {
     expect(run("claude")).toMatch(
       /^claude http:\/\/127\.0\.0\.1:24180 platform:conn:router /,
     );
-    expect(fs.readFileSync(envLog, "utf8")).toBe(
+    expect(fs.readFileSync(at("engine-env"), "utf8")).toBe(
       `${at(".config", "spotlights", "models.yaml")} ${at(".config", "spotlights", "rates.json")}\n`,
     );
     expect(run("codex")).toMatch(/^codex platform:conn:router /);

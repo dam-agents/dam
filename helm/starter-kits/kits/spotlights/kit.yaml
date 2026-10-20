@@ -77,8 +77,9 @@ install:
     # the home, so neither can be spelled here.
     ENGINE_PYTHON="$(sed -n '1s/^#!//p' "$HOME/.local/bin/spotlights-engine")"
     BUNDLED="$("$ENGINE_PYTHON" -c 'import importlib.resources as r; print(r.files("spotlights_engine") / "costing" / "rates.json")')"
-    # A Codex stream reports no model id, so the engine prices it by the
-    # CLI-family row, and that row follows the kit's GPT model.
+    # A Codex stream reports no model id. The engine then bills the model it
+    # was handed, and every call here gets the pinned one, so this row is
+    # reached only by an unpinned call; it follows the kit's GPT model.
     GPT="$(sed -n 's/^codex:[[:space:]]*//p' "$HOME/.config/spotlights/models.yaml")"
 
     rows() { # $1 harness, $2 provider prefix
