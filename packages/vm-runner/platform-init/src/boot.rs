@@ -3932,6 +3932,16 @@ mod tests {
         (info.stx_dev_major, info.stx_dev_minor, info.stx_ino)
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a `/proc` of the test's own, in which one process of one thread holds what `held` names open, read by the same scan the pass runs: the tests hold what a guest's root sees and a runner's user does not, so a scan of the real `/proc` would stop on the first process of another user rather than say anything about eviction.
+    fn proc_holding(dir: &Path, held: &[&Path]) -> Option<HashSet<(u32, u32, u64)>> {
+        let task = dir.join("1").join("task").join("1");
+        fs::create_dir_all(task.join("fd")).unwrap();
+        for (n, path) in held.iter().enumerate() {
+            std::os::unix::fs::symlink(path, task.join("fd").join(n.to_string())).unwrap();
+        }
+        in_use(dir)
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: runs the test `name` again in a child of the test binary with a mount namespace of its own, and a user namespace unless it runs as root, so it may bind mount without root and without touching the host's mounts, and returns false when this process is that child. A host that allows no such namespace skips the test, with a line saying so.
     fn in_mount_namespace(name: &str) -> bool {
         const INSIDE: &str = "PLATFORM_INIT_TEST_IN_MOUNT_NAMESPACE";
@@ -4128,18 +4138,19 @@ mod tests {
             "an entry nothing has open is offered"
         );
 
-        let held = File::open(s.join("checkout/src/main.rs")).unwrap();
-        let open = in_use(Path::new("/proc")).unwrap();
+        let reader = File::open(s.join("checkout/src/main.rs")).unwrap();
+        let proc = TempDir::new("evict-open-proc");
+        let open = proc_holding(proc.path(), &[&s.join("checkout/src/main.rs")]).unwrap();
         assert!(
             open.contains(&identity(&s.join("checkout/src/main.rs"))),
-            "the scan does not see the file this process holds open"
+            "the scan does not see the file a process holds open"
         );
         assert_eq!(
             offered(&open),
             [s.join("idle")],
             "a file a process holds open keeps its entry whole"
         );
-        drop(held);
+        drop(reader);
 
         assert_eq!(
             offered(&HashSet::from([identity(&s.join("checkout"))])),
@@ -4185,7 +4196,8 @@ mod tests {
         ));
 
         let reader = File::open(s.join("checkout/src/main.rs")).unwrap();
-        let held = in_use(Path::new("/proc")).unwrap();
+        let proc = TempDir::new("evict-late-open-proc");
+        let held = proc_holding(proc.path(), &[&s.join("checkout/src/main.rs")]).unwrap();
         assert!(
             !still_evictable(entry("checkout"), &HashSet::new(), &held, later),
             "the file the tool opened after the pass listed the entry keeps it"
@@ -4195,10 +4207,11 @@ mod tests {
             "the entry beside it, which nothing opened, still goes"
         );
         drop(reader);
+        let nothing = TempDir::new("evict-late-open-none");
         assert!(still_evictable(
             entry("checkout"),
             &HashSet::new(),
-            &in_use(Path::new("/proc")).unwrap(),
+            &proc_holding(nothing.path(), &[]).unwrap(),
             later
         ));
     }
@@ -4226,8 +4239,9 @@ mod tests {
             .as_secs()
             + 2 * EVICT_AGES[0];
 
-        let held = File::open(h.join("mnt/input")).unwrap();
-        let open = in_use(Path::new("/proc")).unwrap();
+        let reader = File::open(h.join("mnt/input")).unwrap();
+        let proc = TempDir::new("evict-alias-proc");
+        let open = proc_holding(proc.path(), &[&h.join("mnt/input")]).unwrap();
         let shown: Vec<_> = scratch_entries(&roots, &HashSet::new(), &open, later, EVICT_AGES[3])
             .into_iter()
             .map(|entry| entry.shown)
@@ -4237,7 +4251,7 @@ mod tests {
             [h.join(".cache/plain")],
             "the cache the tool reads through another mount is the one it holds, whatever its name there"
         );
-        drop(held);
+        drop(reader);
         // SAFETY: the path is NUL-terminated and outlives the call.
         assert_eq!(
             unsafe { libc::umount2(cstring(h.join("mnt").as_os_str()).unwrap().as_ptr(), 0) },
