@@ -29,7 +29,9 @@ export function FreeBudgetBanner() {
             {budgetExhausted ? "Free budget used up" : "Free starter budget"}
           </p>
           <p className="text-sm text-muted-foreground">
-            {formatUsd(freeBudget.used)} of {formatUsd(freeBudget.limit)} used
+            {budgetExhausted
+              ? "Connect your own LLM provider to keep chatting"
+              : `${formatUsd(freeBudget.used)} of ${formatUsd(freeBudget.limit)} used`}
           </p>
         </div>
         <button
@@ -37,7 +39,7 @@ export function FreeBudgetBanner() {
           onClick={() => navigateToSettings("providers")}
           className="flex shrink-0 items-center gap-1 text-sm font-medium text-primary transition-colors hover:text-primary/80"
         >
-          {budgetExhausted ? "Add provider" : "Use own provider"}
+          {budgetExhausted ? "Connect provider" : "Use own provider"}
           <ArrowRight size={16} />
         </button>
       </div>

@@ -117,7 +117,6 @@ import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
 import { Terminal } from "../components/terminal.js";
-import { BudgetExhaustedNotice } from "../../instant-start/components/budget-exhausted-notice.js";
 import { FreeBudgetBanner } from "../../instant-start/components/free-budget-banner.js";
 import {
   KitSuggestionsEmpty,
@@ -805,11 +804,6 @@ export function ChatView() {
                   <div className="mb-3">
                     <ChatColumn className="px-4 md:px-8">
                       <FreeBudgetBanner />
-                      {instantStart.budgetExhausted && (
-                        <div className="mt-3">
-                          <BudgetExhaustedNotice />
-                        </div>
-                      )}
                       {instantStart.approach === 3 &&
                         messages.length === 0 && (
                           <KitSuggestionsEmpty />
