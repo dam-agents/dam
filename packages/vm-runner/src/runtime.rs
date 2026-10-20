@@ -241,16 +241,22 @@ pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> anyhow::Result<Vec<i32>> 
 pub fn vmms_left(proc_root: &Path, vm_dir: &Path, mut seen: Vec<i32>, limit: Duration) -> Vec<i32> {
     let deadline = Instant::now() + limit;
     let mut looked = false;
+    let mut warned = false;
     loop {
         match orphan_pids(proc_root, vm_dir) {
             Ok(found) => {
                 looked = true;
                 seen.extend(found);
             }
-            Err(e) => tracing::warn!(
-                machine = %vm_dir.display(),
-                "could not scan the host for a VMM holding the machine: {e:#}"
-            ),
+            Err(e) => {
+                if !warned {
+                    warned = true;
+                    tracing::warn!(
+                        machine = %vm_dir.display(),
+                        "could not scan the host for a VMM holding the machine: {e:#}"
+                    );
+                }
+            }
         }
         seen.sort_unstable();
         seen.dedup();
