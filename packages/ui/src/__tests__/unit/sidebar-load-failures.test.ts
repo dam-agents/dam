@@ -256,3 +256,22 @@ it("offers no later-page retry while the Agent cannot answer", () => {
     renderToStaticMarkup(createElement(AgentSessionList, { agentId: "a" })),
   ).toContain('data-testid="sidebar-agent-sessions-more-failed"');
 });
+
+// TEST_SCENARIO: an Agent's list offers its New session row only once it is known to hold no Session: not while its first page failed or is loading, and not while a further page may still hold one; otherwise only the Agent row's plus starts a session.
+it("offers the New session row only for a list known to be empty", () => {
+  const render = () =>
+    renderToStaticMarkup(
+      createElement(AgentSessionList, {
+        agentId: "a",
+        newSessionRow: createElement("i", { "data-new-session": true }),
+      }),
+    );
+  expect(render()).not.toContain("data-new-session");
+  list.failed = false;
+  expect(render()).toContain("data-new-session");
+  list.loading = true;
+  expect(render()).not.toContain("data-new-session");
+  list.loading = false;
+  list.nextFailed = true;
+  expect(render()).not.toContain("data-new-session");
+});

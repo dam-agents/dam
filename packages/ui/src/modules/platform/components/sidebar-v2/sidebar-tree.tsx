@@ -293,7 +293,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
               ))}
             </ul>
           )}
-          {groupBy === "agents" && (
+          {groupBy === "agents" && agents.length === 0 && (
             <AddRow
               icon={Add}
               label="New agent"
@@ -390,9 +390,9 @@ function AgentNode({
   shownIds: readonly string[];
   onNavigate?: () => void;
 }) {
-  const newSessionOpen = useStore(
-    (s) => current && expanded && s.view === "chat",
-  );
+  const newSessionPage = useStore((s) => current && s.view === "chat");
+  const [noSessions, setNoSessions] = useState(false);
+  const rowShown = expanded && noSessions;
   const startSession = useStartSession();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setView = useStore((s) => s.setView);
@@ -422,7 +422,7 @@ function AgentNode({
         {...drag.dragProps}
         className={cn(
           "group/agent relative flex items-center rounded-lg transition-colors",
-          current && !newSessionOpen ? "bg-muted" : "hover:bg-muted",
+          current && !newSessionPage ? "bg-muted" : "hover:bg-muted",
         )}
       >
         <button
@@ -430,7 +430,7 @@ function AgentNode({
           onClick={onToggle}
           aria-expanded={expanded}
           aria-controls={expanded ? listId : undefined}
-          aria-current={current && !newSessionOpen ? "page" : undefined}
+          aria-current={current && !newSessionPage ? "page" : undefined}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
@@ -467,16 +467,21 @@ function AgentNode({
           {cue && !expanded && <AgentCue tone={cue} />}
         </button>
         <div
-          className={cn("absolute right-1 flex items-center gap-0.5", REVEAL)}
+          className={cn(
+            "absolute right-1 flex items-center gap-0.5",
+            REVEAL,
+            "has-[[aria-current=page]]:pointer-events-auto has-[[aria-current=page]]:opacity-100",
+          )}
         >
           <Tooltip content="New session" side="bottom">
             <button
               type="button"
               aria-label={`New session with ${agent.name}`}
+              aria-current={newSessionPage && !rowShown ? "page" : undefined}
               data-testid="sidebar-agent-new-session"
               onClick={go(() => startSession(agent.id))}
               className={cn(
-                "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground",
+                "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground aria-[current=page]:bg-background aria-[current=page]:text-foreground",
                 FOCUS_RING,
               )}
             >
@@ -512,14 +517,20 @@ function AgentNode({
       </div>
       <Collapse open={expanded}>
         <div className="pt-px pb-3" id={listId}>
-          <AgentSessionList agentId={agent.id} onNavigate={onNavigate} />
-          <AddRow
-            icon={Add}
-            label="New session"
-            ariaLabel={`New session with ${agent.name}`}
-            testId="sidebar-new-session-row"
-            current={newSessionOpen}
-            onClick={go(() => startSession(agent.id))}
+          <AgentSessionList
+            agentId={agent.id}
+            onNavigate={onNavigate}
+            onEmptyChange={setNoSessions}
+            newSessionRow={
+              <AddRow
+                icon={Add}
+                label="New session"
+                ariaLabel={`New session with ${agent.name}`}
+                testId="sidebar-new-session-row"
+                current={newSessionPage}
+                onClick={go(() => startSession(agent.id))}
+              />
+            }
           />
         </div>
       </Collapse>

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 
@@ -50,11 +50,21 @@ function useAgentTreeRows(agentId: string) {
 export function AgentSessionList({
   agentId,
   onNavigate,
+  newSessionRow,
+  onEmptyChange,
 }: {
   agentId: string;
   onNavigate?: () => void;
+  newSessionRow?: ReactNode;
+  onEmptyChange?: (empty: boolean) => void;
 }) {
   const { list, filters, rows, rest } = useAgentTreeRows(agentId);
+  const empty =
+    !list.loading &&
+    !list.failed &&
+    !list.hasNextPage &&
+    list.sessions.length === 0;
+  useEffect(() => onEmptyChange?.(empty), [empty, onEmptyChange]);
   const runState = useAgentRunState(agentId);
   const asleep =
     list.loading &&
@@ -153,6 +163,7 @@ export function AgentSessionList({
           }}
         />
       )}
+      {empty && newSessionRow}
     </div>
   );
 }
