@@ -44,6 +44,7 @@ let agentId = "";
 const marker = `home-survives-${randomUUID()}`;
 let machine = { boot: "", pod: "" };
 let installImage = "";
+let installRepository = "";
 let secondImage = "";
 let installMoved = false;
 
@@ -148,8 +149,11 @@ test.beforeAll(async () => {
     { neverIdle: true },
   );
   await waitAgentState(api, agentId, "running", { timeoutMs: 600_000 });
+  const pod = runnerPod(agentId);
+  test.skip(pod === "", "the Mac's host runner runs outside the cluster");
   installImage = runnerImage();
-  machine = { boot: guestBoot(), pod: runnerPod(agentId) };
+  installRepository = installImage.split("@")[0].replace(/:[^/]*$/, "");
+  machine = { boot: guestBoot(), pod };
   expect(
     machine.boot,
     "the guest did not answer for the boot it is in",
@@ -167,26 +171,26 @@ test.beforeAll(async () => {
   expect(
     secondImage,
     "e2e:runner-release did not load the lane's runner image under the second key",
-  ).toBe(
-    `${installImage.slice(0, installImage.lastIndexOf(":"))}:${secondKey}`,
-  );
+  ).toBe(`${installRepository}:${secondKey}`);
 });
 
 test.afterAll(async () => {
-  if (installMoved) upgrade();
-  if (agentId) await api.agents.delete.mutate({ id: agentId });
+  test.setTimeout(600_000);
+  try {
+    if (installMoved) upgrade();
+  } finally {
+    if (agentId) await api.agents.delete.mutate({ id: agentId });
+  }
 });
 
 // TEST_SCENARIO: a release that declares a reboot key the pod does not run cannot be handed to the machines that pod boots, so the pod rolls onto the image carrying it and every machine it runs reboots. The agent's guest is live with a file in HOME when the chart is upgraded to that release, so the roll reaches a running machine and must bring it back on a new boot with its disk as it was.
 test("rolls the live guest onto a release that declares a reboot", async () => {
   test.setTimeout(1_500_000);
-  const repository = secondImage.slice(0, secondImage.lastIndexOf(":"));
-  const tag = secondImage.slice(secondImage.lastIndexOf(":") + 1);
   const since = new Date().toISOString();
   installMoved = true;
   upgrade(
-    `virtualization.runner.image.repository=${repository}`,
-    `virtualization.runner.image.tag=${tag}`,
+    `virtualization.runner.image.repository=${installRepository}`,
+    `virtualization.runner.image.tag=${secondKey}`,
     "virtualization.runner.image.digest=",
   );
   await rolledOnto(secondImage, since);
