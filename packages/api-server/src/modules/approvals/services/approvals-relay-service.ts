@@ -22,6 +22,7 @@ interface RecordAcpNativePendingInput {
   toolName: string;
   toolCallId?: string;
   args: unknown;
+  idsWhole?: boolean;
   options: readonly AcpPermissionOption[];
 }
 
@@ -176,7 +177,7 @@ export function createApprovalsRelayService(
           optionId: o.optionId,
           kind: o.kind,
         })),
-        optionsWhole: true as const,
+        ...(input.idsWhole === true && { optionsWhole: true as const }),
       };
       const written = await deps.repo.insertIfAbsent({
         id: rowId,

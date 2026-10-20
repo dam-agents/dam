@@ -8,16 +8,16 @@ import type {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The frames a verdict becomes when it travels to
  * the runtime, and the verdict a reported outcome becomes when it travels
- * back. A verdict only ever answers in its own direction: a denial picks a
- * reject option or cancels, because the row's catalog is bounded and the
- * option it lost cannot be told apart from an allow, and an id a catalog
- * recorded twice — once as an allow, once as a shorter reject — is never sent
- * for a denial: the harness knows only one meaning for it. A catalog recorded
- * before ids were kept whole cannot prove its reject was not shortened, so a
- * reject at the old character bound is never sent from it either. In the other direction
- * the runtime holds the whole request, so the kind it reports states what an
- * option the row dropped was. That kind decides the verdict only when the
- * runtime reports it: the chat client's own answer travels unvalidated.
+ * back. A verdict only ever answers in its own direction: the option it sends
+ * must be the kind it asks for, because a catalog that recorded an id twice
+ * cannot say what the harness will read. A catalog recorded before option ids
+ * were kept whole is not trusted at all: its ids below the old character bound
+ * were provably left alone, and an id at that bound may be a shortened one, so
+ * a legacy row answers only a provably intact option of exactly the wanted
+ * kind and cancels otherwise. In the other direction the runtime holds the
+ * whole request, so the kind it reports states what an option the row dropped
+ * was. That kind decides the verdict only when the runtime reports it: the
+ * chat client's own answer travels unvalidated.
  */
 export function pickOptionId(
   options: readonly AcpPermissionOption[],
@@ -32,21 +32,17 @@ export function pickOptionId(
         : verdict === "allow"
           ? "allow_always"
           : "allow_once";
+  if (opts?.idsWhole !== true) {
+    return (
+      options.find(
+        (o) => o.kind === want && o.optionId.length < TOOL_CALL_ID_MAX,
+      )?.optionId ?? null
+    );
+  }
   const isAllow = verdict === "allow" || verdict === "allow_once";
-  const allowIds = new Set(
-    options
-      .filter((o) => o.kind?.startsWith("allow") === true)
-      .map((o) => o.optionId),
-  );
-  const answerable = options.filter(
-    (o) =>
-      isAllow ||
-      (!allowIds.has(o.optionId) &&
-        (opts?.idsWhole === true || o.optionId.length < TOOL_CALL_ID_MAX)),
-  );
-  const direct = answerable.find((o) => o.kind === want);
+  const direct = options.find((o) => o.kind === want);
   if (direct) return direct.optionId;
-  const fallback = answerable.find((o) => {
+  const fallback = options.find((o) => {
     if (!o.kind) return false;
     return isAllow ? o.kind.startsWith("allow") : o.kind.startsWith("reject");
   });

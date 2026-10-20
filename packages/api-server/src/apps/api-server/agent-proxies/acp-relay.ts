@@ -147,6 +147,7 @@ export function createAcpRelay(
             toolName,
             ...(toolCallId !== undefined && { toolCallId }),
             args: tc.rawInput,
+            idsWhole: true,
             options,
           })
           .then((recorded) => {

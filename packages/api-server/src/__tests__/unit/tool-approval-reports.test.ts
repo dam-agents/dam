@@ -124,13 +124,14 @@ function setup() {
   const { rows, repo, hooks } = makeRepo();
   const relay = createApprovalsRelayService({ repo, bus: {} as RedisBus });
   const reports = createToolApprovalReports({ relay, ownerSub: "owner-1" });
-  const waiting = () =>
+  const waiting = (idsWhole = true) =>
     reports.waiting(AGENT, {
       sessionId: SESSION,
       rpcId: RPC,
       toolName: "Write /tmp/a",
       toolCallId: "tc-7",
       args: { path: "/tmp/a" },
+      ...(idsWhole && { idsWhole: true as const }),
       options: OPTIONS,
     });
   return { rows, repo, relay, reports, waiting, hooks };
@@ -565,5 +566,21 @@ describe("tool approval reports", () => {
       verdict: "deny_once",
       deliveredAt: null,
     });
+  });
+
+  // TEST_SCENARIO: the api-server and the runtime upgrade separately, so a runtime built before ids were kept whole sends its first report to the new API. That catalog may hold a shortened id, so the row must stay unmarked and answer conservatively; a runtime that asserts whole ids is trusted.
+  it("trusts only a report that asserts its ids are whole", async () => {
+    const { rows, reports, waiting } = setup();
+    await reports.waiting(AGENT, {
+      sessionId: SESSION,
+      rpcId: "legacy-1",
+      toolName: "Write /tmp/a",
+      args: { path: "/tmp/b" },
+      options: OPTIONS,
+    });
+    await waiting();
+
+    expect(rows[0]?.payload).not.toHaveProperty("optionsWhole");
+    expect(rows[1]?.payload).toMatchObject({ optionsWhole: true });
   });
 });

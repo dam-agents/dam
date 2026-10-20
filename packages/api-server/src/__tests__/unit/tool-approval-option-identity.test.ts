@@ -71,7 +71,8 @@ describe("tool approval option identity", () => {
     ];
 
     expect(pickOptionId(legacy, "deny_once")).toBeNull();
-    expect(pickOptionId(legacy, "allow_once")).toBe(shared);
+    expect(pickOptionId(legacy, "allow_once")).toBeNull();
+    expect(pickOptionId(legacy, "allow_once", { idsWhole: true })).toBe(shared);
   });
 
   // TEST_SCENARIO: the old mapper shortened ids and then kept only sixteen options, so the allow the shortened reject collides with can be the one it drops. Absence of that allow from the stored catalog proves nothing, and both Home and the delivery sweeper answer from it: a reject at the old character bound is never sent from a catalog that cannot prove its ids whole.
@@ -101,8 +102,8 @@ describe("tool approval option identity", () => {
     expect(pickOptionId(legacyCatalog, "allow_once")).toBe("yes0");
   });
 
-  // TEST_SCENARIO: delivery recovery answers from the same stored catalog as Home, so a legacy row whose reject may be a shortened id must not be retried into the harness as an allow either. The row stays undelivered on purpose, waiting for the runtime's answer instead.
-  it("keeps a legacy denial undelivered rather than sending an ambiguous id", async () => {
+  // TEST_SCENARIO: delivery recovery answers from the same stored catalog as Home, so a legacy row whose reject may be a shortened id must not be retried into the harness as an allow either; it sends a cancellation the harness can always read.
+  it("retries a legacy denial as a cancellation, never an ambiguous id", async () => {
     const legacyCatalog = legacyRecordedOptionsOf([
       ...Array.from({ length: 15 }, (_, n) => ({
         optionId: `yes${n}`,
@@ -112,6 +113,7 @@ describe("tool approval option identity", () => {
       { optionId: shared, kind: "allow_once" },
     ]);
     const sent: string[] = [];
+    const delivered: string[] = [];
     const rows = [
       {
         id: "acpnative:a:s:1",
@@ -136,7 +138,9 @@ describe("tool approval option identity", () => {
     ] as PendingApprovalRow[];
     const repo = {
       listResolvedUndelivered: async () => rows,
-      markDelivered: async () => {},
+      markDelivered: async (id: string) => {
+        delivered.push(id);
+      },
       expireOverdue: async () => [],
     } as Partial<ApprovalsRepository> as ApprovalsRepository;
     const sweeper = createDeliverySweeper({
@@ -159,6 +163,37 @@ describe("tool approval option identity", () => {
         result: { outcome: { outcome: "cancelled" } },
       }),
     ]);
+    expect(delivered).toEqual(["acpnative:a:s:1"]);
+  });
+
+  // TEST_SCENARIO: #5468 recorded an allow_once and an allow_always whose ids differed only after the bound, so the stored catalog holds the persistent id once, as a one-time allow. Approve Once must not grant the persistent permission: a legacy row answers only an option it can prove was not shortened.
+  it("never turns a legacy Approve Once into the persistent permission", () => {
+    const once = `${"g".repeat(TOOL_CALL_ID_MAX)}-once`;
+    const legacyCatalog = legacyRecordedOptionsOf([
+      { optionId: once, kind: "allow_once" },
+      { optionId: "g".repeat(TOOL_CALL_ID_MAX), kind: "allow_always" },
+      { optionId: "no", kind: "reject_once" },
+    ]);
+
+    expect(
+      legacyCatalog.filter((o) => o.kind?.startsWith("allow")),
+    ).toHaveLength(2);
+    expect(pickOptionId(legacyCatalog, "allow_once")).toBeNull();
+    expect(pickOptionId(legacyCatalog, "allow")).toBeNull();
+    expect(pickOptionId(legacyCatalog, "deny_once")).toBe("no");
+  });
+
+  // TEST_SCENARIO: ordinary approvals must keep working on a legacy row: an option whose id is shorter than the old bound was provably left alone, so it stays selectable and the owner's permission still reaches the harness.
+  it("still answers a legacy row's intact options", () => {
+    const legacyCatalog = legacyRecordedOptionsOf([
+      { optionId: "yes", kind: "allow_once" },
+      { optionId: "always", kind: "allow_always" },
+      { optionId: "no", kind: "reject_once" },
+    ]);
+
+    expect(pickOptionId(legacyCatalog, "allow_once")).toBe("yes");
+    expect(pickOptionId(legacyCatalog, "allow")).toBe("always");
+    expect(pickOptionId(legacyCatalog, "deny_once")).toBe("no");
   });
 });
 

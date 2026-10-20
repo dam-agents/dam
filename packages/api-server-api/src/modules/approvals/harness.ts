@@ -15,6 +15,7 @@ export const toolApprovalWaitingInputSchema = z.object({
   toolName: z.string().min(1).max(4096),
   toolCallId: z.string().min(1).max(512).optional(),
   args: z.unknown().optional(),
+  idsWhole: z.literal(true).optional(),
   options: z
     .array(
       z.object({

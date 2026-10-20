@@ -64,6 +64,7 @@ describe("tool approval reporter", () => {
           toolName: "Write /tmp/a",
           toolCallId: "tc-7",
           args: { path: "/tmp/a" },
+          idsWhole: true,
           options: [
             { optionId: "allow", kind: "allow_once" },
             { optionId: "no", kind: "reject_once" },

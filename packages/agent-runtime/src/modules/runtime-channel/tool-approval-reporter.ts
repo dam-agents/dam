@@ -176,6 +176,7 @@ export function createToolApprovalReporter(opts: {
               toolName,
               ...(toolCallId !== undefined && { toolCallId }),
               args: frame.params?.toolCall?.rawInput,
+              idsWhole: true,
               options: recordedOptionsOf(frame.params?.options),
             },
             { signal },

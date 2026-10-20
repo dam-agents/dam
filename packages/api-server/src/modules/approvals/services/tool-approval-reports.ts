@@ -32,6 +32,7 @@ export function createToolApprovalReports(deps: {
         toolName: input.toolName,
         toolCallId: input.toolCallId,
         args: input.args,
+        idsWhole: input.idsWhole,
         options: input.options,
       });
     },
