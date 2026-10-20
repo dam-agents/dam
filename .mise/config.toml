@@ -21,11 +21,15 @@ GIT_PREFIX = false
 repo_root = "{{config_root}}"
 # Issue #5291's newer digests are under the 7-day floor: the api-server base
 # was built 2026-10-19T09:08Z and the controller base 2026-10-17T06:35Z.
-# Neither those nor main's 2026-10-15T01:50Z, T02:13Z and T06:36Z pair is old
-# enough, so the pins hold at the newest releases that are: the 2026-10-09
-# builds that main shipped from 2026-10-11 to 2026-10-16. The api-server base
-# then carries Node 26.10.0 instead of 26.11.1, and the ui base nginx 1.30.5
-# instead of 1.30.6. main's three become eligible 2026-10-22T02:13Z.
+# Neither those nor main's are old enough, so each pin holds at the newest
+# release that is, and each clears on its own date:
+#   nodejs:26      2026-10-09T15:20:14Z  ->  old pin 2026-10-15T01:50:48Z, clears 2026-10-22T01:50:48Z
+#   core-runtime   2026-10-09T15:20:14Z  ->  old pin 2026-10-15T02:13:31Z, clears 2026-10-22T02:13:31Z
+#   nginx:1.30     2026-10-08T02:49:02Z  ->  old pin 2026-10-15T06:36:30Z, clears 2026-10-22T06:36:30Z
+# These are the builds main shipped from 2026-10-11 to 2026-10-16. The cost:
+# the api-server base carries Node 26.10.0 instead of 26.11.1, and the ui
+# base nginx 1.30.5 instead of 1.30.6. The three re-pin together only after
+# the latest of those dates, 2026-10-22T06:36:30Z.
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:dffe609fba03be24faf352015d3f2e3950e18a82922b39f8b3828b9696cc6fcf"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4730fe5f23bec7eb86b9736bc1458d58862372b1d1555ca9da77d21d4fffea17"
 # 26.8.1 (2026-10-13T08:59Z) fixes the pcre2 CVEs in 26.8.0 and Keycloak's own
