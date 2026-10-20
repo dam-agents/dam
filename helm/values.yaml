@@ -1044,6 +1044,14 @@ keycloak:
     username: null
     password: null
 
+  # -- More test users bootstrapped via realm import, for QA installs that need
+  # more than one account. Empty by default — the same rule as `testUser`.
+  # Each entry: `username`, `password`, optional `firstName`/`lastName`, and
+  # `groups` — any of `inspectors`, `slack-installers` (ignored when that role
+  # is disabled). The email is `<username>@platform.local`; `requiredRole`,
+  # when set, is granted as for `testUser`.
+  extraTestUsers: []
+
   # -- Database connection (empty host = use shared local postgres)
   db:
     host: ""

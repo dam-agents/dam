@@ -399,3 +399,22 @@ runner_class() {
 }
 [ "$(runner_class 1000)" != "$(runner_class 0)" ] \
   || { echo "a changed runner priority renders the same PriorityClass name, whose value Kubernetes will not update" >&2; exit 1; }
+# More test users for a QA install: each lands in the realm import with its own
+# email and only the groups whose role this install has. An entry without a
+# password, or with a group the chart does not create, fails the render instead
+# of a realm import Keycloak refuses at start.
+realm=$(helm template platform . "${COMMON[@]}" \
+  --set-json 'keycloak.extraTestUsers=[{"username":"qa-member","password":"p1"},{"username":"qa-inspector","password":"p2","groups":["inspectors","slack-installers"]}]' \
+  --set keycloak.slackInstallerRole= \
+  --show-only templates/keycloak/realm-configmap.yaml | yq -r '.data["platform-realm.json"]')
+jq -e '[.users[] | select(.username | startswith("qa-"))] as $u
+  | $u[0] == ($u[0] | {username: "qa-member", email: "qa-member@platform.local"} + .) and ($u[0].groups == null)
+  and $u[1].email == "qa-inspector@platform.local" and $u[1].groups == ["/inspectors"]
+  and $u[1].credentials[0].value == "p2" and ($u | length) == 2' <<<"$realm" >/dev/null ||
+  { echo "keycloak.extraTestUsers did not render as the realm users it names: $realm" >&2; exit 1; }
+for refused in '[{"username":"qa-member"}]' '[{"username":"qa-member","password":"p1","groups":["admins"]}]'; do
+  if helm template platform . "${COMMON[@]}" --set-json "keycloak.extraTestUsers=$refused" >/dev/null 2>&1; then
+    echo "a render with keycloak.extraTestUsers=$refused succeeded, but Keycloak cannot import that user" >&2
+    exit 1
+  fi
+done
