@@ -3,7 +3,7 @@
  * artifact that an agent published can ask that agent for data. The owner's
  * session calls artifactLibrary.callAgentApi with the artifact id; the server
  * reads the agent from the artifact, wakes it, and relays the request to the
- * app the agent serves on the Artifact API Port. Share links, other people's
+ * app the agent serves on the Artifact API Port. Public pages, other people's
  * artifacts and user uploads are refused with "not-allowed" before any agent
  * is woken.
  */
@@ -97,17 +97,38 @@ describe("Artifact API — asking the publishing agent", () => {
   });
 });
 
+describe("Artifact API — a page shared with named viewers", () => {
+  /**
+   * TEST_SCENARIO: The owner shared the dashboard with named viewers. The
+   * owner still uses it from the docked preview, so the call goes through.
+   * The viewers have no way here: callAgentApi runs as the owner, and the
+   * share host never relays a page's requests.
+   */
+  it("should still answer its owner", async () => {
+    const world = createArtifactApiWorld();
+    world.agent("agent-a").serve(() => pong);
+    const dashboard = world.publish({
+      by: "agent-a",
+      visibility: "restricted",
+    });
+
+    await expect(world.call(dashboard, ping)).resolves.toEqual({
+      ok: true,
+      ...pong,
+    });
+  });
+});
+
 describe("Artifact API — who may not call", () => {
   /**
-   * TEST_SCENARIO: Only a private, interactive html artifact that an agent
-   * published may call, and only by its owner. Share links (restricted or
-   * public) would let other people drive the owner's agent. User uploads
+   * TEST_SCENARIO: Only an interactive html artifact that an agent published
+   * may call, and only by its owner. A public page is refused even for its
+   * owner, so a public link can never be a way to the agent. User uploads
    * have no agent to call. In every case the agent stays asleep and its app
    * sees nothing.
    */
   it.each<[string, PublishOptions]>([
     ["shared by public link", { visibility: "public" }],
-    ["shared with named viewers", { visibility: "restricted" }],
     ["not interactive", { interactive: false }],
     ["not an html page", { kind: "markdown" }],
     ["uploaded by the user", { by: null }],

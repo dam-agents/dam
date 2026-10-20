@@ -88,7 +88,7 @@ export function ArtifactDeletionChip({
 
 export function ArtifactInteractiveBadge() {
   return (
-    <Tooltip content="This page can ask its agent to do something, so it stays private — it can never be shared.">
+    <Tooltip content="This page can ask its agent to do something, so it can never be public. You can share it with named people; its buttons work only for you.">
       <span className="inline-flex">
         <Badge variant="accent" className="gap-1">
           <Flash size={12} />
