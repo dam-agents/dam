@@ -26,21 +26,25 @@ repo_root = "{{config_root}}"
 # Issue #5291's newer digests are under the 7-day floor: the api-server base
 # was built 2026-10-19T09:08Z and the controller base 2026-10-17T06:35Z.
 # Neither those nor main's are old enough, so each pin holds at the newest
-# release that is, and each clears on its own date:
-#   nodejs:26      2026-10-09T15:20:14Z  ->  old pin 2026-10-15T01:50:48Z, clears 2026-10-22T01:50:48Z
-#   core-runtime   2026-10-09T15:20:14Z  ->  old pin 2026-10-15T02:13:31Z, clears 2026-10-22T02:13:31Z
-#   nginx:1.30     2026-10-08T02:49:02Z  ->  old pin 2026-10-15T06:36:30Z, clears 2026-10-22T06:36:30Z
-# These are the builds main shipped from 2026-10-11 to 2026-10-16. The cost:
-# the api-server base carries Node 26.10.0 instead of 26.11.1, and the ui
-# base nginx 1.30.5 instead of 1.30.6. The three re-pin together only after
-# the latest of those dates, 2026-10-22T06:36:30Z.
+# release that is. These dates are build timestamps plus seven days, i.e.
+# earliest possible clearances; a non-security re-pin needs evidence the
+# manifest was actually published at or before the build time:
+#   nodejs:26      2026-10-09T15:20:14Z  ->  main's 2026-10-15T01:50:48Z, earliest 2026-10-22T01:50:48Z
+#   core-runtime   2026-10-09T15:20:14Z  ->  main's 2026-10-15T02:13:31Z, earliest 2026-10-22T02:13:31Z
+# These are the builds main shipped from 2026-10-11 to 2026-10-16, and the
+# api-server base then carries Node 26.10.0 instead of 26.11.1.
 base_image_api_server = "registry.access.redhat.com/hi/nodejs:26@sha256:dffe609fba03be24faf352015d3f2e3950e18a82922b39f8b3828b9696cc6fcf"
 base_image_controller = "registry.access.redhat.com/hi/core-runtime:latest@sha256:4730fe5f23bec7eb86b9736bc1458d58862372b1d1555ca9da77d21d4fffea17"
 # 26.8.1 (2026-10-13T08:59Z) fixes the pcre2 CVEs in 26.8.0 and Keycloak's own
 # advisories, so it carries a dated exception that ends 2026-10-20T08:59Z. It
 # is still the newest tag upstream publishes.
 base_image_keycloak = "quay.io/keycloak/keycloak:26.8.1@sha256:79c623a22abacf3fe6c00a5fb30f5b7843d717b234033b80995891c06116d244"
-base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:7c88ec5f1177a2ab937e3fb99c3e42c367c629a7632e5c90a9dc607a9e4d1dcc"
+# nginx 1.30.6 (built 2026-10-15T06:36:30Z, earliest clearance 2026-10-22T06:36:30Z)
+# stays despite the 7-day floor: 1.30.6 fixes CVE-2026-15176, CVE-2026-93479,
+# CVE-2026-95101, CVE-2026-97629 and CVE-2026-97205, which the 1.30.5 build
+# eligible today lacks. The exception can go once an eligible build carries
+# 1.30.6 or later, i.e. from 2026-10-22T06:36:30Z for this one.
+base_image_ui = "registry.access.redhat.com/hi/nginx:1.30@sha256:63ef79903a967e6bf45ed76e7c5f8bf28fb7457931162e0d645e75bcdeee0c49"
 base_image_debian = "mirror.gcr.io/library/debian:trixie-slim"
 
 [deps.pnpm]
