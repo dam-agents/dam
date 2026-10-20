@@ -121,6 +121,7 @@ export const telegramConversations = pgTable(
     conversationId: text("conversation_id").primaryKey(),
     agentId: text("agent_id").notNull(),
     authorizedBy: text("authorized_by").notNull(),
+    ambient: boolean("ambient").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),

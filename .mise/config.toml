@@ -16,6 +16,10 @@ GIT_DIR = false
 GIT_WORK_TREE = false
 GIT_INDEX_FILE = false
 GIT_PREFIX = false
+# mr boxington's store budget: compiled output shared by every checkout on the
+# machine, collected as it fills. A developer sets a different one in
+# `mise.local.toml`.
+MBX_GC_MAX_TOTAL_SIZE = "60GiB"
 
 [vars]
 repo_root = "{{config_root}}"
@@ -72,6 +76,10 @@ jq = "latest"
 kubeconform = "latest"
 lima = "latest"
 maven = "latest"
+# Caches Cargo builds across checkouts and worktrees; the wrapper below is what
+# routes this repo's `cargo` through it. See "The Rust build cache" in the
+# README.
+"mr-boxington" = "latest"
 nodejs = "26"
 pinact = "latest"
 pnpm = "latest"
@@ -87,6 +95,15 @@ yq = "latest"
 # past it. check:zizmor runs it beside jactionlint: the default profile leaves
 # parts of some zizmor audits out, the dynamic-matrix injection among them.
 zizmor = "1.30.1"
+
+# Cargo runs through mr boxington, which is what makes a build here restore the
+# crates another checkout or worktree already compiled. This is the wrapper
+# `mbx setup` writes, declared in the project instead of a developer's config,
+# so nothing touches the global mise config or rust-analyzer's settings.
+# `MBX_DISABLE=1 cargo …` bypasses it for one command.
+[wrappers.cargo]
+command = "mbx"
+env = { MBX_CARGO_SHIM_MODE = "1" }
 
 [settings]
 npm.package_manager = "aube"

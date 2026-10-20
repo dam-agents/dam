@@ -4,6 +4,7 @@ import { telegramConversations, eq } from "db";
 export interface TelegramConversationBinding {
   agentId: string;
   authorizedBy: string;
+  ambient: boolean;
 }
 
 export function findAgentByConversation(db: Db) {
@@ -14,11 +15,21 @@ export function findAgentByConversation(db: Db) {
       .select({
         agentId: telegramConversations.agentId,
         authorizedBy: telegramConversations.authorizedBy,
+        ambient: telegramConversations.ambient,
       })
       .from(telegramConversations)
       .where(eq(telegramConversations.conversationId, conversationId))
       .limit(1);
     return rows[0] ?? null;
+  };
+}
+
+export function setConversationAmbient(db: Db) {
+  return async (conversationId: string, ambient: boolean): Promise<void> => {
+    await db
+      .update(telegramConversations)
+      .set({ ambient })
+      .where(eq(telegramConversations.conversationId, conversationId));
   };
 }
 

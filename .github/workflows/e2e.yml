@@ -398,6 +398,10 @@ jobs:
       E2E_TIMINGS: *e2e-timings
       E2E_REPORT_JSON: *e2e-report-json
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      # This lane restores the release build's `packages/vm-runner/target`, so
+      # it wants Cargo's plain target and not mr boxington's managed one in its
+      # place, as build.yml's build-images says.
+      MBX_DISABLE: "1"
     steps:
       - *e2e-timing-start
       - *e2e-checkout
