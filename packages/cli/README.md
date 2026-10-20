@@ -20,6 +20,17 @@ dam --version
 Configuration lives at `$XDG_CONFIG_HOME/dam/config.toml` (default `~/.config/dam/config.toml`).
 State and credentials live separately under `$XDG_STATE_HOME/dam/` (default `~/.local/state/dam/`).
 
+## Use it from your own agent
+
+The CLI comes with a skill that teaches an agent on your machine — Claude Code, Codex, or any agent that loads skills — to drive DAM with this CLI.
+The agent never sees a secret: whenever DAM needs one, it gives you a command to run in your own terminal.
+
+```sh
+npx skills add 'dam-agents/dam/packages/cli/skills/dam#v0.2.24' -g
+```
+
+Replace `0.2.24` with the version `dam --version` prints, so the skill matches your CLI.
+
 ## Links
 
 - [Source](https://github.com/dam-agents/dam/tree/main/packages/cli)

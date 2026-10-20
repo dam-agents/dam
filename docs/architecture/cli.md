@@ -142,6 +142,21 @@ The recurring patterns, stated once:
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
 - **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
 
+## Agent skill
+
+The CLI ships an agent skill ([`packages/cli/skills/`](../../packages/cli/skills/)) that teaches an agent on the user's own machine — any harness that loads skills — to drive a Platform deployment through the CLI.
+The user installs it from the repository with an open skills installer, pinned to the release tag of the CLI they run.
+The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
+
+The skill lives beside the CLI source so one check covers both.
+The CLI's test suite reads the skill and resolves every command it names against the CLI's command tree, every flag against the command it is given to, and its exit-code table against the exit-code registry.
+A CLI change that leaves the skill describing a command that no longer exists fails there, before it ships.
+
+The skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
+Sign-in stays the device flow the user approves in a browser, and the agent never reads the credential store or the bearer variable.
+Every command that stores a secret — a connection's credential, a rotated one, a new API key — is handed to the user to run in a terminal of their own, where the CLI's masked prompt takes it, and the agent then verifies the outcome with a read verb.
+Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
+
 ## Agent lifecycle
 
 The CLI presents Agents as single, atomic entities — one resource carrying both spec and runtime state, with no separate instance type.
