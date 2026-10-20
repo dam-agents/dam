@@ -406,6 +406,10 @@ impl Runtime for Smolvm {
     fn vmm_exit_signal(&self, pid: i32) -> Option<i32> {
         smolvm::process::peek_exit_signal(pid)
     }
+
+    fn forget_vmm_exit(&self, pid: i32) {
+        smolvm::process::forget_exit_signal(pid);
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a grow waits for the guest to plug its added RAM and put it online, as smolvm's own resize waits.

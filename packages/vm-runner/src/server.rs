@@ -126,6 +126,8 @@ struct MachineEntry {
     seeding: bool,
     failure: Option<Failed>,
     killed: Option<Killed>,
+    // UNIT_BOUNDARY_DESCRIPTION: a kernel OOM kill held for this machine's own boot or grow, with the instant it was counted: a recovery that stops a machine and boots it whole takes longer than a credit's window, and this kill is already known to belong to that action's death, so it waits for the action rather than for the clock.
+    oom_reserved: Option<Instant>,
     health: Health,
     restarts: i32,
     gave_up: Option<Instant>,
@@ -246,6 +248,15 @@ fn read_exit_record(state_dir: &std::path::Path, pid: i32) -> Option<i32> {
     Some(signal)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: drops a record the loader left under a pid this machine now runs on: it names the incarnation before this one, and this one publishes its own when it dies, so keeping the old one is what would report a seccomp kill for a machine the kernel took for memory. Safe against a new death because it runs as the boot returns, while the new VMM is alive and nothing can have recorded it.
+fn forget_exit_record(state_dir: &std::path::Path, pid: i32) {
+    let _ = fs::remove_file(
+        state_dir
+            .join(crate::state::EXIT_RECORDS)
+            .join(pid.to_string()),
+    );
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: removes the loader's records that no death still explains: a machine deleted while its record was being written, or a pid this runner never matched to a machine, leaves a file nothing would ever read. Only age decides: a record written while a tick is looking at the machine of its pid is not yet readable by that tick, and pruning it as unnamed would drop the kill it names.
 fn prune_exit_records(state_dir: &std::path::Path) {
     let dir = state_dir.join(crate::state::EXIT_RECORDS);
@@ -281,9 +292,7 @@ pub struct Server {
     // UNIT_BOUNDARY_DESCRIPTION: the cgroup's oom_kill count as this runner last read it, with the kills counted but not yet matched to a victim it reported. One credit is spent per SIGKILL it reports, so an operator's `kill -9` beside a real OOM is not read as memory, and an OOM counted before its victim was read is not lost. The count and the credits share one lock: a boot, a grow and the tick all sample the count, and a sample that another of them has already moved past must not put the count back, or the same kill is credited twice.
     oom: Mutex<OomKills>,
     // UNIT_BOUNDARY_DESCRIPTION: every death the reaper has collected and not yet reported or dropped, by pid, with the signal that ended it when one did: the runtime's own sweep of these children discards the status, and the status read once is all there is, so a machine still starting when its VMM dies keeps its record until the start call returns.
-    exits: Mutex<BTreeMap<i32, (Option<i32>, Instant)>>,
-    // UNIT_BOUNDARY_DESCRIPTION: every death this runner has already considered, by machine and pid, with when it did: the note a killed child leaves is readable by every waiter for a minute, so without this the next tick would consider that same death again and spend on it a credit the kernel counted later, for another machine.
-    considered: Mutex<std::collections::HashMap<(String, i32), Instant>>,
+    exits: Mutex<BTreeMap<i32, (Option<i32>, Option<u64>, Instant)>>,
     shed_request: Mutex<Option<(u64, String)>>,
     lifetime: CancellationToken,
     work: TaskTracker,
@@ -411,7 +420,6 @@ impl Server {
             storage_unmeasured: std::sync::atomic::AtomicBool::new(false),
             oom: Mutex::new(oom),
             exits: Mutex::new(BTreeMap::new()),
-            considered: Mutex::new(std::collections::HashMap::new()),
             shed_request: Mutex::new(None),
             lifetime,
             work: TaskTracker::new(),
@@ -572,21 +580,33 @@ impl Server {
     pub fn reap_killed(&self) {
         self.collect_exits();
         self.match_oom_kills();
-        for (id, pid, signal) in self.reportable_kills() {
-            self.report_kill(&id, pid, signal);
+        self.reserve_action_kills();
+        for (id, pid, started, signal) in self.reportable_kills() {
+            self.report_kill(&id, pid, started, signal);
         }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: says on the machine what took its VMM down, and counts it: a signal is the kernel taking the machine for memory, or the machine's own seccomp filter. A SIGKILL the cgroup did not count, and a signal no reason explains, are said on the console alone, since a reason would claim what nothing showed. Answers whether the machine now names a kill.
-    fn report_kill(&self, id: &str, pid: i32, signal: i32) -> bool {
-        // UNIT_BOUNDARY_DESCRIPTION: the death is consumed wherever it was reported from, so a kill a boot's or a grow's own failure already said is not said again by a tick that collected the same status, and it is remembered as considered whatever this decides: a death the console alone explained is not read again by a later tick that finds a newer credit.
+    fn report_kill(&self, id: &str, pid: i32, started: Option<u64>, signal: i32) -> bool {
+        // UNIT_BOUNDARY_DESCRIPTION: the death is consumed wherever it was reported from — its collected status, the note the runtime kept, and the loader's record are all read once — so a kill a boot's or a grow's own failure already said is not said again by a tick that collected the same status, and a death the console alone explained cannot come back on a later tick and take a count the kernel made for another machine. Safe for the other readers: a machine with an action in flight is not reported by the tick, and an action reads its death before it reports it.
         locked(&self.exits).remove(&pid);
-        locked(&self.considered).insert((id.to_string(), pid), Instant::now());
-        // UNIT_BOUNDARY_DESCRIPTION: the count is read before it is spent, so an OOM kill that landed since the last tick — the one that killed a booting or growing VMM, which no tick has seen — is credited to the machine in hand.
+        self.runtime.forget_vmm_exit(pid);
+        let _ = started;
+        // UNIT_BOUNDARY_DESCRIPTION: the count is read before it is spent, so an OOM kill that landed since the last tick — the one that killed a booting or growing VMM, which no tick has seen — is credited to the machine in hand, and a kill this machine's action reserved for itself is taken after that reservation rather than before it.
         self.match_oom_kills();
+        self.reserve_action_kills();
+        eprintln!("DBGR report id={id} signal={signal} action={:?} credits={} reserved={:?}", locked(&self.machines).entries.get(id).and_then(|e| e.action), locked(&self.oom).credits.len(), locked(&self.machines).entries.get(id).and_then(|e| e.oom_reserved));
+        let reserved = if signal == libc::SIGKILL {
+            locked(&self.machines)
+                .entries
+                .get_mut(id)
+                .and_then(|entry| entry.oom_reserved.take())
+        } else {
+            None
+        };
         let reason = match signal {
             libc::SIGSYS => REASON_SECCOMP_KILLED,
-            libc::SIGKILL if self.take_oom_credit() => REASON_OOM_KILLED,
+            libc::SIGKILL if reserved.is_some() || self.take_oom_credit() => REASON_OOM_KILLED,
             libc::SIGKILL => {
                 tracing::warn!(machine = %id, pid, signal, "vm runner: a machine's VMM was killed by a signal the kernel's OOM killer did not count, so it was not the kernel's; the machine restarts with no reason saying it ran out of memory");
                 return false;
@@ -637,21 +657,20 @@ impl Server {
             if locked(&self.exits).contains_key(&pid) {
                 continue;
             }
-            if locked(&self.considered).contains_key(&(id.clone(), pid)) {
-                continue;
-            }
-            if let Some((pid, signal)) = self.vmm_exit(&id) {
-                locked(&self.exits).insert(pid, (signal, Instant::now()));
+            if let Some((pid, started, signal)) = self.vmm_exit(&id) {
+                locked(&self.exits).insert(pid, (signal, started, Instant::now()));
             }
         }
-        locked(&self.exits).retain(|_, (_, at)| at.elapsed() < EXIT_KEPT);
-        locked(&self.considered).retain(|_, at| at.elapsed() < EXIT_KEPT);
+        locked(&self.exits)
+            .retain(|_, (_, _, at)| at.elapsed() < EXIT_KEPT);
         prune_exit_records(&self.config.state_dir);
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the exit of a machine's VMM as one read says it, with the signal that ended it when one did, or nothing while the VMM runs. A pid this process is not the parent of reads as nothing at all, which is every machine that outlived the runner that booted it: its death is the record the loader wrote or the signal the runtime kept, and reading either here is what keeps a hand-off, and a kill during a boot, from hiding a kill. The pid is the record's, given only while it still names the process the record meant, so a reused pid is never read as this machine's and never reaped.
-    fn vmm_exit(&self, id: &str) -> Option<(i32, Option<i32>)> {
+    fn vmm_exit(&self, id: &str) -> Option<(i32, Option<u64>, Option<i32>)> {
         let pid = self.runtime.vmm_pid(id)?;
+        // UNIT_BOUNDARY_DESCRIPTION: the start time identifies the process, not the pid: the kernel hands a number out again, and a death read for the machine is only that process's while this still says so.
+        let started = smolvm::process::process_start_time(pid);
         let signal = match ended(pid) {
             Ended::Signalled(signal) => Some(signal),
             Ended::Exited => None,
@@ -667,7 +686,7 @@ impl Server {
                 }
             }
         };
-        Some((pid, signal))
+        Some((pid, started, signal))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the kernel counts an OOM kill at the second it makes one, and the victim is read at the tick after, so the count is turned into credits every tick and each credit is spent by a SIGKILL this reaper reports. A cgroup that cannot be read says nothing about who killed the machine, so every SIGKILL is read as memory there.
@@ -685,41 +704,81 @@ impl Server {
 
     // UNIT_BOUNDARY_DESCRIPTION: writes what the next runner starts from, from inside a critical section that already holds the count's lock: the kills accounted for, less the ones still owed to a machine.
     fn keep_oom_kills(&self, oom: &OomKills) {
-        let owed = u64::try_from(oom.credits.len()).unwrap_or(u64::MAX);
+        let reserved = locked(&self.machines)
+            .entries
+            .values()
+            .filter(|entry| entry.oom_reserved.is_some())
+            .count();
+        let owed = u64::try_from(oom.credits.len() + reserved).unwrap_or(u64::MAX);
         persist_oom_kills(&self.config.state_dir, oom.seen.saturating_sub(owed));
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: one sample of the count turned into credits, in the same critical section that moves the count it was worked out from: a boot, a grow and the tick each sample the count, and two of them in the other order would credit the same kills twice. A sample below the count already read is a cgroup the kernel recreated, which starts afresh. Credits past OOM_CREDIT_TTL are dropped before the cap is applied, so a set of credits whose victims this runner never saw cannot refuse a kill it has just counted.
     fn credit_oom(&self, counted: u64) {
         let mut oom = locked(&self.oom);
+        let now = Instant::now();
+        // UNIT_BOUNDARY_DESCRIPTION: expiry runs on every sample, an unchanged one included: a victim this runner never saw leaves a credit that a normal tick has to give up on, or a runner that idles for hours hands it to whoever replaces it as a fresh kill.
+        oom.credits
+            .retain(|at| now.saturating_duration_since(*at) < OOM_CREDIT_TTL);
         if oom.seen == OOM_KILLS_UNREAD {
             oom.seen = counted;
             self.keep_oom_kills(&oom);
             return;
         }
-        if counted <= oom.seen {
-            return;
-        }
-        let fresh = usize::try_from(counted.saturating_sub(oom.seen)).unwrap_or(usize::MAX);
-        oom.seen = counted;
-        let now = Instant::now();
-        if !self.action_in_flight() {
-            oom.credits
-                .retain(|at| now.saturating_duration_since(*at) < OOM_CREDIT_TTL);
-        }
-        let room = OOM_CREDIT_CAP.saturating_sub(oom.credits.len());
-        for _ in 0..fresh.min(room) {
-            oom.credits.push(now);
+        if counted > oom.seen {
+            let fresh = usize::try_from(counted.saturating_sub(oom.seen)).unwrap_or(usize::MAX);
+            oom.seen = counted;
+            let room = OOM_CREDIT_CAP.saturating_sub(oom.credits.len());
+            for _ in 0..fresh.min(room) {
+                oom.credits.push(now);
+            }
         }
         self.keep_oom_kills(&oom);
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: whether a boot, a grow, a stop or a delete is running, which holds the credits that are past their window: a kill a boot's or a grow's own death was counted for is named when that action finally fails, and a recovery that stops and boots a machine whole takes longer than the window, so the credit waits for it — no longer than the runtime call it waits on, which gives up at its own limit.
-    fn action_in_flight(&self) -> bool {
-        locked(&self.machines)
-            .entries
-            .values()
-            .any(|entry| entry.action.is_some() || entry.converging)
+    // UNIT_BOUNDARY_DESCRIPTION: sets aside one credit for each machine whose boot or grow is running and whose VMM is already gone, in the order of their names: that death is the action's own to name, and it is known now, so the kill belongs to it even if the recovery takes longer than a credit's window. Credits left over stay in the pool and keep aging: another machine's old, unmatched kill is not evidence for this action's death.
+    fn reserve_action_kills(&self) {
+        let corpses: Vec<String> = {
+            let machines = locked(&self.machines);
+            machines
+                .entries
+                .iter()
+                .filter(|(_, entry)| entry.action.is_some() && entry.oom_reserved.is_none())
+                .map(|(id, _)| id.clone())
+                .collect()
+        };
+        let mut ids = corpses;
+        ids.sort();
+        for id in ids {
+            let Some(pid) = self.runtime.vmm_pid(&id) else {
+                eprintln!("DBGR no pid {id}");
+                continue;
+            };
+            if smolvm::process::is_alive(pid) {
+                eprintln!("DBGR alive {id} {pid}");
+                continue;
+            }
+            let mut oom = locked(&self.oom);
+            let Some(at) = oom.credits.pop() else {
+                return;
+            };
+            if let Some(entry) = locked(&self.machines).entries.get_mut(&id) {
+                entry.oom_reserved = Some(at);
+            }
+            self.keep_oom_kills(&oom);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: gives a machine's reserved kill back to the pool when its action ended without naming it, with the age it was counted at, so it is dropped at the end of its window like any other: an action that did not die of that kill is no evidence for the next one.
+    fn release_oom_reservation(&self, entry: &mut MachineEntry) {
+        let Some(at) = entry.oom_reserved.take() else {
+            return;
+        };
+        let mut oom = locked(&self.oom);
+        if oom.credits.len() < OOM_CREDIT_CAP {
+            oom.credits.push(at);
+        }
+        self.keep_oom_kills(&oom);
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether one kernel OOM kill is still unmatched: spent by the SIGKILL it is reported for, or granted outright where no cgroup can be read to count them. A credit past its window is dropped rather than spent, since the victim it was counted for died where this reaper never saw it.
@@ -735,10 +794,8 @@ impl Server {
         }
         let mut oom = locked(&self.oom);
         let now = Instant::now();
-        if !self.action_in_flight() {
-            oom.credits
-                .retain(|at| now.saturating_duration_since(*at) < OOM_CREDIT_TTL);
-        }
+        oom.credits
+            .retain(|at| now.saturating_duration_since(*at) < OOM_CREDIT_TTL);
         let spent = oom.credits.pop().is_some();
         // UNIT_BOUNDARY_DESCRIPTION: what this runner owes is written whenever it changes — a kill it named, and one whose credit just aged out of the vector — so the runner that replaces it credits neither again.
         self.keep_oom_kills(&oom);
@@ -746,7 +803,7 @@ impl Server {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the machines whose collected death can be reported now, with the machine, its pid and the signal: one its owner asked to run, with no action in flight, not converging or deleting, not already saying a kill, and no runtime call still holding it after its wait gave up. A death collected for any other machine is kept, not dropped — the call in flight is what will make it reportable next tick. They come in the order of their names, not of a hash map's buckets: with one OOM count between two deaths the kernel says which process it took by nothing the host can read, so the same two deaths must be blamed the same way on every runner, and a machine's own name is the part of that which does not change.
-    fn reportable_kills(&self) -> Vec<(String, i32, i32)> {
+    fn reportable_kills(&self) -> Vec<(String, i32, Option<u64>, i32)> {
         let exits = locked(&self.exits);
         let machines = locked(&self.machines);
         let mut found = Vec::new();
@@ -766,8 +823,8 @@ impl Server {
             let Some(pid) = self.runtime.vmm_pid(id) else {
                 continue;
             };
-            if let Some((Some(signal), _)) = exits.get(&pid) {
-                found.push((id.clone(), pid, *signal));
+            if let Some((Some(signal), started, _)) = exits.get(&pid) {
+                found.push((id.clone(), pid, *started, *signal));
             }
         }
         found
@@ -1078,6 +1135,7 @@ impl Server {
         entry.converging = false;
         entry.action = None;
         entry.acting_mib = 0;
+        self.release_oom_reservation(entry);
         self.bump(entry);
     }
 
@@ -1380,12 +1438,18 @@ impl Server {
         };
         self.metrics
             .operation(action, started.elapsed(), result.is_ok());
+        // UNIT_BOUNDARY_DESCRIPTION: a boot that returned leaves this machine running at a pid the kernel may have handed out before, so the record of that earlier incarnation goes before this one can die.
+        if result.is_ok() && !matches!(action, Action::Stop) {
+            if let Some(pid) = self.runtime.vmm_pid(id) {
+                forget_exit_record(&self.config.state_dir, pid);
+            }
+        }
         let failure = result.err().and_then(|e| {
             // UNIT_BOUNDARY_DESCRIPTION: a VMM a signal took during its boot is the reason the machine restarted, not a boot that broke: the start fails either way, and only this says the kernel took it for memory or its own filter killed it.
             if let Some(killed) = e.downcast_ref::<crate::runtime::VmmKilled>() {
                 let message = format!("{e:#}");
                 tracing::error!(machine = %id, op = action.label(), error = %message, "machine action failed");
-                if self.report_kill(id, killed.pid, killed.signal) {
+                if self.report_kill(id, killed.pid, None, killed.signal) {
                     return None;
                 }
             }
@@ -1660,7 +1724,7 @@ impl Server {
             .start(action, started.elapsed(), result.is_ok());
         if let Ok(Booted { whole, killed }) = &result {
             if let Some((pid, signal)) = killed {
-                self.report_kill(id, *pid, *signal);
+                self.report_kill(id, *pid, None, *signal);
             }
             if *whole {
                 if let Err(e) = crate::files::write(&marker, own.as_bytes(), state::PORT_MODE) {
@@ -2244,7 +2308,7 @@ impl Server {
         if let Some(boot) = &answered {
             self.metrics.became_ready(boot.action, boot.at.elapsed());
         }
-        // UNIT_BOUNDARY_DESCRIPTION: a guest that answered again is a machine the kill no longer explains, so the reason goes with the boot that answered it.
+        // UNIT_BOUNDARY_DESCRIPTION: a guest that answered again is a machine the kill no longer explains, so the reason goes with the boot that answered it, and so does the death this machine was last told about: the VMM that died is not this one, whatever pid the kernel handed out again.
         if seen.ready {
             entry.killed = None;
         }
