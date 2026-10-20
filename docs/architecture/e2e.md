@@ -54,3 +54,7 @@ The two summaries hold the same table, so a phase of one lane compares with the 
 
 `mise run e2e` is the CI path: a fresh cluster, the suite, teardown.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
+
+A CI runner and its cluster are gone once the job ends, so a failure has to explain itself in the job's own record.
+A tRPC call a spec makes that fails names its procedure, its HTTP status and the answer it got, because the api-server redacts an internal error to "internal server error" and the spec's stack names no call.
+A failed run dumps the cluster's state into the job log, with every error line the api-server logged during the suite, since the server side of a 500 is there and nowhere else.
