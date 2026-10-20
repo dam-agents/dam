@@ -261,3 +261,64 @@ describe("createSessionsService", () => {
     expect(entries.unknown).toBeUndefined();
   });
 });
+
+describe("adoptHarnessTitle", () => {
+  function titled(meta: SessionMetaEntry["meta"]) {
+    const entries = new Map<string, SessionMetaEntry>([
+      ["term", { meta, createdAt: "2026-10-20T00:00:00.000Z" }],
+    ]);
+    const asked: unknown[] = [];
+    const caller: InProcessCaller = {
+      request: async <T>(method: string, params: unknown): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        asked.push(params);
+        return {
+          sessions: [{ sessionId: "term", title: "fix the login\nmore" }],
+        } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const service = createSessionsService({
+      defaultHarness: "claude-code",
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: {
+        ...fakeStore(),
+        get: (id) => entries.get(id),
+        set: (id, m) => {
+          entries.set(id, { ...entries.get(id)!, meta: m });
+        },
+      },
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+    return { service, asked, meta: () => entries.get("term")?.meta };
+  }
+
+  // TEST_SCENARIO: A terminal Session sends no prompt, so its title is the one its own harness lists; the list is asked of that harness, and the first line is kept as the Session's title.
+  it("keeps the harness's title for a terminal session", async () => {
+    const t = titled({ mode: "terminal", harness: "copilot" });
+    await t.service.adoptHarnessTitle("term");
+    expect(t.asked).toEqual([
+      { cwd: ".", _meta: { platform: { harness: "copilot" } } },
+    ]);
+    expect(t.meta()?.title).toBe("fix the login");
+  });
+
+  // TEST_SCENARIO: A title a person set wins over the harness's, and a chat Session already takes its title from its first prompt, so neither asks the harness.
+  it("leaves a set title and a chat session alone", async () => {
+    for (const meta of [
+      { mode: "terminal", customTitle: "mine" },
+      { mode: "chat" },
+    ]) {
+      const t = titled(meta);
+      await t.service.adoptHarnessTitle("term");
+      expect(t.asked).toEqual([]);
+      expect(t.meta()?.title).toBeUndefined();
+    }
+  });
+});

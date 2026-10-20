@@ -25,7 +25,7 @@ vi.mock("../../modules/providers/api/queries.js", () => ({
   }),
 }));
 
-const ALL: HarnessFamily[] = ["bob", "claude-code", "codex", "pi"];
+const ALL: HarnessFamily[] = ["bob", "claude-code", "codex", "copilot", "pi"];
 
 function renderToStaticMarkup(element: ReactElement) {
   return renderMarkup(createElement(TooltipProvider, null, element));
@@ -61,8 +61,8 @@ describe("harness icons on provider and preset cards", () => {
     const html = renderToStaticMarkup(
       createElement(HarnessIcons, { size: "sm" }),
     );
-    expect(html.match(/<svg /g)).toHaveLength(4);
-    expect(html.match(/fill="currentColor"/g)).toHaveLength(4);
+    expect(html.match(/<svg /g)).toHaveLength(5);
+    expect(html.match(/fill="currentColor"/g)).toHaveLength(5);
     expect(html).not.toMatch(
       /<img|<mask|gradient|bg-|text-white|fill="#|stroke="#/,
     );
@@ -122,10 +122,10 @@ describe("harness icons on provider and preset cards", () => {
     const html = renderToStaticMarkup(createElement(HarnessIcons));
     expect(html).toContain("size-5 scale-110");
     expect(html).toContain("size-5 scale-90");
-    expect(html.match(/text-white/g)).toHaveLength(4);
-    expect(html.match(/bg-icon-[a-z]+/g)).toHaveLength(4);
+    expect(html.match(/text-white/g)).toHaveLength(5);
+    expect(html.match(/bg-icon-[a-z]+/g)).toHaveLength(5);
     expect(html).not.toMatch(/bg-icon-[a-z]+\//);
-    expect(html.match(/fill="currentColor"/g)).toHaveLength(4);
+    expect(html.match(/fill="currentColor"/g)).toHaveLength(5);
   });
 
   it.each(PROVIDER_PRESET_TYPES)(

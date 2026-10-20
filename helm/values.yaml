@@ -2243,6 +2243,15 @@ harnesses:
       # Code writes, so it rides its own env rail.
       telemetry: bob
       tags: ["Anthropic", "Mistral", "Granite"]
+    copilot:
+      enabled: true
+      displayName: "Copilot"
+      description: "GitHub Copilot CLI coding agent"
+      releaseNotesUrl: "https://github.com/github/copilot-cli/releases"
+      # Copilot's BYOK provider speaks Chat Completions through the Model
+      # Router, which meters its spend; no export rail.
+      providers: [ibm-litellm, curve-bender, openai, platform]
+      tags: ["Any provider"]
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over

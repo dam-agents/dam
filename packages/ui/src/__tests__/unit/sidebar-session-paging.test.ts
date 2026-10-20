@@ -30,11 +30,7 @@ vi.mock("../../query-client.js", async () => {
 vi.mock("../../store.js", () => ({
   useStore: Object.assign(
     (select: (s: Record<string, unknown>) => unknown) =>
-      select({
-        sidebarActivityFilters: h.filters,
-        deleteSession: vi.fn(),
-        showConfirm: vi.fn(),
-      }),
+      select({ sidebarActivityFilters: h.filters }),
     { getState: () => ({}) },
   ),
 }));
@@ -51,30 +47,27 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
       draft: false,
     }),
     operable: true,
+    answerable: true,
     loading: false,
+    failed: false,
     provisional: false,
+    recordRead: true,
     fetchNextPage: vi.fn(),
   }),
 }));
-vi.mock("../../modules/sessions/components/session-row.js", () => ({
-  SessionRow: ({ session }: { session: SessionView }) =>
-    createElement("div", { "data-testid": "session-row" }, session.sessionId),
+vi.mock(
+  "../../modules/platform/components/sidebar-v2/tree-session-row.js",
+  () => ({
+    TreeSessionRow: ({ session }: { session: SessionView }) =>
+      createElement("div", { "data-testid": "session-row" }, session.sessionId),
+  }),
+);
+vi.mock("../../modules/agents/api/queries.js", () => ({
+  useAgentRunState: () => "running",
 }));
 vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
   pinKey: (agentId: string, sessionId: string) => `${agentId}:${sessionId}`,
-  togglePinnedSession: vi.fn(),
-  unpinSession: vi.fn(),
   usePinnedSessions: () => new Set(),
-}));
-vi.mock("../../modules/agents/hooks/use-act-when-awake.js", () => ({
-  useActWhenAwake: () => vi.fn(),
-}));
-vi.mock("../../modules/sessions/hooks/use-open-session.js", () => ({
-  useOpenSession: () => vi.fn(),
-}));
-vi.mock("../../modules/features/api/queries.js", () => ({
-  useFeatures: () => ({ data: {} }),
-  useInstallCapabilities: () => ({ data: {} }),
 }));
 
 const { AgentSessionList } =

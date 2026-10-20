@@ -61,7 +61,10 @@ import {
   type SessionChanges,
 } from "./services/session-changes.js";
 import { createInProcessCaller } from "./infrastructure/in-process-request.js";
-import { createSessionsService } from "./services/sessions-service.js";
+import {
+  createSessionsService,
+  type RuntimeSessionsService,
+} from "./services/sessions-service.js";
 import {
   readTerminalSessionPins,
   type PlatformSessionOf,
@@ -257,7 +260,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
   sessionMetadata: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
   harnessWork: HarnessWork;
-  sessions: SessionsService;
+  sessions: RuntimeSessionsService;
   sessionChanges: SessionChanges;
   activeTurns: ActiveTurnStore;
   subAgentSessions: SubAgentSessionStore;
@@ -464,6 +467,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     log: (msg) => opts.log?.(msg),
   });
   const sessions = createSessionsService({
+    defaultHarness: opts.defaultHarness,
     subAgentContextOf: (meta) => {
       const harness = meta.harness ?? opts.defaultHarness;
       return {
