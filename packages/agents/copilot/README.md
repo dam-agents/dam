@@ -11,6 +11,8 @@ The harness ships in the default image every harness Template boots, built by `/
 | CLI       | `@github/copilot` | ACP agent for chat sessions (`--acp --stdio`) and the TUI for terminal sessions |
 
 The npm package is a loader that runs the native binary of its platform package (`@github/copilot-linux-x64`, `-arm64`, and the musl variants), all pinned in the image lockfile.
+On its first start the binary unpacks its app, about 200 MB, into `$XDG_CACHE_HOME/copilot`, which would land in every agent's persistent home.
+So the tool's `postinstall` in [`image.toml`](image.toml) unpacks it once at build time into the package's `dist/` in the harness tools layer, and [`copilot-router.sh`](rootfs/usr/local/lib/copilot-router.sh) names that directory in `COPILOT_CLI_DIST_DIR`.
 
 ## Models: BYOK through the Model Router
 
