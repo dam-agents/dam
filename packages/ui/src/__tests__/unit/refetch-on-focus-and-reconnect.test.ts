@@ -106,14 +106,17 @@ it("leaves a family the stream carries and an unrelated key alone", async () => 
   expect(queryClient.getQueryState(["unrelated"])?.isInvalidated).toBe(true);
 });
 
-// TEST_SCENARIO: a reconnect comes back while the ACP Session list is still fresh by its 5 s staleTime. That data must refetch anyway, because its notices are not replayed to a new observer; the assertion runs on the online transition alone, with no stale marking to lean on.
-it("refetches a fresh ACP Session list on reconnect", async () => {
+// TEST_SCENARIO: a tab returns and then the connection comes back while the ACP Session list is still fresh by its 5 s staleTime. A tab return must leave the paginated list alone, because it refetches on mount and polls on a runtime without live updates, but a reconnect must refetch it anyway: its notices are not replayed to a new observer, so the assertion runs on the online transition alone, with no stale marking to lean on.
+it("refetches a fresh ACP Session list on reconnect, not on return", async () => {
   const sessions = watch(acpSessionsKeys.pagesOf("agent-a", []));
   await vi.waitFor(() =>
     expect(
       queryClient.getQueryState(acpSessionsKeys.pagesOf("agent-a", []))?.status,
     ).toBe("success"),
   );
+
+  await returnToTheTab();
+  expect(sessions.calls()).toBe(1);
 
   onlineManager.setOnline(false);
   onlineManager.setOnline(true);
@@ -142,6 +145,9 @@ it("refreshes the account preference, key and access families", async () => {
     }),
     "sidebar order": trpc.sidebarOrder.get.queryKey(),
     "agent access": trpc.agents.get.queryKey({ id: "a" }),
+    "runtime migration": trpc.agents.planRuntimeMigration.queryKey({
+      agentId: "a",
+    } as never),
   });
 });
 
@@ -213,5 +219,6 @@ it("refreshes the install and catalog families", async () => {
     links: trpc.links.all.queryKey(),
     version: ["version"],
     "terms document": termsKeys.document(),
+    "terms acceptance": trpc.terms.latestAcceptance.queryKey(),
   });
 });

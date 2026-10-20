@@ -10,6 +10,7 @@ const NO_PUSH_PATHS: readonly KeyPath[] = [
   ["channels", "telegramBot"],
   ["agents", "listTelegramChats"],
   ["agents", "get"],
+  ["agents", "planRuntimeMigration"],
   ["slack", "install", "availability"],
   ["features", "flags"],
   ["features", "install"],
@@ -44,7 +45,7 @@ const NO_PUSH_PATHS: readonly KeyPath[] = [
   ["usage", "inspect", "availability"],
   ["links", "all"],
   ["version"],
-  ["terms", "document"],
+  ["terms"],
 ];
 
 function pathOf(queryKey: readonly unknown[]): readonly string[] {
