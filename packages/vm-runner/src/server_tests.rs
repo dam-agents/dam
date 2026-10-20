@@ -4217,6 +4217,189 @@ async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
     let _ = vmm.wait();
 }
 
+// TEST_SCENARIO: a machine restarted at a pid the kernel handed out again, with a record the loader wrote for the incarnation before it still on disk: the record names a death that belongs to the process that held the pid, so a live process there is not it, and the machine must not be reported as killed by a filter or by the kernel while it runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_live_pid_does_not_read_the_record_of_the_incarnation_before_it() {
+    let h = Harness::new("record-of-the-incarnation-before");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // TEST_SCENARIO: the record the loader leaves for a VMM it reaped, under a pid this one now holds.
+    let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
+    std::fs::create_dir_all(&exits).unwrap();
+    std::fs::write(exits.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+
+    h.server.reap_killed();
+    let status = h.server.status("m1");
+    assert_eq!(status.state, State::Running.to_string(), "{status:?}");
+    assert_eq!(
+        status.reason, "",
+        "a live machine was read as the death of the one before it"
+    );
+    assert!(
+        !h.server.metrics_text().lines().any(|line| line
+            .starts_with("platform_vm_runner_machine_kills_total{")
+            && !line.ends_with(" 0")),
+        "the kill counter took a death that never happened:\n{}",
+        h.server.metrics_text()
+    );
+    let _ = vmm.kill();
+    let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: an operator `kill -9`s a machine while the cgroup count does not move, so the death is considered and explained on the console alone. The kernel then takes another VMM for memory and the count rises: the death already considered must not be read again and spend that count, or the machine the kernel did take keeps no reason.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_death_already_considered_does_not_spend_a_later_count() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-considered-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("considered-once", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = vmm.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    h.server.reap_killed();
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "a kill the cgroup did not count is not memory"
+    );
+
+    // TEST_SCENARIO: the kernel counts the next kill for another machine, and this tick reads the first death again if nothing remembers it.
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    assert_ne!(
+        h.server.status("m1").reason,
+        REASON_OOM_KILLED,
+        "the same death was counted twice and took the kill of another machine"
+    );
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        1,
+        "the count is still unspent for the machine it was counted for"
+    );
+}
+
+// TEST_SCENARIO: two kills in one burst, one named before the runner hands off. The other is still owed to a machine, so the runner that replaces this one has to credit it again: a baseline that moves past every sampled kill leaves the second victim unnamed.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_handoff_keeps_the_other_kill_of_a_burst() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-burst-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let during = cgroup.clone();
+    let h = Harness::with("burst-handoff", move |config| {
+        config.cgroup_dir = Some(during)
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    counted(&cgroup, 2);
+    h.server.match_oom_kills();
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        2,
+        "two kills, two credits"
+    );
+
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = vmm.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    h.server.reap_killed();
+    assert_eq!(h.server.status("m1").reason, REASON_OOM_KILLED);
+    assert_eq!(locked(&h.server.oom).credits.len(), 1, "one victim left");
+
+    let next = h
+        .hand_off(|config| config.cgroup_dir = Some(cgroup.clone()))
+        .await;
+    next.server.match_oom_kills();
+    assert_eq!(
+        locked(&next.server.oom).credits.len(),
+        1,
+        "the kill the last runner never named is still owed"
+    );
+}
+
+// TEST_SCENARIO: a credit for a kill no machine explained ages out, and the runner hands off afterwards. Expiry is this runner saying the victim died where it could not see it, so the runner that replaces it must not read the same count as a fresh kill and spend it on whichever machine an operator kills next.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_handoff_does_not_revive_a_credit_that_aged_out() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-revive-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let during = cgroup.clone();
+    let h = Harness::with("no-revival", move |config| config.cgroup_dir = Some(during));
+    counted(&cgroup, 1);
+    h.server.match_oom_kills();
+    let aged = Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1);
+    locked(&h.server.oom).credits = vec![aged];
+    assert!(
+        !h.server.take_oom_credit(),
+        "a credit past its window spends on nothing"
+    );
+
+    let next = h
+        .hand_off(|config| config.cgroup_dir = Some(cgroup.clone()))
+        .await;
+    next.server.match_oom_kills();
+    assert_eq!(
+        locked(&next.server.oom).credits.len(),
+        0,
+        "a count this runner gave up on came back as a fresh kill"
+    );
+}
+
+// TEST_SCENARIO: the kernel counts the kill of a booting VMM, and the boot's own recovery — stopping the machine and booting it whole — takes longer than the window a credit is held for. The victim and its signal are known, so the credit must wait for the action that names it rather than age out while that action still runs.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_slow_boot_keeps_the_kill_it_was_restarted_for() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-slow-boot-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("slow-boot-kill", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    let (held, release) = h.fake.hold_start();
+    h.fake.kill_on_start(libc::SIGKILL);
+    h.server.put("m1", spec(true)).unwrap();
+    h.wait_for_call("start m1").await;
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot holds until this test lets it go");
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    assert_eq!(
+        locked(&h.server.oom).credits.len(),
+        1,
+        "the kill is counted while its boot runs"
+    );
+    // TEST_SCENARIO: the recovery takes longer than the window.
+    let aged = Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1);
+    locked(&h.server.oom).credits = vec![aged];
+
+    release.send(()).expect("the boot returns");
+    let status = h.settle("m1").await;
+    assert_eq!(
+        status.reason, REASON_OOM_KILLED,
+        "the kill the machine was restarted for was forgotten while it restarted: {status:?}"
+    );
+}
+
 // TEST_SCENARIO: the cgroup counts an OOM kill, and an operator `kill -9`s another machine in the same second. One count is one victim: the machine the kernel took names memory, the operator's does not, and the kill counter shows the one. A count the reaper never matched to a victim — a kill of something outside its machines — does not label the next SIGKILL it does see.
 #[tokio::test(flavor = "multi_thread")]
 async fn one_counted_oom_names_one_machine_not_every_sigkill_beside_it() {
