@@ -83,6 +83,9 @@ type fakeNode struct {
 	pressure      vmrunner.RunnerPressure
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
 	stopsSlowly bool
+	// UNIT_BOUNDARY_DESCRIPTION: the release read answers a 500, as a loader that hangs answers none, and how many reads arrived, so a test tells a refused read from one that never happened.
+	releaseFails bool
+	releaseReads int
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -115,6 +118,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			return
 		}
 		if r.URL.Path == "/release" {
+			n.releaseReads++
+			if n.releaseFails {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
 			require.NoError(t, json.NewEncoder(w).Encode(n.release))
 			return
 		}
@@ -277,6 +285,19 @@ func (n *fakeNode) pressureReadCount() int {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.pressureReads
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the release read fails from now on, as a loader that hangs answers none.
+func (n *fakeNode) refuseReleaseReads() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.releaseFails = true
+}
+
+func (n *fakeNode) releaseReadCount() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.releaseReads
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: sets the pressure the runner reports and makes its next read fail, as a runner restarting does.

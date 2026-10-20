@@ -354,8 +354,12 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 	err = concurrently(
 		func() error { return r.applyConfigMap(ctx, cm) },
 		func() error {
-			_, err := r.applyOwnerCredentialSecret(ctx, buildOwnerCredentialSecret(owner, r.config, granted, refs))
-			return err
+			creds := buildOwnerCredentialSecret(owner, r.config, granted, refs)
+			if _, err := r.applyOwnerCredentialSecret(ctx, creds); err != nil {
+				return err
+			}
+			r.refreshOwnerGatewayCredentials(ctx, owner, creds.Annotations[annOwnerCredentialsHash], names, time.Now())
+			return nil
 		},
 		func() error {
 			return r.applyCertificate(ctx, buildOwnerLeafCertificate(owner, r.config, leafAgents, refs))
@@ -381,6 +385,29 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 		r.cutOverToOwnerGateway(ctx, owner, members)
 	}
 	return members, nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner gateway's credential Secret reaches its pods' mounted files the same way an agent's own gateway's does, so each of its pods is synced twice per content hash of that Secret, as an agent's own gateway pod is per revision. The second sync is due a few seconds after the first, so one of the agents it renders comes back for it, since its reconcile renders the owner gateway again. A failure only logs: the periodic sync still delivers the value.
+func (r *AgentReconciler) refreshOwnerGatewayCredentials(ctx context.Context, owner, hash string, members []string, now time.Time) {
+	pods, err := r.client.CoreV1().Pods(r.config.Namespace).List(ctx, metav1.ListOptions{LabelSelector: "app.kubernetes.io/component=" + ownerGatewayComponent + "," + envoyOwnerLabel + "=" + owner})
+	if err != nil {
+		slog.Warn("owner gateway: listing its pods to refresh credentials failed; the periodic refresh still applies", "owner", owner, "error", err)
+		return
+	}
+	var recheck time.Duration
+	for i := range pods.Items {
+		if pods.Items[i].DeletionTimestamp != nil {
+			continue
+		}
+		wait, err := r.nudgeCredentialSync(ctx, &pods.Items[i], hash, now)
+		if err != nil {
+			slog.Warn("owner gateway: asking the kubelet to refresh credentials failed; the periodic refresh still applies", "owner", owner, "pod", pods.Items[i].Name, "error", err)
+		}
+		recheck = max(recheck, wait)
+	}
+	if recheck > 0 && len(members) > 0 && r.requeue != nil {
+		r.requeue(members[0], recheck)
+	}
 }
 
 func (r *AgentReconciler) recordOwnerGatewaySlot(ctx context.Context, svcName string, slot int) error {

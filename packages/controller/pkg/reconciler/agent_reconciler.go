@@ -416,9 +416,13 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 				"namespace", gatewaySS.Namespace, "statefulset", gatewaySS.Name, "error", err)
 		}
 		if running {
-			if err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets); err != nil {
+			recheck, err := r.refreshGatewayCredentials(ctx, gatewaySS.Name, credentialSecrets, time.Now())
+			if err != nil {
 				slog.Warn("asking the kubelet to refresh gateway credentials failed; the periodic refresh still applies",
 					"agent", name, "error", err)
+			}
+			if recheck > 0 && r.requeue != nil {
+				r.requeue(name, recheck)
 			}
 		}
 		timer.mark("gatewayStatefulSet")

@@ -1,0 +1,9 @@
+#!/usr/bin/env bash
+#MISE description="GitHub Actions workflows and composite actions pass jactionlint"
+# Offline: the online rules ask GitHub about archived repositories, impostor
+# commits and advisories, and print nothing here. With no file it checks every
+# workflow, composite action and dependabot.yml of the repository. Ignored
+# paths and findings live in .github/jactionlint.yaml (actionlint's config
+# reads the same); it honors the `# zizmor: ignore[...]` comments the workflows
+# still carry.
+exec jactionlint

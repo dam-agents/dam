@@ -78,11 +78,12 @@ The new runner reads each machine's record, finds its VMM alive, and publishes i
 The machines and their disks are untouched, and each keeps the runtime it booted; the machines the new runner starts boot its own runtime, so a machine moves to a new runtime at its next boot.
 The runner records the runtime each machine booted, and manages a machine on another runtime assuming the two are compatible, rather than testing every pair of releases: a runtime error on such a machine, or a guest quiet for half a minute instead of ten, reboots it onto the runner's own runtime.
 That reboot is the safety for a new runtime, and it waits on the machine failing: a fix a running guest needs — a new libkrun, guest kernel or platform-init — reaches it only when a hand-off's machine errs or goes quiet.
-So a release declares which of what a machine booted it changes, as a reboot key it carries in its release directory (`reboot-id`, written by the image build from [`packages/vm-runner/reboot-id`](../../packages/vm-runner/reboot-id)): a runner refuses a release whose key differs from the one it runs, holding it as `reboot`, and each owner's runner pod rolls onto that release instead, rebooting that owner's machines.
+So a release declares which of what a machine booted it changes, as a reboot key it carries in its release directory, written by the image build from [`packages/vm-runner/reboot-id`](../../packages/vm-runner/reboot-id): a runner refuses a release whose key differs from the one it runs, holding it as `reboot`, and each owner's runner pod rolls onto that release instead, rebooting that owner's machines.
 The key is compared whole and never parsed, and a release that changes nothing a machine booted carries the key before it, so the pods it reaches take it in place.
-A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod rolls for a reason of its own.
-That roll does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
-It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
+A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod's shape changes for another reason, which rolls it onto a release that carries a key.
+The pod roll a `reboot` hold causes does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
+That roll ends the turn each busy agent is in, and the controller reports the owner and those agents when it rolls past them.
+That exemption belongs to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
 The runner's own answer is what the controller rolls on: a release it holds as `reboot` ends the hand-off, and the pod roll that follows takes its own place in the width.
 Such a roll writes the image that carries the release, which the pod does not have yet — a pod on the configured image already runs the release it declares — and that change to the pod template is what restarts it, rebooting the machines.
 A runner that holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the refusal to reboot does not overrule what the runner reported.
@@ -100,6 +101,7 @@ A runner under a loader whose machine API fails to serve exits as a hand-off doe
 That record is what a restarted controller resumes from, and what it names again to a runner that reports neither running nor taking it, a pod that restarted and forgot.
 A hand-off reboots nothing, but the loader's fallback catches only a release that exits: one that runs and then refuses to manage machines would, named everywhere at once, break every owner together.
 So a hand-off holds a place in the same roll as a pod roll, and a new release is named only while fewer than the roll's width of runners are mid-roll or mid-hand-off.
+A runner already mid-hand-off takes the release in the place it holds, as a mid-roll runner takes a corrective roll, so a fleet that shrinks under the width still offers every runner stuck on a broken release the corrected one.
 It ends no turn, so it does not wait for idle agents.
 A runner whose pod is about to roll is not named a release: the roll starts it on the configured image.
 A runner is mid-hand-off from the moment its release is named until it reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and no ensure of that owner's machines was refused since.

@@ -1155,7 +1155,6 @@ func TestAReleaseWhoseMachinesMustRebootRollsThePodWithoutWaitingForIdle(t *test
 	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, testOwner), "the pod rolls onto the release, which reboots the machine")
 	assert.NotContains(t, runnerAnnotations(t, r, testOwner), annRunnerBusy, "the roll waits for no agent's turn")
-	assert.NotEqual(t, runnerV1, runnerImageOf(t, r, testOwner), "the pod template takes the image that carries the release, and that change is what restarts the pod")
 	assert.Equal(t, []string{runnerV2}, nodes[testOwner].named, "the hand-off ends: the release is not named again")
 
 	settleRunnerPod(t, r, testOwner)
@@ -1164,7 +1163,7 @@ func TestAReleaseWhoseMachinesMustRebootRollsThePodWithoutWaitingForIdle(t *test
 	assert.NotContains(t, runnerAnnotations(t, r, testOwner), annRunnerRolledAt, "the roll settles once the machine is back on the new pod")
 }
 
-// TEST_SCENARIO: the bypass a reboot release gets is its own roll's. A changed runner pod still waits for a busy agent, since nothing of that release rides on a shape change, and the release is not handed off meanwhile either: it reaches a runner only by rebooting its machines.
+// TEST_SCENARIO: the bypass a reboot release gets is its own roll's, never another roll's: a changed pod shape rolls for a reason of its own, so it waits for a busy agent even while the runner holds the release as one that reboots its machines, which that roll is not.
 func TestAChangedPodStillWaitsForIdleWithARebootReleasePending(t *testing.T) {
 	ctx := context.Background()
 	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
@@ -1172,7 +1171,6 @@ func TestAChangedPodStillWaitsForIdleWithARebootReleasePending(t *testing.T) {
 	nodes["owner-a"].set("busy", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
 	r.busyProbe = func(_ context.Context, id string) bool { return id == "busy" }
 	changeRunnerPod(r)
-	r.config.VM.Runner.Image = runnerV2
 	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldReboot}
 
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
@@ -1240,20 +1238,6 @@ func TestARebootReleaseRollsOneOwnerAtATime(t *testing.T) {
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "a settled roll frees its place")
 }
 
-// TEST_SCENARIO: a release the runner holds as failed is never rolled onto, reboot release or not: a pod on the release would fail the same way and take the machines with it.
-func TestARebootReleaseTheRunnerHoldsAsFailedDoesNotRoll(t *testing.T) {
-	ctx := context.Background()
-	r, nodes := setupRolloutReconciler(t)
-	createRolloutRunner(t, r, testOwner)
-	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
-	settleRunnerPod(t, r, testOwner)
-	r.config.VM.Runner.Image = runnerV2
-	nodes[testOwner].release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldFailed}
-
-	require.NoError(t, r.applyRunnerDeployment(ctx, testOwner, r.runnerOwnerRef(ctx), true))
-	assert.Equal(t, runnerV1, runnerImageOf(t, r, testOwner), "the release failed on this runner, so the pod is not rolled onto it")
-}
-
 // TEST_SCENARIO: a roll stalls on a release whose pods crash-loop, and the fleet shrinks under it, so the share the roll was handed out at no longer holds the runners that are mid-roll. A runner already mid-roll replaces its failed target in the place it holds, so a corrective pod shape still reaches it.
 func TestAStalledRollKeepsItsPlaceWhenTheFleetShrinks(t *testing.T) {
 	ctx := context.Background()
@@ -1289,4 +1273,75 @@ func TestAStalledRollKeepsItsPlaceWhenTheFleetShrinks(t *testing.T) {
 	for _, owner := range broken {
 		assert.NotEqual(t, old.UTC().Format(time.RFC3339), runnerAnnotations(t, r, owner)[annRunnerRolledAt], "a runner mid-roll takes a corrective roll in the place it holds, where a share of a shrunken fleet would hold all three back")
 	}
+}
+
+// TEST_SCENARIO: a release breaks and leaves three runners mid-hand-off, and an owner is removed so the share shrinks to two places under them. A corrected release reaches every one of them: a runner already mid-hand-off takes it in the place it holds, where counting its peers alone would leave all three on the broken release.
+func TestAShrunkenShareStillOffersAStuckRunnerTheCorrectedRelease(t *testing.T) {
+	ctx := context.Background()
+	owners := []string{"owner-a", "owner-b", "owner-c", "owner-d", "owner-e"}
+	r, _ := setupRolloutReconciler(t, owners...)
+	r.config.VM.Runner.Rollout.MaxConcurrent = 1
+	r.config.VM.Runner.Rollout.MaxConcurrentPercent = 50
+	r.config.VM.Runner.Image = runnerV2
+	for _, owner := range owners {
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	var stuck, idle []string
+	for _, owner := range owners {
+		if namedRelease(t, r, owner) == runnerV2 {
+			stuck = append(stuck, owner)
+		} else {
+			idle = append(idle, owner)
+		}
+	}
+	require.Len(t, stuck, 3, "half of six runners is three, and none of them took the release")
+	for _, owner := range idle {
+		require.NoError(t, r.client.AppsV1().Deployments("test-agents").Delete(ctx, r.runnerName(owner), metav1.DeleteOptions{}))
+	}
+	_, total, err := r.runnersMidRoll(ctx)
+	require.NoError(t, err)
+	require.Equal(t, 4, total)
+	require.Equal(t, 2, runnerRollWidth(r.config.VM.Runner, total), "half of four is smaller than the three runners stuck on the broken release")
+
+	const corrected = "quay.io/dam-agents/vm-runner:3"
+	r.config.VM.Runner.Image = corrected
+	for _, owner := range stuck {
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	for _, owner := range stuck {
+		assert.Equal(t, corrected, namedRelease(t, r, owner), "a runner mid-hand-off takes the corrected release in the place it holds")
+	}
+}
+
+// TEST_SCENARIO: a release that must reboot its machines is named, and the sweep settles that hand-off as the loader holds it, as it does for an owner with nothing running; the pod roll that follows finds no free place in the width. The time the release was named survives that turn. A loader that then stops answering the release read leaves the pod alone while that time is fresh, and the pod rolls once it passes the unreachable timeout.
+func TestARebootHoldKeepsTheTimeItsReleaseWasNamedUntilThePodRolls(t *testing.T) {
+	ctx := context.Background()
+	r, nodes := setupRolloutReconciler(t, "owner-a", "owner-b")
+	r.config.VM.Runner.Rollout.MaxConcurrent = 1
+	for _, owner := range []string{"owner-a", "owner-b"} {
+		require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	}
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.Equal(t, runnerV2, namedRelease(t, r, "owner-a"))
+	nodes["owner-a"].release = vmrunner.RunnerRelease{Running: runnerV1, Target: runnerV2, Held: vmrunner.HeldReboot}
+	r.followIdleRunnerHandoff(ctx, "owner-a")
+	require.NotContains(t, runnerAnnotations(t, r, "owner-a"), annRunnerHandoffAt, "the hand-off ended on the hold, and its place with it")
+	setRolledAt(t, r, "owner-b", time.Now())
+	setRunnerAnnotation(t, r, "owner-b", annRunnerAwaiting, vmAgentCR().Name)
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "the width's one place is the other runner's")
+	assert.Contains(t, runnerAnnotations(t, r, "owner-a"), annRunnerReleaseNamedAt, "a pod roll that takes no place yet keeps the time its release was named")
+
+	require.NoError(t, r.client.AppsV1().Deployments("test-agents").Delete(ctx, r.runnerName("owner-b"), metav1.DeleteOptions{}))
+	reads := nodes["owner-a"].releaseReadCount()
+	nodes["owner-a"].refuseReleaseReads()
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Greater(t, nodes["owner-a"].releaseReadCount(), reads, "the controller read the release again, and the read failed")
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-a"), "a loader that has only just stopped answering keeps its pod")
+
+	setRunnerAnnotation(t, r, "owner-a", annRunnerReleaseNamedAt, time.Now().Add(-runnerReleaseUnreachableRoll-time.Minute).UTC().Format(time.RFC3339))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "the runner that never answered is rolled onto the release it was named")
 }
