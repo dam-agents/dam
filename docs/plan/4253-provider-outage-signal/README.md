@@ -26,19 +26,20 @@ AWS Bedrock and the platform's own LLM provider get only the gateway signal.
 
 Decisions that Petr made while this plan was discussed:
 
-| #   | Decision                                                                                                                                                                           |
-| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| D1  | Must work: Curve Bender and IBM LiteLLM. Nice to have: Anthropic, OpenAI, Bob. Bedrock and the platform provider: gateway signal only.                                             |
-| D2  | Detection is automatic. No manual outage flag for the operator.                                                                                                                    |
-| D3  | The main signal is the failed calls that the agents' gateways see. Public status sources are a second signal.                                                                      |
-| D4  | No check with each user's key. An outage belongs to the provider; one check serves every user, and a test call per user adds load to a provider that already fails.                |
-| D5  | The UI polls the status every 60 seconds, and also on window focus and after a failed turn. No live event: the status changes at most once a minute.                               |
-| D6  | The banner follows the design agreed while planning (described in slice 05): the `Notice` primitive at the top of the main area, not the fixed bottom bar of `ConnectionBanner`.   |
-| D7  | The banner does not show in the chat view, where the status line covers the session's provider. It shows only to users with a Connection to the failing provider.                  |
-| D8  | The page reload gap (a failed turn without reply text shows no error after a reload) stays with #3761.                                                                             |
-| D9  | The plan does not edit `model-indicator.tsx` or `session-projection.ts`, because open pull requests change them (#5389, #5402, #5393).                                             |
-| D10 | The card follows the mockup: a provider error shows the red card in the agent's column, also when nothing streamed. Copy text and Delete move into a "⋯" menu on the card.         |
-| D11 | A proxy is unreachable only after its readiness check fails in two runs in a row; the outage starts at the first failed run. The count of failed runs lives in the Redis snapshot. |
+| #   | Decision                                                                                                                                                                                                                           |
+| --- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| D1  | Must work: Curve Bender and IBM LiteLLM. Nice to have: Anthropic, OpenAI, Bob. Bedrock and the platform provider: gateway signal only.                                                                                             |
+| D2  | Detection is automatic. No manual outage flag for the operator.                                                                                                                                                                    |
+| D3  | The main signal is the failed calls that the agents' gateways see. Public status sources are a second signal.                                                                                                                      |
+| D4  | No check with each user's key. An outage belongs to the provider; one check serves every user, and a test call per user adds load to a provider that already fails.                                                                |
+| D5  | The UI polls the status every 60 seconds, and also on window focus and after a failed turn. No live event: the status changes at most once a minute.                                                                               |
+| D6  | The banner follows the design agreed while planning (described in slice 05): the `Notice` primitive at the top of the main area, not the fixed bottom bar of `ConnectionBanner`.                                                   |
+| D7  | The banner does not show in the chat view, where the status line covers the session's provider. It shows only to users with a Connection to the failing provider.                                                                  |
+| D8  | The page reload gap (a failed turn without reply text shows no error after a reload) stays with #3761.                                                                                                                             |
+| D9  | The plan does not edit `model-indicator.tsx` or `session-projection.ts`, because open pull requests change them (#5389, #5402, #5393).                                                                                             |
+| D10 | The card follows the mockup: a provider error shows the red card in the agent's column, also when nothing streamed. Copy text and Delete move into a "⋯" menu on the card.                                                         |
+| D11 | A proxy is unreachable only after its readiness check fails in two runs in a row; the outage starts at the first failed run. The count of failed runs lives in the Redis snapshot.                                                 |
+| D12 | A reply that holds only the harness's copy of a provider error (Claude Code) is the failure: the chat hides the copy and shows the card as "Send failed:" with Retry; the prompt stays, and Retry sends it again as a new message. |
 
 Decisions made alone while planning (open for review):
 
@@ -146,7 +147,7 @@ No module imports another module's internals.
 | --- | ---- | ----------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- | ---------- |
 | 01  | ☑    | [Status from failed gateway calls](./01-gateway-call-outcomes.md) | Event, `provider-status` module, call window, evaluate job, snapshot, `providerStatus.list`, architecture page | —          |
 | 02  | ☑    | [Public status sources](./02-public-status-sources.md)            | Proxy readiness, Statuspage components, Bob status, status page links                                          | 01         |
-| 03  | ☐    | [The failed turn names the outage](./03-failed-turn-card.md)      | UI status query, provider error kind, card text and actions, refresh after a failed turn                       | 01         |
+| 03  | ☑    | [The failed turn names the outage](./03-failed-turn-card.md)      | UI status query, provider error kind, card text and actions, refresh after a failed turn                       | 01         |
 | 04  | ☐    | [Status line and Providers badge](./04-status-line-and-badge.md)  | Status line above the message box, "Degraded" badge in Settings › Providers                                    | 03         |
 | 05  | ☐    | [Outage banner](./05-outage-banner.md)                            | `Notice` danger tone, banner at the top of the main area in both layouts, close per outage                     | 03         |
 

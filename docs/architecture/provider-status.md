@@ -81,3 +81,23 @@ It returns the outages with their start times and, for Anthropic, OpenAI and Bob
 While the fault is on the platform's side, only the outages that a public source reports stay listed.
 A template that the query does not list is healthy or unknown.
 Every signed-in user reads the same status, because an outage belongs to the provider and not to a user.
+
+## Screens
+
+The screens read the status query every 60 seconds, when the window gets focus, and at once after a turn fails.
+
+**The failed turn.** When a model call fails with a status or a message that says the provider is down or overloaded, the chat shows a red card in the agent's column, also when the agent wrote no reply text.
+Other errors keep their own look.
+The card names the provider of the session:
+
+- no outage is known: the provider did not respond, the message was saved, and the user can retry in a few minutes or switch the agent to another provider;
+- the provider is degraded: it has had problems since the start of the outage, in the viewer's local time, and the user's setup is not the cause;
+- the fault is on the platform's side: the platform cannot reach model providers, and neither the provider nor the setup is the cause;
+- the card saw an outage that has ended: the provider works again, and the user can retry now.
+
+The card's actions are Retry, where the message can be sent again; Switch provider, which opens the agent's Providers section; and Raw error, which shows the original error text.
+Claude Code writes its own copy of the error as reply text before the turn fails; a reply that holds nothing but that copy is the failure itself, so the chat shows the card in its place and the copy only under Raw error.
+Retry then sends the same prompt again as a new message, and the failed exchange stays above it.
+A reply that streamed other text before it failed keeps its text, and its card says that the response was interrupted and has no Retry.
+Pi ends such a turn like a normal one, with the error in its reply, so it gets no card; the status line and the banner still name the outage.
+The card lives only in the open chat: a reload or a reconnect rebuilds the chat from the transcript, which holds the harness's text and no card.
