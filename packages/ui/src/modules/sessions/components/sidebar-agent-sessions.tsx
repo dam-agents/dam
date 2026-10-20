@@ -26,6 +26,7 @@ import {
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
+import { sessionTitleLabel } from "../lib/session-title.js";
 import {
   moreClick,
   newestFirst,
@@ -34,7 +35,7 @@ import {
 } from "../lib/sidebar-session-window.js";
 import { RenameSessionDialog } from "./rename-session-dialog.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
-import { SessionRow, sessionTitleLabel } from "./session-row.js";
+import { SessionRow } from "./session-row.js";
 
 const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
 

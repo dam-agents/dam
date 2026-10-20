@@ -15,10 +15,7 @@ import { matchesActivityFilters } from "../../../home/lib/activity-sessions.js";
 import { prefetchSessionHistory } from "../../../sessions/api/queries.js";
 import { RenameSessionDialog } from "../../../sessions/components/rename-session-dialog.js";
 import { SessionListSkeleton } from "../../../sessions/components/session-list-skeleton.js";
-import {
-  SessionRow,
-  sessionTitleLabel,
-} from "../../../sessions/components/session-row.js";
+import { SessionRow } from "../../../sessions/components/session-row.js";
 import { useAgentSessionList } from "../../../sessions/hooks/use-agent-session-list.js";
 import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import {
@@ -27,6 +24,7 @@ import {
   unpinSession,
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
+import { sessionTitleLabel } from "../../../sessions/lib/session-title.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
 

@@ -41,6 +41,7 @@ import {
   sessionSpendTitle,
 } from "../../spend/lib/amounts-label.js";
 import { runTimeLabel } from "../lib/run-time.js";
+import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -49,10 +50,6 @@ const LONG_PRESS_MS = 400;
 const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
-
-export function sessionTitleLabel(s: SessionView): string {
-  return s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
-}
 
 interface Props {
   session: SessionView;

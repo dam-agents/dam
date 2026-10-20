@@ -29,7 +29,8 @@ function ShownWhereItCloses({
  * UNIT_BOUNDARY_DESCRIPTION: The X that ends every side panel's top bar,
  * behind a vertical border so it does not read as one of the panel's own
  * actions. It closes the whole panel and hands focus to the rail's open tab,
- * which stays on screen; a phone hides it, because the full-screen panel
+ * which stays on screen; with no rail, as in the classic chat, to the top
+ * bar's open tab, or to the main region; a phone hides it, because the full-screen panel
  * there has its own back button.
  */
 export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
@@ -43,12 +44,16 @@ export function SidePanelCloseButton({ onClose }: { onClose?: () => void }) {
           tooltip="Close panel"
           data-testid="side-panel-close"
           onClick={(e) => {
+            const page = e.currentTarget.ownerDocument;
             const bar = e.currentTarget
               .closest('[data-testid="side-panel"]')
               ?.querySelector('[data-testid="side-panel-bar"]');
-            (
-              bar?.querySelector<HTMLElement>('[aria-pressed="true"]') ??
-              bar?.querySelector<HTMLElement>("button")
+            (bar
+              ? (bar.querySelector<HTMLElement>('[aria-pressed="true"]') ??
+                bar.querySelector<HTMLElement>("button"))
+              : (page.querySelector<HTMLElement>(
+                  '[data-testid^="side-panel-tab-"][aria-pressed="true"]',
+                ) ?? page.getElementById("main"))
             )?.focus();
             (onClose ?? (() => useStore.getState().setSidePanelTab(null)))();
           }}

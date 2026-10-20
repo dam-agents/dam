@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   groupSessionsByAgent,
+  sidebarAgentFolded,
   sidebarAgentOpen,
 } from "../../modules/agents/lib/sidebar-agent-order.js";
 import { defaultActivityFilters } from "../../modules/home/lib/activity-filter.js";
@@ -274,5 +275,18 @@ describe("an agent's sessions open and close in the sidebar", () => {
     expect(sidebarAgentOpen({ "a-1": false }, "a-1", "a-1")).toBe(false);
     expect(sidebarAgentOpen({ "a-2": true }, "a-2", "a-1")).toBe(true);
     expect(sidebarAgentOpen({ "a-2": true }, "a-2", null)).toBe(true);
+  });
+});
+
+describe("hibernated Agents fold under See all", () => {
+  const sleeping = { id: "a-1", state: "hibernated" } as const;
+  it("TEST_SCENARIO: a hibernated Agent folds unless it is open or shown; closing the shown Agent's Sessions keeps its row in place", () => {
+    expect(sidebarAgentFolded({}, sleeping, null)).toBe(true);
+    expect(sidebarAgentFolded({ "a-1": true }, sleeping, null)).toBe(false);
+    expect(sidebarAgentFolded({}, sleeping, "a-1")).toBe(false);
+    expect(sidebarAgentFolded({ "a-1": false }, sleeping, "a-1")).toBe(false);
+    expect(sidebarAgentFolded({}, { id: "a-1", state: "running" }, null)).toBe(
+      false,
+    );
   });
 });

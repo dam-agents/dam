@@ -5,6 +5,7 @@ import { cn } from "@/lib/utils";
 
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { WorkingDots } from "../../sessions/components/working-dots.js";
+import { sessionTitleLabel } from "../../sessions/lib/session-title.js";
 import type { AgentActivitySession } from "../hooks/use-activity-sessions.js";
 
 const MESSENGERS: Partial<Record<SessionType, { slug: string; alt: string }>> =
@@ -47,7 +48,7 @@ export function SidebarActivityRow({
               unread && "font-semibold",
             )}
           >
-            {session.title ?? "Session"}
+            {sessionTitleLabel(session)}
           </span>
           {needsApproval ? (
             <span

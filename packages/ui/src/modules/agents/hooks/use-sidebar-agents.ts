@@ -1,4 +1,3 @@
-import type { AgentState } from "api-server-api";
 import { useMemo } from "react";
 
 import { useStore } from "../../../store.js";
@@ -12,15 +11,11 @@ import { useAgents } from "../api/queries.js";
 import { useSidebarOrder } from "../api/sidebar-order.js";
 import {
   groupSessionsByAgent,
+  sidebarAgentFolded,
   sidebarAgentOpen,
 } from "../lib/sidebar-agent-order.js";
 import { manualOrder } from "../lib/sidebar-order.js";
 import { splitTemporarySandboxes } from "../utils/temporary-sandboxes.js";
-
-const FOLDED_STATES: ReadonlySet<AgentState> = new Set([
-  "hibernating",
-  "hibernated",
-]);
 
 const NO_AGENTS: AgentView[] = [];
 const NO_SESSIONS: AgentActivitySession[] = [];
@@ -59,9 +54,7 @@ export function useSidebarAgents() {
 
   const { active, folded } = useMemo(() => {
     const isFolded = (agent: AgentView) =>
-      agent.id !== openAgentId &&
-      openOverrides[agent.id] !== true &&
-      FOLDED_STATES.has(agent.state);
+      sidebarAgentFolded(openOverrides, agent, openAgentId);
     return {
       active: agents.filter((agent) => !isFolded(agent)),
       folded: agents.filter(isFolded),
