@@ -1311,6 +1311,10 @@ fn scratch_entries(
                     if oldest >= now.saturating_sub(TEMP_GRACE.max(youngest)) {
                         continue;
                     }
+                    // UNIT_BOUNDARY_DESCRIPTION: a file an earlier pass emptied holds nothing to free, and offering it would walk it every pass for the rest of the machine's life and announce it as deleted each time. Its blocks are what a pass is for, so a file with none is no entry.
+                    if info.stx_blocks == 0 {
+                        continue;
+                    }
                     (0, TEMP_GRACE)
                 }
                 Serving::Cache => {
@@ -1530,7 +1534,7 @@ fn drain_temporary(entry: &ScratchEntry, proc: &Path, now: u64) -> io::Result<u6
     if lease(&file).is_err() {
         return Ok(0);
     }
-    let emptied = empty_leased(&file, proc, now);
+    let emptied = empty_leased(&file, entry, proc, now);
     // UNIT_BOUNDARY_DESCRIPTION: the lease is released whatever came of the judgement, so a file this pass kept is not left holding its tool's opens off.
     // SAFETY: the descriptor is open for the call and fcntl takes no pointer for F_SETLEASE.
     unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLEASE, libc::F_UNLCK) };
@@ -1538,9 +1542,17 @@ fn drain_temporary(entry: &ScratchEntry, proc: &Path, now: u64) -> io::Result<u6
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what is done to a file while a write lease holds it, the only window in which nothing can open, write, map or rename it into something else. Every doubt keeps it: another kind, another link, a time younger than the grace, a mapping it cannot rule out, a size it cannot read.
-fn empty_leased(file: &File, proc: &Path, now: u64) -> io::Result<u64> {
+fn empty_leased(file: &File, entry: &ScratchEntry, proc: &Path, now: u64) -> io::Result<u64> {
     let before = statx(file.as_raw_fd(), Path::new(""))?;
     let id = (before.stx_dev_major, before.stx_dev_minor, before.stx_ino);
+    // UNIT_BOUNDARY_DESCRIPTION: a mount the pass never saw under that name is not scratch: something is mounted on the file's name now, and what the descriptor reaches is another filesystem's file. The mount id read through the descriptor is the only way to tell, as for a cache entry.
+    if before.stx_mnt_id != entry.mount
+        || entry
+            .disk
+            .is_some_and(|disk| libc::makedev(before.stx_dev_major, before.stx_dev_minor) != disk)
+    {
+        return Ok(0);
+    }
     if u32::from(before.stx_mode) & libc::S_IFMT != libc::S_IFREG
         || before.stx_nlink != 1
         || u64::try_from(before.stx_mtime.tv_sec.max(before.stx_ctime.tv_sec)).unwrap_or(0)
@@ -4505,6 +4517,84 @@ mod tests {
         );
         assert_eq!(fs::metadata(s.join("one")).unwrap().len(), 8192);
         assert_eq!(fs::metadata(s.join("two")).unwrap().len(), 8192);
+    }
+
+    // TEST_SCENARIO: the entry a pass listed can have something mounted on its name by the time the removal reaches it, and what the descriptor then reaches is another filesystem's file, not the one the pass judged. Nothing on another mount is scratch, so the mount id is read through the descriptor and a file that has moved to one is kept.
+    #[test]
+    fn a_temporary_file_on_another_mount_than_the_pass_saw_is_kept() {
+        let tmp = TempDir::new("evict-tmp-mounted");
+        let s = fs::canonicalize(tmp.path()).unwrap();
+        fs::write(s.join("blob"), vec![1u8; 8192]).unwrap();
+        let now = long_after();
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), Serving::Temporary)]);
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let listed = listed
+            .iter()
+            .find(|entry| entry.shown == s.join("blob"))
+            .expect("an old plain file is offered");
+        // TEST_SCENARIO: the entry is held to a mount it is not on, which is what a mount arriving under its name looks like to the removal.
+        let entry = ScratchEntry {
+            root: std::fs::File::open(&s).unwrap(),
+            name: listed.name.clone(),
+            shown: listed.shown.clone(),
+            used: listed.used,
+            bytes: listed.bytes,
+            age: listed.age,
+            disk: listed.disk,
+            mount: listed.mount.wrapping_add(1),
+            serving: listed.serving,
+        };
+        assert_eq!(
+            evict(
+                &entry,
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                now
+            )
+            .unwrap(),
+            0,
+            "a file the pass did not see on this mount is kept"
+        );
+        assert_eq!(fs::metadata(s.join("blob")).unwrap().len(), 8192);
+    }
+
+    // TEST_SCENARIO: a file an earlier pass emptied keeps its name and nothing else, and a pass that listed it again would report it as deleted on every look for the rest of the machine's life. So a file with no blocks is no entry of a temporary folder: the pass that emptied it is the last to hear of it, and the name stands for its tool to reuse or remove.
+    #[test]
+    fn an_emptied_temporary_file_is_no_entry_again() {
+        let tmp = TempDir::new("evict-tmp-emptied");
+        let s = fs::canonicalize(tmp.path()).unwrap();
+        fs::write(s.join("blob"), vec![1u8; 8192]).unwrap();
+        fs::write(s.join("beside"), vec![2u8; 4096]).unwrap();
+        let now = long_after();
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), Serving::Temporary)]);
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let entry = listed
+            .iter()
+            .find(|entry| entry.shown == s.join("blob"))
+            .expect("an old plain file is offered");
+        assert!(
+            evict(
+                entry,
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                now
+            )
+            .unwrap()
+                > 0
+        );
+        assert_eq!(fs::metadata(s.join("blob")).unwrap().len(), 0);
+        assert!(s.join("blob").exists(), "the emptied name stands");
+
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let mut shown: Vec<_> = listed.iter().map(|entry| entry.shown.clone()).collect();
+        shown.sort();
+        assert_eq!(
+            shown,
+            [s.join("beside")],
+            "the emptied file is no entry, while the one beside it still holds blocks and still is"
+        );
     }
 
     // TEST_SCENARIO: the boot's own folder list serves the home's caches whole and the temporary folders by file: the two are told apart by what they were opened as, so a directory of a temporary folder is never listed while a directory of a cache is.
