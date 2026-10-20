@@ -44,8 +44,8 @@ const (
 	vmReadinessPoll   = 3 * time.Second
 	vmNotReadyPollMax = time.Minute
 	vmHealthPoll      = time.Minute
-	// UNIT_BOUNDARY_DESCRIPTION: how long a start may wait for the node to report what it granted before the wait is published as a state of its own. It matches the api-server's 120 s wake, so a person waiting on a start hears the diagnosis rather than a timeout, and a node that has not answered in two minutes of three-second retries is not merely late.
-	grantUnreadableBound = 2 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: how long a start may wait for the node to report what it granted before the wait is published as a state of its own. It sits well inside the api-server's 120 s wake, whose clock starts before the controller's hold does, so the named state is published before that final read rather than after it; a node that has not answered in a minute of three-second retries is not merely late.
+	grantUnreadableBound = 60 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: how often an unreadable grant is asked about with a resize, since the API server validates one against what the node supports and the answer cannot change between two asks a few seconds apart.
 	grantProbeInterval = 30 * time.Second
 
@@ -186,18 +186,20 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 		return vmrunner.MachineStatus{}, false, err
 	}
 	if err != nil && running {
-		// UNIT_BOUNDARY_DESCRIPTION: an unreadable grant never stops or shrinks a machine that holds memory. One the runner reports booting, running, restarting or stopping is admitted against the limit alone, as a restart is, since its boot replaces memory it already holds and no new footprint is asked for; only a start that holds nothing waits, because admitting it against the pool is the failure this ceiling exists to prevent. The machine's own state decides, read from the runner: the controller's last reading is kept only while a machine runs, so a restart in flight would read as a stop there.
-		state := r.liveMachine(name).State
-		if !holdsMemory(state) {
-			if live, statusErr := runner.Status(ctx, name); statusErr == nil {
-				state = live.State
-			}
-		}
-		if holdsMemory(state) {
+		// UNIT_BOUNDARY_DESCRIPTION: an unreadable grant never stops or shrinks a machine that holds memory, and what a machine holds is only ever the runner's current answer: the controller's cache is kept from the last running reading, so a machine that exited since would read as holding memory and its cold start would be admitted against the whole pool. One the runner reports booting, running, restarting or stopping is admitted against the limit alone, as a restart is, since its boot replaces memory it already holds and no new footprint is asked for. Only a start the runner reports holding nothing waits.
+		live, statusErr := runner.Status(ctx, name)
+		switch {
+		case statusErr != nil:
+			// UNIT_BOUNDARY_DESCRIPTION: a failed read is no evidence either way, and acting on it is how a restart in flight becomes a stop: the answer returns without parking, so the Agent keeps its gateway and the restart the runner already performs, and the reconcile is retried.
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading the state of %s to admit it against a node that has not reported its grant: %w", name, statusErr)
+		case holdsMemory(live.State):
 			admitMiB = 0
 			r.grantHolds.Delete(name)
-		} else {
-			return r.holdUnreadableGrant(ctx, owner, name, demand, state), false, nil
+		case live.State == vmrunner.StateUnknown:
+			// UNIT_BOUNDARY_DESCRIPTION: the runner says it cannot read the machine's own record, which is a machine that may still hold its memory: absence of an active state is not proof of a stop, so this is retried rather than held, parked or admitted.
+			return vmrunner.MachineStatus{}, false, fmt.Errorf("the runner cannot read the record of %s, so whether it holds memory is unknown and it may not be admitted against a node that has not reported its grant", name)
+		default:
+			return r.holdUnreadableGrant(ctx, owner, name, demand, live.State), false, nil
 		}
 	}
 	r.grantHolds.Delete(name)

@@ -47,15 +47,16 @@ import (
 )
 
 type fakeNode struct {
-	mu       sync.Mutex
-	specs    map[string]vmrunner.MachineSpec
-	statuses map[string]vmrunner.MachineStatus
-	deleted  []string
-	seedGone []string
-	puts     []vmrunner.MachineSpec
-	version  uint64
-	waits    int
-	release  vmrunner.RunnerRelease
+	mu          sync.Mutex
+	specs       map[string]vmrunner.MachineSpec
+	statuses    map[string]vmrunner.MachineStatus
+	deleted     []string
+	seedGone    []string
+	puts        []vmrunner.MachineSpec
+	version     uint64
+	waits       int
+	statusFails bool
+	release     vmrunner.RunnerRelease
 	// UNIT_BOUNDARY_DESCRIPTION: every release the controller named over the machine API, in order. A named release becomes the reported target, as the loader reports it once it reads the name.
 	named  []string
 	onName func()
@@ -206,6 +207,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(st))
 		case http.MethodGet:
+			// UNIT_BOUNDARY_DESCRIPTION: every short status read fails while the runner is handing off, and answers once it recovers; the watch's own long poll is untouched.
+			if n.statusFails && !r.URL.Query().Has("wait") {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
 			if !r.URL.Query().Has("wait") {
 				n.statusReads++
 			}
@@ -262,6 +268,20 @@ func (n *fakeNode) forgetReads() {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: stores a machine's status under a new version, as the runner moves the version on every change it reports.
+// UNIT_BOUNDARY_DESCRIPTION: the short status reads fail while the runner hands off, and answer again once it is back.
+func (n *fakeNode) failStatusReads(failing bool) {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.statusFails = failing
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every ensure the controller sent, as the runner received it.
+func (n *fakeNode) ensures() []vmrunner.MachineSpec {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return append([]vmrunner.MachineSpec(nil), n.puts...)
+}
+
 func (n *fakeNode) set(id string, st vmrunner.MachineStatus) {
 	n.mu.Lock()
 	defer n.mu.Unlock()
@@ -1113,6 +1133,69 @@ func TestAStartWaitingForTheNodeDoesNotStopARestartInFlight(t *testing.T) {
 	assert.True(t, node.spec("my-agent").Running, "the restart was stopped for an answer about an operation already in flight")
 	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason,
 		"an Agent whose machine is restarting reads as starting, not as waiting for the node")
+}
+
+// TEST_SCENARIO: the controller's own reading is kept from the last time a machine ran, so a guest that has exited since still reads as running there. Admitting on that reading turns a genuine cold start into one with no ceiling, which is the overcommit the ceiling exists to prevent. What a machine holds is only ever the runner's current answer.
+func TestACachedRunningMachineThatStoppedIsHeldLikeAColdStart(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	r.noteMachineUse("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true})
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	for _, spec := range node.ensures() {
+		assert.False(t, spec.Running && spec.AdmitMiB == 0,
+			"a cold start was admitted against the whole pool because the controller still held the machine's last running reading")
+	}
+	assert.False(t, node.spec("my-agent").Running, "a start with no grant to admit against went ahead")
+}
+
+// TEST_SCENARIO: a revision restart is admitted and blocked between stopping the old VMM and booting its replacement, and the state read fails transiently before the runner answers again. Acting on the failed read with no state parks the Agent, and the halt that follows is stored behind the restart: the replacement is stopped once it boots. A failed read is no evidence, so the reconcile is retried and nothing is stopped.
+func TestAFailedStateReadKeepsARestartFromBeingStopped(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRestarting})
+	node.failStatusReads(true)
+
+	require.Error(t, r.Reconcile(ctx, agent), "a state the runner could not report was acted on instead of retried")
+	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, readyCondition(t, r, "my-agent").Reason,
+		"an Agent whose machine is restarting was parked for an answer nothing gave")
+
+	node.failStatusReads(false)
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	for _, spec := range node.ensures() {
+		assert.True(t, spec.Running, "a failed state read stopped a machine whose restart the runner is performing")
+	}
+}
+
+// TEST_SCENARIO: the runner says it cannot read the machine's own launch record, which is a machine that may still hold the memory of a VMM it cannot account for. Absence of an active spelling is not proof of a stop, so the reconcile is retried rather than held, parked or admitted.
+func TestAnUnreadableMachineRecordIsNotTreatedAsStopped(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateUnknown})
+
+	require.Error(t, r.Reconcile(ctx, agent), "an unreadable machine record was decided on instead of retried")
+
+	for _, spec := range node.ensures() {
+		assert.True(t, spec.Running, "an unreadable machine record stopped the machine")
+	}
 }
 
 // TEST_SCENARIO: a node that reports nothing it holds for the owner's runner leaves the grant unreadable, and what that means has to come from the runner: a machine it reports running holds memory, so admitting it against the limit alone asks for no footprint the node has not already granted, and a start held here would stop a healthy machine rather than a boot. The controller's own last reading cannot tell: it is kept only while a machine runs, so a restart in flight reads as a stop there.

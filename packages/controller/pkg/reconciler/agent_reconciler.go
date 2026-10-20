@@ -74,6 +74,7 @@ type AgentReconciler struct {
 	vmAnswers             sync.Map
 	grantHolds            sync.Map
 	grantProbes           sync.Map
+	noNodeResize          sync.Map
 	vmDiskGrows           sync.Map
 	vmPools               sync.Map
 	usageSecrets          sync.Map

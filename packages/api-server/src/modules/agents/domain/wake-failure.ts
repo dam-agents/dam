@@ -46,13 +46,14 @@ export const GATEWAY_FAILURE_REASONS = new Set([
   ...POD_FAILURE_REASONS,
   "StuckOnSupersededRevision",
 ]);
-// UNIT_BOUNDARY_DESCRIPTION: the refusals of a vm machine's start that this wake will not outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, the runner cannot reach the node's image cache, the guest did not boot, or the node holding the owner's runner is gone. A wake fails on one at once rather than at its timeout, the cache refusal with them: it is a member because no wait of this wake's brings the machine up, and a cache that comes back is met by the controller's retry and the next wake, not by this one's waiting. An unschedulable runner is left out, because a node can free up or be added while the wake waits. A pull or boot still in progress reads MachineNotReady, so it never matches.
+// UNIT_BOUNDARY_DESCRIPTION: the refusals of a vm machine's start that this wake will not outgrow: the owner's VM storage is full, the image cannot be pulled or unpacked, the runner cannot reach the node's image cache, the guest did not boot, the node holding the owner's runner is gone, or a node that has gone a minute without reporting what it granted the runner has had that published as the start's own diagnosis. A wake fails on one at once rather than at its timeout, the cache refusal and the named diagnosis with them: no wait of this wake's brings the machine up, and a node that starts reporting is met by the controller's retry and the next wake, not by this one's. An unschedulable runner is left out, because a node can free up or be added while the wake waits, and so is a grant still inside its first minute, which reads AwaitingAllocation. A pull or boot still in progress reads MachineNotReady, so it never matches.
 export const REFUSED_START_REASONS: ReadonlySet<string> = new Set([
   TerminationCode.MachineStorageFull,
   TerminationCode.MachineImageUnavailable,
   TerminationCode.MachineImageCacheUnreachable,
   TerminationCode.MachineBootFailed,
   TerminationCode.MachineRunnerNodeLost,
+  TerminationCode.MachineAllocationUnreadable,
 ]);
 
 // UNIT_BOUNDARY_DESCRIPTION: the refusals that come from the node a machine runs on rather than from the image it was asked to boot: the runner cannot reach the node's image cache service, so it boots only the trees its machines already hold and refuses every other image. An image update that meets one holds the upgrade and says so: moving the Agent back would convict an image that starts fine on every other node, and silently drop the upgrade the owner is waiting for.

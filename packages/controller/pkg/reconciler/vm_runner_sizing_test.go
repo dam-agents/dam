@@ -111,13 +111,7 @@ func TestAResizeTheNodeCannotCarryEndsTheHoldWithoutACeiling(t *testing.T) {
 	runnerPodCarriesTheDemand(t, r, demand)
 	runnerPodForgetsItsGrant(t, r)
 	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
-	r.client.(*fake.Clientset).PrependReactor("update", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
-		if a.GetSubresource() != "resize" {
-			return false, nil, nil
-		}
-		return true, nil, k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, a.(k8stesting.UpdateAction).GetObject().(metav1.Object).GetName(),
-			field.ErrorList{field.Invalid(field.NewPath("spec", "containers").Index(0).Child("resources"), nil, "pod resize is not supported by the node")})
-	})
+	refuseResizes(r, nodeCannotResizePod(r.runnerName(testOwner)+"-abc"))
 
 	require.NoError(t, r.Reconcile(ctx, agent), "the invalid the node answers with was treated as a failure to retry")
 	require.NoError(t, r.Reconcile(ctx, agent))
@@ -145,6 +139,58 @@ func TestALaterGrantAdmitsTheHeldStart(t *testing.T) {
 
 	assert.True(t, node.spec("my-agent").Running, "the start did not go ahead once the node reported its grant")
 	assert.Equal(t, 9216, node.spec("my-agent").AdmitMiB, "the start was admitted against something other than the grant the node reported")
+}
+
+// TEST_SCENARIO: a refusal about one pod's node is not a fact about the cluster. A resize that answers "this node cannot carry one" belongs to that owner's runner alone, so it must not stop the reconciler reading another owner's grant or asking for another owner's resize: that owner's node still grants 1 GiB, and a start of theirs must still be held to it.
+func TestAnUnsupportedNodeElsewhereLeavesAnotherOwnersCeiling(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+	runnerPodOf(t, r, "other-owner", "1Gi")
+	refuseResizes(r, nodeCannotResizePod("platform-vm-runner-my-agent-abc"))
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.False(t, node.spec("my-agent").Running, "the refused node's owner was not admitted")
+
+	grant, err := r.runnerAdmitMiB(ctx, "other-owner")
+	require.NoError(t, err)
+	assert.Equal(t, 1024, grant, "one node's refusal dropped another owner's ceiling")
+	before := resizeCallsFor(r, "other-owner")
+	r.resizeRunnerPod(ctx, "other-owner", runnerDemand{memoryMiB: 4096, vCPUs: 4})
+	assert.Positive(t, resizeCallsFor(r, "other-owner")-before, "one node's refusal stopped the reconciler asking for another owner's resize")
+}
+
+// TEST_SCENARIO: only the cause Kubernetes uses for a node that cannot resize counts as that node's answer. Any other invalid is a validation or admission failure of the ask itself, and reading it as node support drops the ceiling of a runner whose node grants nothing it has reported.
+func TestAResizeRejectedForAnotherReasonKeepsTheHold(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")}}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "16Gi")
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped})
+	refuseResizes(r, k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, "pod", field.ErrorList{
+		field.Invalid(field.NewPath("spec", "containers").Index(0).Child("resources", "limits"), "1", "must be less than or equal to cpu limit"),
+	}))
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.False(t, node.spec("my-agent").Running, "a validation failure of the ask was read as the node's answer and admitted the start without a ceiling")
+	_, err := r.runnerAdmitMiB(ctx, testOwner)
+	assert.ErrorIs(t, err, errGrantUnknown, "the grant was no longer read as unknown after an unrelated invalid response")
+}
+
+// TEST_SCENARIO: the api-server's wake gives up at 120 s and its clock starts before the controller's first reconcile of the hold. A bound that does not leave room for that lag publishes the diagnosis after the wake has already timed out, so the person waiting reads a timeout instead of the problem that names itself a moment later.
+func TestTheHoldNamesItselfInsideTheWakesDeadline(t *testing.T) {
+	assert.Less(t, grantUnreadableBound+vmReadinessPoll, 120*time.Second,
+		"the named hold has to be published before the api-server's 120 s wake times out")
 }
 
 // TEST_SCENARIO: the hold has to end in a state that names the problem, since nothing the owner does supplies a figure the node never reported. The start keeps holding and is retried at the parked tick, so the promise of an automatic start has a way out that a person can see and act on.
@@ -279,6 +325,58 @@ func runnerPodCarriesTheDemand(t *testing.T, r *AgentReconciler, demand runnerDe
 	res.Limits[corev1.ResourceCPU] = want.cpu
 	_, err = r.client.CoreV1().Pods("test-agents").Update(ctx, pod, metav1.UpdateOptions{})
 	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: the resize API reports a node that cannot carry one the way Kubernetes does: an invalid wrapping a forbidden cause on the field the resize would change.
+func nodeCannotResizePod(name string) error {
+	return k8serrors.NewInvalid(schema.GroupKind{Kind: "Pod"}, name, field.ErrorList{
+		field.Forbidden(field.NewPath("spec", "containers").Index(0).Child("resources"),
+			"pod resize is not supported by the node"),
+	})
+}
+
+// TEST_SCENARIO: every resize the API receives answers with err.
+func refuseResizes(r *AgentReconciler, err error) {
+	r.client.(*fake.Clientset).PrependReactor("update", "pods", func(a k8stesting.Action) (bool, runtime.Object, error) {
+		if a.GetSubresource() != "resize" {
+			return false, nil, nil
+		}
+		return true, nil, err
+	})
+}
+
+// TEST_SCENARIO: a running runner pod of another owner, on another node, reporting what its node granted it.
+func runnerPodOf(t *testing.T, r *AgentReconciler, owner, allocated string) {
+	t.Helper()
+	res := corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(allocated)},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	pod := &corev1.Pod{
+		ObjectMeta: metav1.ObjectMeta{Name: r.runnerName(owner) + "-abc", Namespace: "test-agents", Labels: vmRunnerSelector(owner)},
+		Spec:       corev1.PodSpec{NodeName: "kvm-2", Containers: []corev1.Container{{Name: vmRunnerComponent, Resources: res}}},
+		Status: corev1.PodStatus{Phase: corev1.PodRunning, ContainerStatuses: []corev1.ContainerStatus{{
+			Name:               vmRunnerComponent,
+			AllocatedResources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(allocated)},
+		}}},
+	}
+	_, err := r.client.CoreV1().Pods("test-agents").Create(context.Background(), pod, metav1.CreateOptions{})
+	require.NoError(t, err)
+}
+
+// TEST_SCENARIO: the resizes the API received for one owner's pod.
+func resizeCallsFor(r *AgentReconciler, owner string) int {
+	n := 0
+	for _, a := range r.client.(*fake.Clientset).Actions() {
+		ua, ok := a.(k8stesting.UpdateAction)
+		if !ok || a.GetVerb() != "update" || a.GetSubresource() != "resize" {
+			continue
+		}
+		if pod, ok := ua.GetObject().(*corev1.Pod); ok && pod.Labels[envoyOwnerLabel] == owner {
+			n++
+		}
+	}
+	return n
 }
 
 func resizeCalls(r *AgentReconciler) int {

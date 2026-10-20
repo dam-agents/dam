@@ -287,7 +287,7 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 // UNIT_BOUNDARY_DESCRIPTION: the memory limit, the memory request and the CPU limit are changed on the running pod through its resize subresource and never on the Deployment, whose Recreate strategy would stop every machine to apply them. The limit is the owner's pool, so a UserBudget that raises or lowers it reaches the runner without restarting a machine. CPU and memory resize without a container restart by default. The kubelet applies a resize whole, so a memory request the node defers holds the new CPU limit back with it until there is room, and a limit the kubelet will not lower yet holds the request with it. A replacement pod therefore starts at the limit and the CPU bound the Deployment rendered — the owner's pool, or the one derived from the memory pool where they have none — and the install's request, and the next reconcile sets all three again. A pod with no CPU request gets an explicit zero one, because the API defaults a missing request to the limit, which would reserve every vCPU and could change the pod's QoS class, which a resize may not do. A cluster without in-place resize, or one that refuses the controller the subresource, keeps the old behaviour — machines admitted against the limit the pod started with, which the scheduler does not see, under the CPU bound it was created with — and says so once.
 // UNIT_BOUNDARY_DESCRIPTION: the pods come from the runner pod cache, as a live List after every machine PUT cost 57 ms at p90 on dev. The resize carries the resourceVersion it was read at, so the API server refuses it against any later pod, and a refused resize is decided again from a live List.
 func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, demand runnerDemand) {
-	if !r.podResizeAvailable(ctx) {
+	if !r.runnerResizesInPlace(ctx, owner) {
 		return
 	}
 	if r.resizeRunnerPodFrom(ctx, owner, demand, true, false) && r.runnerPodCache != nil {
@@ -324,6 +324,10 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 	if !available {
 		return 0, nil
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: one node's answer says nothing about another's: a runner whose node cannot carry a resize is admitted against its limit, as every start is on a cluster without the subresource, and every other owner keeps the ceiling their own node reports.
+	if _, noResize := r.noNodeResize.Load(owner); noResize {
+		return 0, nil
+	}
 	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil {
 		return 0, fmt.Errorf("listing the owner's runner pods to read what the node granted them: %w", err)
@@ -334,6 +338,8 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 			continue
 		}
 		if grant, ok := runnerPodGrantMiB(pod); ok {
+			// UNIT_BOUNDARY_DESCRIPTION: a node that reports again is not the node that refused the resize, so the mark lapses rather than outliving the fault.
+			r.noNodeResize.Delete(owner)
 			return grant, nil
 		}
 		return 0, fmt.Errorf("%w: %s", errGrantUnknown, pod.Name)
@@ -361,7 +367,7 @@ func runnerPodGrantMiB(pod *corev1.Pod) (int, bool) {
 
 // UNIT_BOUNDARY_DESCRIPTION: a resize the node cannot carry is how a hold on an unreadable grant learns that the node will never report one: the API server validates a resize against what the running node supports, and a node without in-place resize answers invalid. Asking with the pod unchanged is therefore the probe, and the answer cannot change between two asks a few seconds apart, so it is throttled per owner.
 func (r *AgentReconciler) probeRunnerResize(ctx context.Context, owner string, demand runnerDemand) {
-	if !r.podResizeAvailable(ctx) {
+	if !r.runnerResizesInPlace(ctx, owner) {
 		return
 	}
 	if last, ok := r.grantProbes.Load(owner); ok && time.Since(last.(time.Time)) < grantProbeInterval {
@@ -415,10 +421,10 @@ func (r *AgentReconciler) resizeRunnerPodFrom(ctx context.Context, owner string,
 		res.Limits[corev1.ResourceMemory] = want.memoryLimit
 		res.Limits[corev1.ResourceCPU] = want.cpu
 		if _, err := r.client.CoreV1().Pods(pod.Namespace).UpdateResize(ctx, pod.Name, pod, metav1.UpdateOptions{}); err != nil {
-			// UNIT_BOUNDARY_DESCRIPTION: a node without in-place resize answers the resize with an invalid, not a forbidden: the API server validates it against what the running node supports and rejects the field. It counts as unsupported where the pod reports no grant, since that is the shape this node presents, and a resize the controller asked for a reason of its own is still logged.
-			if _, reports := runnerPodGrantMiB(pod); !reports && k8serrors.IsInvalid(err) {
-				r.podResize.Store(resizeUnsupported)
-				slog.Warn("vm runner: the runner pod cannot be resized in place, its memory request and limit stay where the pod started and its CPU limit stays at the bound it was created with", "owner", owner, "pod", pod.Name, "error", err)
+			// UNIT_BOUNDARY_DESCRIPTION: a node that cannot carry a resize answers the resize with an invalid carrying a forbidden cause on the resize field, which is how the API server reports that the running container never reported the resources the resize would change. Only that cause counts, and only for the owner whose pod was refused: the answer is about one pod's node, where an absent subresource is about the cluster.
+			if _, reports := runnerPodGrantMiB(pod); !reports && resizeNodeUnsupported(err) {
+				r.noNodeResize.Store(owner, true)
+				slog.Warn("vm runner: this runner's node cannot resize the pod in place, its memory request and limit stay where the pod started and its CPU limit stays at the bound it was created with", "owner", owner, "pod", pod.Name, "error", err)
 				return false
 			}
 			if k8serrors.IsForbidden(err) || k8serrors.IsMethodNotSupported(err) {
@@ -494,6 +500,29 @@ func (r *AgentReconciler) podResizeSupport(ctx context.Context) (available, know
 	r.podResize.Store(resizeUnsupported)
 	slog.Warn("vm runner: this cluster cannot resize pods in place, so a runner's memory request stays where the install set it and the scheduler does not see the machines it holds")
 	return false, true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether an owner's runner pod can be resized in place: the cluster advertises the subresource, and this owner's node has not answered that it cannot carry one. Both are per-runner facts kept apart, since a node's answer must never cost another owner the ceiling their own node grants.
+func (r *AgentReconciler) runnerResizesInPlace(ctx context.Context, owner string) bool {
+	if !r.podResizeAvailable(ctx) {
+		return false
+	}
+	_, noResize := r.noNodeResize.Load(owner)
+	return !noResize
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a resize was refused because the node cannot carry one, which Kubernetes reports as an invalid carrying a forbidden cause on the field the resize changes. Any other invalid answer is a validation or admission failure of the ask itself, and is no evidence about the node, so it keeps the hold.
+func resizeNodeUnsupported(err error) bool {
+	if !k8serrors.IsInvalid(err) {
+		return false
+	}
+	status, ok := err.(k8serrors.APIStatus)
+	if !ok || status.Status().Details == nil {
+		return false
+	}
+	return slices.ContainsFunc(status.Status().Details.Causes, func(c metav1.StatusCause) bool {
+		return c.Type == metav1.CauseTypeForbidden
+	})
 }
 
 func (r *AgentReconciler) podResizeAvailable(ctx context.Context) bool {

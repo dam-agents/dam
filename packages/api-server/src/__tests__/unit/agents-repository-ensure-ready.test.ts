@@ -434,6 +434,46 @@ describe("ensureReady", () => {
     }
   });
 
+  const UNREADABLE_GRANT: Condition[] = [
+    {
+      type: "Ready",
+      status: "False",
+      reason: "MachineAllocationUnreadable",
+      message:
+        "The node has not reported how much memory it granted this owner's VM runner, so this start can't be admitted yet. The platform keeps retrying every 30 seconds; if this lasts, an admin should check that the cluster can resize pods in place.",
+    },
+    {
+      type: "AgentPodReady",
+      status: "False",
+      reason: "MachineAllocationUnreadable",
+      message:
+        "The node has not reported how much memory it granted this owner's VM runner, so this start can't be admitted yet. The platform keeps retrying every 30 seconds; if this lasts, an admin should check that the cluster can resize pods in place.",
+    },
+  ];
+
+  // TEST_SCENARIO: the node has gone a minute without reporting what it granted the runner, and the controller has published that as the start's own diagnosis. No wait of this wake's brings the machine up, so the wake fails at once with the cause the page and the channel copy already name, not at the two-minute timeout.
+  it("fail-fast: a standing unreadable-grant hold rejects at once", async () => {
+    const { repo, lines } = harness([agentObj("a1", UNREADABLE_GRANT)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure).toEqual({
+        kind: "agent-pod-failed",
+        terminationReason: "MachineAllocationUnreadable",
+      });
+      expect(err.durationMs).toBeLessThan(30_000);
+    }
+    expect(lines.find((l) => l.msg === "agent.wake.rejected")?.cause).toBe(
+      "wake-timeout:agent-pod-failed:MachineAllocationUnreadable",
+    );
+  });
+
   // TEST_SCENARIO: the refusal the wake first reads is the previous attempt's; the owner freed storage, and the controller's retry boots the machine within the grace. The wake must ride the stale refusal through and succeed.
   it("keeps polling past a stale start refusal and succeeds once the machine boots", async () => {
     const { repo, store } = harness([agentObj("a1", STORAGE_FULL)]);
