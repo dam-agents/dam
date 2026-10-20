@@ -123,6 +123,7 @@ import type {
   SlackPostMessage,
   SlackReservedFile,
   SlackFileInfo,
+  SlackSessionStoppedEvent,
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
@@ -1586,6 +1587,35 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     }
   }
 
+  type StoppableTurn = {
+    instanceName: string;
+    startedBy: (slackUserId: string) => boolean;
+    sessionIds: Set<string>;
+    stop: () => Promise<void>;
+  };
+
+  const stoppableTurns = new Map<string, Set<StoppableTurn>>();
+
+  function holdStoppableTurn(
+    channel: string,
+    threadTs: string,
+    turn: StoppableTurn,
+  ): () => void {
+    const key = `${channel} ${threadTs}`;
+    let held = stoppableTurns.get(key);
+    if (!held) {
+      held = new Set();
+      stoppableTurns.set(key, held);
+    }
+    held.add(turn);
+    return () => {
+      const live = stoppableTurns.get(key);
+      if (!live) return;
+      live.delete(turn);
+      if (live.size === 0) stoppableTurns.delete(key);
+    };
+  }
+
   const watchedTurnRefs = new Map<string, Set<TurnRef>>();
 
   function holdWatchedRefs(instanceName: string, refs: TurnRef[]) {
@@ -2724,6 +2754,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     onSession?: (sessionId: string) => void;
     onGhostTurn?: () => void;
     legacyThreadKey?: string;
+    signal?: AbortSignal;
   }): Promise<string> {
     const platformMeta = {
       type: SessionType.ChannelSlack,
@@ -2744,11 +2775,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onImagesDropped: args.onImagesDropped,
         onUpdate: args.onUpdate,
         onSession: args.onSession,
+        signal: args.signal,
       };
       const send = async (
         built: BuiltPrompt,
         opts: Parameters<typeof acp.sendPrompt>[1],
       ) => {
+        args.signal?.throwIfAborted();
         const answer = await acp.sendPrompt(built.prompt, opts);
         built.commit();
         return answer;
@@ -2965,6 +2998,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     let ghostTurn = false;
     let restartsAtStart: Promise<PodRestartState | null> | undefined;
+    const stopper = new AbortController();
+    const stopped = () => stopper.signal.aborted;
     const runTurn = async () => {
       await runSessionTurn({
         instanceName,
@@ -3026,6 +3061,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onGhostTurn: () => {
           ghostTurn = true;
         },
+        signal: stopper.signal,
       });
     };
 
@@ -3065,6 +3101,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       failurePosted = true;
     };
 
+    const releaseStoppable = holdStoppableTurn(ctx.channel, replyThreadTs, {
+      instanceName,
+      startedBy: (slackUserId) =>
+        verdictRefs().some((ref) => ref.slackUserId === slackUserId),
+      sessionIds: seenSessionIds,
+      stop: async () => {
+        stopper.abort();
+        await presenter.clearStatus();
+      },
+    });
     try {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
       await runWhileAgentStarts(runTurn, {
@@ -3078,6 +3124,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       });
       outcome = "success";
     } catch (err) {
+      if (stopped()) {
+        outcome = "success";
+        getLogger().info(
+          { agentId: instanceName, error: formatError(err) },
+          "slack.turn.stopped_with_error",
+        );
+        return;
+      }
       await postFailure(err);
       const sessionId = turnSessionId();
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
@@ -3086,6 +3140,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         });
       }
     } finally {
+      releaseStoppable();
       for (const ref of turnRefs) {
         endTurn(instanceName, ref, {
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
@@ -3100,6 +3155,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (
         failureReason === undefined &&
         !ghostTurn &&
+        !stopped() &&
         !deliveredBy(settledRefs, "clean")
       ) {
         getLogger().warn(
@@ -3131,7 +3187,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ? { externalActorId: ctx.externalActorId }
           : {}),
         outcome,
-        ...(failureReason !== undefined ? { reason: failureReason } : {}),
+        ...(failureReason !== undefined
+          ? { reason: failureReason }
+          : stopped()
+            ? { reason: "stopped" }
+            : {}),
       });
     }
   }
@@ -3436,6 +3496,77 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       `I can't be added to this group DM: Slack only lets an app into a group DM that was started with it. ` +
       `Start a new group DM that includes @${brand.name}, or move this conversation to a private channel and invite me there, then run \`/${brandShort} bind\` again.`
     );
+  }
+
+  async function handleSessionStopped(event: SlackSessionStoppedEvent) {
+    const gw = gateway;
+    if (!gw) return;
+    const { channel, threadTs, teamId, user } = event;
+    for (const ts of event.streamingMessageTs) {
+      await gw.stopStream({ channel, ts, teamId }).catch((err) =>
+        getLogger().debug(
+          { channelId: channel, ts, err: formatError(err) },
+          "slack.stop.stream_stop_failed",
+        ),
+      );
+    }
+    const running = [...(stoppableTurns.get(`${channel} ${threadTs}`) ?? [])];
+    if (running.length === 0) {
+      await gw
+        .setStatus({ channel, threadTs, teamId, status: "" })
+        .catch(() => {});
+      return;
+    }
+    const invoker = await identityLinks.resolve("slack", user).catch(() => null);
+    const mayStop = async (turn: StoppableTurn) =>
+      turn.startedBy(user) ||
+      (invoker !== null &&
+        invoker === (await getInstanceOwner(turn.instanceName)));
+    const allowed: StoppableTurn[] = [];
+    for (const turn of running) if (await mayStop(turn)) allowed.push(turn);
+    const agentName = await resolveAgentName(
+      (allowed[0] ?? running[0]!).instanceName,
+    );
+    if (allowed.length === 0) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: invoker,
+        actorKind: invoker ? "user" : "external",
+        surface: "slack",
+        agentId: running[0]!.instanceName,
+        decision: "deny",
+        reason: "not-starter-or-owner",
+        detail: { slackUserId: user, channelId: channel, trigger: "stop" },
+      });
+      await ephemeral(
+        channel,
+        user,
+        threadTs,
+        `Only the person who asked, or \`${agentName}\`'s owner, can stop it.`,
+        teamId,
+      );
+      return;
+    }
+    for (const turn of allowed) {
+      securityLog("info", "channel.authz", {
+        category: "channel",
+        actor: invoker,
+        actorKind: invoker ? "user" : "external",
+        surface: "slack",
+        agentId: turn.instanceName,
+        decision: "allow",
+        detail: {
+          basis: turn.startedBy(user) ? "starter" : "owner",
+          trigger: "stop",
+          slackUserId: user,
+          channelId: channel,
+        },
+      });
+      await turn.stop();
+      for (const sid of turn.sessionIds)
+        turnRecovery.dismiss(turn.instanceName, sid);
+    }
+    await ephemeral(channel, user, threadTs, `Stopped \`${agentName}\`.`, teamId);
   }
 
   async function handleBotJoinedChannel(event: SlackBotJoinedChannelEvent) {
@@ -5718,6 +5849,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onDirectMessage: handleDirectMessage,
         onBotJoinedChannel: handleBotJoinedChannel,
         onViewSubmission: handleViewSubmission,
+        onSessionStopped: handleSessionStopped,
       });
       if (!connected) {
         gatewayFailed = true;
