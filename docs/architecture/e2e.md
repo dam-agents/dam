@@ -31,6 +31,7 @@ The boot matrix runs with the other specs that boot an Agent of their own, one a
 Its cases that need room a CI node cannot spare, a disk with no block left and a claim with none, are opt-in through `E2E_DISK_FILL_GIB` and `E2E_CLAIM_FILL_GIB`: a machine's disk is a sparse file on its owner's claim, that claim is a directory of the node's disk, and a fill takes that room whenever its filesystem allocates the blocks instead of marking them.
 The storage trim spec's refusal cases need no host budget and run on every in-cluster vm lane run: the always-on one first writes and deletes 256 MiB of real bytes through a renewal and compares the guest's free space with the grant the runner published, then fills the guest's remaining room without writing bytes, so the guest is held at its share without the claim paying for it, and waits a renewal window: the runner grants a new look's room at every look, so a fill the claim never paid for is room the guest is given again, and the case measures the guest against that renewed grant.
 Each comparison reads the grant and the guest's free space in one guest command, with the grant line on both sides of the room so a sample that straddles a renewal is retried.
+The same holds for the refusal: the fill and the write after it run in one command inside one grant, and a look across a renewal is thrown away and taken again, because a new grant makes the guard count from what the guest had written then and gives a marked fill back.
 The renewed comparison needs a grant the runner published after the case's own write, and both of its bounds are waited for on one sample, so a room the guard has not yet moved is neither accepted nor rejected.
 The case also checks the machines' grants against the claim, for every run and with no host byte: no guest may be granted more than the room left below 95% of the claim's capacity, and each running guest is granted a part of it.
 That is a policy check and not the ceiling regression: a sum of observed grants cannot prove the whole claim's ceiling, so the near-ceiling refusal still needs the claim filled.
@@ -54,3 +55,7 @@ The two summaries hold the same table, so a phase of one lane compares with the 
 
 `mise run e2e` is the CI path: a fresh cluster, the suite, teardown.
 `e2e:loop` iterates against a warm cluster, and the [cluster-ops skill](../../.agents/skills/cluster-ops/SKILL.md) covers both.
+
+A CI runner and its cluster are gone once the job ends, so a failure has to explain itself in the job's own record.
+A tRPC call a spec makes that fails names its procedure, its HTTP status and the answer it got, because the api-server redacts an internal error to "internal server error" and the spec's stack names no call.
+A failed run dumps the cluster's state into the job log, with every error line the api-server logged during the suite, since the server side of a 500 is there and nowhere else.

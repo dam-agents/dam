@@ -21,3 +21,19 @@ sources = ["src/lib/keep-awake.ts"]
 outputs = []
 deny_net = true
 deny_write = true
+
+[tasks."check:storage-look"]
+description = "A look across a grant renewal is thrown away, and an absent grant is no grant"
+run = "node src/lib/storage-look.ts"
+sources = ["src/lib/storage-look.ts"]
+outputs = []
+deny_net = true
+deny_write = true
+
+[tasks."check:trpc-failures"]
+description = "A failed tRPC call names its procedure, its status and the answer's body, and a passing one is untouched"
+run = "node src/lib/trpc-failures.ts"
+sources = ["src/lib/trpc-failures.ts"]
+outputs = []
+deny_net = true
+deny_write = true
