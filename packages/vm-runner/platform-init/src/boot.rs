@@ -1234,11 +1234,11 @@ fn evict_scratch(dirs: &[(PathBuf, u64, Serving)]) {
                 break;
             };
             match evict(&entry, &locked, &held, Path::new("/proc"), now) {
-                Ok(true) => {
-                    freed += entry.bytes;
+                Ok(0) => {}
+                Ok(bytes) => {
+                    freed += bytes;
                     deleted.push(entry.shown.display().to_string());
                 }
-                Ok(false) => {}
                 Err(e) => logf!("WARNING: evicting {} ({e})", entry.shown.display()),
             }
         }
@@ -1425,11 +1425,7 @@ fn open_authorized(
     let parent = entry.root.try_clone()?;
     let (dir, info) = open_at(&parent, &entry.name)?;
     let kind = u32::from(info.stx_mode) & libc::S_IFMT;
-    let allowed = match entry.serving {
-        Serving::Cache => matches!(kind, libc::S_IFDIR | libc::S_IFREG | libc::S_IFLNK),
-        Serving::Temporary => kind == libc::S_IFREG,
-    };
-    if !allowed
+    if !matches!(kind, libc::S_IFDIR | libc::S_IFREG | libc::S_IFLNK)
         || info.stx_mnt_id != entry.mount
         || entry
             .disk
@@ -1459,22 +1455,9 @@ fn open_authorized(
         }
         Some(file)
     };
-    // UNIT_BOUNDARY_DESCRIPTION: what the delete rests on is read again through the descriptor the delete will use, and never once for the whole pass: a file whose times moved is younger than the pass listed it for, and one a process has opened since is in use however old it is (held is read anew by every eviction). A temporary entry's use is its two times alone — nothing walks it, since it is a file — while a cache entry's is the newest time anywhere in its tree.
-    let used = match entry.serving {
-        Serving::Cache => {
-            let Some((used, _)) = tree_use_at(&dir, &info, entry.disk, entry.mount, locked, held)
-            else {
-                return Ok(None);
-            };
-            used
-        }
-        Serving::Temporary => {
-            let id = (info.stx_dev_major, info.stx_dev_minor, info.stx_ino);
-            if locked.contains(&id) || held.contains(&id) {
-                return Ok(None);
-            }
-            u64::try_from(info.stx_mtime.tv_sec.max(info.stx_ctime.tv_sec)).unwrap_or(0)
-        }
+    // UNIT_BOUNDARY_DESCRIPTION: what the delete rests on is read again through the descriptor the delete will use, and never once for the whole pass: a tree whose times moved is younger than the pass listed it for, and one a process has opened since is in use however old it is (held is read anew by every eviction).
+    let Some((used, _)) = tree_use_at(&dir, &info, entry.disk, entry.mount, locked, held) else {
+        return Ok(None);
     };
     Ok(
         (used < now.saturating_sub(entry.age)).then_some(Authorized {
@@ -1483,7 +1466,6 @@ fn open_authorized(
             dir,
             info,
             _lock: lock,
-            serving: entry.serving,
         }),
     )
 }
@@ -1495,40 +1477,25 @@ struct Authorized {
     dir: File,
     info: libc::statx,
     _lock: Option<File>,
-    serving: Serving,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: deletes the tree `open_authorized` authorized, and nothing else: the entry is emptied through its own descriptor, so what goes is the tree that was validated even though the name it wore now names another. A directory's emptied name is then left where it is, and never resolved again: removing it would be a check and a removal, two calls a tool can act between, and a name given to a directory of its own in that instant would be removed — the emptied directory left behind costs a name inside a cache folder, and a later pass finds it empty and changes nothing. Nothing of the entry survives but that name, which its tool recreates or reuses as it likes. A file or a link is unlinked while the name still names it (same_entry), and a name that no longer names it is left alone.
-fn remove_authorized(authorized: Authorized, held: &HashSet<(u32, u32, u64)>) -> io::Result<bool> {
+// UNIT_BOUNDARY_DESCRIPTION: deletes the tree `open_authorized` authorized, and nothing else: the entry is emptied through its own descriptor, so what goes is the tree that was validated even though the name it wore now names another. A directory's emptied name is then left where it is, and never resolved again: removing it would be a check and a removal, two calls a tool can act between, and a name given to a directory of its own in that instant would be removed — the emptied directory left behind costs a name inside a cache folder, and a later pass finds it empty and changes nothing. Nothing of the entry survives but that name, which its tool recreates or reuses as it likes. A file or a link is unlinked while the name still names it (same_entry), and a name that no longer names it is left alone. Only a cache folder's entries reach this: a temporary folder's file is emptied under a lease (drain_temporary).
+fn remove_authorized(authorized: Authorized) -> io::Result<bool> {
     let Authorized {
         parent,
         name,
         dir,
         info,
         _lock,
-        serving,
     } = authorized;
-    let id = (info.stx_dev_major, info.stx_dev_minor, info.stx_ino);
-    match serving {
-        // UNIT_BOUNDARY_DESCRIPTION: a plain file in a temporary folder is not removed while any process has it open, read again here and not once for the pass: the file was authorized a moment ago, and a tool that opened it since holds it now. held is what every descriptor of every process names, by device and inode, so the same file held through another name is caught.
-        Serving::Temporary => {
-            if held.contains(&id) || !same_entry(&parent, &name, &info) {
-                return Ok(false);
-            }
-            unlink_at(&parent, &name, 0)?;
-            Ok(true)
-        }
-        Serving::Cache => {
-            if u32::from(info.stx_mode) & libc::S_IFMT == libc::S_IFDIR {
-                return Ok(remove_tree_at(&dir, info.stx_mnt_id)? > 0);
-            }
-            if same_entry(&parent, &name, &info) {
-                unlink_at(&parent, &name, 0)?;
-                return Ok(true);
-            }
-            Ok(false)
-        }
+    if u32::from(info.stx_mode) & libc::S_IFMT == libc::S_IFDIR {
+        return Ok(remove_tree_at(&dir, info.stx_mnt_id)? > 0);
     }
+    if same_entry(&parent, &name, &info) {
+        unlink_at(&parent, &name, 0)?;
+        return Ok(true);
+    }
+    Ok(false)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: empties the directory at `dir` through that descriptor, and answers how many names it removed: each child is opened inside it and removed by the name it had there, so a child swapped for a link or a mount meanwhile is not followed. A child on another mount is an error and stays with what is mounted there. One ceiling this leaves: an entry that was already emptied keeps its name, and its tool recreates it or does not, so a cache folder can hold empty directories for as long as the agent lives; they cost a name each and every later pass skips them for nothing, and reclaiming them would take the tool's cooperation.
@@ -1554,6 +1521,100 @@ fn remove_tree_at(dir: &File, mount: u64) -> io::Result<usize> {
     Ok(removed)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: empties one plain file of a temporary folder, and answers how many bytes it freed. The question "may this file be deleted" cannot be answered by reading /proc: a scan is a snapshot assembled over time, so a tool can open the file after the scan and keep its descriptor while the only name goes, and a write can land between the last look at its times and the delete. Linux answers it atomically instead. A write lease (fcntl F_SETLEASE, F_WRLCK) is granted only while no other open description of that inode exists — not another process's, not a second one of this pass's own — and any later open from another process waits until the lease is released. So the file is opened read-write from the folder it was listed in, leased, and then judged and emptied with ftruncate through that same descriptor: its kind, its link count and both its times are read again from the descriptor, and no name is resolved and nothing is unlinked. A name that changed hands therefore reaches nothing — a replacement is either already empty, or is judged as itself and kept — and a tool that arrives during the pass waits for a file that is empty rather than losing a name it could reopen. A hard-linked file is kept, because emptying it frees no blocks while another name holds the inode. A file another process has mapped is kept too: a mapping outlives the descriptor that made it, and the maps of every process are read under the lease, which is exact because no process can map the file while the lease is held (in_mapped).
+fn drain_temporary(entry: &ScratchEntry, proc: &Path, now: u64) -> io::Result<u64> {
+    ignore_lease_signals();
+    let Some(file) = reopen_readwrite(&entry.root, &entry.name).ok() else {
+        return Ok(0);
+    };
+    if lease(&file).is_err() {
+        return Ok(0);
+    }
+    let emptied = empty_leased(&file, proc, now);
+    // UNIT_BOUNDARY_DESCRIPTION: the lease is released whatever came of the judgement, so a file this pass kept is not left holding its tool's opens off.
+    // SAFETY: the descriptor is open for the call and fcntl takes no pointer for F_SETLEASE.
+    unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLEASE, libc::F_UNLCK) };
+    emptied
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what is done to a file while a write lease holds it, the only window in which nothing can open, write, map or rename it into something else. Every doubt keeps it: another kind, another link, a time younger than the grace, a mapping it cannot rule out, a size it cannot read.
+fn empty_leased(file: &File, proc: &Path, now: u64) -> io::Result<u64> {
+    let before = statx(file.as_raw_fd(), Path::new(""))?;
+    let id = (before.stx_dev_major, before.stx_dev_minor, before.stx_ino);
+    if u32::from(before.stx_mode) & libc::S_IFMT != libc::S_IFREG
+        || before.stx_nlink != 1
+        || u64::try_from(before.stx_mtime.tv_sec.max(before.stx_ctime.tv_sec)).unwrap_or(0)
+            >= now.saturating_sub(TEMP_GRACE)
+        || in_mapped(proc, id) != Some(false)
+    {
+        return Ok(0);
+    }
+    // UNIT_BOUNDARY_DESCRIPTION: the bytes are freed where the file stands and the name is left: the space is what the pass is for, and a name costs nothing. What is reported is what the descriptor held before and after, so an already empty or sparse file is reported as the little it is, and a hard link's blocks are never claimed (such a file is kept above).
+    let freed = before.stx_blocks;
+    if unsafe { libc::ftruncate(file.as_raw_fd(), 0) } != 0 {
+        return Err(io::Error::last_os_error());
+    }
+    Ok(freed.saturating_sub(statx(file.as_raw_fd(), Path::new(""))?.stx_blocks) * 512)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: takes a write lease on `file`: Ok(()) when it is held, an error when another open description exists (WouldBlock) or the filesystem refuses one. The lease is both the evidence that nothing has the file open and the reason a later open cannot join it.
+fn lease(file: &File) -> io::Result<()> {
+    // SAFETY: the descriptor is open for the call and fcntl takes no pointer for F_SETLEASE.
+    let taken = unsafe { libc::fcntl(file.as_raw_fd(), libc::F_SETLEASE, libc::F_WRLCK) };
+    (taken == 0)
+        .then_some(())
+        .ok_or_else(io::Error::last_os_error)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the kernel tells a lease holder, by SIGIO, that another process wants the file, and takes the lease away if the holder does not answer; the default action of that signal ends the process, and this is PID 1 of the guest. So a handler that does nothing is installed once for the whole process before any lease is taken, and a break request waits for the release inside drain_temporary. A handler and not SIG_IGN: an ignored disposition survives exec, and the entrypoint every agent runs would inherit a signal ignored that its image never asked to ignore; a handler is reset to the default by exec, so the agent starts clean.
+fn ignore_lease_signals() {
+    extern "C" fn nothing(_: libc::c_int) {}
+    static ONCE: std::sync::Once = std::sync::Once::new();
+    ONCE.call_once(|| {
+        // SAFETY: `libc::signal` installs a disposition for the process and takes no pointer of ours.
+        unsafe { libc::signal(libc::SIGIO, nothing as *const () as libc::sighandler_t) };
+    });
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether any process has the file at `id` mapped, read from every process's maps as the device and inode each mapping names. A mapping outlives the descriptor that made it, so a tool can hold a file's pages with no open file at all. A write lease is refused while a mapping stands on tmpfs and on btrfs, but not on overlayfs, which is what /tmp is on this guest, so the lease alone cannot rule a mapping out there. Called with the lease already held, this scan is exact and not a race: a lease is granted only when no other open description of the inode exists, and mapping a file requires an open descriptor, so no process can make a new mapping while the lease is held, and every mapping that could exist is already in the tables. Some when the answer is known, None when a table could not be read, which keeps the file rather than risk a mapping it could not see.
+fn in_mapped(proc: &Path, id: (u32, u32, u64)) -> Option<bool> {
+    // UNIT_BOUNDARY_DESCRIPTION: the device is matched as the kernel spells it in that table, two-digit lowercase hexadecimal, so a device whose minor is below 0x10 is not missed.
+    let needle = format!("{:02x}:{:02x}", id.0, id.1);
+    let mut mapped = false;
+    for task in fs::read_dir(proc).ok()? {
+        let task = task.ok()?;
+        if !task
+            .file_name()
+            .to_string_lossy()
+            .bytes()
+            .all(|b| b.is_ascii_digit())
+        {
+            continue;
+        }
+        let maps = match fs::read_to_string(task.path().join("maps")) {
+            Ok(maps) => maps,
+            Err(e) if e.kind() == io::ErrorKind::NotFound => continue,
+            Err(_) => return None,
+        };
+        for line in maps.lines() {
+            let mut fields = line.split_whitespace();
+            let (Some(_range), Some(_perms), Some(_offset), Some(device), Some(inode)) = (
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+                fields.next(),
+            ) else {
+                return None;
+            };
+            if device == needle && inode.parse::<u64>() == Ok(id.2) {
+                mapped = true;
+            }
+        }
+    }
+    Some(mapped)
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whether the name in `dir` names the entry the pass validated, by device and inode. It guards the removal of a file or a link, and it is a look and not a guarantee, since the removal resolves the name again: a file given that name in the instant between the two is removed instead. What that leaves exposed is one file inside a folder a specification declares a cache, which is the least any by-name delete can cost; a directory is never removed by name at all (remove_authorized).
 fn same_entry(dir: &File, name: &OsStr, info: &libc::statx) -> bool {
     statx(dir.as_raw_fd(), Path::new(name)).is_ok_and(|now| {
@@ -1571,6 +1632,22 @@ fn reopen_at(dir: &File, name: &OsStr) -> io::Result<File> {
             dir.as_raw_fd(),
             c_name.as_ptr(),
             libc::O_RDONLY | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
+        )
+    };
+    succeeded(fd >= 0)?;
+    // SAFETY: openat returned a descriptor nothing else owns.
+    Ok(unsafe { File::from_raw_fd(fd) })
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the entry `name` names inside `dir`, opened to be written: a lease is taken through a descriptor that may empty the file, and O_NOFOLLOW keeps a name given to a link from reaching what it points at.
+fn reopen_readwrite(dir: &File, name: &OsStr) -> io::Result<File> {
+    let c_name = cstring(name)?;
+    // SAFETY: c_name is NUL-terminated and outlives the call, and openat hands back a descriptor nothing else owns.
+    let fd = unsafe {
+        libc::openat(
+            dir.as_raw_fd(),
+            c_name.as_ptr(),
+            libc::O_RDWR | libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC,
         )
     };
     succeeded(fd >= 0)?;
@@ -1673,19 +1750,15 @@ fn evict(
     held: &HashSet<(u32, u32, u64)>,
     proc: &Path,
     now: u64,
-) -> io::Result<bool> {
+) -> io::Result<u64> {
+    // UNIT_BOUNDARY_DESCRIPTION: a temporary folder's file is neither authorized nor unlinked like a cache entry: it is judged and emptied under one lease on its own descriptor (drain_temporary), which is what makes "nothing has it open" true at the moment it goes rather than true a moment ago. It answers what it freed, which a sparse file makes less than the size the pass listed.
+    if entry.serving == Serving::Temporary {
+        return drain_temporary(entry, proc, now);
+    }
     let Some(authorized) = open_authorized(entry, locked, held, now)? else {
-        return Ok(false);
+        return Ok(0);
     };
-    // UNIT_BOUNDARY_DESCRIPTION: what processes hold is read once more here, between the look and the removal, because the look took a walk of the tree and a tool may have opened a file in it since. A scan that cannot be read is no evidence that nothing is held, so the entry is kept rather than removed on a guess.
-    let held = match entry.serving {
-        Serving::Temporary => match in_use(proc) {
-            Some(held) => held,
-            None => return Ok(false),
-        },
-        Serving::Cache => held.clone(),
-    };
-    remove_authorized(authorized, &held)
+    remove_authorized(authorized).map(|removed| if removed { entry.bytes } else { 0 })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the runner's request that this machine give back scratch because the owner's claim is short (pool_guard::ClaimRequest), read from `path`, which the guest's own boot points at guest::STORAGE_SHORT_PATH. A share with no file, or one from an older runner, holds no request. It is read again before every entry a pass deletes, and never once for the whole pass: a request the runner clears or replaces while a pass runs is not the request that pass serves.
@@ -4080,6 +4153,14 @@ mod tests {
         assert!(SCRATCH_DIRS.iter().all(|(dir, _)| *dir != "/var/cache"));
     }
 
+    // TEST_SCENARIO: the home's two cache folders a specification names, for a test that is about the home alone: the boot's own list also serves the machine's temporary folders, which hold whatever the machine happens to be running.
+    fn home_caches(home: &Path) -> Vec<(PathBuf, u64, Serving)> {
+        scratch_folders(home)
+            .into_iter()
+            .filter(|(_, _, serving)| *serving == Serving::Cache)
+            .collect()
+    }
+
     // TEST_SCENARIO: a new image boots on an empty upper, and the old one can hold millions of files, which deleted in place hold up the boot for minutes. Clearing renames the kept upper aside with its image record, so nothing under the old names is left to mount, and a later delete takes it away. A root kept for the same image is left as it is, while the work layer is emptied on every boot.
     #[test]
     fn a_new_image_moves_the_old_root_aside_without_deleting_it() {
@@ -4165,11 +4246,12 @@ mod tests {
 
         // TEST_SCENARIO: the removal re-reads what is held, so the test hands it a table of its own: one process in it holds the open file and nothing else.
         for entry in &listed {
-            assert!(evict(entry, &HashSet::new(), &held, proc.path(), now).unwrap());
+            assert!(evict(entry, &HashSet::new(), &held, proc.path(), now).unwrap() > 0);
         }
-        assert!(
-            !s.join("old.blob").exists(),
-            "an old, closed file is removed"
+        assert_eq!(
+            fs::metadata(s.join("old.blob")).unwrap().len(),
+            0,
+            "an old, closed file is emptied where it stands: its bytes are what the pass is for, and its name costs nothing"
         );
         assert!(
             s.join("fresh.blob").is_file(),
@@ -4211,7 +4293,7 @@ mod tests {
         let proc = TempDir::new("evict-tmp-late-proc");
         proc_holding(proc.path(), &[&s.join("blob")]).unwrap();
         assert!(
-            !evict(entry, &HashSet::new(), &HashSet::new(), proc.path(), now).unwrap(),
+            !evict(entry, &HashSet::new(), &HashSet::new(), proc.path(), now).unwrap() > 0,
             "a file a process opened after the pass listed it is not removed"
         );
         assert_eq!(fs::read(s.join("blob")).unwrap(), b"x");
@@ -4220,8 +4302,209 @@ mod tests {
         // TEST_SCENARIO: with nothing holding it, the same entry goes on the next try, so the test's table is what decides and not some other refusal.
         let nothing = TempDir::new("evict-tmp-late-none");
         let table = proc_holding(nothing.path(), &[]).unwrap();
-        assert!(evict(entry, &HashSet::new(), &table, nothing.path(), now).unwrap());
-        assert!(!s.join("blob").exists());
+        assert!(evict(entry, &HashSet::new(), &table, nothing.path(), now).unwrap() > 0);
+        assert_eq!(fs::metadata(s.join("blob")).unwrap().len(), 0);
+    }
+
+    // TEST_SCENARIO: the advisor's three late races, which a scan and a delete cannot survive and a lease does. The pass lists and judges a file; before the removal reaches it, another process opens it, writes it, or renames its name onto a fresh file. The lease is what decides now, and it decides against the pass every time: the file that a process opened is kept, the file that was written is kept, and the file whose name was taken is kept — because the lease is granted to whatever the name denotes at that instant and every judgement is made again on that, not on what the pass saw.
+    #[test]
+    fn a_temporary_file_that_changes_hands_before_the_removal_is_kept() {
+        let tmp = TempDir::new("evict-tmp-races");
+        let s = fs::canonicalize(tmp.path()).unwrap();
+        let now = long_after();
+        let nothing = TempDir::new("evict-tmp-races-none");
+        proc_holding(nothing.path(), &[]).unwrap();
+        let table = nothing.path();
+
+        // TEST_SCENARIO: a reader arrives after the pass listed the file. The file is opened when the removal reaches it and the lease is refused, so it is kept with its bytes.
+        fs::write(s.join("opened"), b"work").unwrap();
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), Serving::Temporary)]);
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let opened = listed
+            .iter()
+            .find(|entry| entry.shown == s.join("opened"))
+            .expect("an old plain file is offered");
+        let reader = File::open(s.join("opened")).unwrap();
+        assert_eq!(
+            evict(opened, &HashSet::new(), &HashSet::new(), table, now).unwrap(),
+            0,
+            "a file a process opened after the pass listed it is kept, whatever the pass read"
+        );
+        assert_eq!(fs::read(s.join("opened")).unwrap(), b"work");
+        drop(reader);
+
+        // TEST_SCENARIO: a writer arrives and moves the file's times past the grace without opening it for longer than a moment: the times are read again under the lease, so a file that is young again is kept. The write is done and closed before the removal reaches it, so nothing holds it and only its times can save it.
+        fs::write(s.join("written"), b"work").unwrap();
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let written = listed
+            .iter()
+            .find(|entry| entry.shown == s.join("written"))
+            .expect("an old plain file is offered");
+        fs::write(s.join("written"), b"fresh work").unwrap();
+        // TEST_SCENARIO: the file is dated inside the grace of the pass's own clock, which the pass reads and not the wall clock the test runs on.
+        let fresh = now - TEMP_GRACE / 2;
+        let path = cstring(s.join("written").as_os_str()).unwrap();
+        let times = [
+            libc::timespec {
+                tv_sec: fresh as libc::time_t,
+                tv_nsec: 0,
+            },
+            libc::timespec {
+                tv_sec: fresh as libc::time_t,
+                tv_nsec: 0,
+            },
+        ];
+        // SAFETY: the path is NUL-terminated and outlives the call, and times holds the two values the call reads.
+        assert_eq!(
+            unsafe { libc::utimensat(libc::AT_FDCWD, path.as_ptr(), times.as_ptr(), 0) },
+            0
+        );
+        assert_eq!(
+            evict(written, &HashSet::new(), &HashSet::new(), table, now).unwrap(),
+            0,
+            "a file written after the pass judged it is kept: its times are read again under the lease"
+        );
+        assert_eq!(fs::read(s.join("written")).unwrap(), b"fresh work");
+
+        // TEST_SCENARIO: the name the pass listed is given to a young file before the removal reaches it, and the old file is renamed aside. The lease and the judgement both go to what the name denotes now, so the young file is kept and keeps its bytes; the old file, still old and still closed, is what a later pass takes.
+        fs::write(s.join("swapped"), vec![1u8; 4096]).unwrap();
+        fs::write(s.join("young"), b"young work").unwrap();
+        // TEST_SCENARIO: the replacement is dated inside the grace of the pass's own clock, which the pass reads and not the wall clock the test runs on.
+        let young = now - TEMP_GRACE / 2;
+        let young_path = cstring(s.join("young").as_os_str()).unwrap();
+        let young_times = [
+            libc::timespec {
+                tv_sec: young as libc::time_t,
+                tv_nsec: 0,
+            },
+            libc::timespec {
+                tv_sec: young as libc::time_t,
+                tv_nsec: 0,
+            },
+        ];
+        // SAFETY: the path is NUL-terminated and outlives the call, and young_times holds the two values the call reads.
+        assert_eq!(
+            unsafe {
+                libc::utimensat(libc::AT_FDCWD, young_path.as_ptr(), young_times.as_ptr(), 0)
+            },
+            0
+        );
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let swapped = listed
+            .iter()
+            .find(|entry| entry.shown == s.join("swapped"))
+            .expect("an old plain file is offered");
+        fs::rename(s.join("swapped"), s.join("aside")).unwrap();
+        fs::rename(s.join("young"), s.join("swapped")).unwrap();
+        assert_eq!(
+            evict(swapped, &HashSet::new(), &HashSet::new(), table, now).unwrap(),
+            0,
+            "a name given to a young file is judged on that file, and kept"
+        );
+        assert_eq!(fs::read(s.join("swapped")).unwrap(), b"young work");
+        assert_eq!(
+            fs::metadata(s.join("aside")).unwrap().len(),
+            4096,
+            "the old file is where it was renamed to"
+        );
+    }
+
+    // TEST_SCENARIO: a mapping outlives the descriptor that made it, so a tool can hold a file's pages with no open file at all, and emptying it under the mapping would fault the tool on its next touch. The lease alone does not catch this: on overlayfs, which is what /tmp is on the guest, a lease is granted while a mapping stands; on tmpfs and btrfs it is refused. So the maps of every process are read while the lease is held, and the file is kept either way. The descriptor that made the mapping is closed here first, and only the mapping is left. The control file beside it, unmapped, is emptied by the same call on the same filesystem, so the mapping is what saved the first.
+    #[test]
+    fn a_temporary_file_a_process_has_mapped_is_kept() {
+        let tmp = TempDir::new("evict-tmp-mapped");
+        let s = fs::canonicalize(tmp.path()).unwrap();
+        fs::write(s.join("mapped"), vec![7u8; 4096]).unwrap();
+        fs::write(s.join("plain"), vec![7u8; 4096]).unwrap();
+        let now = long_after();
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), Serving::Temporary)]);
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let find = |name: &str| {
+            listed
+                .iter()
+                .find(|entry| entry.shown == s.join(name))
+                .unwrap_or_else(|| panic!("{name} is offered"))
+        };
+
+        let file = File::open(s.join("mapped")).unwrap();
+        // SAFETY: the descriptor is open, the mapping is the file's own size, and it is unmapped before the test ends.
+        let pages = unsafe {
+            libc::mmap(
+                std::ptr::null_mut(),
+                4096,
+                libc::PROT_READ,
+                libc::MAP_SHARED,
+                file.as_raw_fd(),
+                0,
+            )
+        };
+        assert_ne!(pages, libc::MAP_FAILED);
+        // TEST_SCENARIO: the descriptor goes before the removal reaches the file, which is the case an open-file scan could not see.
+        drop(file);
+        assert_eq!(
+            evict(find("mapped"), &HashSet::new(), &HashSet::new(), Path::new("/proc"), now).unwrap(),
+            0,
+            "a file a process has mapped is kept: the maps of every process are read under the lease, so the mapping is seen"
+        );
+        assert_eq!(fs::metadata(s.join("mapped")).unwrap().len(), 4096);
+        assert!(
+            evict(
+                find("plain"),
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                now
+            )
+            .unwrap()
+                > 0
+        );
+        assert_eq!(fs::metadata(s.join("plain")).unwrap().len(), 0);
+
+        // SAFETY: pages is the mapping made above, over one page.
+        unsafe { libc::munmap(pages, 4096) };
+        assert!(
+            evict(
+                find("mapped"),
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                now
+            )
+            .unwrap()
+                > 0,
+            "the same file, once unmapped, is emptied"
+        );
+        assert_eq!(fs::metadata(s.join("mapped")).unwrap().len(), 0);
+    }
+
+    // TEST_SCENARIO: a file with another name still on it is not emptied: emptying frees no blocks while that other name holds the inode, so the pass would report bytes it did not free, and the work would be lost from a name its tool did not expect to lose. The link count is read through the leased descriptor, so a link made after the pass listed the file is seen.
+    #[test]
+    fn a_temporary_file_with_two_names_is_kept() {
+        let tmp = TempDir::new("evict-tmp-linked");
+        let s = fs::canonicalize(tmp.path()).unwrap();
+        fs::write(s.join("one"), vec![3u8; 8192]).unwrap();
+        let now = long_after();
+        let roots = open_scratch_roots(&[(s.clone(), mount_of(&s), Serving::Temporary)]);
+        let listed = scratch_entries(&roots, &HashSet::new(), &HashSet::new(), now, EVICT_AGES[3]);
+        let entry = listed
+            .iter()
+            .find(|entry| entry.shown == s.join("one"))
+            .expect("an old plain file is offered");
+        fs::hard_link(s.join("one"), s.join("two")).unwrap();
+        assert_eq!(
+            evict(
+                entry,
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                now
+            )
+            .unwrap(),
+            0,
+            "a file with two names is kept: its blocks are not the pass's to free"
+        );
+        assert_eq!(fs::metadata(s.join("one")).unwrap().len(), 8192);
+        assert_eq!(fs::metadata(s.join("two")).unwrap().len(), 8192);
     }
 
     // TEST_SCENARIO: the boot's own folder list serves the home's caches whole and the temporary folders by file: the two are told apart by what they were opened as, so a directory of a temporary folder is never listed while a directory of a cache is.
@@ -4237,14 +4520,15 @@ mod tests {
             .map(|(dir, _, serving)| (dir.clone(), *serving))
             .collect();
         shown.sort_by(|a, b| a.0.cmp(&b.0));
+        let mut expected = [
+            (PathBuf::from("/tmp"), Serving::Temporary),
+            (h.join(".cache"), Serving::Cache),
+            (h.join(".npm"), Serving::Cache),
+            (PathBuf::from("/var/tmp"), Serving::Temporary),
+        ];
+        expected.sort_by(|a, b| a.0.cmp(&b.0));
         assert_eq!(
-            shown,
-            [
-                (PathBuf::from("/tmp"), Serving::Temporary),
-                (h.join(".cache"), Serving::Cache),
-                (h.join(".npm"), Serving::Cache),
-                (PathBuf::from("/var/tmp"), Serving::Temporary),
-            ],
+            shown, expected,
             "the home's caches are served whole, and the temporary folders only for plain files"
         );
     }
@@ -4261,7 +4545,8 @@ mod tests {
         fs::create_dir_all(h.join("work/checkout/src")).unwrap();
         fs::write(h.join("work/checkout/src/main.rs"), b"fn main() {}").unwrap();
         let later = long_after();
-        let roots = open_scratch_roots(&scratch_folders(&h));
+        // TEST_SCENARIO: the boot's own list also serves the machine's temporary folders, and this test is about the home's caches alone, so it is given the caches a specification names and nothing else of the boot's list.
+        let roots = open_scratch_roots(&home_caches(&h));
         let offered = scratch_entries(
             &roots,
             &HashSet::new(),
@@ -4277,14 +4562,17 @@ mod tests {
             "a pass lists the home's caches and nothing else of the home"
         );
         for entry in &offered {
-            assert!(evict(
-                entry,
-                &HashSet::new(),
-                &HashSet::new(),
-                Path::new("/proc"),
-                later
-            )
-            .unwrap());
+            assert!(
+                evict(
+                    entry,
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    Path::new("/proc"),
+                    later
+                )
+                .unwrap()
+                    > 0
+            );
         }
         assert!(
             h.join("work/checkout/src/main.rs").is_file(),
@@ -4350,6 +4638,24 @@ mod tests {
     }
 
     // TEST_SCENARIO: an entry as a pass over a folder a specification calls a cache lists one, with nothing held and no age floor in its way.
+    // TEST_SCENARIO: what a listed entry holds, which an eviction of a cache reports as freed.
+    fn tree_bytes(path: &Path) -> u64 {
+        let Ok(info) = fs::symlink_metadata(path) else {
+            return 0;
+        };
+        if !info.is_dir() {
+            return info.len();
+        }
+        fs::read_dir(path)
+            .map(|children| {
+                children
+                    .flatten()
+                    .map(|child| tree_bytes(&child.path()))
+                    .sum()
+            })
+            .unwrap_or(0)
+    }
+
     fn cache_entry(path: &Path) -> ScratchEntry {
         ScratchEntry {
             root: OpenOptions::new()
@@ -4360,7 +4666,7 @@ mod tests {
             name: path.file_name().unwrap().to_owned(),
             shown: path.to_path_buf(),
             used: 0,
-            bytes: 0,
+            bytes: tree_bytes(path),
             age: EVICT_AGES[3],
             disk: None,
             mount: mount_of(path),
@@ -4482,14 +4788,17 @@ mod tests {
         let shown: Vec<_> = offered.iter().map(|entry| entry.shown.clone()).collect();
         assert_eq!(shown, [h.join(".cache/plain")]);
         for entry in &offered {
-            assert!(evict(
-                entry,
-                &HashSet::new(),
-                &HashSet::new(),
-                Path::new("/proc"),
-                later
-            )
-            .unwrap());
+            assert!(
+                evict(
+                    entry,
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    Path::new("/proc"),
+                    later
+                )
+                .unwrap()
+                    > 0
+            );
         }
         assert!(remove_all(&h.join(".cache/tool")).is_err());
         assert!(remove_all(&h.join(".npm")).is_err());
@@ -4692,14 +5001,17 @@ mod tests {
             .is_some(),
             "the entry is authorized once the reader is gone"
         );
-        assert!(evict(
-            entry("checkout"),
-            &HashSet::new(),
-            &HashSet::new(),
-            nothing.path(),
-            later
-        )
-        .unwrap());
+        assert!(
+            evict(
+                entry("checkout"),
+                &HashSet::new(),
+                &HashSet::new(),
+                nothing.path(),
+                later
+            )
+            .unwrap()
+                > 0
+        );
         assert_eq!(
             fs::read_dir(s.join("checkout")).unwrap().count(),
             0,
@@ -4723,7 +5035,7 @@ mod tests {
         fs::rename(s.join("cache"), s.join("cache.saved")).unwrap();
         fs::create_dir_all(s.join("cache/draft")).unwrap();
         fs::write(s.join("cache/draft/only-copy.md"), b"the only copy").unwrap();
-        remove_authorized(authorized, &HashSet::new()).unwrap();
+        remove_authorized(authorized).unwrap();
 
         assert_eq!(
             fs::read(s.join("cache/draft/only-copy.md")).unwrap(),
@@ -4745,7 +5057,7 @@ mod tests {
         fs::create_dir_all(h.join(".cache/cache")).unwrap();
         fs::write(h.join(".cache/cache/old"), b"a cache file").unwrap();
         let later = long_after();
-        let roots = open_scratch_roots(&scratch_folders(&h));
+        let roots = open_scratch_roots(&home_caches(&h));
         let listed = scratch_entries(
             &roots,
             &HashSet::new(),
@@ -4769,7 +5081,8 @@ mod tests {
                 Path::new("/proc"),
                 later
             )
-            .unwrap(),
+            .unwrap()
+                > 0,
             "what the name denotes when the pass reaches it is what the pass deletes"
         );
 
@@ -4803,7 +5116,8 @@ mod tests {
                 Path::new("/proc"),
                 later
             )
-            .unwrap(),
+            .unwrap()
+                > 0,
             "the entry holds files, so the pass freed them"
         );
         assert_eq!(
@@ -4828,14 +5142,17 @@ mod tests {
         // TEST_SCENARIO: an entry that is already empty is authorized and frees nothing, so a pass reports no delete rather than claim one.
         let empty = cache_entry(&h.join(".cache/cache"));
         fs::remove_file(h.join(".cache/cache/only-copy.md")).unwrap();
-        assert!(!evict(
-            &empty,
-            &HashSet::new(),
-            &HashSet::new(),
-            Path::new("/proc"),
-            later
-        )
-        .unwrap());
+        assert!(
+            !evict(
+                &empty,
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                later
+            )
+            .unwrap()
+                > 0
+        );
     }
 
     // TEST_SCENARIO: the file a turn is working in is the one a pass cannot see in time: a reader that starts between the last look at a tree and the delete of it leaves no trace in anything a pass reads, and no snapshot, timestamp or lock closes that window. So the destructive path is not reached for the agent's work at all: an entry outside a cache folder is no candidate of any pass, whatever the reader does and however old the entry is, and a reader that starts inside the window can only cost a cache, which the folder's own specification says is rebuildable.
@@ -4849,7 +5166,7 @@ mod tests {
         fs::create_dir_all(h.join(".cache/tool")).unwrap();
         fs::write(h.join(".cache/tool/blob"), b"c").unwrap();
         let later = long_after();
-        let roots = open_scratch_roots(&scratch_folders(&h));
+        let roots = open_scratch_roots(&home_caches(&h));
         let listed = scratch_entries(
             &roots,
             &HashSet::new(),
@@ -4894,14 +5211,17 @@ mod tests {
             EVICT_AGES[3],
         );
         for entry in &pass {
-            assert!(evict(
-                entry,
-                &HashSet::new(),
-                &HashSet::new(),
-                Path::new("/proc"),
-                later
-            )
-            .unwrap());
+            assert!(
+                evict(
+                    entry,
+                    &HashSet::new(),
+                    &HashSet::new(),
+                    Path::new("/proc"),
+                    later
+                )
+                .unwrap()
+                    > 0
+            );
         }
         stop.store(true, std::sync::atomic::Ordering::Relaxed);
         reader.join().unwrap();
@@ -5286,25 +5606,46 @@ mod tests {
         fs::create_dir(s.join("held")).unwrap();
 
         let later = long_after();
-        assert!(evict(
-            &cache_entry(&s.join("mise")),
-            &HashSet::new(),
-            &HashSet::new(),
-            Path::new("/proc"),
-            later
-        )
-        .unwrap());
-        assert!(evict(
-            &cache_entry(&s.join("link")),
-            &HashSet::new(),
-            &HashSet::new(),
-            Path::new("/proc"),
-            later
-        )
-        .unwrap());
+        assert!(
+            evict(
+                &cache_entry(&s.join("mise")),
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                later
+            )
+            .unwrap()
+                > 0
+        );
+        assert!(
+            evict(
+                &cache_entry(&s.join("link")),
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                later
+            )
+            .unwrap()
+                > 0
+        );
         let lock = File::open(s.join("held")).unwrap();
         // SAFETY: the descriptor is open for the call and flock takes no pointer.
         assert_eq!(unsafe { libc::flock(lock.as_raw_fd(), libc::LOCK_EX) }, 0);
+        assert!(
+            evict(
+                &cache_entry(&s.join("held")),
+                &HashSet::new(),
+                &HashSet::new(),
+                Path::new("/proc"),
+                later
+            )
+            .unwrap()
+                == 0,
+            "a locked entry is kept"
+        );
+        assert!(s.join("held").is_dir());
+        drop(lock);
+        // TEST_SCENARIO: an entry that was already emptied by an earlier pass is authorized and holds nothing to remove, so a pass answers that it freed nothing rather than claim a delete it did not make.
         assert!(
             !evict(
                 &cache_entry(&s.join("held")),
@@ -5313,20 +5654,9 @@ mod tests {
                 Path::new("/proc"),
                 later
             )
-            .unwrap(),
-            "a locked entry is kept"
+            .unwrap()
+                > 0
         );
-        assert!(s.join("held").is_dir());
-        drop(lock);
-        // TEST_SCENARIO: an entry that was already emptied by an earlier pass is authorized and holds nothing to remove, so a pass answers that it freed nothing rather than claim a delete it did not make.
-        assert!(!evict(
-            &cache_entry(&s.join("held")),
-            &HashSet::new(),
-            &HashSet::new(),
-            Path::new("/proc"),
-            later
-        )
-        .unwrap());
 
         let mut left: Vec<_> = fs::read_dir(s)
             .unwrap()

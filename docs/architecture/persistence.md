@@ -234,33 +234,33 @@ The path the disk holds apart from the root is `HOME`.
 That is not a field an Agent sets: `HOME` is fixed on both backends, and it is already the only path every template and starter kit in the chart persists.
 The disk sits on the owner's [VM runner](vm-runner.md) volume, grows with its size at the machine's next start and never shrinks, survives hibernation, restarts and a new image, and goes with the Agent on delete.
 It is per owner rather than per Agent, so the storage-class pin and the warm pool do not apply and the storage migration never sees it.
-An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, because a machine cannot keep it and silently dropping it is how an agent comes to look healthy while discarding its work.
+An Agent whose mounts ask to persist a path outside `HOME` is refused rather than reconciled, since a machine cannot keep it and silently dropping it is how an agent looks healthy while discarding its work.
 
 **The whole machine persists, per root generation.** Everything outside `HOME` is the image's root: an overlay platform-init lays over the image, its upper layer on the disk, kept across stops, restarts and new images of one generation.
-A generation is a string key an image declares in its env and compares whole, never parsed or ordered: the default image's names it, such as `default-1`, and an image the platform builds on it appends its own segment, such as `default-1/gepa-1`, so a key names the image's lineage.
-An image built from the default one elsewhere inherits the default's key unless it declares its own, and so keeps a root the default image wrote.
-An image's build changes its key only on a change that breaks an older root; an image declaring none is its own generation.
-The runner names it in the share at every start, and any other key, an extending image's included, or none named, boots onto an empty upper: what must outlast that belongs under `HOME`.
-**Nothing the platform writes at boot lands in the kept root.** A file a boot rewrote there would hide every later image's copy of it, so the boot builds the CA bundle under `/run`, a fresh tmpfs on every boot.
-The entry that maps `agent` to uid 0 for SSH logins is in a layer platform-init builds in memory at every boot, between the image and the upper: the image's `/etc/passwd` with that entry at its end.
-It is an ordinary file of the root, so `useradd` replaces it as on any root, and only then does the upper hold a copy, as with any file the agent writes.
-The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the image's build gives uid 0's entry the agent's `HOME`.
-The old upper is renamed aside with the record of its image and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short is deleted on the next boot.
-smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
-Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root, empty on every boot whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-`/var/cache` stays in the root: an image ships its caches there, and an empty folder over them rebuilt them each boot.
-The caches share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
-A disk pass runs until a fifth of the disk is free; a claim's stops at the bytes the runner asked for.
-It deletes from `HOME`'s `.cache` and `.npm`, caches by the XDG specification and by npm, whole; from `/tmp` and `/var/tmp` it deletes only a plain file that no process holds open and that nothing has touched for an hour — a directory there is where a turn's work lives, and a directory's mark, times and locks are all things its tool can revoke while a pass runs.
+A generation is a string key an image declares in its env and compares whole, never parsed or ordered: the default image's names it, such as `default-1`, and an image built on it appends a segment, such as `default-1/gepa-1`, so a key names a lineage.
+An image built elsewhere from the default inherits its key unless it declares its own, and so keeps a root the default wrote.
+An image changes its key only on a change that breaks an older root; one declaring none is its own.
+The runner names it in the share at every start, and any other key, an extending image's included, or none, boots onto an empty upper: what must outlast that belongs under `HOME`.
+**Nothing the platform writes at boot lands in the kept root.** A file a boot rewrote there hides every later image's copy, so the boot builds the CA bundle under `/run`, a fresh tmpfs on every boot.
+The entry mapping `agent` to uid 0 for SSH logins is in a layer platform-init builds in memory every boot, between image and upper: the image's `/etc/passwd` with that entry appended.
+It is an ordinary file of the root, so `useradd` replaces it there and only then does the upper hold a copy, as with any file the agent writes.
+The agent runs as root there, and a tool taking its home from the user database rather than `HOME`, as OpenSSH does, would write to `/root` there, so the image's build gives uid 0's entry the agent's `HOME`.
+The old upper is renamed aside with its image record and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short goes on the next.
+smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind and fails the boot rather than run on them.
+Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root, empty every boot whatever the image ships, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
+`/var/cache` stays in the root: an image ships caches there, and an empty folder over them rebuilds them.
+The caches share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim short, platform-init deletes their oldest entries, never outside them nor through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, and an entry holding a mount stays whole.
+A disk pass runs until a fifth of the disk is free; a claim's stops at the bytes asked for.
+It deletes from `HOME`'s `.cache` and `.npm`, caches by the XDG specification and by npm, whole; from `/tmp` and `/var/tmp` only a plain file nothing has open or mapped and nothing touched for an hour — a directory there is where a turn's work lives, and its mark, times and locks are things its tool can revoke while a pass runs.
+It empties such a file rather than unlinking it, under a write lease on its own descriptor: the kernel grants one only while nothing else has it open and makes a later open wait, and its kind, links and times are judged through it, no name resolved.
 An entry goes whole: a tool keeping part of its cache takes it for complete and fails.
-Deletion is bound to the tree it judged, not the name it listed: the entry is opened once and its mount and use are read through that descriptor, and a directory's name is not touched again.
-Use is the newest modification or change time in the entry: a write moves those, a read moves none the guest keeps, and a reader is seen by its descriptors alone.
-An entry used in the last ten minutes stays, and so does one a process holds, locks (as `systemd-tmpfiles` leaves it) or works in.
-A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that rule on: each request is served once, by one pass that keeps what was used in the last hour, stops at the bytes the runner asked for, and reads the request again before each entry.
-A guest at its grant's floor keeps that hour with no byte bound, served once an hour, not at every look.
+Deletion is bound to the tree it judged, not the name it listed: the entry is opened once, its mount and use are read through it, and a directory's name is not touched again.
+Use is the newest modification or change time in the entry: a write moves those, a read moves none the guest keeps, and a reader is seen by its descriptors alone — for a temporary file, by every process's descriptors and mappings — and a file with more than one link is kept, since emptying it frees nothing.
+An entry used in the last ten minutes stays, as does one a process holds, locks or works in.
+A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that rule on: each request is served once, by one pass keeping what was used in the last hour, stopping at the bytes asked for, and rereading the request before each entry; a guest at its grant's floor keeps that hour with no byte bound.
 Each eviction, and a disk still short with nothing to evict, is a console line.
 An agent that exits with its home nearly out of space or inodes is a full home.
-A boot that finds the disk with no space or inode left deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
+A boot finding no space left deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, then tries again.
 A boot that still has no room stops, and its console line says the home is full, so the runner reports it, with its fix: more storage.
 btrfs discards what it frees on its own (`discard=async`, the kernel's default on a disk that supports discard), so whatever the agent frees, by deleting or by rewriting a file, goes back to the runner's volume and stops counting against the owner's storage.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
