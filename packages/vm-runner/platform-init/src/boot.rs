@@ -3244,22 +3244,22 @@ mod tests {
             kept
         });
         // UNIT_BOUNDARY_DESCRIPTION: the shrink is held open across a whole allocation of the writer's rather than raced against it: it drops a step, waits, bounded, for the writer's next attempt to finish, and only then drops another. A writer blocked in the filesystem when the wait starts still finishes inside the window, and every step still holds within one file of what it was asked for once that allocation landed, which is the guard's own promise: a move that released the whole guard and let it regrow would have left the guard short of what it was asked for, with the room gone to the writer.
-        let mut tried_at = 0usize;
         for left in (4..=19u64).rev() {
             let size = left * POOL_GUARD_STEP;
             guard.size(&dir, size).unwrap();
             // UNIT_BOUNDARY_DESCRIPTION: the step's room is committed before the writer is asked to use it, because btrfs frees a dropped file's extents in its next transaction and the writer's own preallocation cannot be given space the filesystem has not released yet.
             flush_filesystem(&top).unwrap();
+            // UNIT_BOUNDARY_DESCRIPTION: the count is taken once the step's room is committed, so the attempt the wait below finds is one the writer made with that room free: a count taken before the resize is already satisfied by an attempt that finished while the guard still held the step, and the wait would pass without the writer ever having seen the release.
+            let released_at = attempts.load(std::sync::atomic::Ordering::Acquire);
             let until = std::time::Instant::now() + std::time::Duration::from_secs(10);
-            while attempts.load(std::sync::atomic::Ordering::Acquire) <= tried_at {
+            while attempts.load(std::sync::atomic::Ordering::Acquire) <= released_at {
                 assert!(
                     std::time::Instant::now() < until,
-                    "the writer finished no allocation attempt while the guard moved to {} MiB",
+                    "the writer finished no allocation attempt after the guard released the room for {} MiB",
                     size >> 20
                 );
                 std::thread::yield_now();
             }
-            tried_at = attempts.load(std::sync::atomic::Ordering::Acquire);
             assert!(
                 guard.held() + POOL_GUARD_STEP >= size,
                 "after the move to {} MiB the guard held {} MiB once the writer's allocation landed",
