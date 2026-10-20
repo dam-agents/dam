@@ -3,7 +3,7 @@ import { useRef } from "react";
 import { ResizeHandle } from "@/components/resize-handle";
 
 import { useStore } from "../../../../store.js";
-import { STRIP_SNAP_PX, stripWidth } from "../../lib/agent-strip.js";
+import { stripTravel, stripWidth } from "../../lib/agent-strip.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The edge between the agent strip and the
@@ -20,12 +20,9 @@ export function StripWidthHandle() {
       value={stripWidth(wide)}
       onResize={(delta) => {
         const { sidebarStripWide, setSidebarStripWide } = useStore.getState();
-        travel.current = sidebarStripWide
-          ? Math.min(0, travel.current + delta)
-          : Math.max(0, travel.current + delta);
-        if (Math.abs(travel.current) < STRIP_SNAP_PX) return;
-        travel.current = 0;
-        setSidebarStripWide(!sidebarStripWide);
+        const next = stripTravel(travel.current, delta, sidebarStripWide);
+        travel.current = next.travel;
+        if (next.flip) setSidebarStripWide(!sidebarStripWide);
       }}
       onDragEnd={() => {
         travel.current = 0;
