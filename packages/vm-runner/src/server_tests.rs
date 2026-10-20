@@ -4672,8 +4672,8 @@ async fn an_adopted_vmm_is_not_named_by_its_predecessors_record() {
     h.fake.set_vmm("m1", pid);
     let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&exits).unwrap();
-    // TEST_SCENARIO: a record of some other process under this pid, which is the predecessor's.
-    fs::write(exits.join(pid.to_string()), "1\n12").unwrap();
+    // TEST_SCENARIO: a record of some other process under this pid, which is the predecessor's, naming the filter's own signal so that reading it would be visible as that reason on either platform.
+    fs::write(exits.join(pid.to_string()), format!("1\n{}", libc::SIGSYS)).unwrap();
 
     // TEST_SCENARIO: a hand-off, and a tick on the other side while the VMM is still alive.
     let next = h.hand_off(|_| {}).await;
@@ -4704,8 +4704,8 @@ fn a_newer_death_survives_the_claim_that_takes_its_predecessor() {
     fs::create_dir_all(&dir).unwrap();
     let exits = dir.join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&exits).unwrap();
-    // TEST_SCENARIO: the predecessor's death, claimed by a reader that is about to decide about it.
-    fs::write(exits.join("4242"), "1\n12").unwrap();
+    // TEST_SCENARIO: the predecessor's death, claimed by a reader that is about to decide about it. The signal is this platform's, so the record says what the assertion reads back on either.
+    fs::write(exits.join("4242"), format!("1\n{}", libc::SIGSYS)).unwrap();
     let claimed = claim_exit_record(&dir, 4242).expect("the predecessor's record is claimed");
     // TEST_SCENARIO: the machine's own death, published by the loader under the name the claim freed.
     fs::write(dir.join(".4242.part"), "9\n9").unwrap();
