@@ -1,5 +1,9 @@
 import { describe, it, expect, afterEach, vi } from "vitest";
-import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
+import {
+  CONFIGURE_SESSION_METHOD,
+  NO_MODEL_REASON,
+  PIN_MODEL_METHOD,
+} from "agent-runtime-api";
 import {
   IDLE_REAP_DELAY_MS,
   createClient,
@@ -14,6 +18,10 @@ import {
   type Harness,
 } from "./acp-world.js";
 import { createAcpRuntime } from "../acp-runtime.js";
+import {
+  noopAgentRequests,
+  type AgentRequestObserver,
+} from "../pending-agent-requests.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import {
@@ -36,7 +44,8 @@ import {
  * answered without any process. A session whose model names a provider the
  * agent no longer holds is refused on its next prompt, not frozen. One client
  * connection reaches every process, so a question two harnesses ask with the
- * same request id must still be answered to the harness that asked it.
+ * same request id must still be answered to the harness that asked it, from
+ * whichever connection answers it.
  */
 
 const IDLE_CHECK_MS = 10_000;
@@ -53,7 +62,11 @@ const ALIAS_OF: Record<string, string> = {
   "conn-bedrock": "bedrock",
 };
 
-function createLeaseWorld(opts: { providers: string[] }) {
+function createLeaseWorld(opts: {
+  providers: string[];
+  agentRequests?: AgentRequestObserver;
+  modelRequired?: boolean;
+}) {
   let providers = opts.providers;
   let keptProcesses = 0;
   const metadata = createSessionMetadata();
@@ -74,6 +87,7 @@ function createLeaseWorld(opts: { providers: string[] }) {
       providers.includes("conn-bedrock")
         ? "conn-bedrock"
         : null,
+    modelRequired: () => opts.modelRequired === true,
     settingScope: (_harness, id) => SESSION_SETTINGS[id] ?? null,
     settingsError: (_harness, settings) =>
       Object.keys(settings).some((id) => !SESSION_SETTINGS[id])
@@ -95,8 +109,10 @@ function createLeaseWorld(opts: { providers: string[] }) {
     idleCheckMs: IDLE_CHECK_MS,
     leaseIdleMs: LEASE_IDLE_MS,
     log: () => {},
+    agentRequests: opts.agentRequests ?? noopAgentRequests,
     createRuntime: (pair, scoped) =>
       createAcpRuntime({
+        agentRequests: scoped.agentRequests,
         workingDir: "/workspace",
         idleReapDelayMs: IDLE_REAP_DELAY_MS,
         onArtifactTouch: () => {},
@@ -302,6 +318,26 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(client.reply(2)?.result).toEqual({ value: "x" });
   });
 
+  /** TEST_SCENARIO: a terminal Session's title is known only to its harness,
+   * so a session/list that names a harness reaches that harness's process,
+   * started for it, and no other. */
+  it("asks the named harness for its listing", () => {
+    const world = createLeaseWorld({ providers: ["conn-a"] });
+    const client = world.connect();
+    client.send(frames.initialize(0));
+    client.send({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "session/list",
+      params: { cwd: ".", _meta: { platform: { harness: "codex" } } },
+    });
+    expect(world.harnessCount("codex")).toBe(1);
+    expect(world.harnessCount("claude-code")).toBe(0);
+    const codex = world.harness("codex");
+    codex.replyTo("initialize", {});
+    expect(codex.received("session/list")).toHaveLength(1);
+  });
+
   /** TEST_SCENARIO: Two harnesses ask the client a question with the same
    * request id. Each answer reaches the harness that asked it. */
   it("keeps agent requests from two processes apart", () => {
@@ -324,6 +360,102 @@ describe("acp-runtime: one harness process per harness", () => {
     expect(world.harness("codex").answersTo(0)).toEqual([
       expect.objectContaining({ result: { outcome: "c" } }),
     ]);
+  });
+
+  /** TEST_SCENARIO: The agent asks while nobody watches the session. The
+   * platform hears of it under the id a client would see, and answers it later
+   * from a connection of its own that never saw the question; the answer must
+   * reach the harness that asked, under the id it asked with. */
+  it("takes the answer to an unwatched question from any connection", () => {
+    const heard: unknown[] = [];
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: {
+        held: () => {},
+        waiting: (id) => heard.push(id),
+        answered: () => {},
+        abandoned: () => {},
+      },
+    });
+    const first = world.connect();
+    startSession(world, first, "claude-code", "s-a", 1, {});
+    first.disconnect();
+    world.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+    expect(heard).toHaveLength(1);
+
+    const platform = world.connect();
+    platform.send({ jsonrpc: "2.0", id: heard[0], result: { outcome: "x" } });
+    expect(world.harness("claude-code").answersTo(7)).toEqual([
+      expect.objectContaining({ result: { outcome: "x" } }),
+    ]);
+  });
+
+  /** TEST_SCENARIO: The user watches the session when the agent asks, so no
+   * waiting report goes out, and answers in the chat. The platform must still
+   * hear the end under the id the client saw: the lease router wraps the
+   * observer, and a wrapper that swallows a method leaves the record of a
+   * watched request open forever. */
+  it("forwards the held and answered reports of a watched question", () => {
+    const heard: unknown[][] = [];
+    const observer: AgentRequestObserver = {
+      held: (id, sessionId) => heard.push(["held", id, sessionId]),
+      waiting: (id, sessionId) => heard.push(["waiting", id, sessionId]),
+      answered: (id, sessionId) => heard.push(["answered", id, sessionId]),
+      abandoned: (id, sessionId) => heard.push(["abandoned", id, sessionId]),
+    };
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const viewer = world.connect();
+    startSession(world, viewer, "claude-code", "s-a", 1, {});
+    world.harness("claude-code").emit(frames.requestPermission(11, "s-a"));
+
+    expect(heard.map(([kind]) => kind)).toEqual(["held"]);
+    const routed = heard[0]![1];
+    expect(routed).toMatch(/^platform-lease-in-[0-9a-f]+-\d+-11$/);
+
+    viewer.send({ jsonrpc: "2.0", id: routed, result: { outcome: "x" } });
+    expect(heard.map(([kind]) => kind)).toEqual(["held", "answered"]);
+    expect(world.harness("claude-code").answersTo(11)).toEqual([
+      expect.objectContaining({ result: { outcome: "x" } }),
+    ]);
+  });
+
+  /** TEST_SCENARIO: The pod restarted, and its first harness process asks
+   * again under the same request id. A verdict kept from before the restart
+   * names the earlier boot's request, so it must answer nothing. */
+  it("drops an answer under an id from before a restart", () => {
+    const heard: unknown[] = [];
+    const observer: AgentRequestObserver = {
+      held: () => {},
+      waiting: (id) => heard.push(id),
+      answered: () => {},
+      abandoned: () => {},
+    };
+    const before = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const first = before.connect();
+    startSession(before, first, "claude-code", "s-a", 1, {});
+    first.disconnect();
+    before.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+
+    const after = createLeaseWorld({
+      providers: ["conn-a"],
+      agentRequests: observer,
+    });
+    const reopened = after.connect();
+    startSession(after, reopened, "claude-code", "s-a", 1, {});
+    reopened.disconnect();
+    after.harness("claude-code").emit(frames.requestPermission(7, "s-a"));
+    expect(heard).toHaveLength(2);
+    expect(heard[1]).not.toEqual(heard[0]);
+
+    const platform = after.connect();
+    platform.send({ jsonrpc: "2.0", id: heard[0], result: { outcome: "x" } });
+    expect(after.harness("claude-code").answersTo(7)).toEqual([]);
   });
 
   /** TEST_SCENARIO: A permission prompt is still open when the page reloads,
@@ -463,6 +595,59 @@ describe("acp-runtime: one harness process per harness", () => {
       data: { platform: { reason: PROVIDER_REMOVED_REASON } },
     });
     expect(world.harnessCount("claude-code")).toBe(0);
+  });
+
+  /** TEST_SCENARIO: On a harness that reaches its models through the Model
+   * Router, a session with no model never reaches the harness, which would
+   * otherwise run a model the user never chose: session/new without one is
+   * refused as no-model, and an old session's prompt or edited resend is
+   * refused (a prompt sent as a notification is dropped) until a model is
+   * pinned on it. */
+  it("refuses a turn on a session with no model", () => {
+    const world = createLeaseWorld({
+      providers: ["conn-a"],
+      modelRequired: true,
+    });
+    world.metadata.store.set("old", { mode: "chat" });
+    const client = world.connect();
+    client.send(newSessionOn(1, {}));
+    expect(client.reply(1)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    client.send(frames.prompt(2, "old", "hi"));
+    expect(client.reply(2)?.error).toMatchObject({
+      message: expect.stringMatching(/Providers page/),
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    client.send({
+      jsonrpc: "2.0",
+      method: "session/prompt",
+      params: { sessionId: "old", prompt: [{ type: "text", text: "hi" }] },
+    });
+    client.send({
+      jsonrpc: "2.0",
+      id: 5,
+      method: "platform/rewriteFrom",
+      params: { sessionId: "old", messageId: "m-1", prompt: [] },
+    });
+    expect(client.reply(5)?.error).toMatchObject({
+      data: { platform: { reason: NO_MODEL_REASON } },
+    });
+    expect(world.harnessCount("claude-code")).toBe(0);
+
+    client.send({
+      jsonrpc: "2.0",
+      id: 3,
+      method: PIN_MODEL_METHOD,
+      params: { sessionId: "old", model: "ibm/aws/claude-sonnet-4-6" },
+    });
+    expect(client.reply(3)?.result).toEqual({
+      model: "ibm/aws/claude-sonnet-4-6",
+    });
+    client.send(frames.prompt(4, "old", "now"));
+    const harness = world.harness("claude-code");
+    harness.replyToSession("session/set_config_option", "old", {});
+    expect(promptTextsOf(harness)).toEqual(["now"]);
   });
 
   /** TEST_SCENARIO: A session whose harness this agent no longer carries is
@@ -851,7 +1036,8 @@ describe("acp-runtime: one harness process per harness", () => {
 
   /** TEST_SCENARIO: After the agent restarts, a client that loads a saved
    * session gets its saved model and mode on the new harness process before
-   * it can prompt, so both survive the restart. */
+   * it can prompt, so both survive the restart. The mode follows the model's
+   * own answer, since the harness reads a mode against the model it holds. */
   it("re-applies the saved model and settings when a client loads the session", () => {
     const world = createLeaseWorld({ providers: ["conn-a"] });
     world.metadata.store.set("saved", {
@@ -865,6 +1051,8 @@ describe("acp-runtime: one harness process per harness", () => {
     const harness = world.harness("claude-code");
     harness.replyToSession("session/load", "saved", {});
     expect(modelFrames(harness, "saved")).toEqual(["ibm/aws/claude-opus-4-8"]);
+    expect(harness.received("session/set_mode")).toEqual([]);
+    harness.replyToSession("session/set_config_option", "saved", {});
     expect(harness.received("session/set_mode")).toEqual([
       expect.objectContaining({
         params: { sessionId: "saved", modeId: "plan" },

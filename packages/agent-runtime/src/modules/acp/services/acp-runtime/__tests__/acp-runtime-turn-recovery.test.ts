@@ -50,7 +50,11 @@ async function boot(resumes: boolean): Promise<World> {
   const recovery = recoverInterruptedTurns({
     store: activeTurns,
     sessionMetadata,
-    triggerDriver: createTriggerSessionDriver({ acpRuntime: world.runtime }),
+    triggerDriver: createTriggerSessionDriver({
+      acpRuntime: world.runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+    }),
     log: () => {},
   });
   if (resumes) {
@@ -131,7 +135,11 @@ describe("acp-runtime: interrupted-turn recovery with nobody watching", () => {
     const recovery = recoverInterruptedTurns({
       store: activeTurns,
       sessionMetadata,
-      triggerDriver: createTriggerSessionDriver({ acpRuntime: world.runtime }),
+      triggerDriver: createTriggerSessionDriver({
+        acpRuntime: world.runtime,
+        modelRequired: () => false,
+        modelMissing: () => false,
+      }),
       log: () => {},
     });
     await vi.waitFor(() => world.harness().replyTo("initialize"));

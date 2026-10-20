@@ -267,10 +267,27 @@ virtualization:
     nodeSelector: {}
     tolerations: []
     # affinity: {}  # unset by default; an empty one would roll every runner
+    # PriorityClass every runner pod runs under, and its value. The chart always
+    # renders its own, cluster-scoped and named after the release (installs share
+    # nodes); runners use the class named here instead when you set one that
+    # already exists. The rendered class stays even then, because a runner
+    # Deployment keeps the class it was rolled with until its pod rolls again. A
+    # runner holds every machine of one owner, so that one pod going down costs
+    # the owner every agent they have: a node under memory pressure evicts the
+    # agent pods, which carry no class (0), before it. `preemptionPolicy: Never`
+    # keeps it the other way round too — a runner never preempts anything to be
+    # placed, so a full node waits for room rather than evicting a gateway, an
+    # agent pod or the platform's own control plane. The chart gives that
+    # control plane no class of its own, which leaves it below this value; an
+    # install that wants it above gives it a class above this one.
+    priorityClassName: ""
+    priority: 1000
     # REQUIRED when virtualization.enabled — the install fails without
     # limits.memory. Machines are processes of this pod, so that limit is also
     # what the runner admits them against (it refuses one that does not fit,
-    # keeping `reserveMiB` for itself). It is the owner's whole memory pool,
+    # keeping `reserveMiB` for itself), and never past the memory the node has
+    # allocated the pod: a start that the pod's request does not cover waits
+    # for the resize below to be applied. It is the owner's whole memory pool,
     # unless their UserBudget sets `memory` (and `cpu`, which caps the CPU
     # limit below); the controller then resizes that owner's pod in place:
     # vm agents have no size of their own and do not count toward the user's
@@ -291,8 +308,15 @@ virtualization:
     # refuses the resize, which the controller reports too. The controller
     # also sets the running pod's CPU limit in place, to `machineCPUs` for
     # every machine that should run plus one more for the runner, so one
-    # owner's runaway VMM cannot take the node. A `limits.cpu` here caps that
-    # limit: below the machines' vCPUs it throttles every guest at once.
+    # owner's runaway VMM cannot take the node. A pod is created at the
+    # owner's whole CPU pool, which is the most that resize would ever give
+    # it, so a runner the cluster cannot resize is still bounded. That pool
+    # is a UserBudget `cpu` or a `limits.cpu` here; an install that sets
+    # neither gets one derived from the memory pool it does set — every
+    # machine that memory holds at `bootMiB`, plus one for the runner — and
+    # only an install with no memory limit either renders none. A
+    # `limits.cpu` here caps that limit: below the machines' vCPUs it
+    # throttles every guest at once.
     resources: {}
     # Memory the runner keeps for itself rather than committing to machines.
     reserveMiB: 512
@@ -422,8 +446,6 @@ virtualization:
   # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
   # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
   # the controller deletes it when the window passes or the agent is deleted.
-  # The api-server reads the same value to name the window in the Migrate
-  # dialog.
   # `concurrency` caps the copy Jobs running at once in the install and
   # `ownerConcurrency` those of one owner, whose copies all land on the same
   # runner claim; a migration past either cap waits, and says so on the Agent.
@@ -1763,7 +1785,12 @@ controller:
         enabled: true
         # SIG Release distroless-iptables — same image kube-proxy uses.
         # Ships sh + iptables-wrapper; pinned by tag.
-        image: registry.k8s.io/build-image/distroless-iptables:v0.11.0
+        # v0.11.1 (2026-10-16) is under the 7-day floor: it carries the Debian
+        # point releases that fix CVE-2026-103111 and CVE-2026-84782 in
+        # v0.11.0, and its go-runner is built with Go 1.27.2, which fixes the
+        # Go stdlib rows the scan reported for the 1.27.1 build. The exception
+        # can go 2026-10-23.
+        image: registry.k8s.io/build-image/distroless-iptables:v0.11.1
 
       # -- Userspace init container that blocks the agent's main
       # container until the egress NetworkPolicy is verifiably enforced.
@@ -2008,15 +2035,17 @@ controller:
   # -- Image for the Envoy credential-injector sidecar.
   # Envoy publishes only to Docker Hub; pulled via mirror.gcr.io (Google's
   # pull-through cache, higher anonymous rate limits) — byte-identical to
-  # envoyproxy/envoy:distroless-v1.39.3 (same manifest digest).
-  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.3
+  # envoyproxy/envoy:distroless-v1.39.4 (same manifest digest).
+  envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
-  # its gateway passes through untouched. Needed when something on the
-  # cluster's egress path intercepts TLS with its own CA: a corporate
-  # TLS-inspecting proxy, or the platform's own gateway when the platform runs
-  # inside one of its agents (`mise run cluster:install` sets it there). Empty
-  # leaves each gateway on its image's own roots. Set with --set-file, e.g.
+  # its gateway passes through untouched. The api-server trusts them too
+  # (NODE_EXTRA_CA_CERTS), for its own Slack, GitHub and OAuth calls. Needed
+  # when something on the cluster's egress path intercepts TLS with its own
+  # CA: a corporate TLS-inspecting proxy, or the platform's own gateway when
+  # the platform runs inside one of its agents (`mise run cluster:install`
+  # sets it there). Empty leaves each gateway on its image's own roots. Set
+  # with --set-file, e.g.
   # `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
   gatewayUpstreamExtraCAs: ""
   # -- Where each agent gateway may send traffic. The controller renders a
@@ -2214,6 +2243,15 @@ harnesses:
       # Code writes, so it rides its own env rail.
       telemetry: bob
       tags: ["Anthropic", "Mistral", "Granite"]
+    copilot:
+      enabled: true
+      displayName: "Copilot"
+      description: "GitHub Copilot CLI coding agent"
+      releaseNotesUrl: "https://github.com/github/copilot-cli/releases"
+      # Copilot's BYOK provider speaks Chat Completions through the Model
+      # Router, which meters its spend; no export rail.
+      providers: [ibm-litellm, curve-bender, openai, platform]
+      tags: ["Any provider"]
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over

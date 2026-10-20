@@ -121,6 +121,7 @@ export const telegramConversations = pgTable(
     conversationId: text("conversation_id").primaryKey(),
     agentId: text("agent_id").notNull(),
     authorizedBy: text("authorized_by").notNull(),
+    ambient: boolean("ambient").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -376,6 +377,7 @@ export const agents = pgTable(
     runtimeAgentVersion: text("runtime_agent_version"),
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
     sessionPair: jsonb("session_pair"),
+    defaultModelNote: jsonb("default_model_note"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),
     starterKit: text("starter_kit"),

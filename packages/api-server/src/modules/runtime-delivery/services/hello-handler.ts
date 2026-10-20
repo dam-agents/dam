@@ -91,11 +91,6 @@ export function createHelloHandler(deps: {
         return deps.outboxRepo.bumpVersion(agentId, tx);
       });
 
-      const ownerSub = await deps.resolveOwner(agentId);
-      if (ownerSub) {
-        emit({ type: EventType.RuntimeHelloReceived, agentId, ownerSub });
-      }
-
       if (input.harnessConfigCurrent || input.harnessConfigCurrentByHarness) {
         try {
           if (input.harnessConfigCurrent)
@@ -116,6 +111,11 @@ export function createHelloHandler(deps: {
             `[runtime-hello] ${agentId}: harness-config snapshot write failed: ${(err as Error).message}`,
           );
         }
+      }
+
+      const ownerSub = await deps.resolveOwner(agentId);
+      if (ownerSub) {
+        emit({ type: EventType.RuntimeHelloReceived, agentId, ownerSub });
       }
 
       if (bumpedVersion !== null) {

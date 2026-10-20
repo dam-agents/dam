@@ -24,12 +24,15 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
 
 - No outbound network from inside the nested cluster: real model providers, GitHub, Slack and Telegram do not work.
   An AC that needs any of them is `testable: no — external dependency`, unless it only checks that the UI offers or records something.
-- Agents only answer when the profile's `mock_image` is set (a scripted mock harness).
-  Without it, an AC that needs an agent to reply or run is `blocked`, not failed.
+- Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`): it replies "Hello from the mock agent."
+  to every prompt and never calls a model.
+  An AC about what an agent says or decides is judged only on what the UI shows around that reply; with `mock_image` set empty, an AC that needs an agent to reply or run is `blocked`, not failed.
 - The harness templates (Claude Code, Codex, Pi, Bob) boot the default image, which bakes their
   tools, but no real model provider is reachable (above), so an AC about such a harness's own
   replies is `testable: no — external dependency`; one that only checks what the UI offers or
   records for it stays testable.
+- What a user creates with a free-text field (a schedule's prompt) needs an agent first; the agent's name is itself free text and shows wherever the agent is listed.
+  The injection canary therefore names one Mock agent with its text (`canary` in `profile.json`) and deletes it.
 - One user.
   ACs about sharing, other users' access or approvals between people need a second account — `testable: no — single user` until the profile adds one.
 - No service mesh: the VM's kernel cannot run Istio, so the nested install runs without it.

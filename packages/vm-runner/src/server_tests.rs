@@ -5,10 +5,10 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use super::*;
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING, STATE_RUNNING,
-    STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
+    REASON_AWAITING_ALLOCATION, REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_COPYING_DISK,
+    REASON_HOME_FULL, REASON_IMAGE_UNAVAILABLE, REASON_OOM_KILLED, REASON_SECCOMP_KILLED,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL, STATE_ABSENT, STATE_CREATING, STATE_RESTARTING,
+    STATE_RUNNING, STATE_STARTING, STATE_STOPPED, STATE_STOPPING, STATE_UNKNOWN,
 };
 use crate::cache::{archive_path, digest_path, staged_path, PARTIAL_PREFIX};
 use crate::cacheapi;
@@ -438,6 +438,14 @@ impl Harness {
             .collect()
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: holds the worker at the moment it refused a planned action, before it decides whether that refusal is still the newest spec, so a test can accept a spec inside that window rather than racing it.
+    fn hold_refusal(&self) -> (std::sync::mpsc::Receiver<()>, std::sync::mpsc::Sender<()>) {
+        let (reached, refused) = std::sync::mpsc::channel();
+        let (release, released) = std::sync::mpsc::channel();
+        *locked(&self.server.refusal_gate) = Some((reached, released));
+        (refused, release)
+    }
+
     fn machine<R>(&self, id: &str, change: impl FnOnce(&mut MachineEntry) -> R) -> R {
         change(
             locked(&self.server.machines)
@@ -528,6 +536,7 @@ fn spec(running: bool) -> MachineSpec {
         migration: None,
         expect_seed: None,
         nested_virtualization: false,
+        admit_mib: 0,
     }
 }
 
@@ -1275,6 +1284,255 @@ async fn a_machine_is_refused_when_the_runner_has_no_room() {
     assert!(refused.message.contains("does not fit"), "{refused:?}");
     h.settle("m1").await;
     assert!(!h.fake.calls().iter().any(|c| c.ends_with("m2")));
+}
+
+// TEST_SCENARIO: the controller caps admission at the memory the pod was allocated, which is below the pod's own limit while an in-place resize waits for room, so a machine that fits the limit is refused until the node has granted the owner that much. The refusal names the node's allocation rather than the owner's pool, under its own reason, so the controller neither hibernates idle agents for room the node is about to grant nor tells the person their memory is full. The same machine starts once a later spec carries a ceiling that covers it.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_is_refused_above_the_memory_the_node_granted() {
+    let h = Harness::with("allocation", |c| c.memory_mib = 8192);
+    let mut machine = spec(true);
+    machine.memory_mib = 4096;
+    machine.admit_mib = 3072;
+    let refused = h.server.put("m1", machine.clone()).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+    assert!(
+        refused
+            .message
+            .contains("3072 MiB the node has allocated this runner so far, less the 0 MiB the runner keeps for itself"),
+        "{refused:?}"
+    );
+    assert!(
+        h.fake.calls().is_empty(),
+        "nothing is created: {:?}",
+        h.fake.calls()
+    );
+
+    machine.admit_mib = 4096;
+    assert_eq!(h.server.put("m1", machine).unwrap().state, STATE_CREATING);
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a boot the runner admitted is the runner's to finish. The controller re-sends the machine on every reconcile, and the ceiling it carries moves under it — a node that stops reporting its grant re-sends the one-MiB ceiling that authorizes nothing, a node that grants less sends a smaller figure. Deciding that ceiling again would refuse a boot already carrying out, which the controller answers by stopping the machine it had just started, so an action in flight keeps the admission it was given, on a Create from a machine with no record and on a Start from a stopped one alike.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_boot_in_flight_keeps_the_admission_it_was_given() {
+    for (label, stop_first) in [("create", false), ("start", true)] {
+        let h = Harness::with(&format!("boot-admitted-{label}"), |c| c.memory_mib = 8192);
+        let mut machine = spec(true);
+        machine.memory_mib = 3072;
+        machine.admit_mib = 4096;
+        if stop_first {
+            h.server.put("m1", spec(false)).unwrap();
+            assert_eq!(h.settle("m1").await.state, STATE_STOPPED);
+        }
+        // TEST_SCENARIO: the boot is held inside the runtime, so the ensure below lands while it runs rather than at whatever speed this host schedules the test.
+        let (held, release) = h.fake.hold_start();
+        let booting = if stop_first {
+            STATE_STARTING
+        } else {
+            STATE_CREATING
+        };
+        assert_eq!(
+            h.server.put("m1", machine.clone()).unwrap().state,
+            booting,
+            "{label}"
+        );
+        held.recv_timeout(ACTION_DEADLINE)
+            .expect("the boot never reached the runtime");
+
+        let mut shrunk = machine.clone();
+        shrunk.admit_mib = 1024;
+        let answered = h.server.put("m1", shrunk.clone()).unwrap();
+        assert_ne!(
+            answered.reason, REASON_AWAITING_ALLOCATION,
+            "{label}: a boot already in flight was admitted again: {answered:?}"
+        );
+        assert_eq!(answered.state, booting, "{label}: {answered:?}");
+        release.send(()).unwrap();
+        assert_eq!(h.settle("m1").await.state, STATE_RUNNING, "{label}");
+
+        // TEST_SCENARIO: the same ceiling on a machine that holds nothing is decided afresh, and it refuses.
+        h.server.put("m1", spec(false)).unwrap();
+        assert_eq!(h.settle("m1").await.state, STATE_STOPPED, "{label}");
+        assert_eq!(
+            h.server.put("m1", shrunk).unwrap().reason,
+            REASON_AWAITING_ALLOCATION,
+            "{label}: a ceiling that authorizes nothing admitted a cold start"
+        );
+    }
+}
+
+// TEST_SCENARIO: an action the convergence loop plans after the one before it ended is a new operation. A boot admitted under a ceiling that covered it then fails, and the worker stays alive because a newer spec arrived while it ran: the step it plans next is a fresh start, and the newer spec's own ceiling has to admit it. Inheriting the first boot's admission would boot a machine this spec cannot pay for, which is memory the node never granted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_step_planned_after_a_failed_boot_is_admitted_on_its_own() {
+    let h = Harness::with("planned-admission", |c| c.memory_mib = 8192);
+    let mut machine = spec(true);
+    machine.memory_mib = 3072;
+    machine.admit_mib = 4096;
+    *locked(&h.fake.fail_start_once) = Some("guest agent never became ready".into());
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m1", machine.clone()).unwrap();
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot never reached the runtime");
+
+    let mut shrunk = machine.clone();
+    shrunk.admit_mib = 1024;
+    h.server.put("m1", shrunk).unwrap();
+    release.send(()).unwrap();
+
+    let settled = h.settle("m1").await;
+    assert_eq!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count(),
+        1,
+        "the failed boot was retried under a ceiling that does not cover it: {:?} {:?}",
+        h.fake.calls(),
+        settled
+    );
+    assert_eq!(settled.reason, REASON_AWAITING_ALLOCATION, "{settled:?}");
+}
+
+// TEST_SCENARIO: a restart of a machine the runtime reports running replaces memory it already holds, so it is exempt from the ceiling wherever the plan comes from. A revision change accepted while a boot was still in flight is planned by the worker that booted it, not by a PUT: reading that plan as a new operation and capping it would refuse a restart the same PUT would have admitted, and the machine would be left on the old revision.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_planned_by_the_worker_is_exempt_like_one_a_put_asks_for() {
+    let h = Harness::with("planned-restart", |c| c.memory_mib = 4096);
+    let mut machine = spec(true);
+    machine.memory_mib = 3072;
+    machine.admit_mib = 4096;
+    let (held, release) = h.fake.hold_start();
+    h.server.put("m1", machine.clone()).unwrap();
+    held.recv_timeout(ACTION_DEADLINE)
+        .expect("the boot never reached the runtime");
+
+    // TEST_SCENARIO: a revision change arrives under a ceiling far below what the machine boots at, while that boot is still running.
+    let mut changed = machine.clone();
+    changed.admit_mib = 1024;
+    changed.revision = "r2".into();
+    h.server.put("m1", changed.clone()).unwrap();
+    release.send(()).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let applied = h.machine("m1", |e| e.desired.clone().unwrap().revision);
+    assert_eq!(
+        applied, "r2",
+        "the restart onto the new revision was refused for a ceiling a PUT of the same spec would have been exempt from"
+    );
+    assert!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count() >= 2,
+        "the replacement never booted: {:?}",
+        h.fake.calls()
+    );
+}
+
+// TEST_SCENARIO: a refusal ends this worker only if the spec it refused is still the newest one. A spec accepted between the refusal and the cleanup started no worker, because this one still held the machine, so ending here would leave a start the runner accepted with nothing to run it until something else asked again.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_refused_step_settles_only_on_the_spec_it_refused() {
+    let h = Harness::with("refusal-settle", |c| c.memory_mib = 4096);
+    let mut machine = spec(true);
+    machine.memory_mib = 3072;
+    machine.admit_mib = 4096;
+    *locked(&h.fake.fail_start_once) = Some("guest agent never became ready".into());
+    let (booted, release_boot) = h.fake.hold_start();
+    h.server.put("m1", machine.clone()).unwrap();
+    booted
+        .recv_timeout(ACTION_DEADLINE)
+        .expect("the boot never reached the runtime");
+
+    // TEST_SCENARIO: the ceiling shrinks under the boot, so the step the worker plans after it fails is refused.
+    let mut shrunk = machine.clone();
+    shrunk.admit_mib = 1024;
+    h.server.put("m1", shrunk).unwrap();
+    // TEST_SCENARIO: the gate is armed before the failing boot is released, so the spec below is the one accepted behind the refusal.
+    let (refused, release_refusal) = h.hold_refusal();
+    release_boot.send(()).unwrap();
+    refused
+        .recv_timeout(ACTION_DEADLINE)
+        .expect("the refusal never happened");
+
+    let mut restored = machine.clone();
+    restored.admit_mib = 4096;
+    h.server.put("m1", restored).unwrap();
+    release_refusal.send(()).unwrap();
+
+    let settled = h.settle("m1").await;
+    assert_eq!(
+        h.fake.calls().iter().filter(|c| *c == "start m1").count(),
+        2,
+        "the spec accepted behind the refusal was left with no worker to start it: {:?} {settled:?}",
+        h.fake.calls()
+    );
+    assert_eq!(settled.state, STATE_RUNNING, "{settled:?}");
+}
+
+// TEST_SCENARIO: a machine that is already running comes back under a ceiling sized from what it holds while idle, which is below the size it boots at: a revision roll, an image or env change, a CA rotation and a guest gone quiet all restart a running machine, and refusing those for good would park the agent and scale its gateway away. A machine that is not running is still capped, so the ceiling keeps gating every footprint the runner does not already hold.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_running_machine_restarts_under_a_ceiling_below_what_it_boots_at() {
+    let h = Harness::with("restart-ceiling", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    let restarted = h.server.put("m1", changed).unwrap();
+    assert_eq!(restarted.state, STATE_RESTARTING, "{restarted:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+
+    let mut second = spec(true);
+    second.admit_mib = 1536;
+    let refused = h.server.put("m2", second).unwrap();
+    assert_eq!(refused.reason, REASON_AWAITING_ALLOCATION, "{refused:?}");
+}
+
+// TEST_SCENARIO: a restart the runner admitted holds its exemption for the whole action, because the worker stops the old VMM and boots its replacement in one: the controller's next ensure can land while the machine is down, and re-checking that already-admitted restart against the grant answered MachineAwaitingAllocation, which the controller acts on by stopping the machine the restart had just booted.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restart_keeps_its_exemption_while_its_replacement_boots() {
+    let h = Harness::with("restart-in-flight", |c| c.memory_mib = 4096);
+    h.server.put("m1", spec(true)).unwrap();
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+    *locked(&h.fake.resident) = Some(400);
+
+    let mut ceilinged = spec(true);
+    ceilinged.admit_mib = 1536;
+    *locked(&h.fake.start_delay) = Duration::from_millis(400);
+    let mut changed = ceilinged.clone();
+    changed.revision = "r2".into();
+    assert_eq!(
+        h.server.put("m1", changed.clone()).unwrap().state,
+        STATE_RESTARTING
+    );
+    h.wait_for_call("stop m1").await;
+    // TEST_SCENARIO: the restart's own boot is the second start the runtime is asked for, and it is still running here.
+    while h.fake.calls().iter().filter(|c| *c == "start m1").count() < 2 {
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+
+    let again = h.server.put("m1", changed).unwrap();
+    assert_ne!(
+        again.reason, REASON_AWAITING_ALLOCATION,
+        "an admitted restart was re-checked against the grant: {again:?}"
+    );
+    assert_eq!(again.state, STATE_RESTARTING, "{again:?}");
+    assert_eq!(h.settle("m1").await.state, STATE_RUNNING);
+}
+
+// TEST_SCENARIO: a machine that does not fit the runner's own limit is refused as the owner's memory being full whether the ceiling is above the limit or below it: the ceiling never hides the real shortfall, which is the one the controller relieves by hibernating idle agents, and a machine the node cannot help never reads as waiting for the node.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_machine_over_the_runner_limit_is_refused_as_out_of_capacity_under_a_ceiling() {
+    for admit_mib in [8192, 3072] {
+        let h = Harness::with("both-bounds", |c| c.memory_mib = 4096);
+        let mut machine = spec(true);
+        machine.memory_mib = 8192;
+        machine.admit_mib = admit_mib;
+        let refused = h.server.put("m1", machine).unwrap();
+        assert_eq!(refused.reason, REASON_OUT_OF_CAPACITY, "{refused:?}");
+        assert!(
+            refused
+                .message
+                .contains("the VM runner has 4096 MiB for machines"),
+            "admit_mib={admit_mib}: {refused:?}"
+        );
+    }
 }
 
 // TEST_SCENARIO: a boot that fails is reported under the reason the controller shows the person, and a later attempt that succeeds clears it.

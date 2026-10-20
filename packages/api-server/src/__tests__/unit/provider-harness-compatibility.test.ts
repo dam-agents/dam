@@ -24,11 +24,11 @@ const catalog = createHarnessCatalog(harnesses, true);
 
 describe("provider harness compatibility", () => {
   it.each<[string, string[]]>([
-    ["ibm-litellm", ["claude-code", "codex", "pi", "bob"]],
-    ["curve-bender", ["claude-code", "codex", "pi", "bob"]],
+    ["ibm-litellm", ["claude-code", "codex", "pi", "bob", "copilot"]],
+    ["curve-bender", ["claude-code", "codex", "pi", "bob", "copilot"]],
     ["anthropic", ["claude-code", "pi"]],
     ["anthropic-oauth", ["claude-code"]],
-    ["openai", ["codex", "pi"]],
+    ["openai", ["codex", "pi", "copilot"]],
     ["bedrock", ["claude-code", "pi"]],
     ["bob", ["bob"]],
   ])(

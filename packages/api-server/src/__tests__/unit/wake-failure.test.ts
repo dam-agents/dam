@@ -111,6 +111,30 @@ describe("classifyWakeFailure", () => {
       },
     },
     {
+      name: "AwaitingAllocation → progressing (the node has not granted the runner its memory yet; it starts on its own)",
+      snapshot: { ...base, agentPodNotReadyReason: "AwaitingAllocation" },
+      expected: { kind: "agent-pod-not-ready" },
+    },
+    {
+      name: "MachineAwaitingAllocation → progressing (the runner's own spelling of the same wait)",
+      snapshot: {
+        ...base,
+        agentPodNotReadyReason: "MachineAwaitingAllocation",
+      },
+      expected: { kind: "agent-pod-not-ready" },
+    },
+    {
+      name: "MachineAllocationUnreadable → agent-pod-failed (the node never reported the grant; the hold ended naming the problem)",
+      snapshot: {
+        ...base,
+        agentPodNotReadyReason: "MachineAllocationUnreadable",
+      },
+      expected: {
+        kind: "agent-pod-failed",
+        terminationReason: "MachineAllocationUnreadable",
+      },
+    },
+    {
       name: "MachineNotReady → progressing (a machine that is still booting)",
       snapshot: { ...base, agentPodNotReadyReason: "MachineNotReady" },
       expected: { kind: "agent-pod-not-ready" },

@@ -1,18 +1,12 @@
-import { Add, AddComment, Tools } from "@carbon/icons-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { Add } from "@carbon/icons-react";
+import { useMemo, useState } from "react";
 
-import {
-  DropdownMenuItem,
-  DropdownMenuSeparator,
-} from "@/components/ui/dropdown-menu";
-import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
@@ -23,6 +17,10 @@ import { useAgents, useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
+import {
+  hasChannelActions,
+  SidebarAgentActions,
+} from "./sidebar-agent-actions.js";
 import { SidebarAgentRow } from "./sidebar-agent-row.js";
 
 export function SidebarAgents({
@@ -81,42 +79,14 @@ export function SidebarAgents({
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}
         onSelect={() => setAgentOpen(agent.id, !open)}
+        actionCount={hasChannelActions(available) ? 3 : 2}
         actions={
-          <>
-            <RowIconButton
-              label="New session"
-              onClick={navigate(() => startSession(agent.id))}
-            >
-              <AddComment size={14} />
-            </RowIconButton>
-            <RowActionsMenu
-              label="Agent actions"
-              testId="sidebar-agent-menu"
-              dense
-              stopPropagation
-            >
-              <DropdownMenuItem
-                onSelect={navigate(() => navigateToSandboxHome(agent.id))}
-              >
-                <Tools size={14} /> Configure agent
-              </DropdownMenuItem>
-              {(available.slack || available.telegram) && (
-                <DropdownMenuSeparator />
-              )}
-              {available.slack && (
-                <DropdownMenuItem onSelect={() => setBinding("slack")}>
-                  <ConnectionIcon iconSlug="slack" alt="" size={14} />
-                  Add to Slack channel
-                </DropdownMenuItem>
-              )}
-              {available.telegram && (
-                <DropdownMenuItem onSelect={() => setBinding("telegram")}>
-                  <ConnectionIcon iconSlug="telegram" alt="" size={14} />
-                  Add to Telegram chat
-                </DropdownMenuItem>
-              )}
-            </RowActionsMenu>
-          </>
+          <SidebarAgentActions
+            channels={available}
+            onNewSession={navigate(() => startSession(agent.id))}
+            onConfigure={navigate(() => navigateToSandboxHome(agent.id))}
+            onBind={setBinding}
+          />
         }
       >
         <SidebarAgentSessions
@@ -168,32 +138,6 @@ export function SidebarAgents({
         />
       )}
     </section>
-  );
-}
-
-function RowIconButton({
-  label,
-  disabled = false,
-  onClick,
-  children,
-}: {
-  label: string;
-  disabled?: boolean;
-  onClick: () => void;
-  children: ReactNode;
-}) {
-  return (
-    <Tooltip content={label} side="bottom">
-      <button
-        type="button"
-        aria-label={label}
-        disabled={disabled}
-        onClick={onClick}
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground disabled:opacity-50"
-      >
-        {children}
-      </button>
-    </Tooltip>
   );
 }
 

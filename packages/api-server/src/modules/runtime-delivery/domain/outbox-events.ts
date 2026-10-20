@@ -36,18 +36,23 @@ export const workspaceCommandEvent = (
 ): OutboxEvent =>
   workspaceEvent("workspace-command", idPrefix, agentId, { command }, at);
 
-function initializationPayload(
-  task: string,
+export function sessionPairFields(
   pair: SessionPair | null | undefined,
-): OutboxEvent["payload"] {
-  if (!pair) return { task };
+): Record<string, unknown> {
+  if (!pair) return {};
   return {
-    task,
     harness: pair.harness,
     ...(pair.provider !== null && { provider: pair.provider }),
     ...(pair.model !== null && { model: pair.model }),
     ...(pair.settings && { settings: pair.settings }),
   };
+}
+
+function initializationPayload(
+  task: string,
+  pair: SessionPair | null | undefined,
+): OutboxEvent["payload"] {
+  return { task, ...sessionPairFields(pair) };
 }
 
 export const initializationEvent = (

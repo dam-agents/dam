@@ -7,7 +7,7 @@ Each carries the agent-runtime and every harness.
 The default image bakes the **harness tools**, base's and every harness's, in a layer of their own.
 A workload bakes only its own Python, whole, and the mock the node it runs on.
 Nothing installs lazily, and no tool runs through a shim.
-Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob), which is a source of the default image and no image of its own.
+Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob, Copilot), which is a source of the default image and no image of its own.
 
 ## One base, one image over it
 
@@ -15,7 +15,7 @@ Every image is a Debian system-package base and directory trees packed onto it a
 The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, and `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake.
 
 - **A harness** is mise config over the base — its tools and env — and a `rootfs/` of its files at their image paths.
-  The default image carries all four.
+  The default image carries all five.
 - **A workload** is the default image under its own files and env, so a kit image carries every harness and runs the one its kit names.
   Its Python package is installed into a venv and shipped as a whole Python at a fixed path, the interpreter and its standard library copied in, named in an environment variable; the entrypoint and login shells put it first on `PATH`, so `python` is the workload's, whatever Python the node's tools hold.
   **k-search** also ships its upstream source trees, pinned by commit and checksum and patched at install, at fixed paths.
@@ -129,7 +129,7 @@ A hibernated, stopped or over-budget Agent moves at once and takes the image on 
 That wake costs nothing extra for the default image on the `vm` Backend: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
 A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
-An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, an open terminal and kept background work.
+An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, a live terminal and kept background work ([what counts as activity](agent-lifecycle.md#hibernate)).
 The job re-reads each Agent before deciding, probes the pod after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
 A prompt arriving in the seconds between the write and the pod's restart is the one window it cannot close.
 

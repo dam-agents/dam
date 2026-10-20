@@ -1,10 +1,12 @@
 import {
   buildConversation,
   forEachRenderedComponent,
+  functionCalls,
   type RendererError,
   type SurfaceState,
 } from "./conversation.js";
 import type { ChatFormPreferences } from "./preferences.js";
+import { regexPatternProblem } from "./regex-pattern.js";
 import { hasA2uiBlock, splitA2uiBlocks } from "./split-blocks.js";
 
 export interface ChatFormCheck {
@@ -108,7 +110,25 @@ function preferenceProblems(
   }));
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: validates a reply the way the web chat replays it, except that a surface the reply updates without creating is taken to come from an earlier reply, and agent function calls are checked but not run; with the user's preferences it also reports the forms they asked the agent not to send.
+function regexProblems(surface: SurfaceState): RendererError[] {
+  const problems: RendererError[] = [];
+  for (const component of surface.components.values())
+    for (const call of functionCalls(component)) {
+      const pattern = call.args?.pattern;
+      if (call["@call"] !== "regex" || typeof pattern !== "string") continue;
+      const problem = regexPatternProblem(pattern);
+      if (problem)
+        problems.push({
+          code: "VALIDATION_FAILED",
+          surfaceId: surface.id,
+          path: `/components/${component.id}`,
+          message: `Component "${component.id}" has a regex check whose pattern ${JSON.stringify(pattern)} the chat cannot run: ${problem}. A pattern compiles with no flags and no implicit anchors, has at most 256 characters and no nested quantifiers.`,
+        });
+    }
+  return problems;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: validates a reply the way the web chat replays it, except that a surface the reply updates without creating is taken to come from an earlier reply, and agent function calls are checked but not run, though each literal regex pattern is compiled the way the chat's renderer compiles it; with the user's preferences it also reports the forms they asked the agent not to send.
 export function checkChatForm(
   reply: string,
   preferences?: ChatFormPreferences,
@@ -132,6 +152,8 @@ export function checkChatForm(
           message: `callRendererFunction "${call.name}": ${call.response.error.message}`,
         });
   }
+  for (const surface of surfaces.values())
+    if (!surface.deleted) problems.push(...regexProblems(surface));
   if (preferences)
     for (const surface of surfaces.values())
       if (!surface.assumed && !surface.deleted)

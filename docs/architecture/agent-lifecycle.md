@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -10,7 +10,8 @@ It is a custom resource whose `spec` the api-server owns and whose `status` the 
 The lifecycle is driven by three actors:
 
 - **Users** drive both management and sessions, but along different paths.
-  The **UI** is the only management surface — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  The **UI** is the only management surface a user has — creating, configuring, disabling, and deleting Agents all flow through tRPC on the api-server's public port, which is the sole writer of the Agent spec.
+  An operator can start a runtime migration from the cluster alone, which no user can do; see [vm-runtime-migration](vm-runtime-migration.md).
   Sessions can be driven from the UI **or** from a connected channel (Slack, Telegram).
   Channels never hit management endpoints; they dial the api-server's ACP relay only, with identity scoped to the individual messenger user driving the session.
   Channel internals live on [channels](channels.md).
@@ -67,7 +68,7 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's size and the trusted egress preset — or, for a kit that declares either, the kit's — both editable afterwards, plus a Backend the template has no say in: a container, or a microVM, which has no size and shares its owner's [memory pool](vm-memory.md) instead.
-The Backend follows the install rather than the caller: an install that can run microVMs creates every new agent it is not told otherwise about as one, an explicit ask for a container still wins, and an install that cannot run one creates a container ([features](features.md)).
+The Backend follows the install rather than the caller: an install that can run microVMs creates every new agent it is not told otherwise about as one, an explicit ask for a container is refused there, and an install that cannot run one creates a container ([features](features.md)).
 A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants every provider Connection of the caller's that the harness runs on, the oldest one per provider alias.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 A create that names a provider gets that one alone.
@@ -148,6 +149,7 @@ It does not wait out the two minutes for a start that cannot succeed: an over-bu
 Such a wake fails with that cause once it saw the refusal appear during its own poll, or once the refusal outlasted a ten-second grace, because its first polls can read the previous attempt's refusal.
 A vm start refusal read while the Agent still shows hibernated does not count, since the controller has not acted on the wake yet.
 An unschedulable runner and a machine still pulling or booting keep the wait, because both can still come up; a node the cluster has lost is the opposite case, and no wait brings it back.
+So does a start waiting for the node to grant its runner the memory it needs ([vm-memory](vm-memory.md)): the Agent carries `AwaitingAllocation`, not `OverBudget`, and the next retry, seconds later, admits it or re-denies the wake.
 On giving up it reads the controller's readiness conditions one final time and classifies the failure into a typed wake-failure cause — hibernation never acted on, a pod start failure (with the controller's termination cause, a full home volume named), pods still progressing, a gateway still coming up, a gateway failure it cannot outgrow, or a reconcile error — which callers receive and surface in their own idiom (channel reply copy, WS close reason, HTTP body, skills call error).
 The classification distinguishes transient causes (progressing, worth waiting or retrying) from hard ones (needing intervention); the two gateway causes split along exactly that line.
 A gateway wedged on a superseded configuration counts as hard even though the platform replaces such pods by itself ([security-and-credentials](security-and-credentials.md)): classification runs only once the budget is spent, so a repair that was going to land already had its chance.
@@ -175,7 +177,7 @@ That lives on [sessions](sessions.md).
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
 On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
 A wake scales the gateway up before the agent side, because the gateway pod is the slower of the two to start.
-A `vm` Agent whose last start the runner refused for lack of room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
+A `vm` Agent whose last start the runner refused for lack of room, one waiting for the node to grant its runner that room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
@@ -198,7 +200,9 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
 
-- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is open — an open-but-idle terminal counts, because the open PTY *is* the signal.
+- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is live.
+  A terminal is live while a viewer is attached, inside its detach grace, or while it printed within the idle window its reap uses ([sessions](sessions.md)).
+  A detached, quiet terminal held open only for its background work counts only while that work is kept, as a chat session does: unkept work holds the terminal open and dies at hibernation.
   A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe.
   What the probe uniquely catches is in-flight work that no connection holds and `last-activity` no longer covers: a scheduled run outlasting the idle timeout, or a turn still running after its tab closed.
 - **api-server (`active-session` annotation).** A refcount of open chat, terminal, SSH and browser connections — set on the first, cleared on the last.

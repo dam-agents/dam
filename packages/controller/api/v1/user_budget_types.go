@@ -36,8 +36,9 @@ type UserBudgetSpec struct {
 	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : quantity(string(self)).isGreaterThan(quantity('0'))",message="cpu must be a positive quantity"
 	CPU *resource.Quantity `json:"cpu,omitempty"`
 	// Memory is the ceiling on summed memory limits (e.g. "16Gi"), and the
-	// memory limit of the user's VM runner: the pool every vm Agent of theirs
-	// is admitted against.
+	// memory limit of the user's VM runner: the whole pool every vm Agent of
+	// theirs shares, which a start is admitted against only as far as the node
+	// has granted the runner pod.
 	// +optional
 	// +kubebuilder:validation:XValidation:rule="type(self) == int ? self > 0 : quantity(string(self)).isGreaterThan(quantity('0'))",message="memory must be a positive quantity"
 	Memory *resource.Quantity `json:"memory,omitempty"`

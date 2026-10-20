@@ -1,4 +1,4 @@
-import { SidebarColumns } from "./sidebar-columns.js";
+import { SidebarTree } from "./sidebar-tree.js";
 
 export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
   return (
@@ -6,7 +6,7 @@ export function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
       className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
       data-testid="sidebar-agents-section"
     >
-      <SidebarColumns onNavigate={onNavigate} />
+      <SidebarTree onNavigate={onNavigate} />
     </div>
   );
 }

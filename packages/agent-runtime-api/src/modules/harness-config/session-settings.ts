@@ -32,6 +32,30 @@ export function modelConstraintsFor(
   return key === undefined ? undefined : constraints[key];
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the mode a session starts on when neither the
+ * session nor the agent's config file names one: the catalog's default for
+ * that option, and where the session's model cannot use it, the first choice
+ * of the option the model's constraints allow. A mode the model cannot use
+ * would make the harness refuse the session.
+ */
+export function startModeFor(
+  catalog: HarnessConfigCatalog | undefined,
+  model: string | null | undefined,
+  id: string,
+): string | null {
+  const option = catalog?.options.find((o) => o.id === id);
+  if (!option) return null;
+  const allowed = modelConstraintsFor(catalog, model)?.[id];
+  const usable = (value: string) =>
+    allowed === undefined || allowed.includes(value);
+  const start =
+    option.default !== undefined && usable(option.default)
+      ? option.default
+      : option.choices.find((choice) => usable(choice.value))?.value;
+  return start ?? null;
+}
+
 export function sessionSettingsError(
   catalog: HarnessConfigCatalog | undefined,
   settings: SessionSettings,

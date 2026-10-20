@@ -1,10 +1,7 @@
-import type {
-  EventHandler,
-  Plugin,
-  SatelliteOutcomeEventPayload,
-} from "agent-runtime-api";
+import type { EventHandler, Plugin } from "agent-runtime-api";
 import {
   initializationEventPayload,
+  satelliteOutcomeEventPayload,
   subAgentOutcomeEventPayload,
 } from "agent-runtime-api";
 import { SessionMode, SessionType } from "api-server-api";
@@ -61,10 +58,21 @@ export const createInitializationPlugin = sessionEventPlugin(
  */
 export const createSatelliteOutcomePlugin = sessionEventPlugin(
   "satellite-outcome",
-  (payload) => ({
-    task: (payload as SatelliteOutcomeEventPayload).task,
-    platformMeta: { type: SessionType.Regular, mode: SessionMode.Chat },
-  }),
+  (payload) => {
+    const {
+      task,
+      refs: _refs,
+      ...pair
+    } = satelliteOutcomeEventPayload.parse(payload);
+    return {
+      task,
+      platformMeta: {
+        type: SessionType.Regular,
+        mode: SessionMode.Chat,
+        ...pair,
+      },
+    };
+  },
 );
 
 /**
@@ -88,16 +96,23 @@ export function createSubAgentOutcomePlugin(deps: {
         );
       }
       return async (payload) => {
-        const { task, ids } = subAgentOutcomeEventPayload.parse(payload);
+        const { task, ids, ...pair } =
+          subAgentOutcomeEventPayload.parse(payload);
         const resumeSessionId = deps.sessions.sessionOf(ids);
         await deps.driver.start(
           resumeSessionId
-            ? { task, resumeSessionId }
+            ? {
+                task,
+                resumeSessionId,
+                ...(pair.model && { model: pair.model }),
+                keepSessionModel: true,
+              }
             : {
                 task,
                 platformMeta: {
                   type: SessionType.Regular,
                   mode: SessionMode.Chat,
+                  ...pair,
                 },
               },
         );

@@ -197,36 +197,6 @@ export function useUpgradeAgentMutation() {
   });
 }
 
-export function useMigrateRuntimeMutation() {
-  return useMutation({
-    ...trpc.agents.migrateRuntime.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't move the agent to the new runtime",
-    },
-  });
-}
-
-export function useAbortRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.abortRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't undo the move to the new runtime",
-    },
-  });
-}
-
-export function useRetryRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.retryRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't retry the move to the new runtime",
-    },
-  });
-}
-
 export function useConnectSlack() {
   return useMutation({
     ...trpc.agents.connectSlack.mutationOptions(),
@@ -296,6 +266,7 @@ export function useSetAgentConnections() {
       invalidates: [
         trpc.connections.getAgentConnections.queryKey(),
         egressRulesKeys.all,
+        trpc.attention.pathKey(),
       ],
       errorToast: "Couldn't update app connections",
     },

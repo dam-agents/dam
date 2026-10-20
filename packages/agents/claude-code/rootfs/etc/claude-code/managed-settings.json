@@ -3,7 +3,8 @@
   "permissions": {
     "allow": [
       "mcp__platform-outbound",
-      "mcp__knowledge-bases"
+      "mcp__knowledge-bases",
+      "Read(~/.uploads/**)"
     ]
   },
   "crossSessionInbound": "refuse",

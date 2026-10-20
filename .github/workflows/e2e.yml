@@ -283,22 +283,38 @@ jobs:
         with:
           path: &playwright-path ~/.cache/ms-playwright
           key: &playwright-key playwright-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      # Under the job's timeout, so a hung image build fails the step and the
-      # log steps below still run; the job's own timeout cancels them too.
-      - run: &e2e-run |
-          timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done' ||
-            { echo "::error::the background k3s provision is still running after 3 minutes"; exit 1; }
+      # A step of its own, and named: an unnamed `run:` step is reported under
+      # its first line, so a shared block names every failure in it after its
+      # wait. Here that read as a provision timeout for failures in the image
+      # builds and the suite.
+      # The provision writes its status when it exits, never when it hangs: a
+      # missing file is this step's failure, and it prints the provision's own
+      # log. A nonzero status is not, so it only withholds E2E_HOST_PROVISIONED,
+      # which makes e2e:run nuke what the failed provision left and provision
+      # again.
+      - &e2e-provision-wait
+        name: Wait for the background k3s provision
+        run: |
+          if ! timeout 180 bash -c 'until [ -s /tmp/k3s-provision.status ]; do sleep 1; done'; then
+            tail -n 100 /tmp/k3s-provision.log
+            echo "::error::the background k3s provision wrote no status within 3 minutes; its log is above"
+            exit 1
+          fi
           status="$(cat /tmp/k3s-provision.status)"
           if [ "$status" != 0 ]; then
             echo "::warning::the background k3s provision exited $status; mise run e2e nukes and provisions again"
-            unset E2E_HOST_PROVISIONED
+          else
+            echo "E2E_HOST_PROVISIONED=1" >> "$GITHUB_ENV"
           fi
+      # Under the job's timeout, so a hung image build fails the step and the
+      # log steps below still run; the job's own timeout cancels them too.
+      - name: Run the e2e suite
+        run: &e2e-run |
           mise run e2e
         timeout-minutes: 35
         env: &e2e-run-env
           SKIP_IMAGE_BUILD: "1"
           CI_IMAGES_STATUS: /tmp/ci-images.status
-          E2E_HOST_PROVISIONED: "1"
       - &e2e-playwright-save
         if: ${{ inputs.save-caches && steps.playwright-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -347,14 +363,13 @@ jobs:
     # The vm lane: the same smoke suite on an install with virtualization
     # enabled, where the agents the suite creates are vm Agents bar the one
     # container Agent the migration spec applies itself. The KVM
-    # device plugin comes from cluster:install, the staged mock image from
-    # values-local.yaml once e2e:install sees E2E_VIRTUALIZATION, and the
-    # vm-runner image is built or fetched with the rest by e2e:ci-images. The
-    # lane installs a node image cache root of its own, so a staging that did
-    # not follow the install's values would strand the trees it stages. Every
-    # create the suite makes lands on a machine there, the UI's and the API's
-    # alike, unless it asks for a container. It
-    # also adds the runtime migration spec, which needs
+    # device plugin comes from cluster:install, the node image cache root of
+    # its own (values-local.yaml once e2e:install sees E2E_VIRTUALIZATION, so a
+    # staging that did not follow the install's values would strand the trees
+    # it stages) and the vm-runner image is built or fetched with the rest by
+    # e2e:ci-images. Every create the suite makes lands on a machine there, the
+    # UI's and the API's alike, and a spec that needs a container Agent applies
+    # one as an object instead. It also adds the runtime migration spec, which needs
     # both Backends on one install, and runs it and the backend spec after the
     # rest of the suite:
     # the backend spec deletes the user's VM runner, which runs every one of
@@ -382,6 +397,10 @@ jobs:
       E2E_TIMINGS: *e2e-timings
       E2E_REPORT_JSON: *e2e-report-json
       E2E_SCOPE: ${{ inputs.pr-scope && 'pr' || '' }}
+      # This lane restores the release build's `packages/vm-runner/target`, so
+      # it wants Cargo's plain target and not mr boxington's managed one in its
+      # place, as build.yml's build-images says.
+      MBX_DISABLE: "1"
     steps:
       - *e2e-timing-start
       - *e2e-checkout
@@ -454,12 +473,14 @@ jobs:
       - *e2e-ci-images-agents
       - *e2e-playwright-version
       - *e2e-playwright-cache
+      - *e2e-provision-wait
       # Twice the container lane's budget: the vm-runner build above on a PR,
       # the node staging of the mock image, each agent's boots, each a machine
       # start under nested virtualization or, for the migration spec's legacy
       # Agent, a container start, and the backend and runtime
       # migration specs, which run after the rest of the suite.
-      - run: *e2e-run
+      - name: Run the e2e suite
+        run: *e2e-run
         timeout-minutes: 70
         env: *e2e-run-env
       - *e2e-playwright-save

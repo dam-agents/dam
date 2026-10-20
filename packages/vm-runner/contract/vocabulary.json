@@ -3,6 +3,7 @@
   "reasons": [
     "MachineNotReady",
     "MachineOutOfCapacity",
+    "MachineAwaitingAllocation",
     "MachineImageUnavailable",
     "MachineImageCacheUnreachable",
     "MachineBootFailed",

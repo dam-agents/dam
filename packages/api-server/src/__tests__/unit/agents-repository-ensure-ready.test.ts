@@ -29,6 +29,22 @@ const READY: Condition[] = [{ type: "Ready", status: "True" }];
 const HIBERNATED: Condition[] = [
   { type: "Ready", status: "False", reason: "Hibernated" },
 ];
+const AWAITING_ALLOCATION: Condition[] = [
+  {
+    type: "Ready",
+    status: "False",
+    reason: "AwaitingAllocation",
+    message:
+      "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does.",
+  },
+  {
+    type: "AgentPodReady",
+    status: "False",
+    reason: "AwaitingAllocation",
+    message:
+      "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does.",
+  },
+];
 const OVER_BUDGET: Condition[] = [
   {
     type: "Ready",
@@ -389,6 +405,17 @@ describe("ensureReady", () => {
     );
   });
 
+  // TEST_SCENARIO: a start the runner's pool has room for but the node has not yet granted memory for is refused by the node's grant, not admitted: it waits for the node's resize, which lands within seconds and needs nothing from the owner. It is not one of the refusals a wake gives up on, so the wake keeps waiting past the grace window and succeeds when the machine boots.
+  it("waits out a start waiting for the node rather than failing fast", async () => {
+    const { repo, store } = harness([agentObj("a1", AWAITING_ALLOCATION)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(30_000);
+    store.set("a1", agentObj("a1", READY));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
+  });
+
   // TEST_SCENARIO: an awake agent already in error with a refused start. The first polls may read the previous attempt's refusal, so the wake waits out the short grace, then fails well before its timeout.
   it("fail-fast: a standing start refusal outlasting the grace window rejects", async () => {
     const { repo } = harness([agentObj("a1", STORAGE_FULL)]);
@@ -405,6 +432,46 @@ describe("ensureReady", () => {
       expect(err.durationMs).toBeGreaterThanOrEqual(10_000);
       expect(err.durationMs).toBeLessThan(120_000);
     }
+  });
+
+  const UNREADABLE_GRANT: Condition[] = [
+    {
+      type: "Ready",
+      status: "False",
+      reason: "MachineAllocationUnreadable",
+      message:
+        "The node has not reported how much memory it granted this owner's VM runner, so this start can't be admitted yet. The platform keeps retrying every 30 seconds; if this lasts, an admin should check that the cluster can resize pods in place.",
+    },
+    {
+      type: "AgentPodReady",
+      status: "False",
+      reason: "MachineAllocationUnreadable",
+      message:
+        "The node has not reported how much memory it granted this owner's VM runner, so this start can't be admitted yet. The platform keeps retrying every 30 seconds; if this lasts, an admin should check that the cluster can resize pods in place.",
+    },
+  ];
+
+  // TEST_SCENARIO: the node has gone a minute without reporting what it granted the runner, and the controller has published that as the start's own diagnosis. No wait of this wake's brings the machine up, so the wake fails at once with the cause the page and the channel copy already name, not at the two-minute timeout.
+  it("fail-fast: a standing unreadable-grant hold rejects at once", async () => {
+    const { repo, lines } = harness([agentObj("a1", UNREADABLE_GRANT)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await advanceUntilSettled(p);
+    const err = await p.then(
+      () => null,
+      (e: unknown) => e,
+    );
+    expect(isAgentWakeTimeoutError(err)).toBe(true);
+    if (isAgentWakeTimeoutError(err)) {
+      expect(err.failure).toEqual({
+        kind: "agent-pod-failed",
+        terminationReason: "MachineAllocationUnreadable",
+      });
+      expect(err.durationMs).toBeLessThan(30_000);
+    }
+    expect(lines.find((l) => l.msg === "agent.wake.rejected")?.cause).toBe(
+      "wake-timeout:agent-pod-failed:MachineAllocationUnreadable",
+    );
   });
 
   // TEST_SCENARIO: the refusal the wake first reads is the previous attempt's; the owner freed storage, and the controller's retry boots the machine within the grace. The wake must ride the stale refusal through and succeed.
@@ -470,7 +537,7 @@ describe("ensureReady", () => {
     ).toBeUndefined();
   });
 
-  // TEST_SCENARIO: a migration that failed after it stopped the container keeps it stopped until the owner retries or aborts, so the wake is refused at once with a cause that says the move failed.
+  // TEST_SCENARIO: a migration that failed after it stopped the container keeps it stopped until an operator finishes or undoes the move, so the wake is refused at once with a cause that says the move failed.
   it("refuses at once while a failed migration keeps the agent stopped", async () => {
     const obj = agentObj("a1", [
       ...HIBERNATED,

@@ -22,7 +22,10 @@ import type {
   RuntimeMutator,
 } from "../../runtime-delivery/index.js";
 import type { TtlStore } from "../../../core/ttl-store.js";
-import type { FirePair } from "../../harness-config/index.js";
+import {
+  isNoDefaultModelError,
+  type FirePair,
+} from "../../harness-config/index.js";
 import { emit, EventType } from "../../../events.js";
 import { annotateSpan } from "../../../core/background-span.js";
 
@@ -38,7 +41,12 @@ export type SpendHoldGate = (input: {
 }) => Promise<SpendHoldReason | null>;
 
 export type RunNowResult =
-  "started" | "onboarding-pending" | "spend-limit" | "spend-ceiling";
+  | "started"
+  | "onboarding-pending"
+  | "spend-limit"
+  | "spend-ceiling"
+  | "no-default-model"
+  | "default-pending";
 
 export interface SchedulerRunner {
   buildFireHandler(): (
@@ -80,6 +88,12 @@ export interface SchedulerRunnerDeps {
   queue: ScheduleQueue;
   runtimeMutator: RuntimeMutator;
   wakeAgent: (agentId: string) => Promise<ActivityStamp | null>;
+  ensureDefault: (agentId: string) => Promise<ActivityStamp | null>;
+  defaultPendingAfterMove: (agentId: string) => Promise<boolean>;
+  scheduleModelFor: (
+    agentId: string,
+    model: string,
+  ) => Promise<string | undefined>;
   restoreActivity?: (agentId: string, stamp: ActivityStamp) => Promise<void>;
   activityStamps?: TtlStore<ActivityStamp>;
   onboardingPending?: (agentId: string) => Promise<boolean>;
@@ -165,10 +179,12 @@ export function createSchedulerRunner(
   }
 
   const firedHarness = new WeakMap<Schedule, string>();
+  const earlyWake = new WeakMap<Schedule, ActivityStamp>();
 
   async function triggerPayload(
     sched: Schedule,
     fireAt: Date,
+    opts: { wakeFirst: boolean },
   ): Promise<Record<string, unknown>> {
     const payload: Record<string, unknown> = {
       scheduleId: sched.id,
@@ -177,13 +193,20 @@ export function createSchedulerRunner(
     };
     if (sched.spec.sessionMode) payload.sessionMode = sched.spec.sessionMode;
     if (sched.spec.precheck) payload.precheck = sched.spec.precheck;
-    if (sched.spec.model) payload.model = sched.spec.model;
     if (sched.spec.sessionTitle) payload.sessionTitle = sched.spec.sessionTitle;
     const continues =
       sched.spec.type === "once" && sched.spec.origin?.mode === "continue";
+    if (!continues && opts.wakeFirst) {
+      const stamp = await deps.ensureDefault(sched.agentId);
+      if (stamp) earlyWake.set(sched, stamp);
+    }
+    const model = sched.spec.model
+      ? await deps.scheduleModelFor(sched.agentId, sched.spec.model)
+      : sched.spec.model;
+    if (model) payload.model = model;
     const choices = {
       ...(sched.spec.harness && { harness: sched.spec.harness }),
-      ...(sched.spec.model && { model: sched.spec.model }),
+      ...(model && { model }),
       ...(sched.spec.settings && { settings: sched.spec.settings }),
     };
     if (!continues && Object.keys(choices).length > 0) {
@@ -198,7 +221,7 @@ export function createSchedulerRunner(
       ? undefined
       : await deps.firePair?.(sched.agentId, {
           ...(sched.spec.harness && { harness: sched.spec.harness }),
-          ...(sched.spec.model && { model: sched.spec.model }),
+          ...(model && { model }),
         });
     if (pair === null)
       throw new TRPCError({
@@ -281,7 +304,13 @@ export function createSchedulerRunner(
 
   async function pokeAgent(sched: Schedule, eventId: string): Promise<void> {
     await deps.runtimeMutator.enqueueAfterCommit(sched.agentId);
-    const stamp = await deps.wakeAgent(sched.agentId);
+    const woke = await deps.wakeAgent(sched.agentId);
+    const early = earlyWake.get(sched);
+    earlyWake.delete(sched);
+    const stamp =
+      woke && early
+        ? { previous: early.previous, written: woke.written }
+        : woke;
     if (stamp && sched.spec.precheck && deps.activityStamps)
       await deps.activityStamps
         .set(eventId, stamp)
@@ -336,7 +365,9 @@ export function createSchedulerRunner(
       log(`fire: one-time schedule ${sched.id} is committed; poking again`);
     } else {
       try {
-        const payload = await triggerPayload(sched, fireAt);
+        const payload = await triggerPayload(sched, fireAt, {
+          wakeFirst: true,
+        });
         const held = await spendHeld(sched, payload);
         if (held) {
           const until = new Date(
@@ -359,10 +390,12 @@ export function createSchedulerRunner(
         const reason = (err as Error).message ?? String(err);
         log(`fire: one-time schedule ${sched.id} failed: ${reason}`);
         noteFire("failure", { stage: "commit" });
-        if (lastAttempt) {
+        const final = lastAttempt || isNoDefaultModelError(err);
+        if (final) {
           await deps.repo.recordFire(sched.id, reason, null).catch(() => {});
           await emitFired(sched, "failure");
         }
+        if (final && !lastAttempt) return;
         throw err;
       }
     }
@@ -437,7 +470,7 @@ export function createSchedulerRunner(
 
     let stage: "commit" | "poke" = "commit";
     try {
-      const payload = await triggerPayload(sched, fireAt);
+      const payload = await triggerPayload(sched, fireAt, { wakeFirst: true });
       const held = await spendHeld(sched, payload);
       if (held) {
         log(`fire: agent ${sched.agentId} ${held.result}`);
@@ -452,15 +485,17 @@ export function createSchedulerRunner(
       const result = (err as Error).message ?? String(err);
       log(`fire: schedule ${scheduleId} failed: ${result}`);
       noteFire("failure", { stage });
-      const after = lastAttempt ? nextFireAt(spec, now()) : fireAt;
+      const final = lastAttempt || isNoDefaultModelError(err);
+      const after = final ? nextFireAt(spec, now()) : fireAt;
       if (stage === "commit")
         await deps.repo.stampResult(scheduleId, result, after).catch(() => {});
       else
         await deps.repo.recordFire(scheduleId, result, after).catch(() => {});
-      if (lastAttempt) {
+      if (final) {
         if (after) await deps.queue.enqueue(scheduleId, after, now());
         await emitFired(sched, "failure");
       }
+      if (final && !lastAttempt) return;
       throw err;
     }
 
@@ -504,6 +539,12 @@ export function createSchedulerRunner(
         );
         return "onboarding-pending";
       }
+      if (await deps.defaultPendingAfterMove(sched.agentId)) {
+        log(
+          `run-now: agent ${sched.agentId} is setting up its default model; refusing`,
+        );
+        return "default-pending";
+      }
 
       const firedAt = now();
       const eventId = `run:${scheduleId}:${firedAt.getTime()}`;
@@ -512,7 +553,9 @@ export function createSchedulerRunner(
       );
 
       try {
-        const payload = await triggerPayload(sched, firedAt);
+        const payload = await triggerPayload(sched, firedAt, {
+          wakeFirst: false,
+        });
         const held = await spendHeld(sched, payload);
         if (held) {
           log(`run-now: agent ${sched.agentId} ${held.result}; refusing`);
@@ -524,6 +567,10 @@ export function createSchedulerRunner(
           `run-now: schedule ${scheduleId} commit failed: ${(err as Error).message}`,
         );
         await emitFired(sched, "failure");
+        if (isNoDefaultModelError(err)) {
+          await deps.repo.stampFire(scheduleId, err.message).catch(() => {});
+          return "no-default-model";
+        }
         throw err;
       }
 
