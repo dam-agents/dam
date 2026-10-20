@@ -139,7 +139,7 @@ depends = ["check:*", "//...:check"]
 [tasks.fix]
 description = "Apply every fix: formatters, linters, generators"
 depends = ["fix:comment-types", "fix:markdown"]
-run = [{ tasks = ["fix:skill-manifest", "//docs:fix", "//packages/...:fix"] }]
+run = [{ tasks = ["fix:skill-manifest", "fix:skills-lock", "//docs:fix", "//packages/...:fix"] }]
 
 [tasks.test]
 description = "Run every test suite"
@@ -162,6 +162,10 @@ run = { task = "fix:comment-types", args = ["--check"] }
 [tasks."check:markdown"]
 description = "Markdown prose has one sentence per line"
 run = { task = "fix:markdown", args = ["--check"] }
+
+[tasks."check:skills-lock"]
+description = "skills-lock.json lists exactly the contributor skills under .agents/skills"
+run = { task = "fix:skills-lock", args = ["--check"] }
 
 [tasks."check:skill-manifest"]
 description = "Every shipped image skill's content hash is in the append-only shipped-skill manifest"
