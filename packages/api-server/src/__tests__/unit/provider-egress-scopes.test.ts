@@ -1,0 +1,162 @@
+// TEST_OVERVIEW: the egress gate lets a model provider Connection's hosts pass over the Agent's deny rules: its own egress hosts, and api.anthropic.com when it sets Claude Code's env. Only provider Connections count, and a scope covers a request only on its own host, port and path.
+import { describe, expect, it } from "vitest";
+import type { Connection } from "api-server-api";
+import {
+  providerEgressScopes,
+  scopeCovers,
+} from "../../modules/connections/domain/provider-egress-scopes.js";
+
+const connection = (
+  templateId: string,
+  contributions: Connection["contributions"],
+): Pick<Connection, "templateId" | "contributions"> => ({
+  templateId,
+  contributions,
+});
+
+const inject = (host: string, pathPattern?: string) =>
+  ({
+    kind: "egress-inject",
+    host,
+    headerName: "Authorization",
+    valueFormat: "Bearer {value}",
+    ...(pathPattern ? { pathPattern } : {}),
+  }) as Connection["contributions"][number];
+
+const request = { port: 443, tls: true };
+
+describe("providerEgressScopes", () => {
+  it("takes the egress hosts of provider Connections only", () => {
+    expect(
+      providerEgressScopes([
+        connection("anthropic-oauth", [
+          { kind: "env", name: "CLAUDE_CODE_OAUTH_TOKEN", placeholder: "x" },
+          inject("api.anthropic.com"),
+        ]),
+        connection("github", [inject("api.github.com")]),
+      ]),
+    ).toEqual([
+      { host: "api.anthropic.com", pathPattern: "*" },
+      { host: "api.anthropic.com", pathPattern: "*" },
+    ]);
+  });
+
+  // TEST_SCENARIO: the prod report started on the LiteLLM Connection, whose own host is its proxy; Claude Code still called api.anthropic.com for settings and bootstrap, so a deny on it must not hold while a Connection points Claude Code elsewhere.
+  it("adds api.anthropic.com for a provider that sets Claude Code's env", () => {
+    expect(
+      providerEgressScopes([
+        connection("ibm-litellm", [
+          {
+            kind: "env",
+            name: "ANTHROPIC_BASE_URL",
+            placeholder: "https://ete-litellm.example",
+          },
+          inject("ete-litellm.example"),
+        ]),
+      ]),
+    ).toEqual([
+      { host: "ete-litellm.example", pathPattern: "*" },
+      { host: "api.anthropic.com", pathPattern: "*" },
+    ]);
+  });
+
+  it("adds no Anthropic host for a provider that does not set Claude Code's env", () => {
+    expect(
+      providerEgressScopes([
+        connection("openai", [
+          { kind: "env", name: "OPENAI_API_KEY", placeholder: "x" },
+          inject("api.openai.com", "/v1/*"),
+        ]),
+      ]),
+    ).toEqual([{ host: "api.openai.com", pathPattern: "/v1/*" }]);
+  });
+});
+
+describe("scopeCovers", () => {
+  const openai = providerEgressScopes([
+    connection("openai", [inject("api.openai.com", "/v1/*")]),
+  ])[0]!;
+
+  it("covers the scope's own path, in any host letter case", () => {
+    expect(
+      scopeCovers(openai, {
+        ...request,
+        host: "API.OpenAI.com",
+        path: "/v1/responses",
+      }),
+    ).toBe(true);
+  });
+
+  it("does not cover another path, host or port", () => {
+    expect(
+      scopeCovers(openai, {
+        ...request,
+        host: "api.openai.com",
+        path: "/v2/x",
+      }),
+    ).toBe(false);
+    expect(
+      scopeCovers(openai, { ...request, host: "openai.com", path: "/v1/x" }),
+    ).toBe(false);
+    expect(
+      scopeCovers(openai, {
+        host: "api.openai.com",
+        port: 8443,
+        tls: true,
+        path: "/v1/x",
+      }),
+    ).toBe(false);
+  });
+
+  it("reads a dot in the pattern as a dot, not any character", () => {
+    const scope = { host: "h.example", pathPattern: "/v1.json" };
+    expect(
+      scopeCovers(scope, { ...request, host: "h.example", path: "/v1.json" }),
+    ).toBe(true);
+    expect(
+      scopeCovers(scope, { ...request, host: "h.example", path: "/v1xjson" }),
+    ).toBe(false);
+  });
+});
+
+describe("scopeCovers reads a path pattern as the rule matcher does", () => {
+  // TEST_SCENARIO: the rule matcher compares paths with SQL LIKE, where `_` is one character; a scope that kept `_` literal would miss a path a rule of the same pattern matches, and the override would stay silent.
+  it("treats `_` as one character, as LIKE does", () => {
+    const scope = { host: "api.example", pathPattern: "/v1_/*" };
+    expect(
+      scopeCovers(scope, {
+        ...request,
+        host: "api.example",
+        path: "/v1x/messages",
+      }),
+    ).toBe(true);
+    expect(
+      scopeCovers(scope, {
+        ...request,
+        host: "api.example",
+        path: "/v1/messages",
+      }),
+    ).toBe(false);
+  });
+
+  it("treats `%` as any run, as LIKE does", () => {
+    const scope = { host: "api.example", pathPattern: "/v1/%/count" };
+    expect(
+      scopeCovers(scope, {
+        ...request,
+        host: "api.example",
+        path: "/v1/messages/count",
+      }),
+    ).toBe(true);
+  });
+
+  it("keeps a backslash-escaped `_` literal, as LIKE does", () => {
+    const scope = { host: "api.example", pathPattern: "/a\\_b" };
+    expect(
+      scopeCovers(scope, { ...request, host: "api.example", path: "/a_b" }),
+    ).toBe(true);
+    expect(
+      scopeCovers(scope, { ...request, host: "api.example", path: "/axb" }),
+    ).toBe(false);
+  });
+});

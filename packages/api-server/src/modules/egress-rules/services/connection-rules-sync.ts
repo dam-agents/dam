@@ -72,7 +72,8 @@ export function createConnectionRulesSync(deps: {
         if (desiredTriples.has(triple)) continue;
         const connId = row.source.slice(SOURCE_PREFIX.length);
         if (!ownedSourceIds.has(connId)) continue;
-        await deps.repo.revoke(row.id);
+        if (row.presetSource) await deps.repo.restorePresetSource(row.id);
+        else await deps.repo.revoke(row.id);
       }
 
       for (const [connId, { hosts }] of grants) {

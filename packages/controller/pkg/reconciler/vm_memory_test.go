@@ -273,7 +273,7 @@ func TestAMemoryPassOnAnOlderRunnerReadsEachMachineAsBefore(t *testing.T) {
 		"a machine still running at its old size counts at that size, though the pool has shrunk under it")
 }
 
-// TEST_SCENARIO: the runner's pressure signal is the kernel's view, which is what kills the runner, so a pass on it hibernates an idle peer even while the counted demand is well under the threshold, and even when that peer alone does not cover the measured overshoot. The signal repeats while pressure lasts, so for a while after it freed room it hibernates nothing more, and it never runs beside the owner's other pass.
+// TEST_SCENARIO: the runner's pressure signal is the kernel's view, which is what kills a machine, so a pass on it hibernates an idle peer even while the counted demand is well under the threshold, and even when that peer alone does not cover the measured overshoot. The signal repeats while pressure lasts, so for a while after it freed room it hibernates nothing more, and it never runs beside the owner's other pass.
 func TestAPressureSignalReclaimsBelowTheCountedThresholdOnceAWhile(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -550,6 +550,7 @@ func TestARefusedMachineCountsNothingUntilItsRetryRuns(t *testing.T) {
 		{name: "refused for storage", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonStorageFull + `"}]`},
 		{name: "a home that is full", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonHomeFull + `"}]`},
 		{name: "a boot that failed", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonBootFailed + `"}]`},
+		{name: "a cache the runner cannot reach", conditions: `[{"type":"` + apiv1.ConditionAgentPodReady + `","status":"False","reason":"` + vmrunner.ReasonImageCacheUnreachable + `"}]`},
 		{name: "refusal recorded before its status", recorded: true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {

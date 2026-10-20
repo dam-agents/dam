@@ -1,4 +1,4 @@
-import { AddAlt } from "@carbon/icons-react";
+import { Add } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -80,7 +80,7 @@ export function AgentBindPicker({
       tone="muted"
       className="mt-6 text-sm"
     >
-      <AddAlt size={16} /> {creating ? "Creating…" : "Create a new agent"}
+      <Add size={16} /> {creating ? "Creating…" : "Create a new agent"}
     </Button>
   );
 

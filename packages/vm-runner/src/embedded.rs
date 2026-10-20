@@ -378,6 +378,23 @@ impl Runtime for Smolvm {
     fn disk_used_bytes(&self, id: &str) -> Option<u64> {
         allocated_bytes(&vm_data_dir(id))
     }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pid of the machine's VMM, given only while that pid still names the process the record was written for. A pid is reused after its process ends, and the reap reads the exit status of the pid it is given, so a record whose pid now belongs to some other process would report that process's death as this machine's: the start time the record kept tells the two apart, and a pid the kernel no longer lists is the record's own, dead child.
+    fn vmm_record_pid(&self, id: &str) -> Option<i32> {
+        self.record(id).ok()??.pid
+    }
+
+    fn vmm_pid(&self, id: &str) -> Option<i32> {
+        let record = self.record(id).ok()??;
+        let pid = record.pid?;
+        match (
+            record.pid_start_time,
+            smolvm::process::process_start_time(pid),
+        ) {
+            (Some(recorded), Some(now)) if recorded != now => None,
+            _ => Some(pid),
+        }
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long a grow waits for the guest to plug its added RAM and put it online, as smolvm's own resize waits.

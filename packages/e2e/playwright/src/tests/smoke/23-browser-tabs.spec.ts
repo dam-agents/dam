@@ -76,7 +76,10 @@ async function expectSameTab(page: Page, targetId: string) {
 
 async function openPanel(page: Page) {
   await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
-  await page.getByTestId("side-panel-tab-browser").click();
+  await page
+    .getByTestId("side-panel-tab-browser")
+    .or(page.getByRole("button", { name: "Open browser" }))
+    .click();
   await expect(page.getByLabel("Address in the agent's browser")).toBeVisible();
   await expect(page.getByText(/Starting the agent's browser/)).toHaveCount(0, {
     timeout: 120_000,

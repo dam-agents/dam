@@ -8,14 +8,19 @@ on:
   pull_request:
     types: [closed]
 
-permissions:
-  actions: write
+permissions: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
 
 jobs:
   cancel:
     name: cancel the closed PR's CI/CD runs
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    permissions:
+      actions: write
     steps:
       - name: Cancel unfinished CI/CD runs for the PR's branch
         env:

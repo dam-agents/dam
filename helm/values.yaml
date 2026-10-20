@@ -75,8 +75,6 @@ links:
 # for every user, whatever they stored. A feature `features` does not name
 # takes `featureDefault`, so an install that sets it `off` also keeps features
 # added by later releases off until it names them.
-# `vm-sandboxes` also needs `virtualization.enabled`; pinned `on`, it makes
-# every new agent a microVM, starter kits and API creates included.
 featureDefault: experimental
 features: {}
 
@@ -204,7 +202,10 @@ virtualization:
   runner:
     # Published charts pin this by digest, which a rebuild that changes nothing
     # in the image keeps, so an upgrade that leaves the runner unchanged doesn't
-    # roll the pod and stop every machine. A digest wins over the tag.
+    # roll the pod and stop every machine (unless this release declares a
+    # reboot key the pod it reaches does not run, which rolls the pods to
+    # reboot them; a pod whose own release declares no key takes it in
+    # place). A digest wins over the tag.
     image:
       repository: quay.io/dam-agents/vm-runner
       tag: ""
@@ -230,7 +231,8 @@ virtualization:
     # read the image files a guest is served even where the image keeps them
     # from root. The runner drops every other capability, cannot escalate,
     # and runs under the runtime/default seccomp profile. That SCC refuses
-    # the hostPath `imageCache.hostPath` mounts, so on OpenShift this is
+    # the hostPath of the node image cache and the release directory, so on
+    # OpenShift this is
     # required. The same SCC also admits the node image cache, which sets its
     # own SELinux type (see `imageCache`), so it must have
     # `seLinuxContext.type: RunAsAny`. Empty = no extra binding rendered.
@@ -274,7 +276,7 @@ virtualization:
     # vm agents have no size of their own and do not count toward the user's
     # budget; every machine may grow to half of the limit less `reserveMiB`,
     # so one agent can use most of the pool while a runaway guest hits its
-    # own OOM killer before it takes the runner, and every machine with it.
+    # own OOM killer, which takes that machine and not the runner.
     # A running machine counts at what its
     # guest measurably uses plus `headroomMiB`, never above its size, so an
     # owner can run more machines than their sizes add up to; near the limit
@@ -330,14 +332,17 @@ virtualization:
     # image the pod's loader cannot take in place — reboots every machine
     # that owner has. The controller rolls
     # such a change across owners rather than all at once: at most
-    # `maxConcurrent` runners are mid-roll at a time, and a runner stays
+    # `maxConcurrent` runners are mid-roll at a time, or, where
+    # `maxConcurrentPercent` is set, that share of the runners the install
+    # has (rounded up, at least one), which is what keeps a full roll of a
+    # large install to hours rather than days. A runner stays
     # mid-roll until its new pod is ready and every machine that was ready
     # before the roll is ready again. `settleTimeout` bounds that wait, so a
     # machine that never comes back (its agent was stopped mid-roll) does not
     # stall everyone else's upgrade. A new owner's runner is created at once.
     # A pass visits each runner about once every five minutes while its
     # agents run, and on the controller's ten-minute sweep otherwise, so a
-    # full roll takes roughly owners / maxConcurrent × (runner restart +
+    # full roll takes roughly owners / the roll's width × (runner restart +
     # machine boot).
     # A runner whose owner has an agent in the middle of a turn does not take
     # a free place in the roll: it is offered again on the next pass, and
@@ -350,8 +355,23 @@ virtualization:
     # ensure refused, or outlasts `settleTimeout` halts the release. Time
     # spent waiting for the node's stager to stage the release does not
     # count. The controller's sweep follows that many hand-offs at once.
+    # A hand-off leaves a running machine on the runtime it booted, so a
+    # release whose fix only a machine that booted it has — a new libkrun,
+    # guest kernel or platform-init — reaches running machines only by
+    # rebooting them. Such a release declares a reboot key the pod before it
+    # does not run (`packages/vm-runner/reboot-id`): a runner refuses it, its
+    # pod rolls instead, and that roll does not wait for a busy agent, so the
+    # fix reaches every machine within the roll rather than after `idleWait`.
+    # A pod built from a release that declares no key takes the release in
+    # place, since there is nothing to compare it with.
+    # A roll for a changed pod shape keeps its idle wait. A runner that
+    # already holds the release as failed keeps its pod: a pod on the release
+    # would fail the same way and take its machines with it.
     rollout:
       maxConcurrent: 1
+      # Set instead of `maxConcurrent` to express the width as a percentage
+      # of the install's runners; `maxConcurrent` is then ignored.
+      maxConcurrentPercent: 0
       settleTimeout: 10m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
@@ -361,16 +381,20 @@ virtualization:
     # it without a restart: the controller names the release over the
     # runner's machine API, the pod's loader drains the old runner, starts
     # the new one from this directory, and the new runner adopts every
-    # machine still running, so no machine reboots. A release built against
-    # another VM runtime (a new smolvm, libkrun or crane) brings its runtime
-    # along: machines already running keep the runtime they booted, and
-    # machines started after the hand-off boot the new one. Only a release
-    # that cannot load in the pod (a newer base image's libc) still rolls the
-    # pods, through `rollout`. The stager is the only writer; runners mount
-    # it read-only. Each install stages into its own subdirectory, named
-    # after `agentNamespace`, because every stager keeps only the newest few
-    # releases in its directory. On OpenShift it needs `scc`, as
-    # `imageCache.hostPath` does: the stager labels the directory for
+    # machine still running, so no machine reboots, unless the release
+    # declares a reboot key the pod it reaches does not run, which rolls the
+    # pods to reboot the machines, while a pod whose own release declares no
+    # key takes it in place. A release built against another VM runtime
+    # (a new smolvm, libkrun or crane) brings its runtime along: machines
+    # already running keep the runtime they booted, and machines started after
+    # the hand-off boot the new one. A release the pod's loader cannot load (a
+    # newer base image's libc) rolls the pods through `rollout` too, as does
+    # a release declaring another reboot key than its pod's release.
+    # The stager is the only writer; runners mount it read-only. Each
+    # install stages into its own subdirectory, named after
+    # `agentNamespace`, because every stager keeps only the newest few
+    # releases in its directory. On OpenShift it needs `scc`, as the node
+    # image cache does: the stager labels the directory for
     # containers, as spc_t, so the confined runners can read it.
     releaseHostPath: /var/lib/platform-vm-runner-releases
     # How smolvm checks every VMM's syscalls, from after its device setup,
@@ -440,8 +464,11 @@ virtualization:
   # virtualization.enabled. A machine may reach only its gateway, so the guest
   # cannot pull its own image; it is fetched and unpacked here once, and the
   # next owner on that node boots the same tree without touching the
-  # registry. The default is the directory etc/openshift-node-config has the
-  # nodes create and label. An install with no registry (local dev) stages
+  # registry. It is this install's own directory under the one
+  # etc/openshift-node-config has the nodes create and label, named
+  # `<release namespace>/<release name>`, so the installs sharing a node never
+  # take each other's.
+  # An install with no registry (local dev) stages
   # pre-flattened trees here too, named after the image reference
   # (`mise run image:stage-vm`), which the runners boot before they ask the
   # service.
@@ -498,13 +525,54 @@ virtualization:
   # set with room to spare: pins are never evicted, so a budget below their
   # total leaves the cache permanently over it and saying so in its log.
   imageCache:
-    hostPath: /var/lib/platform-images
+    # The root the node image caches live under: on every node a runner runs
+    # on, the chart keeps this install's cache in its own subdirectory of it,
+    # `<release namespace>/<release name>` — the pair the cluster already keeps
+    # unique. Nodes are shared, and an install given another install's cache
+    # directory is a second writer of it: the two take turns unlinking each
+    # other's socket and serving each other's trees. So the value is a root and
+    # never the directory itself, it is absolute, and it stays outside
+    # `runner.releaseHostPath`'s per-install subdirectory, which the release
+    # stager prunes.
+    hostPath: ""
+    # The directory a previous release served, kept alive while the runners
+    # that release gave their mounts are still rolling out: the rollout waits
+    # out a busy owner's turn (`runner.rollout.idleWait`, a day by default), and
+    # until it reaches a runner, that runner dials the socket in the old
+    # directory. Setting this runs a second cache service over that directory,
+    # which preloads nothing; remove it once every runner has rolled. It has to
+    # be the whole host directory the previous release served, and to hold this
+    # install's new cache directory neither directly nor from above — so the
+    # new root is normally a sibling of it, not the same one.
+    legacyPath: ""
     budget: 20Gi
     preloadInterval: 5m
-    # How the service resolves the registries it fetches from. `Default` is
-    # the node's resolver. `ClusterFirst` is for an install whose registry is
-    # a Service inside the cluster, such as OpenShift's internal registry.
-    dnsPolicy: Default
+    # How the service resolves the registries it fetches from. `ClusterFirst`
+    # puts every lookup through the cluster DNS pods, which its egress policy
+    # admits by construction. `Default` leaves it to the node's own resolver:
+    # that resolver's address then has to be one the policy admits, and it
+    # admits the public internet only — a node-local resolver (a link-local
+    # stub, say) needs its address in `egressCidrs`.
+    dnsPolicy: ClusterFirst
+    # In-cluster registries the service may also reach, for a registry that is
+    # a Service here or a mirror of one — OpenShift's internal registry, for
+    # example. Policy is applied after a Service's address is translated to a
+    # pod, and that pod's address lies in a range the service's egress policy
+    # closes, so the pods are named and not the Service. `podLabels` is
+    # required: an empty one would admit every pod in the namespace, and its
+    # keys and values have to be labels the API server takes.
+    peers: []
+    # Ranges the service may also reach OUTSIDE the cluster, for a registry on
+    # a private address that no pod selector can name — a mirror on the
+    # enterprise network, say. An in-cluster registry is a `peers` entry: the
+    # policy applies after a Service's address becomes a pod address, which no
+    # range follows. The service already reaches the public internet minus
+    # every range this cluster owns (private, loopback, link-local, CGNAT and
+    # this-network, which hold the platform's own datastores, the node and the
+    # cloud metadata endpoints); inside a range named here those endpoints
+    # lose that protection, so name the narrowest range that holds the mirror.
+    # Each entry is an address/prefix, never `/0`.
+    egressCidrs: []
     # Unpacking is I/O rather than CPU, and the tree is streamed rather than
     # held, so this is small on purpose. Leave the CPU limit unset: a
     # throttled unpack is a slow first boot. The ephemeral-storage request is

@@ -43,26 +43,6 @@ const FEATURE_ROWS: FeatureRow[] = [
       "See the pre-release connection catalog: Google services, Spotify, YouTube and custom client credentials.",
   },
   {
-    id: "vm-sandboxes",
-    label: "New sandbox runtime",
-    description: (
-      <>
-        Create new agents on a runtime based on{" "}
-        <a
-          href="https://github.com/smol-machines/smolvm"
-          target="_blank"
-          rel="noreferrer"
-          className="underline hover:text-foreground"
-          onClick={(event) => event.stopPropagation()}
-        >
-          smolvm
-        </a>
-        . Agents start much faster and can run containers (Docker, Kubernetes).
-        Existing agents keep their runtime until you migrate them.
-      </>
-    ),
-  },
-  {
     id: "agent-telemetry",
     label: "Agent telemetry",
     description:
@@ -90,7 +70,7 @@ const FEATURE_ROWS: FeatureRow[] = [
     id: "new-layout",
     label: "New layout",
     description:
-      "A sidebar of agent avatars beside your conversations, with pinned sessions and a dashboard Home. Turn it off to return to the current layout.",
+      "A sidebar of agent avatars beside your conversations, with pinned sessions, a dashboard Home, and one side panel on the right with an icon bar for files, changes, artifacts and the browser. Turn it off to return to the current layout.",
   },
 ];
 

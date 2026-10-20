@@ -249,7 +249,7 @@ The old upper is renamed aside with the record of its image and deleted in the b
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
 Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root that start empty on every boot, whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
 `/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
+They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries, never outside them, and never through a link or a mount: a folder that is a link, or a mount it was not at boot, is skipped, an entry holding a mount stays whole.
 What it may delete is only what something other than the agent calls replaceable: an entry carrying a `CACHEDIR.TAG` signature wherever it sits, and any entry of `HOME`'s `.cache` and `.npm`, which the XDG specification and npm call caches; an unmarked entry of `/tmp` or `/var/tmp` is never deleted, whatever its age, being the agent's own work.
 An entry is one name directly in such a folder, and it goes whole or not at all: a tool that keeps part of its cache takes it for complete and fails on it.
 Use is the newest modification or change time in the entry: a write moves those, a read moves no time the guest keeps, and a reader is seen by its descriptors alone.
@@ -321,7 +321,7 @@ A flush is never tried again: after a failed fsync the host can have dropped the
 
 ### The machine image cache
 
-A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on a node directory every runner on the node shares, never on the runner's claim; [vm-image-cache](vm-image-cache.md) owns it.
+A machine may reach only its gateway, so its image is fetched for it and unpacked once into a tree every machine of that image mounts read-only, on a node directory the install's runners share, never on the runner's claim; [vm-image-cache](vm-image-cache.md) owns it.
 
 ### Warm PVC pool
 

@@ -98,7 +98,7 @@ func (r *AgentReconciler) runnerOvershootMiB(ctx context.Context, owner string, 
 // UNIT_BOUNDARY_DESCRIPTION: hibernated for room that would still not suffice.
 // UNIT_BOUNDARY_DESCRIPTION: A `partial` reclaim, on the runner's own pressure
 // UNIT_BOUNDARY_DESCRIPTION: signal, hibernates what it can instead: near an
-// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes every machine of the owner,
+// UNIT_BOUNDARY_DESCRIPTION: OOM kill, which takes a machine of the owner,
 // UNIT_BOUNDARY_DESCRIPTION: freeing some memory beats freeing none. When no
 // UNIT_BOUNDARY_DESCRIPTION: agent says it is idle, it hibernates the agents
 // UNIT_BOUNDARY_DESCRIPTION: that did not answer as a last resort, as the kill

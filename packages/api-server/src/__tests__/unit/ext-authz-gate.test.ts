@@ -10,7 +10,9 @@ import {
   type ApprovalResolved,
 } from "../../events.js";
 
-const noSpend = { checkCall: async () => ({ verdict: "allow" as const }) };
+const noSpend = {
+  checkCall: async () => ({ verdict: "allow" as const, rule: anyRule }),
+};
 const noQuestions = { ask: async () => {} };
 
 interface FakeRepo {
@@ -149,6 +151,10 @@ const identityResolver = {
 
 const noMatchRules = { match: async () => null };
 
+const noProviderScopes = { covers: async () => false };
+
+const anyRule = { host: "api.x", method: "*", pathPattern: "*" };
+
 const attended = {
   hasOpenChannelTurn: async () => false,
   hasInteractiveSession: async () => false,
@@ -174,7 +180,8 @@ describe("ext-authz gate", () => {
       bus: bus.bus,
       attendance: attended,
       identityResolver,
-      ruleMatcher: { match: async () => ({ verdict: "allow" }) },
+      ruleMatcher: { match: async () => ({ verdict: "allow", rule: anyRule }) },
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -204,6 +211,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -232,6 +240,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -268,6 +277,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -305,6 +315,7 @@ describe("ext-authz gate", () => {
         attendance: attended,
         identityResolver,
         ruleMatcher: noMatchRules,
+        providerScopes: noProviderScopes,
         holdSeconds: 30,
         spend: noSpend,
         questions: noQuestions,
@@ -336,6 +347,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -399,6 +411,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
       holdSeconds: 1800,
       spend: noSpend,
       questions: noQuestions,
@@ -439,6 +452,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: { match: ruleMatch },
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -471,6 +485,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -493,13 +508,17 @@ describe("ext-authz gate", () => {
   it("denies a path with a dot segment without reading rules or holding", async () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
-    const ruleMatch = vi.fn(async () => ({ verdict: "allow" as const }));
+    const ruleMatch = vi.fn(async () => ({
+      verdict: "allow" as const,
+      rule: anyRule,
+    }));
     const gate = createExtAuthzGate({
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
       identityResolver,
       ruleMatcher: { match: ruleMatch },
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -540,13 +559,17 @@ describe("ext-authz gate", () => {
   // TEST_SCENARIO: the agent writes the Host header, and DNS and GitHub ignore its letter case, so `API.GitHub.com` must meet the rules for api.github.com rather than slip past them to a wildcard allow.
   it("asks the rules with the host in lower case", async () => {
     const repo = makeFakeRepo();
-    const ruleMatch = vi.fn(async () => ({ verdict: "deny" as const }));
+    const ruleMatch = vi.fn(async () => ({
+      verdict: "deny" as const,
+      rule: anyRule,
+    }));
     const gate = createExtAuthzGate({
       repo: repo.repo,
       bus: makeFakeBus().bus,
       attendance: attended,
       identityResolver,
       ruleMatcher: { match: ruleMatch },
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -562,7 +585,7 @@ describe("ext-authz gate", () => {
       path: "/repos/dam-agents/dam/contents/",
     });
 
-    expect(verdict).toBe("deny");
+    expect(verdict).toMatchObject({ verdict: "refuse", basis: "rule" });
     expect(ruleMatch).toHaveBeenCalledWith(
       "agent-1",
       "api.github.com",
@@ -577,13 +600,17 @@ describe("ext-authz gate", () => {
   it("allows the platform host only on its own port, and asks the rules with port and scheme", async () => {
     const repo = makeFakeRepo();
     const bus = makeFakeBus();
-    const ruleMatch = vi.fn(async () => ({ verdict: "deny" as const }));
+    const ruleMatch = vi.fn(async () => ({
+      verdict: "deny" as const,
+      rule: anyRule,
+    }));
     const gate = createExtAuthzGate({
       repo: repo.repo,
       bus: bus.bus,
       attendance: attended,
       identityResolver,
       ruleMatcher: { match: ruleMatch },
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -599,7 +626,7 @@ describe("ext-authz gate", () => {
       path: "/b/k",
     });
 
-    expect(verdict).toBe("deny");
+    expect(verdict).toMatchObject({ verdict: "refuse", basis: "rule" });
     expect(ruleMatch).toHaveBeenCalledWith(
       "agent-1",
       "store.internal",
@@ -620,6 +647,7 @@ describe("ext-authz gate", () => {
       attendance: attended,
       identityResolver,
       ruleMatcher: noMatchRules,
+      providerScopes: noProviderScopes,
       holdSeconds: 30,
       spend: noSpend,
       questions: noQuestions,
@@ -650,6 +678,114 @@ describe("ext-authz gate", () => {
     ]);
   });
 
+  describe("model provider hosts", () => {
+    const providerHost = {
+      agentId: "inst-1",
+      host: "api.anthropic.com",
+      port: 443,
+      tls: true,
+      method: "POST",
+      path: "/v1/messages",
+    };
+    const gateWith = (
+      ruleMatch: Parameters<
+        typeof createExtAuthzGate
+      >[0]["ruleMatcher"]["match"],
+      covers: Parameters<
+        typeof createExtAuthzGate
+      >[0]["providerScopes"]["covers"],
+      repo = makeFakeRepo(),
+    ) =>
+      createExtAuthzGate({
+        repo: repo.repo,
+        bus: makeFakeBus().bus,
+        attendance: attended,
+        identityResolver,
+        ruleMatcher: { match: ruleMatch },
+        providerScopes: { covers },
+        holdSeconds: 30,
+        spend: noSpend,
+        questions: noQuestions,
+        platformAllowedAuthorities: [],
+      });
+
+    // TEST_SCENARIO: a user denies api.anthropic.com while the agent runs on LiteLLM, then switches the agent to the Claude subscription Connection; every model call then hit the deny rule and the session ended on a bare 403. The attached provider's host must pass over the rule.
+    it("allows a provider Connection's host over a deny rule, and asks the scopes as the calling agent", async () => {
+      const covers = vi.fn(async () => true);
+      const gate = gateWith(
+        async () => ({
+          verdict: "deny",
+          rule: { host: "api.anthropic.com", method: "*", pathPattern: "*" },
+        }),
+        covers,
+      );
+
+      expect(await gate.gateRequest(providerHost)).toBe("allow");
+      expect(covers).toHaveBeenCalledWith("inst-1", {
+        host: "api.anthropic.com",
+        port: 443,
+        tls: true,
+        path: "/v1/messages",
+      });
+    });
+
+    // TEST_SCENARIO: a user rule on the provider host keeps the connection sync from writing its allow row, so with no rule matching the request the provider host must still pass without a hold.
+    it("allows a provider Connection's host that no rule matches, without holding", async () => {
+      const repo = makeFakeRepo();
+      const gate = gateWith(
+        async () => null,
+        async () => true,
+        repo,
+      );
+
+      expect(await gate.gateRequest(providerHost)).toBe("allow");
+      expect(repo.inserts).toBe(0);
+    });
+
+    it("never reads the provider scopes when a rule allows", async () => {
+      const covers = vi.fn(async () => true);
+      const gate = gateWith(
+        async () => ({ verdict: "allow", rule: anyRule }),
+        covers,
+      );
+
+      expect(await gate.gateRequest(providerHost)).toBe("allow");
+      expect(covers).not.toHaveBeenCalled();
+    });
+
+    // TEST_SCENARIO: a request the rules deny used to get a 403 with no body, which the harness shows with no cause; the refusal must name the rule and say the egress gateway refused it, not the upstream.
+    it("refuses a host a rule denies with a body that names the rule", async () => {
+      const gate = gateWith(
+        async () => ({
+          verdict: "deny",
+          rule: {
+            host: "*.anthropic.com",
+            port: 8443,
+            method: "POST",
+            pathPattern: "/v1/*",
+          },
+        }),
+        async () => false,
+      );
+
+      const decision = await gate.gateRequest(providerHost);
+
+      expect(decision).toMatchObject({
+        verdict: "refuse",
+        basis: "rule",
+        response: {
+          status: 403,
+          headers: { "x-platform-refusal": "egress" },
+        },
+      });
+      const body = typeof decision === "object" ? decision.response.body : "";
+      expect(body).toContain(
+        'Blocked by network rule "deny *.anthropic.com:8443, method POST, path /v1/*"',
+      );
+      expect(body).toContain("api.anthropic.com");
+    });
+  });
+
   describe("unattended channel turns", () => {
     const unattended = {
       hasOpenChannelTurn: async () => true,
@@ -665,6 +801,7 @@ describe("ext-authz gate", () => {
         attendance: unattended,
         identityResolver,
         ruleMatcher: noMatchRules,
+        providerScopes: noProviderScopes,
         holdSeconds: 1800,
         spend: noSpend,
         questions: noQuestions,
@@ -695,6 +832,7 @@ describe("ext-authz gate", () => {
         attendance: unattended,
         identityResolver,
         ruleMatcher: noMatchRules,
+        providerScopes: noProviderScopes,
         holdSeconds: 1800,
         spend: noSpend,
         questions: noQuestions,
@@ -722,6 +860,7 @@ describe("ext-authz gate", () => {
         attendance: unattended,
         identityResolver,
         ruleMatcher: noMatchRules,
+        providerScopes: noProviderScopes,
         holdSeconds: 1800,
         spend: noSpend,
         questions: noQuestions,
@@ -755,6 +894,7 @@ describe("ext-authz gate", () => {
         },
         identityResolver,
         ruleMatcher: noMatchRules,
+        providerScopes: noProviderScopes,
         holdSeconds: 30,
         spend: noSpend,
         questions: noQuestions,
@@ -792,7 +932,10 @@ describe("ext-authz gate", () => {
           hasInteractiveSession: async () => false,
         },
         identityResolver,
-        ruleMatcher: { match: async () => ({ verdict: "allow" }) },
+        ruleMatcher: {
+          match: async () => ({ verdict: "allow", rule: anyRule }),
+        },
+        providerScopes: noProviderScopes,
         holdSeconds: 1800,
         spend: noSpend,
         questions: noQuestions,

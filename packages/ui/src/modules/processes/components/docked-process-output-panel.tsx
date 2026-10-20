@@ -1,4 +1,4 @@
-import { Close } from "@carbon/icons-react";
+import { ArrowLeft } from "@carbon/icons-react";
 import { PROCESS_OUTPUT_MAX_BYTES } from "agent-runtime-api";
 import { useMemo, useRef } from "react";
 
@@ -7,6 +7,7 @@ import { Spinner } from "@/components/ui/spinner";
 
 import { TruncateStart } from "../../../components/truncate-start.js";
 import { useStore } from "../../../store.js";
+import { SidePanelCloseButton } from "../../sessions/components/side-panel-close-button.js";
 import { useProcesses, useProcessOutput } from "../api/queries.js";
 import { useStickToBottom } from "../hooks/use-stick-to-bottom.js";
 import { findListedProcess } from "../lib/listed-process.js";
@@ -29,7 +30,17 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
 
   return (
     <div className="flex h-full min-h-0 flex-col">
-      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border px-4">
+      <div className="flex h-12 shrink-0 items-center gap-2 border-b border-border pl-2 pr-4">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="shrink-0"
+          aria-label="Back to processes"
+          tooltip="Back to processes"
+          onClick={() => close(null)}
+        >
+          <ArrowLeft size={16} />
+        </Button>
         <div className="flex min-w-0 flex-1 flex-col">
           <TruncateStart
             className="font-mono text-sm font-medium text-foreground"
@@ -51,16 +62,7 @@ export function DockedProcessOutputPanel({ agentId, outputKey }: Props) {
             {listed.status}
           </span>
         )}
-        <Button
-          variant="ghost"
-          size="icon-sm"
-          className="shrink-0"
-          aria-label="Close"
-          tooltip="Close"
-          onClick={() => close(null)}
-        >
-          <Close size={16} />
-        </Button>
+        <SidePanelCloseButton />
       </div>
       {listed ? (
         <OutputBody

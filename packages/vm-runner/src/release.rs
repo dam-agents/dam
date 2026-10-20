@@ -3,7 +3,7 @@ use std::path::{Path, PathBuf};
 use anyhow::Context;
 use sha2::{Digest, Sha256};
 
-use crate::api::{RunnerRelease, HELD_UNSTAGED};
+use crate::api::{RunnerRelease, HELD_REBOOT, HELD_UNSTAGED};
 
 // UNIT_BOUNDARY_DESCRIPTION: a runner release is the runner and the two guest binaries it copies into every share, staged together on the node so the runner and platform-init stay one version. runtime-id names the VM runtime the release was built against: the smolvm release with its patched libkrun, crane and the base image's libc. The runtime travels with the release, staged once per id beside the releases, because the runner is itself the VMM of every machine it starts and loads that runtime's libraries and guest agent.
 pub const FILES: [&str; 4] = ["vm-runner", "platform-init", "platform-runc", RUNTIME_ID];
@@ -26,6 +26,16 @@ pub fn runtime_id(release_dir: &Path) -> Option<String> {
         .map(|id| id.trim().to_string())
         .filter(|id| !id.is_empty())
 }
+
+pub fn reboot_id(release_dir: &Path) -> Option<String> {
+    std::fs::read_to_string(release_dir.join(REBOOT_ID))
+        .ok()
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the file a release declares its reboot key in: the machines booted by an older key cannot take what this release changes in place, so a runner refuses to hand them over and the pod rolls instead, which reboots them. A release declares the same key as the one before it unless what a machine booted changed, and a release built before keys declares none, so nothing compares it and it is handed off as any release was. The image build writes it from this package's `reboot-id`, which the change that needs the reboot bumps, as an agent image declares its root's key.
+pub const REBOOT_ID: &str = "reboot-id";
 
 // UNIT_BOUNDARY_DESCRIPTION: which binaries and runtime the loader runs for the release the controller asks for. The pod's own image is always there; a staged one only once the stager has put it, and the runtime it names, on this node. A release built against another runtime than the pod's is taken too: machines already running stay on the runtime they booted, and only machines started after the hand-off boot the new one. `runtime` is None for the pod's own runtime.
 #[derive(Debug, PartialEq, Eq)]
@@ -61,6 +71,16 @@ impl Releases {
         let (Some(id), true) = (runtime_id(&dir), dir.join(RUNNER).is_file()) else {
             return unstaged("the release");
         };
+        if let (Some(theirs), Some(ours)) = (reboot_id(&dir), reboot_id(&self.builtin)) {
+            if theirs != ours {
+                return Choice::Held {
+                    held: HELD_REBOOT,
+                    message: format!(
+                        "{target} reboots the machines booted before it, and this pod's release declares another key ({ours})"
+                    ),
+                };
+            }
+        }
         if Some(&id) == runtime_id(&self.builtin).as_ref() {
             return Choice::Run {
                 release: target.to_string(),
@@ -193,7 +213,11 @@ pub fn stage_files(builtin: &Path, into: &Path, release: &str) -> anyhow::Result
         }
         std::fs::create_dir_all(&scratch)
             .with_context(|| format!("creating {}", scratch.display()))?;
-        for file in FILES {
+        for file in FILES.iter().chain(
+            [REBOOT_ID]
+                .iter()
+                .filter(|file| builtin.join(file).is_file()),
+        ) {
             std::fs::copy(builtin.join(file), scratch.join(file))
                 .with_context(|| format!("copying {file} into {}", scratch.display()))?;
             std::fs::File::open(scratch.join(file))?.sync_all()?;
@@ -285,6 +309,7 @@ fn same_release(a: &Path, b: &Path) -> bool {
             (Some(a), Some(b)) => a == b,
             _ => false,
         })
+        && reboot_id(a) == reboot_id(b)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: sets the SELinux context of one file, or of a link itself rather than what it points at, as `chcon -h` would. Only Linux has one, and the binaries that call it run only from the runner image.
@@ -350,6 +375,10 @@ mod tests {
         std::fs::write(dir.join(RUNTIME_ID), runtime).unwrap();
     }
 
+    fn boots(dir: &Path, key: &str) {
+        std::fs::write(dir.join(REBOOT_ID), key).unwrap();
+    }
+
     fn runtime(dir: &Path, agent: &str) {
         std::fs::create_dir_all(dir.join("agent-rootfs/etc")).unwrap();
         std::fs::write(dir.join("agent-rootfs/etc/agent"), agent).unwrap();
@@ -368,6 +397,7 @@ mod tests {
     fn stage_as(r: &Releases, name: &str, runner: &str, id: &str) {
         let image = r.staged.parent().unwrap().join(format!("image-{runner}"));
         release(&image, runner, id);
+        boots(&image, "runner-1");
         let tree = r
             .staged
             .parent()
@@ -412,6 +442,42 @@ mod tests {
                 runtime: Some(runtime_dir(&r.staged, "runtime-b")),
             }
         );
+    }
+
+    // TEST_SCENARIO: a release that declares another reboot key than the pod's own is held, since the machines booted by the older key cannot take what it changes in place; one declaring the same key, or declaring none because it was built before keys, is handed off as any release was.
+    #[test]
+    fn a_release_that_reboots_machines_is_held() {
+        let dir = TempDir::new("release-reboot");
+        let r = releases(dir.path());
+        release(&r.builtin, "one", "runtime-a");
+        assert!(matches!(
+            r.choose("runner:1"),
+            Choice::Run { ref release, .. } if release == "runner:1"
+        ));
+        stage_as(&r, "runner:2", "two", "runtime-a");
+        assert!(matches!(
+            r.choose("runner:2"),
+            Choice::Run { ref release, .. } if release == "runner:2"
+        ));
+        boots(&r.builtin, "runner-1");
+        boots(&r.staged.join(key("runner:2")), "runner-2");
+        assert!(matches!(
+            r.choose("runner:2"),
+            Choice::Held {
+                held: HELD_REBOOT,
+                ..
+            }
+        ));
+        boots(&r.staged.join(key("runner:2")), "runner-1");
+        assert!(matches!(
+            r.choose("runner:2"),
+            Choice::Run { ref release, .. } if release == "runner:2"
+        ));
+        stage_as(&r, "runner:3", "three", "runtime-b");
+        assert!(matches!(
+            r.choose("runner:3"),
+            Choice::Run { ref release, .. } if release == "runner:3"
+        ));
     }
 
     // TEST_SCENARIO: a staged release runs its own binaries against its own runtime, so every argument naming one of the pod's own binaries or its smolvm is pointed at the release's copy, and nothing else changes.

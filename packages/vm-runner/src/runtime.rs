@@ -53,6 +53,15 @@ pub trait Runtime: Send + Sync {
     fn nests(&self) -> bool {
         false
     }
+    // UNIT_BOUNDARY_DESCRIPTION: the process of the machine's running VMM, or nothing when no VMM runs or the runtime keeps none. The runner reaps that process itself, so it learns the signal that ended it — a seccomp filter's kill or the kernel's — where smolvm's own sweep over its children discards the status.
+    fn vmm_pid(&self, _id: &str) -> Option<i32> {
+        None
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the pid the machine's own record names, whether or not that process is still the one the record meant: a VMM the loader reaped is gone, so its start time cannot be checked any more, and the pid is the only link to the exit the loader recorded. Read only to match such a record, never to reap.
+    fn vmm_record_pid(&self, _id: &str) -> Option<i32> {
+        None
+    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: everything a create needs beyond the spec. `image` is what the machine boots: an unpacked cache tree or a staged tree, both absolute paths, or a registry reference when neither exists. `share` is the host directory the guest mounts read-only at the share path, and `host_port` the loopback port the guest's agent port is published on.
@@ -403,6 +412,26 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what one read of a child's exit status says. The read happens once and the caller keeps the answer: a second read gets ECHILD, and the status is gone with it, which is why the reaper collects before it decides anything. A VMM is a child of the process that spawned it, so a machine handed over to a new runner release reads as `Gone` here — the loader reaps those and records the signal for the runner that adopted them.
+pub enum Ended {
+    Running,
+    Signalled(i32),
+    Exited,
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what waitpid(2) says of a pid: `Running` covers both a live process and one this process never was the parent of, which the caller tells apart by the record the loader leaves.
+pub fn ended(pid: i32) -> Ended {
+    let mut status = 0;
+    // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
+    if unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) } != pid {
+        return Ended::Running;
+    }
+    match libc::WIFSIGNALED(status) {
+        true => Ended::Signalled(libc::WTERMSIG(status)),
+        false => Ended::Exited,
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: where ext4 keeps its magic number: the superblock starts 1024 bytes into the disk, and its magic, 0xEF53 little-endian, is 56 bytes into the superblock.
 const EXT4_MAGIC_OFFSET: u64 = 1024 + 56;
 // UNIT_BOUNDARY_DESCRIPTION: where btrfs keeps its magic: the primary superblock starts 64 KiB into the disk, and its magic, `_BHRfS_M`, is 64 bytes into the superblock.
@@ -520,16 +549,17 @@ mod tests {
             .unwrap();
         let pid = i32::try_from(vmm.id()).unwrap();
         let proc_root = Path::new("/proc");
-        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so the first scan can miss a process that has just started.
+        // UNIT_BOUNDARY_DESCRIPTION: spawn returns once the exec has begun, and Linux shows the new command line only a moment later, so a scan can miss a process that has just started; a Mac's own process-table read can also answer with nothing for a moment under load. So a scan that finds no process is repeated until the deadline, while one that names a process must name the stand-in alone at once: `kill_orphans` signals every pid a scan names.
         let deadline = Instant::now() + Duration::from_secs(5);
-        while orphan_pids(proc_root, &vm_dir)
-            .unwrap_or_default()
-            .is_empty()
-            && Instant::now() < deadline
-        {
+        let mut found = Vec::new();
+        while Instant::now() < deadline {
+            found = orphan_pids(proc_root, &vm_dir).unwrap_or_default();
+            if !found.is_empty() {
+                break;
+            }
             std::thread::sleep(Duration::from_millis(1));
         }
-        assert_eq!(orphan_pids(proc_root, &vm_dir).unwrap(), vec![pid]);
+        assert_eq!(found, vec![pid], "the scan names the stand-in alone");
         assert!(orphan_pids(proc_root, &dir.path().join("m"))
             .unwrap()
             .is_empty());
@@ -894,5 +924,50 @@ mod tests {
         let dir = proc.path().join(pid.to_string());
         fs::create_dir_all(&dir).unwrap();
         fs::write(dir.join("cmdline"), cmdline).unwrap();
+    }
+
+    // TEST_SCENARIO: a VMM killed by a signal is told apart from one that exited on its own, and from one this process cannot read at all — a machine another runner release booted, whose VMM is nobody's child here. Only the kill carries a signal, which is what the machine's status reports.
+    #[test]
+    fn a_vmm_the_kernel_killed_reports_its_signal() {
+        let mut child = std::process::Command::new("sleep")
+            .arg("60")
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        assert!(matches!(ended(pid), Ended::Running), "a running VMM exited");
+        // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+        unsafe { libc::kill(pid, libc::SIGSYS) };
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let signal = loop {
+            if let Ended::Signalled(signal) = ended(pid) {
+                break signal;
+            }
+            assert!(Instant::now() < deadline, "the VMM never exited");
+            std::thread::sleep(Duration::from_millis(5));
+        };
+        assert_eq!(signal, libc::SIGSYS);
+        assert!(
+            matches!(ended(pid), Ended::Running),
+            "a VMM whose status was already read is not read again"
+        );
+        let _ = child.wait();
+    }
+
+    // TEST_SCENARIO: a VMM that exits on its own is told apart from one a signal ended, so a machine that stopped itself is not reported as a kill.
+    #[test]
+    fn a_vmm_that_exits_on_its_own_is_not_a_kill() {
+        let mut child = std::process::Command::new("true").spawn().unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        let deadline = Instant::now() + Duration::from_secs(5);
+        loop {
+            match ended(pid) {
+                Ended::Exited => break,
+                _ => {
+                    assert!(Instant::now() < deadline, "the VMM never exited");
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+            }
+        }
+        let _ = child.wait();
     }
 }

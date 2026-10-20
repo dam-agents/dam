@@ -17,14 +17,15 @@ Icons come from `@carbon/icons-react`.
 | Attach a file in the composer                               | `Attachment`                                   |
 | New session, discuss with agent                             | `AddComment`                                   |
 | Generic add or new                                          | `Add`                                          |
-| Create agent                                                | `AddAlt`                                       |
+| Create agent                                                | `Add`                                          |
 | Create agent from a starter kit                             | `DataEnrichmentAdd`                            |
-| Starter kits destination                                    | `Box`                                          |
+| Starter kits destination, a starter kit                     | `Gift`                                         |
 | External link, open in new tab                              | `Launch` (only for a link that leaves the app) |
 | Back                                                        | `ArrowLeft`                                    |
 | Restart agent                                               | `Restart`                                      |
 | Retry, update, reload                                       | `Renew`                                        |
-| Files destination                                           | `Folders`                                      |
+| Files destination                                           | `Folder`                                       |
+| Artifacts destination, an artifact (`ArtifactIcon`)         | `Folders`                                      |
 | More actions                                                | `OverflowMenuVertical` (use `RowActionsMenu`)  |
 | "About X" hint                                              | `Information`                                  |
 | How-to explainer popover                                    | `Help`                                         |

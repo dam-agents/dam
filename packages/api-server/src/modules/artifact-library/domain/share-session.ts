@@ -1,4 +1,15 @@
-export const SHARE_SESSION_COOKIE = "share_session";
+export interface ShareSessionCookie {
+  name: string;
+  secure: boolean;
+}
+
+export function shareSessionCookie(shareBaseUrl: string): ShareSessionCookie {
+  const secure = new URL(shareBaseUrl).protocol === "https:";
+  return {
+    name: secure ? "__Host-share_session" : "share_session",
+    secure,
+  };
+}
 
 export const SHARE_SESSION_TTL_MS = 12 * 60 * 60 * 1000;
 

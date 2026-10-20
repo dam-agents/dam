@@ -1,6 +1,6 @@
 # Getting started
 
-Last verified: 2026-10-16
+Last verified: 2026-10-19
 
 ## Overview
 
@@ -28,14 +28,18 @@ The Agent whose create is that first meeting does not count.
 
 ## In the browser
 
-The UI shows the checklist as the **Get started** side panel, a panel like any other on the right edge: its icon, a progress ring, sits in the icon bar above the approvals bell on every page and in an Agent's chat, and opens and closes the panel the way the other icons open theirs.
-The panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle and phone behavior: on a phone the ring sits in the top bar and the panel fills the screen under a back button.
+The UI shows the checklist as the **Get started** side panel, a panel like any other on the right edge: its icon, a progress ring, sits in the icon bar above the approvals bell on every page, and in an Agent's chat with the [new layout](home-feed.md#the-new-layout) on, and opens and closes the panel the way the other icons open theirs.
+The panel takes its room from the page, as every side panel does, so it never covers the page's buttons, and it shares their width, resize handle, close X and phone behavior.
+Every side panel's top bar ends with that X, behind a vertical border; it closes the panel.
+In an Agent's chat with the new layout off, the X shows only where it closes something: on Get started, Approvals and a docked delegation.
+On a phone the X is hidden, the ring sits in the top bar and the panel fills the screen under a back button.
 The panel opens only when the user asks for it.
 An unlock the user has not seen puts a count on the ring instead of opening the panel.
-Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab.
+Each row opens the place where the task is done; tasks on an Agent open the newest one, the chat tasks leave a starting line in its composer, and the artifact task opens the side panel's Artifacts tab, or in an Agent's chat with the new layout off, the Artifacts section beside the conversation.
 Every unlock is pushed to the owner's open tabs as a [live hint](platform-topology.md); the panel plays a short celebration at its top for each unlock the user has not seen, one at a time, while it is open, then records it as seen.
 
-The ring stays in the icon bar until the checklist is done; closing the panel only closes it.
+In an Agent's chat with the new layout off, the chat has no icon bar: the ring sits in the chat's top bar beside the bell and opens the panel in the slot beside the conversation.
+The ring stays in its bar until the checklist is done; closing the panel only closes it.
 A checklist dismissed through the API stays hidden until the next unlock, which brings the ring back, or until the user asks for the checklist from the avatar picker, which opens the panel.
 Once every character is unlocked and seen, the checklist is gone until the user resets their onboarding progress from the Experimental features tab.
 That reset deletes every unlock and reopens the checklist; characters already on Agents stay on them.

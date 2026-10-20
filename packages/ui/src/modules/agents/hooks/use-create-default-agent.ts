@@ -1,6 +1,5 @@
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { useVmRuntime } from "../../features/hooks/use-vm-runtime.js";
 import { useUnlockedAvatars } from "../../getting-started/hooks/use-unlocked-avatars.js";
 import {
   defaultHarnessId,
@@ -15,17 +14,13 @@ import { nextAgentName } from "../lib/sandbox-name.js";
 export function useCreateDefaultAgent() {
   const list = useAgents().data?.list;
   const templates = useTemplates().data;
-  const vmRuntime = useVmRuntime();
   const createAgent = useCreateAgent();
   const unlocked = useUnlockedAvatars();
   const selectAgent = useStore((s) => s.selectAgent);
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
   return {
     ready:
-      list !== undefined &&
-      templates !== undefined &&
-      vmRuntime.answered &&
-      !createAgent.isPending,
+      list !== undefined && templates !== undefined && !createAgent.isPending,
     create: async ({ navigate = true } = {}): Promise<
       AgentView | undefined
     > => {
@@ -37,7 +32,6 @@ export function useCreateDefaultAgent() {
           name,
           egressPreset: "trusted",
           ...(templateId ? { templateId } : {}),
-          ...(vmRuntime.vm ? { vm: true } : {}),
           avatar: defaultAvatar(name, unlocked, list),
         });
         if (navigate) {

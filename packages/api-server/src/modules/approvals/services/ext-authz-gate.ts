@@ -11,7 +11,7 @@ import { getLogger } from "../../../core/logger.js";
 import { formatError } from "../../../core/format-error.js";
 import { emit, EventType } from "../../../events.js";
 import { hasDotSegment } from "../domain/dot-segment.js";
-import { canonicalEgressHost } from "api-server-api";
+import { canonicalEgressHost, PLATFORM_REFUSAL_HEADER } from "api-server-api";
 import type { SpendCheck } from "../../spend/index.js";
 import type { SpendLimitQuestions } from "./spend-limit-questions.js";
 
@@ -25,7 +25,11 @@ export interface DeniedResponse {
 
 export type ExtAuthzDecision =
   | ExtAuthzVerdict
-  | { readonly verdict: "refuse"; readonly response: DeniedResponse };
+  | {
+      readonly verdict: "refuse";
+      readonly basis: "spend" | "rule";
+      readonly response: DeniedResponse;
+    };
 
 export const approvalChannelOf = (id: string) => `approval:${id}`;
 
@@ -54,6 +58,13 @@ export interface AgentIdentityResolver {
   ): Promise<{ ownerSub: string; agentId: string } | null>;
 }
 
+export interface MatchedEgressRule {
+  readonly host: string;
+  readonly port?: number;
+  readonly method: string;
+  readonly pathPattern: string;
+}
+
 export interface EgressRuleMatcher {
   match(
     agentId: string,
@@ -62,7 +73,14 @@ export interface EgressRuleMatcher {
     tls: boolean,
     method: string,
     path: string,
-  ): Promise<{ verdict: ExtAuthzVerdict } | null>;
+  ): Promise<{ verdict: ExtAuthzVerdict; rule: MatchedEgressRule } | null>;
+}
+
+export interface ProviderScopes {
+  covers(
+    agentId: string,
+    request: { host: string; port: number; tls: boolean; path: string },
+  ): Promise<boolean>;
 }
 
 export interface EgressAttendance {
@@ -75,6 +93,7 @@ interface CreateExtAuthzGateDeps {
   bus: RedisBus;
   identityResolver: AgentIdentityResolver;
   ruleMatcher: EgressRuleMatcher;
+  providerScopes: ProviderScopes;
   attendance: EgressAttendance;
   spend: Pick<SpendCheck, "checkCall">;
   questions: SpendLimitQuestions;
@@ -145,7 +164,11 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
               via,
             },
           });
-          return { verdict: "refuse", response: spend.response };
+          return {
+            verdict: "refuse",
+            basis: "spend",
+            response: spend.response,
+          };
         }
       }
 
@@ -186,6 +209,24 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
         method,
         path,
       );
+      if (
+        matched?.verdict !== "allow" &&
+        (await deps.providerScopes.covers(agentId, { host, port, tls, path }))
+      ) {
+        const overridden = matched?.verdict === "deny";
+        securityLog(overridden ? "warn" : "info", "egress.decision", {
+          category: "egress",
+          actor: identity.ownerSub,
+          actorKind: "agent",
+          surface: "ext-authz",
+          agentId: identity.agentId,
+          target: host,
+          decision: "allow",
+          ...(overridden ? { reason: "provider-over-deny-rule" } : {}),
+          detail: { method, path, basis: "provider", via },
+        });
+        return "allow";
+      }
       if (matched) {
         securityLog(
           matched.verdict === "deny" ? "warn" : "info",
@@ -201,7 +242,13 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
             detail: { method, path, basis: "rule", via },
           },
         );
-        return matched.verdict;
+        return matched.verdict === "deny"
+          ? {
+              verdict: "refuse",
+              basis: "rule",
+              response: ruleRefusal(host, matched.rule),
+            }
+          : matched.verdict;
       }
 
       const unattended =
@@ -305,6 +352,18 @@ export function createExtAuthzGate(deps: CreateExtAuthzGateDeps): ExtAuthzGate {
       });
       return verdict;
     },
+  };
+}
+
+function ruleRefusal(host: string, rule: MatchedEgressRule): DeniedResponse {
+  const ruleHost = rule.port ? `${rule.host}:${rule.port}` : rule.host;
+  return {
+    status: 403,
+    headers: {
+      "content-type": "text/plain",
+      [PLATFORM_REFUSAL_HEADER]: "egress",
+    },
+    body: `Blocked by network rule "deny ${ruleHost}, method ${rule.method}, path ${rule.pathPattern}": the egress gateway refused this request to ${host}, not the upstream. The agent's owner can change the rule in the agent's network settings.`,
   };
 }
 

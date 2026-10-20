@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+#MISE description="The host runner links and loads the smolvm release's libkrun, never a system copy"
+# Runs on the binary //packages/vm-runner:host built; elsewhere there is none to
+# check. A binary that names a libkrun found on the build machine starts only
+# while that copy is where it was: that is the runner dead at start with
+# "dyld: Library not loaded" after the copy was removed.
+set -euo pipefail
+cd "$(dirname "$0")/../../.."
+bin=dist/host/vm-runner
+[ "$(uname -s)" = Darwin ] && [ -x "$bin" ] || exit 0
+tag="$(sed -n 's/^tag=//p' smolvm.pin)"
+loads="$(otool -L "$bin")"
+# @rpath, or no reference at all: rustc drops a linked library that no symbol
+# needs, and a clean Mac builds exactly that. What may not appear is a bare
+# name (libkrun.1.dylib) or an absolute one, which dyld resolves through the
+# system's own search paths.
+for load in $(awk 'NR > 1 && $1 ~ /libkrun/ {print $1}' <<<"$loads"); do
+  [ "$load" = "@rpath/libkrun.dylib" ] ||
+    { echo "$bin names libkrun as $load, which a system copy can satisfy" >&2; exit 1; }
+done
+rpaths="$(otool -l "$bin" | awk '$1 == "cmd" && $2 == "LC_RPATH" {getline; getline; print $2}')"
+grep -qxF "@executable_path/smolvm-$tag/lib" <<<"$rpaths" ||
+  { echo "$bin carries no loader path into the staged smolvm release; its own are:" >&2; echo "$rpaths" >&2; exit 1; }
+! grep -qE '^/(opt/homebrew|usr/local)' <<<"$rpaths" ||
+  { echo "$bin searches a system directory for its libraries:" >&2; echo "$rpaths" >&2; exit 1; }
+# And it starts: a reference dyld cannot satisfy is the crash itself.
+"$bin" --help >/dev/null

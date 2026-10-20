@@ -114,7 +114,7 @@ func acceptTransparentTLS(listener ev, p bootstrapParams) {
 	}}, chains...)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the ports a machine reaches its gateway on once every name resolves to the gateway. TLS and plain HTTP both go to the proxy listener itself: it hands a TLS handshake to the internal listener, and routes an ordinary HTTP request by its Host through the same egress check as an absolute-form one.
+// UNIT_BOUNDARY_DESCRIPTION: the ports a machine reaches its gateway on once every name resolves to the gateway. TLS and plain HTTP both go to the proxy listener itself: it hands a TLS handshake to the internal listener, and routes an ordinary HTTP request by its Host through the same egress check as an absolute-form one. The one plain-HTTP route without that check is the reserved OTLP path, which forwards only to the platform's collector, whatever Host the request names.
 func machineGatewayServicePorts(cfg *config.Config) []corev1.ServicePort {
 	return []corev1.ServicePort{
 		{Name: "http", Port: 80, TargetPort: intstr.FromInt32(portInt32(cfg.EnvoyPort)), Protocol: corev1.ProtocolTCP},

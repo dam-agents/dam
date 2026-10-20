@@ -269,7 +269,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
       virtualizationEnabled: config.virtualizationEnabled,
-      prefersVm: async () => (await features.flags())["vm-sandboxes"],
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(
           agentId,
@@ -425,7 +424,6 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,
-      vmForced: agentsInstallSettings(config).vmForced,
       featureModes: config.featureModes,
       telemetryBackend: telemetryReader !== null,
     };
