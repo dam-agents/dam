@@ -254,6 +254,7 @@ import {
   composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
+import { composeEnvironments } from "./modules/environments/index.js";
 import {
   composeApprovalsSystem,
   composeSpendLimitQuestions,
@@ -1598,7 +1599,19 @@ export async function bootstrap() {
   const artifactLibraryForSystem = (owner: string) =>
     artifactLibraryFor(owner, "system");
 
+  const environments = composeEnvironments({
+    db,
+    agentsFor: (owner) => harnessAgentsServiceFor(owner),
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    config: {
+      urlTemplate: config.environmentsUrl,
+      maxPerAgent: config.environmentsMaxPerAgent,
+      expiryMaxDays: config.environmentExpiryMaxDays,
+    },
+  });
+
   const agentCleanupSources: AgentCleanupSource[] = [
+    environments.cleanupSource,
     {
       name: "egress-rules",
       listAgentIds: () => listEgressRuleAgentIds(db),
@@ -1904,6 +1917,9 @@ export async function bootstrap() {
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
+  await periodicJobs.register("environment-expiry", 5 * 60_000, () =>
+    environments.sweepExpired(),
+  );
 
   const runtimeMigrationSwitch = createRuntimeMigrationSwitch({
     listAgents: () => agentsRepo.list(),
@@ -1994,6 +2010,7 @@ export async function bootstrap() {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    environmentsFor: environments.environmentsFor,
     secretStore,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
@@ -2084,6 +2101,7 @@ export async function bootstrap() {
     harnessCatalog,
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
+    environmentsFor: environments.environmentsFor,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,

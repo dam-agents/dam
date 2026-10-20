@@ -72,6 +72,12 @@ const FEATURE_ROWS: FeatureRow[] = [
     description:
       "A sidebar of agent avatars beside your conversations, with pinned sessions, a dashboard Home, and one side panel on the right with an icon bar for files, changes, artifacts and the browser. Turn it off to return to the current layout.",
   },
+  {
+    id: "environments",
+    label: "Environments",
+    description:
+      "Let your vm agents run sandboxes of their own for other people and agents to open, such as one per pull request, which sleep when unused and expire.",
+  },
 ];
 
 function FeatureRowCard({

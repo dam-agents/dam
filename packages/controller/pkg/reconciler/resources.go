@@ -127,7 +127,10 @@ func agentPlatformEnv(name string, cfg *config.Config, agentHome, proxyAddr stri
 	}
 }
 
-const requireConnectionAddressEnv = "PLATFORM_REQUIRE_CONNECTION_ADDRESS"
+const (
+	requireConnectionAddressEnv = "PLATFORM_REQUIRE_CONNECTION_ADDRESS"
+	environmentOfEnv            = "PLATFORM_ENVIRONMENT_OF"
+)
 
 func requireConnectionAddressValue(spec *apiv1.AgentSpec) string {
 	if spec.RequireConnectionAddress {

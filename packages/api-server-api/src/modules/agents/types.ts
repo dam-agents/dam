@@ -180,6 +180,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   id?: string;
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
+  environmentOf?: string;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 

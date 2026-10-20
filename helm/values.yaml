@@ -196,6 +196,18 @@ istio:
 # memory limit against `reserveMiB`, egress that reaches the cluster's own
 # ranges — logs what it finds, and names any problem on a vm agent whose
 # runner is not ready.
+# -- Environments: sandboxes a vm agent creates for others to open, one per
+# pull request for example. They need `virtualization.enabled`.
+environments:
+  # -- Domain under which each Environment endpoint gets an address of its
+  # own, `<endpoint>-<environment>.<domain>`: one wildcard DNS name and one
+  # wildcard certificate cover them all. Empty: Environments get no addresses.
+  domain: ""
+  # -- Most Environments one agent may hold at once.
+  maxPerAgent: 5
+  # -- Furthest ahead an Environment's expiry may be set, in days.
+  expiryMaxDays: 30
+
 virtualization:
   enabled: false
   # The shape of every runner pod the controller creates (one per owner).

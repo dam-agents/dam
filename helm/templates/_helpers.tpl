@@ -110,6 +110,18 @@ Host:port string for URLs (includes port if non-empty)
 {{- end }}
 {{- end }}
 
+{{- /* An Environment endpoint's address, with {host} for its
+       `<endpoint>-<environment>` label; empty without environments.domain. */ -}}
+{{- define "platform.url.environments" -}}
+{{- with .Values.environments.domain }}
+{{- if $.Values.port }}
+{{- printf "%s://{host}.%s:%v" $.Values.scheme . $.Values.port }}
+{{- else }}
+{{- printf "%s://{host}.%s" $.Values.scheme . }}
+{{- end }}
+{{- end }}
+{{- end }}
+
 {{- /* Path-based ingress rule block reused per host. `/api` goes to the
        api-server, everything else to the UI. Order matters: more-specific
        Prefix first. Pass `dict "uiSvc" $uiSvc "apiSvc" $apiSvc`. */ -}}

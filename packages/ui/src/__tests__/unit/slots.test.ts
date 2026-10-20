@@ -52,6 +52,7 @@ const agent = (
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  environmentOf: null,
   vm: false,
   runtimeMigration: null,
 });
