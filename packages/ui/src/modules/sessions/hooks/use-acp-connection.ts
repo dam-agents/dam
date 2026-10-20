@@ -208,10 +208,17 @@ export function useAcpConnection(
       const continuesInvocation =
         useStore.getState().drafts[draftKey(agentId, null)]
           ?.continuesInvocation;
-      const continuedFrom =
+      const read =
         continuesInvocation === undefined
           ? null
           : await readContinuedFrom(agentId, continuesInvocation);
+      if (read?.kind === "unavailable") {
+        useStore.getState().dropDraftContinuation(agentId);
+        throw new Error(
+          `${read.reason} Send again to start the chat without it.`,
+        );
+      }
+      const continuedFrom = read?.kind === "ready" ? read.copy : null;
 
       let listening = true;
       let settled = false;
@@ -250,6 +257,8 @@ export function useAcpConnection(
         try {
           ws.close();
         } catch {}
+        if (continuedFrom && isInvalidParams(err))
+          useStore.getState().dropDraftContinuation(agentId);
         throw err;
       }
 
@@ -629,4 +638,13 @@ export function useAcpConnection(
     connectionRef,
     reset,
   };
+}
+
+function isInvalidParams(err: unknown): boolean {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "code" in err &&
+    err.code === -32602
+  );
 }

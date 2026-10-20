@@ -86,3 +86,27 @@ export function ContinuedFromPrelude({ copy, avatarAgent }: Props) {
     </div>
   );
 }
+
+export function ContinuedFromUnavailable({
+  reason,
+  onDrop,
+}: {
+  reason: string;
+  onDrop: () => void;
+}) {
+  return (
+    <div
+      data-testid="continued-from-unavailable"
+      className="flex flex-col items-center gap-2 py-6 text-center text-sm text-muted-foreground"
+    >
+      <p>{reason}</p>
+      <button
+        type="button"
+        onClick={onDrop}
+        className="text-xs text-foreground underline-offset-4 hover:underline"
+      >
+        Start the chat without it
+      </button>
+    </div>
+  );
+}

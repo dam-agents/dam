@@ -132,7 +132,10 @@ import { ChatInputArea } from "../components/chat-input-area.js";
 import { ChatMessage } from "../components/chat-message.js";
 import { ClassicChatIdentity } from "../components/classic-chat-identity.js";
 import { ClassicChatLayout } from "../components/classic-chat-layout.js";
-import { ContinuedFromPrelude } from "../components/continued-from-prelude.js";
+import {
+  ContinuedFromPrelude,
+  ContinuedFromUnavailable,
+} from "../components/continued-from-prelude.js";
 import { ModelIndicator } from "../components/model-indicator.js";
 import { NewSessionLauncher } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
@@ -383,9 +386,16 @@ export function ChatView() {
       ? s.drafts[draftKey(selectedAgent, null)]?.continuesInvocation
       : undefined,
   );
-  const draftCopy = useContinuedFrom(selectedAgent, continuesInvocation);
+  const draftRead = useContinuedFrom(selectedAgent, continuesInvocation);
+  const dropDraftContinuation = useStore((s) => s.dropDraftContinuation);
   const sessionCopy = useStore((s) => s.continuedFrom);
-  const copy = sessionId ? sessionCopy : draftCopy;
+  const copy = sessionId
+    ? sessionCopy
+    : draftRead?.kind === "ready"
+      ? draftRead.copy
+      : null;
+  const copyUnavailable =
+    !sessionId && draftRead?.kind === "unavailable" ? draftRead.reason : null;
   const copyInView = copy !== null && shown[0]?.loadOlderBefore === undefined;
   const chatIdle =
     !sessionId && messages.length === 0 && continuesInvocation === undefined;
@@ -937,6 +947,12 @@ export function ChatView() {
                 <ContinuedFromPrelude
                   copy={copy}
                   avatarAgent={agentView ?? undefined}
+                />
+              )}
+              {copyUnavailable !== null && selectedAgent && (
+                <ContinuedFromUnavailable
+                  reason={copyUnavailable}
+                  onDrop={() => dropDraftContinuation(selectedAgent)}
                 />
               )}
               <A2uiActionProvider value={sendFormPrompt}>

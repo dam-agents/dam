@@ -1,5 +1,9 @@
 import { skipToken, useQuery, useQueryClient } from "@tanstack/react-query";
-import type { DelegationNode, PlatformContinuedFrom } from "api-server-api";
+import {
+  CONTINUED_FROM_TEXT_MAX,
+  type DelegationNode,
+  type PlatformContinuedFrom,
+} from "api-server-api";
 
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
@@ -109,12 +113,34 @@ export function useDelegationTranscript(
   });
 }
 
+export type ContinuedFromRead =
+  | { kind: "ready"; copy: PlatformContinuedFrom }
+  | { kind: "loading" }
+  | { kind: "unavailable"; reason: string };
+
+const MISSING = "The sub-agent is no longer recorded.";
+const UNREADABLE = "The sub-agent's prompt and result could not be loaded.";
+const TOO_LARGE =
+  "The sub-agent's prompt or result is too large to continue from.";
+
+function readOf(
+  nodes: readonly DelegationNode[],
+  invocationId: string,
+): ContinuedFromRead {
+  const node = nodes.find((n) => n.id === invocationId);
+  if (!node) return { kind: "unavailable", reason: MISSING };
+  const copy = continuedFromOf(node);
+  return copy.prompt.length > CONTINUED_FROM_TEXT_MAX ||
+    copy.result.length > CONTINUED_FROM_TEXT_MAX
+    ? { kind: "unavailable", reason: TOO_LARGE }
+    : { kind: "ready", copy };
+}
+
 export function useContinuedFrom(
   driverAgentId: string | null,
   invocationId: string | undefined,
-): PlatformContinuedFrom | null {
-  const ids = invocationId === undefined ? [] : [invocationId];
-  const { data } = useQuery({
+): ContinuedFromRead | null {
+  const { data, isError } = useQuery({
     ...trpc.invocations.tree.queryOptions(
       driverAgentId && invocationId
         ? { driverAgentId, ids: [invocationId] }
@@ -123,14 +149,17 @@ export function useContinuedFrom(
     staleTime: Infinity,
     retry: 2,
   });
-  const node = data?.nodes.find((n) => ids.includes(n.id));
-  return node ? continuedFromOf(node) : null;
+  if (invocationId === undefined) return null;
+  if (data) return readOf(data.nodes, invocationId);
+  return isError
+    ? { kind: "unavailable", reason: UNREADABLE }
+    : { kind: "loading" };
 }
 
 export async function readContinuedFrom(
   driverAgentId: string,
   invocationId: string,
-): Promise<PlatformContinuedFrom> {
+): Promise<ContinuedFromRead> {
   const tree = await queryClient.fetchQuery({
     ...trpc.invocations.tree.queryOptions({
       driverAgentId,
@@ -138,7 +167,5 @@ export async function readContinuedFrom(
     }),
     staleTime: Infinity,
   });
-  const node = tree.nodes.find((n) => n.id === invocationId);
-  if (!node) throw new Error("The sub-agent is no longer recorded.");
-  return continuedFromOf(node);
+  return readOf(tree.nodes, invocationId);
 }
