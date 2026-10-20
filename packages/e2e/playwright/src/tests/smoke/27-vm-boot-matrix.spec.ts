@@ -180,7 +180,7 @@ function killReport(id: string, tag: string): string {
 
 const SIGKILL = 9;
 
-// UNIT_BOUNDARY_DESCRIPTION: waits for the runner to report one more of this machine's VMMs dead by a signal than it had reported before the kill, and asserts the signal is the one the watcher sent, so a kill that missed the boot fails the case instead of showing up as an agent that came back. A start call cannot say it: it returns once the VMM is up, before the guest's boot reaches the step the watcher waits for.
+// UNIT_BOUNDARY_DESCRIPTION: waits for the runner to report one more of this machine's VMMs dead by a signal than it had reported before the kill, and asserts the signal is the one the watcher sent, so a kill that missed the boot fails the case instead of showing up as an agent that came back. A boot's steps come after the start call returns on a fast machine and before it on a slow one, so the report is the start's failure or the reaper's line, whichever the death fell on.
 async function expectKillReported(
   id: string,
   before: number,

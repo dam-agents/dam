@@ -381,7 +381,7 @@ export function onRunnerHost(
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the signals that killed this machine's VMMs, one per death the agent's own runner reported, in the order it reported them: the runner's reaper is what notices a VMM that died and says in its log which machine it held and the signal that ended it. A start call cannot say it, because it returns once the VMM is up, before the guest's boot reaches the steps a host waits for.
+// UNIT_BOUNDARY_DESCRIPTION: the signals that killed this machine's VMMs, one per death the agent's own runner reported, in the order it reported them, as the number the kernel gives a signal: 9 is SIGKILL. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns is the reaper's, which says the signal beside the machine. A kill lands on either side of that moment depending on how fast the machine boots, so both reports are read.
 export function runnerKilledVmms(agentId: string): number[] {
   const logs = kubectl(
     "-n",
@@ -396,8 +396,14 @@ export function runnerKilledVmms(agentId: string): number[] {
       const { fields } = JSON.parse(line) as {
         fields?: Record<string, unknown>;
       };
-      return fields?.machine === agentId &&
-        typeof fields.signal === "number" &&
+      if (fields?.machine !== agentId) return [];
+      if (
+        fields.message === "machine action failed" &&
+        fields.op === "starting" &&
+        typeof fields.error === "string"
+      )
+        return fields.error.includes("killed by SIGKILL") ? [9] : [];
+      return typeof fields.signal === "number" &&
         typeof fields.message === "string" &&
         fields.message.startsWith("vm runner: a machine's VMM was killed")
         ? [fields.signal]
