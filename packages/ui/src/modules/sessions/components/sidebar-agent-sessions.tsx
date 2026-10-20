@@ -4,7 +4,7 @@ import {
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 
 import { labelVariants } from "@/components/ui/label";
 import { Spinner } from "@/components/ui/spinner";
@@ -13,6 +13,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
+import { useAgentRunState } from "../../agents/api/queries.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
 import {
   useFeatures,
@@ -90,7 +91,9 @@ export function SidebarAgentSessions({
 
   return (
     <>
-      {!shown ? null : open || expanded ? (
+      {!shown ? null : open ||
+        expanded ||
+        (preview.length === 0 && !previewComplete) ? (
         <AgentSessionList
           agentId={agentId}
           sessionActions={sessionActions}
@@ -139,12 +142,7 @@ function SessionPreview({
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  if (sessions.length === 0 && complete)
-    return (
-      <p className="py-1.5 pl-9 text-xs text-muted-foreground">
-        No sessions yet.
-      </p>
-    );
+  if (sessions.length === 0) return <ListNote>No sessions yet.</ListNote>;
   const visible = sidebarSessionWindow(sessions, false, () => false);
   const { more } = sessionListControls({
     total: sessions.length,
@@ -201,6 +199,11 @@ function AgentSessionList({
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
+  const runState = useAgentRunState(agentId);
+  const asleep =
+    list.loading &&
+    list.recordRead &&
+    (runState === "hibernated" || runState === "hibernating");
   const openSession = useOpenSession();
   const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
   const telemetryBackend =
@@ -250,13 +253,17 @@ function AgentSessionList({
       className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
-      aria-busy={list.provisional || list.loading}
+      aria-busy={list.provisional || (list.loading && !asleep)}
     >
-      {list.loading && <SessionListSkeleton />}
+      {asleep ? (
+        <ListNote testId="sidebar-agent-asleep">
+          Its sessions show when it wakes.
+        </ListNote>
+      ) : (
+        list.loading && <SessionListSkeleton />
+      )}
       {!list.loading && rows.length === 0 && !hasNextPage && (
-        <p className="py-1.5 pl-9 text-xs text-muted-foreground">
-          No sessions yet.
-        </p>
+        <ListNote>No sessions yet.</ListNote>
       )}
       {visible.map(({ session: s, state }) => (
         <div key={s.sessionId} className={TREE_GUIDE}>
@@ -309,6 +316,23 @@ function AgentSessionList({
         />
       )}
     </div>
+  );
+}
+
+function ListNote({
+  testId,
+  children,
+}: {
+  testId?: string;
+  children: ReactNode;
+}) {
+  return (
+    <p
+      className="py-1.5 pl-9 text-xs text-muted-foreground"
+      data-testid={testId}
+    >
+      {children}
+    </p>
   );
 }
 
