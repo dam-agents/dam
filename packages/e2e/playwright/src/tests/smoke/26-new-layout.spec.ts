@@ -111,7 +111,7 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   await expect(asleep.getByTestId("session-row")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent.
+// TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent. Done from the keyboard, focus follows the Session to its new row, or lands on its Agent's row when that Agent is closed.
 test("pins a Session above every Agent", async ({ page }) => {
   test.setTimeout(240_000);
   await setNewLayout(true);
@@ -146,6 +146,22 @@ test("pins a Session above every Agent", async ({ page }) => {
   await inPinned.getByTestId("session-pin-button").click();
   await expect(pinnedSection).toHaveCount(0);
   await expect(inAgent).toBeVisible();
+
+  await inAgent.getByTestId("session-pin-button").focus();
+  await page.keyboard.press("Enter");
+  await expect(inPinned.getByTestId("session-pin-button")).toBeFocused();
+  await page.keyboard.press("Enter");
+  await expect(inAgent.getByTestId("session-pin-button")).toBeFocused();
+
+  await page.keyboard.press("Enter");
+  await expect(inPinned.getByTestId("session-pin-button")).toBeFocused();
+  const agentRow = node.getByTestId("sidebar-agent-row");
+  await agentRow.click();
+  await expect(agentRow).toHaveAttribute("aria-expanded", "false");
+  await inPinned.getByTestId("session-pin-button").focus();
+  await page.keyboard.press("Enter");
+  await expect(pinnedSection).toHaveCount(0);
+  await expect(agentRow).toBeFocused();
 });
 
 // TEST_SCENARIO: with the chat Session the pin test made pinned again, the tree's Agents header carries the one session filter. Leaving Chat out of its types hides the Session from the Pinned section and from its Agent's list and marks the control filtered; putting Chat back returns it to the Pinned section. Pins live in this browser's storage, so the delete runs in the same page: deleting the Session from its Pinned row removes it from the tree and drops its pin.

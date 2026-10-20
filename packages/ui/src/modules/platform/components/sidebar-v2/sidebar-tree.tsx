@@ -7,7 +7,14 @@ import {
   Tools,
   TrashCan,
 } from "@carbon/icons-react";
-import { type ReactNode, useEffect, useMemo, useState } from "react";
+import {
+  type ReactNode,
+  useEffect,
+  useId,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 
 import {
   DropdownMenu,
@@ -21,6 +28,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
+import { queryClient } from "../../../../query-client.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView } from "../../../../types.js";
 import { useDeleteAgent } from "../../../agents/api/mutations.js";
@@ -44,28 +52,37 @@ import {
   useActivitySessions,
 } from "../../../home/hooks/use-activity-sessions.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
+import { useSessionBackgroundWork } from "../../../sessions/api/background-work.js";
+import { acpSessionsKeys } from "../../../sessions/api/keys.js";
 import { provisionalSessionView } from "../../../sessions/api/queries.js";
+import { backgroundWorkLabel } from "../../../sessions/components/background-work-indicator.js";
 import { RenameSessionDialog } from "../../../sessions/components/rename-session-dialog.js";
 import { SessionRow } from "../../../sessions/components/session-row.js";
 import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import {
-  togglePinnedSession,
+  draftKey,
+  keysWithDraftContent,
+} from "../../../sessions/lib/draft-key.js";
+import {
   unpinSession,
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
 import {
   activityTone,
+  agentsWithUnlistedPins,
   awaitsApproval,
+  changedAgents,
+  isExpanded,
+  recordSignatures,
   sessionContext,
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
-import { ActivityDot } from "./activity-dot.js";
+import { ActivityDot, AgentCue } from "./activity-dot.js";
 import { AddRow, FOCUS_RING } from "./add-row.js";
-import { AgentSessionList } from "./agent-session-list.js";
-
-const ROW = "min-w-0 rounded-lg border-b-0 px-2 py-2";
+import { AgentPinnedRows, AgentSessionList } from "./agent-session-list.js";
+import { togglePinKeepingFocus, TREE_ROW_CLASS } from "./tree-session-row.js";
 const REVEAL =
   "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
 
@@ -73,7 +90,9 @@ const REVEAL =
  * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar as one tree: the pinned
  * Sessions of every Agent in a Pinned section at the top, then every Agent,
  * each opening to its own Sessions. The Agent that is open in the page opens
- * in the tree too; any other Agent opens and closes from its row.
+ * in the tree too until its row closes it; any other Agent opens and closes
+ * from its row. A change in the attention record refreshes the changed
+ * Agents' own lists, so an open list stays live without its chat.
  */
 export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const { agents, openAgentId, sessionOpen, unreadAgentIds } =
@@ -83,13 +102,22 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const filters = useStore((s) => s.sidebarActivityFilters);
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const allAgents = useAgentsList();
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set());
+  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(
+    new Map(),
+  );
+  const signatures = useMemo(
+    () => recordSignatures(activity.items),
+    [activity.items],
+  );
+  const lastSignatures = useRef(signatures);
   useEffect(() => {
-    if (openAgentId)
-      setExpanded((prev) =>
-        prev.has(openAgentId) ? prev : toggleExpanded(prev, openAgentId),
-      );
-  }, [openAgentId]);
+    for (const id of changedAgents(lastSignatures.current, signatures))
+      void queryClient.invalidateQueries({
+        queryKey: acpSessionsKeys.pages(id),
+      });
+    lastSignatures.current = signatures;
+  }, [signatures]);
+  const approvals = useApprovalsForOwner().data;
 
   const pinned = useMemo(
     () =>
@@ -103,7 +131,15 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
     [pinned],
   );
   const conversationOf = useActivityConversations(pinnedSessions, allAgents);
-  const shownAbove = new Set(pinned.map((item) => item.id));
+  const inFeed = useMemo(
+    () => new Set(activity.items.map((item) => item.id)),
+    [activity.items],
+  );
+  const pinAgents = agentsWithUnlistedPins(
+    pins,
+    inFeed,
+    agents.map((agent) => agent.id),
+  ).flatMap((id) => agents.filter((agent) => agent.id === id));
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
   const defaultAgent = useCreateDefaultAgent();
@@ -114,8 +150,11 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
         className="min-h-0 min-w-0 flex-1 overflow-x-hidden overflow-y-auto px-2 pt-2 pb-3"
         data-testid="sidebar-tree"
       >
-        {pinned.length > 0 && (
-          <section aria-label="Pinned" className="mb-2">
+        {(pinned.length > 0 || pinAgents.length > 0) && (
+          <section
+            aria-label="Pinned"
+            className="mb-2 hidden has-[[data-testid=session-row]]:block"
+          >
             <ListLabel>Pinned</ListLabel>
             <div className="flex flex-col gap-px">
               {pinned.map((item) => (
@@ -123,6 +162,15 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   key={item.id}
                   item={item}
                   conversation={conversationOf(item.session)}
+                  onNavigate={onNavigate}
+                />
+              ))}
+              {pinAgents.map((agent) => (
+                <AgentPinnedRows
+                  key={agent.id}
+                  agentId={agent.id}
+                  agentName={agent.name}
+                  inFeed={inFeed}
                   onNavigate={onNavigate}
                 />
               ))}
@@ -150,12 +198,19 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
               <AgentNode
                 key={agent.id}
                 agent={agent}
-                expanded={expanded.has(agent.id)}
+                expanded={isExpanded(toggled, agent.id, openAgentId)}
                 current={agent.id === openAgentId && !sessionOpen}
-                unread={unreadAgentIds.has(agent.id)}
-                shownAbove={shownAbove}
+                cue={
+                  awaitsApproval(approvals ?? [], agent.id)
+                    ? "approval"
+                    : unreadAgentIds.has(agent.id)
+                      ? "unread"
+                      : null
+                }
                 onToggle={() =>
-                  setExpanded((prev) => toggleExpanded(prev, agent.id))
+                  setToggled((prev) =>
+                    toggleExpanded(prev, agent.id, openAgentId),
+                  )
                 }
                 order={orderActions}
                 shownIds={shownIds}
@@ -196,8 +251,7 @@ function AgentNode({
   agent,
   expanded,
   current,
-  unread,
-  shownAbove,
+  cue,
   onToggle,
   order,
   shownIds,
@@ -206,8 +260,7 @@ function AgentNode({
   agent: AgentView;
   expanded: boolean;
   current: boolean;
-  unread: boolean;
-  shownAbove: ReadonlySet<string>;
+  cue: "approval" | "unread" | null;
   onToggle: () => void;
   order: ReturnType<typeof useSidebarOrderActions>;
   shownIds: readonly string[];
@@ -230,10 +283,12 @@ function AgentNode({
     fn();
     onNavigate?.();
   };
+  const listId = useId();
   return (
     <li
       className={cn(expanded && "pb-3")}
       data-testid="sidebar-agent"
+      data-agent-id={agent.id}
       data-agent-name={agent.name}
       data-expanded={expanded || undefined}
     >
@@ -248,6 +303,7 @@ function AgentNode({
           type="button"
           onClick={onToggle}
           aria-expanded={expanded}
+          aria-controls={expanded ? listId : undefined}
           aria-current={current ? "page" : undefined}
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
@@ -265,13 +321,13 @@ function AgentNode({
               avatar={agent.avatar}
               size={20}
               mood={mood}
-              className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible"
+              className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
             />
             <ChevronRight
               size={16}
               aria-hidden
               className={cn(
-                "invisible absolute text-muted-foreground transition-transform group-has-[:focus-visible]/agent:visible group-hover/agent:visible motion-reduce:transition-none",
+                "invisible absolute text-muted-foreground transition-transform group-has-[:focus-visible]/agent:visible group-hover/agent:visible motion-reduce:transition-none [@media(hover:none)]:visible",
                 expanded && "rotate-90",
               )}
             />
@@ -282,15 +338,7 @@ function AgentNode({
           >
             {agent.name}
           </span>
-          {unread && !expanded && (
-            <>
-              <span
-                aria-hidden
-                className="size-2 shrink-0 rounded-full bg-success group-has-[:focus-visible]/agent:hidden group-hover/agent:hidden"
-              />
-              <span className="sr-only">(unread)</span>
-            </>
-          )}
+          {cue && !expanded && <AgentCue tone={cue} />}
         </button>
         <div
           className={cn("absolute right-1 flex items-center gap-0.5", REVEAL)}
@@ -337,15 +385,12 @@ function AgentNode({
         <OrderDropIndicator at={drag.indicator} />
       </div>
       {expanded && (
-        <div className="pt-px pl-2">
-          <AgentSessionList
-            agentId={agent.id}
-            shownAbove={shownAbove}
-            onNavigate={onNavigate}
-          />
+        <div className="pt-px pl-2" id={listId}>
+          <AgentSessionList agentId={agent.id} onNavigate={onNavigate} />
           <AddRow
             icon={AddComment}
             label="New session"
+            ariaLabel={`New session with ${agent.name}`}
             testId="sidebar-new-session-row"
             onClick={go(() => startSession(agent.id))}
           />
@@ -382,24 +427,38 @@ function PinnedRow({
   const actWhenAwake = useActWhenAwake(agentId);
   const session = provisionalSessionView(item.session);
   const label = session.title || sessionId.slice(0, 12);
+  const backgroundWork = useSessionBackgroundWork(agentId, sessionId);
+  const draft = useStore((s) =>
+    keysWithDraftContent(s.drafts).includes(draftKey(agentId, sessionId)),
+  );
   const state = {
     working: item.working,
     needsApproval:
       permissionPending || awaitsApproval(approvals ?? [], agentId, sessionId),
     unread: item.unread,
+    backgroundWork,
+    draft,
   };
+  const tone = activityTone(state);
   return (
-    <>
+    <div data-pin-key={item.id}>
       <SessionRow
         session={session}
         active={active}
         {...state}
-        leading={<ActivityDot tone={activityTone(state)} />}
+        leading={
+          <ActivityDot
+            tone={tone}
+            {...(tone === "background" && {
+              label: backgroundWorkLabel(backgroundWork),
+            })}
+          />
+        }
         indicators={false}
         conversation={`${item.agent.name} · ${sessionContext(session, conversation)}`}
-        className={ROW}
+        className={TREE_ROW_CLASS}
         pinned
-        onTogglePin={() => togglePinnedSession(item.id)}
+        onTogglePin={() => togglePinKeepingFocus(item.id, agentId)}
         onResume={() => {
           openSession(agentId, sessionId, mode);
           onNavigate?.();
@@ -429,7 +488,7 @@ function PinnedRow({
           onClose={() => setRenaming(false)}
         />
       )}
-    </>
+    </div>
   );
 }
 

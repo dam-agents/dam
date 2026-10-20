@@ -1,15 +1,22 @@
+import { Pen } from "@carbon/icons-react";
+
 import { cn } from "@/lib/utils";
 
 import { ACTIVITY_LABEL, type ActivityTone } from "../../lib/sidebar-tree.js";
 
-const DOT: Record<Exclude<ActivityTone, "working">, string> = {
+const DOT: Record<"approval" | "unread" | "idle", string> = {
   approval: "bg-warning",
   unread: "bg-success",
   idle: "bg-muted-foreground/35",
 };
 
-export function ActivityDot({ tone }: { tone: ActivityTone }) {
-  const label = ACTIVITY_LABEL[tone];
+export function ActivityDot({
+  tone,
+  label = ACTIVITY_LABEL[tone],
+}: {
+  tone: ActivityTone;
+  label?: string;
+}) {
   return (
     <span
       role="img"
@@ -24,9 +31,32 @@ export function ActivityDot({ tone }: { tone: ActivityTone }) {
           <span className="size-3 animate-spin rounded-full border-[1.5px] border-accent/25 border-t-accent motion-reduce:animate-none" />
           <span className="absolute size-1.5 rounded-full bg-accent" />
         </>
+      ) : tone === "background" ? (
+        <span className="size-2.5 rounded-full border-[1.5px] border-success" />
+      ) : tone === "draft" ? (
+        <Pen size={12} aria-hidden className="text-muted-foreground" />
       ) : (
         <span className={cn("size-2 rounded-full", DOT[tone])} />
       )}
+    </span>
+  );
+}
+
+export function AgentCue({ tone }: { tone: "approval" | "unread" }) {
+  return (
+    <span
+      data-testid="sidebar-agent-cue"
+      data-tone={tone}
+      className="flex shrink-0 items-center"
+    >
+      <span
+        aria-hidden
+        className={cn(
+          "size-2 rounded-full group-hover/agent:hidden group-has-[:focus-visible]/agent:hidden",
+          DOT[tone],
+        )}
+      />
+      <span className="sr-only">({ACTIVITY_LABEL[tone].toLowerCase()})</span>
     </span>
   );
 }

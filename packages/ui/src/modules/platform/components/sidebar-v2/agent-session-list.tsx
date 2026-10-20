@@ -1,89 +1,28 @@
-import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
-import { useEffect, useRef, useState } from "react";
+import { SESSION_CATEGORIES } from "api-server-api";
+import { useEffect, useRef } from "react";
 
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
-import type { SessionView } from "../../../../types.js";
 import { useAgentRunState } from "../../../agents/api/queries.js";
-import { useActWhenAwake } from "../../../agents/hooks/use-act-when-awake.js";
-import {
-  useFeatures,
-  useInstallCapabilities,
-} from "../../../features/api/queries.js";
 import { isFiltered } from "../../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../../home/lib/activity-sessions.js";
-import { prefetchSessionHistory } from "../../../sessions/api/queries.js";
-import { RenameSessionDialog } from "../../../sessions/components/rename-session-dialog.js";
 import { SessionListSkeleton } from "../../../sessions/components/session-list-skeleton.js";
-import {
-  SessionRow,
-  sessionTitleLabel,
-} from "../../../sessions/components/session-row.js";
 import { useAgentSessionList } from "../../../sessions/hooks/use-agent-session-list.js";
-import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import {
   pinKey,
-  togglePinnedSession,
   unpinSession,
   usePinnedSessions,
 } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
-import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
-import { activityTone, sessionContext } from "../../lib/sidebar-tree.js";
-import { ActivityDot } from "./activity-dot.js";
+import { splitPinned } from "../../lib/sidebar-tree.js";
 import { FOCUS_RING } from "./add-row.js";
+import { TreeSessionRow } from "./tree-session-row.js";
 
-const ROW_CLASS = "min-w-0 rounded-lg border-b-0 px-2 py-2";
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in the new layout's sidebar tree: every Session the Agent lists except those the Pinned section above already shows, each with its activity dot and context line, the next page loaded when the list scrolls near its end, and the Sessions ordered by last activity, newest first. Rename and Delete wake the Agent and run once it answers, as in the current layout's list.
- */
-export function AgentSessionList({
-  agentId,
-  shownAbove,
-  onNavigate,
-}: {
-  agentId: string;
-  shownAbove: ReadonlySet<string>;
-  onNavigate?: () => void;
-}) {
+function useAgentTreeRows(agentId: string) {
   const list = useAgentSessionList(agentId);
   const filters = useStore((s) => s.sidebarActivityFilters);
-  const deleteSession = useStore((s) => s.deleteSession);
-  const showConfirm = useStore((s) => s.showConfirm);
-  const actWhenAwake = useActWhenAwake(agentId);
-  const runState = useAgentRunState(agentId);
-  const asleep =
-    list.loading &&
-    list.recordRead &&
-    (runState === "hibernated" || runState === "hibernating");
-  const openSession = useOpenSession();
   const pins = usePinnedSessions();
-  const [renaming, setRenaming] = useState<SessionView | null>(null);
-  const telemetryFlag = useFeatures().data?.["agent-telemetry"] ?? false;
-  const telemetryBackend =
-    useInstallCapabilities().data?.telemetryBackend ?? false;
-  const telemetryEnabled = telemetryFlag && telemetryBackend;
-
-  const {
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPageFailed,
-    fetchNextPage,
-  } = list;
-  const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
-  const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
-  const loadedIds = new Set(list.sessions.map((s) => s.sessionId));
-  const pinMissing = [...pins].some(
-    (key) =>
-      key.startsWith(`${agentId}:`) &&
-      !shownAbove.has(key) &&
-      !loadedIds.has(key.slice(agentId.length + 1)),
-  );
-  useEffect(() => {
-    if (canFetch && pinMissing && !list.provisional) void fetchNextPage();
-  }, [canFetch, pinMissing, list.provisional, fetchNextPage]);
   const rows = newestFirst(
     list.sessions
       .map((session) => ({ session, state: list.rowState(session) }))
@@ -96,61 +35,36 @@ export function AgentSessionList({
     (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
   );
-  const isPinned = (id: string) => pins.has(pinKey(agentId, id));
-  const shown = rows.filter(
-    (row) => !shownAbove.has(pinKey(agentId, row.session.sessionId)),
+  const [pinned, rest] = splitPinned(rows, (row) =>
+    pins.has(pinKey(agentId, row.session.sessionId)),
   );
+  return { list, filters, pins, rows, pinned, rest };
+}
 
-  const remove = async (s: SessionView) => {
-    const label = s.title ? `“${s.title}”` : sessionTitleLabel(s);
-    if (
-      await showConfirm(
-        "Its transcript is deleted and cannot be recovered.",
-        `Delete session ${label}?`,
-        { kind: "destructive", confirmLabel: "Delete session" },
-      )
-    )
-      actWhenAwake(`delete:${s.sessionId}`, async () => {
-        if (!(await deleteSession(s.sessionId, agentId))) return;
-        unpinSession(pinKey(agentId, s.sessionId));
-      });
-  };
-
-  const row = ({ session: s, state }: (typeof rows)[number]) => (
-    <div key={s.sessionId} className="relative">
-      <SessionRow
-        session={s}
-        {...state}
-        conversation={sessionContext(s, state.conversation)}
-        leading={<ActivityDot tone={activityTone(state)} />}
-        indicators={false}
-        className={ROW_CLASS}
-        pinned={isPinned(s.sessionId)}
-        onTogglePin={() => togglePinnedSession(pinKey(agentId, s.sessionId))}
-        onResume={() => {
-          openSession(agentId, s.sessionId, s.mode);
-          onNavigate?.();
-        }}
-        {...(list.operable &&
-          s.mode !== SessionMode.Terminal && {
-            onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
-          })}
-        onRename={() =>
-          actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s))
-        }
-        onDelete={() => void remove(s)}
-        {...(telemetryEnabled && {
-          onExportTimeline: () =>
-            void downloadTelemetryExport({
-              agentId,
-              sessionId: s.sessionId,
-              signal: "logs",
-              sinceHours: TELEMETRY_MAX_SINCE_HOURS,
-            }),
-        })}
-      />
-    </div>
-  );
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in the new layout's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end, and the Sessions ordered by last activity, newest first. A hibernated Agent whose record holds no Session says its Sessions show when it wakes.
+ */
+export function AgentSessionList({
+  agentId,
+  onNavigate,
+}: {
+  agentId: string;
+  onNavigate?: () => void;
+}) {
+  const { list, filters, rows, rest } = useAgentTreeRows(agentId);
+  const runState = useAgentRunState(agentId);
+  const asleep =
+    list.loading &&
+    list.recordRead &&
+    (runState === "hibernated" || runState === "hibernating");
+  const {
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPageFailed,
+    fetchNextPage,
+  } = list;
+  const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
+  const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
 
   return (
     <div
@@ -176,7 +90,17 @@ export function AgentSessionList({
             : "No sessions yet."}
         </p>
       )}
-      {shown.map(row)}
+      {rest.map(({ session, state }) => (
+        <TreeSessionRow
+          key={session.sessionId}
+          agentId={agentId}
+          session={session}
+          state={state}
+          operable={list.operable}
+          pinned={false}
+          onNavigate={onNavigate}
+        />
+      ))}
       {hasNextPage && <div ref={endRef} aria-hidden className="h-px" />}
       {isFetchingNextPage && <SessionListSkeleton />}
       {hasNextPage && fetchNextPageFailed && (
@@ -191,15 +115,74 @@ export function AgentSessionList({
           Couldn't load the rest. Retry
         </button>
       )}
-      {renaming && (
-        <RenameSessionDialog
-          agentId={agentId}
-          session={renaming}
-          onClose={() => setRenaming(null)}
-        />
-      )}
     </div>
   );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The pinned Sessions of one Agent that the owner's bounded attention feed does not hold, read from the Agent's own list for the Pinned section. It loads further pages until every such pin appears, and drops a pin whose Session the complete, unfiltered list no longer has.
+ */
+export function AgentPinnedRows({
+  agentId,
+  agentName,
+  inFeed,
+  onNavigate,
+}: {
+  agentId: string;
+  agentName: string;
+  inFeed: ReadonlySet<string>;
+  onNavigate?: () => void;
+}) {
+  const { list, pins, pinned } = useAgentTreeRows(agentId);
+  const allCategories = useStore(
+    (s) => s.sessionFilter.length === SESSION_CATEGORIES.length,
+  );
+  const loaded = new Set(
+    list.sessions.map((s) => pinKey(agentId, s.sessionId)),
+  );
+  const missing = [...pins].filter(
+    (key) =>
+      key.startsWith(`${agentId}:`) && !inFeed.has(key) && !loaded.has(key),
+  );
+  const {
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPageFailed,
+    fetchNextPage,
+  } = list;
+  const complete =
+    !list.loading && !list.provisional && !hasNextPage && allCategories;
+  const missingKey = missing.join(",");
+  useEffect(() => {
+    if (!missingKey) return;
+    if (hasNextPage && !isFetchingNextPage && !fetchNextPageFailed) {
+      if (!list.provisional) void fetchNextPage();
+    } else if (complete)
+      for (const key of missingKey.split(",")) unpinSession(key);
+  }, [
+    missingKey,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPageFailed,
+    list.provisional,
+    complete,
+    fetchNextPage,
+  ]);
+
+  return pinned
+    .filter(({ session }) => !inFeed.has(pinKey(agentId, session.sessionId)))
+    .map(({ session, state }) => (
+      <TreeSessionRow
+        key={session.sessionId}
+        agentId={agentId}
+        session={session}
+        state={state}
+        operable={list.operable}
+        pinned
+        prefix={agentName}
+        onNavigate={onNavigate}
+      />
+    ));
 }
 
 function useLoadOnReach(enabled: boolean, load: () => void) {

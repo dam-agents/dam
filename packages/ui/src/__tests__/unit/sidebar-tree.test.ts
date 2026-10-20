@@ -1,15 +1,22 @@
-// TEST_OVERVIEW: The new layout's sidebar is one tree of Agents. An Agent row opens and closes its Session list, a "New session" row ends each open list and a "New agent" row ends the tree, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
+// TEST_OVERVIEW: The new layout's sidebar is one tree of Agents. An Agent row opens and closes its Session list (the open Agent opens on its own, and only that one), a change in the attention record names the Agents whose lists must refresh, a "New session" row ends each open list and a "New agent" row ends the tree, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, a pin the bounded feed does not hold is read from its Agent's own list, a closed Agent shows a pending approval before unread, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
 import { AddAlt, AddComment } from "@carbon/icons-react";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
-import { ActivityDot } from "../../modules/platform/components/sidebar-v2/activity-dot.js";
+import {
+  ActivityDot,
+  AgentCue,
+} from "../../modules/platform/components/sidebar-v2/activity-dot.js";
 import { AddRow } from "../../modules/platform/components/sidebar-v2/add-row.js";
 import {
   activityTone,
+  agentsWithUnlistedPins,
   awaitsApproval,
+  changedAgents,
+  isExpanded,
+  recordSignatures,
   sessionContext,
   splitPinned,
   toggleExpanded,
@@ -18,9 +25,65 @@ import {
 describe("sidebar tree", () => {
   // TEST_SCENARIO: opening one Agent leaves the others as they are, and a second toggle closes it again.
   it("opens and closes one Agent at a time", () => {
-    const one = toggleExpanded(new Set(["a"]), "b");
-    expect([...one]).toEqual(["a", "b"]);
-    expect([...toggleExpanded(one, "a")]).toEqual(["b"]);
+    const one = toggleExpanded(toggleExpanded(new Map(), "a", null), "b", null);
+    expect(isExpanded(one, "a", null)).toBe(true);
+    expect(isExpanded(one, "b", null)).toBe(true);
+    const two = toggleExpanded(one, "a", null);
+    expect(isExpanded(two, "a", null)).toBe(false);
+    expect(isExpanded(two, "b", null)).toBe(true);
+  });
+
+  // TEST_SCENARIO: the Agent open in the page opens on its own, and moving to another Agent closes it again unless the user opened it; the user can still close the open Agent. Visiting many Agents keeps one list open, not all of them.
+  it("opens only the Agent open in the page by itself", () => {
+    const none = new Map<string, boolean>();
+    expect(isExpanded(none, "a", "a")).toBe(true);
+    expect(isExpanded(none, "a", "b")).toBe(false);
+    const closed = toggleExpanded(none, "a", "a");
+    expect(isExpanded(closed, "a", "a")).toBe(false);
+  });
+
+  // TEST_SCENARIO: a Session that starts, finishes, is renamed, is read, appears or goes away changes its Agent's record signature, so that Agent's own list refreshes; an Agent whose rows did not change does not refetch.
+  it("names the Agents whose record changed", () => {
+    const row = (
+      agentId: string,
+      sessionId: string,
+      at: string,
+      working = false,
+    ) => ({
+      session: { agentId, sessionId, title: "t", seenAt: null },
+      at,
+      working,
+    });
+    const before = recordSignatures([row("a", "s1", "1"), row("b", "s2", "1")]);
+    expect(changedAgents(before, before)).toEqual([]);
+    expect(
+      changedAgents(
+        before,
+        recordSignatures([row("a", "s1", "1", true), row("b", "s2", "1")]),
+      ),
+    ).toEqual(["a"]);
+    expect(
+      changedAgents(before, recordSignatures([row("b", "s2", "1")])),
+    ).toEqual(["a"]);
+    expect(
+      changedAgents(
+        before,
+        recordSignatures([
+          row("a", "s1", "1"),
+          row("b", "s2", "1"),
+          row("c", "s3", "1"),
+        ]),
+      ),
+    ).toEqual(["c"]);
+  });
+
+  // TEST_SCENARIO: a pin the bounded attention feed does not hold, for example one on the second page of its Agent's list, sends that Agent's own list to the Pinned section; pins the feed holds need nothing more, and an Agent with no such pin is not read.
+  it("finds the Agents whose pins the feed lacks", () => {
+    const pins = new Set(["a:old", "b:new", "c:gone"]);
+    expect(
+      agentsWithUnlistedPins(pins, new Set(["b:new"]), ["a", "b", "c", "d"]),
+    ).toEqual(["a", "c"]);
+    expect(agentsWithUnlistedPins(pins, pins, ["a", "b", "c"])).toEqual([]);
   });
 
   // TEST_SCENARIO: a pin moves a Session into the Pinned list in activity order and out of the rest; unpinning puts it back in its old place.
@@ -39,12 +102,29 @@ describe("sidebar tree", () => {
     ]);
   });
 
-  // TEST_SCENARIO: an approval outranks work, work outranks unread, and a quiet Session is idle.
+  // TEST_SCENARIO: an approval outranks work, work outranks background work, background work outranks unread, unread outranks a draft, and only a Session with none of them is idle.
   it.each([
     [{ working: true, needsApproval: true, unread: true }, "approval"],
     [{ working: true, needsApproval: false, unread: true }, "working"],
     [{ working: false, needsApproval: false, unread: true }, "unread"],
     [{ working: false, needsApproval: false, unread: false }, "idle"],
+    [
+      {
+        working: false,
+        needsApproval: false,
+        unread: true,
+        backgroundWork: [{}],
+      },
+      "background",
+    ],
+    [
+      { working: false, needsApproval: false, unread: true, draft: true },
+      "unread",
+    ],
+    [
+      { working: false, needsApproval: false, unread: false, draft: true },
+      "draft",
+    ],
   ] as const)("picks the dot for %o", (state, tone) => {
     expect(activityTone(state)).toBe(tone);
   });
@@ -52,10 +132,10 @@ describe("sidebar tree", () => {
   // TEST_SCENARIO: a pinned row reads its approval tone from the owner's approvals: only a pending approval of that Agent's Session counts.
   it("finds a pending approval for one Session", () => {
     const approvals = [
-      { status: "approved", agentId: "a", sessionId: "s1" },
+      { status: "resolved", agentId: "a", sessionId: "s1" },
       { status: "pending", agentId: "b", sessionId: "s1" },
       { status: "pending", agentId: "a", sessionId: null },
-    ];
+    ] as const;
     expect(awaitsApproval(approvals, "a", "s1")).toBe(false);
     expect(
       awaitsApproval(
@@ -64,6 +144,47 @@ describe("sidebar tree", () => {
         "s1",
       ),
     ).toBe(true);
+  });
+
+  // TEST_SCENARIO: a closed Agent whose read Session waits for an approval shows the approval cue before unread, with a text equivalent; an Agent with only resolved approvals shows none.
+  it("cues a closed Agent's pending approval", () => {
+    expect(
+      awaitsApproval(
+        [{ status: "pending", agentId: "a", sessionId: "s1" }],
+        "a",
+      ),
+    ).toBe(true);
+    expect(
+      awaitsApproval(
+        [{ status: "resolved", agentId: "a", sessionId: "s1" }],
+        "a",
+      ),
+    ).toBe(false);
+    const html = renderToStaticMarkup(
+      createElement(AgentCue, { tone: "approval" }),
+    );
+    expect(html).toContain('data-tone="approval"');
+    expect(html).toContain("bg-warning");
+    expect(html).toContain(
+      '<span class="sr-only">(needs your approval)</span>',
+    );
+  });
+
+  // TEST_SCENARIO: background work after the foreground run ends and an unsent draft each keep a visible mark with their own label, never "Idle".
+  it("marks background work and drafts", () => {
+    const background = renderToStaticMarkup(
+      createElement(ActivityDot, {
+        tone: "background",
+        label: "Running: npm test",
+      }),
+    );
+    expect(background).toContain('aria-label="Running: npm test"');
+    expect(background).toContain("border-success");
+    const draft = renderToStaticMarkup(
+      createElement(ActivityDot, { tone: "draft" }),
+    );
+    expect(draft).toContain('aria-label="Has a draft"');
+    expect(draft).toContain("<svg");
   });
 
   // TEST_SCENARIO: only a working Session's dot spins, it stops spinning under prefers-reduced-motion, and every state names itself to assistive technology.
@@ -124,6 +245,21 @@ describe("sidebar tree add rows", () => {
     expect(html).toContain(`>${label}</span>`);
     expect(html).toContain('aria-hidden="true"');
     expect(html).not.toContain('disabled=""');
+  });
+
+  // TEST_SCENARIO: every open Agent ends with its own New session row, so each row's accessible name names its Agent while the visible text stays short.
+  it("names the Agent in a New session row", () => {
+    const html = renderToStaticMarkup(
+      createElement(AddRow, {
+        icon: AddComment,
+        label: "New session",
+        ariaLabel: "New session with dam",
+        testId: "sidebar-new-session-row",
+        onClick: () => {},
+      }),
+    );
+    expect(html).toContain('aria-label="New session with dam"');
+    expect(html).toContain(">New session</span>");
   });
 
   // TEST_SCENARIO: while a new Agent cannot be created yet, its row is disabled rather than silently doing nothing.

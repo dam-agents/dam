@@ -160,7 +160,7 @@ function PeekButton({
         {agent ? agent.name : view === "settings" ? "Settings" : "Home"}
       </span>
       {hasUnread && (
-        <span className="absolute top-1 right-1 size-2 rounded-full bg-warning ring-2 ring-chrome" />
+        <span className="absolute top-1 right-1 size-2 rounded-full bg-success ring-2 ring-chrome" />
       )}
     </button>
   );

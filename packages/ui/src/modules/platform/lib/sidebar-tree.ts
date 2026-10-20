@@ -1,4 +1,5 @@
 import {
+  type ApprovalView,
   type HarnessFamily,
   SessionMode,
   SessionType,
@@ -9,12 +10,15 @@ import { HARNESS_ICONS } from "@/components/harness-icons";
 
 import { modelDisplayName } from "../../sessions/lib/model-name.js";
 
-export type ActivityTone = "approval" | "working" | "unread" | "idle";
+export type ActivityTone =
+  "approval" | "working" | "background" | "unread" | "draft" | "idle";
 
 export const ACTIVITY_LABEL: Record<ActivityTone, string> = {
   approval: "Needs your approval",
   working: "Working",
+  background: "Working in the background",
   unread: "Unread",
+  draft: "Has a draft",
   idle: "Idle",
 };
 
@@ -22,19 +26,74 @@ export function activityTone(state: {
   working: boolean;
   needsApproval: boolean;
   unread: boolean;
+  backgroundWork?: readonly unknown[];
+  draft?: boolean;
 }): ActivityTone {
   if (state.needsApproval) return "approval";
   if (state.working) return "working";
-  return state.unread ? "unread" : "idle";
+  if (state.backgroundWork?.length) return "background";
+  if (state.unread) return "unread";
+  return state.draft ? "draft" : "idle";
+}
+
+export function isExpanded(
+  toggled: ReadonlyMap<string, boolean>,
+  agentId: string,
+  openAgentId: string | null,
+): boolean {
+  return toggled.get(agentId) ?? agentId === openAgentId;
 }
 
 export function toggleExpanded(
-  expanded: ReadonlySet<string>,
+  toggled: ReadonlyMap<string, boolean>,
   agentId: string,
-): ReadonlySet<string> {
-  const next = new Set(expanded);
-  if (!next.delete(agentId)) next.add(agentId);
-  return next;
+  openAgentId: string | null,
+): ReadonlyMap<string, boolean> {
+  return new Map(toggled).set(
+    agentId,
+    !isExpanded(toggled, agentId, openAgentId),
+  );
+}
+
+export function recordSignatures(
+  items: readonly {
+    session: {
+      agentId: string;
+      sessionId: string;
+      title: string | null;
+      seenAt: string | null;
+    };
+    at: string;
+    working: boolean;
+  }[],
+): ReadonlyMap<string, string> {
+  const byAgent = new Map<string, string>();
+  for (const { session: s, at, working } of items)
+    byAgent.set(
+      s.agentId,
+      `${byAgent.get(s.agentId) ?? ""}|${s.sessionId}:${at}:${working}:${s.seenAt}:${s.title}`,
+    );
+  return byAgent;
+}
+
+export function changedAgents(
+  before: ReadonlyMap<string, string>,
+  after: ReadonlyMap<string, string>,
+): string[] {
+  return [...new Set([...before.keys(), ...after.keys()])].filter(
+    (id) => before.get(id) !== after.get(id),
+  );
+}
+
+export function agentsWithUnlistedPins(
+  pins: ReadonlySet<string>,
+  listed: ReadonlySet<string>,
+  agentIds: readonly string[],
+): string[] {
+  const unlisted = [...pins].filter((key) => !listed.has(key));
+  return agentIds.filter((id) =>
+    unlisted.some((key) => key.startsWith(`${id}:`)),
+  );
 }
 
 export function splitPinned<T>(
@@ -83,19 +142,17 @@ export function sessionContext(
     .join(" · ");
 }
 
+type ApprovalRef = Pick<ApprovalView, "status" | "agentId" | "sessionId">;
+
 export function awaitsApproval(
-  approvals: readonly {
-    status: string;
-    agentId: string;
-    sessionId: string | null;
-  }[],
+  approvals: readonly ApprovalRef[],
   agentId: string,
-  sessionId: string,
+  sessionId?: string,
 ): boolean {
   return approvals.some(
     (a) =>
       a.status === "pending" &&
       a.agentId === agentId &&
-      a.sessionId === sessionId,
+      (sessionId === undefined || a.sessionId === sessionId),
   );
 }
