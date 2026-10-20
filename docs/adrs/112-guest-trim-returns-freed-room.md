@@ -13,10 +13,10 @@ summary: The guest's storage disk discards an extent as its filesystem frees it 
 
 ## Context
 
-ADR-093 counted on the guest's own discards, and on the runner's storage guard, to keep an owner's claim in step with what its machines write and free.
-Neither held.
-A guest's filesystem discarded nothing as it freed blocks, so the disk file the claim pays for kept them; a discard asked for once a minute is the only thing that could return them, and nothing asked.
-The storage guard that holds a machine to its share then preallocated over the room a guest had just freed, and a guard asked only for a shorter length kept the blocks it had.
+ADR-093 assumed that a guest's freed blocks reach the owner's claim, and that the runner keeps a claim from filling by stopping a machine before it does.
+The first assumption held for neither, and the storage guard that holds a machine to its share came after that record, in the work this one covers.
+A guest's filesystem discarded nothing as it freed blocks, so the disk file the claim pays for kept them: nothing asked the device to discard, and no trim ran.
+That guard then preallocated over the room a guest had just freed, and a guard asked only for a shorter length kept the blocks it had.
 A claim therefore only ever grew: deleting 300 MiB of an agent's files left the claim where it was while the agent existed, and a steadily writing agent was refused at its share with the owner's claim only 73–86% full, and stayed refused.
 
 ## Decision

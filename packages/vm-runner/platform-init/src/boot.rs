@@ -123,7 +123,7 @@ pub fn run() -> ! {
     let guard = dir
         .as_ref()
         .and_then(pool_guard)
-        .map(|file| Guard { files: vec![file] });
+        .and_then(|file| Guard::new(file).ok());
     leave_disk(&root);
     share_mounts();
     enter_workdir(Path::new(machine.launch.workdir.as_deref().unwrap_or("/")));
@@ -1533,56 +1533,63 @@ fn pool_guard(dir: &File) -> Option<File> {
     Some(unsafe { <File as std::os::fd::FromRawFd>::from_raw_fd(fd) })
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the guard as a set of whole files, each one unit of room (POOL_GUARD_STEP), all unnamed and on the disk's own subvolume. It is a set rather than one file because a filesystem returns a file's blocks only when it loses the file or is cut to nothing: btrfs keeps the physical allocation of a preallocated extent that a shorter length alone only partly released, so a guard shortened in place reports the smaller size from its own stat while the room stays taken, and the guest it holds gets nothing back. A shrink therefore drops whole files and a growth adds them, so every release is whole extents and no partial one is ever asked for. Files are created through the disk directory's descriptor (`pool_guard`), because the disk's mount is gone by the time the guard is resized and only that descriptor still names the subvolume. A refusal leaves the files it already placed in place and reports the error; a shrink to nothing drops them all, and a guard held to nothing is a cut, which no filesystem refuses.
+// UNIT_BOUNDARY_DESCRIPTION: the guard as a set of whole files, each one unit of room (POOL_GUARD_STEP), all unnamed and on the disk's own subvolume. It is a set rather than one file because a filesystem returns a file's blocks only when it loses the file or is cut to nothing: btrfs keeps the physical allocation of a preallocated extent that a shorter length alone only partly released, so a guard shortened in place reports the smaller size from its own stat while the room stays taken, and the guest it holds gets nothing back. A shrink therefore drops whole files and a growth adds them, so every release is whole extents and no partial one is ever asked for. `held` is kept as the blocks the files took, so a move reads each file's blocks once and not the whole set after every step: a guard of a large claim is thousands of files, and rescanning them per step made a move quadratic in the number of files. Files are created through the disk directory's descriptor (`pool_guard`), because the disk's mount is gone by the time the guard is resized and only that descriptor still names the subvolume. A refusal leaves the files it already placed in place, counts what they took, and reports the error.
 struct Guard {
     files: Vec<File>,
+    held: u64,
 }
 
 impl Guard {
-    // UNIT_BOUNDARY_DESCRIPTION: what the guard holds, from its files' own blocks rather than their lengths: a preallocation the disk refused may have placed part of the unit it was asked for, and the blocks are what the disk took.
+    // UNIT_BOUNDARY_DESCRIPTION: makes a guard of one file, and reads what it holds: a preallocation the disk refused may have placed part of the unit it was asked for, and the blocks are what the disk took. A file that holds nothing is dropped, since the room is what the guard keeps and not the file: a guard is built from an empty file and only then sized.
+    fn new(file: File) -> io::Result<Self> {
+        let held = blocks(&file)?;
+        Ok(Self {
+            files: if held > 0 { vec![file] } else { Vec::new() },
+            held,
+        })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what the guard holds, as the blocks its files took, from the count each move has kept up rather than from a stat per file.
     fn held(&self) -> u64 {
-        self.files
-            .iter()
-            .filter_map(|file| file.metadata().ok())
-            .map(|info| info.blocks() * 512)
-            .sum()
+        self.held
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: gives every block of the guard back: the files are unnamed, so dropping the last descriptor frees each one whole, and the filesystem frees a file it loses in full.
     fn release(&mut self) {
         self.files.clear();
+        self.held = 0;
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: sizes the guard to `size` bytes of preallocated room, or leaves it at what the disk took when it refuses more, and reports the refusal. A shrink drops whole files and never shortens one, and it drops a file only when the rest still holds `size`, so the guard never holds less than a step below the room it was asked to hold. A growth adds unit files, each `min(POOL_GUARD_STEP, what is still missing)`, so a guard that grows by a step at a time is a set of equal files and the last one is the remainder.
+    // UNIT_BOUNDARY_DESCRIPTION: sizes the guard to `size` bytes of preallocated room, or leaves it at what the disk took when it refuses more, and reports the refusal. A shrink drops whole files and never shortens one, and it drops a file only while the rest still holds `size`, so the guard never holds less than a step below the room it was asked to hold. A growth adds unit files, each `min(POOL_GUARD_STEP, what is still missing)`, so a guard that grows by a step at a time is a set of equal files and the last one is the remainder. Each file's blocks are read once as it is made or dropped, so a move costs one read per file rather than one per file per step.
     fn size(&mut self, dir: &File, size: u64) -> io::Result<()> {
-        self.files
-            .retain(|file| file.metadata().is_ok_and(|info| info.len() > 0));
-        while self.held() > size {
-            let Some(last) = self.files.last() else {
-                break;
-            };
-            let len = last.metadata().map_or(0, |info| info.len());
-            if self.held().saturating_sub(len) < size {
+        while let Some(last) = self.files.last() {
+            let blocks = blocks(last)?;
+            if self.held.saturating_sub(blocks) < size {
                 break;
             }
+            self.held = self.held.saturating_sub(blocks);
             self.files.pop();
         }
-        loop {
-            let held = self.held();
-            if held >= size {
-                return Ok(());
-            }
+        while self.held < size {
             let Some(file) = pool_guard(dir) else {
                 return Err(io::Error::other("no guard file could be made on the disk"));
             };
-            let unit = (size - held).min(POOL_GUARD_STEP);
+            let unit = (size - self.held).min(POOL_GUARD_STEP);
             let taken = preallocate(&file, unit);
-            if file.metadata().map_or(0, |info| info.blocks()) > 0 {
+            let blocks = blocks(&file)?;
+            if blocks > 0 {
+                self.held = self.held.saturating_add(blocks);
                 self.files.push(file);
             }
             taken?;
         }
+        Ok(())
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: what a file takes on the disk, from its own blocks and not its length: a preallocation the disk refused may have placed part of what it was asked for.
+fn blocks(file: &File) -> io::Result<u64> {
+    Ok(file.metadata()?.blocks().saturating_mul(512))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: takes `size` bytes of blocks for `file` from its start and reports a refusal. Every call allocates whole extents of its own file, which is why the guard is a set of files: no release ever has to free part of one.
@@ -2883,10 +2890,13 @@ mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
+    // UNIT_BOUNDARY_DESCRIPTION: the request the btrfs test makes of a disk its guest has filled and of one the guard gave room on: large enough to need the room a shrink returns, and small against the test's own disk, so the difference it reads is the guard's.
+    const PROBE_BYTES: u64 = 64 << 20;
+
     // UNIT_BOUNDARY_DESCRIPTION: the guard tests share one process-wide slot, and the mutex protects each look at it, not a test's setup and assertions, so the standard runner's concurrent tests would have one test's stop release another test's guard.
     static GUARD_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
 
-    // TEST_SCENARIO: a guard that held room when the guest stopped is detached from its slot before it is released, so the running guard cannot regrow it and the filesystem frees its blocks once the last descriptor closes; the stop's sync then has nothing left to wait for. That the room is room the guest can write again is measured in `a_smaller_guard_gives_its_room_back`: this test's own filesystem is shared with the rest of the suite's tests, so their writes move its free space. The guard thread then finds nothing and ends.
+    // TEST_SCENARIO: a guard that held room when the guest stopped is detached from its slot before it is released, so the running guard cannot regrow it and the filesystem frees its blocks once the last descriptor closes; the stop's sync then has nothing left to wait for. That the room is room the guest can write again is measured in `a_smaller_guard_gives_up_its_files` and, on a bounded disk, in `a_btrfs_guard_move_returns_the_room`: this test's own filesystem is shared with the rest of the suite's tests, so their writes move its free space. The guard thread then finds nothing and ends.
     #[test]
     fn a_clean_stop_empties_the_storage_guard() {
         let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
@@ -2896,7 +2906,7 @@ mod tests {
         let file = pool_guard(&dir).expect("an unnamed file on the disk");
         preallocate(&file, 64 << 20).unwrap();
         let probe = file.try_clone().unwrap();
-        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(Guard { files: vec![file] });
+        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(Guard::new(file).unwrap());
         let mut released = take_pool_guard(|| {}).expect("the guard the stop takes");
         assert!(
             POOL_GUARD
@@ -2938,9 +2948,7 @@ mod tests {
         let disk = TempDir::new("guard-resize");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
-        let mut guard = Guard {
-            files: vec![pool_guard(&dir).expect("an unnamed file on the disk")],
-        };
+        let mut guard = Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap();
         guard.size(&dir, 128 << 20).unwrap();
         let held = guard.held();
         assert!(
@@ -2973,9 +2981,7 @@ mod tests {
         let disk = TempDir::new("guard-whole");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
-        let mut guard = Guard {
-            files: vec![pool_guard(&dir).expect("an unnamed file on the disk")],
-        };
+        let mut guard = Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap();
         for size in [
             128 << 20,
             40 << 20,
@@ -3030,9 +3036,8 @@ mod tests {
         let disk = TempDir::new("guard-progress");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
-        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) = Some(Guard {
-            files: vec![pool_guard(&dir).expect("an unnamed file on the disk")],
-        });
+        *POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner()) =
+            Some(Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap());
         let holding = POOL_GUARD.lock().unwrap_or_else(|e| e.into_inner());
         let frames = std::sync::Arc::new(AtomicUsize::new(0));
         let counted = frames.clone();
@@ -3055,6 +3060,43 @@ mod tests {
             .is_none());
     }
 
+    // TEST_SCENARIO: a guard of a large claim is thousands of files, and a move that read every one of them after each step it took would cost a metadata read per file per step: 500 GiB is 32,000 files, and rescanning them per step is over five hundred million reads for one grow. Each file is read once as it is made or dropped, so a move's reads are proportional to the files it touches.
+    #[test]
+    fn a_guard_move_reads_each_file_once() {
+        let _serial = GUARD_TESTS.lock().unwrap_or_else(|e| e.into_inner());
+        let disk = TempDir::new("guard-reads");
+        fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
+        let dir = guard_dir(disk.path()).expect("the disk's own directory");
+        let mut guard = Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap();
+        guard.size(&dir, 16 * POOL_GUARD_STEP).unwrap();
+        assert_eq!(
+            guard.files.len(),
+            16,
+            "a guard of sixteen steps holds {} files",
+            guard.files.len()
+        );
+        // UNIT_BOUNDARY_DESCRIPTION: the count a move keeps is the files' own blocks, so a move that stops reading them still reports what the guard holds.
+        let read: u64 = guard
+            .files
+            .iter()
+            .map(|file| file.metadata().unwrap().blocks() * 512)
+            .sum();
+        assert_eq!(guard.held(), read, "the guard's count left its files");
+        let before = guard.held();
+        guard.size(&dir, 8 * POOL_GUARD_STEP).unwrap();
+        assert!(
+            guard.held() < before && guard.held() + POOL_GUARD_STEP > 8 * POOL_GUARD_STEP,
+            "a guard shrunk to eight steps holds {} MiB",
+            guard.held() >> 20
+        );
+        assert_eq!(
+            guard.files.len(),
+            8,
+            "a guard shrunk to eight steps holds {} files",
+            guard.files.len()
+        );
+    }
+
     // TEST_SCENARIO: a guard that grows while the guest is writing keeps the guest held the whole time: the files it adds hold the room before the guest can take it, and a shrink drops files only while the rest still holds the size asked for, so the guard never falls below a step under the room it was asked to hold.
     #[test]
     fn a_growing_guard_never_lifts_its_hold() {
@@ -3062,9 +3104,7 @@ mod tests {
         let disk = TempDir::new("guard-hold");
         fs::create_dir_all(disk.path().join(guest::SYSTEM_DIR)).unwrap();
         let dir = guard_dir(disk.path()).expect("the disk's own directory");
-        let mut guard = Guard {
-            files: vec![pool_guard(&dir).expect("an unnamed file on the disk")],
-        };
+        let mut guard = Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap();
         guard.size(&dir, 128 << 20).unwrap();
         for size in [32u64 << 20, 48 << 20, 8 << 20, 112 << 20, 96 << 20] {
             guard.size(&dir, size).unwrap();
@@ -3077,7 +3117,7 @@ mod tests {
         }
     }
 
-    // TEST_SCENARIO: on a real btrfs disk the guard's moves have to return room the guest can write into, not just a smaller number in the guard's own stat: btrfs keeps the whole physical allocation of a preallocated extent whose tail alone was released, so a guard shortened in place left a steadily writing guest refused while the room it was promised stayed taken. This fills a loop-mounted btrfs with a guard, shrinks it while a writer asks for the room, and measures the filesystem's committed free space at every step. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored a_btrfs_guard_move_returns_the_room`.
+    // TEST_SCENARIO: on a real btrfs disk the guard's moves have to return room the guest can write into, not just a smaller number in the guard's own stat: btrfs keeps the whole physical allocation of a preallocated extent whose tail alone was released, so a guard shortened in place left a steadily writing guest refused while the room it was promised stayed taken. The guest here fills a loop-mounted btrfs until the disk refuses it, so a fixed request is refused; the guard then shrinks and the same request lands, which is room the release returned and not room the disk had spare. Growing the guard back against that writing guest takes the room again, and the disk ends where it started. Needs root and mkfs.btrfs: `sudo -E cargo test -p platform-init -- --ignored a_btrfs_guard_move_returns_the_room`.
     #[test]
     #[ignore = "needs root and mkfs.btrfs"]
     fn a_btrfs_guard_move_returns_the_room() {
@@ -3097,7 +3137,7 @@ mod tests {
             );
         };
         let image = root.join("disk.raw");
-        File::create(&image).unwrap().set_len(512 << 20).unwrap();
+        File::create(&image).unwrap().set_len(1 << 30).unwrap();
         run(
             "mkfs.btrfs",
             &["-q".as_ref(), "-M".as_ref(), image.as_os_str()],
@@ -3120,52 +3160,67 @@ mod tests {
             let (size, avail) = (stat.f_frsize as u64, stat.f_bavail as u64);
             size * avail
         };
-        let dir = File::open(&top).unwrap();
-        let mut guard = Guard {
-            files: vec![pool_guard(&dir).expect("an unnamed file on the disk")],
+        // UNIT_BOUNDARY_DESCRIPTION: asks the disk for `size` bytes in a file of its own and reports whether it took them, then keeps the file: the guest's disk is filled by holding it, the way a home of files fills.
+        let take = |name: &str, size: u64| -> Option<File> {
+            let file = File::create(top.join(name)).unwrap();
+            preallocate(&file, size).ok().map(|()| file)
         };
+        let dir = File::open(&top).unwrap();
+        let mut guard = Guard::new(pool_guard(&dir).expect("an unnamed file on the disk")).unwrap();
         let base = free();
-        guard.size(&dir, 256 << 20).unwrap();
+        guard.size(&dir, 320 << 20).unwrap();
         assert!(
-            base.saturating_sub(free()) >= 240 << 20,
-            "a 256 MiB guard took {} MiB of the disk",
+            base.saturating_sub(free()) >= 300 << 20,
+            "a 320 MiB guard took {} MiB of the disk",
             base.saturating_sub(free()) >> 20
         );
-        // UNIT_BOUNDARY_DESCRIPTION: the room the guest asks for after the shrink has to be there, so a writer past the guard's old size only succeeds if the release was whole.
-        guard.size(&dir, 64 << 20).unwrap();
-        let room = base.saturating_sub(free());
-        let writer = top.join("guest-data");
-        let fill = File::create(&writer).unwrap();
-        fill.set_len(room.saturating_sub(48 << 20)).unwrap();
-        fill.sync_all().unwrap();
-        assert!(
-            room <= 96 << 20,
-            "a guard shrunk to 64 MiB still holds {} MiB of the disk",
-            room >> 20
-        );
-        // UNIT_BOUNDARY_DESCRIPTION: growing it back takes the room again, however the guest's file is laid out.
-        for round in 1..=3 {
-            let before = free();
-            guard
-                .size(&dir, 192 << 20)
-                .expect("room the guest has not written");
-            assert!(
-                before.saturating_sub(free()) >= 115 << 20,
-                "round {round} took {} MiB for a guard grown to 192 MiB",
-                before.saturating_sub(free()) >> 20
-            );
-            guard.size(&dir, 64 << 20).unwrap();
+        // UNIT_BOUNDARY_DESCRIPTION: the guest fills every block the guard left it, so the next request of the probe's size has nowhere to come from: without the shrink below, this is the state a wedge leaves a guest in.
+        let mut filled = Vec::new();
+        while let Some(file) = take(&format!("guest-{}", filled.len()), 32 << 20) {
+            filled.push(file);
         }
-        fs::remove_file(&writer).unwrap();
+        assert!(!filled.is_empty(), "the guest filled nothing at all");
+        assert!(
+            take("probe-before", PROBE_BYTES).is_none(),
+            "a disk the guest filled took {} MiB more",
+            PROBE_BYTES >> 20
+        );
+        // UNIT_BOUNDARY_DESCRIPTION: every block of the shrink's room is room the guest can take again: the same request the full disk refused lands once the guard holds less, which a guard that released only part of its files cannot show.
+        guard.size(&dir, 64 << 20).unwrap();
+        let probe = take("probe-after", PROBE_BYTES);
+        assert!(
+            probe.is_some(),
+            "a guard shrunk from 320 MiB to 64 MiB returned no room a {} MiB request could take on a disk the guest had filled",
+            PROBE_BYTES >> 20
+        );
+        // UNIT_BOUNDARY_DESCRIPTION: growing the guard back against a guest that holds the disk takes the room again from that guest: the fill it can still place shrinks, so the guard is enforced on a nearly full disk and not only on an empty one.
+        let taken = filled.len() as u64 * (32 << 20);
+        guard.size(&dir, 192 << 20).unwrap();
+        let mut more = 0u64;
+        let mut extra = Vec::new();
+        while let Some(file) = take(&format!("later-{}", extra.len()), 8 << 20) {
+            more += 8 << 20;
+            extra.push(file);
+        }
+        assert!(
+            more < 128 << 20,
+            "a guard grown to 192 MiB left the guest {more} MiB to write on a disk the guest had already taken {taken} MiB of"
+        );
+        // UNIT_BOUNDARY_DESCRIPTION: releasing everything returns every block the test itself took, so the disk ends where it started.
+        for file in filled.iter().chain(extra.iter()).chain(probe.iter()) {
+            let _ = file.set_len(0);
+        }
+        drop(extra);
+        drop(probe);
+        drop(filled);
         guard.size(&dir, 0).unwrap();
         assert!(guard.files.is_empty(), "an empty guard holds no files");
         assert!(
-            free() + (16 << 20) >= base,
+            free() + (32 << 20) >= base,
             "the disk ended {} MiB under where it started",
             (base.saturating_sub(free())) >> 20
         );
-        // UNIT_BOUNDARY_DESCRIPTION: every descriptor into the disk is a reference that keeps the mount busy, and a mount in use cannot be unmounted: the guest's file, the guard's files and the directory the guard was made through all go before the unmount.
-        drop(fill);
+        // UNIT_BOUNDARY_DESCRIPTION: every descriptor into the disk keeps the mount busy, and a mount in use cannot be unmounted, so the guard's files and the directory they were made through go before the unmount.
         drop(guard);
         drop(dir);
         run("umount", &[top.as_os_str()]);
