@@ -89,9 +89,11 @@ func (r *AgentReconciler) applyOwnerGatewayFiles(ctx context.Context, desired *c
 	cli := r.client.CoreV1().Secrets(desired.Namespace)
 	existing, err := cli.Get(ctx, desired.Name, metav1.GetOptions{})
 	if k8serrors.IsNotFound(err) {
-		_, err = cli.Create(ctx, desired, metav1.CreateOptions{})
+		if _, err = cli.Create(ctx, desired, metav1.CreateOptions{}); err != nil {
+			return err
+		}
 		slog.Info("owner gateway: wrote its files", "secret", desired.Name, "keys", len(desired.Data))
-		return err
+		return nil
 	}
 	if err != nil {
 		return err

@@ -373,20 +373,21 @@ func TestOwnerGatewayRepairPlan_APodIsOfferedTheFilesItHasAndHasNotRead(t *testi
 	assert.Zero(t, first.due["agent-a"])
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-1", planAt(time.Second).xdsVersion(), "the offer is not repeated")
 
-	// TEST_SCENARIO: a pod that answers an older revision is offered the files again on a doubling wait, which is bounded, and the wait is counted from the answer that asked for it.
+	// TEST_SCENARIO: a pod that answers an older revision is offered the files again on a doubling wait, the last offer lands past the delay a kubelet can take, and the tries are bounded.
 	r.ownerStaleListeners.Store("agent-a", struct{}{})
 	plan := planAt(2 * time.Second)
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-2", plan.xdsVersion())
 	assert.Equal(t, ownerGatewayOfferWait, plan.due["agent-a"], "the next offer is a wait away")
-	plan = planAt(2*time.Second + ownerGatewayOfferWait)
+	at := 2*time.Second + ownerGatewayOfferWait
+	plan = planAt(at)
 	assert.Equal(t, ownerGatewayTemplateRev+"-repair-3", plan.xdsVersion())
 	assert.Equal(t, 2*ownerGatewayOfferWait, plan.due["agent-a"], "and then two waits after that")
-	at := 2*time.Second + ownerGatewayOfferWait
-	for range ownerGatewayOfferTries - 2 {
-		at += ownerGatewayOfferCap
+	for plan.due["agent-a"] > 0 {
+		at += plan.due["agent-a"]
 		plan = planAt(at)
 	}
-	assert.Equal(t, ownerGatewayTemplateRev+fmt.Sprintf("-repair-%d", 2+ownerGatewayOfferTries-1), plan.xdsVersion(), "the tries are bounded")
+	assert.Equal(t, ownerGatewayTemplateRev+fmt.Sprintf("-repair-%d", 1+ownerGatewayOfferTries), plan.xdsVersion(), "the tries are bounded")
+	assert.GreaterOrEqual(t, at-2*time.Second, 90*time.Second, "the last offer is past a kubelet's sync period plus its cache delay")
 	assert.Zero(t, plan.due["agent-a"], "and a listener that will not load is not rewritten for as long as the agent lives")
 	r.ownerStaleListeners.Delete("agent-a")
 
@@ -417,6 +418,24 @@ func TestOwnerGatewayRepairPlan_APodIsOfferedTheFilesItHasAndHasNotRead(t *testi
 }
 
 // TEST_SCENARIO: the same through the reconcile loop: a rendering the pod read is offered once more, one Secret update carries it, and every later reconcile with the same rendering and the same answer writes nothing.
+// TEST_SCENARIO: an install that upgrades from the layout with a ConfigMap of the owner gateway's name and a credentials Secret beside it keeps both objects. Nothing refreshes the Secret, so it holds signing keys later rotations retire; the render that writes the files Secret removes them.
+func TestOwnerGateway_TheFilesOfTheLayoutBeforeOneVolumeAreRemoved(t *testing.T) {
+	ctx := context.Background()
+	r, _, agent := servedVMReconciler(t)
+	name, ns := ownerGatewayName("platform", testOwner), "test-agents"
+	_, err := r.client.CoreV1().ConfigMaps(ns).Create(ctx, &corev1.ConfigMap{ObjectMeta: metav1.ObjectMeta{Name: name, Namespace: ns}}, metav1.CreateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Secrets(ns).Create(ctx, &corev1.Secret{ObjectMeta: metav1.ObjectMeta{Name: name + "-credentials", Namespace: ns}}, metav1.CreateOptions{})
+	require.NoError(t, err)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	_, err = r.client.CoreV1().ConfigMaps(ns).Get(ctx, name, metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "the ConfigMap of the previous layout is gone")
+	_, err = r.client.CoreV1().Secrets(ns).Get(ctx, name+"-credentials", metav1.GetOptions{})
+	assert.True(t, k8serrors.IsNotFound(err), "and the Secret that held signing keys nothing refreshed")
+}
+
 func TestOwnerGateway_ARenderingIsOfferedOnceThroughTheReconcile(t *testing.T) {
 	ctx := context.Background()
 	r, _, agent := servedVMReconciler(t)

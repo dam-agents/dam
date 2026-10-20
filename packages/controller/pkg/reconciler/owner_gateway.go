@@ -388,6 +388,7 @@ func (r *AgentReconciler) ensureOwnerGateway(ctx context.Context, owner string) 
 				return err
 			}
 			r.refreshOwnerGatewayCredentials(ctx, owner, files.Annotations[annOwnerCredentialsHash], names, r.clockNow())
+			r.deleteLegacyOwnerGatewayFiles(ctx, files.Name)
 			return nil
 		},
 		func() error {
@@ -553,6 +554,19 @@ func (r *AgentReconciler) ownerGatewayFailure(ctx context.Context, owner string)
 	return "", "", false
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the layout before one volume kept an owner gateway's files in a ConfigMap of its name and its credentials in a Secret beside it, both folded into the files Secret since. A fresh owner never has them; an install that upgrades keeps the credentials Secret, which holds signing keys nothing refreshes afterwards. Every write of the files therefore removes them, which costs two not-found deletes a render and heals an object put back by hand, and so does the teardown of an owner that never rendered one.
+func (r *AgentReconciler) deleteLegacyOwnerGatewayFiles(ctx context.Context, name string) {
+	ns, opts := r.config.Namespace, metav1.DeleteOptions{}
+	for _, del := range []func() error{
+		func() error { return r.client.CoreV1().ConfigMaps(ns).Delete(ctx, name, opts) },
+		func() error { return r.client.CoreV1().Secrets(ns).Delete(ctx, name+"-credentials", opts) },
+	} {
+		if err := del(); err != nil && !k8serrors.IsNotFound(err) {
+			slog.Warn("owner gateway: removing the files its previous layout kept apart", "gateway", name, "error", err)
+		}
+	}
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: removes everything an owner gateway is made of, once the owner has no vm Agent left. Its objects all carry the owner gateway's labels and name, so this is one delete each.
 func (r *AgentReconciler) deleteOwnerGateway(ctx context.Context, owner string) {
 	name, ns := ownerGatewayName(r.config.ReleaseName, owner), r.config.Namespace
@@ -575,6 +589,7 @@ func (r *AgentReconciler) deleteOwnerGateway(ctx context.Context, owner string) 
 			slog.Warn("removing an owner gateway", "owner", owner, "error", err)
 		}
 	}
+	r.deleteLegacyOwnerGatewayFiles(ctx, name)
 }
 
 const (
@@ -670,19 +685,17 @@ func retargetedGatewayService(svc *corev1.Service, owner string, slot int) *core
 
 // UNIT_BOUNDARY_DESCRIPTION: an agent's listener is current when its health path answers with the revision rendered for it last. Envoy applies a changed file about a second after the kubelet syncs it, and a file that does not load leaves the last good one running, so a stale or missing listener reads as not current rather than as an outage. The controller probes through the same port the agent's traffic takes.
 const (
-	// UNIT_BOUNDARY_DESCRIPTION: two things make an owner rewrite its files, and neither is a guess about how long a volume takes to reach the pod. A pod that answers the revision rendered for an agent has proven it read the files, so the owner offers them once more: everything Envoy refused the first time is offered again with the file that names it and the file itself already on disk. A pod that answers an older revision has not read them, so the owner offers them again on a wait that doubles from two seconds, up to this controller's retry budget; past it the pod keeps the listener it has and a warning names the agent. The budget covers the documented fallback of a projected Secret, a kubelet sync period plus its cache delay.
-	ownerGatewayOfferWait  = 2 * time.Second
-	ownerGatewayOfferCap   = 2 * time.Minute
+	// UNIT_BOUNDARY_DESCRIPTION: two things make an owner rewrite its files, and neither is a guess about how long a volume takes to reach the pod. A pod that answers the revision rendered for an agent has proven it read the files, so the owner offers them once more: everything Envoy refused the first time is offered again with the file that names it and the file itself already on disk. A pod that answers an older revision has not read them, so the owner offers them again on a wait that doubles from four seconds, six times, the last about two minutes after the first; that covers the documented fallback of a projected Secret, a kubelet sync period plus its cache delay. Past it the pod keeps the listener it has and a warning names the agent.
+	ownerGatewayOfferWait  = 4 * time.Second
 	ownerGatewayOfferTries = 6
 	// UNIT_BOUNDARY_DESCRIPTION: one owner's files are one object, so one write carries every agent that is owed an offer, whatever their number, and no two writes land closer than this.
 	ownerGatewayWritePace = 2 * time.Second
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner owes one agent: the rendering the pod's answer is matched against, whether the files were offered again since the pod read them, when the wait for a pod that has not read them began, when its next offer is due, how many it has had, and whether giving up has been logged. A new rendering of the agent replaces this with a fresh one, so a file that names a new credential is never repaired on an older episode's leftovers.
+// UNIT_BOUNDARY_DESCRIPTION: what an owner owes one agent: the rendering the pod's answer is matched against, whether the files were offered again since the pod read them, when its next offer is due, how many it has had, and whether giving up has been logged. A new rendering of the agent replaces this with a fresh one, so a file that names a new credential is never repaired on an older episode's leftovers.
 type ownerGatewayOffer struct {
 	revision  string
 	reoffered bool
-	first     time.Time
 	next      time.Time
 	tries     int
 	warned    bool
@@ -723,7 +736,7 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, n
 		_, stale := r.ownerStaleListeners.Load(name)
 		offer := set.offers[name]
 		if offer == nil || offer.revision != revision {
-			offer = &ownerGatewayOffer{revision: revision, first: now, next: now}
+			offer = &ownerGatewayOffer{revision: revision, next: now}
 			set.offers[name] = offer
 		}
 		switch {
@@ -755,7 +768,7 @@ func (r *AgentReconciler) ownerGatewayRepairPlan(owner string, names []string, n
 		offer := set.offers[name]
 		if _, stale := r.ownerStaleListeners.Load(name); stale {
 			offer.tries++
-			offer.next = now.Add(min(ownerGatewayOfferWait<<(offer.tries-1), ownerGatewayOfferCap))
+			offer.next = now.Add(ownerGatewayOfferWait << (offer.tries - 1))
 			if offer.tries < ownerGatewayOfferTries {
 				p.due[name] = max(offer.next.Sub(now), set.next.Sub(now))
 				continue

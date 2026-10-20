@@ -179,7 +179,7 @@ So it can accept an agent's outer listener, whose clusters it already has, and r
 Unchanged files cannot repair that: the controller writes nothing for a render that changes nothing, so the pod is never handed them again.
 The controller therefore decides what to write from what its pod has shown it.
 A pod that answers the revision rendered for an agent has read the files, so the owner writes them once more, with a version of their own in place of the template's: the pod reads them again and everything it refused is offered again with what it names already on disk.
-A pod that answers an older revision has not read them, so the owner writes them again on a wait that doubles from two seconds, up to six times; past it the pod keeps the listener it has and a warning names the agent.
+A pod that answers an older revision has not read them, so the owner writes them again on a wait that doubles from four seconds, six times, the last about two minutes after the first, past the kubelet's documented sync period and cache delay; past it the pod keeps the listener it has and a warning names the agent.
 An offer changes files, not resources: every listener and cluster in them is byte-identical, so Envoy deduplicates what it accepted and no stream is drained for a repair.
 One write carries every agent that is owed one, and no two writes land closer than two seconds, so an owner with many agents is not written once per agent.
 Readiness tells the two apart only partly: a listener Envoy accepted answers the current revision whether or not the provider it built was ever able to read its file, and so does an outer listener whose internal resources were refused, while a container-level rejection or a listener never loaded reads as stale.
