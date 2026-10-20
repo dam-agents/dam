@@ -31,7 +31,7 @@ import { downloadTelemetryExport } from "../../../telemetry/api/download-export.
 const ROW_CLASS = "min-w-0 rounded-lg border-b-0 px-2 py-2";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's own Session list in the new layout's sidebar: every Session the Agent lists, its pinned ones in their own section above the rest, the next page loaded when the list scrolls near its end, and the Sessions ordered by last activity, newest first. Rename and Delete wake the Agent and run once it answers, as in the current layout's list.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's own Session list in the new layout's sidebar: every Session the Agent lists, its pinned ones in their own section above the rest, the next page loaded when the list scrolls near its end — or, while the activity filter is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. Rename and Delete wake the Agent and run once it answers, as in the current layout's list.
  */
 export function AgentSessionList({
   agentId,
@@ -59,8 +59,12 @@ export function AgentSessionList({
     fetchNextPageFailed,
     fetchNextPage,
   } = list;
+  const filtered = isFiltered(filters);
   const canFetch = hasNextPage && !isFetchingNextPage && !fetchNextPageFailed;
-  const endRef = useLoadOnReach(canFetch, () => void fetchNextPage());
+  const endRef = useLoadOnReach(
+    canFetch && !filtered,
+    () => void fetchNextPage(),
+  );
   const loadedIds = new Set(list.sessions.map((s) => s.sessionId));
   const pinMissing = [...pins].some(
     (key) =>
@@ -148,11 +152,13 @@ export function AgentSessionList({
       aria-busy={list.provisional || list.loading}
     >
       {list.loading && <SessionListSkeleton />}
-      {!list.loading && rows.length === 0 && !hasNextPage && (
+      {!list.loading && rows.length === 0 && (!hasNextPage || filtered) && (
         <p className="py-1.5 pl-2 text-xs text-muted-foreground">
-          {isFiltered(filters)
-            ? "No sessions match the filter."
-            : "No sessions yet."}
+          {!filtered
+            ? "No sessions yet."
+            : hasNextPage
+              ? "No loaded sessions match the filter."
+              : "No sessions match the filter."}
         </p>
       )}
       {pinned.length > 0 && (
@@ -163,8 +169,25 @@ export function AgentSessionList({
         </>
       )}
       {rest.map(row)}
-      {hasNextPage && <div ref={endRef} aria-hidden className="h-px" />}
+      {hasNextPage && !filtered && (
+        <div
+          ref={endRef}
+          aria-hidden
+          data-testid="sidebar-agent-sessions-end"
+          className="h-px"
+        />
+      )}
       {isFetchingNextPage && <SessionListSkeleton />}
+      {canFetch && filtered && (
+        <button
+          type="button"
+          onClick={() => void fetchNextPage()}
+          data-testid="sidebar-agent-sessions-load-more"
+          className="flex h-[30px] items-center rounded-lg pl-2 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          Load more
+        </button>
+      )}
       {hasNextPage && fetchNextPageFailed && (
         <button
           type="button"

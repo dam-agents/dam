@@ -8,7 +8,9 @@ import type { PlatformStore } from "../../../store.js";
 import {
   type ActivityFilters,
   defaultActivityFilters,
+  isFiltered,
 } from "../../home/lib/activity-filter.js";
+import { keepFirstSessionPages } from "../../sessions/api/queries.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
@@ -42,15 +44,18 @@ export const createSidebarSlice: StateCreator<
   [],
   [],
   SidebarSlice
-> = (set) => ({
+> = (set, get) => ({
   sidebarExpanded: readStoredSidebarExpanded(),
   setSidebarExpanded: (expanded) => {
     writePersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, expanded);
     set({ sidebarExpanded: expanded });
   },
   sidebarActivityFilters: defaultActivityFilters(),
-  setSidebarActivityFilters: (filters) =>
-    set({ sidebarActivityFilters: filters }),
+  setSidebarActivityFilters: (filters) => {
+    if (isFiltered(get().sidebarActivityFilters) && !isFiltered(filters))
+      keepFirstSessionPages();
+    set({ sidebarActivityFilters: filters });
+  },
   sidebarShowHibernating: readPersistedFlag(
     SIDEBAR_HIBERNATING_STORAGE_KEY,
     false,
