@@ -1,15 +1,12 @@
-import { ChevronDown, ChevronUp } from "@carbon/icons-react";
 import {
   type AttentionItem,
   SessionMode,
   TELEMETRY_MAX_SINCE_HOURS,
 } from "api-server-api";
-import { type ReactNode, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
-import { labelVariants } from "@/components/ui/label";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { Spinner } from "@/components/ui/spinner";
-import { TREE_GUIDE } from "@/components/ui/tree-guide";
-import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
@@ -29,16 +26,17 @@ import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
 import { sessionTitleLabel } from "../lib/session-title.js";
 import {
-  moreClick,
   newestFirst,
-  sessionListControls,
+  SIDEBAR_SESSION_STEP,
   sidebarSessionWindow,
+  viewMore,
 } from "../lib/sidebar-session-window.js";
 import { RenameSessionDialog } from "./rename-session-dialog.js";
 import { SessionListSkeleton } from "./session-list-skeleton.js";
 import { SessionRow } from "./session-row.js";
 
-const ROW_CLASS = "rounded-lg border-b-0 py-1.5 pr-2 pl-9";
+const ROW_CLASS = "rounded-lg border-b-0 py-2.5 pr-2 pl-12";
+const LIST_CLASS = "mt-2 mb-3 flex flex-col gap-1";
 
 interface SessionActions {
   rename: (session: SessionView) => void;
@@ -48,25 +46,32 @@ interface SessionActions {
 interface Props {
   agentId: string;
   open: boolean;
-  shown: boolean;
   preview: readonly AgentActivitySession[];
   previewComplete: boolean;
   conversationOf: (session: AttentionItem) => string | undefined;
-  stickyClassName: string;
   onNavigate?: () => void;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An Agent's Sessions under its row in the sidebar,
+ * five at first and five more per View more, which then moves focus to the
+ * first newly shown Session. An Agent that is not open in the page previews
+ * its Sessions from the attention record and reads its own list only after
+ * View more; its own list loads a further page only when the loaded rows run
+ * out.
+ */
 export function SidebarAgentSessions({
   agentId,
   open,
-  shown,
   preview,
   previewComplete,
   conversationOf,
-  stickyClassName,
   onNavigate,
 }: Props) {
-  const [expanded, setExpanded] = useState(false);
+  const [limit, setLimit] = useState(SIDEBAR_SESSION_STEP);
+  const [focusAfter, setFocusAfter] = useState<ReadonlySet<string> | null>(
+    null,
+  );
   const [renaming, setRenaming] = useState<SessionView | null>(null);
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
@@ -91,15 +96,16 @@ export function SidebarAgentSessions({
 
   return (
     <>
-      {!shown ? null : open ||
-        expanded ||
-        (preview.length === 0 && !previewComplete) ? (
+      {open ||
+      limit > SIDEBAR_SESSION_STEP ||
+      (preview.length === 0 && !previewComplete) ? (
         <AgentSessionList
           agentId={agentId}
           sessionActions={sessionActions}
-          expanded={expanded}
-          onExpandedChange={setExpanded}
-          stickyClassName={stickyClassName}
+          limit={limit}
+          onLimitChange={setLimit}
+          focusAfter={focusAfter}
+          onFocusAfterChange={setFocusAfter}
           onNavigate={onNavigate}
         />
       ) : (
@@ -109,7 +115,10 @@ export function SidebarAgentSessions({
           complete={previewComplete}
           sessionActions={sessionActions}
           conversationOf={conversationOf}
-          onExpand={() => setExpanded(true)}
+          onMore={(shown) => {
+            setFocusAfter(shown);
+            setLimit(limit + SIDEBAR_SESSION_STEP);
+          }}
           onNavigate={onNavigate}
         />
       )}
@@ -130,7 +139,7 @@ function SessionPreview({
   complete,
   sessionActions,
   conversationOf,
-  onExpand,
+  onMore,
   onNavigate,
 }: {
   agentId: string;
@@ -138,47 +147,54 @@ function SessionPreview({
   complete: boolean;
   sessionActions: SessionActions;
   conversationOf: Props["conversationOf"];
-  onExpand: () => void;
+  onMore: (shown: ReadonlySet<string>) => void;
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
   if (sessions.length === 0) return <ListNote>No sessions yet.</ListNote>;
-  const visible = sidebarSessionWindow(sessions, false, () => false);
-  const { more } = sessionListControls({
+  const visible = sidebarSessionWindow(
+    sessions,
+    SIDEBAR_SESSION_STEP,
+    () => false,
+  );
+  const { more } = viewMore({
     total: sessions.length,
-    collapsed: visible.length,
-    expanded: false,
+    shown: visible.length,
+    limit: SIDEBAR_SESSION_STEP,
     hasNextPage: !complete,
+    isFetchingNextPage: false,
   });
 
   return (
-    <div
-      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
-      data-testid="sidebar-agent-sessions"
-    >
+    <div className={LIST_CLASS} data-testid="sidebar-agent-sessions">
       {visible.map((item) => {
         const session = provisionalSessionView(item.session);
         return (
-          <div key={item.id} className={TREE_GUIDE}>
-            <SessionRow
-              session={session}
-              active={false}
-              working={item.working}
-              needsApproval={item.needsApproval}
-              unread={item.unread}
-              conversation={conversationOf(item.session)}
-              className={ROW_CLASS}
-              onResume={() => {
-                openSession(agentId, item.session.sessionId, item.session.mode);
-                onNavigate?.();
-              }}
-              onRename={() => sessionActions.rename(session)}
-              onDelete={() => void sessionActions.delete(session)}
-            />
-          </div>
+          <SessionRow
+            key={item.id}
+            session={session}
+            active={false}
+            working={item.working}
+            needsApproval={item.needsApproval}
+            unread={item.unread}
+            conversation={conversationOf(item.session)}
+            className={ROW_CLASS}
+            onResume={() => {
+              openSession(agentId, item.session.sessionId, item.session.mode);
+              onNavigate?.();
+            }}
+            onRename={() => sessionActions.rename(session)}
+            onDelete={() => void sessionActions.delete(session)}
+          />
         );
       })}
-      {more && <ToggleRow more onClick={onExpand} />}
+      {more && (
+        <ViewMoreRow
+          onClick={() =>
+            onMore(new Set(visible.map((item) => item.session.sessionId)))
+          }
+        />
+      )}
     </div>
   );
 }
@@ -186,16 +202,18 @@ function SessionPreview({
 function AgentSessionList({
   agentId,
   sessionActions,
-  expanded,
-  onExpandedChange,
-  stickyClassName,
+  limit,
+  onLimitChange,
+  focusAfter,
+  onFocusAfterChange,
   onNavigate,
 }: {
   agentId: string;
   sessionActions: SessionActions;
-  expanded: boolean;
-  onExpandedChange: (expanded: boolean) => void;
-  stickyClassName: string;
+  limit: number;
+  onLimitChange: (limit: number) => void;
+  focusAfter: ReadonlySet<string> | null;
+  onFocusAfterChange: (shown: ReadonlySet<string> | null) => void;
   onNavigate?: () => void;
 }) {
   const list = useAgentSessionList(agentId);
@@ -207,6 +225,7 @@ function AgentSessionList({
   const telemetryBackend =
     useInstallCapabilities().data?.telemetryBackend ?? false;
   const telemetryEnabled = telemetryFlag && telemetryBackend;
+  const rootRef = useRef<HTMLDivElement>(null);
 
   const {
     hasNextPage,
@@ -223,32 +242,33 @@ function AgentSessionList({
     (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
   );
-  const isActive = (row: (typeof rows)[number]) => row.state.active;
-  const visible = sidebarSessionWindow(rows, expanded, isActive);
-  const collapsed = expanded
-    ? sidebarSessionWindow(rows, false, isActive).length
-    : visible.length;
-  const { more, less } = sessionListControls({
+  const visible = sidebarSessionWindow(rows, limit, (row) => row.state.active);
+  const visibleIds = visible.map((row) => row.session.sessionId);
+  const next = viewMore({
     total: rows.length,
-    collapsed,
-    expanded,
+    shown: visible.length,
+    limit,
     hasNextPage,
+    isFetchingNextPage,
   });
-  const onMore = () => {
-    const click = moreClick({
-      total: rows.length,
-      collapsed,
-      expanded,
-      hasNextPage,
-      isFetchingNextPage,
-    });
-    if (click.expand) onExpandedChange(true);
-    if (click.fetchNextPage) void fetchNextPage();
-  };
+  const paged = limit > SIDEBAR_SESSION_STEP;
+
+  useEffect(() => {
+    if (!focusAfter || list.loading || isFetchingNextPage) return;
+    const id = visibleIds.find((sessionId) => !focusAfter.has(sessionId));
+    if (id)
+      rootRef.current
+        ?.querySelector<HTMLElement>(
+          `[data-session-id="${CSS.escape(id)}"] [data-row-main]`,
+        )
+        ?.focus();
+    onFocusAfterChange(null);
+  });
 
   return (
     <div
-      className="flex flex-col gap-px pb-1 [--tree-guide-x:20px]"
+      ref={rootRef}
+      className={LIST_CLASS}
       data-testid="sidebar-agent-sessions"
       data-provisional={list.provisional ? "true" : undefined}
       aria-busy={list.provisional || (list.loading && !asleep && !list.failed)}
@@ -266,10 +286,7 @@ function AgentSessionList({
           onClick={() => void list.retry()}
           disabled={list.retrying}
           data-testid="sidebar-agent-sessions-failed"
-          className={cn(
-            TREE_GUIDE,
-            "flex h-[30px] items-center gap-1 rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-          )}
+          className={`flex h-[30px] items-center gap-1 rounded-lg pl-12 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
         >
           Couldn't load sessions. Retry
           {list.retrying && <Spinner />}
@@ -279,54 +296,52 @@ function AgentSessionList({
         <ListNote>No sessions yet.</ListNote>
       )}
       {visible.map(({ session: s, state }) => (
-        <div key={s.sessionId} className={TREE_GUIDE}>
-          <SessionRow
-            session={s}
-            {...state}
-            className={ROW_CLASS}
-            onResume={() => {
-              openSession(agentId, s.sessionId, s.mode);
-              onNavigate?.();
-            }}
-            {...(list.operable &&
-              s.mode !== SessionMode.Terminal && {
-                onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
-              })}
-            onRename={() => sessionActions.rename(s)}
-            onDelete={() => void sessionActions.delete(s)}
-            {...(telemetryEnabled && {
-              onExportTimeline: () =>
-                void downloadTelemetryExport({
-                  agentId,
-                  sessionId: s.sessionId,
-                  signal: "logs",
-                  sinceHours: TELEMETRY_MAX_SINCE_HOURS,
-                }),
+        <SessionRow
+          key={s.sessionId}
+          session={s}
+          {...state}
+          className={ROW_CLASS}
+          onResume={() => {
+            openSession(agentId, s.sessionId, s.mode);
+            onNavigate?.();
+          }}
+          {...(list.operable &&
+            s.mode !== SessionMode.Terminal && {
+              onPrefetch: () => prefetchSessionHistory(agentId, s.sessionId),
             })}
-          />
-        </div>
+          onRename={() => sessionActions.rename(s)}
+          onDelete={() => void sessionActions.delete(s)}
+          {...(telemetryEnabled && {
+            onExportTimeline: () =>
+              void downloadTelemetryExport({
+                agentId,
+                sessionId: s.sessionId,
+                signal: "logs",
+                sinceHours: TELEMETRY_MAX_SINCE_HOURS,
+              }),
+          })}
+        />
       ))}
-      {expanded && hasNextPage && fetchNextPageFailed && (
+      {paged && hasNextPage && fetchNextPageFailed ? (
         <button
           type="button"
           onClick={() => void fetchNextPage()}
-          className={cn(
-            TREE_GUIDE,
-            "flex h-[30px] items-center rounded-lg pl-9 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-          )}
+          className={`flex h-[30px] items-center rounded-lg pl-12 text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
         >
           Couldn't load the rest. Retry
         </button>
-      )}
-      {more && !(expanded && fetchNextPageFailed) && (
-        <ToggleRow more busy={isFetchingNextPage} onClick={onMore} />
-      )}
-      {less && (
-        <ToggleRow
-          more={false}
-          stickyClassName={stickyClassName}
-          onClick={() => onExpandedChange(false)}
-        />
+      ) : (
+        next.more && (
+          <ViewMoreRow
+            busy={isFetchingNextPage}
+            onClick={async () => {
+              const shown = new Set(visibleIds);
+              onLimitChange(next.limit);
+              if (next.fetchNextPage) await fetchNextPage();
+              onFocusAfterChange(shown);
+            }}
+          />
+        )
       )}
     </div>
   );
@@ -341,7 +356,7 @@ function ListNote({
 }) {
   return (
     <p
-      className="py-1.5 pl-9 text-xs text-muted-foreground"
+      className="py-1.5 pl-12 text-xs text-muted-foreground"
       data-testid={testId}
     >
       {children}
@@ -349,34 +364,22 @@ function ListNote({
   );
 }
 
-function ToggleRow({
-  more,
+function ViewMoreRow({
   busy = false,
-  stickyClassName,
   onClick,
 }: {
-  more: boolean;
   busy?: boolean;
-  stickyClassName?: string;
   onClick: () => void;
 }) {
-  const Chevron = more ? ChevronDown : ChevronUp;
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-expanded={!more}
-      data-testid="sidebar-agent-sessions-toggle"
-      className={cn(
-        labelVariants(),
-        TREE_GUIDE,
-        "[--tree-guide-end:15px]",
-        "flex h-[30px] shrink-0 items-center gap-1 rounded-lg pl-9 text-left text-muted-foreground transition-colors hover:bg-muted hover:text-foreground",
-        !more && ["sticky bottom-0 z-raised", stickyClassName],
-      )}
+      aria-busy={busy || undefined}
+      data-testid="sidebar-agent-sessions-more"
+      className={`flex h-[30px] shrink-0 items-center gap-1.5 rounded-lg pl-12 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
     >
-      {more ? "More" : "Less"}
-      <Chevron size={14} />
+      View more
       {busy && <Spinner />}
     </button>
   );

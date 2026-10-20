@@ -1,6 +1,6 @@
 import {
   ArrowLeft,
-  DataEnrichmentAdd,
+  Gift,
   Launch,
   Meter,
   PlayFilledAlt,
@@ -678,7 +678,7 @@ function KitDetail({
             <ArrowLeft size={16} /> Back
           </Button>
           <Button onClick={() => void create()} disabled={!canCreate}>
-            <DataEnrichmentAdd size={16} aria-hidden />
+            <Gift size={16} aria-hidden />
             {apply.isPending ? "Creating…" : "Use this starter kit"}
           </Button>
         </DialogFooter>

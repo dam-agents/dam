@@ -172,9 +172,9 @@ flowchart LR
 
 ## UI surfaces
 
-- The library lives in the **Artifacts tab** of the side panel on the right, on every page outside an Agent's chat.
-  The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and shows as the current destination while that tab is open; there it shares the panel with Get started and Approvals.
-  In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files, and the Artifacts destination opens that section and shows as current while it is open.
+- The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens; an artifact opened there docks in the side panel on the right.
+  The page shows the same list as the side panel's **Artifacts tab**, which an Agent's configuration page offers, scoped to that Agent; other pages outside an Agent's chat leave the tab out, so the library is never open twice.
+  In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.

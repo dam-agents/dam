@@ -74,11 +74,9 @@ function openedAgent(previewComplete: boolean) {
       createElement(SidebarAgentSessions, {
         agentId: "a-1",
         open: false,
-        shown: true,
         preview: [],
         previewComplete,
         conversationOf: () => undefined,
-        stickyClassName: "",
       }),
     ),
   );

@@ -1,6 +1,7 @@
 import { Add } from "@carbon/icons-react";
 import { useMemo, useState } from "react";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -72,7 +73,7 @@ export function SidebarAgents({
         key={agent.id}
         agent={agent}
         open={open}
-        selected={current}
+        selected={current && open}
         current={current && !sessionOpen}
         unread={unreadAgentIds.has(agent.id)}
         orderReady={orderActions.ready}
@@ -89,16 +90,16 @@ export function SidebarAgents({
           />
         }
       >
-        <SidebarAgentSessions
-          agentId={agent.id}
-          open={current}
-          shown={open}
-          preview={sessionsOf(agent.id)}
-          previewComplete={previewComplete}
-          conversationOf={conversationOf}
-          stickyClassName={stickyHeaderClassName}
-          onNavigate={onNavigate}
-        />
+        {open && (
+          <SidebarAgentSessions
+            agentId={agent.id}
+            open={current}
+            preview={sessionsOf(agent.id)}
+            previewComplete={previewComplete}
+            conversationOf={conversationOf}
+            onNavigate={onNavigate}
+          />
+        )}
       </SidebarAgentRow>
     );
   };
@@ -107,7 +108,7 @@ export function SidebarAgents({
     <section aria-label="Agents" data-testid="sidebar-agents">
       <div
         className={cn(
-          "sticky top-0 z-raised flex items-center justify-between py-1 pr-1 pl-2.5",
+          "sticky top-0 z-raised mb-1.5 flex items-center justify-between pt-3 pr-1 pb-1 pl-3",
           stickyHeaderClassName,
         )}
       >
@@ -126,7 +127,7 @@ export function SidebarAgents({
           onClick={() => setShowFolded(!showFolded)}
           aria-expanded={showFolded}
           data-testid="sidebar-agents-hibernating"
-          className="mt-px flex h-[30px] w-full items-center rounded-lg px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           {showFolded ? "Show less" : `See all (${folded.length} hibernating)`}
         </button>
@@ -153,7 +154,7 @@ function CreateAgentButton({ onCreate }: { onCreate?: () => void }) {
           void defaultAgent.create();
           onCreate?.();
         }}
-        className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        className={`flex size-6 items-center justify-center rounded-md border border-border bg-background text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50 ${FOCUS_RING}`}
       >
         <Add size={14} />
       </button>
