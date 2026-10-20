@@ -384,7 +384,7 @@ export function onRunnerHost(
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the deaths of this machine's VMMs that the agent's own runner reported, in the order it reported them, each with the number the kernel gives a signal where the report names one — 9 is SIGKILL — and the pid where it names one. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns, the reaper names the signal, or the runner's stop of a machine that went away names the pid alone, in a line that names no machine: the pid is what ties that report to a machine, and a caller holding it to the process it killed is what keeps a death of another machine on the same runner out.
+// UNIT_BOUNDARY_DESCRIPTION: the deaths of this machine's VMMs that the agent's own runner reported, in the order it reported them, each with the number the kernel gives a signal where the report names one — 9 is SIGKILL — and the pid where it names one. Two of the three channels name a cause and one does not, which is why a caller reads them and not a count: the start call's failure is the runner saying the boot died of that signal before the guest came up, the reaper's line is it saying so after, and the exit record is only the runner noticing a machine it believed up had gone, with no cause and no machine — a record that can equally belong to the runtime's own stop of a machine it could not grow, so a pid match against the killed process is the least such a record can carry, and no proof of the cause. A death the runner sees while the start call still runs fails that call, whose error names the signal; one after the call returns, the reaper names the signal, or the runner's stop of a machine that went away names the pid alone, in a line that names no machine: the pid is what ties that report to a machine, and a caller holding it to the process it killed is what keeps a death of another machine on the same runner out.
 export function runnerKilledVmms(
   agentId: string,
 ): { signal: number | null; pid: number | null }[] {
@@ -438,9 +438,10 @@ export function runnerKilledVmms(
     });
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what provisions the claim the agent's runner keeps its machines' disks on, which is the owner's storage: the provisioner of the claim's StorageClass, the cluster's default class when the claim names none. A provisioner that hands out a directory of the node makes the claim part of the node's own disk, which nothing may fill.
-export function runnerClaimProvisioner(agentId: string): string {
-  const claim = kubectl(
+// UNIT_BOUNDARY_DESCRIPTION: whether the volume behind the claim the agent's runner keeps its machines' disks on is a place on a node, as the PersistentVolume itself states it: `hostPath` and `local` are directories of a node, and a CSI driver, `nfs`, `rbd`, `iscsi` or `fc` source is storage that node's disk does not have to hold. It answers `null` when no volume source can be read, which is no evidence either way: the claim's provisioner name is not asked, because a name says nothing about where the volume's blocks are. Every read carries a deadline, since a synchronous call with none cannot be interrupted by the case's own timeout.
+export function runnerClaimOnNode(agentId: string): boolean | null {
+  const claim = kubectlWithin(
+    LOOKUP_TIMEOUT_MS,
     "-n",
     AGENT_NS,
     "get",
@@ -449,36 +450,32 @@ export function runnerClaimProvisioner(agentId: string): string {
     "-o",
     String.raw`jsonpath={.spec.volumes[?(@.name=="state")].persistentVolumeClaim.claimName}`,
   );
-  if (!claim) return "";
-  const named = kubectl(
+  if (!claim) return null;
+  const pv = kubectlWithin(
+    LOOKUP_TIMEOUT_MS,
     "-n",
     AGENT_NS,
     "get",
     "pvc",
     claim,
     "-o",
-    "jsonpath={.spec.storageClassName}",
+    "jsonpath={.spec.volumeName}",
   );
-  const className = named
-    ? named
-    : kubectl(
-        "-n",
-        AGENT_NS,
-        "get",
-        "storageclass",
-        "-o",
-        String.raw`jsonpath={.items[?(@.metadata.annotations.storageclass\.kubernetes\.io/is-default-class=="true")].metadata.name}`,
-      );
-  if (!className) return "";
-  return kubectl(
+  if (!pv) return null;
+  const source = kubectlWithin(
+    LOOKUP_TIMEOUT_MS,
     "-n",
     AGENT_NS,
     "get",
-    "storageclass",
-    className,
+    "pv",
+    pv,
     "-o",
-    "jsonpath={.provisioner}",
+    "jsonpath={.spec.hostPath.path}\n{.spec.local.path}\n{.spec.csi.driver}\n{.spec.nfs.path}\n{.spec.rbd.pool}\n{.spec.iscsi.targetPortal}\n{.spec.fc.targetWWNs}",
   );
+  const [onNode, local, ...elsewhere] = source.split("\n");
+  if (onNode === undefined) return null;
+  if (onNode !== "" || local !== "") return true;
+  return elsewhere.some((field) => field !== "") ? false : null;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: runs a shell script as root inside a vm agent's guest, through `vm-runner exec` on its owner's runner pod, and returns its output.
