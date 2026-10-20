@@ -84,7 +84,7 @@ A few observations the diagram glosses over:
   Ambient turns present no status — nobody summoned the agent.
 - **The status carries Slack's Stop button, and it stops the turn.** Slack shows the button to apps subscribed to `agent_session_stopped`, and sends that event for the thread when someone presses it.
   The worker cancels the turn running in that thread with ACP `session/cancel`, the same notification the web UI sends, on the connection that carries the prompt.
-  Only the person who started the turn, or someone whose linked platform user owns the Agent, may stop it; anyone else is told so in an ephemeral notice and the turn runs on.
+  Only a person whose message the turn carries — the one who started it, or one whose message joined it — or someone whose linked platform user owns the Agent may stop it; anyone else is told so in an ephemeral notice and the turn runs on.
   A stopped turn clears its status, finishes every stream Slack names in the event, and is recorded with the reason `stopped`; it is not handed to the delivery nudge, so the agent is not asked again to answer what the person withdrew.
   A Stop that arrives after the turn ended only clears the status.
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.

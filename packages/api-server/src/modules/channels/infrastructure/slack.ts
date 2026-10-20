@@ -3514,14 +3514,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     if (running.length === 0) {
       await gw
         .setStatus({ channel, threadTs, teamId, status: "" })
-        .catch(() => {});
+        .catch((err) =>
+          getLogger().debug(
+            { channelId: channel, threadTs, err: formatError(err) },
+            "slack.stop.status_clear_failed",
+          ),
+        );
       return;
     }
     const invoker = await identityLinks.resolve("slack", user).catch(() => null);
     const mayStop = async (turn: StoppableTurn) =>
       turn.startedBy(user) ||
       (invoker !== null &&
-        invoker === (await getInstanceOwner(turn.instanceName)));
+        invoker ===
+          (await getInstanceOwner(turn.instanceName).catch(() => null)));
     const allowed: StoppableTurn[] = [];
     for (const turn of running) if (await mayStop(turn)) allowed.push(turn);
     const agentName = await resolveAgentName(
