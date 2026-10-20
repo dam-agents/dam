@@ -409,7 +409,7 @@ mod tests {
         stage(&image, &tree, &r.staged, name, 10).unwrap();
     }
 
-    // TEST_SCENARIO: the loader is the pod's own supervisor, and a hand-off replaces the runner process only: a release that needs a new loader reaches pod after pod only by declaring another key than the pod before it runs, which rolls it. The key this package ships is pinned, so dropping the one that carried it is a decision and not an accident.
+    // TEST_SCENARIO: the loader is the pod's own supervisor, and a hand-off replaces the runner process only: a release that needs a new loader reaches a pod that carries a key only by declaring another one, which rolls it — a pod built before keys compares nothing and takes the release in place, as the upgrades page says. The key this package ships is pinned, so dropping the one that carried it is a decision and not an accident.
     #[test]
     fn the_key_this_release_ships_rolls_a_pod_from_before_its_loader() {
         let dir = Path::new(env!("CARGO_MANIFEST_DIR"));
