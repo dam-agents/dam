@@ -173,7 +173,7 @@ jobs:
         id: controller-changed
         if: inputs.verify
         run: |
-          mapfile -t paths < <(.mise/tasks/image/resolve paths controller)
+          read -r -a paths <<< "$(.mise/tasks/image/resolve paths controller)"
           if git diff --quiet "$DIFF_BASE" HEAD -- "${paths[@]}"; then
             echo "changed=false" >> "$GITHUB_OUTPUT"
           else
@@ -476,6 +476,7 @@ jobs:
       - name: Kernel log and VMM seccomp records
         if: ${{ !cancelled() }}
         run: |
+          set -o pipefail
           python3 - <<'EOF' || echo "::warning::the seccomp canary did not run"
           import ctypes, os
           libc = ctypes.CDLL(None, use_errno=True)
@@ -492,7 +493,10 @@ jobs:
           EOF
           sleep 2
           mkdir -p /tmp/kernel-log
-          { sudo journalctl -k -b --no-pager -o short-precise || sudo dmesg -T; } > /tmp/kernel-log/kernel.log
+          # tee, not a redirect on sudo: the file is the runner's, and a failed
+          # journalctl must not leave its partial output in front of dmesg's.
+          sudo journalctl -k -b --no-pager -o short-precise | tee /tmp/kernel-log/kernel.log > /dev/null ||
+            sudo dmesg -T | tee /tmp/kernel-log/kernel.log > /dev/null
           [ ! -e /var/log/audit/audit.log ] || { sudo cat /var/log/audit/audit.log; } > /tmp/kernel-log/audit.log
           grep -hs 'type=1326\|type=SECCOMP' /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log | grep -v 'comm="seccomp-canary"' > /tmp/seccomp.log || true
           canary="$(cat /tmp/kernel-log/kernel.log /tmp/kernel-log/audit.log 2>/dev/null | grep -c 'comm="seccomp-canary"' || true)"

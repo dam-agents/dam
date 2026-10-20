@@ -1,23 +1,25 @@
-import {
-  AddAlt,
-  AddComment,
-  DataEnrichmentAdd,
-  Tools,
-} from "@carbon/icons-react";
-import { type ReactNode, useMemo } from "react";
+import { Add, AddComment, Tools } from "@carbon/icons-react";
+import { type ReactNode, useMemo, useState } from "react";
 
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
+import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
-import { ActivityFilterMenu } from "../../home/components/activity-filter-menu.js";
+import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
+import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
+import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
-import { useAgentsList } from "../api/queries.js";
+import { useAgents, useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
 import { useSidebarOrderActions } from "../hooks/use-sidebar-order-actions.js";
@@ -32,7 +34,10 @@ export function SidebarAgents({
 }) {
   const {
     agents,
+    active,
+    folded,
     openAgentId,
+    isOpen,
     sessionOpen,
     unreadAgentIds,
     sessionsOf,
@@ -46,30 +51,36 @@ export function SidebarAgents({
     [activity.items],
   );
   const conversationOf = useActivityConversations(attention, allAgents);
-  const filters = useStore((s) => s.sidebarActivityFilters);
-  const setFilters = useStore((s) => s.setSidebarActivityFilters);
+  const available = useAgents().data?.availableChannels ?? {};
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
+  const showFolded = useStore((s) => s.sidebarShowHibernating);
+  const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
   const startSession = useStartSession();
+  const [binding, setBinding] = useState<BindMessenger | null>(null);
 
   const navigate = (go: () => void) => () => {
     go();
     onNavigate?.();
   };
 
-  const shownAgentIds = agents.map((agent) => agent.id);
+  const shownAgents = showFolded ? agents : active;
+  const shownAgentIds = shownAgents.map((agent) => agent.id);
   const row = (agent: AgentView) => {
-    const open = agent.id === openAgentId;
+    const current = agent.id === openAgentId;
+    const open = isOpen(agent.id);
     return (
       <SidebarAgentRow
         key={agent.id}
         agent={agent}
         open={open}
-        current={open && !sessionOpen}
+        selected={current}
+        current={current && !sessionOpen}
         unread={unreadAgentIds.has(agent.id)}
         orderReady={orderActions.ready}
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}
-        onSelect={navigate(() => startSession(agent.id))}
+        onSelect={() => setAgentOpen(agent.id, !open)}
         actions={
           <>
             <RowIconButton
@@ -78,18 +89,40 @@ export function SidebarAgents({
             >
               <AddComment size={14} />
             </RowIconButton>
-            <RowIconButton
-              label="Configure agent"
-              onClick={navigate(() => navigateToSandboxHome(agent.id))}
+            <RowActionsMenu
+              label="Agent actions"
+              testId="sidebar-agent-menu"
+              dense
+              stopPropagation
             >
-              <Tools size={14} />
-            </RowIconButton>
+              <DropdownMenuItem
+                onSelect={navigate(() => navigateToSandboxHome(agent.id))}
+              >
+                <Tools size={14} /> Configure agent
+              </DropdownMenuItem>
+              {(available.slack || available.telegram) && (
+                <DropdownMenuSeparator />
+              )}
+              {available.slack && (
+                <DropdownMenuItem onSelect={() => setBinding("slack")}>
+                  <ConnectionIcon iconSlug="slack" alt="" size={14} />
+                  Add to Slack channel
+                </DropdownMenuItem>
+              )}
+              {available.telegram && (
+                <DropdownMenuItem onSelect={() => setBinding("telegram")}>
+                  <ConnectionIcon iconSlug="telegram" alt="" size={14} />
+                  Add to Telegram chat
+                </DropdownMenuItem>
+              )}
+            </RowActionsMenu>
           </>
         }
       >
         <SidebarAgentSessions
           agentId={agent.id}
-          open={open}
+          open={current}
+          shown={open}
           preview={sessionsOf(agent.id)}
           previewComplete={previewComplete}
           conversationOf={conversationOf}
@@ -109,18 +142,31 @@ export function SidebarAgents({
         )}
       >
         <SectionLabel>Agents</SectionLabel>
-        <div className="flex items-center gap-0.5">
-          <ActivityFilterMenu filters={filters} onChange={setFilters} />
-          <CreateFromKitButton onOpen={onNavigate} />
-          <CreateAgentButton onCreate={onNavigate} />
-        </div>
+        <CreateAgentButton onCreate={onNavigate} />
       </div>
       {activity.unreadable && (
         <p className="px-2.5 py-1.5 text-xs text-muted-foreground">
           Recent sessions can't be loaded right now.
         </p>
       )}
-      <ul className="flex flex-col gap-px">{agents.map(row)}</ul>
+      <ul className="flex flex-col gap-px">{shownAgents.map(row)}</ul>
+      {folded.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setShowFolded(!showFolded)}
+          aria-expanded={showFolded}
+          data-testid="sidebar-agents-hibernating"
+          className="mt-px flex h-[30px] w-full items-center rounded-lg px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+        >
+          {showFolded ? "Show less" : `See all (${folded.length} hibernating)`}
+        </button>
+      )}
+      {binding && (
+        <MessengerBindDialog
+          messenger={binding}
+          onClose={() => setBinding(null)}
+        />
+      )}
     </section>
   );
 }
@@ -163,28 +209,9 @@ function CreateAgentButton({ onCreate }: { onCreate?: () => void }) {
           void defaultAgent.create();
           onCreate?.();
         }}
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
+        className="flex size-6 items-center justify-center rounded-md border border-border text-muted-foreground transition-colors hover:bg-muted hover:text-foreground disabled:opacity-50"
       >
-        <AddAlt size={16} />
-      </button>
-    </Tooltip>
-  );
-}
-
-function CreateFromKitButton({ onOpen }: { onOpen?: () => void }) {
-  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
-  return (
-    <Tooltip content="Create agent from starter kit" side="right">
-      <button
-        type="button"
-        aria-label="Create agent from starter kit"
-        onClick={() => {
-          setKitBrowserOpen(true);
-          onOpen?.();
-        }}
-        className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-      >
-        <DataEnrichmentAdd size={16} />
+        <Add size={14} />
       </button>
     </Tooltip>
   );

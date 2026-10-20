@@ -95,10 +95,7 @@ for refused in 'virtualization.imageCache.hostPath=' \
   'controller.gatewayEgress.clusterDns.ports[0]=0' \
   'controller.gatewayEgress.peers[0].namespace=Registry' \
   'virtualization.imageCache.egressCidrs[0]=0.0.0.0/00' \
-  'virtualization.imageCache.egressCidrs[0]=10.0.0.0/08' \
-  'virtualization.imageCache.egressCidrs[0]=2001:db8::/064' \
   'controller.gatewayEgress.extraCidrs[0]=::/00' \
-  'controller.gatewayEgress.extraCidrs[0]=10.0.0.0/08' \
   'virtualization.imageCache.peers[0].namespace=registry,virtualization.imageCache.peers[0].podLabels=app=registry,virtualization.imageCache.peers[0].ports[0]=443' \
   'controller.gatewayEgress.extraCidrs[0]=2001:::1/64' \
   'virtualization.runner.seccomp=permissive'; do
@@ -106,6 +103,24 @@ for refused in 'virtualization.imageCache.hostPath=' \
     echo "a render setting $refused succeeded, but it leaves the runners no image cache, no reachable registry or no seccomp filter" >&2
     exit 1
   fi
+done
+# A prefix length written with a leading zero is octal to Helm's integer
+# conversion and refused outright by the controller's own parser: `/07` passed
+# the render as prefix 7, and the controller then would not start. (`/08` is no
+# octal number, so Helm read it as 0 and the opens-every-range rule refused it
+# whichever grammar the chart kept.) The refusal has to be this one, since the
+# loop above takes any failure, and `/07` fails there for no other reason.
+for leading in 'virtualization.imageCache.egressCidrs[0]=10.0.0.0/07' \
+  'virtualization.imageCache.egressCidrs[0]=2001:db8::/064' \
+  'controller.gatewayEgress.extraCidrs[0]=10.0.0.0/07'; do
+  if out=$(helm template platform . "${COMMON[@]}" "${VM[@]}" --set "$leading" 2>&1 >/dev/null); then
+    echo "a render setting $leading succeeded, but the controller's parser refuses a prefix with a leading zero" >&2
+    exit 1
+  fi
+  case "$out" in
+    *'written without a leading zero'*) ;;
+    *) echo "a render setting $leading failed for another reason: $out" >&2; exit 1 ;;
+  esac
 done
 # The node image cache service fetches from registries and reaches nothing
 # else: its own policy admits the public internet minus every range the

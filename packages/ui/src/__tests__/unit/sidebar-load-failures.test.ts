@@ -24,6 +24,9 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
   useIsAgentAnswerableSoon: () => true,
 }));
+vi.mock("../../modules/approvals/api/queries.js", () => ({
+  useApprovalsForOwner: () => ({ data: [] }),
+}));
 vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
   useAgentSessionList: () => ({
     sessions: [],

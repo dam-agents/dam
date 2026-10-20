@@ -46,6 +46,12 @@ export function wakeFailureUserCopy(c: WakeFailureCause): string {
             "This agent failed to start: its image isn't available. " +
             "Check the agent's page or contact its owner."
           );
+        case "MachineImageCacheUnreachable":
+          return (
+            "This agent failed to start: the server that runs its owner's " +
+            "agents can't reach its image cache. Ask an admin to check the " +
+            "server's image cache."
+          );
         case "MachineBootFailed":
           return (
             "This agent failed to start: its VM didn't boot. " +

@@ -25,7 +25,6 @@ import {
   useState,
 } from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
 import { Badge } from "@/components/ui/badge";
 import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
@@ -42,6 +41,7 @@ import {
   sessionSpendTitle,
 } from "../../spend/lib/amounts-label.js";
 import { runTimeLabel } from "../lib/run-time.js";
+import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
@@ -50,10 +50,6 @@ const LONG_PRESS_MS = 400;
 const PREFETCH_DWELL_MS = 100;
 
 const NO_WORK: readonly BackgroundWorkItemView[] = Object.freeze([]);
-
-export function sessionTitleLabel(s: SessionView): string {
-  return s.title || `(no title · ${s.sessionId.slice(0, 8)})`;
-}
 
 interface Props {
   session: SessionView;
@@ -237,7 +233,7 @@ export function SessionRow({
                 working={working}
                 draft={draft}
                 backgroundWork={backgroundWork}
-                harness={s.harness ?? null}
+                unread={unread}
               />
             )}
             <div
@@ -348,7 +344,7 @@ function SessionIndicators({
   working,
   draft,
   backgroundWork,
-  harness,
+  unread,
 }: {
   scheduled: boolean;
   terminal: boolean;
@@ -357,7 +353,7 @@ function SessionIndicators({
   working: boolean;
   draft: boolean;
   backgroundWork: readonly BackgroundWorkItemView[];
-  harness: string | null;
+  unread: boolean;
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
@@ -368,7 +364,7 @@ function SessionIndicators({
     !working &&
     !hasBackgroundWork &&
     !draft &&
-    !harness
+    !unread
   )
     return null;
   return (
@@ -411,13 +407,15 @@ function SessionIndicators({
         >
           <Pen size={16} />
         </span>
-      ) : harness ? (
-        <span
-          data-testid="session-harness"
-          className="inline-flex shrink-0 text-muted-foreground"
-        >
-          <HarnessIcons harnesses={[harness]} size="xs" />
-        </span>
+      ) : unread ? (
+        <IndicatorBox>
+          <span
+            data-testid="session-unread-dot"
+            role="img"
+            aria-label="Unread"
+            className="size-2 rounded-full bg-accent"
+          />
+        </IndicatorBox>
       ) : null}
       {messenger && !working && (
         <ConnectionIcon

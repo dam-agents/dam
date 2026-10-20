@@ -72,6 +72,7 @@ export function OffFeedPinnedRow({
     refetch,
   } = useAgentSession(agent.id, sessionId, { enabled: answerable });
   const conversationOf = useSessionConversations(agent.id);
+  const approvals = useApprovalsForOwner().data;
   const filters = useStore((s) => s.sidebarActivityFilters);
   const open = useStore(
     (s) =>
@@ -97,7 +98,13 @@ export function OffFeedPinnedRow({
     ) : null;
   const working = !!session.running;
   const unread = isUnreadSession(session, { open });
-  if (!matchesActivityFilters({ session, working, unread }, filters))
+  const needsApproval = awaitsApproval(approvals ?? [], agent.id, sessionId);
+  if (
+    !matchesActivityFilters(
+      { session, working, unread, needsApproval },
+      filters,
+    )
+  )
     return null;
   return (
     <PinnedSessionRow

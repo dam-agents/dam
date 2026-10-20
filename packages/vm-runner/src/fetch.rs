@@ -7,8 +7,8 @@ use std::time::{Duration, Instant};
 use tokio_util::sync::CancellationToken;
 
 use crate::api::{
-    REASON_BOOT_FAILED, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY, REASON_SEED_MISSING,
-    REASON_STORAGE_FULL,
+    REASON_BOOT_FAILED, REASON_CACHE_UNREACHABLE, REASON_IMAGE_UNAVAILABLE, REASON_OUT_OF_CAPACITY,
+    REASON_SEED_MISSING, REASON_STORAGE_FULL,
 };
 use crate::cache::{repository, PULL_TIMEOUT};
 use crate::command::{self, PipelineFailure};
@@ -55,6 +55,15 @@ pub fn unusable(detail: impl std::fmt::Display) -> anyhow::Error {
 pub fn out_of_capacity(detail: impl std::fmt::Display) -> anyhow::Error {
     Refusal {
         reason: REASON_OUT_OF_CAPACITY,
+        message: detail.to_string(),
+    }
+    .into()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a failure of the node's image cache service rather than of the image it was asked for. The message names the socket and what sits on it, since the same "cannot be reached" means a service that is not running and a runner mounted from another node directory, and only an operator can tell those apart.
+pub fn cache_unreachable(detail: impl std::fmt::Display) -> anyhow::Error {
+    Refusal {
+        reason: REASON_CACHE_UNREACHABLE,
         message: detail.to_string(),
     }
     .into()

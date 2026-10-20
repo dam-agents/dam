@@ -13,10 +13,7 @@ import { acpSessionsKeys } from "../../../sessions/api/keys.js";
 import { prefetchSessionHistory } from "../../../sessions/api/queries.js";
 import { backgroundWorkLabel } from "../../../sessions/components/background-work-indicator.js";
 import { RenameSessionDialog } from "../../../sessions/components/rename-session-dialog.js";
-import {
-  SessionRow,
-  sessionTitleLabel,
-} from "../../../sessions/components/session-row.js";
+import { SessionRow } from "../../../sessions/components/session-row.js";
 import { useOpenSession } from "../../../sessions/hooks/use-open-session.js";
 import {
   pinKey,
@@ -24,6 +21,7 @@ import {
   togglePinnedSession,
   unpinSession,
 } from "../../../sessions/lib/pinned-sessions.js";
+import { sessionTitleLabel } from "../../../sessions/lib/session-title.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
 import { activityTone, sessionContext } from "../../lib/sidebar-tree.js";
 import { ActivityDot } from "./activity-dot.js";

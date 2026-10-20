@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -109,6 +109,66 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
     "Its sessions show when it wakes.",
   );
   await expect(asleep.getByTestId("session-row")).toHaveCount(0);
+});
+
+// TEST_SCENARIO: with the experiment off, an Agent's chat keeps the layout from before the side panel: a top bar with the Agent's tools, the Files and Artifacts sections in a column beside the conversation, and no icon bar. Turning the experiment on in the Experimental features tab, which the spec reveals the way the About tab does, and going back to the chat by in-app navigation, with no reload, swaps that for the side panel's icon bar, and the bar's Files icon opens the Files tab in the panel; turning it off brings the sections back.
+test("switches the chat between the sections and the side panel", async ({
+  page,
+}) => {
+  test.setTimeout(300_000);
+  await setNewLayout(false);
+  const agentId = agentIds.get(AGENTS[1])!;
+  await openHome(page);
+  await page.evaluate(() =>
+    localStorage.setItem("platform-debug:features-menu", "true"),
+  );
+  await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
+  await waitForAgentRunning(api, AGENTS[1]);
+  await expect(
+    page.getByRole("button", { name: "Show changes" }),
+  ).toBeVisible();
+  await expect(page.getByTestId("chat-sections")).toBeVisible();
+  await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
+
+  const chatPath = `/chat/${encodeURIComponent(agentId)}`;
+  const navigateInApp = (path: string) =>
+    page.evaluate((to) => {
+      history.pushState(null, "", to);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, path);
+  await page.evaluate(() => {
+    (window as { layoutMarker?: boolean }).layoutMarker = true;
+  });
+  const layoutSwitch = page.getByRole("switch", { name: "New layout" });
+  const switchLayout = async (on: boolean) => {
+    await navigateInApp("/settings/features");
+    await layoutSwitch.click();
+    await expect(layoutSwitch).toHaveAttribute("aria-checked", String(on));
+    await navigateInApp(chatPath);
+    await expect(chatInput(page)).toBeVisible();
+    expect(
+      await page.evaluate(
+        () => (window as { layoutMarker?: boolean }).layoutMarker,
+      ),
+      "the page did not reload",
+    ).toBe(true);
+  };
+
+  await switchLayout(true);
+  const bar = page.getByTestId("side-panel-bar");
+  await expect(bar).toBeVisible();
+  await expect(page.getByRole("button", { name: "Show changes" })).toHaveCount(
+    0,
+  );
+  await expect(page.getByTestId("chat-sections")).toHaveCount(0);
+  await bar.getByTestId("side-panel-tab-files").click();
+  await expect(
+    page.getByTestId("side-panel").getByRole("heading", { name: "Files" }),
+  ).toBeVisible();
+
+  await switchLayout(false);
+  await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
+  await expect(page.getByTestId("chat-sections")).toBeVisible();
 });
 
 // TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent. Done from the keyboard, focus follows the Session to its new row, or lands on its Agent's row when that Agent is closed.

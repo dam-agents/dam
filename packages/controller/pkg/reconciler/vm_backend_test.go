@@ -60,7 +60,11 @@ type fakeNode struct {
 	named  []string
 	onName func()
 	usage  vmrunner.RunnerUsage
-	onPut  func(vmrunner.MachineSpec)
+	// UNIT_BOUNDARY_DESCRIPTION: what the fake runner answers to a read of its image cache: reachable unless a test says otherwise, and the refusal it reports when it is not.
+	imageCache vmrunner.RunnerImageCache
+	// UNIT_BOUNDARY_DESCRIPTION: the image-cache read answers a 500, as a runner that cannot be asked about its cache does, which is not the same as a runner that says its cache is unreachable.
+	imageCacheFails bool
+	onPut           func(vmrunner.MachineSpec)
 	// UNIT_BOUNDARY_DESCRIPTION: what the controller this test builds asked the runner, so a test can hold a reconcile or a memory pass to the reads it costs: one status read per machine is work a usage read that lists every machine already answers.
 	statusReads int
 	usageReads  int
@@ -81,13 +85,20 @@ type fakeNode struct {
 	pressure      vmrunner.RunnerPressure
 	// UNIT_BOUNDARY_DESCRIPTION: a stop answers stopping, as the real runner's does, and the machine stays so until a test sets it stopped. Without it a stop takes effect at once.
 	stopsSlowly bool
+	// UNIT_BOUNDARY_DESCRIPTION: the release read answers a 500, as a loader that hangs answers none, and how many reads arrived, so a test tells a refused read from one that never happened.
+	releaseFails bool
+	releaseReads int
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
 const fakeNodeWait = 20 * time.Millisecond
 
 func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
-	n := &fakeNode{specs: map[string]vmrunner.MachineSpec{}, statuses: map[string]vmrunner.MachineStatus{}}
+	n := &fakeNode{
+		specs:      map[string]vmrunner.MachineSpec{},
+		statuses:   map[string]vmrunner.MachineStatus{},
+		imageCache: vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock"},
+	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer node-token" {
 			http.Error(w, "unauthorized", http.StatusUnauthorized)
@@ -109,6 +120,11 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			return
 		}
 		if r.URL.Path == "/release" {
+			n.releaseReads++
+			if n.releaseFails {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
 			require.NoError(t, json.NewEncoder(w).Encode(n.release))
 			return
 		}
@@ -137,6 +153,14 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 				return
 			}
 			require.NoError(t, json.NewEncoder(w).Encode(n.pressure))
+			return
+		}
+		if r.URL.Path == "/image-cache" {
+			if n.imageCacheFails {
+				http.Error(w, "the read failed", http.StatusInternalServerError)
+				return
+			}
+			require.NoError(t, json.NewEncoder(w).Encode(n.imageCache))
 			return
 		}
 		if r.URL.Path == "/machines" {
@@ -267,6 +291,19 @@ func (n *fakeNode) pressureReadCount() int {
 	n.mu.Lock()
 	defer n.mu.Unlock()
 	return n.pressureReads
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the release read fails from now on, as a loader that hangs answers none.
+func (n *fakeNode) refuseReleaseReads() {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	n.releaseFails = true
+}
+
+func (n *fakeNode) releaseReadCount() int {
+	n.mu.Lock()
+	defer n.mu.Unlock()
+	return n.releaseReads
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: sets the pressure the runner reports and makes its next read fail, as a runner restarting does.
@@ -1837,6 +1874,31 @@ func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
 	assert.Equal(t, metav1.ConditionFalse, cond.Status)
 	assert.Equal(t, vmrunner.ReasonStorageFull, cond.Reason)
 	assert.Contains(t, cond.Message, "93% full")
+}
+
+// TEST_SCENARIO: a runner that cannot reach the node's image cache refuses every image its machines do not already hold, and the runner sees only its own mount of the cache directory — two runners on one node directory and on a stale copy of it name the same socket. So the Agent's own failure names the node directory this runner mounts, which is the fact an operator compares with the one the cache service writes: a start that fails with no pending runner change writes no roll Event to carry it.
+func TestACacheRefusalNamesTheNodeDirectoryTheRunnerMounts(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	createRolloutRunner(t, r, testOwner)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateAbsent,
+		Reason:  vmrunner.ReasonImageCacheUnreachable,
+		Message: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, vmrunner.ReasonImageCacheUnreachable, cond.Reason)
+	assert.Contains(t, cond.Message, "cannot be reached", "the runner's own refusal is published")
+	assert.Contains(t, cond.Message, r.config.VM.Runner.ImageCacheHostPath, "the failure does not name the node directory the runner mounts")
 }
 
 // TEST_SCENARIO: a full home inside a guest is the same failure a container agent reports from its termination message, so the runner's reason for it is published as HomeVolumeFull, and the api-server's and UI's existing copy for a full home applies to a vm agent too.

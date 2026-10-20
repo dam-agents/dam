@@ -1,7 +1,7 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fs;
 use std::ops::RangeInclusive;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Condvar, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
@@ -10,10 +10,10 @@ use tokio_util::sync::CancellationToken;
 use tokio_util::task::TaskTracker;
 
 use crate::api::{
-    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerPressure, RunnerUsage,
-    SeedResult, State, StorageUsage, REASON_BOOT_FAILED, REASON_COPYING_DISK, REASON_HOME_FULL,
-    REASON_OOM_KILLED, REASON_OUT_OF_CAPACITY, REASON_SECCOMP_KILLED, REASON_STORAGE_FULL,
-    STATE_RUNNING,
+    CpuUsage, MachineSpec, MachineStatus, MachineUsage, MemoryUsage, RunnerImageCache,
+    RunnerPressure, RunnerUsage, SeedResult, State, StorageUsage, REASON_BOOT_FAILED,
+    REASON_COPYING_DISK, REASON_HOME_FULL, REASON_OOM_KILLED, REASON_OUT_OF_CAPACITY,
+    REASON_SECCOMP_KILLED, REASON_STORAGE_FULL, STATE_RUNNING,
 };
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
@@ -330,6 +330,22 @@ fn check_id(id: &str) -> Result<(), Rejected> {
     } else {
         Err(Rejected::bad_request("invalid machine id"))
     }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how a person restages the image the runner refuses as an archive, which is the one thing a staging run cannot learn by itself — where this runner's images live. `host_runner` is set where the binary runs on a Mac, which is the host runner: it owns its image directory, so the staging is told to stay on that Mac, in the home the directory sits in, since a shell a person opens has neither. A runner pod reads a mount of the install's cache directory instead, whose node directory no process in the pod can see, so the hint says where that directory is named rather than the mount's path.
+fn restage_hint(image_dir: &Path, host_runner: bool) -> String {
+    if host_runner {
+        return format!(
+            "`VM_HOST_RUNNER=1 PLATFORM_VM_RUNNER_HOME={} mise run image:stage-vm <image>`",
+            shell_quote(image_dir.parent().unwrap_or(Path::new("/")))
+        );
+    }
+    "`mise run image:stage-vm <image>`, with `VM_IMAGE_DIR` set to the node directory this runner's pod mounts its image cache from".to_string()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one shell word, so a hint a person pastes works for a directory with a space or a quote in it. Every value it is given is single-quoted, and a quote inside one closes the quoting, escapes itself and opens it again.
+fn shell_quote(path: &Path) -> String {
+    format!("'{}'", path.to_string_lossy().replace('\'', r"'\''"))
 }
 
 impl Server {
@@ -797,6 +813,14 @@ impl Server {
         Ok(state::machine_ids(&self.config.state_dir)?
             .into_iter()
             .collect())
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether this runner can reach the node image cache service now, asked by the controller before it holds a changed runner pod back for a busy agent. A runner with no service configured needs no one and answers reachable, since it boots only the trees staged on its node.
+    pub fn image_cache(&self) -> RunnerImageCache {
+        match &self.config.images {
+            Some(images) => images.reach(),
+            None => RunnerImageCache::default(),
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: takes the controller's desired spec for one machine and answers with its status. The spec replaces any spec not yet acted on. When the machine needs work and no worker is converging it, one is started and the answer reports its first action as the state. A spec that would boot a machine the runner's memory cannot hold is refused here and not stored, so nothing is created for it. While a seed is being uploaded the spec is stored and no worker is started, because a guest booted then would read half a seed; the controller's next ensure after the upload starts it.
@@ -1411,7 +1435,7 @@ impl Server {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as an image problem, never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
+    // UNIT_BOUNDARY_DESCRIPTION: what a machine of this spec boots: the tree an install with no registry staged for the reference, or else the tree the image cache resolves it to, with the launch recorded beside it. If the node's cache service cannot be reached, a reference one of this runner's own machines already boots still boots the tree that machine holds: it is only read, and it was checked for this owner when that machine got it. Anything else the cache cannot serve is refused as the cache's fault or the image's, whichever it is, and never booted straight from the registry. The machine stops waiting for the cache once its token is cancelled; the fetch itself is the cache's, may serve other machines of the image, and runs on to its own end.
     fn resolve(
         &self,
         id: &str,
@@ -1864,8 +1888,9 @@ impl Server {
         let archive = cache::archive_path(&self.config.image_dir, image);
         if archive.exists() {
             return Err(unusable(format!(
-                "{} is a staged image archive, which the runner does not boot; restage the image with `mise run image:stage-vm`",
-                archive.display()
+                "{} is a staged image archive, which the runner does not boot; restage the image with {}",
+                archive.display(),
+                restage_hint(&self.config.image_dir, cfg!(target_os = "macos")),
             )));
         }
         Ok(None)

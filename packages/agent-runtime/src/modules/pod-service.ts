@@ -1,51 +1,9 @@
 import { spawn } from "node:child_process";
-import { z } from "zod";
-import type { DocumentStoreBackend } from "../core/document-store.js";
 import { mergedSpawnEnv, type LeaseEnvReader } from "../core/runtime-env.js";
 
 const BACKOFF_INITIAL_MS = 1_000;
 const BACKOFF_MAX_MS = 30_000;
 const HEALTHY_RUN_MS = 60_000;
-
-export interface ProviderEnvSnapshot {
-  write(): void;
-}
-
-/**
- * UNIT_BOUNDARY_DESCRIPTION: the Model Router keeps provider env out of every
- * harness process, so this file in the agent's home is the one place an
- * image's own scripts learn which providers the agent holds.
- */
-export function createProviderEnvSnapshot(opts: {
-  stateBackend: DocumentStoreBackend;
-  envReader: LeaseEnvReader;
-}): ProviderEnvSnapshot {
-  const { envReader } = opts;
-  const snapshot = opts.stateBackend.open("pod-service-env", {
-    schema: z.object({
-      env: z.record(z.string(), z.string().optional()),
-      providers: z
-        .record(z.string(), z.record(z.string(), z.string()))
-        .optional(),
-    }),
-    initial: () => ({ env: {} }),
-  });
-  return {
-    write() {
-      snapshot.write({
-        env: mergedSpawnEnv(envReader),
-        providers: Object.fromEntries(
-          envReader
-            .providers()
-            .map((provider) => [
-              provider,
-              envReader.forLease({ harness: "", provider }),
-            ]),
-        ),
-      });
-    },
-  };
-}
 
 export interface PodServiceSupervisor {
   refreshEnv(): void;

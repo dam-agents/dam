@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -22,6 +22,15 @@ A changed runner also waits for its owner's agents to be idle, since a roll ends
 Before it takes a place in the roll, the controller asks each of the owner's ready machines the idle checker's own question, whether its agent's status says idle, all at once, and an agent that does not answer counts as idle.
 A runner with a busy agent holds no place, so other owners roll meanwhile, and the next pass offers it again.
 The install's idle wait, a day by default so that a multi-hour kept job finishes, bounds this from the first pass that found the owner busy, and is recorded on the runner so a controller restart does not start it over; past it, the runner rolls with the agent busy, so an owner who is never idle still gets the release.
+**A runner that cannot reach its node's image cache does not wait out the idle wait.** Such a runner boots only the trees its own machines already hold, so every image its owner has not booted yet is refused ([vm-image-cache](vm-image-cache.md)), and the image update job holds each upgrade rather than moving an Agent back.
+Waiting would protect one turn and cost the owner every image move for the whole idle wait, so a runner whose cache stays out of reach rolls with the agent busy.
+It takes a minute of the runner saying so first: a cache service restarted, or a socket rebound under it, refuses a connect for seconds, and one refused probe is not worth the turns of a healthy, busy runner.
+The first pass that reads the refusal records when it read it on the runner's Deployment, so the wait is judged across passes and a controller restart does not start it over, and a cache that answers in between clears the record and starts the minute again.
+The minute therefore counts only the time a pass watched the refusal: a pass that finds no place in the roll asks nothing and forgets the record, since a cache that recovered while every place was taken is never seen to recover.
+The wait is otherwise what it was: a runner whose cache answers waits, and so does one that cannot be asked at all, since a runner that answers nothing may still have a working cache.
+**A held roll is reported once per transition, not once per pass.** The controller writes a Kubernetes Event on the runner's Deployment when the wait starts, when the cache goes out of reach, when it passes the idle wait, and when a cache that stayed out of reach takes the roll past that wait, naming whichever of the busy agents, the node directory that runner mounts as its cache, and the runner's own refusal explains that transition, and only once the write that records the transition has landed.
+A roll held right now is one series in `platform.vm_runner.roll_held_for_idle`, the age of the roll held longest, observed rather than recorded: it reads zero when the last hold ends, and drops a hold no pass reported for half an hour, well past the drift pass and the ten-minute sweep that refresh a live one, so a queue delay never reads as a deletion; it names no owner, since a runner is per owner and no exported series names a person ([observability](observability.md)), and the Events on the runner are what say which roll is held.
+An operator therefore reads one line per change in `kubectl get events`, and one series per roll held now, rather than one log line per reconcile.
 Rolls advance as agents reconcile and on the periodic sweep, which offers every runner its turn so owners whose agents all sleep still roll, as many turns at once as the roll is wide, handed out in name order; which runners are mid-roll is read once every few seconds rather than on every turn, and a roll the controller starts counts at once.
 That read takes only what the runners' Deployments record, and calls no runner, since every owner's decision waits on it.
 Whether a runner's machines came back is asked on its own owner's turn, an agent of theirs reconciling or the sweep reaching them, and so is the owner's own list of ready machines before it takes a place.
@@ -70,11 +79,12 @@ The new runner reads each machine's record, finds its VMM alive, and publishes i
 The machines and their disks are untouched, and each keeps the runtime it booted; the machines the new runner starts boot its own runtime, so a machine moves to a new runtime at its next boot.
 The runner records the runtime each machine booted, and manages a machine on another runtime assuming the two are compatible, rather than testing every pair of releases: a runtime error on such a machine, or a guest quiet for half a minute instead of ten, reboots it onto the runner's own runtime.
 That reboot is the safety for a new runtime, and it waits on the machine failing: a fix a running guest needs — a new libkrun, guest kernel or platform-init — reaches it only when a hand-off's machine errs or goes quiet.
-So a release declares which of what a machine booted it changes, as a reboot key it carries in its release directory (`reboot-id`, written by the image build from [`packages/vm-runner/reboot-id`](../../packages/vm-runner/reboot-id)): a runner refuses a release whose key differs from the one it runs, holding it as `reboot`, and each owner's runner pod rolls onto that release instead, rebooting that owner's machines.
+So a release declares which of what a machine booted it changes, as a reboot key it carries in its release directory, written by the image build from [`packages/vm-runner/reboot-id`](../../packages/vm-runner/reboot-id): a runner refuses a release whose key differs from the one it runs, holding it as `reboot`, and each owner's runner pod rolls onto that release instead, rebooting that owner's machines.
 The key is compared whole and never parsed, and a release that changes nothing a machine booted carries the key before it, so the pods it reaches take it in place.
-A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod rolls for a reason of its own.
-That roll does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
-It applies to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
+A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod's shape changes for another reason, which rolls it onto a release that carries a key.
+The pod roll a `reboot` hold causes does not wait for the owner's agents to be idle, which would otherwise hold the release back a day from an owner who is never idle.
+That roll ends the turn each busy agent is in, and the controller reports the owner and those agents when it rolls past them.
+That exemption belongs to the roll that carries the release, never to a roll a changed pod shape causes, which keeps its idle wait.
 The runner's own answer is what the controller rolls on: a release it holds as `reboot` ends the hand-off, and the pod roll that follows takes its own place in the width.
 Such a roll writes the image that carries the release, which the pod does not have yet — a pod on the configured image already runs the release it declares — and that change to the pod template is what restarts it, rebooting the machines.
 A runner that holds that release as failed keeps the pod it has: a pod on the release would fail the same way and take its machines with it, so the refusal to reboot does not overrule what the runner reported.
@@ -92,6 +102,7 @@ A runner under a loader whose machine API fails to serve exits as a hand-off doe
 That record is what a restarted controller resumes from, and what it names again to a runner that reports neither running nor taking it, a pod that restarted and forgot.
 A hand-off reboots nothing, but the loader's fallback catches only a release that exits: one that runs and then refuses to manage machines would, named everywhere at once, break every owner together.
 So a hand-off holds a place in the same roll as a pod roll, and a new release is named only while fewer than the roll's width of runners are mid-roll or mid-hand-off.
+A runner already mid-hand-off takes the release in the place it holds, as a mid-roll runner takes a corrective roll, so a fleet that shrinks under the width still offers every runner stuck on a broken release the corrected one.
 It ends no turn, so it does not wait for idle agents.
 A runner whose pod is about to roll is not named a release: the roll starts it on the configured image.
 A runner is mid-hand-off from the moment its release is named until it reports the release running, every machine that was ready before is ready again, stopped, or gone with its agent, and no ensure of that owner's machines was refused since.

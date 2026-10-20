@@ -1,5 +1,5 @@
 import {
-  AddAlt,
+  Add,
   AddComment,
   ChevronRight,
   DataEnrichmentAdd,
@@ -202,7 +202,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             ))}
           </ul>
           <AddRow
-            icon={AddAlt}
+            icon={Add}
             label="New agent"
             testId="sidebar-new-agent-row"
             disabled={!defaultAgent.ready}
@@ -402,7 +402,7 @@ function CreateAgentMenu({
               FOCUS_RING,
             )}
           >
-            <AddAlt size={16} />
+            <Add size={16} />
           </button>
         </DropdownMenuTrigger>
       </Tooltip>
@@ -411,7 +411,7 @@ function CreateAgentMenu({
           disabled={!defaultAgent.ready}
           onSelect={() => void defaultAgent.create()}
         >
-          <AddAlt size={14} /> New agent
+          <Add size={14} /> New agent
         </DropdownMenuItem>
         <DropdownMenuItem onSelect={() => setKitBrowserOpen(true)}>
           <DataEnrichmentAdd size={14} /> Use a starter kit

@@ -99,6 +99,84 @@ func RunnerHandoffStalled(ctx context.Context) {
 	}
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how long the roll held longest right now has waited, as an observation of the rolls held right now rather than a value written per pass: a gauge that is recorded keeps a series for every owner it ever saw, so an owner whose roll ended would export its last age forever, and owners that churn would fill the SDK's series limit. A hold is dropped when the reconciler ends it, and on its own when no pass refreshed it for heldRollStale, so a runner deleted or a template reverted mid-wait stops being observed; heldRollStale outlives the backstops that refresh a live hold — the drift pass, which hands its agents over five minutes and runs later under queue congestion, and the ten-minute rollout sweep — by a wide margin, since a hold that waited for one of them is being held and dropping it would export zero in the middle of it and reset whatever alert reads the series. The series carries no owner: a runner is per owner, so its owner on a series would be a person, which no exported series names. An operator reads which runner is held from the Events on it.
+const heldRollStale = 30 * time.Minute
+
+const (
+	heldRollName = "platform.vm_runner.roll_held_for_idle"
+	heldRollDesc = "How long the changed pod held longest right now has been held back from its roll, for busy agents or for a node image cache the runner cannot reach; zero when no roll is held"
+)
+
+type heldRoll struct {
+	since time.Time
+	seen  time.Time
+}
+
+type heldRolls struct {
+	mu sync.Mutex
+	m  map[string]heldRoll
+}
+
+var runnerRollHeld = &heldRolls{m: map[string]heldRoll{}}
+
+// UNIT_BOUNDARY_DESCRIPTION: one pass that keeps the hold, with the instant it started, which the reconciler reads from the runner's own annotation rather than counting from this process's start.
+func (h *heldRolls) held(owner string, since time.Time) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.m[owner] = heldRoll{since: since, seen: time.Now()}
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the pass that ends the hold, so the series goes rather than being left at its last age.
+func (h *heldRolls) ended(owner string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	delete(h.m, owner)
+}
+
+func (h *heldRolls) observe(now time.Time, o metric.Int64Observer) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	var oldest time.Duration
+	for owner, roll := range h.m {
+		if now.Sub(roll.seen) >= heldRollStale {
+			delete(h.m, owner)
+			continue
+		}
+		oldest = max(oldest, now.Sub(roll.since))
+	}
+	o.Observe(int64(oldest.Seconds()))
+}
+
+func newHeldRollGauge(meter metric.Meter, h *heldRolls) (metric.Int64ObservableGauge, error) {
+	return meter.Int64ObservableGauge(heldRollName,
+		metric.WithDescription(heldRollDesc),
+		metric.WithUnit("s"),
+		metric.WithInt64Callback(func(_ context.Context, o metric.Int64Observer) error {
+			h.observe(time.Now(), o)
+			return nil
+		}))
+}
+
+var runnerRollHeldGauge = sync.OnceValue(func() metric.Int64ObservableGauge {
+	gauge, err := newHeldRollGauge(otel.Meter(ScopeName), runnerRollHeld)
+	if err != nil {
+		otel.Handle(err)
+	}
+	return gauge
+})
+
+// UNIT_BOUNDARY_DESCRIPTION: a pass that keeps a runner's roll held, named by owner and by when the hold started.
+func RunnerRollHeld(owner string, since time.Time) {
+	runnerRollHeldGauge()
+	runnerRollHeld.held(owner, since)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a pass that finds the hold over, so nothing is exported for that owner until it is held again.
+func RunnerRollEnded(owner string) {
+	runnerRollHeldGauge()
+	runnerRollHeld.ended(owner)
+}
+
 var runnerRollSkipped = sync.OnceValue(func() metric.Int64Counter {
 	counter, err := otel.Meter(ScopeName).Int64Counter("platform.vm_runner.roll_skipped",
 		metric.WithDescription("VM runner rolls whose new pod was not ready by the settle timeout for a fault of its owner alone, and which gave up their place in the roll"))

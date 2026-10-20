@@ -137,6 +137,8 @@ A move never strands an Agent.
 It records the image the Agent came from until the Agent has stayed ready on the new spec for five minutes, so a container that crashes seconds after it becomes ready does not prove the move.
 If the controller instead reports, for that spec, a failure the image can cause, the job writes the old image back and marks the new one refused for that Agent, which is not moved to it again; a later image is tried as usual.
 The failures are: the image cannot be pulled or unpacked, the machine cannot boot it, or the controller's `StartFailed` condition.
+A start the node refused is not one of them: a machine whose runner cannot reach its node's image cache carries a reason of its own ([vm-image-cache](vm-image-cache.md)), and the job holds the move instead, writing nothing back and marking nothing refused, because the image is not what failed and the image it came from would fail the same way there.
+It says so once per move, so the upgrade reads as waiting rather than as dropped.
 The controller sets `StartFailed` only from the pod or machine that runs the current spec, or from a refusal to admit that spec, never from the pod a roll replaces, which exits too.
 On the container backend that is a pod of the agent StatefulSet's update revision, once the StatefulSet has observed its generation.
 On the vm backend the runner's status names no spec, but a restart in flight reads not ready, so the controller counts from the first read at the current generation.

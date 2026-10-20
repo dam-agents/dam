@@ -4,8 +4,9 @@ Last verified: 2026-10-20
 
 Home answers one question: what has happened since you last looked, and what still needs you.
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
-Two surfaces read it: the sidebar lists the newest Sessions of every Agent under that Agent, and the **approvals bell** lists what waits on the user's decision.
+Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, a panel like the Artifacts panel beside it, that takes its room from the page.
+In an Agent's chat with the new layout off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
 
 ## What Home reads
 
@@ -37,17 +38,25 @@ It shows its owner the rows filed for that Agent as a **provisional** list, and 
 The UI asks the Agent for that list once the Agent shows as starting, not first at Ready: the agent's tRPC relay holds the ask while the wake runs, and an ask it refuses, or a hold that fails, is asked again when the Agent turns Ready.
 Nothing acts on a provisional row as proof the session exists: opening one asks the Agent, which still decides.
 Rename and Delete on a provisional row wake the Agent and run once it answers, so the Agent still decides; a Delete asks its confirmation before the wake, and an Agent that stops before it answers changes nothing.
-The sidebar shows the record's rows the same way under every Agent that is not open, three at most, and asks the Agent for its own list only when the user opens the Agent (its chat or its configuration page) or asks for more.
+The sidebar's Agents section lists the Sessions of an Agent only while the user has it open: a click on the Agent opens or closes its list in place, and the Agent whose chat or configuration page is shown is open.
+An open Agent that is not the shown one lists the record's rows, three at most; the shown Agent lists its own list, and so does any Agent once the user asks for more.
 It offers more only when the record may hold more: a feed shorter than its row limit lists every row filed for the owner.
 Once the list is expanded, each More asks the Agent for one more page of its list, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.
 
-The sidebar lists Agents in one **manual order**, which the user sets by drag and drop or with Alt+Up and Alt+Down.
-An Agent the order does not name yet, a new Agent, goes to the bottom of the list, oldest first, and activity never moves an Agent.
+The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
+An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
+Hibernated Agents fold under **See all (N hibernating)**, unless the user has one open or its chat or configuration page is shown; closing the shown Agent's Sessions keeps its row in place.
+An Agent's row shows a dot when one of its Sessions is unread, and its hover actions are **New session** and a ⋮ menu: Configure agent, and Add to Slack channel or Telegram chat where the installation has them.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
 
 The Sessions of each Agent are listed by **last activity, newest first**, and the user does not reorder them: a new Session, or a turn in an old one, puts that Session at the top.
+A Session row shows a blue dot while it is unread, and an approval dot in its place while an approval waits on the user.
+
+The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's name and its time.
+Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
+The divider between the two sections drags, and the browser keeps its place.
 The record's rows and the Agent's own list are both newest first, and each More appends an older page, so the rows already shown keep their places.
 
 That boundary is what makes the record safe to rebuild or discard.
@@ -71,6 +80,7 @@ The Pinned section reads a pinned Session from the record, and one the record do
 A pin of an asleep Agent that its record does not hold shows once the Agent wakes.
 An asleep Agent whose Sessions the record does not hold shows a note that its Sessions show when it wakes; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
+An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
 Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 With no Agent rows on that Home, an Agent's runtime migration controls show in the header of its configuration page.
 

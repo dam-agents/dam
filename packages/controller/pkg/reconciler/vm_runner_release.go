@@ -42,7 +42,7 @@ const (
 	legacyRunnerReleaseSuffix = "-release"
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run, the runner image this controller is configured with, to the pod's loader over the runner's machine API, which hands the machines to it once the node's stager has staged it, so a new runner image reaches an owner without a pod restart. A hand-off reboots nothing, but a release that runs and then refuses the machines' ensures would still break every owner it reaches, so a new release is named only while fewer than the roll's width (`rollout.maxConcurrent`, or `rollout.maxConcurrentPercent` of the install's runners) of runners are mid-roll or mid-hand-off. A hand-off ends no turn, so it does not wait for idle agents. A runner whose pod is about to roll is left to the roll, which starts it on the configured image. The release is recorded before the runner is called, and named again on a later turn while the runner does not report it, so a failed call or a controller restart only delays the hand-off. A release that declares its machines must reboot onto it holds the hand-off (`reboot`), which ends it: the pod rolls onto the release instead.
+// UNIT_BOUNDARY_DESCRIPTION: names the runner release an owner's runner pod should run, the runner image this controller is configured with, to the pod's loader over the runner's machine API, which hands the machines to it once the node's stager has staged it, so a new runner image reaches an owner without a pod restart. A hand-off reboots nothing, but a release that runs and then refuses the machines' ensures would still break every owner it reaches, so a new release is named only while fewer than the roll's width (`rollout.maxConcurrent`, or `rollout.maxConcurrentPercent` of the install's runners) of runners are mid-roll or mid-hand-off. A runner already mid-hand-off takes the release in the place it holds (runnerRollPlace): a fleet that shrinks under a share leaves more runners on a broken release than the width has places, and counting their peers alone would never offer them the corrected one. A hand-off ends no turn, so it does not wait for idle agents. A runner whose pod is about to roll is left to the roll, which starts it on the configured image. The release is recorded before the runner is called, and named again on a later turn while the runner does not report it, so a failed call or a controller restart only delays the hand-off. A release that declares its machines must reboot onto it holds the hand-off (`reboot`), which ends it: the pod rolls onto the release instead.
 func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string, rendered *appsv1.Deployment) error {
 	release := r.config.VM.Runner.Image
 	hash, err := runnerTemplateHash(runnerRollSpec(rendered.Spec))
@@ -65,14 +65,14 @@ func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string, 
 	}
 	const waiting = "vm runner: a new release is waiting for other runners to finish rolling or handing off"
 	r.runnerRollMu.Lock()
-	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, false)
+	_, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, true)
 	r.runnerRollMu.Unlock()
 	if err != nil || !free {
 		return err
 	}
 	ready := r.readyMachines(ctx, owner)
 	r.runnerRollMu.Lock()
-	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, false)
+	rolling, free, err := r.runnerRollPlace(ctx, owner, dep.Name, waiting, true)
 	if err != nil || !free {
 		r.runnerRollMu.Unlock()
 		return err
@@ -316,14 +316,13 @@ func (r *AgentReconciler) runnerNeedsPodForRelease(ctx context.Context, owner st
 		return false, false
 	}
 	if release.Held == vmrunner.HeldReboot {
-		r.clearRunnerReleaseNamed(ctx, owner, existing)
 		slog.Info("vm runner: the release reboots the machines booted before it, so the pod rolls onto it instead of handing off", "owner", owner, "release", want, "running", release.Running)
 		return true, true
 	}
 	return release.Held == vmrunner.HeldRuntime, false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: forgets when the runner's release was named, once the runner has answered with an outcome of the hand-off: that it runs the release, or that it holds it as failed and runs the one before. The stamp stands only for a hand-off whose outcome is not known yet; left in place, any later blip in such a runner — a crash and restart — would read as a hand-off that never came back and roll the pod, onto a release that failed in the second case.
+// UNIT_BOUNDARY_DESCRIPTION: forgets when the runner's release was named, once the runner has answered with an outcome of the hand-off: that it runs the release, or that it holds it as failed and runs the one before. The stamp stands only for a hand-off whose outcome is not known yet; left in place, any later blip in such a runner — a crash and restart — would read as a hand-off that never came back and roll the pod, onto a release that failed in the second case. A runner that holds the release as rebooting keeps the stamp: its roll may find no free place for a while, and the stamp is what rolls the pod when a loader that hangs never takes the release it was named.
 func (r *AgentReconciler) clearRunnerReleaseNamed(ctx context.Context, owner string, dep *appsv1.Deployment) {
 	if dep.Annotations[annRunnerReleaseNamedAt] == "" {
 		return

@@ -20,7 +20,11 @@ vi.mock("../../modules/processes/components/process-list.js", () => ({
 }));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: Record<string, unknown>) => unknown) =>
-    select({ setSidePanelTab: vi.fn(), setMobileScreen: vi.fn() }),
+    select({
+      setSidePanelTab: vi.fn(),
+      setProcessesSectionOpen: vi.fn(),
+      setMobileScreen: vi.fn(),
+    }),
 }));
 
 const lastList: ProcessList = {
