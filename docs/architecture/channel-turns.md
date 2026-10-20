@@ -49,6 +49,7 @@ A few observations the diagram glosses over:
   Slack only: Telegram drops one at its gateway.
   A picture becomes prompt content only in a format the harness decodes, the sniffed type outranking the messenger's label.
   Everything else is written into the agent's workspace and linked by absolute path, as a web-UI upload is, whatever its format.
+  Both land under `~/.uploads/`, which the Claude Code image's managed settings allow reads from, so reading a handed file raises no permission prompt.
   Anything withheld — a refusing messenger, a failed write, a size ceiling — is named to the agent, and on an addressed turn to the sender too.
 - **A relayed turn answers its own permission prompts, and it answers them no.** A harness that stops to ask before a sensitive tool call is asking somebody who is not there: the relay holds no verdict of its own, and the conversation's other members are not the binding owner.
   So the relay refuses and the turn carries on with that one call denied, rather than waiting on an answer that cannot come — the same rule the credentialed-egress gate applies to an unattended turn ([security-and-credentials](security-and-credentials.md)).
