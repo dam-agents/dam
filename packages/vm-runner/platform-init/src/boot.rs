@@ -1561,6 +1561,11 @@ fn empty_leased(file: &File, entry: &ScratchEntry, proc: &Path, now: u64) -> io:
     {
         return Ok(0);
     }
+    // UNIT_BOUNDARY_DESCRIPTION: the lease is still a write lease at the instant of the emptying, asked again and not assumed. The kernel breaks a lease by force once the break window (fs.lease-break-time, 45 s by default) passes without the holder answering, and downgrades it to a read lease that lets a reader in — and the scan of every process's maps above can take that long if a process is stopped in the kernel. A file whose lease is no longer a write lease is one a reader may already have opened, so it is kept.
+    // SAFETY: the descriptor is open for the call and fcntl takes no pointer for F_GETLEASE.
+    if unsafe { libc::fcntl(file.as_raw_fd(), libc::F_GETLEASE) } != libc::F_WRLCK {
+        return Ok(0);
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the bytes are freed where the file stands and the name is left: the space is what the pass is for, and a name costs nothing. What is reported is what the descriptor held before and after, so an already empty or sparse file is reported as the little it is, and a hard link's blocks are never claimed (such a file is kept above).
     let freed = before.stx_blocks;
     if unsafe { libc::ftruncate(file.as_raw_fd(), 0) } != 0 {
