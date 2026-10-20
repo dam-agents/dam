@@ -2,6 +2,7 @@ import { ChevronLeft, Home, Settings } from "@carbon/icons-react";
 import { useEffect, useRef } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -140,7 +141,7 @@ function PeekButton({
       onClick={onOpen}
       onMouseEnter={onPeek}
       data-testid="sidebar-peek-button"
-      className="fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-chrome pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex"
+      className={`fixed top-3 left-3 z-nav hidden h-10 items-center gap-1.5 rounded-full border border-border bg-chrome pr-3.5 pl-2 text-foreground/80 shadow-lg transition-colors anim-in hover:bg-muted hover:text-foreground md:flex ${FOCUS_RING}`}
     >
       <ChevronLeft size={16} className="text-muted-foreground" />
       {agent ? (
@@ -159,7 +160,7 @@ function PeekButton({
         {agent ? agent.name : view === "settings" ? "Settings" : "Home"}
       </span>
       {hasUnread && (
-        <span className="absolute top-1 right-1 size-2 rounded-full bg-warning ring-2 ring-chrome" />
+        <span className="absolute top-1 right-1 size-2 rounded-full bg-success ring-2 ring-chrome" />
       )}
     </button>
   );
