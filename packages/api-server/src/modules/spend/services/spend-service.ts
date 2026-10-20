@@ -84,6 +84,9 @@ export function createSpendService(deps: {
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   connectionNames(): Promise<ReadonlyMap<string, string>>;
   liveAgentNames(): Promise<ReadonlyMap<string, string>>;
+  lastKnownNames(
+    agentIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
   invocationTitles(
     agentIds: readonly string[],
   ): Promise<ReadonlyMap<string, string>>;
@@ -216,16 +219,23 @@ export function createSpendService(deps: {
         deps.connectionNames(),
         deps.liveAgentNames(),
       ]);
-      const [sessionCategories, invocationTitles] = await Promise.all([
-        categoriesOf(rows),
-        deps.invocationTitles(agentIdsOf(rows)),
-      ]);
+      const agentIds = agentIdsOf(rows);
+      const [sessionCategories, invocationTitles, lastKnownNames] =
+        await Promise.all([
+          categoriesOf(rows),
+          deps.invocationTitles(agentIds),
+          deps.lastKnownNames(agentIds),
+        ]);
       return foldBreakdown({
         from,
         to,
         rows,
         connectionNames,
-        agentNames: agentNames({ invocationTitles, liveNames }),
+        agentNames: agentNames({
+          invocationTitles,
+          liveNames,
+          lastKnownNames,
+        }),
         sessionCategories,
         scope,
       });

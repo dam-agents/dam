@@ -121,6 +121,8 @@ So a sub-agent's calls count for its root driver.
 **Daily rollup.** Postgres keeps one row per day, payer, Connection, model, Session and calling agent: the cost, the token counts, the web searches, the model time, the counts of calls, estimated calls and refused calls, and the most expensive single call.
 The calling agent is the agent whose gateway sent the record, so a sub-agent's calls count for its root driver and still show as its own.
 A row outlives its agent, so the spend of a deleted agent still counts for its owner.
+The api-server also keeps the last name of each Agent that goes, from its Agent watch, which sees every way that an Agent is deleted.
+A delete that no api-server replica sees leaves the agent with no name.
 
 **Session check.** The Session comes from the stamp in the agent's pod, so it serves display only, and no total and no limit depends on it.
 A call's Session counts only when the calling agent reported that Session to the [Session directory](metrics.md#session-directory); a Session that the agent never reported, or a failed check, counts as no Session.
@@ -147,6 +149,7 @@ The read for one agent counts the calls that it pays for, so a driver's figures 
 The api-server names each agent row.
 A sub-agent takes the first line of its task, from its Invocation record ([invocations](invocations.md#the-delegation-record)), so a running sub-agent and a finished one have the same name.
 Any other agent takes its live name.
+An agent that is gone takes the last name that the api-server kept for it ([Ledger](#ledger)).
 
 **Spend per Session.** For one agent, the api-server sums the calls that the agent made per Session, newest first, and adds to each Session the calls of the sub-agents spawned from it at any depth, also as a part of its own.
 A sub-agent whose spawn recorded no Session ([invocations](invocations.md)) adds its spend to no Session.
@@ -356,5 +359,6 @@ The figure includes the sub-agents spawned from that Session, and its tooltip na
 The Usage pages also show the sum of call times and the spend by session type, with a "Sub-agents" row for the calls of sub-agents and a "No session" row for calls with no Session.
 A driver's Usage section lists the driver and each sub-agent that spent in the period, and a sub-agent's own Usage section shows the calls that it made.
 Each sub-agent row shows the first line of its task, as its delegation card does.
+A deleted agent keeps its last name beside a greyed avatar, and an agent with no recorded name shows as "Deleted agent".
 The line under each chat turn shows the measured cost of the calls that started in that turn, from the call rows.
 Its tooltip tells that the agent reports the time, calls and tokens without cached tokens, and that DAM measures the cost with cached tokens and without sub-agents.

@@ -59,14 +59,14 @@ Apply `/typescript-engineering` throughout.
 
 ## Acceptance criteria
 
-- [ ] `mise run //packages/db:check:generated` passes, and the migration is generated, not hand-written.
-- [ ] Deleting an Agent through the UI, through `kubectl delete`, and by an Invocation reap each leaves one row with its last name in the new table.
-- [ ] A second api-server replica, or a replayed event, leaves one row per agent.
-- [ ] `spend.breakdown` returns the last known name as `agentName` for a deleted agent, and the live name for a live agent whose id has a row in the table.
-- [ ] An Invocation title still wins over the last known name of a reaped sub-agent.
-- [ ] `docs/activity-events.md` lists the new event, and `mise run //docs:check:activity-events` and `mise run //packages/api-server:check:events` pass.
-- [ ] `docs/architecture/persistence.md` is unchanged.
-- [ ] `mise run check` and `mise run test` pass, and `mise run check:comment-types` passes.
+- [x] `mise run //packages/db:check:generated` passes, and the migration is generated, not hand-written.
+- [x] Deleting an Agent through the UI, through `kubectl delete`, and by an Invocation reap each leaves one row with its last name in the new table.
+- [x] A second api-server replica, or a replayed event, leaves one row per agent.
+- [x] `spend.breakdown` returns the last known name as `agentName` for a deleted agent, and the live name for a live agent whose id has a row in the table.
+- [x] An Invocation title still wins over the last known name of a reaped sub-agent.
+- [x] `docs/activity-events.md` lists the new event, and `mise run //docs:check:activity-events` and `mise run //packages/api-server:check:events` pass.
+- [x] `docs/architecture/persistence.md` is unchanged.
+- [x] `mise run check` and `mise run test` pass, and `mise run check:comment-types` passes.
 
 ## Smoke test
 

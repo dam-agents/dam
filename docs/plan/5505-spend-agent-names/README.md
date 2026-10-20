@@ -125,11 +125,11 @@ It still reads the live agents list for the avatar image and to grey out the ava
 
 ## Sub-issues
 
-| #   | Title                                       | Scope                                                                                                                                                                                         | Depends on |
-| --- | ------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | ✅ Sub-agent rows name their task           | `agentName` in the contract, filled from Invocation titles and live names; shared title helper; the three UI surfaces use the server name; Bot icon on sub-agent rows                         | —          |
-| 02  | Deleted agents keep their last known name   | Name table and migration; Agent watch event; spend saga; third name source; activity-events page; Ledger and Screens text                                                                     | 01         |
-| 03  | The driver's card names and caps sub-agents | Label-first names in the shared helper, the delegation card and the spend read; task on hover; sub-agents indented under the driver; top five, one "N more" row and "Show all" in pages of 50 | 01         |
+| #   | Title                                        | Scope                                                                                                                                                                                         | Depends on |
+| --- | -------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
+| 01  | ✅ Sub-agent rows name their task            | `agentName` in the contract, filled from Invocation titles and live names; shared title helper; the three UI surfaces use the server name; Bot icon on sub-agent rows                         | —          |
+| 02  | ✅ Deleted agents keep their last known name | Name table and migration; Agent watch event; spend saga; third name source; activity-events page; Ledger and Screens text                                                                     | 01         |
+| 03  | The driver's card names and caps sub-agents  | Label-first names in the shared helper, the delegation card and the spend read; task on hover; sub-agents indented under the driver; top five, one "N more" row and "Show all" in pages of 50 | 01         |
 
 ## Conventions & glossary
 

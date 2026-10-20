@@ -82,8 +82,13 @@ function byUnitThenCost<T extends SpendAmount>(
 export function agentNames(sources: {
   invocationTitles: ReadonlyMap<string, string>;
   liveNames: ReadonlyMap<string, string>;
+  lastKnownNames: ReadonlyMap<string, string>;
 }): ReadonlyMap<string, string> {
-  return new Map([...sources.liveNames, ...sources.invocationTitles]);
+  return new Map([
+    ...sources.lastKnownNames,
+    ...sources.liveNames,
+    ...sources.invocationTitles,
+  ]);
 }
 
 /**

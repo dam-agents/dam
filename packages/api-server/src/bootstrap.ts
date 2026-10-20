@@ -308,6 +308,7 @@ import {
 } from "./modules/agents/infrastructure/agent-state-cache.js";
 import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js";
+import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -414,6 +415,7 @@ export async function bootstrap() {
     observe: (kind, obj) => {
       outOfMemoryWatch(kind, obj);
       readyWatch(kind, obj);
+      agentRemovalWatch(kind, obj);
     },
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
@@ -2061,6 +2063,7 @@ export async function bootstrap() {
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
+    spend.lastKnownNameSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();
