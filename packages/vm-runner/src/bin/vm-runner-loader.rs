@@ -417,18 +417,37 @@ impl Loader {
 fn reap_children(runner: i32, exits: &Path) -> Option<ExitStatus> {
     let mut runner_status = None;
     loop {
-        let mut status = 0;
-        // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
-        let pid = unsafe { libc::waitpid(-1, &raw mut status, libc::WNOHANG) };
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: WNOHANG never blocks and WNOWAIT leaves the child unreaped, so its identity can still be read before this takes it away.
+        let peeked = unsafe {
+            libc::waitid(
+                libc::P_ALL,
+                0,
+                &raw mut info,
+                libc::WEXITED | libc::WNOWAIT | libc::WNOHANG,
+            )
+        };
+        if peeked != 0 {
+            break;
+        }
+        let pid = unsafe { info.si_pid() };
         if pid <= 0 {
             break;
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: the start time is read from the child while it is still a zombie, since the reap below is what takes its last readable trace away, and the record has to say which process it names.
+        let start = smolvm::process::process_start_time(pid);
+        let mut status = 0;
+        // SAFETY: the child is this process's own and reaping it here is what the record above is about.
+        let reaped = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
+        if reaped != pid {
+            continue;
         }
         if pid == runner {
             runner_status = Some(ExitStatus::from_raw(status));
             continue;
         }
         if libc::WIFSIGNALED(status) {
-            if let Err(e) = record_exit(exits, pid, libc::WTERMSIG(status)) {
+            if let Err(e) = record_exit(exits, pid, start, libc::WTERMSIG(status)) {
                 tracing::warn!(pid, error = %e, "recording a machine's VMM exit for the next runner");
             }
         }
@@ -436,11 +455,12 @@ fn reap_children(runner: i32, exits: &Path) -> Option<ExitStatus> {
     runner_status
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: writes a reaped VMM's signal where the runner that adopted the machine reads it, whole or not at all: the runner reads the moment a record appears, and a record caught half-written would name no signal — a death read as a machine that exited on its own, and pruned with the kill inside it. A rename within the directory is the one write a reader cannot see in pieces.
-fn record_exit(exits: &Path, pid: i32, signal: i32) -> std::io::Result<()> {
+// UNIT_BOUNDARY_DESCRIPTION: writes a reaped VMM's death where the runner that adopted the machine reads it, whole or not at all: the runner reads the moment a record appears, and a record caught half-written would name no signal — a death read as a machine that exited on its own, and pruned with the kill inside it. A rename within the directory is the one write a reader cannot see in pieces. The record carries the start time the kernel gave that process, read before the reap took it away: a pid is a number the kernel hands out again, so the number alone cannot tell the runner whether a record names the VMM the machine runs now or the one before it.
+fn record_exit(exits: &Path, pid: i32, start: Option<u64>, signal: i32) -> std::io::Result<()> {
     std::fs::create_dir_all(exits)?;
     let scratch = exits.join(format!(".{pid}.part"));
-    std::fs::write(&scratch, signal.to_string())?;
+    let start = start.map_or_else(String::new, |at| at.to_string());
+    std::fs::write(&scratch, format!("{start}\n{signal}"))?;
     std::fs::rename(scratch, exits.join(pid.to_string()))
 }
 
@@ -582,10 +602,11 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("vmr-exits-part-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let exits = dir.join(vm_runner::state::EXIT_RECORDS);
-        record_exit(&exits, 4242, libc::SIGSYS).unwrap();
+        record_exit(&exits, 4242, Some(77), libc::SIGSYS).unwrap();
         assert_eq!(
             std::fs::read_to_string(exits.join("4242")).unwrap(),
-            libc::SIGSYS.to_string()
+            "77\n12",
+            "the record names the death and the process it belongs to"
         );
         assert!(
             !exits.join(".4242.part").exists(),
@@ -599,16 +620,13 @@ mod tests {
         std::fs::write(&pointed_at, "").unwrap();
         std::os::unix::fs::symlink(&pointed_at, exits.join("4244"))
             .expect("a name to publish over");
-        record_exit(&exits, 4244, libc::SIGTERM).unwrap();
+        record_exit(&exits, 4244, None, libc::SIGTERM).unwrap();
         assert_eq!(
             std::fs::read_to_string(&pointed_at).unwrap(),
             "",
             "the final name is replaced, never written through"
         );
-        assert_eq!(
-            std::fs::read_to_string(exits.join("4244")).unwrap(),
-            libc::SIGTERM.to_string()
-        );
+        assert_eq!(std::fs::read_to_string(exits.join("4244")).unwrap(), "\n15");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

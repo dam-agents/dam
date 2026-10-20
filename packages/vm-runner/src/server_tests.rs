@@ -4404,10 +4404,7 @@ async fn a_replacement_does_not_read_the_record_of_the_incarnation_before_it() {
     std::fs::create_dir_all(&exits).unwrap();
     std::fs::write(exits.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
 
-    // TEST_SCENARIO: the record is older than the VMM this machine runs, which its boot stamped, so it can never name this incarnation's death whatever the moment it is read.
-    if let Some(entry) = locked(&h.server.machines).entries.get_mut("m1") {
-        entry.booted_at = Some(SystemTime::now() + Duration::from_secs(1));
-    }
+    // TEST_SCENARIO: one tick while the replacement runs: the record can only be the predecessor's, since a live holder cannot have published one.
     h.server.reap_killed();
     assert_eq!(
         h.server.status("m1").reason,
@@ -4503,7 +4500,7 @@ async fn eight_held_kills_do_not_drop_the_ninth() {
         let oom = locked(&h.server.oom);
         oom.credits
             .iter()
-            .chain(oom.holds.values())
+            .chain(oom.holds.values().flatten())
             .copied()
             .collect()
     };
@@ -4532,10 +4529,6 @@ async fn a_claimed_record_from_before_this_vmm_is_not_its_death() {
     let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&exits).unwrap();
     fs::write(exits.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
-    // TEST_SCENARIO: the machine's VMM is newer than the record on disk, which is what its boot stamped.
-    if let Some(entry) = locked(&h.server.machines).entries.get_mut("m1") {
-        entry.booted_at = Some(SystemTime::now() + Duration::from_secs(1));
-    }
     assert!(smolvm::process::is_alive(pid));
 
     // TEST_SCENARIO: the replacement dies inside the moment between the liveness check and the claim, and its own record has not been published.
@@ -4551,6 +4544,217 @@ async fn a_claimed_record_from_before_this_vmm_is_not_its_death() {
         status.reason, REASON_SECCOMP_KILLED,
         "the record of the incarnation before this one named this one's death: {status:?}"
     );
+}
+
+// TEST_SCENARIO: two samples reach the runner while one machine's boot has already seen its VMM die, and both run at once: the count each brings is one victim, so exactly one hold may result and no count may be dropped. Made with the production sample path from both callers, gated inside the runtime so both are past every eligibility check before either takes a credit.
+#[tokio::test(flavor = "multi_thread")]
+async fn two_samples_at_once_do_not_lose_a_counted_kill() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-two-scans-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("two-scans", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    counted(&cgroup, 2);
+    // UNIT_BOUNDARY_DESCRIPTION: two machines each waiting for the kill their own action saw, so both holds depend on assigning from the same count while both samples run: the count is turned into credits once, what a sample finds is only ever spent, and nothing is spent twice.
+    for id in ["m1", "m2"] {
+        if let Some(entry) = locked(&h.server.machines).entries.get_mut(id) {
+            entry.action = Some(Action::Start);
+        }
+    }
+    let one = h.server.clone();
+    let two = h.server.clone();
+    let (first, second) = std::thread::scope(|scope| {
+        let first = scope.spawn(move || one.reap_killed());
+        let second = scope.spawn(move || two.reap_killed());
+        (first.join().unwrap(), second.join().unwrap())
+    });
+    let _ = (first, second);
+    h.server.claim_own_kill("m1");
+    h.server.claim_own_kill("m2");
+    let owed = {
+        let oom = locked(&h.server.oom);
+        oom.holds.values().filter(|held| held.is_some()).count() + oom.credits.len()
+    };
+    assert_eq!(
+        owed, 2,
+        "two victims were counted and {owed} are still owed: a kill was consumed twice, or dropped"
+    );
+}
+
+// TEST_SCENARIO: a machine is in an operator-requested stop, whose SIGKILL is nobody's memory death, and the kernel separately takes another machine. Only the machine whose own boot or grow saw its VMM die may hold a counted kill, so the stopped machine must not take the count, and the machine the kernel really took must name memory.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_stop_holds_no_kill_belonging_to_another_machine() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-stop-hold-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("stop-hold", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    for id in ["m1", "m2"] {
+        h.server.put(id, spec(true)).unwrap();
+        h.settle(id).await;
+        locked(&h.fake.states).insert(id.into(), State::Running);
+    }
+    // TEST_SCENARIO: m1 is being stopped, which is an action with no death of its own to hold, and the kernel's count goes up for m2.
+    if let Some(entry) = locked(&h.server.machines).entries.get_mut("m1") {
+        entry.action = Some(Action::Stop);
+        entry.action_since = Some(Instant::now());
+    }
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    assert!(
+        !locked(&h.server.oom).holds.contains_key("m1"),
+        "a stop held a counted kill its own SIGKILL is not evidence for"
+    );
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m2", pid);
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = vmm.wait().expect("the VMM is waited on");
+    h.fake.keep_signal(pid, ended.signal().unwrap());
+    h.server.reap_killed();
+    assert_eq!(
+        h.server.status("m2").reason,
+        REASON_OOM_KILLED,
+        "the machine the kernel took was not told it ran out of memory, because a stop was holding its count"
+    );
+}
+
+// TEST_SCENARIO: a grow has already seen its machine's VMM die of a SIGKILL and starts the whole-size replacement, and the count that death belongs to is read while that replacement is alive. The hold is made from the death the grow captured, not from anything a scan can see about the pid the machine has now, so the kill is still namable after a recovery longer than a credit's window.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_grows_own_kill_outlives_the_recovery_that_replaces_it() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-cgroup-grow-hold-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("grow-hold", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    // TEST_SCENARIO: the kernel counts the grow's victim at the second it dies, and the count is read at the tick after; the grow is still recovering, so its death is claimed after the count.
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    assert_eq!(locked(&h.server.oom).credits.len(), 1, "the count is owed");
+    h.server.claim_own_kill("m1");
+    // TEST_SCENARIO: the replacement the grow left behind lives on past the window, so a credit left in the pool would expire.
+    {
+        let mut oom = locked(&h.server.oom);
+        oom.credits.clear();
+        if let Some(Some(held)) = oom.holds.get_mut("m1") {
+            *held = Instant::now() - OOM_CREDIT_TTL - Duration::from_secs(1);
+        }
+    }
+    h.server.reap_killed();
+    assert!(
+        locked(&h.server.oom)
+            .holds
+            .get("m1")
+            .is_some_and(Option::is_some),
+        "the kill the grow's own death was counted for was dropped when its replacement outlived the window"
+    );
+}
+
+// TEST_SCENARIO: a machine's VMM is adopted by a new runner after a hand-off, and the record on disk belongs to the incarnation before it. The record names the process it is about by the start time the kernel gave that process, so a hand-off changes nothing: the predecessor's record is refused and the machine's own death is not read as a filter kill.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_adopted_vmm_is_not_named_by_its_predecessors_record() {
+    let h = Harness::new("adopted-record");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    let exits = h.dir.join("machines").join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&exits).unwrap();
+    // TEST_SCENARIO: a record of some other process under this pid, which is the predecessor's.
+    fs::write(exits.join(pid.to_string()), "1\n12").unwrap();
+
+    // TEST_SCENARIO: a hand-off, and a tick on the other side while the VMM is still alive.
+    let next = h.hand_off(|_| {}).await;
+    next.server.reap_killed();
+    assert_eq!(
+        next.server.status("m1").reason,
+        "",
+        "an adopted VMM was named by a record of another process"
+    );
+    // TEST_SCENARIO: the adopted VMM dies, and the loader has not published its record yet.
+    // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
+    unsafe { libc::kill(pid, libc::SIGKILL) };
+    let ended = vmm.wait().expect("the VMM is waited on");
+    next.fake.keep_signal(pid, ended.signal().unwrap());
+    next.server.reap_killed();
+    assert_ne!(
+        next.server.status("m1").reason,
+        REASON_SECCOMP_KILLED,
+        "the adopted VMM's death was read from its predecessor's record"
+    );
+}
+
+// TEST_SCENARIO: a predecessor's record is claimed while the machine's own VMM runs, and the loader publishes the machine's real death under the freed name before the claim is read. What the reader decides about is the file the claim moved, never the name, so a death that arrives meanwhile is neither read as the predecessor's nor deleted with it.
+#[test]
+fn a_newer_death_survives_the_claim_that_takes_its_predecessor() {
+    let dir = std::env::temp_dir().join(format!("vmr-record-stale-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    fs::create_dir_all(&dir).unwrap();
+    let exits = dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&exits).unwrap();
+    // TEST_SCENARIO: the predecessor's death, claimed by a reader that is about to decide about it.
+    fs::write(exits.join("4242"), "1\n12").unwrap();
+    let claimed = claim_exit_record(&dir, 4242).expect("the predecessor's record is claimed");
+    // TEST_SCENARIO: the machine's own death, published by the loader under the name the claim freed.
+    fs::write(dir.join(".4242.part"), "9\n9").unwrap();
+    fs::rename(dir.join(".4242.part"), exits.join("4242")).unwrap();
+
+    let read = read_claimed(&claimed, &exits.join("4242"));
+    assert_eq!(
+        read,
+        Some((Some(1), libc::SIGSYS)),
+        "the reader decided about the death that arrived while it was deciding, not the one it claimed"
+    );
+    assert_eq!(
+        fs::read_to_string(exits.join("4242")).unwrap(),
+        "9\n9",
+        "the machine's own death was deleted with its predecessor's claim"
+    );
+    let _ = fs::remove_dir_all(&dir);
+}
+
+// TEST_SCENARIO: the loader has reaped the VMM a machine ran and left a record under its pid, and by then the kernel has given that number to a replacement, whose start time the record does not name. A pid is a number, not an identity, so the record must not be read as the replacement's death: what it named would be reported as this machine's, as a filter kill or an OOM kill, for a machine that is running.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_record_of_the_incarnation_before_is_not_the_replacements_death() {
+    let h = Harness::new("record-identity");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    // TEST_SCENARIO: the replacement, which the machine runs now, and whose start time is not the one the record names.
+    let mut replacement = stand_in_vmm();
+    let pid = i32::try_from(replacement.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
+    let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&records).unwrap();
+    let record = records.join(pid.to_string());
+    // UNIT_BOUNDARY_DESCRIPTION: a start time the record can never have come from this process with, which is what a predecessor's record looks like once the number is handed out again. It stays alive, so nothing but the start time can refuse it.
+    fs::write(&record, format!("{}\n{}", started + 1, libc::SIGSYS)).unwrap();
+
+    assert!(
+        h.server.vmm_exit("m1").is_none(),
+        "a record of the incarnation before was read as the replacement's death"
+    );
+    // TEST_SCENARIO: a record naming the process the machine runs is its death, which is the same reading allowed.
+    fs::write(&record, format!("{started}\n{}", libc::SIGSYS)).unwrap();
+    assert!(
+        matches!(h.server.vmm_exit("m1"), Some((_, Some(libc::SIGSYS)))),
+        "the machine's own death was refused"
+    );
+    drop(replacement.kill());
+    let _ = replacement.wait();
 }
 
 // TEST_SCENARIO: an incomplete record has been claimed, and the loader publishes a whole one under that name before the claim is put back. The restore must not replace the newer death with the older incomplete file.
@@ -4751,7 +4955,7 @@ async fn a_slow_boot_keeps_the_kill_it_was_restarted_for() {
     {
         let mut oom = locked(&h.server.oom);
         oom.credits.clear();
-        oom.holds.insert("m1".into(), aged);
+        oom.holds.insert("m1".into(), Some(aged));
     }
 
     release.send(()).expect("the boot returns");
@@ -5189,12 +5393,18 @@ async fn a_death_the_loader_recorded_is_named_after_a_handoff() {
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
+    let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
     unsafe { libc::kill(pid, libc::SIGSYS) };
     let _ = vmm.wait();
     let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&records).unwrap();
-    fs::write(records.join(pid.to_string()), libc::SIGSYS.to_string()).unwrap();
+    // TEST_SCENARIO: the record the loader writes for that VMM, naming it by the start time the kernel gave it.
+    fs::write(
+        records.join(pid.to_string()),
+        format!("{started}\n{}", libc::SIGSYS),
+    )
+    .unwrap();
 
     h.server.reap_killed();
     let status = h.server.status("m1");
@@ -5238,13 +5448,15 @@ async fn a_record_read_before_it_is_whole_names_no_clean_exit() {
     let mut vmm = stand_in_vmm();
     let pid = i32::try_from(vmm.id()).unwrap();
     h.fake.set_vmm("m1", pid);
+    let started = smolvm::process::process_start_time(pid).expect("a start time of its own");
     // SAFETY: kill(2) takes no pointers, and the pid is this test's own child.
     unsafe { libc::kill(pid, libc::SIGSYS) };
     let _ = vmm.wait();
     let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
     fs::create_dir_all(&records).unwrap();
     let record = records.join(pid.to_string());
-    fs::write(&record, "").unwrap();
+    // UNIT_BOUNDARY_DESCRIPTION: the identity line has landed and the signal has not, which is what a reader can catch.
+    fs::write(&record, format!("{started}\n")).unwrap();
 
     h.server.reap_killed();
     assert!(
@@ -5255,7 +5467,7 @@ async fn a_record_read_before_it_is_whole_names_no_clean_exit() {
         record.exists(),
         "the record was not read as a machine that exited"
     );
-    fs::write(&record, libc::SIGSYS.to_string()).unwrap();
+    fs::write(&record, format!("{started}\n{}", libc::SIGSYS)).unwrap();
     h.server.reap_killed();
     let status = h.server.status("m1");
     assert_eq!(status.reason, REASON_SECCOMP_KILLED, "{status:?}");
