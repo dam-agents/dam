@@ -1,6 +1,6 @@
 # Persistence
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -259,7 +259,7 @@ Each eviction, and a disk still short once nothing is left to evict, is a line o
 An agent that exits with its home nearly out of space or inodes is reported as a full home.
 A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
 A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, since a grown disk has more of both.
-platform-init trims the disk every minute and before its guard preallocates, since a guest's own discards do not reach the claim: whatever the agent frees then goes back to the runner's volume and stops counting against the owner's storage.
+The guest's storage disk is mounted with synchronous discards, so a block the agent frees reaches the runner's volume as the guest's filesystem frees it and stops counting against the owner's storage; platform-init also trims the whole disk every minute, for a device whose discards fail, and before its guard preallocates.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
 
 Mounting the disk is the platform's job rather than the image's.
@@ -298,10 +298,10 @@ A guest held below 256 MiB may still write 256 MiB in all, once, until a grant w
 The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives it the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 Its blocks are only marked in the guest's filesystem, never written, so it takes nothing from the claim; it has no name, so the filesystem frees it whenever the guest stops.
-btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads its own size from the file, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
-It gives a shrink's room up whole, as a file of its own or as this one emptied, since btrfs keeps a partly truncated preallocation's blocks; it empties the file at a clean stop, and trims first, since an extent it preallocated is beyond any later trim.
+btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads what it holds from the file's blocks, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
+It gives a shrink's room up whole, its blocks never falling below the size it moves to, and empties the file at a clean stop.
 Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
-The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until the next trim.
+The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until their discard reaches it.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.

@@ -1,6 +1,6 @@
 # End-to-end suite
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 The **e2e suite** is the smoke test that proves an install works from outside the cluster: Playwright drives the web UI and the public API against a real k3s install, and a mock harness answers the Agents' turns.
 It is the only test that covers a change across the whole system — login through Keycloak, the mesh's policies, the api-server, the controller and an Agent behind it — so it runs twice for every change, once per lane.
