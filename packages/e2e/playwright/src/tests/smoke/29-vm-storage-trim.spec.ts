@@ -74,31 +74,55 @@ function claimKb(): { used: number; capacity: number } {
   return { used, capacity: used + avail };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine, read from the file platform-init reads it from: one line, the id of the look that wrote it and the bytes the guest may still add to the owner's claim. This is the figure the guest's free space is measured against, and not a share this spec works out for itself, because what the guard must do is hold the guest to the grant it was given. The id is what tells a renewal from the grant of an earlier look, and no grant at all reads as empty, which is what an unmeasured claim looks like.
-function readGrant(): { id: string; mib: number } {
-  const [id = "", bytes = ""] = inGuest(
-    probeId,
-    "cat /platform/storage-room 2>/dev/null",
-  )
-    .trim()
-    .split(/\s+/);
+// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine and the guest's own free space, read in one guest command with the grant bracketing the room: the grant line, the guest's `df`, and the grant line again. They are only comparable as one look — the runner writes a new grant every 30 s and a grant compared with a room read a look apart reads short for no defect — so a sample whose two grant lines differ straddles a renewal and is reported as unstable for the caller to retry, at no cost but one more read. The grant figure is not a share this spec works out for itself, because what the guard must do is hold the guest to the grant it was given. The id is what tells a renewal from the grant of an earlier look, and it is a figure the runner published, not an acknowledgement that the guard has processed that grant: the guard's own look and its 30 s move backoff are the runner's host side, so a bound is waited for rather than read once. An absent file prints `-`, never an empty line: `inGuest` trims its output, so an empty line would vanish, the `df` line would take the grant's place, and its first field would read as a grant id and its fourth as the grant. A `-` parses as no grant at all, so an unmeasured claim reads as NaN and fails the caller's check instead of passing a figure the guest never had.
+function readRoom(id: string = probeId): {
+  id: string;
+  grantMiB: number;
+  availMiB: number;
+  stable: boolean;
+} {
+  const [before, avail, after] = inGuest(
+    id,
+    [
+      'grant() { printf "%s\\n" "$(cat /platform/storage-room 2>/dev/null || echo -)"; }',
+      "grant",
+      "df -Pk /home/agent | tail -1",
+      "grant",
+    ].join("\n"),
+  ).split("\n");
+  const [beforeId = "", bytes = ""] = (before ?? "").trim().split(/\s+/);
+  const [afterId = ""] = (after ?? "").trim().split(/\s+/);
   const mib = Number(bytes) / 1048576;
   return {
-    id,
-    mib: Number.isFinite(mib) && mib > 0 ? Math.round(mib) : Number.NaN,
+    id: beforeId,
+    grantMiB: bytes && Number.isFinite(mib) ? Math.round(mib) : Number.NaN,
+    availMiB: Math.round(
+      Number((avail ?? "").split(/\s+/)[3] ?? Number.NaN) / 1024,
+    ),
+    stable: beforeId === afterId,
   };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits for the runner's next look to publish a grant of its own, and returns it: the grant bytes are what the guest may still add from the moment of that look, so a grant published before the case's own writes counts them against the guest and a comparison with it would read short for no defect. A runner that publishes no new grant inside the window fails the case rather than leaving the comparison to a figure of unknown age.
-async function renewedGrant(after: string): Promise<number> {
+// UNIT_BOUNDARY_DESCRIPTION: waits for a sample the guard has settled on and returns it: a grant published after `after`, the id the case saw once its own write had landed, and one whose guest room meets both of the caller's bounds at once. Three things make that a settled sample rather than a passing figure. The id differs from `after`, so the renewal the runner publishes over the case's own writes is exercised and not skipped when the room happens to read well. The bounds are one pair, both applied to the same sample, so a room the guard has not yet shrunk cannot pass as a healthy one, and a room it has not yet grown cannot fail as a wedged one. And the two grant lines around the room agree, so the free space belongs to one grant version. The window is `WAIT_MS`, well past the runner's 30 s look and the guard's 30 s backoff; a claim with no grant is no claim measured and fails at once rather than looping on a figure no bound can satisfy.
+async function settledRoom(
+  after: string,
+  fits: (room: { grantMiB: number; availMiB: number }) => boolean,
+  what: string,
+): Promise<{ grantMiB: number; availMiB: number }> {
   const deadline = Date.now() + WAIT_MS;
   for (;;) {
     await keepAwake(probeId);
-    const grant = readGrant();
-    if (grant.id !== after) return grant.mib;
+    const room = readRoom();
+    if (room.stable) {
+      expect(
+        Number.isFinite(room.grantMiB),
+        `${what}: the runner published no grant after ${after || "none"} for the probe's claim, so the guest's room cannot be compared with it`,
+      ).toBe(true);
+      if (room.id !== after && fits(room)) return room;
+    }
     expect(
       Date.now(),
-      `the runner published no grant after ${after || "none"} within ${WAIT_MS} ms, so the claim was never measured`,
+      `${what}: the guest reads ${room.availMiB} MiB of the ${room.grantMiB} MiB grant the runner published, under the grant ${room.id || "the case started with"}`,
     ).toBeLessThan(deadline);
     await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
@@ -262,7 +286,7 @@ test("the guard gives a machine the room its share gains, and takes it back", as
   ).toBeLessThanOrEqual(2 * MOVE_MIB);
 });
 
-// TEST_SCENARIO: a guest that writes past its share is refused by the guest, at its share and not at the claim's last block, and it is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is marked with one preallocation, which the guest's own filesystem counts as used and the claim does not pay for, so the case costs a disk of the size the install already gives it and works on any pool. The refusal is read from the guest's own status and its own error file, never from a redirect into the data, which loses the error exactly when the disk is full.
+// TEST_SCENARIO: a guest that writes past its share is refused by the guest, at its share and not at the claim's last block, and it is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is filled without writing bytes, so the guest's own filesystem counts it as used and the claim does not pay for it, and the case costs a disk of the size the install already gives it and works on any pool. Each comparison waits for one sample that meets both of its bounds, and the renewed one needs a grant the runner published after the case's own write, so a room the guard has not finished moving is neither accepted as healthy nor rejected as wedged. The refusal is read from the guest's own status and its own error file, never from a redirect into the data, which loses the error exactly when the disk is full.
 test("a writing agent stops at its share, and writes again when its share grows", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
@@ -271,8 +295,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
   const diskBefore = machineDisks().get(probeDisk) ?? 0;
   inGuest(probeId, "mkdir -p /tmp/e2e-fill");
   try {
-    // UNIT_BOUNDARY_DESCRIPTION: real bytes through a renewal, always: the guest writes 256 MiB of random bytes into its home, the claim pays for them, and the grant the runner publishes over them is the one the guest's room is then measured against. Then they are deleted and the claim must take them back. This is the small bounded half of the case that fills the claim: it costs the host a fixed 256 MiB rather than a whole install, it grows the claim as only written blocks can, and a guard that leaked what it released would take the guest below its floor here before the marking below ever runs.
-    const granted = readGrant();
+    // UNIT_BOUNDARY_DESCRIPTION: real bytes through a renewal, always: the guest writes 256 MiB of random bytes into its home, the claim pays for them, and the case records the grant id it saw once those bytes had landed. Then they are deleted and the claim must take them back. This is the small bounded half of the case that fills the claim: it costs the host a fixed 256 MiB rather than a whole install, it grows the claim as only written blocks can, and a guard that leaked what it released would take the guest below its floor here before the marking below ever runs.
     inGuest(
       probeId,
       `head -c ${REAL_MIB}M /dev/urandom > /tmp/e2e-fill/real && sync`,
@@ -282,30 +305,27 @@ test("a writing agent stops at its share, and writes again when its share grows"
       paid,
       `the guest wrote ${REAL_MIB} MiB of real bytes and its disk took ${paid} MiB of the claim`,
     ).toBeGreaterThanOrEqual(REAL_MIB - SLACK_MIB);
-    const published = await renewedGrant(granted.id);
-    // UNIT_BOUNDARY_DESCRIPTION: the claim of the lane that measures a machine's disk is one the runner measures, so a case that found no grant is a case that proved nothing and says so rather than passing on a comparison it skipped. The grant of a claim too small to measure is no grant either, and that is what the disk-size floor below it rules out.
+    // UNIT_BOUNDARY_DESCRIPTION: the baseline the renewed comparison is measured from is the grant the guest holds now that its own 256 MiB have landed: a grant id read before the write could be republished during it, and a renewal that happened mid-write would then count as the post-write one without the guard ever having seen the whole write. The comparison below therefore requires an id past this one, which is a renewal the runner published over all of them.
+    const written = readRoom();
     expect(
-      Number.isFinite(published),
+      Number.isFinite(written.grantMiB),
       "the runner published no grant for the probe's claim, so the guest's room cannot be compared with it",
     ).toBe(true);
-    // UNIT_BOUNDARY_DESCRIPTION: and not below it: the grant was published after the case's own 256 MiB landed, and nothing has written in the guest's home since, so the guest may still write the whole of it. A guest held to a fraction of the grant it was given is the defect a user reports — an agent refused at three quarters of its storage with the claim a third empty — and the slack is what the case's two measurements and the guard's own step can account for. A new grant id means the runner has looked and written the grant, not that platform-init has read it and moved the guard, since a guard may move only once per POOL_GUARD_BACKOFF, so the room is waited for rather than read once: a guest that never reaches the bound fails inside the same window a wedged one would.
-    const availed = await waitFor(
-      guestAvailMiB,
-      (mib) => mib >= published - SLACK_MIB - GUARD_STEP_MIB,
-      `the guest's room never reached the ${published} MiB grant the runner published`,
+    // UNIT_BOUNDARY_DESCRIPTION: and neither below nor above the renewed grant: the guest may still write the whole grant the runner published over its own writes, and no more than that grant plus the one floor every guest keeps. A guest held to a fraction of its grant is the defect a user reports — an agent refused at three quarters of its storage with the claim a third empty — and a guard that released its whole hold, or moved before the runner could renew, would leave the guest the disk instead. Both bounds are one sample's, waited for together: a room the guard has not finished shrinking yet must not pass the upper bound, and a room it has not finished growing yet must not fail the lower one. The slack is what the case's own measurements and the guard's step can account for, and a guest that never reaches either bound fails inside the same window a wedged one would.
+    const afterWrite = await settledRoom(
+      written.id,
+      (room) =>
+        room.availMiB >= room.grantMiB - SLACK_MIB - GUARD_STEP_MIB &&
+        room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB,
+      "the guest's room never came to the grant the runner published over its own writes",
     );
-    // UNIT_BOUNDARY_DESCRIPTION: the guest's own free space is the room its guard left it, and that is the grant the runner published plus at most one floor: a guard that released its whole hold, or moved before the runner could renew, would leave the guest the disk instead. The floor is the allowance every guest keeps whatever its grant says, so the bound allows it once. The upper bound is checked on the room the same look read, not on a second read that the guard may have moved under.
-    expect(
-      availed,
-      `the guest may write ${availed} MiB of the ${published} MiB grant the runner published`,
-    ).toBeLessThanOrEqual(published + GUARD_FLOOR_MIB + SLACK_MIB);
     // UNIT_BOUNDARY_DESCRIPTION: the wedge this case is for is a guest that stops writing and stays stopped, so the renewal is answered with a real write of its own, synced and read back: a machine that keeps the answer to a shortage after the claim has room again fails here, and no arithmetic about its free space can stand in for that.
     expect(
       inGuest(
         probeId,
         "head -c 8M /dev/urandom > /tmp/e2e-fill/renewed && sync && wc -c < /tmp/e2e-fill/renewed",
       ).trim(),
-      `a renewal window after writing ${REAL_MIB} MiB the guest could write ${availed} MiB but not 8 MiB`,
+      `a renewal window after writing ${REAL_MIB} MiB the guest could write ${afterWrite.availMiB} MiB but not 8 MiB`,
     ).toBe(String(8 * 1024 * 1024));
     await keepAwake(probeId);
     inGuest(probeId, "rm -f /tmp/e2e-fill/real /tmp/e2e-fill/renewed && sync");
@@ -360,33 +380,27 @@ test("a writing agent stops at its share, and writes again when its share grows"
       afterFill - diskBefore,
       `a marked fill took ${afterFill - diskBefore} MiB of the probe's disk on the claim`,
     ).toBeLessThanOrEqual(SLACK_MIB);
-    // UNIT_BOUNDARY_DESCRIPTION: a renewal window later the guest is back on its share, and that is the design rather than a leak: the runner writes a new grant at every look, and the guard counts one from what the guest had written when it came, so a fill the claim never paid for — which line 364 checks it did not — is room the guest is given again. The bound is therefore the renewed grant the runner published, not the floor: below it the agent has been left less than its share (the defect a user reports, a refusal at three quarters of the claim with the claim a third empty), and above it by more than one floor the guard released more than the grant it was told to hold.
+    // UNIT_BOUNDARY_DESCRIPTION: a renewal window later the guest is back on its share, and that is the design rather than a leak: the runner writes a new grant at every look, and the guard counts one from what the guest had written when it came, so a fill the claim never paid for — which the assertion just above checks it did not — is room the guest is given again. The bound is therefore the renewed grant the runner published, not the floor: below it the agent has been left less than its share (the defect a user reports, a refusal at three quarters of the claim with the claim a third empty), and above it by more than one floor the guard released more than the grant it was told to hold. The grant the refused guest held at its refusal is the baseline, so the sample must be a renewal published past it and not the grant the fill ran into.
+    const marked = readRoom();
+    expect(
+      Number.isFinite(marked.grantMiB),
+      "the runner published no grant for the probe's claim at its refusal, so the renewal cannot be measured from one",
+    ).toBe(true);
     await new Promise((resolve) => setTimeout(resolve, RENEWAL_MS));
-    await keepAwake(probeId);
-    let renewed = Number.NaN;
-    const resettled = await waitFor(
-      () => {
-        renewed = readGrant().mib;
-        return guestAvailMiB();
-      },
-      (mib) => mib >= renewed - SLACK_MIB - GUARD_STEP_MIB,
+    const resettled = await settledRoom(
+      marked.id,
+      (room) =>
+        room.availMiB >= room.grantMiB - SLACK_MIB - GUARD_STEP_MIB &&
+        room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB,
       "the guest never got its share back after marking its own room, which no renewal gave it either: an agent that cannot write its share is the wedge this case is for",
     );
-    expect(
-      Number.isFinite(renewed),
-      "the runner published no grant to compare the guest's room with",
-    ).toBe(true);
-    expect(
-      resettled,
-      `a renewal window after marking its room the guest was left ${resettled} MiB of the ${renewed} MiB grant the runner published: the guard gave back room past the grant it was told to hold`,
-    ).toBeLessThanOrEqual(renewed + GUARD_FLOOR_MIB + SLACK_MIB);
     // UNIT_BOUNDARY_DESCRIPTION: the room the renewal gave back is room a real write lands in: a machine that kept the answer to its last refusal, however much room the claim gave it, fails here, and no arithmetic about its free space can stand in for the write. No refusal is asked of the guest here, deliberately: the renewal gave it its share back, so it is meant to write, and whether btrfs also allocates the few MiB past its own `df` estimate — its reserve, not the guard — is no property of this fix.
     expect(
       inGuest(
         probeId,
         "head -c 32M /dev/urandom > /tmp/e2e-fill/back-in && sync && wc -c < /tmp/e2e-fill/back-in",
       ).trim(),
-      `an agent refused at its share must write again once a renewal gives the room back, and it reported ${resettled} MiB`,
+      `an agent refused at its share must write again once a renewal gives the room back, and it reported ${resettled.availMiB} MiB`,
     ).toBe(String(32 * 1024 * 1024));
     // UNIT_BOUNDARY_DESCRIPTION: the refused guest's refusal must be its share and not the claim: another agent of the owner writes real bytes beside it, syncs them, and finds them again, and the claim is still within its own capacity.
     expect(
@@ -401,6 +415,28 @@ test("a writing agent stops at its share, and writes again when its share grows"
       claim.used,
       `a concurrent writer took the claim to ${claim.used} KiB of its ${claim.capacity}`,
     ).toBeLessThanOrEqual(claim.capacity);
+    // UNIT_BOUNDARY_DESCRIPTION: a policy check on the live claim that costs the host no byte, not the claim-ceiling regression: the runner grants each machine's guest its even part of what is left below 95% of the claim's capacity, so no single guest may be granted the whole of that room. The claim's room is read before the grants, and use only grows, so every grant published after that read is a part of a room no larger than the figure used here: a runner that granted one guest the room the claim has, which is how a guest writes into the claim's last blocks, reads above it and fails. Three limits are stated rather than papered over. There is no sum over the observed grants, because a grant read here may predate the claim read or a sibling's renewal, so a sum fails a healthy runner; the cost is that two machines each granted the whole room pass, which only the near-ceiling refusal below can catch. A sum also could not prove the ceiling, since a runner counting machines this case does not observe could grant past 95% overall. And a runner that granted nothing at all would satisfy an upper bound alone, so each grant must also be a positive part. The near-ceiling regression — a guest refused while the claim itself is at 94–95% — needs the claim filled and stays in the `E2E_DISK_FILL_GIB` case below, and it stays open until a lane can fill a small claim without a host budget.
+    const roomMiB = Math.max(
+      0,
+      Math.round((0.95 * claim.capacity - claim.used) / 1024),
+    );
+    const grants = [probeId, siblingId]
+      .filter(Boolean)
+      .map((id) => readRoom(id));
+    for (const [machine, grant] of grants.entries()) {
+      expect(
+        Number.isFinite(grant.grantMiB),
+        `the runner published no grant for machine ${machine + 1} of the owner's, so the ceiling cannot be read`,
+      ).toBe(true);
+      expect(
+        grant.grantMiB,
+        `machine ${machine + 1} of the owner's was granted ${grant.grantMiB} MiB of the ${roomMiB} MiB left below the claim's 95% ceiling, and one guest may only be granted a part of that room`,
+      ).toBeLessThanOrEqual(roomMiB);
+      expect(
+        grant.grantMiB,
+        `machine ${machine + 1} of the owner's was granted ${grant.grantMiB} MiB of the ${roomMiB} MiB left below the claim's ceiling: a running machine with room on the claim is granted a part of it, not nothing`,
+      ).toBeGreaterThan(0);
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the agent refused at its share must write again once its share grows, which a wedged one does not: it keeps the answer to its last refusal however much room the owner frees. Its share grows when a sibling stops, and the room has to be room a real write lands in.
     const beforeRenew = guestAvailMiB();
     await api.agents.delete.mutate({ id: siblingId });
@@ -449,7 +485,6 @@ test("a refused agent has filled the claim to its ceiling", async () => {
       harnessName,
     );
   await keepAwake(siblingId);
-  const diskBefore = machineDisks().get(probeDisk) ?? 0;
   inGuest(probeId, "mkdir -p /tmp/e2e-claim-fill");
   const writtenMiB = () =>
     Math.round(
