@@ -207,69 +207,61 @@ pub struct Orphans {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Orphan {
     pub pid: i32,
-    // UNIT_BOUNDARY_DESCRIPTION: the kernel's name for the process that was read, which no other process can take over: a pid alone can be handed to another process between the scan and the signal, and `proc_signal_with_audittoken` refuses a name whose process is gone.
+    // UNIT_BOUNDARY_DESCRIPTION: the kernel's name for the process whose arguments were read, verified unchanged across that read. It is what a signal goes through and the only thing that can: a pid alone can be another process's by the time a slow scan ends. There is no absent case to fall back from, so a process that cannot be named is never named here at all.
     #[cfg(target_os = "macos")]
-    pub identity: darwin::Identity,
+    pub identity: darwin::AuditToken,
 }
 
 impl Orphans {
     pub fn pids(&self) -> Vec<i32> {
         self.named.iter().map(|orphan| orphan.pid).collect()
     }
-
-    fn sort(&mut self) {
-        self.named.sort_by_key(|orphan| orphan.pid);
-    }
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the processes still holding a machine's directory. Every VMM smolvm spawns names its machine's directory on its command line, so this finds a VMM a previous runner process left behind as well as one of ours. The trailing slash keeps a machine from matching another whose directory name it prefixes. A scan that could not look answers with an error rather than with an empty list, since an empty list says no VMM holds the machine: only a process that exited mid-scan, leaving no command line at all, is that clean answer. A scan the kernel answered only in part says so in `unknown`, since it may still have named the VMMs it did answer for.
+#[cfg_attr(target_os = "macos", allow(unused_variables))]
 pub fn orphan_pids(proc_root: &Path, vm_dir: &Path) -> anyhow::Result<Orphans> {
     let dir = vm_dir.to_string_lossy();
     if dir.is_empty() {
         return Ok(Orphans::default());
     }
     let needle = format!("{dir}/");
-    let entries = fs::read_dir(proc_root);
+    // UNIT_BOUNDARY_DESCRIPTION: a Mac reads its own process table, and reads it whether or not a `/proc` happens to be mounted there: the number alone is not the name a signal goes through.
     #[cfg(target_os = "macos")]
-    let Ok(entries) = entries
-    else {
-        return darwin::pids_with_arg(&needle);
-    };
+    return darwin::pids_with_arg(&needle);
     #[cfg(not(target_os = "macos"))]
-    let entries = entries.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
-    let mut pids: Vec<i32> = Vec::new();
-    for entry in entries {
-        let entry = entry.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
-        let Some(pid) = entry
-            .file_name()
-            .to_str()
-            .and_then(|name| name.parse::<i32>().ok())
-        else {
-            continue;
-        };
-        let cmdline = match fs::read(entry.path().join("cmdline")) {
-            Ok(cmdline) => cmdline,
-            Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
-            Err(e) => {
-                return Err(e).with_context(|| format!("reading the command line of process {pid}"))
+    {
+        let mut pids: Vec<i32> = Vec::new();
+        let entries = fs::read_dir(proc_root)
+            .with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
+        for entry in entries {
+            let entry =
+                entry.with_context(|| format!("scanning {} for a VMM", proc_root.display()))?;
+            let Some(pid) = entry
+                .file_name()
+                .to_str()
+                .and_then(|name| name.parse::<i32>().ok())
+            else {
+                continue;
+            };
+            let cmdline = match fs::read(entry.path().join("cmdline")) {
+                Ok(cmdline) => cmdline,
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(e) => {
+                    return Err(e)
+                        .with_context(|| format!("reading the command line of process {pid}"))
+                }
+            };
+            if String::from_utf8_lossy(&cmdline).contains(&needle) {
+                pids.push(pid);
             }
-        };
-        if String::from_utf8_lossy(&cmdline).contains(&needle) {
-            pids.push(pid);
         }
+        pids.sort_unstable();
+        Ok(Orphans {
+            named: pids.into_iter().map(|pid| Orphan { pid }).collect(),
+            unknown: 0,
+        })
     }
-    pids.sort_unstable();
-    Ok(Orphans {
-        named: pids
-            .into_iter()
-            .map(|pid| Orphan {
-                pid,
-                #[cfg(target_os = "macos")]
-                identity: None,
-            })
-            .collect(),
-        unknown: 0,
-    })
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: waits up to `limit` for the VMMs holding the machine's directory to exit, and returns the ones still there: those its command line names, and those in `seen`, found before a stop. A VMM's command line goes blank the moment it starts exiting, while its threads still hold its disks and published ports until the last of them exits — so a VMM the runner killed itself, or whose stop it went past, is only found through `seen`. smolvm's own stop waits for every thread since 1.18. A start issued before then is refused in a way that looks like a machine that can never start, or cannot bind the machine's port. A machine that is really stopped answers at once, and only a look that saw every process says so: a look that failed, or one that left a process the kernel would not describe, is waited out like one that found a VMM, since it has not shown the machine is free. A wait spent without one such look is an error and never an empty answer, because `clear_for_start` reads an empty answer as permission to clear the machine's lock and sockets and boot a second VMM on the disk the first may still be writing.
@@ -360,30 +352,86 @@ pub(crate) mod darwin {
         table: impl FnOnce() -> anyhow::Result<Vec<i32>>,
         mut read: impl FnMut(i32) -> Answer,
     ) -> anyhow::Result<Orphans> {
+        scan_named(needle, table, &mut read, identity)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the scan over a reader and a name-taking function its caller supplies, so a name that changes under a read, and a read whose process cannot be named at all, are tests of this crate and not of the kernel. A name is taken before the read and once more after it, and a process is named only when both are the same name: the arguments and the signal must belong to one process, and a pid given to another process mid-read, or an image installed mid-read, gives two names.
+    pub(super) fn scan_named(
+        needle: &str,
+        table: impl FnOnce() -> anyhow::Result<Vec<i32>>,
+        mut read: impl FnMut(i32) -> Answer,
+        mut name: impl FnMut(i32) -> Identity,
+    ) -> anyhow::Result<Orphans> {
         let mut found = Orphans::default();
         for pid in table()? {
-            match args(|| read(pid)) {
-                Some(argv) if argv.iter().any(|arg| arg.contains(needle)) => {
-                    found.named.push(super::Orphan {
-                        pid,
-                        identity: identity(pid),
-                    });
+            match look(pid, &mut read, &mut name) {
+                // UNIT_BOUNDARY_DESCRIPTION: the arguments and the name were read of one process that did not change under them, so this name is the one that process held while its arguments were read, and it is the only thing a signal may go through. A process that matches and cannot be named is counted: `kill_orphans` signals every process a scan names, and a number alone can be another process's by the time the sweep runs.
+                Look::Read { argv, identity } if argv.iter().any(|arg| arg.contains(needle)) => {
+                    match identity {
+                        Some(identity) => found.named.push(super::Orphan { pid, identity }),
+                        None => found.unknown += 1,
+                    }
                 }
-                Some(_) => {}
-                None => found.unknown += 1,
+                Look::Read { .. } => {}
+                // UNIT_BOUNDARY_DESCRIPTION: a process that is gone while the scan looks at it leaves nothing to look into, which is the clean answer. A process still there that never answered is one the scan did not see through: it is counted, so a caller can tell a look that saw every process from one that did not, and it is named by nothing.
+                Look::Unknown if busy(pid) => found.unknown += 1,
+                Look::Unknown | Look::Gone => {}
             }
         }
-        found.sort();
+        found.named.sort_by_key(|orphan| orphan.pid);
         Ok(found)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the kernel's name for a process, which is the only thing a signal may be sent through: a pid is a number the kernel hands to whatever process comes next, so the one a scan named can be another process's by the time a slow scan ends. `proc_signal_with_audittoken` signals this or nothing, since the kernel validates the pid version inside it.
+    // UNIT_BOUNDARY_DESCRIPTION: the name the kernel holds for a process, for a caller that offers a function of its own in a test.
+    fn identity_of(pid: i32) -> Identity {
+        identity(pid)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: one process's arguments and the name that belonged to them. An attempt is retried as a whole while the process installs an image: the kernel answers nothing, then answers the new arguments, and bumps the pid version inside the name at that same moment, so a name taken before the read differs from the one taken after it, and retrying only the read would pair new arguments with an old name — a signal through that name ends nothing while the VMM holds the machine. The retry is what makes the arguments and the name one process's.
+    pub(super) fn look(
+        pid: i32,
+        read: &mut impl FnMut(i32) -> Answer,
+        name: &mut impl FnMut(i32) -> Identity,
+    ) -> Look {
+        for attempt in 0..ARG_READS {
+            if attempt > 0 {
+                std::thread::sleep(ARG_READ_PAUSE);
+            }
+            let before = name(pid);
+            match read(pid) {
+                Answer::Gone => return Look::Gone,
+                Answer::MidExec => {}
+                Answer::Args(argv) => {
+                    let identity = match (before, name(pid)) {
+                        (Some(before), Some(after)) if before == after => Some(after),
+                        _ => None,
+                    };
+                    // UNIT_BOUNDARY_DESCRIPTION: a name that changed across the read belongs to another process, or to this one before the image it installed, and the arguments read belong to the other side of that change: read again, and only a read whose name holds still is an answer.
+                    if identity.is_some() || before.is_none() {
+                        return Look::Read { argv, identity };
+                    }
+                }
+            }
+        }
+        Look::Unknown
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the kernel's name for a process, which is the only thing a signal may be sent through: a pid is a number the kernel hands to whatever process comes next, so the one a scan named can be another process's by the time a slow scan ends. Nothing when the kernel does not name the process — it is gone, a policy denies the lookup, or it is not this user's — and a process with no name is never signalled.
     pub type Identity = Option<AuditToken>;
 
     #[repr(C)]
     #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
     pub struct AuditToken {
         val: [u32; 8],
+    }
+
+    impl AuditToken {
+        // UNIT_BOUNDARY_DESCRIPTION: a name that is not the one the kernel gave, for a test to show that two names are told apart. The kernel bumps the pid version inside the token when it hands a number on, which is the first word a token carries.
+        #[cfg(test)]
+        pub fn bump(mut self) -> Self {
+            self.val[0] = self.val[0].wrapping_add(1);
+            self
+        }
     }
 
     const TASK_AUDIT_TOKEN: libc::task_flavor_t = 15;
@@ -429,12 +477,36 @@ pub(crate) mod darwin {
         (read == 0 && count == TASK_AUDIT_TOKEN_COUNT).then_some(token)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: sends a signal through the name a scan took, and through nothing else. The kernel refuses a token whose process has exited and whose pid has been handed on, so a sweep that names a VMM cannot kill the process that took its number. `false` means the signal was refused: the process it named is gone.
-    pub fn signal(identity: &Identity, sig: i32) -> bool {
-        identity.is_some_and(|token| {
-            // SAFETY: `token` is an AuditToken the kernel filled in for a process it named.
-            unsafe { proc_signal_with_audittoken(&raw const token, sig) == 0 }
-        })
+    // UNIT_BOUNDARY_DESCRIPTION: sends a signal through a name the kernel gave for a process, and through nothing else. The kernel refuses a name whose process has exited or installed a new image, so a sweep cannot kill the process that took its number. `false` means the kernel refused it.
+    pub fn signal(token: &AuditToken, sig: i32) -> bool {
+        // SAFETY: `token` is an AuditToken the kernel filled in for a live process of this user.
+        unsafe { proc_signal_with_audittoken(token, sig) == 0 }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: ends one process a scan matched, and only that process. A refused name has left the process it was taken for — the process exited, or it installed a new image, which the kernel counts as a new name for the same process — so the process is looked at again and the signal repeated while its arguments still match the machine's directory. A process that is gone, that no longer matches, or that cannot be named afresh, is left alone: the number alone never carries a signal, because the kernel may have given it to another process.
+    pub fn end(orphan: &super::Orphan, needle: &str) {
+        let mut identity = Some(orphan.identity);
+        for attempt in 0..ARG_READS {
+            if attempt > 0 {
+                std::thread::sleep(ARG_READ_PAUSE);
+            }
+            let Some(token) = identity else {
+                match look(orphan.pid, &mut read_args, &mut identity_of) {
+                    Look::Read {
+                        argv,
+                        identity: Some(fresh),
+                    } if argv.iter().any(|arg| arg.contains(needle)) => {
+                        identity = Some(fresh);
+                        continue;
+                    }
+                    _ => return,
+                }
+            };
+            if signal(&token, libc::SIGKILL) {
+                return;
+            }
+            identity = None;
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: this user's processes in the kernel's table, which the kernel itself keeps apart by uid: a process of another user is no VMM of this machine, and asking the kernel for this user's alone means no scan ever needs to read the owner of a pid one at a time. A listing that failed is an error, and so is one that holds no pid at all, since this user always has at least the runner itself and an empty listing would say nothing of this user runs.
@@ -470,7 +542,7 @@ pub(crate) mod darwin {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: a whole listing of this user's processes. The kernel writes at most what the buffer holds and answers how many it wrote, with no error when the table holds more, and it also caps its own snapshot of the table at what it counted a moment earlier plus twenty — so a listing can come back short of the room it was given and still be a prefix. A listing is therefore taken for the whole table only when it does not fill the room it was given and the same room answers the same again, and otherwise is read again with twice the room; a table too big for the cap is an error and never a prefix, since a scan that took one for the whole table would miss a VMM beyond it and answer that the machine is free.
+    // UNIT_BOUNDARY_DESCRIPTION: a whole listing of this user's processes, as far as repeated readings can show one. The kernel writes at most what the buffer holds and answers how many it wrote, with no error when the table holds more, and it also caps its own snapshot of the table at what it counted a moment earlier plus twenty, so a listing can come back short of the room it was given and still be a prefix. A listing is therefore taken for the whole table only when it does not fill the room it was given and the same room answers the same pids again; otherwise it is read again with twice the room. Two readings that agree are evidence of a whole table and not proof: processes born and gone between them can leave two different prefixes with one count, and the kernel's own cap applies to both. A table too big for the cap is an error and never a prefix, since a scan that took one for the whole table would miss a VMM beyond it and answer that the machine is free.
     pub(super) fn fill(
         hint: usize,
         mut list: impl FnMut(&mut [i32]) -> anyhow::Result<usize>,
@@ -486,7 +558,13 @@ pub(crate) mod darwin {
                 let mut again = vec![0i32; capacity];
                 if list(&mut again)? == first {
                     pids.truncate(first);
-                    return Ok(pids);
+                    again.truncate(first);
+                    let (mut seen, mut now) = (pids.clone(), again);
+                    seen.sort_unstable();
+                    now.sort_unstable();
+                    if seen == now {
+                        return Ok(pids);
+                    }
                 }
             }
             if capacity >= PID_CAP {
@@ -497,23 +575,21 @@ pub(crate) mod darwin {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: a process's arguments, without its environment, or nothing when the kernel answered nothing for it every time it was read. A process the kernel will not answer for — gone, a zombie, root's or a kernel task's — has no arguments and a name to nobody, while one that answered nothing is a process the scan could not look into.
-    pub(super) fn args(mut read: impl FnMut() -> Answer) -> Option<Vec<String>> {
-        (0..ARG_READS).find_map(|attempt| {
-            if attempt > 0 {
-                std::thread::sleep(ARG_READ_PAUSE);
-            }
-            match read() {
-                Answer::Args(args) => Some(args),
-                Answer::Gone => Some(Vec::new()),
-                Answer::MidExec => None,
-            }
-        })
-    }
-
     pub(super) enum Answer {
         Args(Vec<String>),
         Gone,
         MidExec,
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what a look at one process found: its arguments and the name that belonged to them, that it was gone while the scan looked, or that it never answered. A look that never answered is not an empty command line, which would say the process was looked into.
+    #[derive(Debug, PartialEq, Eq)]
+    pub(super) enum Look {
+        Read {
+            argv: Vec<String>,
+            identity: Identity,
+        },
+        Gone,
+        Unknown,
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: one read of a process's arguments through KERN_PROCARGS2, which answers the size the buffer must hold when given none, and a temporary failure for a process the kernel is in the middle of an exec on. A process that is not this user's is no VMM of this machine, so a failure to read it is an answer and is not waited out: the kernel refuses most of those, and paying the pause for a host's daemons would make every scan slow.
@@ -596,7 +672,8 @@ pub(crate) mod darwin {
         let argc = usize::try_from(i32::from_ne_bytes(*argc))
             .ok()
             .filter(|&argc| argc > 0 && argc <= rest.len())?;
-        let path = rest.iter().position(|&b| b == 0)?;
+        // UNIT_BOUNDARY_DESCRIPTION: the executable's path comes first, and it is never empty: a read the kernel answered from a buffer too small for the arguments that came after it answers a region of NULs in place of both, which must not be read as a command line of empty arguments.
+        let path = rest.iter().position(|&b| b == 0).filter(|&path| path > 0)?;
         let pad = padding(path + 1, mem::size_of::<usize>());
         if rest[path + 1..].iter().take(pad).any(|&b| b != 0) {
             return None;
@@ -674,6 +751,7 @@ pub(crate) mod darwin {
 }
 
 pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
+    let needle = format!("{}/", vm_dir.to_string_lossy());
     let found = orphan_pids(proc_root, vm_dir).unwrap_or_else(|e| {
         tracing::warn!(
             machine = %vm_dir.display(),
@@ -688,22 +766,22 @@ pub fn kill_orphans(proc_root: &Path, vm_dir: &Path) {
             "the kernel would not describe every process on the host, so a VMM among them is not killed"
         );
     }
-    kill_named(&found.named);
+    kill_named(&found.named, &needle);
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: ends each process by the name the scan took for it, and never by the number alone where a name exists. A name the kernel refuses is a process that is gone, and the kernel may have given its number to another process by then, so that refusal ends the process's turn. Only a process the kernel kept no name for is signalled by number, which is the one way left to end it.
-fn kill_named(named: &[Orphan]) {
+// UNIT_BOUNDARY_DESCRIPTION: ends each process by the name the scan took for it, and never by its number: a number the kernel has given to another process would kill that one. A name the kernel refuses has left the process it was taken for — the process exited, or it installed a new image, which the kernel counts as a new name for the same process — so the name is taken again and the signal repeated while the process is still the one the scan matched. Only a process that is gone, or that is no longer the process the scan matched, is left alone.
+fn kill_named(named: &[Orphan], needle: &str) {
     for orphan in named {
         #[cfg(target_os = "macos")]
-        if orphan.identity.is_some() {
-            darwin::signal(&orphan.identity, libc::SIGKILL);
-            continue;
-        }
+        darwin::end(orphan, needle);
         // SAFETY: kill(2) takes no pointers; a pid that has already exited returns ESRCH, which is ignored.
+        #[cfg(not(target_os = "macos"))]
         unsafe {
             libc::kill(orphan.pid, libc::SIGKILL);
         }
     }
+    #[cfg(not(target_os = "macos"))]
+    let _ = needle;
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what one read of a child's exit status says. The read happens once and the caller keeps the answer: a second read gets ECHILD, and the status is gone with it, which is why the reaper collects before it decides anything. A VMM is a child of the process that spawned it, so a machine handed over to a new runner release reads as `Gone` here — the loader reaps those and records the signal for the runner that adopted them.
@@ -1033,6 +1111,8 @@ mod tests {
         assert_eq!(grown_storage(10 << 30, &desired), None);
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: a stand-in `/proc` is a Linux process table; a Mac reads the kernel's own list, so these scans are proved where the walk they exercise exists and the Mac's are proved against the kernel in the `darwin` tests.
+    #[cfg(not(target_os = "macos"))]
     // TEST_SCENARIO: a VMM stuck in the kernel outlives SIGKILL and still holds the machine's disks. Clearing its lock and sockets would let a second VMM boot on the same storage disk beside it, so the start fails and says why, and the files that keep the second VMM out stay. A directory no VMM holds is cleared as before.
     #[test]
     fn a_start_refuses_a_disk_a_vmm_that_survived_sigkill_still_holds() {
@@ -1111,6 +1191,7 @@ mod tests {
     }
 
     // TEST_SCENARIO: a scan that cannot read a process's command line is not a scan that found no VMM. Read as one, a live machine whose launch record no longer decodes counts as zero at handoff and its storage share waits for no guest: an unknown scan must never answer "nothing holds this machine". A process that exited mid-scan leaves no command line at all, which is that clean answer, not a failure.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_scan_that_cannot_read_a_command_line_is_not_a_clean_none_found() {
         let proc = TempDir::new("orphans-unreadable");
@@ -1132,6 +1213,7 @@ mod tests {
     }
 
     // TEST_SCENARIO: a start clears a machine's lock and sockets once the wait shows nothing holds the machine, and a wait in which no look at the host's processes saw them all has shown nothing. Read as permission, it would boot a second VMM on the disk a live one may still be writing, and would remove the very lock and sockets that keep it off. The start must fail, and the lock must still be there afterwards.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_wait_no_scan_answered_does_not_clear_the_machine() {
         let proc = TempDir::new("clear-unscanned");
@@ -1158,6 +1240,7 @@ mod tests {
     }
 
     // TEST_SCENARIO: a machine's VMM is found by its directory on the command line. Of three processes only the one naming this machine's directory is its VMM — not one for a machine whose directory name merely starts the same way, and not the runner itself.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_vmm_is_found_by_its_machines_directory_and_no_other() {
         let proc = TempDir::new("orphans");
@@ -1183,6 +1266,7 @@ mod tests {
     }
 
     // TEST_SCENARIO: a start issued while the previous VMM still holds the disks is refused, which looks exactly like a machine that can never start. The wait is what breaks that, and a machine that is really stopped must not pay for it — both halves are asserted, since a wait that always returned true would pass the second alone.
+    #[cfg(not(target_os = "macos"))]
     #[test]
     fn a_start_waits_for_the_vmm_its_stop_left_behind() {
         let proc = TempDir::new("gone");
@@ -1268,35 +1352,34 @@ mod tests {
         assert_eq!(GUEST_AGENT_PORT, 8080);
     }
 
-    // TEST_SCENARIO: a scan takes a process's name from the kernel, and only that name may carry a signal: a pid is a number the kernel hands to whatever process comes next, so a sweep that signalled by number could kill a process the scan never named. The kernel refuses a name whose process is gone, and the runner then signals nothing at that number.
+    // TEST_SCENARIO: a sweep ends every live process a scan named, through the name the kernel gave it, so a VMM left by a previous runner is really gone after it. A sweep that signalled nothing would leave that VMM holding the machine.
     #[cfg(target_os = "macos")]
     #[test]
-    fn a_kill_goes_through_the_name_the_scan_took() {
-        let mut child = std::process::Command::new("/bin/sleep")
-            .arg("30")
+    fn a_sweep_ends_the_live_vmm_it_named() {
+        use std::os::unix::process::ExitStatusExt;
+
+        let dir = TempDir::new("sweep-kills");
+        let vm_dir = dir.path().join("m1");
+        let needle = format!("{}/", vm_dir.display());
+        let mut vmm = std::process::Command::new("sh")
+            .args(["-c", "read _", "_boot-vm"])
+            .arg(&needle)
+            .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
-        let pid = i32::try_from(child.id()).unwrap();
-        let named = darwin::identity(pid);
-        assert!(
-            named.is_some(),
-            "the kernel named no live process of this user"
-        );
-        // UNIT_BOUNDARY_DESCRIPTION: a name the kernel gave for a process that is gone is refused, which is what keeps the number from becoming another process's death.
-        let gone = darwin::identity(pid);
-        child.kill().unwrap();
-        child.wait().unwrap();
-        assert!(
-            !darwin::signal(&gone, libc::SIGKILL),
-            "the kernel signalled a process that is gone, so a name does not hold the process it was taken from"
-        );
-        assert!(
-            !darwin::signal(&named, libc::SIGKILL),
-            "the kernel signalled through a name whose process is gone"
+        let pid = i32::try_from(vmm.id()).unwrap();
+        let named = darwin::pids_with_arg(&needle).unwrap();
+        assert_eq!(named.pids(), vec![pid], "the scan named the stand-in");
+        kill_named(&named.named, &needle);
+        let ended = vmm.wait().unwrap();
+        assert_eq!(
+            ended.signal(),
+            Some(libc::SIGKILL),
+            "the sweep did not end the live VMM it named"
         );
     }
 
-    // TEST_SCENARIO: between a scan and its signal a process can exit and the kernel can give its number to another process, which a sweep signalling numbers would kill. The number here is a live process's and the name is the one the kernel gave a process that has since gone, which is what the kernel leaves a sweep that started before the reuse; only the name decides, and the kernel refuses a name whose process is gone, so the live process survives.
+    // TEST_SCENARIO: a process that is gone keeps its number, and the kernel gives that number to another process. A sweep that signalled the number would kill whatever holds it now; a sweep that signals the name the scan took finds the name refused and ends nothing.
     #[cfg(target_os = "macos")]
     #[test]
     fn a_sweep_never_kills_a_process_it_did_not_name() {
@@ -1309,59 +1392,95 @@ mod tests {
             .arg("30")
             .spawn()
             .unwrap();
-        let stale = darwin::identity(i32::try_from(gone.id()).unwrap());
-        assert!(stale.is_some(), "the kernel named no live process");
+        let stale = darwin::identity(i32::try_from(gone.id()).unwrap())
+            .expect("the kernel names a live process of this user");
         gone.kill().unwrap();
         gone.wait().unwrap();
 
-        // UNIT_BOUNDARY_DESCRIPTION: the number the sweep holds belongs to the process started first, while the name it holds is the one of a process that has gone: what a sweep sees when a pid is reused under it.
-        let named = [Orphan {
-            pid,
-            identity: stale,
-        }];
-        kill_named(&named);
+        // UNIT_BOUNDARY_DESCRIPTION: the number the sweep holds is the live process's, while the name it holds is the one of a process that has gone: what a sweep sees when the kernel hands a number on under it.
+        kill_named(
+            &[Orphan {
+                pid,
+                identity: stale,
+            }],
+            "/m/1/",
+        );
         std::thread::sleep(Duration::from_millis(100));
         assert!(
             !exited(Path::new("/proc"), pid),
-            "the sweep killed the process holding a reused pid instead of the one its name names"
+            "the sweep killed the process holding a reused number instead of the one its name holds"
         );
         reused.kill().unwrap();
         reused.wait().unwrap();
     }
 
-    // TEST_SCENARIO: the sweep kills through the name the scan took for each process, and a name the kernel refuses is a process that is gone and is not followed by a signal to its number, which the kernel may have given to another process by then. A sweep by number would kill the process holding that number, and the test watches exactly that number: a stand-in the scan named is stopped, and the number it held, now another process's, is left alone.
+    // TEST_SCENARIO: this runner cannot always name a process — a policy may deny the task lookup — and a process it cannot name is one it cannot tell apart from whatever process comes next. Such a process is counted as one the scan could not look into, so a start does not read the scan as a machine nothing holds, and it is never ended by number.
     #[cfg(target_os = "macos")]
     #[test]
-    fn a_sweep_kills_the_process_it_named_and_no_other() {
-        let dir = TempDir::new("kill-named");
-        let vm_dir = dir.path().join("m1");
-        let needle = format!("{}/", vm_dir.display());
-        let mut vmm = std::process::Command::new("sh")
+    fn a_process_the_runner_cannot_name_is_never_killed_by_number() {
+        let mut child = std::process::Command::new("sh")
             .args(["-c", "read _", "_boot-vm"])
-            .arg(&needle)
+            .arg("/m/1/")
             .stdin(std::process::Stdio::piped())
             .spawn()
             .unwrap();
-        let pid = i32::try_from(vmm.id()).unwrap();
-        let named = darwin::pids_with_arg(&needle).unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        let unnamed =
+            darwin::scan_named("/m/1/", || Ok(vec![pid]), darwin::read_args, |_| None).unwrap();
         assert_eq!(
-            named.pids(),
-            vec![pid],
-            "the scan named the stand-in alone, and the sweep signals only what it names"
+            unnamed.pids(),
+            Vec::<i32>::new(),
+            "a process the runner could not name was named by the scan"
         );
+        assert_eq!(
+            unnamed.unknown, 1,
+            "a process the runner could not name was read as one it had looked into"
+        );
+        kill_named(&unnamed.named, "/m/1/");
         assert!(
-            named.named[0].identity.is_some(),
-            "the scan named a process without the kernel's name for it, so the sweep could only signal its number"
+            !exited(Path::new("/proc"), pid),
+            "a sweep ended a process it could not name, by its number"
         );
+        child.kill().unwrap();
+        child.wait().unwrap();
+    }
 
-        // UNIT_BOUNDARY_DESCRIPTION: the name is taken while the process lives, and the process is then stopped and reaped here, so the sweep meets a name the kernel refuses. A sweep that fell back to the number would signal whatever holds it now, and no signal is sent to it here.
-        let identity = named.named[0].identity;
-        vmm.kill().unwrap();
-        vmm.wait().unwrap();
-        assert!(
-            !darwin::signal(&identity, libc::SIGKILL),
-            "the kernel signalled through a name whose process is gone"
+    // TEST_SCENARIO: the arguments a scan reads must be the arguments of the process whose name it keeps. A name taken before the read and again after it tells the two apart: an image installed mid-read, or a number the kernel handed on, gives two names, and the read belongs to neither process the sweep may signal.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_name_that_changes_across_the_read_names_no_process() {
+        let mut child = std::process::Command::new("sh")
+            .args(["-c", "read _", "_boot-vm"])
+            .arg("/m/1/")
+            .stdin(std::process::Stdio::piped())
+            .spawn()
+            .unwrap();
+        let pid = i32::try_from(child.id()).unwrap();
+        let mut names = 0;
+        let changed = darwin::scan_named(
+            "/m/1/",
+            || Ok(vec![pid]),
+            darwin::read_args,
+            |_| {
+                names += 1;
+                darwin::identity(pid).map(|token| match names % 2 {
+                    1 => token,
+                    _ => token.bump(),
+                })
+            },
+        )
+        .unwrap();
+        assert_eq!(
+            changed.pids(),
+            Vec::<i32>::new(),
+            "a process whose name changed across the read was named anyway"
         );
+        assert!(
+            changed.unknown >= 1,
+            "a process whose name changed across the read was not counted as one the scan could not look into"
+        );
+        child.kill().unwrap();
+        child.wait().unwrap();
     }
 
     // TEST_SCENARIO: a live process answers the kernel's read of its arguments with nothing, or with a partial answer, for the moment the kernel takes to install a new image, which is longer the longer its arguments are, and a VMM answers it that way at every start. A scan in that moment found no VMM, which `kill_orphans` read as nothing to kill and `vmms_left` as a machine nothing holds. The stand-in re-execs itself with an argument near the host's limit, so it is in that moment over and over, and every scan of it must name it.
@@ -1507,6 +1626,25 @@ mod tests {
             "a reply short of the buffer that the next read contradicted was taken for the whole table"
         );
 
+        // UNIT_BOUNDARY_DESCRIPTION: two listings of one count are not one listing: a process born and another gone between them leaves the same count with a different process in it, and the first is a prefix that may be missing the very VMM the scan looks for.
+        let mut same_count = 0;
+        let churned = darwin::fill(100, |pids| {
+            same_count += 1;
+            let listed: &[i32] = match same_count {
+                1 => &[11, 12, 13],
+                2 => &[11, 12, 99],
+                _ => &[11, 12, 13, 99],
+            };
+            pids[..listed.len()].copy_from_slice(listed);
+            Ok(listed.len())
+        })
+        .unwrap();
+        assert_eq!(
+            churned.len(),
+            4,
+            "two listings of the same count were taken for one table with a different process in them: {churned:?}"
+        );
+
         let capped = darwin::fill(1, |pids| {
             pids.fill(7);
             Ok(pids.len())
@@ -1515,7 +1653,9 @@ mod tests {
             capped.is_err(),
             "a table that never fitted its room answered a partial list"
         );
-        let huge = darwin::fill(darwin::PID_CAP + 1, |pids| Ok(pids.len()));
+        let huge = darwin::fill(darwin::PID_CAP + 1, |_| {
+            panic!("a count hint above the cap was listed instead of refused")
+        });
         assert!(
             huge.is_err(),
             "a count hint above the cap was allocated and read instead of refused"
@@ -1568,14 +1708,16 @@ mod tests {
             darwin::Answer::Args(vec!["_boot-vm".to_string(), "/m/1/".to_string()]),
         ]
         .into_iter();
-        assert_eq!(
-            darwin::args(|| answers.next().expect("read again")),
-            Some(vec!["_boot-vm".to_string(), "/m/1/".to_string()]),
-            "the command line a process installs is read, not the nothing it answered first"
+        let me = i32::try_from(std::process::id()).unwrap();
+        let mut name = |_| darwin::identity(me);
+        let installed = darwin::look(me, &mut |_| answers.next().expect("read again"), &mut name);
+        assert!(
+            matches!(&installed, darwin::Look::Read { argv, identity: Some(_) } if argv == &["_boot-vm".to_string(), "/m/1/".to_string()]),
+            "the command line a process installs is read, not the nothing it answered first: {installed:?}"
         );
         assert_eq!(
-            darwin::args(|| darwin::Answer::MidExec),
-            None,
+            darwin::look(me, &mut |_| darwin::Answer::MidExec, &mut name),
+            darwin::Look::Unknown,
             "a process that never answered is no command line"
         );
     }
@@ -1681,6 +1823,26 @@ mod tests {
             answer.push(0);
         }
         answer
+    }
+
+    // TEST_SCENARIO: a read the kernel answers from a buffer too small for the arguments that came after it answers a region of NULs where the executable's path and the arguments were, and the read still reports success. Read as a command line it is one of empty arguments, which names no machine and says the process was looked into — a machine nothing holds. It is no command line, and the process is one the scan could not look into.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn a_truncated_answer_is_no_command_line() {
+        let mut zeros = 6i32.to_ne_bytes().to_vec();
+        zeros.extend(std::iter::repeat_n(0u8, 64));
+        assert_eq!(
+            darwin::args_in(&zeros),
+            None,
+            "a region of NULs where the executable's path belongs was read as a command line of empty arguments"
+        );
+
+        // UNIT_BOUNDARY_DESCRIPTION: an empty first argument still follows a real executable path, which is what keeps this from refusing a legitimate one.
+        assert_eq!(
+            darwin::args_in(&answer("/bin/sh", &["", "60"], &[])),
+            Some(vec![String::new(), "60".to_string()]),
+            "an empty first argument behind a real path was refused"
+        );
     }
 
     // TEST_SCENARIO: a process whose arguments name no machine must never be named, and `kill_orphans` signals every process a scan names. The environment follows the arguments in the same buffer, so a parse that skips one byte too many or too few reads a machine's directory out of the environment. Empty leading arguments are what a parser shifting fields gets wrong: they leave NULs where a padding looks like it continues, and there can be any number of them.
