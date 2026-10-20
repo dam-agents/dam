@@ -525,6 +525,36 @@ describe("session start mode on the wire", () => {
     expect(metadata.store.get("s")?.meta.settings).toEqual({ mode: "plan" });
   });
 
+  /** TEST_SCENARIO: The model is refused while a mode waits behind it: the
+   * runtime asks for the model again as one block, in the order it lists it,
+   * with no copy of the mode the block replaced left in the queue. */
+  it("re-asks for a refused model once, in the listed order", () => {
+    vi.useFakeTimers();
+    try {
+      const { world } = runtimeWorld();
+      const client = world.connect();
+      client.send(newSession(1, { model: "ibm/claude-opus-4-5" }));
+      world.harness().replyTo("session/new", { sessionId: "s" });
+      const harness = world.harness();
+      harness.refuseTo("session/set_config_option", {
+        code: -32000,
+        message: "unknown model",
+      });
+      vi.advanceTimersByTime(CRITICAL_RETRY_MS);
+
+      answerModelFrame(harness);
+      expect(modesSent(harness)).toEqual(["auto"]);
+      expect(modelFramesSent(harness)).toBe(2);
+
+      harness.replyTo("session/set_mode", {});
+      harness.replyTo("session/set_mode", {});
+      expect(modesSent(harness)).toEqual(["auto"]);
+      expect(modelFramesSent(harness)).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   /** TEST_SCENARIO: A client sends its own mode request while the refused model
    * waits to be asked for again: the retried model goes first, and the client's
    * request still reaches the harness and is answered. */

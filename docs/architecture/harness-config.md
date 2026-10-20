@@ -64,7 +64,7 @@ A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` 
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
 Settings are sent one at a time, in the order the runtime lists them, each after the harness answered the one before, because a harness reads a setting against the state an earlier one left: a mode is read against the model the session holds.
 A prompt waits for all of them.
-A setting always holds a value: the picker starts on the agent's configured value for the harness, or the manifest's `default` for the option where nothing is configured, and offers no unset choice, so a change always names a value the harness applies.
+A setting always holds a value: the picker starts on the agent's configured value for the harness, or, for a mode the runtime derives, on the mode it derives, or else the manifest's `default` for the option, and offers no unset choice, so a change always names a value the harness applies.
 A session that names no mode starts on the mode the agent's config file names, which the harness reads itself.
 Where that file names none, the runtime derives one from the catalog — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
 A harness that keeps its own sources of a start mode does not opt in: Pi's ACP mode is its thinking level, which it takes from the resumed session, then a per-model value, then the global default, and Bob's is the persona a Connection pins.
@@ -75,7 +75,7 @@ The derived mode is the runtime's, not the session's: it never replaces a mode t
 While a setting that can move the mode is still owed an answer — a mode of its own, or the model a mode is read against — a mode the harness reports is that work's doing: an echo of what the runtime sent, or the fallback a model change forced, so it is not saved as a mode the session picked.
 Once those settings are answered, a reported mode is the harness's own, as entering plan mode with a tool is, and is saved; a session the runtime derives a mode for then stops deriving, since the session holds a mode now.
 A mode report that the runtime did not ask for and that arrives after its work settled is indistinguishable from a mode the harness changed on its own, and is saved as one.
-A setting the harness refuses is asked for again ahead of the settings that wait on it, and a client's own setting request keeps its place in that queue and is answered as usual.
+A refused model is asked for again ahead of the settings that wait on it, and a client's own setting request keeps its place in that queue and is answered as usual.
 A change made mid-turn waits for the turn to end, and the next prompt waits for the harness to answer the change.
 A process-scoped one (`env`) is a value the harness reads only at start, such as Claude Code's prompt-cache TTL or Bob's approvals flag; it joins the Harness Lease key, so the session moves to a process started with it and the other sessions' process is left alone.
 Such a move is refused while the session's turn runs.

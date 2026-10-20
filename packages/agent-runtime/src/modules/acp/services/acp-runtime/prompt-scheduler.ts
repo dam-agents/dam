@@ -48,13 +48,14 @@ export interface PromptSubmission {
  * wants them applied and sent one at a time, each after the harness answered
  * the one before, because a harness reads a setting against the state an
  * earlier one left — a mode against the model the session holds. A prompt
- * waits for both. A setting the harness refused is dropped with the queue
- * behind it and submitted again before them, so its dependents never apply
- * against the state it failed to reach.
+ * waits for both. A setting the harness refused is asked for again as one block,
+ * ahead of the queue and in the order the runtime lists it, so what depends on
+ * it never applies against the state it failed to reach.
  */
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
-  submitSetting(submission: PromptSubmission, first?: boolean): PromptFate;
+  submitSetting(submission: PromptSubmission): PromptFate;
+  submitSettings(submissions: PromptSubmission[], first?: boolean): void;
   onSettingResponse(sessionId: string, outboundId: number): void;
   modeWorkOutstanding(sessionId: string): boolean;
   onPromptResponse(
@@ -539,7 +540,7 @@ export function createPromptScheduler(
       return "queued";
     },
 
-    submitSetting(submission, first = false) {
+    submitSetting(submission) {
       const sessionId = submission.sessionId;
       if (
         !pendingSettings.has(sessionId) &&
@@ -549,12 +550,22 @@ export function createPromptScheduler(
         sendSetting(submission)
       )
         return "started";
+      pendingSettings.set(sessionId, [
+        ...(pendingSettings.get(sessionId) ?? []),
+        submission,
+      ]);
+      return "queued";
+    },
+
+    submitSettings(submissions, first = false) {
+      const sessionId = submissions[0]?.sessionId;
+      if (sessionId === undefined) return;
       const queued = pendingSettings.get(sessionId) ?? [];
       pendingSettings.set(
         sessionId,
-        first ? [submission, ...queued] : [...queued, submission],
+        first ? [...submissions, ...queued] : [...queued, ...submissions],
       );
-      return "queued";
+      maybeStartNext(sessionId);
     },
 
     modeWorkOutstanding(sessionId) {

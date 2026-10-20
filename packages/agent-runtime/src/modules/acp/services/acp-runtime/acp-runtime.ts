@@ -709,6 +709,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     if (harnessColdSessions.has(sessionId)) return;
     const applied = appliedSettings.get(sessionId) ?? new Map<string, string>();
     appliedSettings.set(sessionId, applied);
+    const block: PromptSubmission[] = [];
     for (const frame of deps.sessionSettingFrames?.(sessionId) ?? []) {
       const { method, params } = frame;
       const key = settingKeyOf(frame);
@@ -726,19 +727,17 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         settingSessionId: sessionId,
         ...(frame.critical && { critical: true }),
       });
-      promptScheduler.submitSetting(
-        {
-          sessionId,
-          channel: settingsChannel,
-          outboundId,
-          originalId: outboundId,
-          frame: { jsonrpc: "2.0", id: outboundId, method, params },
-          promptId: null,
-          unattended: true,
-        },
-        first,
-      );
+      block.push({
+        sessionId,
+        channel: settingsChannel,
+        outboundId,
+        originalId: outboundId,
+        frame: { jsonrpc: "2.0", id: outboundId, method, params },
+        promptId: null,
+        unattended: true,
+      });
     }
+    promptScheduler.submitSettings(block, first);
   }
 
   const teardownCloseByReason: Record<

@@ -37,6 +37,7 @@ export interface HarnessConfigPlugin extends Plugin {
   readonly catalog: HarnessConfigBinding["catalog"];
   readonly sessionModel: boolean;
   readonly sessionSettings: string[] | undefined;
+  readonly derivedStartMode: string[] | undefined;
   readCurrent(opts?: { discover?: boolean }): Promise<HarnessConfigCurrent>;
   models(
     provider: string | null,
@@ -251,6 +252,7 @@ export function createHarnessConfigPlugin(deps: {
     sessionSettings: binding?.sessionSettings
       ? Object.keys(binding.sessionSettings)
       : undefined,
+    derivedStartMode: derivedStartModeOf(binding),
     readCurrent,
     models: (provider) => listModels(envOf(provider)),
     apply,
@@ -258,6 +260,21 @@ export function createHarnessConfigPlugin(deps: {
       return async (payload) => apply(payload as HarnessConfigEventPayload);
     },
   };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the session settings whose start mode the runtime
+ * derives, which the picker needs to show the same mode the session starts in.
+ * A harness that does not opt in derives none, so the picker derives none.
+ */
+function derivedStartModeOf(
+  binding: HarnessConfigBinding | undefined,
+): string[] | undefined {
+  const derived = Object.entries(binding?.sessionSettings ?? {}).flatMap(
+    ([id, setting]) =>
+      "mode" in setting && setting.deriveStartMode === true ? [id] : [],
+  );
+  return derived.length === 0 ? undefined : derived;
 }
 
 /**

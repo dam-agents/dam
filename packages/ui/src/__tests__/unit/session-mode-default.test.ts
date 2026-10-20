@@ -28,6 +28,7 @@ const capability = {
   name: "claude-code",
   harnessConfigCatalog: CATALOG,
   sessionSettings: ["model", "mode"],
+  derivedStartMode: ["mode"],
 } as unknown as HarnessCapability;
 
 const configured = { mode: null, model: null, configOptions: {} };
@@ -53,6 +54,16 @@ describe("session mode shown before the owner picks one", () => {
         null,
       ).mode,
     ).toBe("default");
+  });
+
+  it("shows the manifest default for a harness that derives no start mode", () => {
+    expect(
+      settingDefaults(
+        { ...capability, derivedStartMode: undefined },
+        configured,
+        "ibm/claude-haiku-4-5",
+      ).mode,
+    ).toBe("auto");
   });
 
   it("shows a mode the agent's config file names as it is", () => {
