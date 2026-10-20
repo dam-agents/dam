@@ -1,5 +1,5 @@
 import { Bot, Locked } from "@carbon/icons-react";
-import type { DelegationNode } from "api-server-api";
+import { type DelegationNode, delegationTitle } from "api-server-api";
 import { useMemo } from "react";
 
 import { Spinner } from "@/components/ui/spinner";
@@ -17,7 +17,7 @@ import {
   useDelegationTree,
   useInvocationTurns,
 } from "../api/queries.js";
-import { delegationState, firstLine } from "../lib/delegation-state.js";
+import { delegationState } from "../lib/delegation-state.js";
 import {
   DelegationOwnersProvider,
   useDelegationOwners,
@@ -58,7 +58,7 @@ export function DockedDelegationPanel({ driverAgentId, id }: Props) {
           className="min-w-0 flex-1 truncate text-sm font-medium text-foreground"
           title={node?.prompt}
         >
-          {node ? firstLine(node.prompt) : id}
+          {node ? delegationTitle(node.prompt) : id}
         </span>
         {node && (
           <DelegationStatePill state={delegationState(node, agentState)} />

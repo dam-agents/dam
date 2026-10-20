@@ -243,6 +243,7 @@ import {
   composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
+  createInvocationTitlesAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
@@ -1148,6 +1149,16 @@ export async function bootstrap() {
     defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
     connectionNames: createConnectionNames(db),
+    agentNames: {
+      namesOf: async (ownerSub) =>
+        new Map(
+          (await agentsRepo.list(ownerSub)).map((agent) => [
+            agent.id,
+            agent.name,
+          ]),
+        ),
+    },
+    invocationTitles: createInvocationTitlesAdapter(db),
     ownedAgents: {
       anyCreatedBefore: async (ownerSub, at) =>
         (await agentsRepo.list(ownerSub)).some(

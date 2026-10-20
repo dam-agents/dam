@@ -94,12 +94,18 @@ export interface SpendCounts {
   webSearches: number;
 }
 
+interface SpendAgentRow {
+  agentId: string;
+  agentName: string | null;
+  calls: number;
+}
+
 export interface SpendBreakdown {
   from: string;
   to: string;
   totals: (SpendAmount & SpendCounts)[];
   byDay: (SpendAmount & { day: string })[];
-  byAgent: (SpendAmount & { agentId: string; calls: number })[];
+  byAgent: (SpendAmount & SpendAgentRow)[];
   byModel: (SpendAmount & SpendCounts & { model: string })[];
   byConnection: (SpendAmount &
     SpendCounts & {
@@ -111,7 +117,7 @@ export interface SpendBreakdown {
   bySessionType: (SpendAmount & {
     category: SessionCategory | "subagents" | "none";
   })[];
-  byCallingAgent: (SpendAmount & { agentId: string; calls: number })[];
+  byCallingAgent: (SpendAmount & SpendAgentRow)[];
 }
 
 export interface SpendSessionRow {

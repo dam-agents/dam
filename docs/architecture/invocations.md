@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -107,6 +107,7 @@ It goes with the root Driver's other agent-scoped rows ([persistence](persistenc
 No age limit and no knob.
 Spend is not on the record; it stays in telemetry, keyed by the invocation id the target's gateway stamps ([observability](observability.md)).
 The root Driver reads it per sub-agent through its own cost read, which the delegation view's figures match ([metrics — agent-facing read](metrics.md#agent-facing-read)).
+The record also names each sub-agent row in the root Driver's spend by agent, by the first line of its prompt, after the target is gone ([spend limits](spend-limits.md#grouped-read)).
 
 **The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.

@@ -13,7 +13,11 @@ import {
 } from "api-server-api";
 import { match } from "ts-pattern";
 import { emit, EventType } from "../../../events.js";
-import { foldBreakdown, type BreakdownRow } from "../domain/breakdown.js";
+import {
+  agentNames,
+  foldBreakdown,
+  type BreakdownRow,
+} from "../domain/breakdown.js";
 import { utcDay } from "../domain/ledger.js";
 import {
   ceilingCounter,
@@ -44,6 +48,17 @@ export interface ConnectionNames {
   namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
 }
 
+export interface AgentNames {
+  namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
+}
+
+export interface InvocationTitles {
+  titlesOf(
+    ownerSub: string,
+    agentIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
+}
+
 export interface OwnedAgentAges {
   anyCreatedBefore(ownerSub: string, at: Date): Promise<boolean>;
 }
@@ -68,6 +83,10 @@ export function createSpendService(deps: {
   meteringStart(): Promise<Date>;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   connectionNames(): Promise<ReadonlyMap<string, string>>;
+  liveAgentNames(): Promise<ReadonlyMap<string, string>>;
+  invocationTitles(
+    agentIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
   ownedAgentCreatedBefore(at: Date): Promise<boolean>;
   telemetryStoreOn: boolean;
   ownerSub: string;
@@ -165,6 +184,14 @@ export function createSpendService(deps: {
     );
   };
 
+  const agentIdsOf = (rows: readonly BreakdownRow[]) => [
+    ...new Set(
+      rows.flatMap((row) =>
+        row.callingAgentId ? [row.payer, row.callingAgentId] : [row.payer],
+      ),
+    ),
+  ];
+
   return {
     async daily({ agentId, from, to }) {
       return deps.ledger.daily({
@@ -178,7 +205,7 @@ export function createSpendService(deps: {
     async breakdown({ agentId, from, to }) {
       const payer = agentId ? await deps.payers.payerOf(agentId) : undefined;
       const scope = !agentId ? "owner" : payer === agentId ? "payer" : "caller";
-      const [rows, connectionNames] = await Promise.all([
+      const [rows, connectionNames, liveNames] = await Promise.all([
         deps.ledger.breakdownRows({
           ownerSub: deps.ownerSub,
           agentIds: scopedAgents(payer),
@@ -187,13 +214,19 @@ export function createSpendService(deps: {
           to,
         }),
         deps.connectionNames(),
+        deps.liveAgentNames(),
+      ]);
+      const [sessionCategories, invocationTitles] = await Promise.all([
+        categoriesOf(rows),
+        deps.invocationTitles(agentIdsOf(rows)),
       ]);
       return foldBreakdown({
         from,
         to,
         rows,
         connectionNames,
-        sessionCategories: await categoriesOf(rows),
+        agentNames: agentNames({ invocationTitles, liveNames }),
+        sessionCategories,
         scope,
       });
     },

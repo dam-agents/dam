@@ -39,15 +39,32 @@ function sourcesBy<T extends Counted>(
   }));
 }
 
+type AgentRow = SpendBreakdown["byAgent"][number];
+
+export function agentNameOf(
+  rows: readonly AgentRow[],
+): (agentId: string) => string | null {
+  const names = new Map(rows.map((row) => [row.agentId, row.agentName]));
+  return (agentId) => names.get(agentId) ?? null;
+}
+
+export function agentLabel(agentName: string | null): string {
+  return agentName ?? DELETED_AGENT_NAME;
+}
+
 export function agentSources(
-  byAgent: SpendBreakdown["byAgent"],
-  nameOf: (agentId: string) => string | undefined,
+  rows: readonly AgentRow[],
+  labelOf: (agentId: string, agentName: string | null) => string = (
+    _agentId,
+    agentName,
+  ) => agentLabel(agentName),
 ): RowSource[] {
+  const nameOf = agentNameOf(rows);
   return sourcesBy(
-    byAgent,
+    rows,
     (row) => row.agentId,
     (agentId) => ({
-      label: nameOf(agentId) ?? DELETED_AGENT_NAME,
+      label: labelOf(agentId, nameOf(agentId)),
       notPriced: false,
     }),
   );

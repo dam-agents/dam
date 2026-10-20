@@ -68,7 +68,7 @@ It still reads the live agents list for the avatar image and to grey out the ava
 
 | #   | Title                                     | Scope                                                                                                                                                                 | Depends on |
 | --- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- |
-| 01  | Sub-agent rows name their task            | `agentName` in the contract, filled from Invocation titles and live names; shared title helper; the three UI surfaces use the server name; Bot icon on sub-agent rows | —          |
+| 01  | ✅ Sub-agent rows name their task         | `agentName` in the contract, filled from Invocation titles and live names; shared title helper; the three UI surfaces use the server name; Bot icon on sub-agent rows | —          |
 | 02  | Deleted agents keep their last known name | Name table and migration; Agent watch event; spend saga; third name source; activity-events page; Ledger and Screens text                                             | 01         |
 
 ## Conventions & glossary
@@ -100,7 +100,7 @@ On the local dev cluster ([`cluster-ops`](../../../.agents/skills/cluster-ops/SK
 1. In a driver agent's chat, ask for three temporary sub-agents, each with a different one-line task.
 2. Wait until all three finish.
 3. Open the driver's Usage section.
-   "Spend by agent" lists "This agent (<driver name>)" first, then three rows.
+   "Spend by agent" lists "<driver name> (this agent)" first, then three rows.
    Each row shows the first line of its task, as the delegation cards in the chat do, with the accent Bot icon.
 4. Create an agent, send it one message so that it spends, then delete it.
    Settings › Usage "Spend by agent" shows its name beside a greyed avatar.

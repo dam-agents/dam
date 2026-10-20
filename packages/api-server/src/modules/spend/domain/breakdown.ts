@@ -79,6 +79,13 @@ function byUnitThenCost<T extends SpendAmount>(
     label(a).localeCompare(label(b));
 }
 
+export function agentNames(sources: {
+  invocationTitles: ReadonlyMap<string, string>;
+  liveNames: ReadonlyMap<string, string>;
+}): ReadonlyMap<string, string> {
+  return new Map([...sources.liveNames, ...sources.invocationTitles]);
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the scope is what the rows are: every agent of
  * the owner, the calls one agent pays for, or the calls one agent made (a
@@ -93,6 +100,7 @@ export function foldBreakdown(input: {
   to: string;
   rows: readonly BreakdownRow[];
   connectionNames: ReadonlyMap<string, string>;
+  agentNames: ReadonlyMap<string, string>;
   sessionCategories: ReadonlyMap<string, SessionCategory>;
   scope: "owner" | "payer" | "caller";
 }): SpendBreakdown {
@@ -124,7 +132,13 @@ export function foldBreakdown(input: {
   const byAgent = group<Entry<"byAgent">>(
     rows,
     (row) => row.payer,
-    (row) => ({ agentId: row.payer, unit: row.unit, costMicros: 0, calls: 0 }),
+    (row) => ({
+      agentId: row.payer,
+      agentName: input.agentNames.get(row.payer) ?? null,
+      unit: row.unit,
+      costMicros: 0,
+      calls: 0,
+    }),
     (into, row) => {
       into.calls += row.calls;
     },
@@ -183,6 +197,7 @@ export function foldBreakdown(input: {
             callerOf,
             (row) => ({
               agentId: callerOf(row),
+              agentName: input.agentNames.get(callerOf(row)) ?? null,
               unit: row.unit,
               costMicros: 0,
               calls: 0,

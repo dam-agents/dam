@@ -1,14 +1,15 @@
+import { Bot } from "@carbon/icons-react";
 import type { SpendBreakdown } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useAgentsList } from "../../agents/api/queries.js";
-import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { SESSION_CATEGORY_LABELS } from "../../sessions/lib/session-category.js";
 import {
+  agentLabel,
+  agentNameOf,
   agentSources,
   connectionSources,
   modelSources,
@@ -16,7 +17,6 @@ import {
   sessionTypeSources,
 } from "../lib/breakdown-sources.js";
 import {
-  DELETED_AGENT_NAME,
   NO_SESSION,
   noSessionHelp,
   SPEND_BY_AGENT,
@@ -28,6 +28,7 @@ import {
   thisAgent,
 } from "../lib/copy.js";
 import { type SpendRow, spendRows } from "../lib/spend-rows.js";
+import { SpendAgentAvatar } from "./spend-agent-avatar.js";
 import { SpendRowList } from "./spend-row-list.js";
 
 function BreakdownCard({
@@ -73,20 +74,9 @@ export function MeasuredBreakdownCards({
   breakdown,
   showPlanUse,
 }: Props) {
-  const agents = useAgentsList();
   const { data: connections = [] } = useAppConnections();
-  const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
-  const agentIcon = (agentId: string) => {
-    const agent = agentOf(agentId);
-    return (
-      <AgentAvatar
-        name={agent?.name ?? DELETED_AGENT_NAME}
-        avatar={agent?.avatar}
-        mood={agent ? "awake" : "disabled"}
-        size={16}
-      />
-    );
-  };
+  const payerNameOf = agentNameOf(breakdown.byAgent);
+  const callerNameOf = agentNameOf(breakdown.byCallingAgent);
   const subAgentSpend = breakdown.byCallingAgent.some(
     (row) => row.agentId !== agentId && row.costMicros > 0,
   );
@@ -95,11 +85,13 @@ export function MeasuredBreakdownCards({
       {agentId === undefined && (
         <BreakdownCard title={SPEND_BY_AGENT}>
           <SpendRowList
-            rows={spendRows(
-              agentSources(breakdown.byAgent, (id) => agentOf(id)?.name),
-              showPlanUse,
+            rows={spendRows(agentSources(breakdown.byAgent), showPlanUse)}
+            iconOf={(id) => (
+              <SpendAgentAvatar
+                agentId={id}
+                name={agentLabel(payerNameOf(id))}
+              />
             )}
-            iconOf={agentIcon}
           />
         </BreakdownCard>
       )}
@@ -108,15 +100,25 @@ export function MeasuredBreakdownCards({
           <SpendRowList
             rows={firstRow(
               spendRows(
-                agentSources(breakdown.byCallingAgent, (id) => {
-                  const name = agentOf(id)?.name;
-                  return id === agentId ? thisAgent(name ?? id) : name;
-                }),
+                agentSources(breakdown.byCallingAgent, (id, name) =>
+                  id === agentId ? thisAgent(name ?? id) : agentLabel(name),
+                ),
                 showPlanUse,
               ),
               agentId,
             )}
-            iconOf={agentIcon}
+            iconOf={(id) =>
+              id === agentId ? (
+                <SpendAgentAvatar
+                  agentId={id}
+                  name={agentLabel(callerNameOf(id))}
+                />
+              ) : (
+                <span className="flex size-4 shrink-0 items-center justify-center">
+                  <Bot size={14} className="text-accent" aria-hidden />
+                </span>
+              )
+            }
           />
         </BreakdownCard>
       )}

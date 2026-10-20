@@ -34,6 +34,7 @@ export {
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
 } from "./modules/invocations/schemas.js";
+export { delegationTitle } from "./modules/invocations/delegation-title.js";
 export type {
   SpawnInvocationRequest,
   SpawnInvocationResponse,

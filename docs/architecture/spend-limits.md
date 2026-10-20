@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -144,6 +144,9 @@ The api-server reads T once and keeps it.
 The api-server folds the rows into totals per unit, the model time, and spend by day, agent, model, Connection, session type and calling agent.
 A call whose calling agent is not its payer counts as a sub-agent's; other calls take their Session's kind from the directory.
 The read for one agent counts the calls that it pays for, so a driver's figures include its sub-agents; for a sub-agent, it counts the calls that the sub-agent made.
+The api-server names each agent row.
+A sub-agent takes the first line of its task, from its Invocation record ([invocations](invocations.md#the-delegation-record)), so a running sub-agent and a finished one have the same name.
+Any other agent takes its live name.
 
 **Spend per Session.** For one agent, the api-server sums the calls that the agent made per Session, newest first, and adds to each Session the calls of the sub-agents spawned from it at any depth, also as a part of its own.
 A sub-agent whose spawn recorded no Session ([invocations](invocations.md)) adds its spend to no Session.
@@ -352,5 +355,6 @@ Every text that a person reads gives the reset in that person's own time, on the
 The figure includes the sub-agents spawned from that Session, and its tooltip names their part.
 The Usage pages also show the sum of call times and the spend by session type, with a "Sub-agents" row for the calls of sub-agents and a "No session" row for calls with no Session.
 A driver's Usage section lists the driver and each sub-agent that spent in the period, and a sub-agent's own Usage section shows the calls that it made.
+Each sub-agent row shows the first line of its task, as its delegation card does.
 The line under each chat turn shows the measured cost of the calls that started in that turn, from the call rows.
 Its tooltip tells that the agent reports the time, calls and tokens without cached tokens, and that DAM measures the cost with cached tokens and without sub-agents.

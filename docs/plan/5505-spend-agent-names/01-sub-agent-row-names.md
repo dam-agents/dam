@@ -45,7 +45,7 @@ Apply `/typescript-engineering` to steps 1–6 and `/react-ui-engineering` to st
 7. **Row labels.**
    In `packages/ui/src/modules/spend/lib/breakdown-sources.ts`, make `agentSources` label each agent from the rows' `agentName`, not from a `nameOf` callback over the live list.
    A row group has one id and so one name; take it from the first row of the group.
-   Default the label to `agentName ?? DELETED_AGENT_NAME`, and let the caller wrap it, so the driver's own row can still read "This agent (<name>)".
+   Default the label to `agentName ?? DELETED_AGENT_NAME`, and let the caller wrap it, so the driver's own row can still read "<name> (this agent)".
    The id-to-name lookup is needed by `agentSources` and by Home's top spenders, so write it once in the spend `lib/`.
 
 8. **Breakdown cards.**
@@ -68,14 +68,14 @@ Apply `/typescript-engineering` to steps 1–6 and `/react-ui-engineering` to st
 
 ## Acceptance criteria
 
-- [ ] `spend.breakdown` for a driver returns `agentName` on every `byCallingAgent` row: the first line of the prompt for each sub-agent, the live name for the driver.
-- [ ] `spend.breakdown` with no `agentId` returns the live name on each `byAgent` row of a live agent, and `null` for a deleted one.
-- [ ] A running sub-agent's row shows its task line, not its minted `invocation-…` name.
-- [ ] The delegation card, the docked delegation panel and the spend read import one title helper from `api-server-api`; `firstLine` no longer exists in `packages/ui`.
-- [ ] No spend component reads an agent's name from `useAgentsList()`; they read it only for the avatar and the mood.
-- [ ] In a driver's Usage section, each sub-agent row has the 14 px accent Bot icon, and the driver's row keeps its avatar.
-- [ ] Settings › Usage, Home's top spenders and the driver's Usage section show the same name for the same agent.
-- [ ] `mise run check` and `mise run test` pass, and `mise run check:comment-types` passes.
+- [x] `spend.breakdown` for a driver returns `agentName` on every `byCallingAgent` row: the first line of the prompt for each sub-agent, the live name for the driver.
+- [x] `spend.breakdown` with no `agentId` returns the live name on each `byAgent` row of a live agent, and `null` for a deleted one.
+- [x] A running sub-agent's row shows its task line, not its minted `invocation-…` name.
+- [x] The delegation card, the docked delegation panel and the spend read import one title helper from `api-server-api`; `firstLine` no longer exists in `packages/ui`.
+- [x] No spend component reads an agent's name from `useAgentsList()`; they read it only for the avatar and the mood.
+- [x] In a driver's Usage section, each sub-agent row has the 14 px accent Bot icon, and the driver's row keeps its avatar.
+- [x] Settings › Usage, Home's top spenders and the driver's Usage section show the same name for the same agent.
+- [x] `mise run check` and `mise run test` pass, and `mise run check:comment-types` passes.
 
 ## Smoke test
 
@@ -83,7 +83,7 @@ Apply `/typescript-engineering` to steps 1–6 and `/react-ui-engineering` to st
 2. Build and roll out: `mise run cluster:build -- api-server ui`.
 3. In the dev app (`http://localhost:4444`), ask a driver agent for three temporary sub-agents with three different one-line tasks, and wait until all three finish.
 4. Open the driver's Usage section.
-   "Spend by agent" shows "This agent (<driver name>)" first, then three rows that each carry the first line of one task and the accent Bot icon.
+   "Spend by agent" shows "<driver name> (this agent)" first, then three rows that each carry the first line of one task and the accent Bot icon.
    The titles match the three delegation cards in the chat.
 5. In the browser's network panel, open the `spend.breakdown` response for that page: each `byCallingAgent` row has `agentName` set.
 6. Open Settings › Usage and Home: the live agents keep their names and avatars, as before.

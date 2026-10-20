@@ -35,8 +35,10 @@ import {
 } from "./services/spend-ingest.js";
 import {
   createSpendService,
+  type AgentNames,
   type AgentPayers,
   type ConnectionNames,
+  type InvocationTitles,
   type OwnedAgentAges,
   type SessionCategories,
   type SpendQuestionCloser,
@@ -83,6 +85,8 @@ export function composeSpendSystem(deps: {
   defaultCeilingMicros: number | null;
   brandName: string;
   connectionNames: ConnectionNames;
+  agentNames: AgentNames;
+  invocationTitles: InvocationTitles;
   ownedAgents: OwnedAgentAges;
   sessions: SessionOwnership & SessionCategories;
   subAgents: SpawnedSubAgents;
@@ -157,6 +161,9 @@ export function composeSpendSystem(deps: {
         subAgents: deps.subAgents,
         meteringStart,
         connectionNames: () => deps.connectionNames.namesOf(owner.ownerSub),
+        liveAgentNames: () => deps.agentNames.namesOf(owner.ownerSub),
+        invocationTitles: (agentIds) =>
+          deps.invocationTitles.titlesOf(owner.ownerSub, agentIds),
         ownedAgentCreatedBefore: (at) =>
           deps.ownedAgents.anyCreatedBefore(owner.ownerSub, at),
         telemetryStoreOn: deps.telemetryStoreOn,
