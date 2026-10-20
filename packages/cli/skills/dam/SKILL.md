@@ -27,6 +27,9 @@ You act as the user, with the user's own rights, so treat every command as if th
 5. **Parse `--json`, not tables.**
    Read commands take `--json`, and an empty list is `[]`.
    Table output is for showing to the user.
+6. **Only the CLI talks to DAM.**
+   Never call DAM's API directly — with curl, a script or anything else — and never reuse the CLI's sign-in to do so.
+   See [When the CLI can't do it](#when-the-cli-cant-do-it).
 
 ## Set up
 
@@ -278,5 +281,7 @@ It exposes the user's machine, so start one only when the user asks for it.
 
 ## When the CLI can't do it
 
-The CLI does everything the web app does.
-If something still can't be done from the CLI, tell the user and point them to the web app rather than calling DAM's internal API yourself.
+The CLI is meant to do everything the web app does, so a task it can't do is a gap in the CLI.
+Don't work around it through the API (hard rule 6).
+Tell the user which command or flag is missing, so the gap can be closed, and point them to the web app to do it for now.
+If the CLI may just be old, update it first and check `dam <command> --help` again.

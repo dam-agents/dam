@@ -157,6 +157,9 @@ Sign-in stays the device flow the user approves in a browser, and the agent neve
 Every command that stores a secret — a connection's credential, a rotated one, a new API key — is handed to the user to run in a terminal of their own, where the CLI's masked prompt takes it, and the agent then verifies the outcome with a read verb.
 Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
 
+The agent reaches the deployment only through the CLI, never through the API directly.
+A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.
+
 ## Agent lifecycle
 
 The CLI presents Agents as single, atomic entities — one resource carrying both spec and runtime state, with no separate instance type.
