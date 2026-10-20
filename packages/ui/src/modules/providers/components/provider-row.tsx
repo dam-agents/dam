@@ -1,4 +1,4 @@
-import type { HarnessFamily } from "api-server-api";
+import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
@@ -10,11 +10,14 @@ import { cn } from "@/lib/utils";
 import type { ProviderPresetType } from "../../../types.js";
 import { providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
+import { ProviderKeyStatus } from "./provider-key-status.js";
 
 interface Props {
   type: ProviderPresetType;
   harnesses?: readonly HarnessFamily[];
   connected: boolean;
+  keyCheck?: ProviderKeyCheck | null;
+  checking?: boolean;
   balance?: ReactNode;
   onOpen?: () => void;
   connectedAction?: string;
@@ -24,11 +27,14 @@ export function ProviderRow({
   type,
   harnesses,
   connected,
+  keyCheck,
+  checking,
   balance,
   onOpen,
   connectedAction = "Edit",
 }: Props) {
   const name = providerName(type);
+  const refused = connected && !checking && keyCheck?.result === "refused";
   const body = (
     <>
       <CardIcon provider={type} />
@@ -41,10 +47,14 @@ export function ProviderRow({
             {name}
           </p>
           <Badge
-            variant={connected ? "success" : "muted"}
+            variant={refused ? "danger" : connected ? "success" : "muted"}
             className="ml-auto shrink-0"
           >
-            {connected ? "Connected" : "Not connected"}
+            {refused
+              ? "Key refused"
+              : connected
+                ? "Connected"
+                : "Not connected"}
           </Badge>
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
@@ -65,6 +75,11 @@ export function ProviderRow({
           </div>
           <div className="min-w-0 text-right">{balance}</div>
         </div>
+        {connected && keyCheck !== undefined && (
+          <div className="mt-2">
+            <ProviderKeyStatus check={keyCheck} checking={checking} />
+          </div>
+        )}
       </div>
     </>
   );
