@@ -159,7 +159,7 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
   expect(
     inGuest(agentId, "find /etc/runlevels -mindepth 2 -printf '%P\\n'").trim(),
     "a fresh machine starts only the agent's own services",
-  ).toBe("default/platform-user-services");
+  ).toBe("default/user.root");
   inGuest(
     agentId,
     [
@@ -184,7 +184,7 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       "EOF",
       `chmod 755 /home/agent/.config/rc/init.d/${startupItem}`,
       `ln -sf /home/agent/.config/rc/init.d/${startupItem} /home/agent/.config/rc/runlevels/default/${startupItem}`,
-      `HOME=/home/agent XDG_RUNTIME_DIR=/run/user/0 rc-service --user ${startupItem} start >/dev/null`,
+      `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} start >/dev/null`,
     ].join("\n"),
   );
   await expect
@@ -311,7 +311,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
       agentId,
       [
         `/sbin/rc-update del ${probeService} default >/dev/null`,
-        `HOME=/home/agent XDG_RUNTIME_DIR=/run/user/0 rc-service --user ${startupItem} stop >/dev/null`,
+        `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} stop >/dev/null`,
         `rm -f /home/agent/.config/rc/runlevels/default/${startupItem} /home/agent/.config/rc/init.d/${startupItem}`,
       ].join("\n"),
     );

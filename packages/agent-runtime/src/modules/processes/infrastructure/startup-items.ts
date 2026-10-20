@@ -13,7 +13,6 @@ import { startupItemIdSchema } from "agent-runtime-api";
 import type { StartupItemConfig } from "../domain/startup-items.js";
 
 const OPENRC_BOOTED = "/run/openrc/softlevel";
-const RUNTIME_DIR = "/run/user/0";
 const RC_TIMEOUT_MS = 30_000;
 
 export interface StartupItemStore {
@@ -75,7 +74,7 @@ export function createStartupItemStore(agentHome: string): StartupItemStore {
           env: {
             PATH: process.env.PATH,
             HOME: agentHome,
-            XDG_RUNTIME_DIR: RUNTIME_DIR,
+            XDG_RUNTIME_DIR: process.env.XDG_RUNTIME_DIR,
           },
         },
         (error, stdout, stderr) => {

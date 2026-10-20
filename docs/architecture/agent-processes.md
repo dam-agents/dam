@@ -121,7 +121,8 @@ It is an openrc **user service** of root, the agent's account: a script in `~/.c
 The agent writes them as plain openrc scripts, and they live in the home, the one place every boot and every image keep.
 
 OpenRC itself does the work.
-platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and one system service in the image's `default` runlevel, `platform-user-services`, runs `openrc --user default` at boot and `openrc --user shutdown` on a stop, for root, as a login would for a person; nobody logs in to a machine.
+platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
+Its `/etc/conf.d/user.root` keeps their state in the image's `XDG_RUNTIME_DIR`, which the agent's shell and the runtime share, starts them after docker and k3s, and waits up to a minute for them all to stop, each within its own stop timeout.
 The image's `/etc/rc/user/rc.conf` makes every such service supervised by `supervise-daemon`, which restarts it two seconds after it exits, run in `~/work`, logged to `~/.local/state/rc/<name>.log`, and stopped with its whole process group; a script overrides any of it.
 A service gets what the image's own services get of the environment, `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF`, and no credential placeholder.
 User services need OpenRC 0.60 or later; the image takes OpenRC alone from Debian testing through an apt pin, until its stable release ships one.
