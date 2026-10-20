@@ -68,7 +68,7 @@ Creation is per-purpose: the plain create picks an image, and a [starter kit](st
 The **Agent Kind** marker survives only on agents stamped before kits: a knowledge base is now a kit that declares one capability, and a marker the platform no longer knows reads as no kind at all.
 A kit apply is the plain create with the kit's grants, followed by the kit's schedules and channel binding, compensated by delete on failure.
 A new agent takes its template's size and the trusted egress preset — or, for a kit that declares either, the kit's — both editable afterwards, plus a Backend the template has no say in: a container, or a microVM, which has no size and shares its owner's [memory pool](vm-memory.md) instead.
-The Backend follows the install rather than the caller: an install that can run microVMs creates every new agent it is not told otherwise about as one, an explicit ask for a container still wins, and an install that cannot run one creates a container ([features](features.md)).
+The Backend follows the install rather than the caller: an install that can run microVMs creates every new agent it is not told otherwise about as one, an explicit ask for a container is refused there, and an install that cannot run one creates a container ([features](features.md)).
 A plain create names neither a harness nor a provider, since each session picks both ([below](#session-inside-the-pod)): it boots the default Template on the install's default harness and grants every provider Connection of the caller's that the harness runs on, the oldest one per provider alias.
 A custom-image Template names the harness it wraps, if any, and may list its providers.
 A create that names a provider gets that one alone.

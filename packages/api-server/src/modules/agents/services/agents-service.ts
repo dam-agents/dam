@@ -1005,6 +1005,13 @@ export function createAgentsService(deps: {
     }),
 
     async create(input: AgentCreateInput) {
+      // UNIT_BOUNDARY_DESCRIPTION: Legacy container backend: remove once every agent runs as a VM. A container is what an install without virtualization can still make, and what the Agents made before the microVM was the default already run as; nothing new is created on it.
+      if (input.vm === false && deps.virtualizationEnabled)
+        throw new TRPCError({
+          code: "PRECONDITION_FAILED",
+          message:
+            "this install runs every new agent as its own microVM, so a container agent cannot be created; only agents made before virtualization was enabled still run on the container backend",
+        });
       const vm = input.vm ?? deps.virtualizationEnabled === true;
       let spec: Record<string, unknown>;
       let templateId: string | undefined;

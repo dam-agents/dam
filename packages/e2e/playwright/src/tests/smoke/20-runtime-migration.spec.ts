@@ -6,8 +6,8 @@
 // TEST_OVERVIEW: agent spec, the only one that creates an agent through the UI,
 // TEST_OVERVIEW: beside the specs that drive the shared e2e-agent, which create
 // TEST_OVERVIEW: none, and one at a time with the other specs that boot their own
-// TEST_OVERVIEW: agent. Its container Agent is asked for explicitly, since every
-// TEST_OVERVIEW: create on this install would otherwise land on a machine, and the
+// TEST_OVERVIEW: agent. No API makes a container Agent on this install, so it is
+// TEST_OVERVIEW: applied as an Agent object the way an operator makes one, and the
 // TEST_OVERVIEW: move is asked for the way an operator asks: the request
 // TEST_OVERVIEW: annotation, which no page offers. It runs before the
 // TEST_OVERVIEW: agent-backend spec, which deletes the VM runner the migrated
@@ -18,6 +18,7 @@ import { expect, test, type Page } from "@playwright/test";
 import { randomUUID } from "node:crypto";
 
 import {
+  deleteAgentIfPresent,
   openAgentChat,
   sendMessageToAgent,
   setMockAgentReply,
@@ -28,7 +29,7 @@ import {
 } from "../../lib/api-client.js";
 import { acceptTerms } from "../../lib/auth.js";
 import {
-  createAgentOn,
+  applyLegacyContainerAgent,
   expectHomeFile,
   listSessionIds,
   refreshingToken,
@@ -82,9 +83,9 @@ test.beforeAll(async () => {
   api = createRefreshingApiClient(token);
   await requireBackend(api, "vm");
   await acceptTerms(api);
-  agentId = await createAgentOn(api, "container", agentName, harnessName, {
-    neverIdle: true,
-  });
+  await deleteAgentIfPresent(api, agentName);
+  await applyLegacyContainerAgent(api, agentName, agentName, harnessName);
+  agentId = agentName;
 });
 
 test.afterAll(async () => {
