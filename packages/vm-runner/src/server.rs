@@ -244,9 +244,11 @@ fn persist_oom_kills(state_dir: &std::path::Path, counted: u64) {
 fn claim_exit_record(state_dir: &std::path::Path, pid: i32) -> Option<PathBuf> {
     let dir = state_dir.join(crate::state::EXIT_RECORDS);
     let published = dir.join(pid.to_string());
+    // UNIT_BOUNDARY_DESCRIPTION: the claim's name carries both this reader's sequence and the runner's own pid, because recovery and pruning decide whether a claim has been abandoned by the liveness of the process the name ends with. A name without the pid would make the sequence read as a pid, so an abandoned claim would be skipped whenever its sequence happened to name a live process, and a live reader's claim would be stolen whenever its sequence named none.
     let claimed = dir.join(format!(
-        ".{pid}.claim.{}",
-        CLAIM_SEQUENCE.fetch_add(1, Ordering::Relaxed)
+        ".{pid}.claim.{}.{}",
+        CLAIM_SEQUENCE.fetch_add(1, Ordering::Relaxed),
+        std::process::id()
     ));
     match fs::rename(&published, &claimed) {
         Ok(()) => Some(claimed),
@@ -769,8 +771,8 @@ impl Server {
                     let this_one = match (start, expected) {
                         // UNIT_BOUNDARY_DESCRIPTION: two start times decide it. Equal means the record is about the very process the machine runs, so it is this machine's death whatever the pid has since been given to; different means a predecessor's, however long ago that predecessor died.
                         (Some(recorded), Some(known)) => recorded == known,
-                        // UNIT_BOUNDARY_DESCRIPTION: with no identity on either side the record is taken: the state directory holds records only for machines this runtime booted, and refusing every record a runtime cannot date would silence every kill on such a runtime. The window the record was published in is what keeps an unrelated death out.
-                        _ => true,
+                        // UNIT_BOUNDARY_DESCRIPTION: without an identity to compare, a record is never taken as positive evidence while the VMM it sits under answers for itself: the loader writes no start time when it cannot read one, so an undated record is indistinguishable from a predecessor's, and reading it would report a running machine as dead. This is the one case where liveness decides, and it decides only to refuse — never to accept, which is what the two recorded start times are for.
+                        _ => !smolvm::process::is_alive(pid),
                     };
                     // UNIT_BOUNDARY_DESCRIPTION: a record of another incarnation is no exit of this one, and not a clean one either: answering with the absence of a signal would report a machine that shut itself down tidily, which is a death this VMM never had.
                     if !this_one {

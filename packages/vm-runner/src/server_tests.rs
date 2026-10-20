@@ -4739,6 +4739,117 @@ async fn the_pruner_does_not_delete_a_newer_publication() {
     );
 }
 
+// TEST_SCENARIO: a machine's held kill belongs to that machine. One count is sampled and claimed for m2 through the production claim, and m1's own SIGKILL must not spend it: the credit is m2's, and only m2 can take it.
+#[tokio::test(flavor = "multi_thread")]
+async fn another_machines_held_credit_is_not_spent() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-held-owner-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    counted(&cgroup, 0);
+    let h = Harness::with("held-owner", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    // TEST_SCENARIO: one count, claimed for m2 by the production claim path, which is what makes the credit m2's.
+    counted(&cgroup, 1);
+    h.server.reap_killed();
+    h.server.claim_own_kill("m2");
+    assert!(
+        locked(&h.server.oom)
+            .holds
+            .get("m2")
+            .is_some_and(Option::is_some),
+        "the count was not assigned to the machine that claimed it"
+    );
+    // TEST_SCENARIO: m1's own SIGKILL asks for a credit, and m2's is the only one there is.
+    assert!(
+        !h.server.take_oom_credit("m1"),
+        "a machine spent the credit held for another machine"
+    );
+    assert!(
+        locked(&h.server.oom)
+            .holds
+            .get("m2")
+            .is_some_and(Option::is_some),
+        "the credit held for m2 was taken by m1"
+    );
+    // TEST_SCENARIO: the machine the credit is held for still has it.
+    assert!(
+        h.server.take_oom_credit("m2"),
+        "the machine the credit was held for could not spend it"
+    );
+}
+
+// TEST_SCENARIO: a record with no start time, under the pid of a VMM that is alive now, must not be read as that VMM's death: an undated record is indistinguishable from a predecessor's, and reading it would report a running machine as stopped by its filter.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_undated_record_does_not_name_a_live_vmms_death() {
+    let h = Harness::new("undated-record");
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    locked(&h.fake.states).insert("m1".into(), State::Running);
+    let mut vmm = stand_in_vmm();
+    let pid = i32::try_from(vmm.id()).unwrap();
+    h.fake.set_vmm("m1", pid);
+    // TEST_SCENARIO: the identity is known to the runtime, and the record carries none, which is what the loader writes when it cannot read the zombie's.
+    locked(&h.fake.vmm_start_times).insert(
+        "m1".into(),
+        smolvm::process::process_start_time(pid).expect("a start time of its own"),
+    );
+    let records = h.server.config.state_dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&records).unwrap();
+    fs::write(records.join(pid.to_string()), format!("\n{}", libc::SIGSYS)).unwrap();
+    assert!(smolvm::process::is_alive(pid));
+    h.server.reap_killed();
+    let status = h.server.status("m1");
+    assert_ne!(
+        status.reason, REASON_SECCOMP_KILLED,
+        "an undated record named a live VMM's death: {status:?}"
+    );
+    assert!(
+        smolvm::process::is_alive(pid),
+        "the VMM was alive throughout"
+    );
+    drop(vmm.kill());
+    let _ = vmm.wait();
+}
+
+// TEST_SCENARIO: a claim the production writer made, whose name carries the runner that made it, is adopted by the runner that replaces it once that runner is gone. The name is built by the writer here, not hand-written, so a shape production never emits cannot make this pass.
+#[test]
+fn a_claim_the_writer_made_is_recoverable_by_the_next_runner() {
+    let dir = std::env::temp_dir().join(format!("vmr-claim-writer-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&dir);
+    let exits = dir.join(crate::state::EXIT_RECORDS);
+    fs::create_dir_all(&exits).unwrap();
+    fs::write(exits.join("4242"), "7\n9").unwrap();
+    // UNIT_BOUNDARY_DESCRIPTION: the claim the production writer makes, taken and then abandoned, as a runner that exits between the rename and the read leaves it.
+    let made = claim_exit_record(&dir, 4242).expect("the record is claimed");
+    let name = made.file_name().unwrap().to_string_lossy().to_string();
+    // TEST_SCENARIO: the runner that made it is this process, so the claim is not yet abandoned: nothing else may take it.
+    assert!(
+        name.rsplit('.').next().and_then(|p| p.parse::<i32>().ok())
+            == i32::try_from(std::process::id()).ok(),
+        "the claim does not name the runner that made it: {name}"
+    );
+    assert!(
+        claim_exit_record(&dir, 4242).is_none(),
+        "a live reader's claim was taken from it"
+    );
+    // TEST_SCENARIO: the runner that made it is gone — reaped, not a zombie, since a zombie still answers for its pid — and the claim is adopted rather than left to be pruned.
+    let mut gone = std::process::Command::new("true")
+        .spawn()
+        .expect("a process to name");
+    let gone_pid = gone.id();
+    let _ = gone.wait();
+    assert!(!smolvm::process::is_alive(i32::try_from(gone_pid).unwrap()));
+    let abandoned = exits.join(format!(".4242.claim.0.{gone_pid}"));
+    fs::rename(&made, &abandoned).unwrap();
+    let adopted = claim_exit_record(&dir, 4242).expect("the abandoned claim is adopted");
+    assert_eq!(
+        read_claimed(&adopted, &exits.join("4242")),
+        Some((Some(7), 9)),
+        "the death a runner claimed and never reported was not read by the runner that replaced it"
+    );
+}
+
 // TEST_SCENARIO: a grow's VMM dies of a SIGKILL, the runtime boots its whole-size replacement and that recovery outlives a credit's window, while the tick samples the kernel's count and expires it in the meantime. The hold has to exist from the moment the death is read, so the replacement's arrival cannot erase the count the death belongs to. This drives the production create, grow, recovery, tick and settlement, and never seeds the hold itself.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_grows_own_kill_survives_the_recovery_it_started() {
