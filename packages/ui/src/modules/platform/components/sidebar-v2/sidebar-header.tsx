@@ -13,25 +13,25 @@ interface Props {
 
 export function SidebarHeader({ onCollapse, onHome }: Props) {
   return (
-    <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
-      <button
-        type="button"
-        onClick={onHome}
-        aria-label={getBrand().name}
-        className={`rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
-      >
-        <BrandLogo />
-      </button>
+    <div className="flex h-12 shrink-0 items-center gap-1.5 border-b border-border px-2">
       <Tooltip content="Collapse navigation" side="bottom">
         <button
           type="button"
           onClick={onCollapse}
           aria-label="Collapse navigation"
-          className={`flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+          className={`flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
         >
           <ChevronLeft size={16} />
         </button>
       </Tooltip>
+      <button
+        type="button"
+        onClick={onHome}
+        aria-label={getBrand().name}
+        className={`min-w-0 rounded-lg p-1 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+      >
+        <BrandLogo />
+      </button>
     </div>
   );
 }
