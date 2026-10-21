@@ -200,7 +200,8 @@ export function composeEnvironmentGate(
   const template = deps.urlTemplate;
   const domain = domainOf(template);
   if (template === null || domain === null) return noEnvironmentGate;
-  const addressUrl = (address: string) => template.replace("{host}", address);
+  const addressUrl = (address: string) =>
+    template.replace("{host}", () => address);
   const signInUrl = addressUrl(SIGNIN_LABEL);
   const keycloak = {
     keycloakExternalUrl: deps.keycloak.externalUrl,

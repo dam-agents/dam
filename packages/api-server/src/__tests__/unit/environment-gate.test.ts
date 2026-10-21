@@ -48,12 +48,20 @@ async function world(opts: { signedInAs?: string } = {}) {
   const seen: { path: string; headers: http.IncomingHttpHeaders }[] = [];
   const runtime = http.createServer((req, res) => {
     seen.push({ path: req.url ?? "", headers: req.headers });
-    res.setHeader("Set-Cookie", [
-      "app=1; Path=/",
-      "platform-env=forged; Path=/",
-    ]);
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.end("from the app");
+    let received = 0;
+    req.on("data", (d: Buffer) => (received += d.length));
+    req.on("error", () => {});
+    req.on("end", () => {
+      res.setHeader("Set-Cookie", [
+        "app=1; Path=/",
+        "platform-env=forged; Path=/",
+        "platform-env =padded; Path=/",
+      ]);
+      res.setHeader("Cache-Control", "public, max-age=3600");
+      res.end(
+        received > 0 ? `from the app, ${received} bytes` : "from the app",
+      );
+    });
   });
   const wss = new WebSocketServer({ server: runtime });
   wss.on("connection", (ws, req) => {
@@ -116,16 +124,24 @@ async function world(opts: { signedInAs?: string } = {}) {
     host: string,
     path: string,
     headers: Record<string, string> = {},
+    body?: { method: string; data: string },
   ) {
     return new Promise<{
       status: number;
       location: string | null;
       cookies: string[];
       cacheControl: string | null;
+      nosniff: string | null;
       body: string;
     }>((resolve, reject) => {
       const req = http.request(
-        { host: "127.0.0.1", port, path, headers: { ...headers, host } },
+        {
+          host: "127.0.0.1",
+          port,
+          path,
+          method: body?.method ?? "GET",
+          headers: { ...headers, host },
+        },
         (res) => {
           let body = "";
           res.setEncoding("utf8");
@@ -136,13 +152,35 @@ async function world(opts: { signedInAs?: string } = {}) {
               location: res.headers.location ?? null,
               cookies: res.headers["set-cookie"] ?? [],
               cacheControl: res.headers["cache-control"] ?? null,
+              nosniff:
+                (res.headers["x-content-type-options"] as string) ?? null,
               body,
             }),
           );
         },
       );
       req.on("error", reject);
-      req.end();
+      req.end(body?.data);
+    });
+  }
+
+  // UNIT_BOUNDARY_DESCRIPTION: a visitor that starts an upload and drops the connection before the body ends.
+  function abortedUpload(host: string, path: string, cookie: string) {
+    return new Promise<void>((resolve) => {
+      const req = http.request({
+        host: "127.0.0.1",
+        port,
+        path,
+        method: "POST",
+        headers: { host, cookie, "content-length": "100000" },
+      });
+      req.on("error", () => resolve());
+      req.write("x".repeat(1000), () => {
+        setTimeout(() => {
+          req.destroy();
+          resolve();
+        }, 50);
+      });
     });
   }
 
@@ -174,7 +212,7 @@ async function world(opts: { signedInAs?: string } = {}) {
     return session.cookies[0]!.split(";")[0]!;
   }
 
-  return { request, signInTo, seen, woken, port, runtimePort };
+  return { request, abortedUpload, signInTo, seen, woken, port, runtimePort };
 }
 
 describe("the Environment gate", () => {
@@ -201,6 +239,36 @@ describe("the Environment gate", () => {
       `app-pr-1-abcdef.${DOMAIN}`,
     );
     expect(w.woken).toContain("agent-pr-1-abcdef");
+  });
+
+  // TEST_SCENARIO: a form post reaches the app with its body; a visitor who drops an upload part-way gets nothing relayed further, and the server keeps serving.
+  it("relays a request body, and survives an aborted upload", async () => {
+    const w = await world();
+    const cookie = await w.signInTo("app-pr-1-abcdef");
+    const host = `app-pr-1-abcdef.${DOMAIN}`;
+
+    const posted = await w.request(
+      host,
+      "/form",
+      { cookie, "content-type": "text/plain" },
+      { method: "POST", data: "a=1&b=2" },
+    );
+    expect(posted.status).toBe(200);
+    expect(posted.body).toBe("from the app, 7 bytes");
+
+    await w.abortedUpload(host, "/upload", cookie);
+    await new Promise((r) => setTimeout(r, 100));
+    expect((await w.request(host, "/after", { cookie })).status).toBe(200);
+  });
+
+  // TEST_SCENARIO: the pages the gate answers with itself carry the platform's security headers, as its own pages do.
+  it("sends the security headers on its own pages", async () => {
+    const w = await world();
+
+    const res = await w.request(`app-nothing-abcdef.${DOMAIN}`, "/");
+    expect(res.status).toBe(404);
+    expect(res.nosniff).toBe("nosniff");
+    expect(res.cacheControl).toBe("private, no-store");
   });
 
   // TEST_SCENARIO: a session made for one Environment address opens nothing on another, even one of the same owner: the browser would never send it there, and a cookie carried across by hand is refused.
@@ -299,7 +367,7 @@ describe("the Environment gate", () => {
 });
 
 describe("Environment addresses", () => {
-  // TEST_SCENARIO: an address is the first label under the environments domain, split at its first hyphen into the endpoint and the Environment's host label; a deeper name, another domain or a label with no hyphen is no address.
+  // TEST_SCENARIO: an address is the first label under the environments domain, split at its first hyphen into the endpoint and the Environment's host label; a deeper name, another domain, a label with no hyphen or one with characters a DNS label cannot hold is no address.
   it("parses an address from the Host header", () => {
     expect(parseAddress(`app-pr-42-abcdef.${DOMAIN}:443`, DOMAIN)).toEqual({
       address: "app-pr-42-abcdef",
@@ -309,17 +377,18 @@ describe("Environment addresses", () => {
     expect(parseAddress(`a.b-c.${DOMAIN}`, DOMAIN)).toBeNull();
     expect(parseAddress("app-pr.example.com", DOMAIN)).toBeNull();
     expect(parseAddress(`signin.${DOMAIN}`, DOMAIN)).toBeNull();
+    expect(parseAddress(`app$&-pr-1.${DOMAIN}`, DOMAIN)).toBeNull();
     expect(domainOf("https://{host}.env.example.com")).toBe("env.example.com");
     expect(domainOf("http://{host}.env.localhost:4444")).toBe("env.localhost");
     expect(domainOf(null)).toBeNull();
   });
 
-  // TEST_SCENARIO: the relay drops both spellings of the session cookie, and keeps an app cookie whose name only starts the same way.
+  // TEST_SCENARIO: the relay drops both spellings of the session cookie, a padded name too, and keeps an app cookie whose name only starts the same way.
   it("drops only the platform's session cookies", () => {
     const out = relayHeaders(
       new Headers({
         cookie:
-          "__Host-platform-env=s; platform-env=t; platform-envx=keep; a=1",
+          "__Host-platform-env=s; platform-env =t; platform-envx=keep; a=1",
       }),
       { address: "x", publicHost: "h", scheme: "https" },
     );

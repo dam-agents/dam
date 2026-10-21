@@ -41,7 +41,7 @@ export function endpointUrl(
   host: string,
 ): string | null {
   if (urlTemplate === null) return null;
-  return urlTemplate.replace("{host}", endpointAddress(endpoint, host));
+  return urlTemplate.replace("{host}", () => endpointAddress(endpoint, host));
 }
 
 /**

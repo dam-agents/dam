@@ -24,6 +24,33 @@ export interface PendingEnvironmentLogin {
   createdAt: number;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Whether a cookie, as one `name=value` pair of a
+ * `Cookie` header or the start of a `Set-Cookie` header, is one of the
+ * platform's session cookies. The name is compared once trimmed, as a browser
+ * stores it, so a padded name (`platform-env =x`) is the session cookie too.
+ */
+export function isSessionCookie(cookie: string): boolean {
+  const name = cookie.split("=", 1)[0]!.trim();
+  return name === SESSION_COOKIE_SECURE || name === SESSION_COOKIE_PLAIN;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The value of the cookie `name` in a `Cookie`
+ * header, by the trimmed name of each pair, or undefined.
+ */
+export function cookieValue(
+  header: string | undefined,
+  name: string,
+): string | undefined {
+  for (const pair of (header ?? "").split(";")) {
+    const eq = pair.indexOf("=");
+    if (eq !== -1 && pair.slice(0, eq).trim() === name)
+      return pair.slice(eq + 1).trim();
+  }
+  return undefined;
+}
+
 export interface ParsedAddress {
   address: string;
   endpoint: string;
@@ -35,7 +62,8 @@ export interface ParsedAddress {
  * null for any other host. The address is the first DNS label under the
  * install's environments domain, `<endpoint>-<host>`; an endpoint name has no
  * hyphen, so the first hyphen splits it from the Environment's host label.
- * A port in the header is ignored.
+ * A port in the header is ignored, and a label with anything but lowercase
+ * letters, digits and hyphens is no address.
  */
 export function parseAddress(
   hostHeader: string | undefined,
@@ -45,7 +73,7 @@ export function parseAddress(
   const suffix = `.${domain.toLowerCase()}`;
   if (!hostname?.endsWith(suffix)) return null;
   const address = hostname.slice(0, -suffix.length);
-  if (address.includes(".")) return null;
+  if (!/^[a-z0-9-]{1,63}$/.test(address)) return null;
   const dash = address.indexOf("-");
   if (dash <= 0 || dash === address.length - 1) return null;
   return {
@@ -134,12 +162,7 @@ export function relayHeaders(
       const kept = value
         .split(";")
         .map((c) => c.trim())
-        .filter(
-          (c) =>
-            c !== "" &&
-            !c.startsWith(`${SESSION_COOKIE_SECURE}=`) &&
-            !c.startsWith(`${SESSION_COOKIE_PLAIN}=`),
-        );
+        .filter((c) => c !== "" && !isSessionCookie(c));
       if (kept.length > 0) out.set("cookie", kept.join("; "));
       continue;
     }

@@ -7,7 +7,9 @@ import { proxy } from "hono/proxy";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
+  cookieValue,
   decideAccess,
+  isSessionCookie,
   parseAddress,
   relayHeaders,
   RESERVED_PREFIX,
@@ -26,6 +28,14 @@ const FORWARD_PREFIX = "/api/environment/forward/";
 const DECLARED_PORTS_HEADER = "x-platform-environment-ports";
 const ACTIVITY_INTERVAL_MS = 60_000;
 const NO_STORE = "private, no-store";
+
+// UNIT_BOUNDARY_DESCRIPTION: the headers every page and redirect the gate answers with itself carry, as the platform's own pages do; the gate answers before the platform's security-headers middleware runs. A relayed response is the app's, and keeps its own.
+const GATE_HEADERS: Record<string, string> = {
+  "Cache-Control": NO_STORE,
+  "X-Content-Type-Options": "nosniff",
+  "X-Frame-Options": "DENY",
+  "Referrer-Policy": "no-referrer",
+};
 
 export interface EnvironmentGateDeps {
   domain: string;
@@ -96,13 +106,18 @@ export function createEnvironmentGate(
     return { record, port: endpoint.port, address: parsed.address };
   }
 
+  function gateHeaders(c: Context) {
+    for (const [name, value] of Object.entries(GATE_HEADERS))
+      c.header(name, value);
+  }
+
   function page(
     c: Context,
     status: 401 | 403 | 404 | 400 | 502,
     title: string,
     body: string,
   ) {
-    c.header("Cache-Control", NO_STORE);
+    gateHeaders(c);
     return c.html(
       renderGatePage({ brandName: deps.brandName, title, body }),
       status,
@@ -136,7 +151,7 @@ export function createEnvironmentGate(
           "No such Environment",
           "This link names no Environment.",
         );
-      c.header("Cache-Control", NO_STORE);
+      gateHeaders(c);
       return c.redirect(
         await deps.signIn.begin(parsed.address, c.req.query("next")),
         302,
@@ -154,7 +169,7 @@ export function createEnvironmentGate(
           "Sign-in failed",
           "Sign-in did not complete. Open the Environment's link again.",
         );
-      c.header("Cache-Control", NO_STORE);
+      gateHeaders(c);
       return c.redirect(done.value.handoffUrl, 302);
     }
     if (path === "/.platform/signed-out")
@@ -200,23 +215,23 @@ export function createEnvironmentGate(
         result: "success",
         detail: { address, email: redeemed.session.email },
       });
-      c.header("Cache-Control", NO_STORE);
+      gateHeaders(c);
       return c.redirect(redeemed.next, 302);
     }
     if (path === "/.platform/sign-out") {
       const id = getCookie(c, cookieName);
       if (id) await deps.signIn.end(id);
       deleteCookie(c, cookieName, { path: "/", secure });
-      c.header("Cache-Control", NO_STORE);
+      gateHeaders(c);
       return c.redirect(deps.signIn.signOutUrl(), 302);
     }
     return page(c, 404, "Not found", "Nothing is served here.");
   }
 
   async function session(
-    cookieValue: string | undefined,
+    sessionId: string | undefined,
   ): Promise<EnvironmentSession | null> {
-    return cookieValue ? deps.signIn.session(cookieValue) : null;
+    return sessionId ? deps.signIn.session(sessionId) : null;
   }
 
   function deny(
@@ -257,12 +272,7 @@ export function createEnvironmentGate(
     try {
       answer = await proxy(
         `http://${target.host}:${target.port}${upstreamPath(resolved, `${url.pathname}${url.search}`)}`,
-        {
-          method: c.req.method,
-          headers,
-          body: c.req.raw.body,
-          redirect: "manual",
-        },
+        { raw: c.req.raw, headers, redirect: "manual" },
       );
     } catch (e) {
       getLogger().warn(
@@ -282,11 +292,7 @@ export function createEnvironmentGate(
       out.append(name, value);
     }
     for (const cookie of answer.headers.getSetCookie())
-      if (
-        !cookie.startsWith(`${SESSION_COOKIE_SECURE}=`) &&
-        !cookie.startsWith(`${SESSION_COOKIE_PLAIN}=`)
-      )
-        out.append("set-cookie", cookie);
+      if (!isSessionCookie(cookie)) out.append("set-cookie", cookie);
     out.set("Cache-Control", NO_STORE);
     return new Response(answer.body, { status: answer.status, headers: out });
   }
@@ -313,7 +319,7 @@ export function createEnvironmentGate(
       deny(record, visitor, address, access.reason);
       if (access.reason === "not-signed-in") {
         if (isNavigation(c)) {
-          c.header("Cache-Control", NO_STORE);
+          gateHeaders(c);
           const url = new URL(c.req.url);
           return c.redirect(
             signInRedirect(address, `${url.pathname}${url.search}`),
@@ -368,11 +374,7 @@ export function createEnvironmentGate(
       const url = new URL(req.url ?? "/", "http://x");
       if (url.pathname.startsWith(RESERVED_PREFIX))
         return refuseUpgrade(socket, "404 Not Found");
-      const cookie = String(req.headers.cookie ?? "")
-        .split(";")
-        .map((p) => p.trim())
-        .find((p) => p.startsWith(`${cookieName}=`))
-        ?.slice(cookieName.length + 1);
+      const cookie = cookieValue(req.headers.cookie, cookieName);
       const visitor = await session(cookie);
       const access = decideAccess(resolved.record, visitor, resolved.address);
       if (!access.allow) {
