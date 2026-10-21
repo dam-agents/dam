@@ -16,12 +16,10 @@ vi.mock("../../modules/agents/infrastructure/k8s.js", async (original) => ({
   podBaseUrl: () => `127.0.0.1:${String(runtime.port)}`,
 }));
 
-const { createAcpRelay } = await import(
-  "../../apps/api-server/agent-proxies/acp-relay.js"
-);
-const { fillSavedDefault } = await import(
-  "../../apps/api-server/agent-proxies/saved-default.js"
-);
+const { createAcpRelay } =
+  await import("../../apps/api-server/agent-proxies/acp-relay.js");
+const { fillSavedDefault } =
+  await import("../../apps/api-server/agent-proxies/saved-default.js");
 
 const saved: SessionPair = {
   harness: "claude-code",

@@ -275,16 +275,23 @@ export function createAcpRelay(
               return;
             }
             const before = held ?? Promise.resolve();
-            const sent = before.then(async () => {
-              const frame = await filled?.catch((err: unknown) => {
+            const sent = before
+              .then(async () => {
+                const frame = await filled?.catch((err: unknown) => {
+                  getLogger().warn(
+                    { err, agentId },
+                    "acp relay: saved default lookup failed",
+                  );
+                  return null;
+                });
+                send(frame ? JSON.stringify(frame) : data, isBinary);
+              })
+              .catch((err: unknown) => {
                 getLogger().warn(
                   { err, agentId },
-                  "acp relay: saved default lookup failed",
+                  "acp relay: a held frame could not be sent",
                 );
-                return null;
               });
-              send(frame ? JSON.stringify(frame) : data, isBinary);
-            });
             held = sent;
             void sent.then(() => {
               if (held === sent) held = null;
