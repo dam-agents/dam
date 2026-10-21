@@ -372,7 +372,7 @@ export function createEnvironmentGate(
     );
   }
 
-  // UNIT_BOUNDARY_DESCRIPTION: passes the app's answer to a WebSocket upgrade on to the visitor without its Set-Cookie lines, which no rule would filter there, then hands the socket over. An app sets cookies over HTTP, where the relay filters them.
+  // UNIT_BOUNDARY_DESCRIPTION: passes the app's answer to a WebSocket upgrade on to the visitor without its Set-Cookie lines, which no rule would filter there, then hands the socket over. An app sets cookies over HTTP, where the relay filters them. An app that closes before it answered closes the visitor's socket too.
   function relayHandshake(upstream: Duplex, socket: Duplex, then: () => void) {
     let buffered = Buffer.alloc(0);
     const onData = (chunk: Buffer) => {
@@ -396,6 +396,9 @@ export function createEnvironmentGate(
       then();
     };
     upstream.on("data", onData);
+    upstream.once("end", () => {
+      if (buffered.indexOf("\r\n\r\n") === -1) socket.destroy();
+    });
   }
 
   function handleUpgrade(

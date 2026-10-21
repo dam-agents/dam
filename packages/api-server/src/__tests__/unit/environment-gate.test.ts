@@ -64,6 +64,10 @@ async function world(opts: { signedInAs?: string } = {}) {
       );
     });
   });
+  // UNIT_BOUNDARY_DESCRIPTION: an app that crashes during an upgrade to /crash: it closes the connection before it answers.
+  runtime.prependListener("upgrade", (req, socket) => {
+    if (req.url?.endsWith("/crash")) socket.destroy();
+  });
   const wss = new WebSocketServer({ server: runtime });
   wss.on("headers", (headers) =>
     headers.push("Set-Cookie: platform-env=forged", "Set-Cookie: ws=1"),
@@ -350,7 +354,7 @@ describe("the Environment gate", () => {
     expect((await w.request("platform.test", "/")).body).toBe("the platform");
   });
 
-  // TEST_SCENARIO: a WebSocket to the owner's Environment is relayed to the declared port both ways, the app's handshake loses its Set-Cookie lines, and one without a session is refused before it reaches the runtime.
+  // TEST_SCENARIO: a WebSocket to the owner's Environment is relayed to the declared port both ways, the app's handshake loses its Set-Cookie lines, an app that closes before it answers closes the visitor's socket, and one without a session is refused before it reaches the runtime.
   it("relays the owner's WebSocket and refuses one without a session", async () => {
     const w = await world();
     const cookie = await w.signInTo("app-pr-1-abcdef");
@@ -379,6 +383,17 @@ describe("the Environment gate", () => {
       anon.on("error", () => resolve(0));
     });
     expect(refused).toBe(401);
+
+    const crashed = await new Promise<string>((resolve) => {
+      const ws = new WebSocket(`ws://127.0.0.1:${w.port}/crash`, {
+        headers: { host: `app-pr-1-abcdef.${DOMAIN}`, cookie },
+      });
+      ws.on("open", () => resolve("open"));
+      ws.on("error", () => resolve("closed"));
+      ws.on("close", () => resolve("closed"));
+      setTimeout(() => resolve("hanging"), 2000);
+    });
+    expect(crashed).toBe("closed");
   });
 });
 
