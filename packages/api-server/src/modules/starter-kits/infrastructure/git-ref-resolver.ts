@@ -7,7 +7,9 @@ const SHA = /^[0-9a-f]{40}$/;
 export type RefResolution =
   | { status: "resolved"; sha: string }
   | { status: "absent" }
-  | { status: "unreachable" };
+  | { status: "unreachable"; unseen?: true };
+
+const UNSEEN_STATUSES = new Set([401, 403, 404]);
 
 export interface RefResolver {
   resolve(gitUrl: string, ref?: string): Promise<RefResolution>;
@@ -76,7 +78,10 @@ export function createGitRefResolver(
       if (!repo) return { status: "absent" };
       const request = repo.refAdvertisement();
       const res = await fetchImpl(request.url, { headers: request.headers });
-      if (!res.ok) return { status: "unreachable" };
+      if (!res.ok)
+        return UNSEEN_STATUSES.has(res.status)
+          ? { status: "unreachable", unseen: true }
+          : { status: "unreachable" };
       const body = await readBytesWithin(res, MAX_ADVERTISEMENT_BYTES);
       if (body === null) return { status: "unreachable" };
       const sha = lookup(parseRefAdvertisement(body), ref);

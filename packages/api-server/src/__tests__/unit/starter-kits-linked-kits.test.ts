@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import { parseCatalogSeeds } from "../../modules/starter-kits/infrastructure/catalog-seeds.js";
 import type { CatalogSource } from "../../modules/starter-kits/infrastructure/catalog-source.js";
 import { createGitHosts } from "../../modules/starter-kits/infrastructure/git-hosts.js";
+import { createGitRefResolver } from "../../modules/starter-kits/infrastructure/git-ref-resolver.js";
 import type { RefResolution } from "../../modules/starter-kits/infrastructure/git-ref-resolver.js";
 import { createLinkedKits } from "../../modules/starter-kits/infrastructure/linked-kits.js";
 
@@ -17,6 +18,10 @@ name: ${id}
 description: A kit.
 category: software
 ${extra}`;
+
+function pkt(line: string): string {
+  return (line.length + 4).toString(16).padStart(4, "0") + line;
+}
 
 function source(files: Record<string, string>): CatalogSource {
   return {
@@ -164,6 +169,46 @@ describe("starter kits: a kit from a link", () => {
     );
     expect(later.code).toBe("BAD_GATEWAY");
     expect(later.message).toContain("try again");
+  });
+
+  // TEST_SCENARIO: GitHub does not say "no such repository" to an anonymous reader: a mistyped link, a renamed repository and a private one all answer the ref advertisement with 401 or 404. Read through the real resolver, each must tell the user to check the link — not to try again — for the kit's repository and for its seed alike.
+  it("tells the user to check a link GitHub will not show", async () => {
+    for (const status of [401, 404]) {
+      const notFound = (seedOnly: boolean) =>
+        createLinkedKits({
+          appVersion: "1.0.0",
+          refs: createGitRefResolver(createGitHosts(), (async (
+            url: string | URL | Request,
+          ) =>
+            !seedOnly || String(url).includes("/acme/missing-seed/")
+              ? new Response(null, { status })
+              : new Response(pkt(`${SHA} HEAD\n`))) as unknown as typeof fetch),
+          scanSkills: async () => [],
+          sourceForEntry: () =>
+            source({
+              "kit.yaml": KIT(
+                "shared",
+                "seed:\n  url: https://github.com/acme/missing-seed\n",
+              ),
+            }),
+        });
+
+      const kit = await refusal(
+        notFound(false).read("https://github.com/acme/typo-kit"),
+      );
+      expect(kit.code).toBe("BAD_REQUEST");
+      expect(kit.message).toBe(
+        "https://github.com/acme/typo-kit could not be found, or it is not public",
+      );
+
+      const seed = await refusal(
+        notFound(true).read("https://github.com/acme/shared-kit"),
+      );
+      expect(seed.code).toBe("BAD_REQUEST");
+      expect(seed.message).toBe(
+        "the kit's seed https://github.com/acme/missing-seed could not be found, or it is not public",
+      );
+    }
   });
 
   // TEST_SCENARIO: a self-seeded kit from a link seeds the workspace from the very commit the kit was read at, as a catalog kit does, so the Kit Update that compares against that commit works for a linked kit too.
