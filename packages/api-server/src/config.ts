@@ -291,6 +291,13 @@ const configSchema = z.object({
   acpTurnStallProbeSeconds: z.coerce.number().int().positive().default(1800),
   onceScheduleAgentMaxOpen: z.coerce.number().int().positive().default(20),
   onceScheduleAgentMaxPerHour: z.coerce.number().int().positive().default(30),
+  environmentsUrl: z
+    .string()
+    .refine((u) => u.includes("{host}"), "must name {host}")
+    .nullable()
+    .default(null),
+  environmentsMaxPerAgent: z.coerce.number().int().positive().default(5),
+  environmentExpiryMaxDays: z.coerce.number().int().positive().default(30),
   minClientCliVersion: z.string().optional(),
   recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
@@ -503,6 +510,9 @@ export function loadConfig(): Config {
     acpTurnStallProbeSeconds: process.env.ACP_TURN_STALL_PROBE_SECONDS,
     onceScheduleAgentMaxOpen: process.env.ONCE_SCHEDULE_AGENT_MAX_OPEN,
     onceScheduleAgentMaxPerHour: process.env.ONCE_SCHEDULE_AGENT_MAX_PER_HOUR,
+    environmentsUrl: process.env.ENVIRONMENTS_URL || null,
+    environmentsMaxPerAgent: process.env.ENVIRONMENTS_MAX_PER_AGENT,
+    environmentExpiryMaxDays: process.env.ENVIRONMENT_EXPIRY_MAX_DAYS,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
     recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,

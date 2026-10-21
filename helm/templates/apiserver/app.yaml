@@ -490,6 +490,12 @@ spec:
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxOpen | quote }}
             - name: ONCE_SCHEDULE_AGENT_MAX_PER_HOUR
               value: {{ .Values.apiServer.oneTimeSchedules.agentMaxPerHour | quote }}
+            - name: ENVIRONMENTS_URL
+              value: {{ include "platform.url.environments" . | quote }}
+            - name: ENVIRONMENTS_MAX_PER_AGENT
+              value: {{ .Values.environments.maxPerAgent | quote }}
+            - name: ENVIRONMENT_EXPIRY_MAX_DAYS
+              value: {{ .Values.environments.expiryMaxDays | quote }}
             - name: SPEND_PRICE_OVERRIDES
               value: {{ (.Values.apiServer.spend | default dict).priceOverrides | default list | toJson | quote }}
             {{- $defaultUserCeilingUsd := (.Values.apiServer.spend | default dict).defaultUserCeilingUsd }}

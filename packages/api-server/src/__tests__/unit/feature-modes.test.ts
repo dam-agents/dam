@@ -28,6 +28,7 @@ describe("feature modes", () => {
         "custom-avatars": "experimental",
         "platform-provider": "experimental",
         "new-layout": "experimental",
+        environments: "experimental",
       },
     });
     expect(await service.flags()).toMatchObject({

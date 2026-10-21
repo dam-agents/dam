@@ -433,6 +433,34 @@ export const agentEnv = pgTable(
   ],
 );
 
+export const environments = pgTable(
+  "environments",
+  {
+    agentId: text("agent_id").primaryKey(),
+    owningAgentId: text("owning_agent_id").notNull(),
+    owner: text("owner").notNull(),
+    name: text("name").notNull(),
+    host: text("host").notNull(),
+    endpoints: jsonb("endpoints")
+      .$type<{ name: string; port: number }[]>()
+      .notNull(),
+    access: jsonb("access").$type<string[] | null>(),
+    expiresAt: timestamp("expires_at", { withTimezone: true }).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+  },
+  (table) => [
+    index("environments_owning_agent_idx").on(table.owningAgentId),
+    uniqueIndex("environments_host_idx").on(table.host),
+    uniqueIndex("environments_owning_agent_name_idx").on(
+      table.owningAgentId,
+      table.name,
+    ),
+    index("environments_expires_at_idx").on(table.expiresAt),
+  ],
+);
+
 export const agentChatFormPreferences = pgTable("agent_chat_form_preferences", {
   agentId: text("agent_id").primaryKey(),
   preferences: jsonb("preferences").notNull(),

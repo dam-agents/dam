@@ -147,6 +147,7 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
 }
 
 const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
+const environmentOf = process.env.PLATFORM_ENVIRONMENT_OF ?? "";
 const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
   ? {
       [defaultHarness]: loadManifest(
@@ -1240,7 +1241,12 @@ acpWss.on("connection", (ws, req: http.IncomingMessage) => {
 
 server.on("upgrade", (req, socket, head) => {
   const url = new URL(req.url!, `http://${req.headers.host}`);
-  if (url.pathname === "/api/acp") {
+  if (
+    environmentOf !== "" &&
+    (url.pathname === "/api/acp" || url.pathname === "/api/terminal")
+  ) {
+    socket.destroy();
+  } else if (url.pathname === "/api/acp") {
     acpWss.handleUpgrade(req, socket, head, (ws) =>
       acpWss.emit("connection", ws, req),
     );
@@ -1311,7 +1317,7 @@ server.listen(config.PORT, () => {
       })),
     }),
   );
-  acpRuntime.prestart();
+  if (environmentOf === "") acpRuntime.prestart();
 
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
@@ -1328,7 +1334,7 @@ server.listen(config.PORT, () => {
 
   setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
 
-  warmHistory();
+  if (environmentOf === "") warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
     process.stderr.write(`[import] ${msg}\n`),

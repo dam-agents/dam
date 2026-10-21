@@ -158,6 +158,11 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 	env["IS_SANDBOX"] = "1"
 	env[vmBackendEnv] = "vm"
 	env[requireConnectionAddressEnv] = requireConnectionAddressValue(spec)
+	if spec.EnvironmentOf != "" {
+		env[environmentOfEnv] = spec.EnvironmentOf
+	} else {
+		delete(env, environmentOfEnv)
+	}
 	env["NO_PROXY"] += "," + vmGuestLocalCIDRs
 	env["no_proxy"] = env["NO_PROXY"]
 

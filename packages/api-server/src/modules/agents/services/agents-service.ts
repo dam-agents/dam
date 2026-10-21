@@ -1101,6 +1101,10 @@ export function createAgentsService(deps: {
         );
       if (input.telemetryAttributionId !== undefined)
         spec.telemetryAttributionId = input.telemetryAttributionId;
+      if (input.environmentOf !== undefined) {
+        spec.environmentOf = input.environmentOf;
+        delete spec.harness;
+      }
       if (input.requireConnectionAddress !== false)
         spec.requireConnectionAddress = true;
 
