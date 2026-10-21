@@ -97,6 +97,7 @@ export function buildListCommand(deps: {
       "--providers",
       "list only model-provider connections, the ones `dam agent create --provider` takes",
     )
+    .option(
       "--json",
       "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, account?, repositories?, repositoryIds?, permissions? }",
     )

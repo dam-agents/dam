@@ -92,6 +92,7 @@ const deps = (svc: Partial<ConnectionService>) => ({
         localCli: "1.0.0",
         serverVersion: "1.0.0",
         serverMinClient: undefined,
+        serverRecommendedClient: undefined,
       },
     }),
   },
