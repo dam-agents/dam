@@ -208,7 +208,7 @@ export function createAuthService(deps: AuthServiceDeps): AuthService {
           });
         case "behind-current":
           warnings.push(
-            `CLI ${compat.value.localCli} is behind server ${compat.value.serverVersion}`,
+            `CLI ${compat.value.localCli} is behind the server's recommended CLI ${compat.value.serverRecommendedClient}`,
           );
           break;
         case "ok":

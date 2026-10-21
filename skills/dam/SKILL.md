@@ -69,9 +69,9 @@ If any command later says the session expired, run `dam auth login` again.
 
 ### Check the version
 
-`dam version` shows this CLI's version and the server's.
-When the CLI is older than the server it warns and carries on; when it is older than the oldest version the server accepts, commands exit with code 3.
-Either way, update the CLI.
+`dam version --json` shows this CLI's version, the server's, the CLI version the server recommends, and the latest CLI on npm.
+When `upToDate` is `false`, update the CLI.
+When the CLI is older than the server recommends, commands warn and carry on; when it is older than the oldest version the server accepts, commands exit with code 3.
 
 ### Terms of Use
 

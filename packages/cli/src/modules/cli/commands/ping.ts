@@ -45,7 +45,7 @@ export function buildPingCommand(deps: {
           return;
         case "behind-current":
           process.stderr.write(
-            `warning: CLI ${verdict.localCli} is behind server ${verdict.serverVersion}; consider upgrading\n`,
+            `warning: CLI ${verdict.localCli} is behind the server's recommended CLI ${verdict.serverRecommendedClient}; consider upgrading\n`,
           );
           process.stdout.write(`ok — server ${verdict.serverVersion}\n`);
           return;

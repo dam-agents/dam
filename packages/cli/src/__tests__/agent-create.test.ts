@@ -47,6 +47,7 @@ function setup(connections: ConnectionView[] = [provider]) {
           localCli: "1.0.0",
           serverVersion: "1.0.0",
           serverMinClient: undefined,
+          serverRecommendedClient: undefined,
         },
       }),
     },
