@@ -110,6 +110,7 @@ One per-Connection Secret holds the client secret, the current access token, and
 
 A **GitHub App** connection applies the same mint-and-refresh shape to a GitHub App installation, signing the exchange with a private key rather than trading a client secret.
 The user supplies the app id, installation id, and a PEM private key; the platform signs a short-lived JWT and mints an installation token at create and again before each expiry.
+When GitHub refuses the mint or the installation read, the error names the input at fault — an App ID with no app behind it, a private key of another app, an installation the app does not have — from GitHub's status and message, so the user knows which value to fix.
 The per-Connection Secret holds the private key (which never leaves the api-server), the current token, and its SDS; the token injects on the same GitHub hosts as a personal access token.
 
 A **GitHub sign-in** made through a GitHub App holds a user token rather than an installation token, and narrows the same way: to one account the app is installed on, optionally further to chosen repositories and permissions there.

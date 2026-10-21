@@ -16,6 +16,7 @@ export class OAuthTokenEndpointError extends Error {
   readonly status: number | undefined;
   readonly oauthError: string | undefined;
   readonly oauthShapedBody: boolean;
+  readonly userMessage: string | undefined;
 
   constructor(
     message: string,
@@ -23,6 +24,7 @@ export class OAuthTokenEndpointError extends Error {
       status?: number;
       oauthError?: string;
       oauthShapedBody?: boolean;
+      userMessage?: string;
     } = {},
   ) {
     super(message);
@@ -30,6 +32,7 @@ export class OAuthTokenEndpointError extends Error {
     this.status = opts.status;
     this.oauthError = opts.oauthError;
     this.oauthShapedBody = opts.oauthShapedBody ?? false;
+    this.userMessage = opts.userMessage;
   }
 }
 

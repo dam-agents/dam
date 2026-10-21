@@ -495,7 +495,7 @@ export function normalizePrivateKeyPem(raw: string): string {
     crypto.createPrivateKey(pem);
   } catch {
     throw new Error(
-      "Private key must be a PEM-encoded RSA private key (or its base64 encoding).",
+      "The private key is not valid: it must be a PEM-encoded RSA private key (or its base64 encoding). Paste the whole .pem file the app's settings page gave you, from -----BEGIN to the -----END line.",
     );
   }
   return pem;
@@ -548,6 +548,11 @@ function buildGitHubApp(
   }
   if (!input.privateKey) {
     throw new Error(`template ${template.id}: missing privateKey`);
+  }
+  if (!/^\d+$/.test(input.installationId)) {
+    throw new Error(
+      `The Installation ID must be a number, the one at the end of the installation's URL (…/settings/installations/<id>) — got "${input.installationId.slice(0, 80)}".`,
+    );
   }
   const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
 
