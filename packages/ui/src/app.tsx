@@ -10,6 +10,7 @@ import { cn } from "./lib/utils.js";
 import { useAgentsList } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
+import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
@@ -32,7 +33,6 @@ import {
 } from "./modules/sessions/components/app-side-panel.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
-import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { useStarterKit } from "./modules/starter-kits/api/queries.js";
 import { BrowseKitsModal } from "./modules/starter-kits/components/browse-kits-modal.js";

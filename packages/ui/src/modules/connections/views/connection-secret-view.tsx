@@ -6,9 +6,9 @@ import { type FormEvent, type ReactNode, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Callout } from "@/components/ui/callout";
 import { PAGE_TITLE } from "@/components/ui/page-header";
-import { getBrand } from "../../../brand.js";
 import { cn } from "@/lib/utils";
 
+import { getBrand } from "../../../brand.js";
 import { trpc } from "../../../trpc.js";
 import { ConnectionIcon } from "../components/connection-icon.js";
 import { LabeledInput } from "../forms/labeled-input.js";
