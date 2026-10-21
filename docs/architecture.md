@@ -92,6 +92,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records, scoped to the agents you own.
 - [metrics](architecture/metrics.md) — the user-facing spend read path behind the global and per-agent Usage surfaces: how much the agents you own have spent.
 - [spend-limits](architecture/spend-limits.md) — Metered Spend: each agent's gateway meters every model call, out of the agent's reach.
+- [provider-status](architecture/provider-status.md) — which model providers fail now, from the calls that the agents' gateways see.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
 - [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store, gated by the mesh rather than ingestion tokens.
 - [e2e](architecture/e2e.md) — the smoke suite that proves an install end to end: its two lanes, the order the projects run in, and the specs a pull request defers to the merge queue and the nightly run.

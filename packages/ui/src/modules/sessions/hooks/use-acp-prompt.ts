@@ -176,9 +176,14 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
           }),
         );
       };
+      const refreshProviderStatus = () =>
+        void queryClient.invalidateQueries({
+          queryKey: trpc.providerStatus.list.queryKey(),
+        });
       const failUserMessage = (message: string) => {
         if (reported) return;
         reported = true;
+        refreshProviderStatus();
         recordUndeliveredLocally(message);
         const failed: Message = {
           ...uMsg,
@@ -197,6 +202,7 @@ export function useAcpPrompt(opts: UseAcpPromptOptions): {
       const interruptTurn = (message: string) => {
         if (reported) return;
         reported = true;
+        refreshProviderStatus();
         setMessages((p) =>
           p.map((m) =>
             m.id === aId

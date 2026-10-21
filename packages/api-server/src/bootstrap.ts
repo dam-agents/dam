@@ -270,6 +270,7 @@ import {
   createSpendLimitsCleanupHook,
   listSpendLimitAgentIds,
 } from "./modules/spend/index.js";
+import { composeProviderStatus } from "./modules/provider-status/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -286,6 +287,7 @@ import {
   createGrantedConnectionTemplates,
   createProviderEgressScopes,
   listConnectionGrantAgentIds,
+  listConnectionTemplateIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
@@ -1208,6 +1210,14 @@ export async function bootstrap() {
     24 * 60 * 60 * 1000,
     () => spend.callRowsRetentionTick(),
   );
+  const providerStatus = composeProviderStatus({
+    redis: sharedRedis,
+    connectedTemplates: listConnectionTemplateIds(db),
+  });
+  const providerStatusSaga = providerStatus.startSaga();
+  await periodicJobs.register("provider-status-evaluate", 60_000, () =>
+    providerStatus.service.evaluate(new Date()),
+  );
 
   const spendQuestions = composeSpendLimitQuestions(db);
   const spendHold = async ({
@@ -1988,6 +1998,7 @@ export async function bootstrap() {
     seedSources,
     redisBus,
     spendForOwner: spend.forOwner,
+    providerStatus: providerStatus.service,
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
@@ -2134,6 +2145,7 @@ export async function bootstrap() {
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
     spend.lastKnownNameSaga.unsubscribe();
+    providerStatusSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();

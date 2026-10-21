@@ -15,16 +15,23 @@ import { cn } from "@/lib/utils";
 
 import type { Message } from "../../../types.js";
 import { partKey } from "../../a2ui/lib/collect-blocks.js";
+import { describeSendError } from "../../acp/errors.js";
 import { hasAgentContent } from "../../acp/session-projection.js";
-import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useIsFanOutChip } from "../../invocations/components/delegation-owners.js";
 import { TurnTelemetry } from "../../telemetry/components/turn-telemetry.js";
 import { activityItems } from "../lib/activity-groups.js";
 import { modelDisplayName } from "../lib/model-name.js";
+import { repliesOnlyWithError } from "../lib/replies-only-with-error.js";
 import type { MessageTime } from "../lib/thread-items.js";
 import { ActivityGroup } from "./activity-group.js";
 import { ChatMessagePart } from "./chat-message-part.js";
+import {
+  AgentSpeaker,
+  type SpeakerAgent,
+  SpeakerRow,
+} from "./chat-message-speaker.js";
 import { PermissionStatusLine } from "./permission-prompt.js";
+import { ProviderFailureCard } from "./provider-failure-card.js";
 import { QuietNotice } from "./quiet-notice.js";
 import { SendErrorCard } from "./send-error-card.js";
 import { type OnRetry, UndeliveredNotice } from "./undelivered-notice.js";
@@ -36,7 +43,7 @@ type Props = BaseProps & MessageTime;
 
 interface BaseProps {
   message: Message;
-  avatarAgent?: { name: string; avatar: string | null };
+  avatarAgent?: SpeakerAgent;
   onAgentClick?: () => void;
   userLabel?: string;
   footer?: ReactNode;
@@ -162,22 +169,22 @@ export const ChatMessage = memo(function ChatMessage({
   const { role, parts, streaming, queued, error, stopped } = message;
   const isAssistant = role === "assistant";
   const undelivered = !isAssistant && error !== undefined;
+  const providerFailure =
+    error !== undefined &&
+    describeSendError(error.message).kind === "provider-unavailable";
+  const errorOnly =
+    providerFailure &&
+    isAssistant &&
+    repliesOnlyWithError(message, error.message);
+  const interrupted =
+    error !== undefined &&
+    isAssistant &&
+    hasAgentContent(message) &&
+    !errorOnly;
   if (isAssistant && streaming && queued && parts.length === 0) return null;
   const working = isAssistant && streaming && !queued && !hasPendingPermission;
   const speaker = isAssistant ? (
-    <>
-      {avatarAgent !== undefined && (
-        <AgentAvatar
-          name={avatarAgent.name}
-          avatar={avatarAgent.avatar}
-          size={32}
-          className="shrink-0"
-        />
-      )}
-      <span className="truncate text-sm font-semibold text-foreground">
-        {avatarAgent?.name ?? "Agent"}
-      </span>
-    </>
+    <AgentSpeaker agent={avatarAgent} />
   ) : (
     userLabel !== undefined && (
       <span className="text-2xs font-medium text-muted-foreground">
@@ -186,7 +193,7 @@ export const ChatMessage = memo(function ChatMessage({
     )
   );
 
-  return (
+  const messageBlock = (
     <div
       data-testid="chat-message"
       data-role={role}
@@ -197,22 +204,11 @@ export const ChatMessage = memo(function ChatMessage({
       )}
     >
       {speaker && !continued && (
-        <div className="mb-0.5 flex max-w-full">
-          {onAgentClick ? (
-            <button
-              type="button"
-              onClick={onAgentClick}
-              aria-label={`Configure ${avatarAgent?.name ?? "agent"}`}
-              className="flex min-w-0 items-center gap-2 rounded-md text-left hover:opacity-80"
-            >
-              {speaker}
-            </button>
-          ) : (
-            <div className="flex min-w-0 items-center gap-2">{speaker}</div>
-          )}
-        </div>
+        <SpeakerRow agentName={avatarAgent?.name} onAgentClick={onAgentClick}>
+          {speaker}
+        </SpeakerRow>
       )}
-      {(!error || parts.length > 0 || undelivered) && (
+      {(!error || (parts.length > 0 && !errorOnly) || undelivered) && (
         <div
           className={cn(
             isAssistant
@@ -265,7 +261,7 @@ export const ChatMessage = memo(function ChatMessage({
             </span>
           )}
           {isAssistant && streaming && parts.length === 0 && pendingNotice}
-          {undelivered && (
+          {undelivered && !providerFailure && (
             <UndeliveredNotice
               message={message}
               onRetry={onRetry}
@@ -289,13 +285,24 @@ export const ChatMessage = memo(function ChatMessage({
           Reply stopped at the output limit.
         </QuietNotice>
       )}
-      {error && isAssistant && (
-        <SendErrorCard
-          rawError={error.message}
-          interrupted={hasAgentContent(message)}
-          quiet={!isLast}
-        />
-      )}
+      {error &&
+        isAssistant &&
+        (providerFailure && (isLast || !interrupted) ? (
+          <ProviderFailureCard
+            message={message}
+            agentId={agentId}
+            sessionId={sessionId}
+            interrupted={interrupted}
+            onRetry={interrupted ? undefined : onRetry}
+            className={cn(interrupted && "mt-2")}
+          />
+        ) : (
+          <SendErrorCard
+            rawError={error.message}
+            interrupted={interrupted}
+            quiet={!isLast}
+          />
+        ))}
       {turn && agentId !== undefined && sessionId !== undefined && (
         <TurnTelemetry
           agentId={agentId}
@@ -327,5 +334,27 @@ export const ChatMessage = memo(function ChatMessage({
         </div>
       )}
     </div>
+  );
+  if (!(undelivered && providerFailure)) return messageBlock;
+  return (
+    <>
+      {messageBlock}
+      <div
+        data-testid="provider-failure-reply"
+        className="flex flex-col items-start gap-1"
+      >
+        <SpeakerRow agentName={avatarAgent?.name} onAgentClick={onAgentClick}>
+          <AgentSpeaker agent={avatarAgent} />
+        </SpeakerRow>
+        <ProviderFailureCard
+          message={message}
+          agentId={agentId}
+          sessionId={sessionId}
+          interrupted={false}
+          onRetry={onRetry}
+          onDelete={onDelete}
+        />
+      </div>
+    </>
   );
 });

@@ -17,6 +17,7 @@ import {
   platformSubagentOptions,
 } from "../lib/platform-subagent-settings.js";
 import { harnessDisplayName } from "../lib/session-pair-options.js";
+import { AwakeModelsGate } from "./awake-models-gate.js";
 
 const AGENT_PICKS = "Agent picks";
 
@@ -54,7 +55,7 @@ export function PlatformSubagentSettings({
   );
   const options = platformSubagentOptions(capability, choice?.model);
   const modelsNote = !catalogModels.operable
-    ? "Start the agent to list models."
+    ? null
     : (catalogModels.isLoading || catalogModels.waiting) && models.length === 0
       ? "Loading models…"
       : catalogModels.isError && models.length === 0
@@ -108,7 +109,14 @@ export function PlatformSubagentSettings({
           })),
         (value) => platformHarnessChange(settings, value),
       )}
+      {harness && !catalogModels.operable && (
+        <Fragment key="model">
+          <span className="text-muted-foreground">Model</span>
+          <AwakeModelsGate agentId={agentId} />
+        </Fragment>
+      )}
       {harness &&
+        catalogModels.operable &&
         row("model", "Model", choice?.model ?? "", models, (value) =>
           platformModelChange(
             capability?.harnessConfigCatalog,

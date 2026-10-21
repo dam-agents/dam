@@ -127,6 +127,17 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
   useIsAgentAnswerableSoon: () => state.answerable ?? state.operable,
 }));
 
+vi.mock("../../modules/agents/hooks/use-operable-state.js", () => ({
+  useOperableState: () => ({
+    operable: state.operable,
+    comingUp: !state.operable && !!state.answerable,
+  }),
+}));
+
+vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
+  useWakeAgent: () => ({ wake: vi.fn(), isPending: false }),
+}));
+
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     data: state.catalogLoaded && {
@@ -552,6 +563,31 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).toContain("128K");
     expect(html).toContain('aria-label="Disconnect IBM"');
     expect(state.providersAsked).toEqual([]);
+  });
+
+  /** TEST_SCENARIO: The model list is read from the running agent, so on a
+   * sleeping agent the list gives way to the start button rather than an
+   * empty list, and to "Agent is starting…" once the start is under way. */
+  it("offers to start a sleeping agent instead of an empty model list", () => {
+    const render = () =>
+      renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+    state.operable = false;
+    const asleep = render();
+    expect(asleep).toContain("Start agent to edit");
+    expect(asleep).not.toContain("gpt-5.5");
+    state.answerable = true;
+    const starting = render();
+    expect(starting).toContain("Agent is starting…");
+    expect(starting).not.toContain("Start agent to edit");
+    state.answerable = undefined;
   });
 
   /** TEST_SCENARIO: A second IBM key the owner holds cannot be attached

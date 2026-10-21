@@ -33,7 +33,8 @@ Until the agent has reported the harnesses it carries, as a new agent has not be
 Opened then, it shows a loader until the list arrives, and a session started meanwhile names its pair only after the harnesses and the remembered pair are read again.
 Until the harness catalog arrives, the picker label is a loader, never a raw harness name.
 A session the UI starts holds the pair it sent as its own view until the agent lists the session, so the composer names that pair from the first moment.
-While a sleeping agent wakes, the picker shows each provider's models as loading rather than asking for a start.
+Every model picker reads its list from the running agent, never from the stored snapshot: while the agent sleeps, the picker gives way to a "Start agent to edit" button, then "Agent is starting…" once woken, and lists the models when the agent answers.
+This holds for the session picker, the Providers page default, the schedule form and the platform sub-agent model; nothing wakes the agent on its own.
 In an existing session, the picker keeps its harness and, on a routed runtime, offers every granted provider's models: another harness needs a new session, which the picker links to, and context moves over only through a file the agent saves.
 
 ## Session settings
@@ -63,6 +64,9 @@ Run Now on such an agent refuses with "setting up" and starts that wake in the b
 A harness on a native Connection, or an agent holding no provider whose API the harness speaks, is not refused, and before the pod's env arrives every routed harness needs a model.
 The turns the platform starts on its own carry the agent's saved default: kit setup, and the result of a satellite Job or of a sub-agent when no waiting session takes it.
 Kit setup is queued at create, before the agent's first `hello` and so before it has a default, so a setup turn that names no model takes the saved default each time it is delivered, and is held back while the agent has no default model.
+A `session/new` that reaches the ACP relay naming no model, as `dam run`, a script or an older client sends it, gets the agent's saved default filled in by the api-server, the same pair the web chat sends: the saved default for the harness the frame names, or for the agent's own harness when it names none.
+With no saved default model, the frame goes on as sent and the runtime refuses it with the `no-model` reason.
+The relay holds the frames after it until the default is read, so they reach the runtime in the order the client sent them.
 A session from before the Model Router carries no model, and it ran on the agent's one provider and its default model, so a channel turn or an api-server trigger that continues it pins the agent's saved default on it first, and a one-time task or a sub-agent result that continues it pins the model the event names.
 A scheduled run with no model, such a task when it names none, an interrupted turn on such a session, or a chat prompt in it is refused until a model is picked.
 A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts on the agent's default when the default is on its harness, and otherwise with no model, on the harness's own default.

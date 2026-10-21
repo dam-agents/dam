@@ -34,6 +34,10 @@ vi.mock("../../store.js", () => ({
 vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
   useNewLayout: () => true,
 }));
+vi.mock("../../modules/agents/api/queries.js", async (importOriginal) => ({
+  ...(await importOriginal()),
+  useIsAgentOperable: () => true,
+}));
 vi.mock("../../modules/agents/hooks/use-root-driver.js", () => ({
   useRootDriver: () => null,
 }));

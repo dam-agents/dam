@@ -19,6 +19,7 @@ import type {
 } from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
+import type { ProviderStatusService } from "./modules/provider-status/types.js";
 import type {
   InvocationsControlService,
   InvocationsQueryService,
@@ -87,6 +88,7 @@ export interface ApiContext {
   satelliteWorker: SatelliteWorkerOps;
   budgets: BudgetsService;
   spend: SpendService;
+  providerStatus: ProviderStatusService;
   user: UserIdentity;
   e2eEnabled: boolean;
   virtualizationEnabled: boolean;

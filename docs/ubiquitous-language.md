@@ -362,6 +362,16 @@ See [`docs/architecture/spend-limits.md`](architecture/spend-limits.md).
 | Spend Ceiling  | The operator's hard daily maximum of Metered Spend in dollars for one user, over all the user's agents. At the ceiling the gateway refuses the next model call and asks nothing. Resolved as the user's UserSpendLimit, else the chart-wide default (off at first). "Ceiling" alone still means the compute Ceiling of a Budget                 |
 | UserSpendLimit | The record of one user's Spend Ceiling: a namespaced CR named `spend-limit-<sub>` whose `spec.owner` carries the exact plaintext Keycloak sub, like UserBudget. Absence means the chart default applies                                                                                                                                         |
 
+## Provider Status (bounded context)
+
+Whether each model provider answers now, as the agents' gateways see it.
+See [`docs/architecture/provider-status.md`](architecture/provider-status.md).
+
+| Term            | Definition                                                                                                                                                                                                                            |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Provider Status | The platform's view of whether a model provider answers, per Connection template: healthy, degraded, or a fault on the platform's side. Computed from the model calls that the agents' gateways see; every user reads the same status |
+| Outage          | One degraded period of one Connection template, named by its template and its start time                                                                                                                                              |
+
 ## Agent Telemetry (bounded context)
 
 The user-facing read path over the raw signals an agent produced — the structural counterpart to Metrics, which reads the same store for Spend alone.

@@ -68,7 +68,11 @@ interface SendErrorDescription {
   title?: string;
   message: string;
   hint?: string;
+  kind?: "provider-unavailable";
 }
+
+const PROVIDER_UNAVAILABLE =
+  /\b(?:HTTP\/?[\d.]*|status(?: code)?:?|error:?|failed:?)\s*(?:500|502|503|504|529)\b|overloaded|service unavailable|bad gateway|gateway timeout|upstream connect error|upstream request timeout/i;
 
 const SEND_ERROR_HINTS: ReadonlyArray<[RegExp, string]> = [
   [
@@ -114,6 +118,8 @@ export function describeSendError(raw: string): SendErrorDescription {
     if (/credential secret/i.test(raw)) return { message: raw };
     return { message: raw, hint };
   }
+  if (PROVIDER_UNAVAILABLE.test(raw))
+    return { message: raw, kind: "provider-unavailable" };
   if (/process exited unexpectedly/i.test(raw)) {
     return {
       message: "The agent's process stopped unexpectedly.",
