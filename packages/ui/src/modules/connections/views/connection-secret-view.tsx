@@ -49,8 +49,7 @@ export function ConnectionSecretView() {
         title="Secret saved"
         icon={<CheckmarkFilled size={24} className="text-success" />}
       >
-        You can close this page. The command that opened it reports the
-        result.
+        You can close this page. The command that opened it reports the result.
       </Terminal>
     );
   }
@@ -69,11 +68,7 @@ export function ConnectionSecretView() {
     return <Terminal title={copy.title}>{copy.hint}</Terminal>;
   }
   return (
-    <SecretForm
-      requestId={requestId}
-      view={request.data}
-      onDone={setDone}
-    />
+    <SecretForm requestId={requestId} view={request.data} onDone={setDone} />
   );
 }
 
@@ -121,6 +116,12 @@ function SecretForm({
         {getBrand().name} stores it, and your agents never see it.
       </p>
       <Summary view={view} />
+      {view.customDestination && view.unexpectedHosts.length === 0 && (
+        <p className="mt-4 text-sm text-muted-foreground">
+          This connection type sends the secret to any host the command names.
+          Check that the hosts above belong to the service the secret is for.
+        </p>
+      )}
       {view.unexpectedHosts.length > 0 && (
         <Callout
           tone="warning"
@@ -155,7 +156,9 @@ function SecretForm({
               field.multiline ? "-----BEGIN RSA PRIVATE KEY-----\n…" : "•••••"
             }
             value={values[field.name] ?? ""}
-            onChange={(v) => setValues((prev) => ({ ...prev, [field.name]: v }))}
+            onChange={(v) =>
+              setValues((prev) => ({ ...prev, [field.name]: v }))
+            }
             error={i === 0 ? submit.error?.message : undefined}
             autoFocus={i === 0}
           />
@@ -228,8 +231,8 @@ function Summary({ view }: { view: SecretRequestView }) {
     rows.push([
       "Agents see",
       <span key="env">
-        <span className="font-mono">{view.envNames.join(", ")}</span>, holding
-        a placeholder, never the secret
+        <span className="font-mono">{view.envNames.join(", ")}</span>, holding a
+        placeholder, never the secret
       </span>,
     ]);
   }

@@ -107,7 +107,9 @@ async function startFixture(
       get(target, prop) {
         if (prop in target) return target[prop as string];
         if (prop === "then") return undefined;
-        throw new Error(`fake api-server: unexpected ctx access: ${String(prop)}`);
+        throw new Error(
+          `fake api-server: unexpected ctx access: ${String(prop)}`,
+        );
       },
     },
   ) as unknown as ApiContext;
@@ -287,7 +289,12 @@ describe("connection secrets entered on the web page (integration)", () => {
   // TEST_SCENARIO: a server from before the page has no requestSecret procedure; the CLI falls back to the terminal prompt, so a newer CLI does not break against it.
   it("falls back to the prompt on a server without the page", async () => {
     fixture = await startFixture([], { noSecretPage: true });
-    const r = await dam(["connection", "connect", "github-pat", "--no-browser"]);
+    const r = await dam([
+      "connection",
+      "connect",
+      "github-pat",
+      "--no-browser",
+    ]);
     expect(r.exitCode).toBe(2);
     expect(r.stderr).toContain("no secret-entry page");
     expect(r.stderr).toContain("missing required input(s): --value");

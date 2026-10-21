@@ -168,7 +168,10 @@ describe("secret requests", () => {
     const ticket = await alice.request(githubPat);
 
     await expect(
-      alice.submit({ requestId: ticket.requestId, fields: { value: " ghp_x " } }),
+      alice.submit({
+        requestId: ticket.requestId,
+        fields: { value: " ghp_x " },
+      }),
     ).resolves.toEqual({ connectionId: "conn-000000000001" });
     expect(w.createFromTemplate).toHaveBeenCalledWith({
       ...githubPat.connection,
@@ -304,7 +307,9 @@ describe("secret requests", () => {
       ],
     });
     await expect(
-      w.forOwner("alice").request({ action: "update", connectionId: "conn-mcp" }),
+      w
+        .forOwner("alice")
+        .request({ action: "update", connectionId: "conn-mcp" }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
 

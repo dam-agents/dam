@@ -7,6 +7,7 @@ import type {
   SecretRequestDestination,
   SecretRequestField,
 } from "api-server-api";
+import { match } from "ts-pattern";
 import {
   clientCredentialsIssuer,
   clientCredentialsTarget,
@@ -36,8 +37,7 @@ export type PendingSecretRequest =
     };
 
 export type SecretRequestOutcome = { ownerId: string } & (
-  | { status: "saved"; connectionId: string }
-  | { status: "cancelled" }
+  { status: "saved"; connectionId: string } | { status: "cancelled" }
 );
 
 const FIELDS: Record<SecretRequestAuthKind, SecretRequestField[]> = {
@@ -86,39 +86,37 @@ export function withSecret(
   connection: SecretlessConnectionCreateInput,
   secret: Record<string, string>,
 ): ConnectionCreateInput {
-  switch (connection.authKind) {
-    case "header":
-      return { ...connection, value: secret.value! };
-    case "client-credentials":
-      return { ...connection, clientSecret: secret.clientSecret! };
-    case "github-app":
-      return { ...connection, privateKey: secret.privateKey! };
-    case "sigv4":
-      return {
-        ...connection,
-        accessKeyId: secret.accessKeyId!,
-        secretAccessKey: secret.secretAccessKey!,
-      };
-  }
+  return match(connection)
+    .with({ authKind: "header" }, (c) => ({ ...c, value: secret.value! }))
+    .with({ authKind: "client-credentials" }, (c) => ({
+      ...c,
+      clientSecret: secret.clientSecret!,
+    }))
+    .with({ authKind: "github-app" }, (c) => ({
+      ...c,
+      privateKey: secret.privateKey!,
+    }))
+    .with({ authKind: "sigv4" }, (c) => ({
+      ...c,
+      accessKeyId: secret.accessKeyId!,
+      secretAccessKey: secret.secretAccessKey!,
+    }))
+    .exhaustive();
 }
 
 export function credentialUpdateOf(
   kind: SecretRequestAuthKind,
   secret: Record<string, string>,
 ): ConnectionCredentialUpdate {
-  switch (kind) {
-    case "sigv4":
-      return {
-        accessKeyId: secret.accessKeyId!,
-        secretAccessKey: secret.secretAccessKey!,
-      };
-    case "header":
-      return { value: secret.value! };
-    case "client-credentials":
-      return { value: secret.clientSecret! };
-    case "github-app":
-      return { value: secret.privateKey! };
-  }
+  return match(kind)
+    .with("sigv4", () => ({
+      accessKeyId: secret.accessKeyId!,
+      secretAccessKey: secret.secretAccessKey!,
+    }))
+    .with("header", () => ({ value: secret.value! }))
+    .with("client-credentials", () => ({ value: secret.clientSecret! }))
+    .with("github-app", () => ({ value: secret.privateKey! }))
+    .exhaustive();
 }
 
 export interface PlannedConnection {
@@ -135,46 +133,44 @@ export function planConnection(
       `template ${template.id} expects authKind=${template.authKind}, got ${connection.authKind}`,
     );
   }
-  switch (connection.authKind) {
-    case "header":
-      return {
-        contributions: headerTarget(
-          template as Extract<ConnectionTemplate, { authKind: "header" }>,
-          connection,
-        ).contributions,
-      };
-    case "client-credentials": {
+  return match(connection)
+    .with({ authKind: "header" }, (c) => ({
+      contributions: headerTarget(
+        template as Extract<ConnectionTemplate, { authKind: "header" }>,
+        c,
+      ).contributions,
+    }))
+    .with({ authKind: "client-credentials" }, (c) => {
       const t = template as Extract<
         ConnectionTemplate,
         { authKind: "client-credentials" }
       >;
-      const target = clientCredentialsTarget(t, connection);
-      const issuer = clientCredentialsIssuer(t, connection, target.host);
+      const target = clientCredentialsTarget(t, c);
+      const issuer = clientCredentialsIssuer(t, c, target.host);
       return {
         contributions: target.contributions,
         tokenEndpoint: issuer
           ? { url: issuer }
           : { discoveredFrom: target.host },
       };
-    }
-    case "github-app": {
+    })
+    .with({ authKind: "github-app" }, (c) => {
       const target = gitHubAppTarget(
         template as Extract<ConnectionTemplate, { authKind: "github-app" }>,
-        connection.host,
+        c.host,
       );
       return {
         contributions: target.contributions,
         tokenEndpoint: { url: target.apiBaseUrl },
       };
-    }
-    case "sigv4":
-      return {
-        contributions: sigv4Target(
-          template as Extract<ConnectionTemplate, { authKind: "sigv4" }>,
-          connection,
-        ).contributions,
-      };
-  }
+    })
+    .with({ authKind: "sigv4" }, (c) => ({
+      contributions: sigv4Target(
+        template as Extract<ConnectionTemplate, { authKind: "sigv4" }>,
+        c,
+      ).contributions,
+    }))
+    .exhaustive();
 }
 
 export function destinationsOf(
@@ -200,7 +196,9 @@ export function destinationsOf(
 
 export function envNamesOf(contributions: readonly Contribution[]): string[] {
   return [
-    ...new Set(contributions.flatMap((c) => (c.kind === "env" ? [c.name] : []))),
+    ...new Set(
+      contributions.flatMap((c) => (c.kind === "env" ? [c.name] : [])),
+    ),
   ];
 }
 

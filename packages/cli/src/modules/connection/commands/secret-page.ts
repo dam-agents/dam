@@ -19,8 +19,7 @@ export const PAGE_SECRET_FIELDS: Partial<
 };
 
 export type SecretPageResult =
-  | { kind: "saved"; connectionId: string }
-  | { kind: "unsupported" };
+  { kind: "saved"; connectionId: string } | { kind: "unsupported" };
 
 export async function enterSecretOnPage(args: {
   svc: ConnectionService;
