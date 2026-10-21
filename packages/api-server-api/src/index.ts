@@ -125,6 +125,12 @@ export {
 export { toAgentView } from "./modules/agents/view.js";
 export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
+  ProviderOutage,
+  ProviderOutageReason,
+  ProviderStatusService,
+  ProviderStatusView,
+} from "./modules/provider-status/types.js";
+export type {
   BudgetReserved,
   BudgetStorageFull,
   BudgetVmUsage,

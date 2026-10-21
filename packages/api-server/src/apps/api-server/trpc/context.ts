@@ -70,6 +70,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     slackBindFlows,
     seedSources,
     spendForOwner,
+    providerStatus,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
@@ -440,6 +441,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         isAgentOwnedBy: (agentId, ownerSub) =>
           agentsRepo.isOwnedBy(agentId, ownerSub),
       }),
+      providerStatus,
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,

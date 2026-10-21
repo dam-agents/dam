@@ -63,6 +63,7 @@ It keeps the raw counts with the dialect and leaves their meaning to pricing: in
 A record names the payer, which is the root driver for an Invocation target, and the Connection and providers that the meter named on the request.
 It carries the session and the harness of the stamp, the call's duration, the reply size, the proxy's own cost figures when the reply has them, and whether the reply ended with its format's end event.
 A reply that stops early keeps the counts read so far and is not marked complete.
+Every final record also goes to [Provider Status](provider-status.md), which counts the failed calls of each provider.
 
 **Periodic records.** While a call runs, the gateway also sends a periodic record of the same call every 2 seconds, with the counts so far.
 So a long call that a gateway restart cuts off still leaves its partial counts.
