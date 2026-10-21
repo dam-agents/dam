@@ -8,7 +8,7 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover.js";
-import { railTile } from "@/components/ui/rail-tile";
+import { RAIL_AVATAR, RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -65,7 +65,7 @@ export function SidebarRail({
           data-testid="sidebar-rail-expand"
           className={cn(railTile(false), FOCUS_RING)}
         >
-          <ChevronRight size={18} />
+          <ChevronRight size={RAIL_GLYPH} />
         </button>
       </Tooltip>
       <Tooltip content="Home" side="right">
@@ -80,7 +80,7 @@ export function SidebarRail({
           data-testid="sidebar-home-row"
           className={cn(railTile(homeOpen), FOCUS_RING)}
         >
-          <Home size={20} />
+          <Home size={RAIL_GLYPH} />
         </button>
       </Tooltip>
       {pins.size > 0 && (
@@ -101,7 +101,7 @@ export function SidebarRail({
                   FOCUS_RING,
                 )}
               >
-                <Pin size={20} />
+                <Pin size={RAIL_GLYPH} />
               </button>
             </PopoverTrigger>
           </Tooltip>
@@ -154,7 +154,7 @@ export function SidebarRail({
           data-testid="sidebar-settings-row"
           className={cn(railTile(settingsOpen), "mt-auto", FOCUS_RING)}
         >
-          <Settings size={20} />
+          <Settings size={RAIL_GLYPH} />
         </button>
       </Tooltip>
     </div>
@@ -239,7 +239,7 @@ function AgentTile({
             <AgentAvatar
               name={agent.name}
               avatar={agent.avatar}
-              size={26}
+              size={RAIL_AVATAR}
               mood={avatarMood(agent.state, agent)}
             />
             {cue && (

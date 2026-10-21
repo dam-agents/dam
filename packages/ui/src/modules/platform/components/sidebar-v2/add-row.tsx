@@ -1,10 +1,12 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
+import { RAIL_AVATAR } from "@/components/ui/rail-tile";
 
 // UNIT_BOUNDARY_DESCRIPTION: every row of the tree puts its avatar, dot or icon in one 40px column, wide enough for an avatar that spans a two-line row, and its text after the same gap, so dots line up under Agent avatars and titles under Agent names.
 export const TREE_LEADING = "flex w-10 shrink-0 justify-center";
-export const TREE_AVATAR = 40;
+// UNIT_BOUNDARY_DESCRIPTION: the expanded row's avatar and the rail's are one size, so collapsing the sidebar does not resize it.
+export const TREE_AVATAR = RAIL_AVATAR;
 
 export function AddRow({
   icon: Icon,

@@ -180,9 +180,9 @@ it("draws JanUI's tiles, with the bar on the right edge", () => {
     expect(bar.includes(" h-6")).toBe(tab === "files");
   }
   const open = buttons.find(([, tab]) => tab === "files")![0];
-  expect(open).toContain("size-10");
+  expect(open).toContain("size-12");
   expect(open).toContain("bg-muted");
-  expect(html).toContain('width="20"');
+  expect(html).toContain('width="24"');
   const order = ["getting-started", "docs", "approvals"].map((id) =>
     html.indexOf(
       id === "docs"

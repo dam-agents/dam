@@ -12,7 +12,12 @@ import type { ReactNode } from "react";
 
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { RAIL_BADGE, railIndicator, railTile } from "@/components/ui/rail-tile";
+import {
+  RAIL_BADGE,
+  RAIL_GLYPH,
+  railIndicator,
+  railTile,
+} from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -88,7 +93,7 @@ export function SidePanelTabButtons({
               aria-hidden
               className={railIndicator("right", active === tab)}
             />
-            {icons[tab] ?? <Icon size={20} />}
+            {icons[tab] ?? <Icon size={RAIL_GLYPH} />}
             {shown && (
               <span
                 data-testid={`side-panel-badge-${tab}`}
@@ -172,7 +177,7 @@ export function SidePanelBar({
       data-testid="side-panel-bar"
       className={cn(
         tiles
-          ? "flex w-[60px] shrink-0 flex-col items-center gap-2 border-l border-border bg-chrome py-3"
+          ? "flex w-14 shrink-0 flex-col items-center gap-2 border-l border-border bg-chrome py-3"
           : "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
         className,
       )}
@@ -221,7 +226,7 @@ function DocsLink() {
         className={railTile(false)}
       >
         <span aria-hidden className={railIndicator("right", false)} />
-        <Book size={20} />
+        <Book size={RAIL_GLYPH} />
       </a>
     </Tooltip>
   );

@@ -1,8 +1,12 @@
 import { cn } from "@/lib/utils";
 
+// UNIT_BOUNDARY_DESCRIPTION: every item of the left and right rails is drawn at one of these sizes, so the rails read as one column of equally sized targets; the Avatar is the size of an Agent's avatar in the expanded sidebar.
+export const RAIL_GLYPH = 24;
+export const RAIL_AVATAR = 40;
+
 export function railTile(active: boolean): string {
   return cn(
-    "group relative flex size-10 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+    "group relative flex size-12 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
     active
       ? "bg-muted text-foreground ring-1 ring-border-ui"
       : "hover:bg-muted/60 hover:text-foreground",
