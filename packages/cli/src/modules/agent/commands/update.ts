@@ -1,0 +1,211 @@
+import { Command, Option } from "commander";
+import type { DefaultKind, SessionPair } from "api-server-api";
+import type { CompatService, ConfigService } from "../../cli/index.js";
+import { resolveConnectionRef } from "../../connection/index.js";
+import type { AgentService } from "../services/agent-service.js";
+import {
+  readAgentModels,
+  type AgentModelsService,
+} from "../services/agent-models-service.js";
+import { resolveActiveHost } from "../../shared/preflight.js";
+import { exitOnServiceError } from "../../shared/trpc/print.js";
+import { parseSettingFlags } from "../../shared/setting-flags.js";
+import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
+import { resolveAgentOrExit } from "./errors.js";
+import { modelEntries, renderEntries } from "../domain/agent-models.js";
+
+const collect = (v: string, acc: string[]): string[] => [...acc, v];
+
+interface UpdateOpts {
+  provider: string[];
+  removeProvider: string[];
+  harness?: string;
+  model?: string;
+  setting: string[];
+  settingsDefault?: boolean;
+  kind: DefaultKind;
+  sameAsChat?: boolean;
+  server?: string;
+  json?: boolean;
+}
+
+function invalid(message: string): never {
+  process.stderr.write(`error: ${message}\n`);
+  return process.exit(EXIT_INVALID_INPUT);
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the flags change only what they name. A new
+ * model on the same harness keeps the default's settings, and a new harness
+ * starts without them, since settings belong to one harness; the server
+ * refuses a pair it cannot run and says why.
+ */
+export function nextDefault(
+  current: SessionPair | null,
+  fallbackHarness: string | null,
+  opts: Pick<UpdateOpts, "harness" | "model" | "settingsDefault">,
+  settings: Record<string, string> | undefined,
+): SessionPair | null {
+  const harness = opts.harness ?? current?.harness ?? fallbackHarness;
+  if (harness === null) return null;
+  const sameHarness = current?.harness === harness;
+  const model = opts.model ?? (sameHarness ? current.model : null);
+  const kept = opts.settingsDefault
+    ? undefined
+    : (settings ?? (sameHarness ? current.settings : undefined));
+  return {
+    harness,
+    provider: null,
+    model,
+    ...(kept && Object.keys(kept).length > 0 && { settings: kept }),
+  };
+}
+
+export function buildUpdateCommand(deps: {
+  compatService: CompatService;
+  configService: ConfigService;
+  createAgentService: (host: string) => AgentService;
+  createAgentModelsService: (host: string) => AgentModelsService;
+}): Command {
+  return new Command("update")
+    .description(
+      "Change which model providers an Agent may use and the harness and model its sessions start on",
+    )
+    .argument("<ref>", "Agent Ref — name or 'agent-…' ID")
+    .option(
+      "--provider <id-or-name>",
+      "grant a model-provider connection to the agent (repeatable)",
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--remove-provider <id-or-name>",
+      "take a model-provider connection away from the agent (repeatable)",
+      collect,
+      [] as string[],
+    )
+    .option(
+      "--harness <name>",
+      "harness the default starts sessions on, one the agent carries",
+    )
+    .option(
+      "--model <model>",
+      "model the default starts sessions on, as <provider>/<model id> (see `dam agent models`)",
+    )
+    .option(
+      "--setting <id=value>",
+      "a per-session setting the default keeps, e.g. effort=high (repeatable; replaces the default's settings)",
+      collect,
+      [] as string[],
+    )
+    .option("--settings-default", "drop the default's per-session settings")
+    .addOption(
+      new Option(
+        "--kind <kind>",
+        "which default to change: chat (also `dam run`), channel (Slack and Telegram) or scheduled",
+      )
+        .choices(["chat", "channel", "scheduled"])
+        .default("chat"),
+    )
+    .option(
+      "--same-as-chat",
+      "with --kind channel or scheduled: drop that default, so it follows the chat default again",
+    )
+    .option(
+      "--server <url>",
+      "override the configured server URL for this call",
+    )
+    .option("--json", "emit the agent's providers, harnesses and defaults")
+    .addHelpText(
+      "after",
+      "\nExamples:\n" +
+        "  dam agent update my-agent --model ibm/gpt-5.5\n" +
+        "  dam agent update my-agent --harness codex --model openai/gpt-5.5 --setting effort=high\n" +
+        '  dam agent update my-agent --provider "My provider" --remove-provider conn-123\n' +
+        "  dam agent update my-agent --kind scheduled --model ibm/gpt-5-mini\n" +
+        "  dam agent update my-agent --kind scheduled --same-as-chat\n",
+    )
+    .action(async (ref: string, opts: UpdateOpts) => {
+      let settings: Record<string, string> | undefined;
+      try {
+        settings = parseSettingFlags(opts.setting);
+      } catch (e) {
+        invalid((e as Error).message);
+      }
+      const pairGiven =
+        opts.harness !== undefined ||
+        opts.model !== undefined ||
+        settings !== undefined ||
+        opts.settingsDefault === true;
+      const providersGiven =
+        opts.provider.length > 0 || opts.removeProvider.length > 0;
+      if (opts.sameAsChat && opts.kind === "chat")
+        invalid("--same-as-chat needs --kind channel or --kind scheduled");
+      if (opts.sameAsChat && pairGiven)
+        invalid(
+          "--same-as-chat drops the default, so it takes no --harness, --model or --setting",
+        );
+      if (settings && opts.settingsDefault)
+        invalid("pass --setting or --settings-default, not both");
+      if (!pairGiven && !providersGiven && !opts.sameAsChat)
+        invalid(
+          "nothing to change: pass --provider, --remove-provider, --harness, --model, --setting or --same-as-chat",
+        );
+
+      const host = await resolveActiveHost(deps, opts.server);
+      const agent = await resolveAgentOrExit(
+        deps.createAgentService(host),
+        ref,
+        host,
+      );
+      const svc = deps.createAgentModelsService(host);
+
+      if (providersGiven) {
+        const all = await svc.connections();
+        exitOnServiceError(all, host);
+        const idsOf = (refs: readonly string[]): string[] =>
+          refs.map(
+            (r) =>
+              resolveConnectionRef(all.value, r)?.id ??
+              invalid(
+                `unknown connection id or name: ${r}\nhint: run \`dam connection list\` to see ids and names`,
+              ),
+          );
+        const updated = await svc.updateProviders(agent.id, {
+          grant: idsOf(opts.provider),
+          revoke: idsOf(opts.removeProvider),
+        });
+        exitOnServiceError(updated, host);
+      }
+
+      if (opts.sameAsChat && opts.kind !== "chat") {
+        const cleared = await svc.clearDefault(agent.id, opts.kind);
+        exitOnServiceError(cleared, host);
+      } else if (pairGiven) {
+        const [saved, status] = await Promise.all([
+          svc.savedDefaults(agent.id),
+          svc.status(agent.id),
+        ]);
+        exitOnServiceError(saved, host);
+        exitOnServiceError(status, host);
+        const current = saved.value[opts.kind] ?? saved.value.chat;
+        const pair =
+          nextDefault(current, status.value.defaultHarness, opts, settings) ??
+          invalid(
+            "the agent has not reported its harnesses yet; pass --harness, or wake it (`dam agent restart`) and try again",
+          );
+        const remembered = await svc.rememberDefault(agent.id, opts.kind, pair);
+        exitOnServiceError(remembered, host);
+      }
+
+      const models = await readAgentModels(svc, agent.id);
+      if (opts.json) {
+        process.stdout.write(`${JSON.stringify(models)}\n`);
+      } else {
+        process.stdout.write(
+          `✓ Updated ${agent.name}.\n${renderEntries(modelEntries(models))}`,
+        );
+      }
+      process.exit(EXIT_SUCCESS);
+    });
+}

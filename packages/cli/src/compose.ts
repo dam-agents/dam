@@ -35,6 +35,7 @@ export function compose(): Command {
   });
   const agent = composeAgentModule({
     buildTrpc,
+    tokenProvider,
     configService,
     compatService,
     templateService: template.exports.createService,
