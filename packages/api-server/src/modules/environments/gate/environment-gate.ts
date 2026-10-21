@@ -7,9 +7,9 @@ import { proxy } from "hono/proxy";
 import { getLogger } from "../../../core/logger.js";
 import { securityLog } from "../../../core/security-log.js";
 import {
+  appSetCookie,
   cookieValue,
   decideAccess,
-  isSessionCookie,
   parseAddress,
   relayHeaders,
   RESERVED_PREFIX,
@@ -28,6 +28,14 @@ const FORWARD_PREFIX = "/api/environment/forward/";
 const DECLARED_PORTS_HEADER = "x-platform-environment-ports";
 const ACTIVITY_INTERVAL_MS = 60_000;
 const NO_STORE = "private, no-store";
+const HOP_BY_HOP = [
+  "transfer-encoding",
+  "keep-alive",
+  "expect",
+  "upgrade",
+  "te",
+  "trailer",
+];
 
 // UNIT_BOUNDARY_DESCRIPTION: the headers every page and redirect the gate answers with itself carry, as the platform's own pages do; the gate answers before the platform's security-headers middleware runs. A relayed response is the app's, and keeps its own.
 const GATE_HEADERS: Record<string, string> = {
@@ -267,6 +275,8 @@ export function createEnvironmentGate(
       scheme: deps.scheme,
     });
     headers.set(DECLARED_PORTS_HEADER, declaredPorts(resolved.record));
+    // UNIT_BOUNDARY_DESCRIPTION: the visitor's hop-by-hop headers describe its own connection, and fetch refuses a request that carries them (a chunked upload, an `Expect: 100-continue`); the body still streams, which proxy() sends chunked itself.
+    for (const name of HOP_BY_HOP) headers.delete(name);
     const target = deps.upstream(resolved.record.agentId);
     let answer: Response;
     try {
@@ -291,8 +301,10 @@ export function createEnvironmentGate(
       if (name === "cache-control" || name === "set-cookie") continue;
       out.append(name, value);
     }
-    for (const cookie of answer.headers.getSetCookie())
-      if (!isSessionCookie(cookie)) out.append("set-cookie", cookie);
+    for (const cookie of answer.headers.getSetCookie()) {
+      const kept = appSetCookie(cookie);
+      if (kept !== null) out.append("set-cookie", kept);
+    }
     out.set("Cache-Control", NO_STORE);
     return new Response(answer.body, { status: answer.status, headers: out });
   }
@@ -360,6 +372,32 @@ export function createEnvironmentGate(
     );
   }
 
+  // UNIT_BOUNDARY_DESCRIPTION: passes the app's answer to a WebSocket upgrade on to the visitor without its Set-Cookie lines, which no rule would filter there, then hands the socket over. An app sets cookies over HTTP, where the relay filters them.
+  function relayHandshake(upstream: Duplex, socket: Duplex, then: () => void) {
+    let buffered = Buffer.alloc(0);
+    const onData = (chunk: Buffer) => {
+      buffered = Buffer.concat([buffered, chunk]);
+      const end = buffered.indexOf("\r\n\r\n");
+      if (end === -1) {
+        if (buffered.length > 64 * 1024) socket.destroy();
+        return;
+      }
+      upstream.off("data", onData);
+      upstream.pause();
+      const head = buffered
+        .subarray(0, end)
+        .toString("latin1")
+        .split("\r\n")
+        .filter((line) => !/^set-cookie\s*:/i.test(line))
+        .join("\r\n");
+      socket.write(`${head}\r\n\r\n`);
+      const rest = buffered.subarray(end + 4);
+      if (rest.length > 0) socket.write(rest);
+      then();
+    };
+    upstream.on("data", onData);
+  }
+
   function handleUpgrade(
     req: IncomingMessage,
     socket: Duplex,
@@ -415,8 +453,10 @@ export function createEnvironmentGate(
         for (const [name, value] of headers) lines.push(`${name}: ${value}`);
         upstream.write(`${lines.join("\r\n")}\r\n\r\n`);
         if (head.length > 0) upstream.write(head);
-        upstream.pipe(socket);
-        socket.pipe(upstream);
+        relayHandshake(upstream, socket, () => {
+          upstream.pipe(socket);
+          socket.pipe(upstream);
+        });
       });
       socket.on("data", () => stamp(resolved.record.agentId));
       const close = () => {

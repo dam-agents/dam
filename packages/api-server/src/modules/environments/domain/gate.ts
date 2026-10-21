@@ -36,6 +36,21 @@ export function isSessionCookie(cookie: string): boolean {
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: An app's `Set-Cookie` as the visitor gets it, or
+ * null when it may not pass: the platform's session cookie never does, and
+ * any other loses its `Domain` attribute, so the cookie stays on the address
+ * that set it. Every address shares the environments domain, and a cookie
+ * set for that domain would reach every other Environment's app.
+ */
+export function appSetCookie(cookie: string): string | null {
+  if (isSessionCookie(cookie)) return null;
+  return cookie
+    .split(";")
+    .filter((part, i) => i === 0 || !/^\s*domain\s*=/i.test(part))
+    .join(";");
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: The value of the cookie `name` in a `Cookie`
  * header, by the trimmed name of each pair, or undefined.
  */

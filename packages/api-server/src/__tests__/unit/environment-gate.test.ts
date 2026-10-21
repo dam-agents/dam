@@ -56,6 +56,7 @@ async function world(opts: { signedInAs?: string } = {}) {
         "app=1; Path=/",
         "platform-env=forged; Path=/",
         "platform-env =padded; Path=/",
+        "shared=1; Domain=env.test; Path=/",
       ]);
       res.setHeader("Cache-Control", "public, max-age=3600");
       res.end(
@@ -64,6 +65,9 @@ async function world(opts: { signedInAs?: string } = {}) {
     });
   });
   const wss = new WebSocketServer({ server: runtime });
+  wss.on("headers", (headers) =>
+    headers.push("Set-Cookie: platform-env=forged", "Set-Cookie: ws=1"),
+  );
   wss.on("connection", (ws, req) => {
     seen.push({ path: req.url ?? "", headers: req.headers });
     ws.on("message", (d) => ws.send(`echo:${d}`));
@@ -216,7 +220,7 @@ async function world(opts: { signedInAs?: string } = {}) {
 }
 
 describe("the Environment gate", () => {
-  // TEST_SCENARIO: the owner signs in once and the address relays to the runtime's forward for the declared port, waking the Environment first. The app gets its own cookies and the original host, never the platform's session cookie or Authorization; it cannot set the session cookie; and the answer is uncacheable whatever the app said.
+  // TEST_SCENARIO: the owner signs in once and the address relays to the runtime's forward for the declared port, waking the Environment first. The app gets its own cookies and the original host, never the platform's session cookie or Authorization; it cannot set the session cookie, nor a cookie for the whole environments domain; and the answer is uncacheable whatever the app said.
   it("relays the owner's request to the declared port", async () => {
     const w = await world();
     const cookie = await w.signInTo("app-pr-1-abcdef");
@@ -229,7 +233,7 @@ describe("the Environment gate", () => {
     expect(res.status).toBe(200);
     expect(res.body).toBe("from the app");
     expect(res.cacheControl).toBe("private, no-store");
-    expect(res.cookies).toEqual(["app=1; Path=/"]);
+    expect(res.cookies).toEqual(["app=1; Path=/", "shared=1; Path=/"]);
     const relayed = w.seen.at(-1)!;
     expect(relayed.path).toBe("/api/environment/forward/4444/a?b=1");
     expect(relayed.headers.cookie).toBe("app=1");
@@ -241,7 +245,7 @@ describe("the Environment gate", () => {
     expect(w.woken).toContain("agent-pr-1-abcdef");
   });
 
-  // TEST_SCENARIO: a form post reaches the app with its body; a visitor who drops an upload part-way gets nothing relayed further, and the server keeps serving.
+  // TEST_SCENARIO: a form post reaches the app with its body, a chunked one with `Expect: 100-continue` too; a visitor who drops an upload part-way gets nothing relayed further, and the server keeps serving.
   it("relays a request body, and survives an aborted upload", async () => {
     const w = await world();
     const cookie = await w.signInTo("app-pr-1-abcdef");
@@ -255,6 +259,15 @@ describe("the Environment gate", () => {
     );
     expect(posted.status).toBe(200);
     expect(posted.body).toBe("from the app, 7 bytes");
+
+    const chunked = await w.request(
+      host,
+      "/form",
+      { cookie, "transfer-encoding": "chunked", expect: "100-continue" },
+      { method: "POST", data: "streamed" },
+    );
+    expect(chunked.status).toBe(200);
+    expect(chunked.body).toBe("from the app, 8 bytes");
 
     await w.abortedUpload(host, "/upload", cookie);
     await new Promise((r) => setTimeout(r, 100));
@@ -337,7 +350,7 @@ describe("the Environment gate", () => {
     expect((await w.request("platform.test", "/")).body).toBe("the platform");
   });
 
-  // TEST_SCENARIO: a WebSocket to the owner's Environment is relayed to the declared port both ways, and one without a session is refused before it reaches the runtime.
+  // TEST_SCENARIO: a WebSocket to the owner's Environment is relayed to the declared port both ways, the app's handshake loses its Set-Cookie lines, and one without a session is refused before it reaches the runtime.
   it("relays the owner's WebSocket and refuses one without a session", async () => {
     const w = await world();
     const cookie = await w.signInTo("app-pr-1-abcdef");
@@ -347,6 +360,8 @@ describe("the Environment gate", () => {
         headers: { host: `app-pr-1-abcdef.${DOMAIN}`, ...headers },
       });
     const ws = open({ cookie });
+    let handshakeCookies: string[] | undefined;
+    ws.on("upgrade", (res) => (handshakeCookies = res.headers["set-cookie"]));
     const reply = await new Promise<string>((resolve, reject) => {
       ws.on("open", () => ws.send("hi"));
       ws.on("message", (d) => resolve(String(d)));
@@ -354,6 +369,7 @@ describe("the Environment gate", () => {
     });
     ws.close();
     expect(reply).toBe("echo:hi");
+    expect(handshakeCookies).toBeUndefined();
     expect(w.seen.at(-1)!.path).toBe("/api/environment/forward/4444/live");
     expect(w.seen.at(-1)!.headers.cookie).toBeUndefined();
 
