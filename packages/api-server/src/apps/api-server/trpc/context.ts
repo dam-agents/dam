@@ -99,6 +99,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     harnessCatalog: harnesses,
     starterKitsRepo,
     kitUpstream,
+    linkedKits,
     firePair,
     reposService,
     connectionsBoot,
@@ -285,6 +286,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       egressRules: createKitRulesSeederAdapter(db, l7Hosts),
       kitUpstream,
       kitUpdateMarks: createKitUpdateMarks(agentsRepo),
+      linkedKits,
       virtualizationEnabled: config.virtualizationEnabled,
       chatFormPreferences: (agentId) =>
         readChatFormPreferences(

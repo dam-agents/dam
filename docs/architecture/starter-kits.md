@@ -220,6 +220,29 @@ A connection the user has since deleted reads as not connected rather than faili
 Every kit ships `ONBOARDING.md` beside `kit.yaml`; the platform has seeded the definition into the work directory before the session opens, so the briefing points at the checkout rather than asking for a clone.
 With the owner's [chat forms](chat-forms.md) on, it also announces that the chat renders forms.
 
+## Linked Kit
+
+A **Linked Kit** is one kit read straight from a link to its repository, the way a teammate shares a kit nobody added to a catalog.
+Under the catalog, the Starter kits page and the Browse Kits modal take a pasted link to a public GitHub repository, and open the kit modal at `/starter-kits/link/<owner>/<repo>` — a URL that can itself be shared.
+No admin is involved and no catalog changes.
+
+- **Read like a catalog entry, never stored.** The kit is resolved by the same reader the refresh uses, as the only entry of a catalog named `link` that exists for that one read: the default branch's head is resolved to a commit, `kit.yaml` at the repository's root is validated there, its seed pinned and its bundled skills scanned.
+  Nothing is written to `starter_kit_catalog_entries`, so a Linked Kit never shows up in the catalog, and the name `link` is reserved: an install configuring a catalog of that name refuses to start.
+- **Public GitHub only.** The kit and its seed must both be on `github.com`.
+  The install's enterprise credential reads only what an operator chose to list, so a URL a user typed never makes the api-server fetch an internal repository with it.
+  A link into a branch or folder is refused, as everywhere a repository is named.
+- **Reviewed by the user, at one commit.** The modal shows everything the kit sets up, as for a catalog kit, and adds what a catalog's review would otherwise cover: a notice that nobody on the platform reviewed the kit, naming the repository and the commit, and the kit's install command and environment.
+  An unreviewed kit can set up nothing the user could not set up by hand on a new Agent — its image, egress, install command and schedules are all things the plain create and the agent's settings already offer the same user — so the review is the user's, and the modal gives them what they need for it.
+- **Created from the commit the user saw.** Apply names the link and that commit; the server reads the kit again at the commit rather than trusting what the browser sends, and refuses when the repository now holds a different kit.
+  The Agent is stamped `link/<kit>@<commit>`.
+- **A refusal says why.** A repository with no `kit.yaml`, an invalid field, a missing or private repository, and one that cannot be reached right now each come back as a message the person who pasted the link can act on.
+  GitHub answers an anonymous read of a missing, renamed or private repository the same way (401 or 404 on the ref advertisement), so all three read as "could not be found, or it is not public" — for the kit and for its seed.
+  The catalog refresh holds on that same answer rather than withdrawing the catalog's kits, so a renamed catalog repository never empties the kit list.
+  The modal shows a linked kit's install command and environment values in full, never clamped, since they are what the user is asked to check.
+- **Kit Updates work as for a catalog kit**, because detection follows the Seed Stamp, not the catalog ([below](#kit-update)).
+  With no catalog row to compare against, the update's briefing covers the definition only.
+  A kit's avatar image is not stored for a Linked Kit, since no row would keep it from the sweep; the kit keeps the default avatar, and an avatar character still applies.
+
 ## Kit Update
 
 An Agent created from a kit with a seed carries a **Seed Stamp** beside its Kit Version: the seed's repository, branch and commit, because the seed commit otherwise lives only in the runtime's seed event.
@@ -248,9 +271,9 @@ An abandoned update stays pending; the button then reopens its session or starts
 
 ## Invariants
 
-- **Kits are catalog-only platform inputs.** The platform never reads configuration back out of an Agent's own repository or workspace, so an agent committing to either can widen nothing the platform enforces — connections, egress, channels and the Template stay owner-managed platform state.
+- **Kits are catalog or link inputs, never workspace ones.** A kit reaches the platform from a catalog or from a link the user pastes; the platform never reads configuration back out of an Agent's own repository or workspace, so an agent committing to either can widen nothing the platform enforces — connections, egress, channels and the Template stay owner-managed platform state.
 - **Requirements are checked before create.** A missing required connection is refused with nothing to clean up.
-- **Kits are defined in git; the platform stores only their resolution.** The catalog locators are the only configuration, the resolved rows are a cache the refresh job rebuilds from the catalogs, and the Kit Version is provenance, not a source the platform re-reads; the Seed Stamp is read only to detect updates.
+- **Kits are defined in git; the platform stores only their resolution.** The catalog locators are the only configuration, the resolved rows are a cache the refresh job rebuilds from the catalogs, a Linked Kit is resolved on each read and never stored, and the Kit Version is provenance, not a source the platform re-reads; the Seed Stamp is read only to detect updates.
 
 ## Where the code lives
 

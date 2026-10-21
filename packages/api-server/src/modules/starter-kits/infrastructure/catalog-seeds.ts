@@ -1,3 +1,4 @@
+import { LINKED_KIT_CATALOG } from "api-server-api";
 import { z } from "zod/v4";
 
 import type { GitHosts } from "./git-hosts.js";
@@ -51,6 +52,10 @@ export function parseCatalogSeeds(
   }
   const seen = new Set<string>();
   for (const c of parsed.data) {
+    if (c.name === LINKED_KIT_CATALOG)
+      throw new Error(
+        `STARTER_KITS_CATALOGS names a catalog "${LINKED_KIT_CATALOG}", which is reserved for kits created from a link: rename it`,
+      );
     if (seen.has(c.name))
       throw new Error(`STARTER_KITS_CATALOGS names catalog "${c.name}" twice`);
     seen.add(c.name);

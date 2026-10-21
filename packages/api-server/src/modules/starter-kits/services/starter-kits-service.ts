@@ -44,6 +44,7 @@ import { createOnboardingMarker } from "./onboarding-marker.js";
 import { createKitUpdates, type KitUpdateMarks } from "./kit-updates.js";
 import { seedStampAtApply } from "../domain/seed-stamp.js";
 import type { KitUpstream } from "../infrastructure/kit-upstream.js";
+import type { LinkedKits } from "../infrastructure/linked-kits.js";
 
 export type LoadedKit = Omit<ResolvedKitRow, "kitId">;
 
@@ -87,6 +88,7 @@ export interface StarterKitsServiceDeps {
   ) => Promise<ChatFormPreferences | null>;
   kitUpstream: KitUpstream;
   kitUpdateMarks: KitUpdateMarks;
+  linkedKits: LinkedKits;
 }
 
 function withSeedStamp(
@@ -96,23 +98,33 @@ function withSeedStamp(
   return stamp ? { starterKitSeed: stamp } : {};
 }
 
-function toView(loaded: LoadedKit): StarterKitView {
+function toView(
+  loaded: LoadedKit & { link?: { url: string } },
+): StarterKitView {
   return {
     ...loaded.kit,
     catalog: loaded.catalog,
     version: loaded.version,
     source: loaded.source,
     skillsInKit: loaded.skillsInKit,
+    ...(loaded.link ? { link: loaded.link } : {}),
   };
 }
 
 export function createStarterKitsService(
   deps: StarterKitsServiceDeps,
 ): StarterKitsService {
-  async function requireKit(
-    catalog: string,
-    kitId: string,
-  ): Promise<LoadedKit> {
+  async function requireKit(input: StarterKitApplyInput): Promise<LoadedKit> {
+    const { catalog, kitId, link } = input;
+    if (link) {
+      const linked = await deps.linkedKits.read(link.url, link.commit);
+      if (linked.kit.id !== kitId)
+        throw new TRPCError({
+          code: "BAD_REQUEST",
+          message: `the kit at ${link.url} is ${linked.kit.id}, not ${kitId}`,
+        });
+      return requireRunnable(linked);
+    }
     const loaded = await deps.repo.get(catalog, kitId);
     if (!loaded)
       throw new TRPCError({
@@ -247,6 +259,14 @@ export function createStarterKitsService(
   const runnableHere = (loaded: LoadedKit): boolean =>
     loaded.kit.backend !== "vm" || deps.virtualizationEnabled === true;
 
+  function requireRunnable<K extends LoadedKit>(loaded: K): K {
+    if (runnableHere(loaded)) return loaded;
+    throw new TRPCError({
+      code: "BAD_REQUEST",
+      message: "this kit runs as a microVM, which this install cannot run",
+    });
+  }
+
   const kitUpdates = createKitUpdates({
     owner: deps.owner,
     repo: deps.repo,
@@ -280,8 +300,12 @@ export function createStarterKitsService(
       return loaded && runnableHere(loaded) ? toView(loaded) : null;
     },
 
+    async inspect(url) {
+      return toView(requireRunnable(await deps.linkedKits.read(url)));
+    },
+
     async apply(input: StarterKitApplyInput): Promise<StarterKitApplyResult> {
-      const loaded = await requireKit(input.catalog, input.kitId);
+      const loaded = await requireKit(input);
       const { kit, version } = loaded;
 
       const unmet = unmetRequiredConnections(

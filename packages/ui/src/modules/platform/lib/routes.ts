@@ -1,3 +1,4 @@
+import { LINKED_KIT_CATALOG } from "api-server-api";
 import { z } from "zod";
 
 const settingsTabSchema = z.enum([
@@ -127,6 +128,15 @@ export function parseRoute(path: string, search = ""): Route {
     };
   }
   if (/^\/starter-kits\/[^/]+$/.test(path)) return { view: "home" };
+  const linkedKitMatch = path.match(
+    new RegExp(`^/starter-kits/${LINKED_KIT_CATALOG}/([^/]+)/([^/]+)$`),
+  );
+  if (linkedKitMatch)
+    return {
+      view: "starter-kit",
+      catalog: LINKED_KIT_CATALOG,
+      kit: `${decodeSegment(linkedKitMatch[1]!)}/${decodeSegment(linkedKitMatch[2]!)}`,
+    };
   const starterKitMatch = path.match(
     /^\/starter-kits\/([^/]+)\/([^/]+)(?:\/new)?$/,
   );
@@ -173,7 +183,11 @@ export function routeToPath(route: Route): string {
         : `${base}/${route.sandboxSection}`;
     }
     case "starter-kit":
-      return `/starter-kits/${encodeURIComponent(route.catalog)}/${encodeURIComponent(route.kit)}`;
+      return `/starter-kits/${encodeURIComponent(route.catalog)}/${
+        route.catalog === LINKED_KIT_CATALOG
+          ? route.kit.split("/").map(encodeURIComponent).join("/")
+          : encodeURIComponent(route.kit)
+      }`;
     case "analytics":
       return "/analytics";
     case "not-found":

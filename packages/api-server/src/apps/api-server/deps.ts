@@ -58,6 +58,7 @@ import type { SessionDirectory } from "../../modules/session-directory/index.js"
 import type { TemplatesRepository } from "../../modules/templates/infrastructure/templates-repository.js";
 import type {
   KitUpstream,
+  LinkedKits,
   StarterKitsRepository,
 } from "../../modules/starter-kits/index.js";
 import type { IsAcceptedPort } from "../../modules/terms/index.js";
@@ -132,6 +133,7 @@ export interface ApiServerDeps {
   firePair: FirePair;
   starterKitsRepo: StarterKitsRepository;
   kitUpstream: KitUpstream;
+  linkedKits: LinkedKits;
   reposService: ReposService;
   apiKeysModule: ReturnType<typeof composeApiKeysModule>;
   satellitesBoot: SatellitesComposition;

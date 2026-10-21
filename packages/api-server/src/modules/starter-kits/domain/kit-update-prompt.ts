@@ -1,5 +1,9 @@
 import type { ChatFormPreferences } from "api-server-api/chat-forms";
-import type { ResolvedStarterKit, SeedStamp } from "api-server-api";
+import {
+  LINKED_KIT_CATALOG,
+  type ResolvedStarterKit,
+  type SeedStamp,
+} from "api-server-api";
 import { chatFormLines, describeAccepts } from "./onboarding-prompt.js";
 import { type GrantedTemplate, satisfiesRequirement } from "./requirements.js";
 
@@ -69,7 +73,9 @@ function platformHalf(facts: KitUpdateFacts): string[] {
   const { kit } = facts;
   if (!kit)
     return [
-      `The kit ${facts.kitRef} is no longer listed in the catalog, so only the definition updates.`,
+      facts.kitRef.startsWith(`${LINKED_KIT_CATALOG}/`)
+        ? `The kit ${facts.kitRef} was created from a link rather than a catalog, so only the definition updates.`
+        : `The kit ${facts.kitRef} is no longer listed in the catalog, so only the definition updates.`,
     ];
   return [
     "What the kit's current catalog entry declares, against this agent's state right now:",

@@ -36,6 +36,10 @@ export {
   type KitUpstream,
 } from "./infrastructure/kit-upstream.js";
 export {
+  createLinkedKits,
+  type LinkedKits,
+} from "./infrastructure/linked-kits.js";
+export {
   createKitUpdateReporter,
   type KitUpdateReporter,
 } from "./services/kit-update-reporter.js";

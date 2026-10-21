@@ -15,6 +15,7 @@ const canonicalPaths = [
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
   "/starter-kits/platform/code-reviewer",
+  "/starter-kits/link/acme/shared-kit",
   "/analytics",
   "/nonexistent",
 ];
@@ -43,6 +44,18 @@ describe("route round-trip", () => {
     expect(parseRoute("/starter-kits")).toEqual({ view: "starter-kits" });
     expect(routeToPath({ view: "artifacts" })).toBe("/artifacts");
     expect(routeToPath({ view: "starter-kits" })).toBe("/starter-kits");
+  });
+
+  // TEST_SCENARIO: a kit from a link is addressed by its repository, so a teammate can share the platform page itself: /starter-kits/link/<owner>/<repo> opens the kit modal for that repository, keeping the slash between owner and repository.
+  it("opens the kit modal for a kit from a link", () => {
+    expect(parseRoute("/starter-kits/link/acme/shared-kit")).toEqual({
+      view: "starter-kit",
+      catalog: "link",
+      kit: "acme/shared-kit",
+    });
+    expect(
+      routeToPath({ view: "starter-kit", catalog: "link", kit: "acme/kit.v2" }),
+    ).toBe("/starter-kits/link/acme/kit.v2");
   });
 
   it("opens the kit modal for a retired kit setup link", () => {
