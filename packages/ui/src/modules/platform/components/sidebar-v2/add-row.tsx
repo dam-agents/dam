@@ -1,7 +1,11 @@
 import type { CarbonIconType } from "@carbon/icons-react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
-import { RAIL_AVATAR, SIDEBAR_GLYPH } from "@/components/ui/rail-tile";
+import {
+  RAIL_AVATAR,
+  RAIL_GLYPH,
+  SIDEBAR_GLYPH,
+} from "@/components/ui/rail-tile";
 
 // UNIT_BOUNDARY_DESCRIPTION: every row of the tree puts its avatar, dot or icon in one 40px column, wide enough for an avatar that spans a two-line row, and its text after the same gap, so dots line up under Agent avatars and titles under Agent names.
 export const TREE_LEADING = "flex w-10 shrink-0 justify-center";
@@ -41,13 +45,13 @@ export function AddRow({
     >
       <span className={TREE_LEADING}>
         <Icon
-          size={avatar ? TREE_AVATAR : SIDEBAR_GLYPH}
+          size={avatar ? RAIL_GLYPH : SIDEBAR_GLYPH}
           aria-hidden
           className={HoverIcon ? "group-hover:hidden" : undefined}
         />
         {HoverIcon && (
           <HoverIcon
-            size={avatar ? TREE_AVATAR : SIDEBAR_GLYPH}
+            size={avatar ? RAIL_GLYPH : SIDEBAR_GLYPH}
             aria-hidden
             className="hidden group-hover:block"
           />
