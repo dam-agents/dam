@@ -14,7 +14,10 @@ const DEFAULT = "ibm/aws/claude-opus-4-8";
 
 function makeOps(
   opts: {
-    defaultModel?: (driverId: string, harness: string) => Promise<string | null>;
+    defaultModel?: (
+      driverId: string,
+      harness: string,
+    ) => Promise<string | null>;
   } = {},
 ) {
   const spawned: Array<Record<string, unknown>> = [];
@@ -168,7 +171,11 @@ describe("the driver's default model", () => {
     ).toBeNull();
     expect(
       await driverDefaultModel(
-        firePairOf({ harness: "codex", provider: "c", model: "openai/gpt-5.5" }),
+        firePairOf({
+          harness: "codex",
+          provider: "c",
+          model: "openai/gpt-5.5",
+        }),
       )("driver-1", "claude-code"),
     ).toBeNull();
     expect(
@@ -178,7 +185,10 @@ describe("the driver's default model", () => {
       ),
     ).toBeNull();
     expect(
-      await driverDefaultModel(firePairOf(undefined))("driver-1", "claude-code"),
+      await driverDefaultModel(firePairOf(undefined))(
+        "driver-1",
+        "claude-code",
+      ),
     ).toBeNull();
   });
 
