@@ -140,7 +140,10 @@ export function composeFirePair(deps: {
 }
 
 export function composeInitializationPairResolver(deps: {
-  firePair: FirePair;
+  firePair: (
+    agentId: string,
+    preferred: { harness?: string },
+  ) => Promise<SessionPair | null | undefined>;
   log: (msg: string) => void;
 }): ReturnType<typeof createInitializationPairResolver> {
   return createInitializationPairResolver(deps);

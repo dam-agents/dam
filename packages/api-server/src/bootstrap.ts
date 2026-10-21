@@ -636,7 +636,7 @@ export async function bootstrap() {
   const resolveInitializationPair = composeInitializationPairResolver({
     firePair: async (agentId, preferred) => {
       await convertDefault(agentId);
-      return firePair(agentId, preferred);
+      return firePair(agentId, "chat", preferred);
     },
     log: (msg) => getLogger().warn(msg),
   });
