@@ -256,12 +256,12 @@ if [ -n "${IS_SANDBOX:-}" ]; then
     # into the kubelet's own drop-in dir wherever kubelet-arg names it — already
     # before this k3s starts. A k3s config drop-in, never config.yaml itself:
     # inside a VM sandbox that file carries the CIDR remap (see step 1b).
+    as_root mkdir -p /etc/rancher/k3s/config.yaml.d
     as_root tee /etc/rancher/k3s/kubelet-single-process-oom-kill.yaml >/dev/null <<'EOF'
 apiVersion: kubelet.config.k8s.io/v1beta1
 kind: KubeletConfiguration
 singleProcessOOMKill: true
 EOF
-    as_root mkdir -p /etc/rancher/k3s/config.yaml.d
     as_root tee /etc/rancher/k3s/config.yaml.d/50-single-process-oom-kill.yaml >/dev/null <<'EOF'
 kubelet-arg+:
   - "config=/etc/rancher/k3s/kubelet-single-process-oom-kill.yaml"
