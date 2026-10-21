@@ -16,7 +16,11 @@ vi.mock("../../modules/agents/api/queries.js", () => ({
 const { SessionRow } =
   await import("../../modules/sessions/components/session-row.js");
 
-function render(quietPin: boolean, mode = SessionMode.Chat) {
+function render(
+  quietPin: boolean,
+  mode = SessionMode.Chat,
+  extra: { repositoryBadges?: boolean } = {},
+) {
   return renderToStaticMarkup(
     createElement(SessionRow, {
       session: {
@@ -26,7 +30,9 @@ function render(quietPin: boolean, mode = SessionMode.Chat) {
         type: SessionType.Regular,
         title: "Recent",
         createdAt: "2026-10-20T00:00:00Z",
+        repositories: [{ name: "dam", path: "/work/dam", branch: "main" }],
       } as never,
+      ...extra,
       active: false,
       working: false,
       needsApproval: false,
@@ -57,4 +63,12 @@ it("marks a terminal Session with the labelled terminal icon", () => {
     /<svg[^>]*aria-label="Terminal"/,
   );
   expect(render(true)).not.toContain('aria-label="Terminal"');
+});
+
+// TEST_SCENARIO: the current layout lists the repositories a Session touched under its row; a row that turns them off, as the new layout's two-line sidebar rows do, draws no repository line.
+it("drops the repository line only when asked", () => {
+  expect(render(false)).toContain("Repositories this session touched");
+  expect(
+    render(false, SessionMode.Chat, { repositoryBadges: false }),
+  ).not.toContain("Repositories this session touched");
 });

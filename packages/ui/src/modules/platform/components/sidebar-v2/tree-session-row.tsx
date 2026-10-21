@@ -45,6 +45,7 @@ type RowState = Omit<
   | "leading"
   | "titleIcon"
   | "activityIndicators"
+  | "repositoryBadges"
 > & { conversation?: string };
 
 export const TREE_ROW_CLASS = "min-w-0 gap-2.5 rounded-lg border-b-0 px-2 py-2";
@@ -195,6 +196,7 @@ export function TreeSessionRow({
           )
         }
         activityIndicators={false}
+        repositoryBadges={false}
         quietPin
         className={TREE_ROW_CLASS}
         pinned={pinned}

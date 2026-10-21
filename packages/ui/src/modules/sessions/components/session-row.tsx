@@ -64,6 +64,7 @@ interface Props {
   leading?: ReactNode;
   titleIcon?: ReactNode;
   activityIndicators?: boolean;
+  repositoryBadges?: boolean;
   pinned?: boolean;
   quietPin?: boolean;
   onTogglePin?: () => void;
@@ -88,6 +89,7 @@ export function SessionRow({
   leading,
   titleIcon,
   activityIndicators = true,
+  repositoryBadges = true,
   pinned = false,
   quietPin = false,
   onTogglePin,
@@ -339,7 +341,7 @@ export function SessionRow({
             </span>
           )}
         </span>
-        {s.repositories && s.repositories.length > 0 && (
+        {repositoryBadges && s.repositories && s.repositories.length > 0 && (
           <SessionRepositoryBadges repositories={s.repositories} />
         )}
       </div>
