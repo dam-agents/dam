@@ -79,6 +79,12 @@ func (r *AgentReconciler) applyRunnerRelease(ctx context.Context, owner string, 
 		r.runnerRollMu.Unlock()
 		return err
 	}
+	live, err := r.runnerDeployment(ctx, dep.Name, false)
+	if err != nil {
+		r.runnerRollMu.Unlock()
+		return err
+	}
+	dep = live
 	now := time.Now().UTC().Format(time.RFC3339)
 	delete(dep.Annotations, annRunnerHandoffStalled)
 	delete(dep.Annotations, annRunnerHandoffAwaiting)
