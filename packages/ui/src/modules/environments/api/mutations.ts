@@ -1,6 +1,5 @@
 import { useMutation } from "@tanstack/react-query";
 
-import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
 
 const invalidatesEnvironments = {
@@ -33,21 +32,6 @@ export function useSetEnvironmentAccessList() {
     meta: {
       ...invalidatesEnvironments,
       errorToast: "Couldn't save who may open Environments",
-    },
-  });
-}
-
-export function useToggleEnvironmentConnection() {
-  return useMutation({
-    mutationFn: (input: { environmentId: string; id: string; on: boolean }) =>
-      api.connections.updateAgentConnections.mutate({
-        agentId: input.environmentId,
-        grant: input.on ? [input.id] : [],
-        revoke: input.on ? [] : [input.id],
-      }),
-    meta: {
-      invalidates: [trpc.connections.getAgentConnections.queryKey()],
-      errorToast: "Couldn't change the Environment's connections",
     },
   });
 }

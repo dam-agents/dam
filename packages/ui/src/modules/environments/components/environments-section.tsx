@@ -50,16 +50,15 @@ export function EnvironmentsSection({
 /**
  * UNIT_BOUNDARY_DESCRIPTION: The owner's list of people who may open this
  * agent's Environments, by the email they sign in with. The owner always may;
- * the agent may narrow the list for one Environment, never add to it.
+ * the agent may narrow the list for one Environment, never add to it. The
+ * list is edited only once it loaded, so a Save never replaces a list the
+ * page could not read.
  */
 function AccessListEditor({ agentId }: { agentId: string }) {
   const saved = useEnvironmentAccessList(agentId);
   const save = useSetEnvironmentAccessList();
   const [edited, setEdited] = useState<string[] | null>(null);
   const [draft, setDraft] = useState("");
-  const savedEmails = saved.data ?? [];
-  const emails = edited ?? savedEmails;
-  const dirty = edited !== null && !sameViewers(edited, savedEmails);
 
   return (
     <div className="mb-6 flex flex-col gap-2" data-testid="environment-access">
@@ -69,42 +68,78 @@ function AccessListEditor({ agentId }: { agentId: string }) {
         in with this email. The agent can narrow the list for one Environment,
         never add to it.
       </p>
+      {saved.data === undefined ? (
+        <p className="text-sm text-muted-foreground">
+          {saved.isError ? "Couldn't load the list." : "Loading…"}
+        </p>
+      ) : (
+        <ListForm
+          savedEmails={saved.data}
+          edited={edited}
+          setEdited={setEdited}
+          draft={draft}
+          setDraft={setDraft}
+          saving={save.isPending}
+          onSave={(emails) =>
+            save.mutate(
+              { owningAgentId: agentId, emails },
+              { onSuccess: () => setEdited(null) },
+            )
+          }
+        />
+      )}
+    </div>
+  );
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the loaded list, its edits and their Save. The shared editor says how full the list is, and the empty list says that only the owner may open them.
+function ListForm({
+  savedEmails,
+  edited,
+  setEdited,
+  draft,
+  setDraft,
+  saving,
+  onSave,
+}: {
+  savedEmails: string[];
+  edited: string[] | null;
+  setEdited: (emails: string[] | null) => void;
+  draft: string;
+  setDraft: (draft: string) => void;
+  saving: boolean;
+  onSave: (emails: string[]) => void;
+}) {
+  const emails = edited ?? savedEmails;
+  const dirty = edited !== null && !sameViewers(edited, savedEmails);
+
+  return (
+    <>
       <ViewerListEditor
         viewers={emails}
         onChange={setEdited}
-        disabled={saved.isPending || save.isPending}
+        disabled={saving}
         draft={draft}
         onDraftChange={setDraft}
-        caption={
-          emails.length === 0
-            ? "Only you can open this agent's Environments."
-            : `${emails.length} ${emails.length === 1 ? "person" : "people"} may open this agent's Environments.`
-        }
+        {...(emails.length === 0 && {
+          caption: "Only you can open this agent's Environments.",
+        })}
       />
       {dirty && (
         <div className="flex gap-2">
-          <Button
-            size="sm"
-            disabled={save.isPending}
-            onClick={() =>
-              save.mutate(
-                { owningAgentId: agentId, emails },
-                { onSuccess: () => setEdited(null) },
-              )
-            }
-          >
+          <Button size="sm" disabled={saving} onClick={() => onSave(emails)}>
             Save
           </Button>
           <Button
             size="sm"
             variant="ghost"
-            disabled={save.isPending}
+            disabled={saving}
             onClick={() => setEdited(null)}
           >
             Cancel
           </Button>
         </div>
       )}
-    </div>
+    </>
   );
 }

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An agent's Environments section, as its owner sees it: each Environment's name, whether it runs or sleeps, its expiry, who may open it, and each endpoint's address as a link; an install without an environments domain says the endpoint has no address; with none yet, the section says the agent creates them. The owner's list of people shows above, with the owner always allowed.
+// TEST_OVERVIEW: An agent's Environments section, as its owner sees it: each Environment's name, whether it runs, its expiry, who may open it, and each endpoint's address as a link; an install without an environments domain says the endpoint has no address; with none yet, the section says the agent creates them. The owner's list of people shows above, with the owner always allowed.
 import type { EnvironmentView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -92,7 +92,7 @@ const environment: EnvironmentView = {
 };
 
 describe("the Environments section", () => {
-  // TEST_SCENARIO: an Environment shows its name, that it sleeps, when it expires, how many of the owner's list may open it, and each endpoint's address as a link; an endpoint without an address says why.
+  // TEST_SCENARIO: an Environment shows its name, that it is not running, when it expires, how many of the owner's list may open it, and each endpoint's address as a link; an endpoint without an address says why.
   it("lists an Environment with its links, state and expiry", () => {
     state.environments = [environment];
     state.accessList = ["reviewer@example.com", "qa@example.com"];
@@ -100,13 +100,13 @@ describe("the Environments section", () => {
     const html = render();
 
     expect(html).toContain("pr-42");
-    expect(html).toContain("Asleep");
+    expect(html).toContain("Not running");
     expect(html).toContain("Expires in 3");
     expect(html).toContain("1 of your list may open it");
     expect(html).toContain('href="https://app-pr-42-abcdef.env.example.com"');
     expect(html).toContain("No address: this install serves no Environments.");
     expect(html).toContain("reviewer@example.com");
-    expect(html).toContain("2 people may open this agent&#x27;s Environments.");
+    expect(html).toContain("2 / 50 people on the list");
   });
 
   // TEST_SCENARIO: an agent with no Environments says that the agent creates them, and that only the owner may open them while the list is empty.
