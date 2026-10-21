@@ -215,7 +215,7 @@ function useRailPopover(
   const tapOnly = () => !window.matchMedia("(hover: hover)").matches;
   // UNIT_BOUNDARY_DESCRIPTION: a menu opened from the popover outlives the pointer leaving it, and most of them render in a portal of their own on the body, outside the content's box, so the search has to reach the page. While one is open the close waits, checking every MENU_POLL_MS; once the menu is shut the pointer gets the full grace again to come back. The cost is a timer that ticks while a menu is open.
   const menuOpen = () =>
-    content.current?.querySelector('[data-state="open"]') !== null ||
+    (content.current?.querySelector('[data-state="open"]') ?? null) !== null ||
     document.querySelector('[role="menu"][data-state="open"]') !== null;
   const shut = () => {
     closedAt.current = Date.now();

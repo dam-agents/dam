@@ -1,13 +1,6 @@
 import { Close } from "@carbon/icons-react";
 import type { ReactNode, RefObject } from "react";
-import {
-  createContext,
-  useContext,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { createContext, useContext, useEffect, useId, useRef } from "react";
 import { createPortal } from "react-dom";
 
 import { Button } from "@/components/ui/button";
@@ -281,12 +274,11 @@ export function useFocusTrap(
   containerRef: RefObject<HTMLElement | null>,
   active = true,
 ) {
-  const [previouslyFocused] = useState(
-    () => document.activeElement as HTMLElement | null,
-  );
   useEffect(() => {
     const container = containerRef.current;
     if (!active || !container) return;
+    // UNIT_BOUNDARY_DESCRIPTION: the element to hand the keyboard back to is the one focused when the trap closes over the page, not the one focused when the trap was built, which may be several opens ago.
+    const previouslyFocused = document.activeElement as HTMLElement | null;
 
     let grabRaf = 0;
     const reassertUntil = performance.now() + 500;
@@ -333,7 +325,7 @@ export function useFocusTrap(
       container.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };
-  }, [containerRef, previouslyFocused, active]);
+  }, [containerRef, active]);
 }
 
 const openModalIds: string[] = [];
