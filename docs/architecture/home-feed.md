@@ -103,7 +103,7 @@ A pin of an asleep Agent that its record does not hold shows once the Agent wake
 An asleep Agent whose Sessions the record does not hold shows a note that its Sessions show when it wakes; the tree never reads an empty record as an empty list.
 Until the record answers, and for an Agent that cannot answer for another reason, the list shows its loading placeholder; a list whose first page failed offers a retry instead of saying the Agent has no Sessions.
 An Agent's chat drops its top bar and its column of Files, Artifacts and Processes sections for the side panel and its icon bar: Files, Changes, Artifacts, Browser and Processes become tabs of the panel, beside Get started and Approvals.
-Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
+Home becomes a dashboard of cards built from the record, the Agents list and the owner's schedules, and a user with no Agent sees only the welcome introduction with Create agent and Start from a kit; its counts cover only the record's rows, at most the feed's row limit, so they describe recent work, not all time.
 An Agent's runtime migration badge reads on its row in the Agents list and in the overlay of an Agent that is not running; the chat header carries it only below the width where the row shows.
 
 ## The producer
