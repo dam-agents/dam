@@ -158,6 +158,20 @@ function markRoom(id: string, dir: string): string {
   );
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: puts every other running vm agent of the test user to sleep, so only the case's own machines change how many run. Agents earlier specs left running are hibernated by the idle sweep after 5 minutes, and one that hibernates while a case starts a machine cancels the move the case waits for (#5624).
+async function sleepOtherMachines(): Promise<void> {
+  const ours = new Set([probeId, siblingId]);
+  const others = (await api.agents.list.query()).filter(
+    (agent) => agent.vm && !ours.has(agent.id) && agent.state !== "hibernated",
+  );
+  for (const agent of others)
+    await api.agents.sleep.mutate({ id: agent.id }).catch(() => undefined);
+  for (const agent of others)
+    await waitAgentState(api, agent.id, "hibernated", {
+      failOnError: false,
+    }).catch(() => undefined);
+}
+
 async function waitFor(
   read: () => number,
   fits: (value: number) => boolean,
@@ -266,10 +280,11 @@ test("room a home of small files frees goes back too", async () => {
   );
 });
 
-// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
+// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. The user's other vm agents are put to sleep first, so the case's machines are the only ones that start or stop. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
 test("the guard gives a machine the room its share gains, and takes it back", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
+  await sleepOtherMachines();
   await keepAwake(probeId);
   await keepAwake(siblingId);
   const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
