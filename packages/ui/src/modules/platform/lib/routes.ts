@@ -25,6 +25,7 @@ const sandboxSectionSchema = z.enum([
   "chat-forms",
   "skills",
   "schedules",
+  "environments",
   "usage",
 ]);
 export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
