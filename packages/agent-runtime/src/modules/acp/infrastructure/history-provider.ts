@@ -1,10 +1,6 @@
 import { describeFailure, runOnce } from "../../../core/run-once.js";
-import {
-  DEFAULT_EXPORT_NAME,
-  startWorker,
-  takePrestartedWorker,
-  type StartedWorker,
-} from "./history-worker.js";
+import { DEFAULT_EXPORT_NAME } from "./history-worker.js";
+import { createWorkerCall } from "./worker-call.js";
 
 export interface HistoryProvider {
   fetch(sessionId: string): Promise<string[] | null>;
@@ -96,10 +92,6 @@ export interface WorkerHistoryProviderDeps {
   log: (msg: string) => void;
 }
 
-interface WorkerHandle extends StartedWorker {
-  inFlight: Map<number, (lines: string[] | null) => void>;
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Hosts the harness image's declared session-history
  * module (runtime-manifest `sessionHistory.module`) in one persistent worker
@@ -116,73 +108,22 @@ export function createWorkerHistoryProvider(
   deps: WorkerHistoryProviderDeps,
 ): HistoryProvider {
   const timeoutMs = deps.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const exportName = deps.exportName ?? DEFAULT_EXPORT_NAME;
-  let handle: WorkerHandle | null = null;
-  let nextId = 1;
-
-  function ensureWorker(): WorkerHandle {
-    if (handle) return handle;
-    const started =
-      takePrestartedWorker(deps.modulePath, exportName) ??
-      startWorker(deps.modulePath, exportName, deps.log);
-    const { worker } = started;
-    const inFlight = new Map<number, (lines: string[] | null) => void>();
-    const created: WorkerHandle = { ...started, inFlight };
-    worker.on(
-      "message",
-      (msg: { id?: number; lines?: unknown; error?: string }) => {
-        if (typeof msg.id !== "number") return;
-        const settle = inFlight.get(msg.id);
-        if (!settle) return;
-        inFlight.delete(msg.id);
-        if (msg.error !== undefined || !Array.isArray(msg.lines)) {
-          if (msg.error !== undefined) {
-            deps.log(`history provider module: ${msg.error}`);
-          }
-          settle(null);
-          return;
-        }
-        settle(msg.lines as string[]);
-      },
-    );
-    const dropWorker = (): void => {
-      if (handle === created) handle = null;
-      for (const settle of inFlight.values()) settle(null);
-      inFlight.clear();
-    };
-    worker.on("error", dropWorker);
-    worker.on("exit", dropWorker);
-    handle = created;
-    return created;
-  }
-
+  const worker = createWorkerCall({
+    modulePath: deps.modulePath,
+    exportName: deps.exportName ?? DEFAULT_EXPORT_NAME,
+    label: "history provider",
+    log: deps.log,
+  });
   return {
-    warm: () => void ensureWorker(),
+    warm: () => worker.warm(),
     async fetch(sessionId) {
-      const current = ensureWorker();
-      const ok = await current.ready;
-      if (!ok) {
-        if (handle === current) handle = null;
-        void current.worker.terminate();
+      const outcome = await worker.call(sessionId, timeoutMs);
+      if (!outcome.ok) {
+        deps.log(`history provider for ${sessionId}: ${outcome.error}`);
         return null;
       }
-      const id = nextId++;
-      const raw = await new Promise<string[] | null>((resolve) => {
-        const timer = setTimeout(() => {
-          current.inFlight.delete(id);
-          deps.log(
-            `history provider for ${sessionId}: timed out after ${timeoutMs}ms`,
-          );
-          resolve(null);
-        }, timeoutMs);
-        current.inFlight.set(id, (lines) => {
-          clearTimeout(timer);
-          resolve(lines);
-        });
-        current.worker.postMessage({ id, sessionId });
-      });
-      if (raw === null) return null;
-      const lines = validateLines(sessionId, raw);
+      if (!Array.isArray(outcome.result)) return null;
+      const lines = validateLines(sessionId, outcome.result as string[]);
       if (lines === null) {
         deps.log(`history provider for ${sessionId}: emitted an invalid frame`);
         return null;

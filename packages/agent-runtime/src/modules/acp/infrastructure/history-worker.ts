@@ -13,8 +13,8 @@ const { parentPort, workerData } = require("node:worker_threads");
   }
   parentPort.on("message", async (msg) => {
     try {
-      const lines = await fn(msg.sessionId);
-      parentPort.postMessage({ id: msg.id, lines });
+      const result = await fn(msg.input);
+      parentPort.postMessage({ id: msg.id, result });
     } catch (error) {
       parentPort.postMessage({
         id: msg.id,
@@ -46,6 +46,7 @@ export function startWorker(
   modulePath: string,
   exportName: string,
   log: (msg: string) => void,
+  label = "history provider",
 ): StartedWorker {
   const worker = new Worker(WORKER_BOOTSTRAP, {
     eval: true,
@@ -64,7 +65,7 @@ export function startWorker(
         return;
       }
       if (msg.fatal !== undefined) {
-        log(`history provider module failed to load: ${msg.fatal}`);
+        log(`${label} module failed to load: ${msg.fatal}`);
         resolve(false);
         return;
       }
@@ -72,7 +73,7 @@ export function startWorker(
     worker.once("message", onFirst);
     worker.once("error", (error) => {
       log(
-        `history provider worker error: ${error instanceof Error ? error.message : String(error)}`,
+        `${label} worker error: ${error instanceof Error ? error.message : String(error)}`,
       );
       resolve(false);
     });

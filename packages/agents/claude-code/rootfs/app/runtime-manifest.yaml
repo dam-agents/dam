@@ -45,6 +45,14 @@ sessionHistory:
   module: "/usr/local/lib/harness-history-lib.mjs"
   exportName: "loadHistory"
 
+# A rewind or a take-back cuts the closed session's on-disk conversation in
+# place, under the same id, instead of forking it. Through the adapter a cut
+# would be replayed whenever it rebuilds the session's query, so the module
+# drives the bundled SDK itself, in a runtime worker of its own.
+sessionCut:
+  module: "/usr/local/lib/harness-cut-lib.mjs"
+  exportName: "cutSession"
+
 # claude-agent-acp is an adapter: each session's conversation runs in a
 # `claude` process under it, usually the pod's largest. The memory reaper must
 # never take one of those for a tool the agent started.

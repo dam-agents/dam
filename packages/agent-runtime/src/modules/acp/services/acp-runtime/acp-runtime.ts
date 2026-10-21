@@ -77,6 +77,7 @@ import {
 import type { AgentProcess } from "../../infrastructure/agent-process.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
+import type { SessionCutProvider } from "../../infrastructure/session-cut-provider.js";
 import type { PlatformSessionOf } from "../../infrastructure/terminal-session-pins.js";
 import {
   platformSessionMetaSchema,
@@ -189,6 +190,11 @@ export interface AcpRuntimeDeps {
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
+  /**
+   * The harness's session-cut provider, when its image declares one: a
+   * rewind or a take-back then cuts the stored conversation in place.
+   */
+  sessionCut?: SessionCutProvider;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;
   backgroundWork: BackgroundWorkRegistry;
