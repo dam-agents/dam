@@ -19,6 +19,7 @@ import {
   SHOW_LESS,
   showAllSubAgents,
   showMoreSubAgents,
+  SPEND_LOAD_ERROR,
   thisAgent,
 } from "../lib/copy.js";
 import { spendRows } from "../lib/spend-rows.js";
@@ -47,7 +48,7 @@ interface Props {
 
 export function DriverSpendByAgent({ agentId, breakdown, showPlanUse }: Props) {
   const [limit, setLimit] = useState(0);
-  const { data: all } = useSubAgentSpend(
+  const { data: all, isError } = useSubAgentSpend(
     { agentId, from: breakdown.from, to: breakdown.to },
     limit,
   );
@@ -96,6 +97,9 @@ export function DriverSpendByAgent({ agentId, breakdown, showPlanUse }: Props) {
         }}
         indentOf={(id) => id !== agentId}
       />
+      {asked && isError && (
+        <p className="text-sm text-muted-foreground">{SPEND_LOAD_ERROR}</p>
+      )}
       {(asked || other.count > 0) && (
         <div className="flex gap-4">
           {!asked && (
