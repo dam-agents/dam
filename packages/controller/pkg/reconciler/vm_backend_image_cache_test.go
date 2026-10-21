@@ -17,6 +17,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
+// TEST_SCENARIO: images/ is the node cache the install's runners on a node share, never a directory of the runner's claim, so it gets a mount of its own, read-only, from the host directory the install names. The other two always live on the claim and are mounted by subPath, so the claim's root is never exposed.
 func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	mounts := func(configure func(*config.VMRunnerSpec)) (map[string]corev1.VolumeMount, map[string]corev1.Volume) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -46,6 +47,7 @@ func TestRunnerMountsTheImageCacheAsItsOwnSource(t *testing.T) {
 	assert.True(t, node[vmRunnerImagesPath].ReadOnly, "the node's image cache service is the only writer of the node directory")
 }
 
+// TEST_SCENARIO: the runner reaches the node's image cache service through a socket the chart's DaemonSet binds inside the same directory. The controller and the chart each name that path, so the controller's constant must be the one the chart passes, or every runner refuses every image as unavailable.
 func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	template, err := os.ReadFile(filepath.Join("..", "..", "..", "..", "helm", "templates", "controller", "vm-image-cache.yaml"))
 	require.NoError(t, err)
@@ -64,6 +66,7 @@ func TestTheRunnerDialsTheSocketTheImageCacheServiceBinds(t *testing.T) {
 	assert.Contains(t, args(func(*config.VMRunnerSpec) {}), "--image-cache-socket="+vmImageCacheSocket)
 }
 
+// TEST_SCENARIO: the node cache carries a budget, because a node directory is shared with the rest of the host and cannot be given a share of its filesystem. A budget the controller cannot read fails the reconcile rather than being replaced by a guess, which would be a cache growing until the node runs out.
 func TestEveryCacheIsBounded(t *testing.T) {
 	args := func(t *testing.T, configure func(*config.VMRunnerSpec)) (string, error) {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())

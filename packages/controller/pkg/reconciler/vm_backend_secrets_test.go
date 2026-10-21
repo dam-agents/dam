@@ -18,6 +18,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// TEST_SCENARIO: a secretRef names a Secret by name alone, in the namespace that holds every owner's credentials and every runner's token, and all of its keys land in the guest's environment. A Secret labelled with the Agent's own owner is honoured; one with another owner's label, with no owner label at all, or one the platform manages is refused: the machine is still ensured, without any of its values, and the reconcile reports the refusal.
 func TestAVMAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Spec.SecretRef = "mine"
@@ -49,6 +50,7 @@ func TestAVMAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: an agent already ran with a Secret its owner does not hold — written before the check existed. Refusing the reconcile alone would leave that environment on the workload; the refusal must take it off. A machine ensured with the Secret is ensured again without it.
 func TestARefusedSecretRefIsTakenOffAMachineThatHadIt(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Spec.SecretRef = "theirs"
@@ -69,6 +71,7 @@ func TestARefusedSecretRefIsTakenOffAMachineThatHadIt(t *testing.T) {
 	assert.NotContains(t, node.spec("my-agent").Env, "SECRET_TOKEN")
 }
 
+// TEST_SCENARIO: the container backend hands a secretRef to the kubelet as envFrom, so the same Secret the vm backend refuses must never reach a StatefulSet there either: the pod is rendered without it, which also takes it off a pod that already had it, and the reconcile reports the refusal. An operator's Secret that predates the rule needs only its owner label to work again.
 func TestAContainerAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	agent := agentCR()
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
@@ -97,6 +100,7 @@ func TestAContainerAgentTakesOnlyItsOwnersSecret(t *testing.T) {
 	assert.Equal(t, "theirs", got.Name)
 }
 
+// TEST_SCENARIO: the OOM kill of an owner's runner was reported only on the agents whose runner reason happened to be MachineNotReady, so an agent the restarted runner refused room, or one carrying a reason of its own, told its owner about that consequence and never about the kill — and the OOM notice and the Slack alert read nothing else. Every agent that was already running when the kill happened now names it for the episode that follows, from the runner pod's last termination alone, whatever reason it carries until then; an agent woken inside that episode carries nothing, since the kill did not take it down.
 func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -177,6 +181,7 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, reason(), "a reason published before the controller restarted, with no start behind it")
 }
 
+// TEST_SCENARIO: every reconcile of a waking vm agent prepares its owner's runner before it sends the machine spec, and both read Secrets: the runner's token and certificate, and the agent's leaf. Read one after another they were four serial reads; the token and certificate are read side by side, and the leaf beside the runner, so the API server's latency is paid twice.
 func TestAMachinesSecretsAreReadInTwoRounds(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)

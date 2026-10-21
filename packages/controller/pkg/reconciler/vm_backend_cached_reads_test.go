@@ -21,6 +21,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// TEST_SCENARIO: a vm agent that is up is reconciled again and again while it runs — a machine poll, a pod event, a drift sweep. Each of those reconciles read its gateway StatefulSet three to four times, its runner Deployment twice and its runner's pods once, all live, and the runner's token and certificate twice each. The StatefulSet, the Deployment and the runner's pods are served from the informers the controller runs, and each runner Secret is read once, so a steady reconcile reads none of the cached kinds from the API server.
 func TestASteadyVMReconcileReadsItsObjectsFromTheCaches(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -69,6 +70,7 @@ func TestASteadyVMReconcileReadsItsObjectsFromTheCaches(t *testing.T) {
 	assert.Equal(t, 1, reads["get secrets "+r.runnerTLSName(testOwner)], "the runner's certificate is read once")
 }
 
+// TEST_SCENARIO: the runner pod cache can hold a pod from before its last change. A resize sent from it carries that old resourceVersion, so the API server refuses it rather than applying it over the change, and the resize is decided again from a live read of the pod.
 func TestAResizeFromAStalePodIsRefusedAndRedoneLive(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -102,6 +104,7 @@ func TestAResizeFromAStalePodIsRefusedAndRedoneLive(t *testing.T) {
 	assert.NotEqual(t, "1Gi", runnerPodRequest(t, r), "and the resize landed on the current pod")
 }
 
+// TEST_SCENARIO: right after the reconcile updates the gateway's template, the informer still holds the StatefulSet as it was, whose pod is ready on the current revision. A readiness check on that copy would call the gateway ready while it is about to roll, so the reconcile reads its own update, whose generation the StatefulSet controller has not observed yet.
 func TestAReconcileReadsItsOwnStatefulSetUpdate(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -126,6 +129,7 @@ func TestAReconcileReadsItsOwnStatefulSetUpdate(t *testing.T) {
 	assert.False(t, r.podCurrentAndReady(ctx, GatewayName("my-agent")), "the gateway is rolling to the new template")
 }
 
+// TEST_SCENARIO: the StatefulSet and its pods come from two caches, so the pod can be the newer of the two: a pod the StatefulSet controller just created on a new revision, not ready yet, looks stuck on a superseded revision against a cached StatefulSet that has not seen the new one. It is deleted only when a live read still finds it stuck.
 func TestAPodNewerThanTheCachedStatefulSetIsNotForceRolled(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()

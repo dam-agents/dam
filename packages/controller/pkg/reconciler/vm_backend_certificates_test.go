@@ -14,6 +14,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// TEST_SCENARIO: the controller trusts a runner by the CA that issued its certificate, so the certificate has to name the Service the controller dials, come from the runners' own CA issuer and never the gateways' MITM one — whose leaves name hosts users choose — and label its Secret so the sweep finds it. A TLS Secret with no CA in it must be refused, because an empty trust pool silently falls back to the system roots.
 func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
 	r, _ := setupReconciler(t, vmAgentCR())
 	r.config.EnvoyMitmCAIssuer = "platform-mitm-ca-issuer"
@@ -40,6 +41,7 @@ func TestTheRunnerCertificateNamesTheServiceTheControllerDials(t *testing.T) {
 	require.Error(t, err, "and refuses to dial with something that is not a certificate")
 }
 
+// TEST_SCENARIO: a new owner's runner cannot serve until cert-manager issues its certificate, and its pod cannot mount the Secret before then. The reconcile requeues, as it does for a gateway's leaf, rather than marking the Agent failed, and no machine is asked for.
 func TestVMBackendWaitsForTheRunnerCertificate(t *testing.T) {
 	agent := vmAgentCR()
 	node, srv := newFakeNode(t)

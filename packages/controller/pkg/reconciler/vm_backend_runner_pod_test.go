@@ -18,6 +18,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// TEST_SCENARIO: the runner resolves nothing — the node's image cache service fetches its images and it reaches its gateways by ClusterIP — and its egress policy admits no resolver. Its pod keeps the node's resolver rather than the cluster's, so a runner a controller from before the node cache was the only cache rendered is not rolled for it.
 func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -29,6 +30,7 @@ func TestTheRunnerResolvesThroughTheNodeNotTheCluster(t *testing.T) {
 	assert.Equal(t, corev1.DNSDefault, dep.Spec.Template.Spec.DNSPolicy)
 }
 
+// TEST_SCENARIO: a runner that is stopped waits up to thirty seconds for machine actions that cannot be cut short, beside a short drain of its API, and then up to forty seconds while it stops its running machines. With kubelet's default thirty-second grace it would be killed with its guests' disks unquiesced, so the pod is given room for all of it.
 func TestTheRunnerPodHasRoomToCloseBeforeItIsKilled(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -42,6 +44,7 @@ func TestTheRunnerPodHasRoomToCloseBeforeItIsKilled(t *testing.T) {
 	assert.Greater(t, *grace, int64(30+40+5))
 }
 
+// TEST_SCENARIO: smolvm enforces a machine's egress allowlist inside the VMM, the process an escaped guest would own, and the runner runs as uid 0. So the runner pod runs in a user namespace: uid 0 there is an unprivileged uid on the node, and its capabilities stop at the namespace.
 func TestTheRunnerPodRunsInAUserNamespace(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -54,6 +57,7 @@ func TestTheRunnerPodRunsInAUserNamespace(t *testing.T) {
 	assert.False(t, *dep.Spec.Template.Spec.HostUsers)
 }
 
+// TEST_SCENARIO: an owner's runner cannot be placed — no node advertises the KVM devices, or a namespace-wide node selector excludes the ones that do. The Deployment only ever says zero ready replicas, so without the pod's own account the agent reads "still starting" forever and nobody learns why.
 func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
@@ -98,6 +102,7 @@ func TestAnUnschedulableRunnerSaysWhyOnTheAgent(t *testing.T) {
 		"the scheduler's own account reaches the agent, not just the generic starting message")
 }
 
+// TEST_SCENARIO: the node an owner's runner pod sits on is gone or has been not ready past the kubelet's eviction toleration. The pod stays terminating there, its claim stays attached to it, and the replacement pod never gets the volume — so every agent of that owner is down until an operator brings the node back or fences it out of service. That is not a runner still starting: the agent says so under a reason of its own.
 func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
@@ -145,6 +150,7 @@ func TestARunnerOnALostNodeSaysSoOnTheAgent(t *testing.T) {
 	assert.NotContains(t, msg, "node-a", "the owner reads the message, and a node name is the operator's to act on")
 }
 
+// TEST_SCENARIO: a node's Ready goes off for a kubelet stall, a network blip or a runtime restart, and the pod stays on it; the node comes back with the pod inside the kubelet's eviction toleration. That heals, so it is not a loss: the agent keeps reading "still starting", its wakes wait out the budget instead of failing at once, and no Warning Event is written. A node not ready past the grace has begun evicting its pods, and a pod the cluster has begun deleting on a node it cannot reach is the eviction that never finishes, so both read as lost — while a pod terminating on a node that reports ready is a pod on its way out normally.
 func TestANodeThatOnlyBlipsIsNotLost(t *testing.T) {
 	for name, tc := range map[string]struct {
 		status      corev1.ConditionStatus
@@ -184,6 +190,7 @@ func TestANodeThatOnlyBlipsIsNotLost(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: a lost node leaves a finished pod behind as well as a terminating one. A pod that has finished is not the owner's runner, so it must not speak over the replacement: the claim the replacement cannot attach, or the schedule it cannot get, is what the agent shows. A pod still terminating on that node does speak, because it is what keeps the claim.
 func TestAFinishedRunnerPodDoesNotSpeakForItsOwner(t *testing.T) {
 	unschedulable := corev1.PodCondition{Type: corev1.PodScheduled, Status: corev1.ConditionFalse,
 		Message: "0/15 nodes are available: 3 node(s) had volume node affinity conflict"}
@@ -236,6 +243,7 @@ func TestAFinishedRunnerPodDoesNotSpeakForItsOwner(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: a new owner's runner pod is created together with its state claim, so the scheduler first reports the claim unbound while the volume is still provisioned. That is a runner still starting, not a failed start the user's first agent shows as an error.
 func TestARunnerWaitingForItsNewVolumeIsStillStarting(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Labels = map[string]string{envoyOwnerLabel: testOwner}
@@ -275,6 +283,7 @@ func TestARunnerWaitingForItsNewVolumeIsStillStarting(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: a runner hosts untrusted guests, so its container holds only the capabilities it adds and none of the runtime's defaults, cannot raise them through exec, and runs under the runtime's default seccomp profile. AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.
 func TestTheRunnerContainerIsConfinedToWhatItAdds(t *testing.T) {
 	sc := runnerSecurityContext()
 	require.NotNil(t, sc.Capabilities)
@@ -290,6 +299,7 @@ func TestTheRunnerContainerIsConfinedToWhatItAdds(t *testing.T) {
 	assert.Equal(t, int64(0), *sc.RunAsUser)
 }
 
+// TEST_SCENARIO: the runner's token is the machine API's credential, so it is 256 bits from the operating system's generator, and two runners never share one.
 func TestARunnerTokenCarriesTwoHundredFiftySixBits(t *testing.T) {
 	a, b := newRunnerToken(), newRunnerToken()
 	assert.Len(t, a, 64)
@@ -298,6 +308,7 @@ func TestARunnerTokenCarriesTwoHundredFiftySixBits(t *testing.T) {
 	assert.NoError(t, err)
 }
 
+// TEST_SCENARIO: service links would put one set of env vars per sibling agent Service into the runner, and the runner reads none of them.
 func TestTheRunnerTakesNoServiceLinks(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -311,6 +322,7 @@ func TestTheRunnerTakesNoServiceLinks(t *testing.T) {
 		"service links would inject one env var set per sibling agent Service; the runner reads none of them")
 }
 
+// TEST_SCENARIO: smolvm checks a VMM against the syscalls a running microVM needs only when its embedder asks, and the runner is the embedder. It asks for enforce, so a VMM that makes a call outside the allowlist is killed.
 func TestTheRunnerEnforcesItsVMMsSyscalls(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -326,6 +338,7 @@ func TestTheRunnerEnforcesItsVMMsSyscalls(t *testing.T) {
 	assert.Equal(t, "enforce", env["SMOLVM_SECCOMP"], "unset checks nothing, and audit lets a call outside the allowlist through")
 }
 
+// TEST_SCENARIO: an install switches its VMMs' syscall filter to audit, or back, through its values, without a release.
 func TestTheRunnerChecksItsVMMsSyscallsInTheInstallsMode(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -342,6 +355,7 @@ func TestTheRunnerChecksItsVMMsSyscallsInTheInstallsMode(t *testing.T) {
 	assert.Equal(t, "audit", env["SMOLVM_SECCOMP"])
 }
 
+// TEST_SCENARIO: smolvm confines a VMM's filesystem only when its embedder asks, and the runner is the embedder. Unconfined, a guest writes through its root virtiofs export into the agent rootfs every sibling machine boots from.
 func TestTheRunnerConfinesItsVMMsFilesystem(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -357,6 +371,7 @@ func TestTheRunnerConfinesItsVMMsFilesystem(t *testing.T) {
 	assert.Equal(t, "enforce", env["SMOLVM_LANDLOCK"], "unset leaves every VMM free to write the shared agent rootfs")
 }
 
+// TEST_SCENARIO: smolvm would give each machine's VMM an unprivileged uid of its own, and this runner refuses it, because a VMM that took one reaches what the runner shares with it through an idmapped mount of a single entry — on-disk uid 0 — so every file the image gives another uid arrives as nobody and the workload exits at once; machines whose rootfs came from a per-machine archive failed to finish starting under the drop as well. The refusal is stated in the environment and backed by withholding the capabilities a uid change needs, since a runner that could still make one would break every machine booting from that tree.
 func TestNoVMMTakesAUidItCouldNotReadTheImageWith(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -381,6 +396,7 @@ func TestNoVMMTakesAUidItCouldNotReadTheImageWith(t *testing.T) {
 		"and the drop is refused in as many words, because a VMM that took one could not read the shared image")
 }
 
+// TEST_SCENARIO: the node's image cache service unpacks every image, so no runner holds the CHOWN, FOWNER and FSETID an unpack takes. Every runner holds DAC_OVERRIDE for its VMMs, which read the image tree with the runner's own credentials to serve it to the guest, including files the image keeps from root, and SYS_RESOURCE so the two processes of the pod can lower their own OOM score where the node lets them: without it a runner holding a few pages of a booting guest's memory ties with a VMM at the maximum, and the kernel's tie-break is the whole protection.
 func TestNoRunnerCanChownTheImagesItReads(t *testing.T) {
 	capsFor := func(configure func(*config.VMRunnerSpec)) []corev1.Capability {
 		r, _, _ := setupVMReconciler(t, vmAgentCR())
@@ -397,6 +413,7 @@ func TestNoRunnerCanChownTheImagesItReads(t *testing.T) {
 	assert.ElementsMatch(t, []corev1.Capability{"DAC_OVERRIDE", "SYS_RESOURCE"}, capsFor(func(*config.VMRunnerSpec) {}))
 }
 
+// TEST_SCENARIO: smolvm accounts for its own boot in phases, but only when asked — and the runner is the only thing in a position to ask, since it is what spawns it. Without this the phase timings of a stall nobody can reproduce are never recorded at all. The format is asked for too: these lines land in the platform's own logs, where a line of terminal colour codes is a line nobody greps.
 func TestTheRunnerAsksSmolvmToAccountForItself(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)

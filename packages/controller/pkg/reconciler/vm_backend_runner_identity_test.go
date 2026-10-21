@@ -19,6 +19,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 )
 
+// TEST_SCENARIO: an install switched from runner pods to the host runner still holds the runner Deployment it made for an owner before, whose pod can never schedule without a KVM device. The host-mode sweep removes that Deployment and keeps its claim, which holds the disks of the machines it ran, and leaves the host runner's own Secret, whose name a per-owner lookup would resolve to in host mode, alone.
 func TestTheHostRunnerSweepDropsRunnerPodsLeftFromBefore(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -44,6 +45,7 @@ func TestTheHostRunnerSweepDropsRunnerPodsLeftFromBefore(t *testing.T) {
 	assert.NoError(t, err, "the host runner's own Secret is left alone")
 }
 
+// TEST_SCENARIO: two owners' vm agents: each owner's machines land on a runner of their own — a separate Deployment, disk and credentials — so one owner's guest cannot reach another's, and the runner's ingress policy admits only the platform.
 func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -91,6 +93,7 @@ func TestEachOwnerGetsTheirOwnRunner(t *testing.T) {
 	require.NoError(t, err, "and the other owner's runner is untouched")
 }
 
+// TEST_SCENARIO: an install without a VM runner cannot run vm agents; the Agent says so instead of silently running as a container.
 func TestVMBackendDisabledFailsReconcile(t *testing.T) {
 	agent := vmAgentCR()
 	r, _ := setupReconciler(t, agent)
@@ -99,6 +102,7 @@ func TestVMBackendDisabledFailsReconcile(t *testing.T) {
 	assert.Contains(t, err.Error(), "virtualization is disabled")
 }
 
+// TEST_SCENARIO: switching virtualization off and on deletes the runner ServiceAccount and renders a new one, which carries a new UID. A controller that resolved the owner once would keep stamping the dead UID, and every object it wrote would be collected the instant it appeared — a runner that never shows up and never explains why.
 func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -122,6 +126,7 @@ func TestRunnerOwnershipFollowsARecreatedServiceAccount(t *testing.T) {
 		"a stale UID here is collected by the garbage collector the moment a runner object is written")
 }
 
+// TEST_SCENARIO: Helm never sees a runner — the controller creates it — so nothing would remove one on uninstall, on rollback, or when virtualization is switched off. Every object it creates is owned by the ServiceAccount the chart does render, which sits in the same namespace because an owner reference may not cross one; a single object missing the reference strands a running VM. The claim is the exception: it holds every machine disk of the owner, so one deletion of the account must not collect it.
 func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -164,6 +169,7 @@ func TestRunnerObjectsAreOwnedByTheRunnerServiceAccount(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: the guest's MITM CA comes from the same leaf Secret the pod mounts; until cert-manager issues it there is nothing to boot with, so the reconcile requeues instead of creating a machine that cannot trust its gateway.
 func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	agent := vmAgentCR()
 	node, srv := newFakeNode(t)
@@ -177,6 +183,7 @@ func TestVMBackendWaitsForTheLeafSecret(t *testing.T) {
 	assert.Empty(t, node.specs)
 }
 
+// TEST_SCENARIO: the sweep needs every runner's token and CA, and runs every ten minutes over every owner. Both of a runner's Secrets carry the component label — the token by the controller, the TLS Secret by cert-manager from the Certificate's template — so one List serves them all and no Secret is read by name.
 func TestTheSweepReadsRunnerSecretsInOneList(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -205,6 +212,7 @@ func TestTheSweepReadsRunnerSecretsInOneList(t *testing.T) {
 	}
 }
 
+// TEST_SCENARIO: the policy confines the runner pod as well as admitting callers, which is the only kernel gate behind a guest's egress allowlist — smolvm enforces that allowlist inside the process an escaped guest would already own. The runner dials nothing but its owner's gateways, so that is all it may reach: no other address, and no resolver, since port 53 open anywhere is a two-way channel from an escaped guest to any host that answers there.
 func TestTheRunnerReachesOnlyItsOwnersGateways(t *testing.T) {
 	np := buildRunnerNetworkPolicy(testOwner, "platform", "platform", "test-agents", "default", testConfig.EnvoyPort)
 	assert.ElementsMatch(t, []networkingv1.PolicyType{networkingv1.PolicyTypeIngress, networkingv1.PolicyTypeEgress}, np.Spec.PolicyTypes)

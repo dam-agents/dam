@@ -19,6 +19,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// TEST_SCENARIO: a hard stop must reach the machine: the node is told the machine should not run, and the gateway pair scales down as for any agent.
 func TestVMBackendStopsTheMachineOnHardStop(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -32,6 +33,7 @@ func TestVMBackendStopsTheMachineOnHardStop(t *testing.T) {
 	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")))
 }
 
+// TEST_SCENARIO: deleting the Agent deletes the machine and its disk on the node — the only place a vm agent's workspace lives.
 func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -39,6 +41,7 @@ func TestVMBackendDeleteRemovesTheMachine(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, node.deleted)
 }
 
+// TEST_SCENARIO: the delete queue retries a cleanup for three quarters of an hour, so it can run long after the delete, and an Agent created again under that name owns the machine, the home and the objects by then. The UID the delete carried tells the two apart: the cleanup waits while the same Agent still holds the name, and removes nothing once another one does.
 func TestADeleteNeverRemovesWhatAnAgentCreatedSinceOwns(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -62,6 +65,7 @@ func TestADeleteNeverRemovesWhatAnAgentCreatedSinceOwns(t *testing.T) {
 	assert.Empty(t, node.deleted, "the machine of the Agent created since is left alone")
 }
 
+// TEST_SCENARIO: the deleted Agent's owner label names the runner its machine is on, so only that runner is asked. Another owner's runner is not called at all, and an owner with no runner gets no Secret minted for a runner that does not exist.
 func TestADeleteReachesOnlyTheOwnersRunner(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -77,6 +81,7 @@ func TestADeleteReachesOnlyTheOwnersRunner(t *testing.T) {
 	assert.True(t, k8serrors.IsNotFound(err), "a delete does not mint credentials for a runner that does not exist")
 }
 
+// TEST_SCENARIO: an Agent whose labels were never seen, the informer having lost its last state, still has a machine somewhere, so a delete without an owner is offered to every runner.
 func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	agent := vmAgentCR()
 	r, node, _ := setupVMReconciler(t, agent)
@@ -87,6 +92,7 @@ func TestADeleteWithNoOwnerReachesEveryRunner(t *testing.T) {
 	assert.Equal(t, []string{"my-agent"}, other.deleted)
 }
 
+// TEST_SCENARIO: the controller reconciles different owners' agents on different workers at once. A runner that hangs but keeps its listener holds its owner's reconcile for the runner client's timeout, and nothing the reconciler shares across owners may be held across that call, or another owner's wake waits on it anyway.
 func TestAHungRunnerHoldsUpNoOtherOwnersReconcile(t *testing.T) {
 	ctx := context.Background()
 	stuck := vmAgentCR()
@@ -145,6 +151,7 @@ func TestAHungRunnerHoldsUpNoOtherOwnersReconcile(t *testing.T) {
 	assert.Less(t, time.Since(start), 2*time.Second, "another owner's reconcile waited on the hung runner")
 }
 
+// TEST_SCENARIO: an install has virtualization on but the agent hibernating is container-backed; halting must not reach a runner, because that agent has no machine and an error here would strand its credentials.
 func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
 	agent := vmAgentCR()
 	agent.Spec.Backend = nil
@@ -154,6 +161,7 @@ func TestHaltingIsANoOpForAContainerAgent(t *testing.T) {
 	assert.Empty(t, node.specs, "a container agent must not reach its owner's runner")
 }
 
+// TEST_SCENARIO: hibernating a vm agent has to stop its machine, which is how the platform reclaims a runner's memory — scaling the gateway alone would leave the guest running while the owner's budget counts that memory as free.
 func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -168,6 +176,7 @@ func TestHibernatingAVMAgentStopsItsMachine(t *testing.T) {
 	assert.False(t, node.puts[len(node.puts)-1].Running, "the last thing the controller asked for is a stopped machine")
 }
 
+// TEST_SCENARIO: a vm agent whose idle timeout lapsed may still be busy, say a Browser Terminal running a long job. Only the idle checker asks agent-runtime, so the reconcile must leave the machine running until the checker has hibernated the pair. Once the gateway is at zero, a machine the checker could not stop is stopped by the next reconcile.
 func TestALapsedIdleTimeoutLeavesTheMachineToTheIdleChecker(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -184,6 +193,7 @@ func TestALapsedIdleTimeoutLeavesTheMachineToTheIdleChecker(t *testing.T) {
 	assert.False(t, node.spec("my-agent").Running)
 }
 
+// TEST_SCENARIO: the owner's Agents no longer look like vm agents, yet a machine is still running on their runner. Deleting the runner takes that owner's whole disk with it, so it is re-read first and kept while it still holds anything.
 func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -204,6 +214,7 @@ func TestOrphanSweepKeepsARunnerThatStillHoldsAMachine(t *testing.T) {
 	require.NoError(t, err, "the runner's disk survives a sweep that raced a machine")
 }
 
+// TEST_SCENARIO: a machine no Agent of this owner claims holds guest memory forever, so the sweep deletes it — and ownership is part of the match, because an Agent of the same name belonging to someone else says nothing about this runner's machine.
 func TestOrphanSweepDeletesAMachineNoAgentOfThisOwnerClaims(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()

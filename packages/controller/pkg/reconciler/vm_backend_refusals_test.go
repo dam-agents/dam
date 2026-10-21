@@ -19,6 +19,7 @@ import (
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
 )
 
+// TEST_SCENARIO: the runner refuses a machine for want of memory; the agent parks instead of spinning — the gateway scales to zero so the owner stops being charged for an agent that does not exist, and the status says in the owner's terms that their VM agents' memory is full and what frees it, not the runner's own accounting.
 func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -44,6 +45,7 @@ func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
 	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
 }
 
+// TEST_SCENARIO: a start the node has not yet granted the memory for is refused under MachineAwaitingAllocation, which is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in the same reconcile, so the Agent is retried at the machine watch's 3 s cadence rather than at the parked tick, no idle agent is hibernated for room the node is already being asked for, and the person reads that their agent is waiting for the node rather than that their memory is gone.
 func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *testing.T) {
 	ctx := context.Background()
 	for _, tc := range []struct {
@@ -105,6 +107,7 @@ func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *te
 	}
 }
 
+// TEST_SCENARIO: the node that keeps a runner at its old size is one no wait ends on: it has deferred the resize, so the room the pod was given is all the owner will get until their machines stop. The start frees that room from the owner's own idle agents, as a start the pool refused does, and the parked retry is the backstop under the machine watch's cadence. The room to free is what the node holds for the runner, not the pool: the pool has room, or the runner would have refused the start for it instead.
 func TestAStartWaitingOnADeferredResizeFreesWhatTheNodeDidGrant(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -156,6 +159,7 @@ func TestAStartWaitingOnADeferredResizeFreesWhatTheNodeDidGrant(t *testing.T) {
 	assert.Equal(t, vmReadinessPoll, requeued.last(), "still retried at the machine watch's cadence, with the parked tick under it")
 }
 
+// TEST_SCENARIO: two wakes that become AwaitingAllocation together are both counted by the resize request, and neither holds a byte: counting the other waiter as a holder asks the reclaim for room no idle agent can give, so neither start is ever admitted even though one machine's worth of room would admit it.
 func TestReclaimForAWaitingStartDoesNotCountTheOtherWaiter(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -203,6 +207,7 @@ func TestReclaimForAWaitingStartDoesNotCountTheOtherWaiter(t *testing.T) {
 	assert.False(t, hibernated["other-peer"], "the other waiter holds nothing, so it is not a machine this reclaim can free room with")
 }
 
+// TEST_SCENARIO: a runner outside the cluster refuses a machine for memory; its limit is a share of its host's memory the controller never learns, so the refusal names no figures rather than quote the chart's limit.
 func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -227,6 +232,7 @@ func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
 	assert.NotContains(t, cond.Message, "GiB", "the host runner's share is unknown here")
 }
 
+// TEST_SCENARIO: a runner whose claim is full refuses a machine under MachineStorageFull, which is not the memory refusal. The Agent is not parked, since parking halts a machine, and the runner's explanation reaches the AgentPodReady condition the api-server classifies a wake by.
 func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -251,6 +257,7 @@ func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
 	assert.Contains(t, cond.Message, "93% full")
 }
 
+// TEST_SCENARIO: a runner that cannot reach the node's image cache refuses every image its machines do not already hold, and the runner sees only its own mount of the cache directory — two runners on one node directory and on a stale copy of it name the same socket. So the Agent's own failure names the node directory this runner mounts, which is the fact an operator compares with the one the cache service writes: a start that fails with no pending runner change writes no roll Event to carry it.
 func TestACacheRefusalNamesTheNodeDirectoryTheRunnerMounts(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -275,6 +282,7 @@ func TestACacheRefusalNamesTheNodeDirectoryTheRunnerMounts(t *testing.T) {
 	assert.Contains(t, cond.Message, r.config.VM.Runner.ImageCacheHostPath, "the failure does not name the node directory the runner mounts")
 }
 
+// TEST_SCENARIO: a full home inside a guest is the same failure a container agent reports from its termination message, so the runner's reason for it is published as HomeVolumeFull, and the api-server's and UI's existing copy for a full home applies to a vm agent too.
 func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -297,6 +305,7 @@ func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
 	assert.Contains(t, cond.Message, "disk is full")
 }
 
+// TEST_SCENARIO: an agent that was down before the runner's kill carried a condition flip from long before it, and a publish that changes only the reason moves no transition time — so a kill timed from that flip would be outside its episode on the first read, and the agent would name the kill on one reconcile and its own reason on the next, all the way through the episode. The reason carries the time it was first published instead, so the reconcile after it still reads the kill.
 func TestTheKillTheRunnerReportsIsNotOvertakenByTheAgentsOwnReason(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
@@ -350,6 +359,7 @@ func TestTheKillTheRunnerReportsIsNotOvertakenByTheAgentsOwnReason(t *testing.T)
 	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, read().Reason, "the reconcile after the kill's publish names the kill again")
 }
 
+// TEST_SCENARIO: a runner roll, a controller restart or a schedule retry brings an owner's agents back with no fresh activity bump, and the runner refuses the ones that do not fit while the others warm up. Nobody presses Start again for those, so the refusal is not remembered against the wake: the retry tick reconciles the agent under the same activity, and it starts once room has freed.
 func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
 	ctx := context.Background()
 	agent := vmAgentCR()
@@ -369,6 +379,7 @@ func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
 	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
 }
 
+// TEST_SCENARIO: a runner with no ready replica reports nothing about its machines, so the reconcile gets an empty machine status. The runner keeps its restart counter in memory and reports it again once it is back. Publishing the empty status as zero restarts would make that return read as a rise, and the UI would announce a restart that never happened.
 func TestAnUnreachableRunnerKeepsThePublishedRestarts(t *testing.T) {
 	agent := vmAgentCR()
 	r, _, _ := setupVMReconciler(t, agent)
