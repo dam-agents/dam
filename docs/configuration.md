@@ -1,7 +1,7 @@
 # Configuration
 
 How to configure [Platform](../README.md) after installation: secrets for the credential gateway, Slack integration, and the development-mode toggle.
-For _what_ Platform is and how it's built, see the [architecture docs](architecture.md).
+For *what* Platform is and how it's built, see the [architecture docs](architecture.md).
 
 ## Secrets
 
@@ -38,7 +38,7 @@ Agents created before named connections became the default keep their setting.
 
 It is set per agent:
 
-- **Agent settings:** _Inject only into addressed requests_ under the agent's setup.
+- **Agent settings:** *Inject only into addressed requests* under the agent's setup.
   Changing it there restarts the agent's gateway.
 - **Starter kit:** `requireConnectionAddress: true` or `false` in `kit.yaml`; a kit that names neither gets the default, on.
 
@@ -170,7 +170,7 @@ Until the app is moved, the working status still shows through the older assista
 
 ### Connecting a workspace
 
-1. Open **Settings → Slack workspaces** and press _Connect a workspace_.
+1. Open **Settings → Slack workspaces** and press *Connect a workspace*.
    The tab appears only for holders of the installer role.
    It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.
 2. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is — it is an invitation, good for 24 hours and spendable once.

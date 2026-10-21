@@ -35,7 +35,7 @@ features:
   slash_commands:
     - command: /dam
       description: Connect an agent to this conversation, whisper to one privately, or delete one of its posts
-      usage_hint: 'bind | unbind | whisper [agent] ["message"] | delete <message link>'
+      usage_hint: "bind | unbind | whisper [agent] [\"message\"] | delete <message link>"
       should_escape: false
 
 oauth_config:
