@@ -1,5 +1,6 @@
 use std::io::Read;
 use std::os::unix::process::CommandExt;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Condvar, Mutex};
 use std::time::{Duration, Instant};
 
@@ -763,17 +764,17 @@ pub fn stopped() -> ! {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: when the supervisor started openrc's shutdown, which is a part of the stop in its own right: the shutdown is the supervisor's child and runs each service's stop in turn. A stop reads this to give the shutdown its own room rather than killing it mid-run, which would end the services whose stop had not come round yet. None until the supervisor reaches the shutdown, since it comes after the entrypoint has been given its grace.
-static SHUTDOWN_STARTED: Mutex<Option<Instant>> = Mutex::new(None);
+// UNIT_BOUNDARY_DESCRIPTION: whether the supervisor has started openrc's shutdown, which is part of the stop in its own right: the shutdown is its child and runs each service's stop in turn. A stop reads this to give the services room rather than killing the shutdown mid-run, which would end the stops that had not come round yet. False until the supervisor reaches the shutdown, since that comes after the entrypoint has had its grace.
+static SHUTDOWN_STARTED: AtomicBool = AtomicBool::new(false);
 
-// UNIT_BOUNDARY_DESCRIPTION: the supervisor's own mark that openrc's shutdown is running, so a stop waits out the services' stops rather than killing the shutdown that runs them.
+// UNIT_BOUNDARY_DESCRIPTION: the supervisor's mark that openrc's shutdown is running, so a stop waits out the services' stops rather than killing the shutdown that runs them.
 pub fn shutdown_started() {
-    *SHUTDOWN_STARTED.lock().unwrap_or_else(|e| e.into_inner()) = Some(Instant::now());
+    SHUTDOWN_STARTED.store(true, Ordering::SeqCst);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the grace a stop gives the workload when the host names none, the same as smolvm's guest agent gave it.
 const DEFAULT_STOP_GRACE: Duration = Duration::from_secs(10);
-// UNIT_BOUNDARY_DESCRIPTION: what openrc's shutdown gets on top of the workload's grace, once the supervisor has reached it, to stop the image's services. The shutdown runs each service's stop in turn, so a kill inside it ends the services whose stops had not come round yet — and a service's stop may take as long again as the workload's own, since a container runtime's stop of its containers is ten seconds by default, which is what a hibernating vm agent saw of a slow docker stop ahead of its own service. The workload's grace, this and AFTER_KILL together come to 25 s, inside STOP_ON_CLOSE's 40 s, the window the runner gives a stop when its pod goes away.
+// UNIT_BOUNDARY_DESCRIPTION: what a stop that has reached openrc's shutdown adds to its window, to let the image's services be stopped. The shutdown runs each service's stop in turn, so a kill inside it ends the services whose stops had not come round yet, and a service's stop may take as long as the workload's own — a container runtime stops its containers in ten seconds by default, which is what a hibernating vm agent saw of a slow docker stop ahead of its own service. The workload's grace, this and AFTER_KILL together come to 25 s, inside STOP_ON_CLOSE's 40 s, the window the runner gives a stop when its pod goes away.
 const SHUTDOWN_GRACE: Duration = Duration::from_secs(10);
 // UNIT_BOUNDARY_DESCRIPTION: how often a stop tells the host it is still at work. The host resets its idle deadline on every progress frame, so a workload that takes its whole grace does not read as a guest that hung.
 const PROGRESS_EVERY: Duration = Duration::from_secs(1);
@@ -827,7 +828,7 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits for the supervisor to finish the stop, telling the host it is still at work, and calls `kill` once the window runs out. The window is `grace` for the workload, or `shutdown_grace` from the moment the supervisor started openrc's shutdown, whichever ends last: that shutdown is the supervisor's child and runs each service's stop in turn, and the kill would end it mid-run, leaving a service whose stop had not come round yet without one. The shutdown is looked for on every turn of the loop, because the supervisor reaches it well after the stop asked for it. Every window stays inside the one the runner gives a stop, so a shutdown that hangs is still cut short.
+// UNIT_BOUNDARY_DESCRIPTION: waits for the supervisor to finish the stop, telling the host it is still at work, and calls `kill` once the window runs out. The window is `grace`, and `shutdown_grace` more once the supervisor has started openrc's shutdown: that shutdown is its own child and runs each service's stop in turn, so the kill would end it mid-run and leave a service whose stop had not come round yet without one. The flag is read on every turn of the loop, because the supervisor reaches the shutdown well after the stop asked for it, and the added window is measured from the same start so the whole stop stays inside the one the runner gives it: a shutdown that hangs is still cut short, `after_kill` later.
 fn wait_out_stop(
     conn: &mut File,
     grace: Duration,
@@ -840,13 +841,9 @@ fn wait_out_stop(
     let (lock, cvar) = &STOPPED;
     let mut stopped = lock.lock().unwrap_or_else(|e| e.into_inner());
     while !*stopped {
-        let shutdown_running = SHUTDOWN_STARTED
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .is_some();
         let deadline = started
             + grace
-            + if shutdown_running {
+            + if SHUTDOWN_STARTED.load(Ordering::SeqCst) {
                 shutdown_grace
             } else {
                 Duration::ZERO
@@ -1003,7 +1000,7 @@ mod tests {
         let run = |shutdown_grace: Duration, reaching_shutdown: bool| {
             let (lock, _) = &STOPPED;
             *lock.lock().unwrap_or_else(|e| e.into_inner()) = false;
-            *SHUTDOWN_STARTED.lock().unwrap_or_else(|e| e.into_inner()) = None;
+            SHUTDOWN_STARTED.store(false, Ordering::SeqCst);
             let _ = fs::remove_file(&marker);
             let mut shutdown = std::process::Command::new("/bin/sh")
                 .arg("-c")
@@ -1023,18 +1020,17 @@ mod tests {
                 *lock.lock().unwrap_or_else(|e| e.into_inner()) = true;
                 cvar.notify_all();
             });
-            let killed = Mutex::new(false);
+            let killed = AtomicBool::new(false);
             // UNIT_BOUNDARY_DESCRIPTION: the stop writes a progress frame on every turn, and a connection it cannot write to ends the wait, so the frames go to a file of this test's.
             let mut conn = fs::File::create(dir.join("progress")).unwrap();
             wait_out_stop(&mut conn, grace, shutdown_grace, after_kill, || {
-                *killed.lock().unwrap_or_else(|e| e.into_inner()) = true;
+                killed.store(true, Ordering::SeqCst);
                 // SAFETY: kill(2) reads no memory; the pid leads the group this test made, which holds nothing but the shutdown.
                 unsafe { libc::kill(-pid, libc::SIGKILL) };
             });
             supervisor.join().unwrap();
             let _ = shutdown.wait();
-            let killed = *killed.lock().unwrap_or_else(|e| e.into_inner());
-            (killed, marker.exists())
+            (killed.load(Ordering::SeqCst), marker.exists())
         };
         let (killed, stopped) = run(Duration::from_millis(1500), true);
         assert!(
