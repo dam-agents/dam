@@ -690,6 +690,13 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 		r.watchMachine(client, name, st.Version)
 		return fmt.Errorf("%w: it is %s", errMachineStopping, st.State)
 	}
+	// UNIT_BOUNDARY_DESCRIPTION: the stop is stamped here, where the runner answers it, and not left to the next check: nothing reconciles the agent in between, so a kill of the runner landing in that window would name an agent whose machine had already stopped.
+	if agent.GetAnnotations()[annMachineDown] == "" {
+		down := time.Now().UTC().Format(time.RFC3339Nano)
+		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, name, map[string]*string{annMachineDown: &down}); err != nil {
+			slog.Warn("stamping the end of a machine's episode", "agent", name, "error", err)
+		}
+	}
 	return nil
 }
 
@@ -761,24 +768,14 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 			msg += " (this runner mounts the node's " + src + " as its image cache)"
 		}
 	}
-	kill, record, killed := r.runnerOOMAttribution(ctx, agent, time.Now())
-	if st.Ready || runnerCausedThisMachine(st.Reason) {
-		killed = false
-	}
-	if err := r.recordKill(ctx, agent, kill, record, killed); err != nil {
-		return err
-	}
-	if st.Ready {
-		if carried := carriedKill(agent); !carried.IsZero() && !killIsOver(agent, carried, time.Now()) {
-			if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, map[string]*string{
-				annRunnerOOMDone: new(time.Now().UTC().Format(time.RFC3339Nano)),
-			}); err != nil {
-				return fmt.Errorf("recording the end of the kill that took this machine down: %w", err)
-			}
-		}
+	kill, record, named := r.runnerOOMAttribution(ctx, agent, time.Now())
+	// UNIT_BOUNDARY_DESCRIPTION: a machine that answered ready, or that took a reason of its own, has done with the kill: the reason it wears now is its own account of itself, and the kill does not come back over it. What the controller says about the runner itself — its node lost, its pod unschedulable — is no account of this machine, so it ends nothing.
+	over := st.Ready || (runnerReached && runnerCausedThisMachine(st.Reason))
+	if over {
+		named = false
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the kill is published over the reason the restarted runner gives for a machine it has no account of its own for — a refusal for room, a wait for the node, a boot that has not answered — because every machine of the owner lived in the killed pod and the kill took all of them down together. A reason the runner gives for this machine alone outranks it, and so does a guest that has answered.
-	if killed {
+	if named {
 		reason, msg = apiv1.ReasonRunnerOutOfMemory, runnerOOMNotice
 	}
 	restartReason := ""
@@ -793,23 +790,27 @@ func (r *AgentReconciler) publishVMReadiness(ctx context.Context, agent *apiv1.A
 	if runnerReached {
 		r.vmStartClocks.Store(agent.Name, clock)
 	}
-	return r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
+	if err := r.publishReadinessOf(ctx, agent, st.Ready, reason, msg, runnerReached, st.Restarts, restartReason,
 		func(s *apiv1.AgentStatus) {
 			nestingCondition(s, agent, st, r.config.AgentTemplateDefaults, r.config.VM.Runner.NestedVirtualization)
 			r.runnerCapacityCondition(s, agent)
 			if runnerReached {
 				setStartFailure(s, failure, agent.Generation)
 			}
-			if killed {
+			if named {
 				setConditionTime(s, apiv1.ConditionAgentPodReady, kill.At)
 			}
-		})
+		}); err != nil {
+		return err
+	}
+	// UNIT_BOUNDARY_DESCRIPTION: what this pass decided about the kill is recorded after the status that carries it, so a status write that failed decides nothing and the retry still names the kill.
+	return r.recordKill(ctx, agent, kill, record, named, over)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the sentence the owner reads when the kill is what took this agent's machine down. It is one string so that every path that takes a vm agent down tells the same story: the notice, the Slack alert and the history all read the reason on AgentPodReady.
 const runnerOOMNotice = "Your VM agents ran out of memory together, so the ones that were running restarted. Disable agents you aren't using to free memory."
 
-// UNIT_BOUNDARY_DESCRIPTION: the marks an agent carries about the kills of its owner's runner and the machine it ran on, all persisted so that a kill is decided once: the kill it was attributed, which is the record that it was told; when its machine last began holding memory; and when it was last seen stopped. Absent is unknown, which is why a kill only goes to an agent whose stamps say its machine was on the killed runner.
+// UNIT_BOUNDARY_DESCRIPTION: the marks an agent carries about the kills of its owner's runner and the machine it ran on, all persisted so that a kill is decided once: the kill it was attributed, which is the record that it was decided; the kill that is over for it, so a later pass never names it again; when its machine last began holding memory; and when it was last seen stopped. An absent stop is a machine that may still be holding memory, and an absent start one whose start went before the platform wrote these marks, so a kill goes to an agent whose stamps do not put its machine away from the runner at the kill.
 const (
 	annRunnerOOMKill = "agent-platform.ai/runner-oom-kill"
 	annRunnerOOMDone = "agent-platform.ai/runner-oom-over"
@@ -831,36 +832,41 @@ func carriedKill(agent *apiv1.Agent) runnerKill {
 	return runnerKill{ID: id, At: finished}
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether this agent's machine was holding memory on the killed runner at the kill, from the two stamps the controller writes as it watches the machine. A machine started after the kill is no victim, and neither is one seen stopped before it; one booting, running or stopping at the kill is, and so is one a reclaim put to sleep after it, since its start predates the kill and its end does not.
+// UNIT_BOUNDARY_DESCRIPTION: whether this agent's machine was holding memory on the killed runner at the kill, from the two stamps the controller writes as it watches the machine. A machine started after the kill is no victim, and neither is one seen stopped before it; one booting, running or stopping at the kill is, and so is one a reclaim put to sleep after it, since its start went before the kill and its end did not. A machine the stamps say nothing about — its start lies before the platform wrote them at all — counts as one that was there unless the agent itself was created after the kill or its machine was seen stopped before it, since the record is incomplete rather than the machine absent.
 func machineOccupiedAt(agent *apiv1.Agent, at time.Time) bool {
-	// UNIT_BOUNDARY_DESCRIPTION: the kill's finished time is the kernel's, at the second, so the stamps are compared at that second: a machine whose start falls in the kill's own second was on the runner, and one stopped in it counts as stopped after, since a victim lost is worse than a notice naming an agent asleep a second early.
+	// UNIT_BOUNDARY_DESCRIPTION: the kill's time is the kernel's, at the second, and the stamps are the controller's, and a stamp is written only while a runner answers: inside the kill's own second the only runner that answers is the one the kill took down, so a stamp in that second reads as an event from before the kill. A start there is a machine the kill found, and a stop there one that had already stopped, and only a later second can put a machine away from the kill. An agent's creation time is no runner's answer, so one created in that second had no machine on the runner: had it booted before the kill, the boot would have stamped it.
 	at = at.Truncate(time.Second)
-	up, err := time.Parse(time.RFC3339Nano, agent.Annotations[annMachineUp])
-	if err != nil || up.Truncate(time.Second).After(at) {
+	if up, err := time.Parse(time.RFC3339Nano, agent.Annotations[annMachineUp]); err == nil {
+		if up.Truncate(time.Second).After(at) {
+			return false
+		}
+	} else if !agent.CreationTimestamp.IsZero() && !agent.CreationTimestamp.Time.Truncate(time.Second).Before(at) {
 		return false
 	}
 	down, err := time.Parse(time.RFC3339Nano, agent.Annotations[annMachineDown])
-	return err != nil || !down.Truncate(time.Second).Before(at)
+	return err != nil || down.Truncate(time.Second).After(at)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the kill an agent carries is over for it: it answered ready after the kill and the end was stamped, or the ten minutes the kill explains have passed. Both are durable, so the reason never comes back to that agent after it recovers, however long the runner keeps the termination in its history and whatever its machine does next.
+// UNIT_BOUNDARY_DESCRIPTION: whether the kill is over for this agent: its machine answered ready after it, which is the kill whose name the answer stamped, or the ten minutes the kill explains have passed. Both are durable, so the reason never comes back to that agent after it recovers, however long the runner keeps the termination in its history and whatever its machine does next. The answer names the kill rather than the time it was given, so a controller whose clock sits a few seconds from the node's reads the same recovery the node does.
 func killIsOver(agent *apiv1.Agent, kill runnerKill, now time.Time) bool {
 	if now.Sub(kill.At) > runnerOOMEpisode {
 		return true
 	}
-	over, err := time.Parse(time.RFC3339Nano, agent.Annotations[annRunnerOOMDone])
-	return err == nil && !over.Before(kill.At)
+	return agent.Annotations[annRunnerOOMDone] == kill.ID
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what this agent reads about the owner's latest kill: the kill it carries, whether that kill is a new attribution to record, and whether the kill is what the agent should read as down for. A kill the agent already carries is never decided again, which holds one kill to one notice however often it reconciles; a new kill goes only to a machine that was holding memory on the killed runner at its finished time; and the reason is published while the agent wears it, which ends when the agent answers ready or takes a reason of its own, or when the ten minutes the kill explains are over.
+// UNIT_BOUNDARY_DESCRIPTION: what this agent reads about the owner's latest kill: the kill it carries, whether the newest kill is one to record, and whether that kill is what the agent should read as down for. A kill the agent already carries is never decided again, which holds one kill to one notice however often it reconciles; a new kill is recorded whatever comes of it, so a kill the agent was not on, one it had already recovered from and one past its episode are decided where they are first read instead of surfacing later as new; and it is published only to a machine that was holding memory on the killed runner at its finished time and only while the ten minutes it explains are running. The runner's record of its kills moves forward, so a kill older than the one an agent carries never replaces it.
 func (r *AgentReconciler) runnerOOMAttribution(ctx context.Context, agent *apiv1.Agent, now time.Time) (kill runnerKill, record, publish bool) {
 	if !agent.Spec.IsVM() {
 		return runnerKill{}, false, false
 	}
 	carried := carriedKill(agent)
 	latest := r.runnerOOMKill(ctx, agent.Labels[envoyOwnerLabel])
-	if !latest.IsZero() && carried.ID != latest.ID && machineOccupiedAt(agent, latest.At) {
-		return latest, true, true
+	if !latest.IsZero() && carried.ID != latest.ID && (carried.IsZero() || latest.At.After(carried.At)) {
+		// UNIT_BOUNDARY_DESCRIPTION: a kill this machine was not on is decided where it is read only once the kill the agent wears is over, so a second kill of the runner that took nothing from a machine asleep since the first does not silence the first one's notice. Waiting loses nothing: a start and a stop only move forward, so a machine the stamps put away from the runner at a kill is not on it at that kill when read later either.
+		if named := machineOccupiedAt(agent, latest.At) && !killIsOver(agent, latest, now); named || killIsOver(agent, carried, now) {
+			return latest, true, named
+		}
 	}
 	if carried.IsZero() || killIsOver(agent, carried, now) {
 		return carried, false, false
@@ -880,19 +886,24 @@ func (r *AgentReconciler) publishKill(ctx context.Context, agent *apiv1.Agent, o
 	}); err != nil {
 		return publish, fmt.Errorf("publishing the kill that took this machine down: %w", err)
 	}
-	if err := r.recordKill(ctx, agent, kill, record, publish); err != nil {
+	if err := r.recordKill(ctx, agent, kill, record, publish, false); err != nil {
 		return publish, err
 	}
 	return publish, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: writes the record of an attribution after the status that carries it, and asks to be looked at when the kill's episode ends. The record goes second so a status write that fails leaves nothing behind and the retry republishes the same reason and time, which is no change and no second notice; the requeue is what ends the reason on a machine nothing else reconciles, since an asleep machine has no machine watch to move it. Scheduling is not a status write, so a repeat reconcile still writes nothing.
-func (r *AgentReconciler) recordKill(ctx context.Context, agent *apiv1.Agent, kill runnerKill, record, publish bool) error {
+// UNIT_BOUNDARY_DESCRIPTION: writes what this pass decided about the kill, after the status that carries it, and asks to be looked at when the kill's episode ends. Two marks go in one write: the kill the agent was attributed, so it is decided once, and the kill that is over for it — one it was not on, one whose episode had passed before it was read, or one its machine has answered ready or died of its own reason since — so no later pass reads that kill as one to name. Both go second so a status write that fails leaves nothing behind: the retry publishes the same reason and time, which is no change and no second notice, and it still knows what the agent recovered from. The requeue is what ends the reason on a machine nothing else reconciles, since an asleep machine has no machine watch to move it. Scheduling is not a status write, so a repeat reconcile still writes nothing.
+func (r *AgentReconciler) recordKill(ctx context.Context, agent *apiv1.Agent, kill runnerKill, record, publish, over bool) error {
+	patch := map[string]*string{}
 	if record {
-		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, map[string]*string{
-			annRunnerOOMKill: new(kill.ID),
-		}); err != nil {
-			return fmt.Errorf("recording the kill that took this machine down: %w", err)
+		patch[annRunnerOOMKill] = new(kill.ID)
+	}
+	if !kill.IsZero() && (over || (record && !publish)) && agent.Annotations[annRunnerOOMDone] != kill.ID {
+		patch[annRunnerOOMDone] = new(kill.ID)
+	}
+	if len(patch) > 0 {
+		if err := patchAgentAnnotations(ctx, r.dynamic, r.config.Namespace, agent.Name, patch); err != nil {
+			return fmt.Errorf("recording what this pass decided about the kill that took this machine down: %w", err)
 		}
 	}
 	if publish && r.requeue != nil {
@@ -903,7 +914,7 @@ func (r *AgentReconciler) recordKill(ctx context.Context, agent *apiv1.Agent, ki
 	return nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the stamps that say when this agent's machine began holding memory and when it was last seen stopped, written as the controller watches it, which is what lets a kill of the runner be held to the machines that were on it. A machine beginning an episode starts one, and one seen stopped ends it; the start is kept when the machine stops, so a kill that lands while it is asleep still reads the start that went before it. A runner that could not be reached says nothing about the machine, so nothing is stamped.
+// UNIT_BOUNDARY_DESCRIPTION: the stamps that say when this agent's machine began holding memory and when it was last seen stopped, written as the controller watches it, which is what lets a kill of the runner be held to the machines that were on it. A machine beginning to hold memory starts an episode, and so does one woken after a sleep, since the machine the runner holds now is not the one the earlier start was written for; one seen stopped ends the episode it is in, which is kept until the next one starts, so a kill that lands while the machine sleeps still reads the start that went before it. A runner that could not be reached says nothing about the machine, so nothing is stamped.
 func (r *AgentReconciler) stampMachine(ctx context.Context, agent *apiv1.Agent, machine vmrunner.MachineStatus, runnerReached bool) (*apiv1.Agent, error) {
 	if !runnerReached {
 		return agent, nil
@@ -915,11 +926,8 @@ func (r *AgentReconciler) stampMachine(ctx context.Context, agent *apiv1.Agent, 
 	case holdsMemory(machine.State) && up != "" && down == "":
 		return agent, nil
 	case holdsMemory(machine.State):
-		patch = map[string]*string{annMachineDown: nil}
-		if up == "" {
-			patch[annMachineUp] = &now
-		}
-	case machineStopped(machine) && up != "" && down == "":
+		patch = map[string]*string{annMachineUp: &now, annMachineDown: nil}
+	case machineStopped(machine) && down == "":
 		patch = map[string]*string{annMachineDown: &now}
 	default:
 		return agent, nil

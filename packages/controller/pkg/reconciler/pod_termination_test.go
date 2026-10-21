@@ -106,7 +106,7 @@ func TestASecondKillOfTheRunnerIsItsOwn(t *testing.T) {
 	assert.NotEqual(t, "containerd://first@"+first.UTC().Format(time.RFC3339), kill.ID)
 }
 
-// TEST_SCENARIO: a kill goes only to an agent whose machine was holding memory on that runner at the kill, read from the two stamps the controller writes as it watches the machine. A machine started after the kill is no victim; one booting, running or stopping at it is; one a reclaim put to sleep after it is, since its start went before the kill and its end did not; and one already asleep, or seen stopped before the kill, is not.
+// TEST_SCENARIO: a kill goes only to an agent whose machine was holding memory on that runner at the kill, read from the two stamps the controller writes as it watches the machine. A machine started after the kill is no victim; one booting, running or stopping at it is; one a reclaim put to sleep after it is, since its start went before the kill and its end did not; one seen stopped before the kill is not; and one whose start went before the platform wrote any stamp is a victim unless the agent itself is younger than the kill or a stop of it was seen before the kill. A stamp inside the kill's own second is an event from before the kill, since only the runner the kill took down answers in it.
 func TestAKillGoesOnlyToMachinesThatWereOnTheRunner(t *testing.T) {
 	killed := time.Now().Add(-time.Minute).Truncate(time.Second)
 	stamped := func(up, down time.Time) *apiv1.Agent {
@@ -124,24 +124,34 @@ func TestAKillGoesOnlyToMachinesThatWereOnTheRunner(t *testing.T) {
 	assert.True(t, machineOccupiedAt(stamped(killed.Add(-time.Hour), killed.Add(time.Minute)), killed), "put to sleep after the kill")
 	assert.False(t, machineOccupiedAt(stamped(killed.Add(-time.Hour), killed.Add(-time.Second)), killed), "seen stopped before the kill")
 	assert.False(t, machineOccupiedAt(stamped(killed.Add(time.Minute), time.Time{}), killed), "started after the kill")
-	assert.False(t, machineOccupiedAt(stamped(time.Time{}, time.Time{}), killed), "an agent the controller never saw run a machine")
+	assert.True(t, machineOccupiedAt(stamped(killed, time.Time{}), killed), "began holding memory in the kill's own second")
+	assert.False(t, machineOccupiedAt(stamped(killed, killed), killed), "stopped in the kill's own second")
+	assert.True(t, machineOccupiedAt(stamped(time.Time{}, time.Time{}), killed), "a machine whose start went before the platform wrote the stamps")
+	assert.False(t, machineOccupiedAt(stamped(time.Time{}, killed.Add(-time.Second)), killed), "one of those, seen stopped before the kill")
+
+	// TEST_SCENARIO: an agent created after the kill had no machine of it on the runner, so its absent stamps mean nothing, and one created in the kill's own second is read the same way: a creation is no runner's answer, so a boot it had before the kill would have been stamped.
+	for _, created := range []time.Time{killed.Add(time.Second), killed} {
+		younger := stamped(time.Time{}, time.Time{})
+		younger.CreationTimestamp = metav1.NewTime(created)
+		assert.False(t, machineOccupiedAt(younger, killed), "an agent created at %s", created.Format(time.RFC3339Nano))
+	}
 }
 
-// TEST_SCENARIO: a kill ends for an agent once the agent answered ready after it, which is stamped, or once the ten minutes the kill explains have passed: both are durable, so the reason never comes back to that agent however long the runner keeps the termination and whatever its machine does next.
+// TEST_SCENARIO: a kill ends for an agent once its machine answered ready after it, which is the kill named in the end mark, or once the ten minutes the kill explains have passed: both are durable, so the reason never comes back to that agent however long the runner keeps the termination and whatever its machine does next. The mark names the kill rather than a time, so a controller clock apart from the node's reads the same answer.
 func TestAKillEndsForAnAgentThatAnsweredOrWhoseEpisodeIsOver(t *testing.T) {
 	killed := time.Now().Add(-time.Minute).Truncate(time.Second)
 	kill := runnerKill{ID: "containerd://dead@" + killed.UTC().Format(time.RFC3339), At: killed}
-	agent := func(done string) *apiv1.Agent {
+	agent := func(over string) *apiv1.Agent {
 		a := &apiv1.Agent{}
 		a.Annotations = map[string]string{}
-		if done != "" {
-			a.Annotations[annRunnerOOMDone] = done
+		if over != "" {
+			a.Annotations[annRunnerOOMDone] = over
 		}
 		return a
 	}
 	assert.False(t, killIsOver(agent(""), kill, time.Now()), "still inside its episode")
-	assert.True(t, killIsOver(agent(killed.Add(time.Second).UTC().Format(time.RFC3339Nano)), kill, time.Now()), "the agent answered after the kill")
-	assert.False(t, killIsOver(agent(killed.Add(-time.Hour).UTC().Format(time.RFC3339Nano)), kill, time.Now()), "an answer from before this kill does not end it")
+	assert.True(t, killIsOver(agent(kill.ID), kill, time.Now()), "the machine answered after the kill")
+	assert.False(t, killIsOver(agent("containerd://other@"+killed.UTC().Format(time.RFC3339)), kill, time.Now()), "an answer that ended another kill does not end this one")
 	assert.True(t, killIsOver(agent(""), kill, killed.Add(runnerOOMEpisode+time.Minute)), "the episode is over")
 
 	// TEST_SCENARIO: the record of the attribution is what the agent carries, so a name and time read back are the kill that was attributed.
