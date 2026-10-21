@@ -1,11 +1,12 @@
-import type { MessagePart } from "../../../types.js";
-import { PLUMBING_TAGS } from "../../acp/plumbing-tags.js";
+import type { MessagePart } from "../../types.js";
+import { PLUMBING_TAGS } from "./plumbing-tags.js";
 
 type TextLike = { kind: "text" | "thought"; text: string };
 
 const FENCE_RE = /^[ \t]*(`{3,}|~{3,})/;
 const MARKUP_RE = new RegExp(
-  `^[ \\t]*<(thinking|${PLUMBING_TAGS.join("|")})(?:\\s[^>]*)?>([\\s\\S]*?)(?:<\\/\\1>[ \\t]*\\n?|(?![\\s\\S]))`,
+  `^[ \\t]*<(?:(thinking)(?:\\s[^>]*)?>([\\s\\S]*?)(?:<\\/thinking>[ \\t]*\\n?|(?![\\s\\S]))` +
+    `|(${PLUMBING_TAGS.join("|")})(?:\\s[^>]*)?>[\\s\\S]*?<\\/\\3>[ \\t]*\\n?)`,
   "gm",
 );
 
@@ -30,7 +31,7 @@ function markupPieces(text: string): TextLike[] {
   let last = 0;
   for (const m of text.matchAll(MARKUP_RE)) {
     pieces.push({ kind: "text", text: text.slice(last, m.index) });
-    if (m[1] === "thinking") pieces.push({ kind: "thought", text: m[2] });
+    if (m[1]) pieces.push({ kind: "thought", text: m[2] });
     last = m.index + m[0].length;
   }
   pieces.push({ kind: "text", text: text.slice(last) });
@@ -59,8 +60,8 @@ function splitAgentText(text: string): TextLike[] {
  * markup into them: a `<thinking>` passage becomes a thought, and a framing
  * tag the agent echoed is dropped. Markup counts only when it opens a line
  * outside a code fence, so a reply that quotes a tag inline or in code shows
- * it as written. A tag still open at the end runs to the end, as it does
- * while the reply streams.
+ * it as written. A `<thinking>` still open runs to the end, as it does while
+ * the reply streams; a framing tag needs its closing tag.
  */
 export function withoutAgentMarkup(
   parts: readonly MessagePart[],
