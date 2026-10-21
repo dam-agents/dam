@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: JanUI's collapsed sidebar opens an Agent's new-session page when its tile is clicked, and its popover on hover, a moment after the pointer rests on the tile, closing it only after a grace period long enough to move into the popover; the popover carries the same session filter, New session button and actions menu as the Agent's row in the tree.
+// TEST_OVERVIEW: JanUI's collapsed sidebar opens an Agent's new-session page when its tile is clicked, and its popover on hover, a moment after the pointer rests on the tile, closing it only after a grace period long enough to move into the popover; the popover carries the same session filter and actions menu as the Agent's row in the tree.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
@@ -105,7 +105,7 @@ function pointer(type: "pointerover" | "pointerout", related: Element | null) {
   });
 }
 
-// TEST_SCENARIO: a resting pointer opens the popover on its own, without a click, and the popover holds the three actions the Agent's row in the tree offers.
+// TEST_SCENARIO: a resting pointer opens the popover on its own, without a click, and the popover holds the filter and the actions menu the Agent's row in the tree offers.
 it("opens an Agent's popover on hover and carries its row's actions", () => {
   expect(popover()).toBeNull();
   pointer("pointerover", document.body);
@@ -113,9 +113,6 @@ it("opens an Agent's popover on hover and carries its row's actions", () => {
   expect(popover()).toBeNull();
   act(() => void vi.advanceTimersByTime(100));
   expect(popover()).not.toBeNull();
-  expect(
-    document.body.querySelector('[data-testid="sidebar-agent-new-session"]'),
-  ).not.toBeNull();
   expect(
     document.body.querySelector('[data-testid="sidebar-agent-menu"]'),
   ).not.toBeNull();

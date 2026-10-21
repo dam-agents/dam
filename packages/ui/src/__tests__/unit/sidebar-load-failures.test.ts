@@ -270,8 +270,8 @@ it("offers no later-page retry while the Agent cannot answer", () => {
   ).toContain('data-testid="sidebar-agent-sessions-more-failed"');
 });
 
-// TEST_SCENARIO: an Agent's list offers its New session row only once it is known to hold no Session: not while its first page failed or is loading, and not while a further page may still hold one; otherwise only the Agent row's plus starts a session.
-it("offers the New session row only for a list known to be empty", () => {
+// TEST_SCENARIO: an Agent's list always ends with its New session row, whatever it holds or is still fetching, so the row the Agent's own page offers is also the row its list leads to.
+it("always ends an Agent's list with its New session row", () => {
   const render = () =>
     renderToStaticMarkup(
       createElement(AgentSessionList, {
@@ -279,14 +279,25 @@ it("offers the New session row only for a list known to be empty", () => {
         newSessionRow: createElement("i", { "data-new-session": true }),
       }),
     );
-  expect(render()).not.toContain("data-new-session");
-  list.failed = false;
+  list.failed = true;
   expect(render()).toContain("data-new-session");
+  list.failed = false;
   list.loading = true;
-  expect(render()).not.toContain("data-new-session");
+  expect(render()).toContain("data-new-session");
   list.loading = false;
   list.nextFailed = true;
-  expect(render()).not.toContain("data-new-session");
+  expect(render()).toContain("data-new-session");
+  rows.sessions = [
+    {
+      sessionId: "s1",
+      type: SessionType.Regular,
+      mode: SessionMode.Chat,
+      scheduleId: null,
+      createdAt: "2026-10-01T08:00:00Z",
+      updatedAt: "2026-10-01T08:00:00Z",
+    },
+  ];
+  expect(render()).toContain("data-new-session");
 });
 
 const chat = (sessionId: string) => ({
@@ -298,7 +309,7 @@ const chat = (sessionId: string) => ({
   updatedAt: "2026-10-01T08:00:00Z",
 });
 
-// TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, so it ends with the New session row an Agent with no Sessions at all gets. A filter that hid an unpinned Session says so above that row, also when the Sessions it left are all pinned.
+// TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, and still ends with its New session row. A filter that hid an unpinned Session says so above that row, also when the Sessions it left are all pinned.
 it("offers the New session row for a list whose Sessions are all pinned or filtered out", () => {
   const render = () =>
     renderToStaticMarkup(
@@ -309,7 +320,7 @@ it("offers the New session row for a list whose Sessions are all pinned or filte
     );
   list.failed = false;
   rows.sessions = [chat("s1"), chat("s2")];
-  expect(render()).not.toContain("data-new-session");
+  expect(render()).toContain("data-new-session");
 
   rows.pinned = new Set(["a:s1", "a:s2"]);
   const pinned = render();
@@ -333,21 +344,4 @@ it("offers the New session row for a list whose Sessions are all pinned or filte
 
   rows.filters = defaultActivityFilters();
   expect(render()).not.toContain("No sessions match the filter.");
-});
-
-// TEST_SCENARIO: on an Agent's new-session page its New session row shows whatever the list holds, so the page has a row of its own to mark current; it goes back to showing only for a list that lists no Session once the user leaves the page.
-it("shows the New session row on the Agent's new-session page", () => {
-  const render = (newSessionPage: boolean) =>
-    renderToStaticMarkup(
-      createElement(AgentSessionList, {
-        agentId: "a",
-        newSessionRow: createElement("i", { "data-new-session": true }),
-        newSessionPage,
-      }),
-    );
-  list.failed = false;
-  rows.sessions = [chat("s1")];
-  expect(render(false)).not.toContain("data-new-session");
-  expect(render(true)).toContain("data-new-session");
-  expect(render(false)).not.toContain("data-new-session");
 });

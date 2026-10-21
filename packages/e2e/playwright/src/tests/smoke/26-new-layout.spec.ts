@@ -77,7 +77,7 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, only the header's plus to create one, not a New agent row, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and the row's New session plus opens the Agent's chat; the New session row, shown only while the Agent has no Sessions, or else that plus, not the Agent row, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent is asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves that Agent open, and once it answers, with only Home shown, its list shows only its New session row; and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, a New agent row at the foot of the list and no plus in the header, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and its list always ends with a New session row whose click opens the Agent's chat, and that row, not the Agent's, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
@@ -87,8 +87,8 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   const tree = page.getByTestId("sidebar-tree");
   await expect(tree).toBeVisible();
   for (const name of AGENTS) await expect(agentNode(page, name)).toBeVisible();
-  await expect(tree.getByTestId("sidebar-create-agent")).toBeVisible();
-  await expect(tree.getByTestId("sidebar-new-agent-row")).toHaveCount(0);
+  await expect(tree.getByTestId("sidebar-create-agent")).toHaveCount(0);
+  await expect(tree.getByTestId("sidebar-new-agent-row")).toBeVisible();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(page.getByTestId("agent-row")).toHaveCount(0);
   await expect(page.getByTestId("side-panel-docs")).toBeVisible();
@@ -97,14 +97,13 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   const row = node.getByTestId("sidebar-agent-row");
   await row.click();
   await expect(row).toHaveAttribute("aria-expanded", "true");
-  await row.hover();
-  await node.getByTestId("sidebar-agent-new-session").click();
+  await node.getByTestId("sidebar-new-session-row").click();
   await expect(page).toHaveURL(
     new RegExp(`/chat/${encodeURIComponent(agentIds.get(AGENTS[0])!)}`),
   );
   await expect(
     node.locator(
-      '[data-testid="sidebar-new-session-row"][aria-current="page"], [data-testid="sidebar-agent-new-session"][aria-current="page"]',
+      '[data-testid="sidebar-new-session-row"][aria-current="page"]',
     ),
   ).toHaveCount(1);
   await expect(row).not.toHaveAttribute("aria-current");

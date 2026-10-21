@@ -2,7 +2,6 @@ import {
   Add,
   type CarbonIconType,
   ChevronRight,
-  Gift,
   Home,
   ListTree,
   Settings,
@@ -13,7 +12,6 @@ import { Collapse } from "@/components/ui/collapse";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
   DropdownMenuRadioGroup,
   DropdownMenuRadioItem,
   DropdownMenuTrigger,
@@ -169,7 +167,6 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                     setFlatShown(FLAT_PAGE);
                   }}
                 />
-                <CreateAgentMenu defaultAgent={defaultAgent} />
               </>
             }
           >
@@ -252,14 +249,16 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
               ))}
             </ul>
           )}
-          {groupBy === "agents" && agents.length === 0 && (
-            <AddRow
-              icon={Add}
-              label="New agent"
-              testId="sidebar-new-agent-row"
-              disabled={!defaultAgent.ready}
-              onClick={() => void defaultAgent.create()}
-            />
+          {groupBy === "agents" && (
+            <div className="mt-px">
+              <AddRow
+                icon={Add}
+                label="New agent"
+                testId="sidebar-new-agent-row"
+                disabled={!defaultAgent.ready}
+                onClick={() => void defaultAgent.create()}
+              />
+            </div>
           )}
         </section>
       </div>
@@ -353,8 +352,6 @@ function AgentNode({
 }) {
   useAutoWakeOnSidebarOpen(agent, expanded);
   const newSessionPage = useStore((s) => current && s.view === "chat");
-  const [noSessions, setNoSessions] = useState(false);
-  const rowShown = expanded && (noSessions || newSessionPage);
   const startSession = useStartSession();
   const mood = avatarMood(agent.state, agent);
   const drag = useOrderDrag({
@@ -441,7 +438,6 @@ function AgentNode({
             <AgentRowActions
               agent={agent}
               current={current}
-              newSessionCurrent={newSessionPage && !rowShown}
               onNavigate={onNavigate}
             />
           </div>
@@ -459,8 +455,6 @@ function AgentNode({
           <AgentSessionList
             agentId={agent.id}
             onNavigate={onNavigate}
-            onEmptyChange={setNoSessions}
-            newSessionPage={newSessionPage}
             newSessionRow={
               <AddRow
                 icon={Add}
@@ -475,44 +469,6 @@ function AgentNode({
         </div>
       </Collapse>
     </li>
-  );
-}
-
-function CreateAgentMenu({
-  defaultAgent,
-}: {
-  defaultAgent: ReturnType<typeof useCreateDefaultAgent>;
-}) {
-  const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
-  return (
-    <DropdownMenu>
-      <Tooltip content="Create agent" side="bottom">
-        <DropdownMenuTrigger asChild>
-          <button
-            type="button"
-            aria-label="Create agent"
-            data-testid="sidebar-create-agent"
-            className={cn(
-              "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground data-[state=open]:bg-muted data-[state=open]:text-foreground",
-              FOCUS_RING,
-            )}
-          >
-            <Add size={SIDEBAR_GLYPH} />
-          </button>
-        </DropdownMenuTrigger>
-      </Tooltip>
-      <DropdownMenuContent align="end">
-        <DropdownMenuItem
-          disabled={!defaultAgent.ready}
-          onSelect={() => void defaultAgent.create()}
-        >
-          <Add size={14} /> New agent
-        </DropdownMenuItem>
-        <DropdownMenuItem onSelect={() => setKitBrowserOpen(true)}>
-          <Gift size={14} /> Use a starter kit
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 
