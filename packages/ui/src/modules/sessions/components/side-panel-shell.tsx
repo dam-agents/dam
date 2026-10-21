@@ -229,7 +229,7 @@ export function SidePanelShell({
           "flex bg-chrome relative z-content",
           tiles
             ? mobilePanelOpen &&
-                "max-md:fixed max-md:inset-y-0 max-md:left-14 max-md:right-14 max-md:z-overlay"
+                "max-md:fixed max-md:inset-y-0 max-md:left-14 max-md:right-0 max-md:z-overlay"
             : cn(
                 "max-md:fixed max-md:inset-0 max-md:z-overlay",
                 !mobilePanelOpen && "max-md:hidden",
