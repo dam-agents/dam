@@ -9,7 +9,8 @@ import type { AgentObservation } from "./out-of-memory-watch.js";
  * goes (a user delete, an Invocation reap, a Driver Cascade, a kubectl delete,
  * the orphan sweep), and a relist after a dropped watch reports a missed
  * delete too. Each replica runs its own watch, so the event comes once per
- * replica.
+ * replica. A temporary (Sweepable) agent is left out: its Invocation record
+ * names its spend rows for as long as they show.
  */
 export function agentRemovalWatch(
   kind: AgentObservation,
@@ -19,10 +20,12 @@ export function agentRemovalWatch(
   const agentId = obj.metadata?.name;
   const ownerSub = agentOwner(obj);
   if (!agentId || !ownerSub) return;
+  const agent = parseInfraAgent(obj);
+  if (agent.sweepable) return;
   emit({
     type: EventType.AgentResourceRemoved,
     agentId,
     ownerSub,
-    name: parseInfraAgent(obj).name,
+    name: agent.name,
   });
 }

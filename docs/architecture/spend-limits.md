@@ -122,6 +122,7 @@ So a sub-agent's calls count for its root driver.
 The calling agent is the agent whose gateway sent the record, so a sub-agent's calls count for its root driver and still show as its own.
 A row outlives its agent, so the spend of a deleted agent still counts for its owner.
 The api-server also keeps the last name of each Agent that goes, from its Agent watch, which sees every way that an Agent is deleted.
+It skips a temporary agent, because its Invocation record names its rows.
 A delete that no api-server replica sees leaves the agent with no name.
 
 **Session check.** The Session comes from the stamp in the agent's pod, so it serves display only, and no total and no limit depends on it.

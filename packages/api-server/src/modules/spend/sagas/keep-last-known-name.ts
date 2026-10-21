@@ -12,9 +12,8 @@ import type { LastKnownNames } from "../infrastructure/last-known-names.js";
 /**
  * UNIT_BOUNDARY_DESCRIPTION: A spend ledger row outlives its agent, so the
  * spend screens keep the name the Agent resource had when it went. Every
- * Agent that goes is kept, temporary targets too. Every replica's watch
- * emits the event, and the write is an upsert on the agent id, so each
- * replica and each replay leave one row.
+ * replica's watch emits the event, and the write is an upsert on the agent
+ * id, so each replica and each replay leave one row.
  */
 export function startKeepLastKnownNameSaga(deps: {
   names: LastKnownNames;

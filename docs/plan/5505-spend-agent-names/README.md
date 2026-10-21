@@ -73,6 +73,7 @@ Instead, the api-server's Agent watch sees every way that an Agent goes: a user 
 The watch's delete observation carries the last state of the resource, with its name.
 The agents module emits an event with that name, and a spend saga keeps it.
 Every api-server replica sees the delete, so each writes the same row; the write is an upsert.
+The watch skips a temporary (Sweepable) agent: its Invocation record names its rows, and once that record is gone its rows no longer show.
 A delete that no api-server replica sees leaves the agent with no name, and its row shows as "Deleted agent".
 
 **No backfill.**
