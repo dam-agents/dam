@@ -105,6 +105,13 @@ fn stop_seen() -> bool {
     STOPPED.load(Ordering::SeqCst)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: resolves once this process has a stop in hand, which is what ends a check that would otherwise outlast the pod's grace: the kubelet kills a pod whose loader is still deciding, and every machine it holds is powered off with it.
+async fn stopped() {
+    while !stop_seen() {
+        tokio::time::sleep(CATCH_POLL).await;
+    }
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: whether a stop the kernel has taken for this process but not yet handed to a handler is waiting: a stop delivered while the mask is on is one only this sees, and it is the other half of what a stop in hand means.
 fn stop_waiting() -> bool {
     let mut pending: libc::sigset_t = unsafe { std::mem::zeroed() };
@@ -432,14 +439,16 @@ impl Loader {
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: whether a release's own loader starts in this pod, which is the release's loader where it carries one this process is not, and nothing where it does not. The loader is asked to do its whole start, since the exec that becomes it never comes back and a loader that cannot start would take the pod's machines with it.
-    async fn ready(
-        &mut self,
-        release: &Release,
-    ) -> Result<Option<PathBuf>, (&'static str, String)> {
+    async fn ready(&mut self, release: &Release) -> Result<Option<PathBuf>, Become> {
         let Some(loader) = self.release_loader(release) else {
             return Ok(None);
         };
-        match starts(&loader).await {
+        // UNIT_BOUNDARY_DESCRIPTION: the check races the pod's stop, since it is given a start's whole time and the pod is killed long before that: a stop ends the check where it is, and the loader the check runs is killed with it.
+        let started = tokio::select! {
+            started = starts(&loader) => started,
+            () = stopped() => return Err(Become::Stopping),
+        };
+        match started {
             Ok(()) => Ok(Some(loader)),
             Err(outcome) => {
                 let message = format!(
@@ -448,7 +457,7 @@ impl Loader {
                 );
                 tracing::error!(release = release.name, error = %message, "the release's loader does not start; keeping the one this pod runs");
                 self.failed = Some((release.name.clone(), message.clone()));
-                Err((HELD_FAILED, message))
+                Err(Become::Failed(HELD_FAILED, message))
             }
         }
     }
@@ -461,7 +470,10 @@ impl Loader {
     ) -> anyhow::Result<(Running, Option<(&'static str, String)>)> {
         match self.ready(&release).await {
             Ok(loader) => self.start_release(release, replaced, loader).await,
-            Err(held) => Ok((self.spawn(replaced, None)?, Some(held))),
+            Err(Become::Stopping) => Ok((self.spawn(replaced, None)?, None)),
+            Err(Become::Failed(held, message)) => {
+                Ok((self.spawn(replaced, None)?, Some((held, message))))
+            }
         }
     }
 
@@ -678,8 +690,13 @@ impl Loader {
     ) -> anyhow::Result<(Running, Option<(&'static str, String)>)> {
         let loader = match self.ready(&release).await {
             Ok(loader) => loader,
-            Err(held) => return Ok((running, Some(held))),
+            // UNIT_BOUNDARY_DESCRIPTION: a stop that arrives while the release's loader is checked keeps the runner this pod has, which the stop then reaches: the check is given a start's whole time, and the pod's grace is shorter than that.
+            Err(Become::Stopping) => return Ok((running, None)),
+            Err(Become::Failed(held, message)) => return Ok((running, Some((held, message)))),
         };
+        if stop_seen() {
+            return Ok((running, None));
+        }
         tracing::info!(
             from = running.release.name,
             to = release.name,

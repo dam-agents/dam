@@ -36,6 +36,13 @@ echo "$0 $* again" >> "$LOADER_LOG"
 exec "$REAL_LOADER" "$@"
 "#;
 
+// UNIT_BOUNDARY_DESCRIPTION: a loader whose check takes as long as a start of a whole release does, which is what a release's loader with a release and a runtime to copy in does.
+const SLOW_CHECK_LOADER: &str = r#"#!/bin/sh
+echo "$0 $*" >> "$LOADER_LOG"
+case "$*" in *--check*) sleep 5;; esac
+exec "$REAL_LOADER" "$@"
+"#;
+
 // UNIT_BOUNDARY_DESCRIPTION: a loader of a release that cannot start in this pod, which is what a release built for another pod's libc looks like.
 const BROKEN_LOADER: &str = "#!/bin/sh\nexit 1\n";
 
@@ -947,5 +954,45 @@ fn a_stop_after_the_last_look_is_taken_by_the_loader_that_follows() {
             .is_some_and(|line| line.starts_with("stopped ")),
         "the stop was lost across the exec: {:?}",
         lines(&dir.join("runners"))
+    );
+}
+
+// TEST_SCENARIO: a stop that arrives while a release's loader is being checked does not wait for the check and for the runner's close: the check ends where it is and the pod keeps the runner it has, which the stop reaches. The pod's grace is shorter than a check may take, so a loader that waited would be killed with every machine still running.
+#[test]
+fn a_stop_during_the_check_keeps_the_runner_the_pod_has() {
+    let mut pod = Pod::start("stop-during-the-check", SLOW);
+    let dir = pod.dir.clone();
+    // UNIT_BOUNDARY_DESCRIPTION: the runner logs that it started only after it takes its own stop, so a close would be logged rather than ending the shell.
+    wait_for("the pod's own runner to take its stop", || {
+        lines(&dir.join("runners"))
+            .iter()
+            .any(|line| line.starts_with("started "))
+    });
+    pod.stage_declaring("runner:2", RUNS, "runtime-a", None, Some(SLOW_CHECK_LOADER));
+    pod.name("runner:2");
+    wait_for("the release's loader to begin its check", || {
+        !lines(&dir.join("loaders")).is_empty()
+    });
+    // SAFETY: kill(2) takes plain integers and touches no memory of this process.
+    unsafe { libc::kill(i32::try_from(pod.loader.id()).unwrap(), libc::SIGTERM) };
+    let exited = pod.loader.wait().unwrap();
+    let loaders = lines(&dir.join("loaders"));
+    assert_eq!(
+        loaders.len(),
+        1,
+        "the pod went on to become the release's loader ({exited}): {loaders:?}"
+    );
+    let runners = lines(&dir.join("runners"));
+    assert!(
+        !runners.iter().any(|line| line.starts_with("closing ")),
+        "the pod closed its runner for a hand-off it should have dropped ({exited}): {runners:?}"
+    );
+    assert_eq!(
+        runners
+            .iter()
+            .filter(|line| line.starts_with("started "))
+            .count(),
+        1,
+        "the pod started a runner it did not need while stopping: {runners:?}"
     );
 }
