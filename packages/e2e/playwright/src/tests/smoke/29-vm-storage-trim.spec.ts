@@ -32,8 +32,6 @@ const FILL_CHUNK_MIB = 256;
 const REAL_MIB = 256;
 // UNIT_BOUNDARY_DESCRIPTION: the room the node keeps for itself while the claim is at its ceiling: the runner pod, its kubelet and the next case all write there, so a fill that leaves less has taken the host rather than the claim.
 const HOST_HEADROOM_MIB = 1024;
-// UNIT_BOUNDARY_DESCRIPTION: the request the refused guest makes, of the few MiB an agent's next write needs.
-const NEXT_WRITE_MIB = 64;
 // UNIT_BOUNDARY_DESCRIPTION: a runner look renews every grant every 30 s (STORAGE_CHECK) and the guard moves at most once per 30 s (POOL_GUARD_BACKOFF), so a refusal that recovers does so inside this window; a guest refused after it is the wedge.
 const RENEWAL_MS = 75_000;
 // UNIT_BOUNDARY_DESCRIPTION: the guest's own free space in KiB, and what it can still write after it has. The awk program is in shell single quotes: inside double quotes the shell would expand `$4` itself and awk would print the whole row.
@@ -306,7 +304,7 @@ test("the guard gives a machine the room its share gains, and takes it back", as
   ).toBeLessThanOrEqual(2 * MOVE_MIB);
 });
 
-// TEST_SCENARIO: a guest the guard holds at its share is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is filled without writing bytes, so the guest's own filesystem counts it as used and the claim does not pay for it, and the case costs a disk of the size the install already gives it and works on any pool. Each comparison waits for one sample that meets both of its bounds, and the renewed one needs a grant the runner published after the case's own write, so a room the guard has not finished moving is neither accepted as healthy nor rejected as wedged. The refusal itself is the case after this one, and it is quarantined there.
+// TEST_SCENARIO: a guest the guard holds at its share is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is filled without writing bytes, so the guest's own filesystem counts it as used and the claim does not pay for it, and the case costs a disk of the size the install already gives it and works on any pool. Each comparison waits for one sample that meets both of its bounds, and the renewed one needs a grant the runner published after the case's own write, so a room the guard has not finished moving is neither accepted as healthy nor rejected as wedged. The refusal itself is the case after this one, which asks for more than any grant could give the guest so that no renewal can make its write fit.
 test("a writing agent stops at its share, and writes again when its share grows", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
@@ -367,7 +365,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
       availMiB,
       `the guest still had ${availMiB} MiB after marking its own room, and the fill reported ${marking}`,
     ).toBeLessThanOrEqual(GUARD_FLOOR_MIB + SLACK_MIB);
-    // UNIT_BOUNDARY_DESCRIPTION: the guest's next write of a few MiB, which the fill above leaves no room for, is the refusal check and it is quarantined in the case after this one, because a renewed allowance can return room between the fill and that write and this case cannot tell the renewal from a write wrongly allowed. Nothing here retries the write until it is refused.
+    // UNIT_BOUNDARY_DESCRIPTION: the refusal itself is the case after this one, which marks this fill again and asks for a write past any grant the guest could be given, rather than for the few MiB an agent's next write needs: a renewed allowance can return room between a fill and the write, and nothing here tells that renewal from a write wrongly allowed.
     // UNIT_BOUNDARY_DESCRIPTION: the fill only marks blocks, so the claim must not have paid for it: a disk that grew by the fill is the guard handing the guest room the guest never wrote.
     const afterFill = machineDisks().get(probeDisk) ?? 0;
     expect(
@@ -456,21 +454,28 @@ test("a writing agent stops at its share, and writes again when its share grows"
   }
 });
 
-// TEST_SCENARIO: QUARANTINED (dam#5610) while dam#5611 has not yet given the guest a way to say which allowance it has applied. A guest whose whole remaining room is marked must be refused its next write of a few MiB, and refused for want of space rather than another reason: that write is what a steadily writing agent makes next, and the wedge a user reports is an agent refused it while its share has room. It is quarantined and not deleted, and not retried until it passes, because a renewed allowance can return room between the fill and the write: the probe cannot tell that renewal from a write wrongly allowed, and a retry would then pass a real intermittent defect. This is the whole direct refusal coverage of the always-on lane, and the fill's own share-size comparison in the case before it is not equivalent coverage: it says the guard left the guest no room of a floor plus slack, never that a write was refused. The case is restored, not re-tuned, once the guest can report a completed allowance.
-test.fixme("a guest held at its share is refused its next write", async () => {
+// TEST_SCENARIO: a guest the guard holds at its share is refused its next write, and refused for want of space rather than another reason: that write is what a steadily writing agent makes next, and the wedge a user reports is an agent refused it while its share has room. The check is coarser than that wedge: it does not judge the write at the size of the guest's own grant, because a renewal can return room between the fill and the write and no guest-side figure says which allowance the guard has applied. So the fill marks the guest's whole remaining room, and the write then asks for more than any grant the guest could be given in the meantime — everything the claim has left below its 95% ceiling, which no grant exceeds even with one machine up, plus the floor every guest may write past its grant, the guard's step and this case's slack — so no room a renewal lands before the write can make it fit, and the guest being far over rather than at its share is what makes the refusal a refusal. A guest let past that bound is the defect, so the write is made once and never retried until it is refused.
+test("a guest held at its share is refused its next write", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
   await keepAwake(probeId);
+  // UNIT_BOUNDARY_DESCRIPTION: the claim's own figures, read before the fill so the bound is the largest one any grant could be: the runner grants a running machine an even part of what is left below 95% of the claim's capacity, and the claim's use only grows, so no grant published from here on exceeds this room however often it is renewed. The write adds the floor a guest may write past its grant, the guard's step beyond it and the slack the case's measurements carry, so the bound holds even if the guard is a whole move and a whole floor from where the case thinks it is.
+  const claim = claimKb();
+  const probeMiB =
+    Math.max(0, Math.round((0.95 * claim.capacity - claim.used) / 1024)) +
+    GUARD_FLOOR_MIB +
+    GUARD_STEP_MIB +
+    SLACK_MIB;
   inGuest(probeId, "mkdir -p /tmp/e2e-refusal");
   try {
     markRoom(probeId, "/tmp/e2e-refusal");
     const refused = inGuest(
       probeId,
-      `if fallocate -l ${NEXT_WRITE_MIB}M /tmp/e2e-refusal/probe-$(date +%s%N) 2>/tmp/e2e-refusal/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-refusal/probe.err 2>/dev/null; fi`,
+      `if fallocate -l ${probeMiB}M /tmp/e2e-refusal/probe-$(date +%s%N) 2>/tmp/e2e-refusal/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-refusal/probe.err 2>/dev/null; fi`,
     );
     expect(
       refused,
-      `the guest was not refused its next ${NEXT_WRITE_MIB} MiB at its share: ${refused}`,
+      `the guest was not refused a write of ${probeMiB} MiB, which is past the whole room the claim has left below its ceiling and the floor a guest may write past its grant: ${refused}`,
     ).toMatch(/probe=refused/);
     expect(
       refused,
