@@ -16,6 +16,7 @@ import {
   useAgentLacksLiveUpdates,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
+import { MESSAGE_UPLOAD_ROOT } from "../lib/upload-path.js";
 import { DEFAULT_EXPANDED_DIRS } from "../store.js";
 import { fileKeys } from "./keys.js";
 
@@ -234,8 +235,6 @@ export function useFileDeleteMutation(agentId: string | null) {
 }
 
 export const MAX_UPLOAD_BYTES = 50 * 1024 * 1024;
-
-const MESSAGE_UPLOAD_ROOT = ".uploads";
 
 function sanitizeSegment(s: string): string {
   return s.replace(/[^A-Za-z0-9._\-]+/g, "_").replace(/^\.+/, "") || "file";

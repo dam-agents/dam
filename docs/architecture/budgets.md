@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -55,7 +55,7 @@ spec:
 
 Every field but `owner` is optional, and each falls back on its own.
 For container agents `cpu` and `memory` are the Ceiling, else the chart defaults.
-For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory.md)): `memory` is their VM runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which every VM disk may grow into and which their claim is created at and grows to ([persistence](persistence.md)), else `virtualization.runner`.
+For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory.md)): `memory` is their VM runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which every VM disk may grow into and which their claim is created at and grows to ([vm storage](vm-storage.md#the-owners-claim)), else `virtualization.runner`.
 One number therefore raises both kinds of agent for a user who has both.
 
 The name↔owner pin makes one-budget-per-user structural (a second budget is a name collision), and the schema validates quantities at admission, so a malformed ceiling is rejected rather than silently parsed to zero.
@@ -115,7 +115,8 @@ The multiples and copy live in the UI budgets module.
 A start the controller parks raises a dialog that names the cause and sends the user to the agent list on the home dashboard to free room; the settings picker warns inline when the chosen Size needs more free slots than remain.
 First-time users with no agents see none of it.
 The card shows a vm user their pools in its place, and a user with both kinds switches between the two views, which the browser remembers: memory and storage as bars showing how much is used of how much, each agent's share a segment largest first, with what the pool counts beyond the agents' own shares — headroom for memory; for storage the copies runtime migrations still hold, and logs and system — as the last.
-Once storage reaches the warning level, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, then the migration copies, which go when each move ends or is cancelled, a failed one keeping its copy until a retry or an abort, and what is left.
+Once storage reaches the warning level, or an agent reports its own disk full, a list under its bar says what fills it, largest first: each agent's disk, which only deleting the agent or having it delete files frees and which leads to that agent, then the migration copies, which go when each move ends or is cancelled, a failed one keeping its copy until a retry or an abort, and what is left.
+An agent whose own disk is full says so on its row — its writes are failing while it keeps running — so the owner sees which agent to open where they go to free space.
 CPU's bar is its congestion, with its word beside it, not a use against a limit, because the limit moves with the machines running and reaching it fails nothing.
 The bar's colour and the meter's spoken value carry the level; at warning or critical a warning sign beside the pool's name says what to do — disable agents not in use, delete old ones or have them clean their disks, or, for CPU, which agents use the most — and at critical what the platform does: idle agents are put to sleep for memory, and new VM agents are refused for storage, plus, for a user who has not linked Slack where the install has it, how to link it to get these alerts there.
 Each vm agent's row carries its own memory and storage, and the dashboard reads the figures again every 15 s while it is open.
@@ -184,7 +185,7 @@ Reserved is computed from live state and never persisted, so a hibernate or dele
 
 ## Resource alerts
 
-A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 95% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 95% — writes are failing ([vm storage](vm-storage.md#the-owners-claim)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
 Each message gives the figures or the agents affected, and what to do.
 Lower levels show only in the web app.
 

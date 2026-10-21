@@ -126,6 +126,11 @@ settings:
       # nobody has to discover the slash command. Needs no scope beyond the
       # channels:read / groups:read already requested above.
       - member_joined_channel
+      # The Stop button on an agent's working status. Slack shows it only to
+      # apps subscribed to this event, and sends it when someone presses Stop:
+      # the turn running in that thread is cancelled, for the person who
+      # started it or the agent's owner. Needs no scope beyond chat:write.
+      - agent_session_stopped
   interactivity:
     is_enabled: true
   org_deploy_enabled: false

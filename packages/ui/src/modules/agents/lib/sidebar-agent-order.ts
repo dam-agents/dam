@@ -33,9 +33,10 @@ export function sidebarAgentOpen(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a hibernated Agent folds under See all unless its
- * Sessions are open in the sidebar, or its chat or configuration page is
- * shown: closing the shown Agent's list keeps its row where the user clicked.
+ * UNIT_BOUNDARY_DESCRIPTION: a hibernated Agent folds under See all unless the
+ * user has clicked its row in the sidebar, or its chat or configuration page
+ * is shown: closing its list keeps the row where the user clicked, so neither
+ * the row nor the See all control moves under the pointer.
  */
 export function sidebarAgentFolded(
   overrides: Readonly<Record<string, boolean>>,
@@ -45,6 +46,6 @@ export function sidebarAgentFolded(
   return (
     FOLDED_STATES.has(agent.state) &&
     agent.id !== shownAgentId &&
-    !sidebarAgentOpen(overrides, agent.id, shownAgentId)
+    !(agent.id in overrides)
   );
 }

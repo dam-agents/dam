@@ -159,6 +159,7 @@ The controller writes it only when its content changes, so a grant, a revocation
 Its pod is stamped twice per content hash of the credentials in that Secret — a change to its files alone does not stamp it, since Envoy reads those as the volume updates — as an agent's own gateway pod is per revision (**Rotation**, above), so a rotation is in use as soon.
 One leaf names every host any of the agents intercepts, from the same issuer, so a machine's CA is unchanged.
 The resolver is one CoreDNS with one block per agent's resolver port, each answering with that agent's ClusterIP and reading its file again on change.
+It reads one file of that Secret and is handed a volume of its own that projects that key alone, so a process in the resolver container can no more read a signing key than one outside the pod can.
 
 **Readiness.** An agent's listener answers the gateway health path with a revision of what was rendered for it.
 An agent moves onto the owner gateway only once the owner pod answers its revision; after the move its gateway readiness is that probe through its own Service, a stale listener reads as starting, and a failing owner pod gives every agent it serves that pod's failure.
@@ -173,20 +174,48 @@ A credentials provider built then fails its first read, installs no watch, and n
 The gateway's bootstrap, listener, cluster and leaf-SDS files, its Lua bodies, its resolver Corefile, its credentials and its upstream CAs are therefore one Secret mounted as one volume.
 The kubelet flips a projected volume once, all keys together, so a file that names a credential and the credential itself become visible at the same moment and no provider is built in between.
 The leaf TLS files stay a Secret of their own: cert-manager writes them, a rotation changes their content rather than their names, and the leaf-SDS file that names them never moves.
+One case the one volume does not close: a key the pod has never had.
+The kubelet moves the volume's data into place before it publishes the new key at the path a listener names, so a listener that arrives in that same flip can still name a file whose pathname appears a moment later, and the provider built then never reads it.
+The controller therefore keeps repair state, one small entry per agent that names a credential, written on the owner gateway Secret's annotation in the same apply as its data: the epoch that agent's credential key set last changed at, and the epoch its internal listener was last rebuilt for.
+A repair is owed exactly when the second is behind the first, so the two numbers are always stored, and a pending repair survives a controller restart instead of reading as settled.
+That state is relative to the last *applied* render: nothing is recorded by a render the owner discards, a wider render it refuses, or a write that failed, and a failed write therefore keeps its arrival and is detected again on the retry.
+An arrival is that agent's own credential key set moving — a key granted, revoked or replaced — not the Secret's key set changing, so an agent just granted a key a sibling already published is an arrival of its own: the pod can deliver both writes in one flip, and that agent's listener would be built naming a pathname that appears in the same flip.
+An empty credential set is a state the Secret really carried, not an absence: the first key an owner with no Connections ever gets is an arrival, and so is a key granted back after every key was revoked.
+The agent's health revision encodes the epoch its key set last changed at, and the epoch a pod answered is what authorises its repair.
+That is what makes a receipt belong to the arrival it repairs: revoking a key and granting it again can return the rendering to a content hash it had before, but it cannot return it to an epoch it has left.
+The rebuild epoch stays out of the health revision, so a repair does not re-arm the offer that decided it and an owner settles.
+A repair is written only on an answer that render itself took, from the sole owner gateway pod that is not terminating: a surge leaves a newer pod that mounted before the arrival and would take the arrival and its repair together, and an answer any earlier probe recorded proves only that some pod answered at some time.
+So a probe that could not be made — two pods, no pod, no address, or a refused request — settles nothing, and the debt stays owed.
+The receipt is taken before the render that would spend it, once per owing agent, on that agent's own proxy port, and at the pod's own address rather than through the Service, whose ordinary readiness probes would otherwise leave an answer that looks like a receipt.
+Only a canonical answer counts: a pod still on the previous two-volume layout hashes its resources against a different credential root, so its own revision keeps its readiness, registered when the controller applies that layout, but never authorises a repair.
+That registration belongs to the owner that applied the layout and covers that owner's whole membership, so one owner's render never makes another owner's old-layout pod stale, and a member that moved back has its registration retired with it: a revision nothing published any more must not carry it onto the owner gateway when it rejoins.
+An agent whose debt is still owed reads as not ready, since a listener that answers the current revision proves the pod read the files, not that it rebuilt a provider it never built.
+That layout projects its files and its credentials as two separately moving objects, so nothing about it can prove what a canonical pod has read; its repair is best effort until it rolls.
+A rotation of a file the pod already has costs no rebuild, and an agent whose chains name none of the moved keys stays byte-identical.
+The annotation is written from the applied render, restricted to the members that render kept, and pruned to them, so an agent whose files a partial refusal discarded leaves no state behind and the annotation is the size of the live state.
+Each member's key set is recorded as a fixed-size digest rather than its file names: Kubernetes bounds all annotations of an object at 256 KiB independently of the data, so names would pass the Secret's own budget and still make the object unwritable.
+A read of it that failed is retried rather than accepted as an empty state, and a Secret without it — a fresh owner, or one upgraded from the single-volume layout, whose pods roll onto fresh mounts — is a baseline recorded at epoch zero with no arrivals, written on the next apply; a key set that moves after that is an arrival.
+An install that upgrades keeps the previous layout's ConfigMap and credentials Secret while a Deployment or a pod still mounts them, written with each render, and removes them once none does.
+Those objects name the credential root that layout mounts (`/etc/envoy/credentials`), not the one-volume root, so a pod of that layout kept serving through a blocked roll reads files under paths it has.
+A delete that failed is not reported as done: the objects are removed by a later render instead.
 
 **A listener the pod refused.** The files still land in the pod after the controller writes them — usually in a second, but the kubelet's documented fallback for a changed Secret is its sync period plus its cache delay, up to about a minute and a half — and Envoy applies the resources of one read one at a time.
 So it can accept an agent's outer listener, whose clusters it already has, and refuse its internal one, whose upstream cluster is still in the CDS file it has not read; the outer listener answers the current revision meanwhile, so nothing the controller reads says the chains are missing.
 Unchanged files cannot repair that: the controller writes nothing for a render that changes nothing, so the pod is never handed them again.
-The controller therefore decides what to write from what its pod has shown it.
+The controller therefore decides what to write from an answer it recorded, never from the absence of a bad one.
 A pod that answers the revision rendered for an agent has read the files, so the owner writes them once more, with a version of their own in place of the template's: the pod reads them again and everything it refused is offered again with what it names already on disk.
-A pod that answers an older revision has not read them, so the owner writes them again on a wait that doubles from four seconds, six times, the last about two minutes after the first, past the kubelet's documented sync period and cache delay; past it the pod keeps the listener it has and a warning names the agent.
-An offer changes files, not resources: every listener and cluster in them is byte-identical, so Envoy deduplicates what it accepted and no stream is drained for a repair.
-One write carries every agent that is owed one, and no two writes land closer than two seconds, so an owner with many agents is not written once per agent.
+A pod that answers anything else — an older revision, or nothing, as a sleeping agent and a freshly started controller answer nothing — has not read them, so the owner writes them again on a wait that doubles from four seconds, six times, the last about two minutes after the first, past the kubelet's documented sync period and cache delay; past it the pod keeps the listener it has and a warning names the agent.
+An offer changes files, not resources: every listener and cluster in them is byte-identical, so Envoy deduplicates what it accepted and no stream is drained for an offer.
+A repair is different: it replaces the affected agent's internal listener, and destroying an internal listener closes the connections that listener held, so a repair does drain that agent's in-flight streams, and no other agent's.
+One write carries every agent that is owed one, and no two offers land closer than two seconds, so an owner with many agents is not written once per agent; a grant or a revocation is written as soon as it is rendered, unthrottled.
 Readiness tells the two apart only partly: a listener Envoy accepted answers the current revision whether or not the provider it built was ever able to read its file, and so does an outer listener whose internal resources were refused, while a container-level rejection or a listener never loaded reads as stale.
-Signing that stays broken after the bounded offers is therefore a healthy-looking gateway, which is what the owner's warning and the agent's unsigned requests are for; a controller restart arms every agent again.
+Signing that stays broken after the bounded offers is therefore a healthy-looking gateway, and it may produce no warning at all: the give-up warning covers an agent whose listener never came current, which this one is not.
+What an operator has is the agent's unsigned requests and the failed read in the gateway's own log.
 
 **Rolls.** The owner gateway is a one-replica Deployment that surges a new pod before the old one stops.
 The new pod turns ready on a health listener that Envoy opens only once its first load of the agents' files is done.
 The old pod sleeps out most of its grace before Envoy is signalled, serving the streams it holds while the new one takes new connections.
+A template change that moves it onto the one files Secret is rendered, not applied on its own: the Secret is written first and an owner whose files are past the limit is refused, so its agents keep the pod that serves them while they move back.
+The sweep that offers every existing owner its turn waits for the agent cache to sync: a cache that has not listed yet is not an owner with no agents, and rendering on that answer would write an empty set of listeners for a gateway whose Services still select it.
 Only a template change (an image, the install's trust settings) rolls it, paced across owners by the same roll width as runner rolls (`rollout.maxConcurrent` runners, or `rollout.maxConcurrentPercent` of them); listener, credential and leaf changes never do.
 A gateway already mid-roll holds one of the width's places, so a later template change replaces its stuck target in the place it holds rather than taking another: a fleet that shrinks under a stalled roll — owners removed, the share falling below the gateways stuck on it — still takes a corrective change, where counting its peers alone would leave every one of them blocked.

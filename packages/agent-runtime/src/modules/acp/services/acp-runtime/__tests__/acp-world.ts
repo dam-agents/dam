@@ -13,6 +13,7 @@ import {
 } from "../../../infrastructure/session-metadata-store.js";
 import type { UndeliveredPromptStore } from "../../../infrastructure/undelivered-prompt-store.js";
 import { createActiveTurnStore } from "../../../infrastructure/active-turn-store.js";
+import { createContinuedFromStore } from "../../../infrastructure/continued-from-store.js";
 import { createBackgroundWorkRegistry } from "../../background-work-registry.js";
 import type { PlatformUndeliveredPrompt } from "api-server-api";
 
@@ -232,6 +233,9 @@ export function createWorld(
     onArtifactTouch: () => {},
     queueParkMs: QUEUE_PARK_MS,
     undeliveredPrompts: createInMemoryUndeliveredStore(),
+    continuedFrom: createContinuedFromStore(memoryDocumentBackend(), () =>
+      new Date().toISOString(),
+    ),
     activeTurns: createActiveTurnStore(memoryDocumentBackend()),
     backgroundWork: createBackgroundWorkRegistry({
       keepPolicy: keepsEveryTask,
@@ -346,6 +350,21 @@ export function memoryDocumentBackend(): DocumentStoreBackend {
         read: () => state,
         write(next) {
           state = next;
+        },
+      };
+    },
+  };
+}
+
+export function sharedDocumentBackend(): DocumentStoreBackend {
+  const documents = new Map<string, unknown>();
+  return {
+    open(name, opts) {
+      if (!documents.has(name)) documents.set(name, opts.initial());
+      return {
+        read: () => documents.get(name) as ReturnType<typeof opts.initial>,
+        write(next) {
+          documents.set(name, next);
         },
       };
     },

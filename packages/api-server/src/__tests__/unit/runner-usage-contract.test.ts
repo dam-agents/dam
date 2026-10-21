@@ -42,6 +42,7 @@ describe("the runner's usage read", () => {
           diskGiB: 100,
           diskUsedBytes: 8589934592,
           cpuMilli: 350,
+          homeFull: true,
         },
       ],
       observedAt: at.toISOString(),

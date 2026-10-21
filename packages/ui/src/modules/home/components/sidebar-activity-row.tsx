@@ -3,6 +3,10 @@ import { SessionType } from "api-server-api";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
+import {
+  AgentAvatar,
+  avatarMood,
+} from "../../agents/components/avatar/agent-avatar.js";
 import { ConnectionIcon } from "../../connections/components/connection-icon.js";
 import { WorkingDots } from "../../sessions/components/working-dots.js";
 import { sessionTitleLabel } from "../../sessions/lib/session-title.js";
@@ -37,7 +41,7 @@ export function SidebarActivityRow({
         aria-current={selected ? "page" : undefined}
         data-testid="sidebar-activity-row"
         className={cn(
-          "flex w-full flex-col gap-0.5 rounded-lg px-2.5 py-1.5 text-left transition-colors",
+          "flex w-full flex-col gap-0.5 rounded-lg px-3 py-2.5 text-left transition-colors",
           selected ? "bg-muted" : "hover:bg-muted",
         )}
       >
@@ -73,6 +77,13 @@ export function SidebarActivityRow({
           ) : null}
         </span>
         <span className="flex min-w-0 items-center gap-1 text-xs text-muted-foreground">
+          <AgentAvatar
+            name={agent.name}
+            avatar={agent.avatar}
+            size={14}
+            mood={avatarMood(agent.state, agent)}
+            className="mr-0.5 shrink-0"
+          />
           <span className="truncate">{agent.name}</span>
           <span aria-hidden>·</span>
           <span className="shrink-0" title={formatTimestamp(at)}>

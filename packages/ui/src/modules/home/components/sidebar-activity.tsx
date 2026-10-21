@@ -1,11 +1,13 @@
 import { useMemo, useState } from "react";
 
+import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { SectionLabel } from "@/components/ui/section-label";
 import { useNow } from "@/hooks/use-now";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import { useAgentsList } from "../../agents/api/queries.js";
+import { useSidebarAgents } from "../../agents/hooks/use-sidebar-agents.js";
 import { useOpenSession } from "../../sessions/hooks/use-open-session.js";
 import { useActivityConversations } from "../hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../hooks/use-activity-sessions.js";
@@ -27,6 +29,8 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
   const filters = useStore((s) => s.sidebarActivityFilters);
   const setFilters = useStore((s) => s.setSidebarActivityFilters);
   const openSession = useOpenSession();
+  const { isOpen } = useSidebarAgents();
+  const setAgentOpen = useStore((s) => s.setSidebarAgentOpen);
   const [shown, setShown] = useState(PAGE);
   const now = useNow(MINUTE_MS);
   const agents = useAgentsList();
@@ -40,7 +44,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
     <section aria-label="Activity" data-testid="sidebar-activity">
       <div
         className={cn(
-          "flex items-center justify-between py-1 pl-2.5",
+          "mb-1.5 flex items-center justify-between pt-3 pr-1 pb-1 pl-3",
           stickyHeaderClassName && [
             "sticky top-0 z-raised",
             stickyHeaderClassName,
@@ -49,6 +53,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
       >
         <SectionLabel>Activity</SectionLabel>
         <ActivityFilterMenu
+          className={`border border-border bg-background ${FOCUS_RING}`}
           filters={filters}
           onChange={(next) => {
             setFilters(next);
@@ -65,7 +70,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
               : "No sessions yet."}
         </p>
       )}
-      <ul className="flex flex-col gap-px">
+      <ul className="flex flex-col gap-1">
         {visible.map((item) => (
           <SidebarActivityRow
             key={item.id}
@@ -74,6 +79,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
             now={now}
             conversation={conversationOf(item.session)}
             onOpen={() => {
+              setAgentOpen(item.session.agentId, isOpen(item.session.agentId));
               openSession(
                 item.session.agentId,
                 item.session.sessionId,
@@ -88,7 +94,7 @@ export function SidebarActivity({ stickyHeaderClassName, onNavigate }: Props) {
         <button
           type="button"
           onClick={() => setShown(shown + PAGE)}
-          className="mt-px flex h-[30px] w-full items-center rounded-lg px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          className="mt-px flex h-[30px] w-full items-center rounded-lg px-3 text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
         >
           View more
         </button>

@@ -284,9 +284,13 @@ fn a_machine_a_hand_off_orphaned_is_the_loaders_to_reap() {
         .join(vm_runner::state::EXIT_RECORDS)
         .join(&machine);
     wait_for("the record of the machine's death", || record.exists());
-    assert_eq!(
-        std::fs::read_to_string(&record).unwrap(),
-        libc::SIGSYS.to_string()
+    // UNIT_BOUNDARY_DESCRIPTION: the loader's record names the death and the process it belongs to, since a pid alone cannot tell this VMM from the one the kernel handed the number to before it: the signal is the second line.
+    let written = std::fs::read_to_string(&record).unwrap();
+    let (start, signal) = written.split_once('\n').expect("a start time and a signal");
+    assert_eq!(signal, libc::SIGSYS.to_string());
+    assert!(
+        start.parse::<u64>().is_ok(),
+        "the record carries no start time: {written:?}"
     );
     let _ = pod.loader.kill();
 }

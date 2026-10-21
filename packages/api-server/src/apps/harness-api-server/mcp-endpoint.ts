@@ -312,7 +312,7 @@ export function createMcpSession(
         .string()
         .optional()
         .describe(
-          "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message.",
+          "Target chat: an id from describe_channel, or a Slack user id (U…) for a direct message — only with your owner, the person in a 1:1 DM you are connected to, or a member of a channel you are connected to; anyone else is refused.",
         ),
       attachment: attachmentInput,
       unfurlLinks: z

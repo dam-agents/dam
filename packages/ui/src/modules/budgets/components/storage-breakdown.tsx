@@ -1,8 +1,5 @@
-import type { BudgetVmUsage } from "api-server-api";
-
 import { useStore } from "../../../store.js";
-import type { AgentView } from "../../../types.js";
-import { formatBytes, STORAGE_PARTS, storageRows } from "../lib/pools.js";
+import { formatBytes, STORAGE_PARTS, type StorageRow } from "../lib/pools.js";
 
 const PART_HINT: Record<string, string> = {
   [STORAGE_PARTS.seeds]:
@@ -11,13 +8,11 @@ const PART_HINT: Record<string, string> = {
 };
 
 interface Props {
-  usage: BudgetVmUsage;
-  agents: readonly AgentView[];
+  rows: StorageRow[];
 }
 
-export function StorageBreakdown({ usage, agents }: Props) {
+export function StorageBreakdown({ rows }: Props) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const rows = storageRows(usage, agents);
   return (
     <section
       aria-label="What fills your storage"
@@ -29,7 +24,7 @@ export function StorageBreakdown({ usage, agents }: Props) {
         delete files it doesn't need.
       </p>
       <ul className="flex flex-col divide-y divide-border">
-        {rows.map(({ agent, label, bytes }) => (
+        {rows.map(({ agent, label, bytes, homeFull }) => (
           <li
             key={agent?.id ?? label}
             className="flex items-baseline justify-between gap-3 py-1.5"
@@ -48,7 +43,9 @@ export function StorageBreakdown({ usage, agents }: Props) {
               )}
               <span className="block text-xs text-muted-foreground">
                 {agent
-                  ? "This agent's files. Open it to delete it, or to ask it to clean up."
+                  ? homeFull
+                    ? "Out of space, so its writes are failing. Open it to delete files it doesn't need."
+                    : "This agent's files. Open it to delete it, or to ask it to clean up."
                   : PART_HINT[label]}
               </span>
             </span>

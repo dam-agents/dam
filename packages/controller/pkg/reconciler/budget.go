@@ -316,3 +316,8 @@ func (r *AgentReconciler) publishParked(ctx context.Context, agent *apiv1.Agent,
 		s.ObservedGeneration = gen
 	})
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's lock, for a caller outside this package that must serialize with the reconciler's own work on that owner. The idle checker takes it around its pin read and its halt, so a runner roll cannot start in between.
+func (r *AgentReconciler) OwnerLock(owner string) *sync.Mutex {
+	return r.ownerLock(owner)
+}

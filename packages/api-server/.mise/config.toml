@@ -12,4 +12,13 @@ run = "pnpm exec prettier --write 'src/**/*.ts' '!src/proto-gen/**'"
 [tasks.test]
 extends = "ts:test"
 run = "pnpm exec vitest run --config vitest.unit.config.ts"
-sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml", "{{vars.repo_root}}/packages/vm-runner/contract/vocabulary.json", "{{vars.repo_root}}/helm/values.yaml", "{{vars.repo_root}}/packages/db/drizzle/*.sql"]
+sources = ["src/**", "vitest*.config.ts", "tsconfig.json", "{{vars.repo_root}}/pnpm-lock.yaml", "{{vars.repo_root}}/packages/vm-runner/contract/vocabulary.json", "{{vars.repo_root}}/packages/controller/contract/*.json", "{{vars.repo_root}}/helm/values.yaml", "{{vars.repo_root}}/helm/starter-kits/**", "{{vars.repo_root}}/packages/db/drizzle/*.sql"]
+
+[tasks."test:harness-config-concurrency"]
+description = "Check the permission-mode reset against hello and the Config save on a real PostgreSQL"
+run = '''
+set -euo pipefail
+: "${HARNESS_CONFIG_DATABASE_URL:?point it at a disposable database}"
+(cd "{{vars.repo_root}}/packages/db" && DATABASE_URL="$HARNESS_CONFIG_DATABASE_URL" pnpm exec drizzle-kit migrate >/dev/null)
+HARNESS_CONFIG_DATABASE_URL="$HARNESS_CONFIG_DATABASE_URL" pnpm exec tsx scripts/harness-config-concurrency.ts
+'''

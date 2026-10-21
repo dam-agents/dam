@@ -1,6 +1,6 @@
 # Invocations
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -121,6 +121,7 @@ Copies are byte-capped per target, keeping the newest frames, and in total per r
 Capture is best effort and bounded: it never blocks a report, never fails a reap, and **never wakes the root** — a root that is not up (sleeping, crashed, or whose script did not await its spawn) keeps no copy.
 A cascade that deletes the root itself skips capture, since the root's volume goes too.
 The copy is read-only history, opened beside the Driver's chat and never loaded back as a live session.
+From a finished target, the user can **continue in a new chat**: a new chat of the root Driver that starts from the target's prompt and result as recorded, not from its conversation ([sessions — follow-up chats](sessions.md#follow-up-chats)).
 
 **The Driver's chat is the anchor.** The progress lines both SDKs print to stderr, naming each spawned target, are what the chat recognises in the Driver's tool output to draw the delegation in place, so their shape is a contract the SDKs and the chat share.
 Each harness's adapter shapes tool output its own way — in the standard content, as the raw tool result, or as a result object — so the chat and the Driver's runtime read it through one shared reader in the runtime contract, and a line means the same on every harness.

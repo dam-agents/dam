@@ -159,7 +159,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 		stripManagedFields,
 	).Apps().V1().StatefulSets().Informer()
 
-	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
+	agentReconciler := reconciler.NewAgentReconciler(client, dynClient, cfg).WithAgentCache(agentInformer.Lister()).WithAgentCacheSynced(agentInformer.Informer().HasSynced).WithPodCache(podInformer.Lister()).WithStatefulSetCache(statefulSetInformer)
 
 	var runnerFactory informers.SharedInformerFactory
 	var runnerInformer, runnerPodInformer, nodeInformer cache.SharedIndexInformer
@@ -196,6 +196,7 @@ func run(ctx context.Context, client kubernetes.Interface, dynClient dynamic.Int
 	idleChecker := reconciler.NewIdleChecker(client, dynClient, cfg)
 	if cfg.VM.Enabled {
 		idleChecker.WithMachineHalt(agentReconciler.HaltMachine)
+		idleChecker.WithOwnerLock(agentReconciler.OwnerLock)
 		agentReconciler.CheckVMInstall(ctx)
 		go every(ctx, 5*time.Minute, func() { agentReconciler.CheckVMInstall(ctx) })
 	}

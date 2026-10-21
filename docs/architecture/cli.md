@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -142,6 +142,30 @@ The recurring patterns, stated once:
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
 - **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
 
+## Agent skill
+
+The repository ships agent skills for agents that run outside the platform ([`skills/`](../../skills/)).
+They sit at the top level, not inside a client package, because a skill is not owned by any one client.
+The repository's contributor skills ([`.agents/skills/`](../../.agents/skills/)) are for working on the repository, not for users.
+Its [`skills-lock.json`](../../skills-lock.json) lists them, and a skills installer leaves out the skills that file lists, so an installer pointed at the repository offers only the skills in `skills/`.
+A repository check fails when a contributor skill is missing from that list.
+The `dam` skill teaches an agent on the user's own machine — any harness that loads skills — to drive a Platform deployment through the CLI.
+The user installs it from the repository with an open skills installer, pinned to the release tag of the CLI they run.
+The tag of a CLI from before the first release that ships the skill does not hold it, so the user updates the CLI first.
+The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
+
+The CLI's test suite checks the `dam` skill against the CLI.
+It resolves every command the skill names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
+A CLI change that leaves the skill describing a command that no longer exists fails there, before it ships.
+
+The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
+Sign-in stays the device flow the user approves in a browser, and the agent never reads the credential store or the bearer variable.
+Every command that stores a secret — a connection's credential, a rotated one, a new API key — is handed to the user to run in a terminal of their own, where the CLI's masked prompt takes it, and the agent then verifies the outcome with a read verb.
+Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
+
+The agent reaches the deployment only through the CLI, never through the API directly.
+A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.
+
 ## Agent lifecycle
 
 The CLI presents Agents as single, atomic entities — one resource carrying both spec and runtime state, with no separate instance type.
@@ -186,9 +210,13 @@ Sessions it creates are typed `cli_run` through the same session metadata every 
 
 The headline property is that **the caller may leave**.
 Detaching never cancels a running turn, so `--async` exits once the runtime reports the prompt started, printing the session id to poll with `dam run get`.
-To make the result readable after the fact — the in-memory session log is reaped seconds after an unwatched turn ends, and harnesses differ in what they can replay — the agent-runtime records each finished `cli_run` turn's outcome (prompt identity, stop reason, accumulated assistant text) in a **run record**, a size-capped document on the pod's own disk, deleted with the Session.
+To make the result readable after the fact — the in-memory session log is reaped seconds after an unwatched turn ends, and harnesses differ in what they can replay — the agent-runtime records each finished `cli_run` run's outcome (prompt identity, stop reason, accumulated assistant text) in a **run record**, a size-capped document on the pod's own disk, deleted with the Session.
+A run is done when its prompt is answered *and* the harness is idle: a harness that works on in an [Autonomous Turn](sessions.md#session-inside-the-pod), as Claude Code does when its background agents report after it answered, keeps the run pending, and the text of that turn joins the record.
+The record then carries the run's final stop reason: the prompt's, or `cancelled` when `dam run cancel` stopped the Autonomous Turn; a harness that dies in it leaves a record with no stop reason, as a dropped turn does.
+When the runtime writes the record it sends `platform/runEnded`, with the prompt identity and that stop reason, into the session log, and `dam run` and `run get --wait` end on it.
+A runtime announces it with `_meta.platform.runEnded` in its `initialize` answer; against one that does not, `dam run` ends at the prompt answer as before.
 A runtime-answered extension method serves it back as *done*, *pending* (turn still in flight — including one cut short by an abnormal pod death and awaiting its one automatic resume), *interrupted* (that resume was cut short too, so the runtime will never finish the run — `dam run` reports it as failed with a retry hint), or *none*; a turn the harness dropped mid-run is recorded with no stop reason rather than erased, so a lost run never reads as one that never existed.
-`dam run get` prints it — under `--json`, the extension method's own status-discriminated payload verbatim, a *pending* shape on wait expiry so stdout is never empty — `--wait` attaches until the turn ends, and `dam run cancel` cancels only a run it could positively read as pending.
+`dam run get` prints it — under `--json`, the extension method's own status-discriminated payload verbatim, a *pending* shape on wait expiry so stdout is never empty — `--wait` attaches until the run ends, and `dam run cancel` cancels only a run it could positively read as pending.
 The record lives in the agent's home volume and shares its lifetime — [persistence](persistence.md) owns what that survives; durability beyond the agent is a deliberate non-goal for now.
 
 The same record is the disconnect story: a `dam run` that loses its socket mid-turn reconnects with backoff, re-loads the Session, and finishes from the record — matching its own turn by the prompt identity and stop reason the logged end-of-turn signal carries — printing only the text it has not already streamed; the total wait is always bounded — `--timeout`, one hour by default (the `agent create --wait` convention) — and on expiry the command exits non-zero with the session id still printed, leaving the run resumable.
@@ -207,13 +235,14 @@ sshd refuses to start a session whose environment exceeds 1000 entries, so the r
 The transport is an in-pod OpenSSH `sshd` spawned per connection and tunneled over the agent WebSocket; the SSH wire protocol is opaque to the CLI and api-server, which relay bytes verbatim.
 SSH terminates at the in-pod sshd, which reuses the same upgrade auth (token → ownership → terms) as `dam chat`.
 Authentication to sshd is public-key via a dedicated dam keypair under `$XDG_STATE_HOME/dam/` — the user's real identity is the bearer token verified at the WebSocket upgrade, and the SSH key is only the transport credential.
-Host-key checking is disabled deliberately: the TLS-encrypted upgrade is the real trust boundary, so the in-pod host key authenticates nothing extra and only broke connections when a volume rotated it.
+Host-key checking is disabled deliberately: the TLS-encrypted upgrade is the real trust boundary, so the in-pod host key authenticates nothing extra, and it is no loss that a fresh host key comes with each boot.
 
 Arguments after `--` go to `ssh` verbatim, after the agent host, so `dam ssh connect <agent> -- -L 8080:localhost:8080 -N` forwards a port without a shell and `-- uname -a` runs a remote command; editor modes reject them.
 A single `--exec` flag selects the client and how it is invoked (`ssh`, or an editor in `code`/`zed` mode).
 Editor modes write a managed host block to dam's own ssh_config and pull it into `~/.ssh/config` via one `Include` line — the reliable cross-client hook, since editors are often already-running singletons that ignore a launch-time environment — then launch the editor against the agent alias; `dam ssh configure` writes those blocks without launching and can reconcile them to the host's current agents or clear them.
 `code` mode additionally pre-allows the VS Code server-download hosts as egress rules so the connect doesn't trip a mid-flight approval prompt.
 `dam ssh` depends on the OpenSSH client locally; `sshd` ships in the shared agent base image, so every agent supports it.
+The files sshd needs to let a connection in — its host key, its config and the keys a connection registers — are a vm agent's in a directory of the runtime's own, `/run/dam/ssh`, and not in its home, so a full agent is still one its owner can get into to free it; a container agent keeps them in its home, the one path its uid may write; the environment file stays where sshd reads it, in the home, so that session starts with a bare shell and without the replayed environment.
 
 ## Files and import
 

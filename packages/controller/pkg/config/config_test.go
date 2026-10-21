@@ -430,20 +430,21 @@ func TestLoadFromEnv_RejectsARunnerRolloutOutOfRange(t *testing.T) {
 		"POD_NAME":              "controller-0",
 	}
 	runner := `"image":"vm-runner:1","storage":"40Gi","resources":{"limits":{"memory":"8Gi"}},"releaseHostPath":"/var/lib/r"`
-	for _, bad := range []string{`"rollout":{"maxConcurrent":-1}`, `"rollout":{"maxConcurrentPercent":101}`, `"rollout":{"maxConcurrentPercent":-5}`} {
+	for _, bad := range []string{`"rollout":{"maxConcurrent":-1}`, `"rollout":{"maxConcurrentPercent":101}`, `"rollout":{"maxConcurrentPercent":-5}`, `"rollout":{"stalledTimeout":"-1m"}`} {
 		base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,` + bad + `}}`
 		setEnv(t, base)
 		_, err := LoadFromEnv()
 		assert.Error(t, err, bad)
 	}
 
-	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"maxConcurrentPercent":10,"settleTimeout":"15m","idleWait":"2h"}}}`
+	base["AGENT_VM"] = `{"enabled":true,"runner":{` + runner + `,"rollout":{"maxConcurrent":2,"maxConcurrentPercent":10,"settleTimeout":"15m","stalledTimeout":"45m","idleWait":"2h"}}}`
 	setEnv(t, base)
 	cfg, err := LoadFromEnv()
 	require.NoError(t, err)
 	assert.Equal(t, 2, cfg.VM.Runner.Rollout.MaxConcurrent)
 	assert.Equal(t, 10, cfg.VM.Runner.Rollout.MaxConcurrentPercent)
 	assert.Equal(t, 15*time.Minute, cfg.VM.Runner.Rollout.SettleTimeout.AsDuration())
+	assert.Equal(t, 45*time.Minute, cfg.VM.Runner.Rollout.StalledTimeout.AsDuration())
 	assert.Equal(t, 2*time.Hour, cfg.VM.Runner.Rollout.IdleWait.AsDuration())
 }
 

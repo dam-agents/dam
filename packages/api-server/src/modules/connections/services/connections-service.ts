@@ -18,6 +18,8 @@ import {
   type ConnectionView,
   type Contribution,
   type ProviderBalance,
+  type ProviderKeyCheck,
+  type ProviderKeyRecheck,
   type SecretRef,
   preferenceGroupOf,
   signingTargetOf,
@@ -77,7 +79,10 @@ import type {
   S3CredentialProbe,
   S3CredentialProbeFailure,
 } from "../domain/s3-credential-probe.js";
-import type { ProviderKeyProbe } from "../domain/provider-key-probe.js";
+import type {
+  ProviderKeyProbe,
+  ProviderKeyProbeOutcome,
+} from "../domain/provider-key-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -96,6 +101,10 @@ import { scopeGitHubUserToken } from "./github-user-token.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { recordAccountLabel } from "./account-label.js";
 import { accountLabelOf } from "../domain/account-label.js";
+import {
+  KEY_CHECK_INPUT_KEY,
+  keyCheckOf,
+} from "../domain/provider-key-check.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -169,6 +178,7 @@ export function createConnectionsService(deps: {
   function toView(conn: Connection): ConnectionView {
     const template = deps.templates.get(conn.templateId);
     const accountLabel = accountLabelOf(conn);
+    const keyCheck = keyCheckOf(conn);
     const hosts = [
       ...new Set(
         conn.contributions.flatMap((c) =>
@@ -232,6 +242,7 @@ export function createConnectionsService(deps: {
       contributions: conn.contributions,
       hosts,
       ...(accountLabel ? { accountLabel } : {}),
+      ...(keyCheck ? { keyCheck } : {}),
       ...oauthExtras,
     };
   }
@@ -635,13 +646,15 @@ export function createConnectionsService(deps: {
     });
   }
 
-  async function assertProviderKeyAccepted(
+  function recordProviderKeyOutcome(
+    outcome: ProviderKeyProbeOutcome,
     templateId: string,
-    key: string,
     connectionId: string,
-  ): Promise<void> {
-    const outcome = await deps.providerKeyProbe.probe(templateId, key);
-    if (outcome.ok) return;
+  ): ProviderKeyCheck | null {
+    const checkedAt = new Date().toISOString();
+    if (outcome.ok) {
+      return outcome.unchecked ? null : { result: "ok", checkedAt };
+    }
     securityLog("warn", "connection.provider_key_probe_failed", {
       category: "credential",
       actor: deps.ownerId,
@@ -651,15 +664,62 @@ export function createConnectionsService(deps: {
       reason: outcome.reason,
       detail: { templateId, probe: outcome.detail },
     });
-    if (outcome.reason !== "refused") return;
+    return { result: outcome.reason, detail: outcome.detail, checkedAt };
+  }
+
+  async function assertProviderKeyAccepted(
+    templateId: string,
+    key: string,
+    connectionId: string,
+  ): Promise<ProviderKeyCheck | null> {
+    const check = recordProviderKeyOutcome(
+      await deps.providerKeyProbe.probe(templateId, key),
+      templateId,
+      connectionId,
+    );
+    if (check?.result !== "refused") return check;
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:
-        `The provider refused this key (${outcome.detail}). Check that it is complete and still valid.` +
+        `The provider refused this key (${check.detail}). Check that it is complete and still valid.` +
         (templateId === "ibm-litellm"
           ? ` There are two ETE LiteLLM instances, and only keys from https://${IBM_LITELLM_HOST}/ui?page=api-keys work with ${deps.brandName}.`
           : ""),
     });
+  }
+
+  async function probeStoredProviderKey(
+    conn: Connection,
+    valueRef: SecretRef,
+  ): Promise<ProviderKeyProbeOutcome> {
+    let key: string | null;
+    try {
+      key = await deps.secretStore.getField(valueRef);
+    } catch (err) {
+      return {
+        ok: false,
+        reason: "unverified",
+        detail: `the stored key could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (!key)
+      return { ok: false, reason: "refused", detail: "no key is stored" };
+    return deps.providerKeyProbe.probe(conn.templateId, key);
+  }
+
+  async function recheckProviderKey(
+    conn: Connection,
+  ): Promise<ProviderKeyCheck | null> {
+    if (conn.auth.kind !== "header") return null;
+    const check = recordProviderKeyOutcome(
+      await probeStoredProviderKey(conn, conn.auth.valueRef),
+      conn.templateId,
+      conn.id,
+    );
+    if (check) {
+      await deps.repo.mergeInputs(conn.id, { [KEY_CHECK_INPUT_KEY]: check });
+    }
+    return check;
   }
 
   async function rotateSigv4Keys(
@@ -919,6 +979,20 @@ export function createConnectionsService(deps: {
       }
     },
 
+    async recheckProviderKeys(): Promise<ProviderKeyRecheck[]> {
+      const providers = (await deps.repo.listByOwner(deps.ownerId)).filter(
+        (c) =>
+          PROVIDER_TEMPLATE_IDS.has(c.templateId) &&
+          c.templateId !== PLATFORM_LLM_TEMPLATE_ID,
+      );
+      return Promise.all(
+        providers.map(async (conn) => ({
+          connectionId: conn.id,
+          check: await recheckProviderKey(conn),
+        })),
+      );
+    },
+
     async validateGrantSet(connectionIds: string[]): Promise<void> {
       const wanted = new Set(connectionIds);
       const granted = (await deps.repo.listByOwner(deps.ownerId)).filter((c) =>
@@ -954,8 +1028,15 @@ export function createConnectionsService(deps: {
               ? singleValueOf(credential)
               : credential.value;
           if (value) {
-            await assertProviderKeyAccepted(conn.templateId, value, conn.id);
+            const check = await assertProviderKeyAccepted(
+              conn.templateId,
+              value,
+              conn.id,
+            );
             await rotateHeaderValue(conn, conn.auth, value);
+            await deps.repo.mergeInputs(conn.id, {
+              [KEY_CHECK_INPUT_KEY]: check,
+            });
           }
           if (contributions) {
             await deps.repo.updateContributions(conn.id, contributions);
@@ -1319,9 +1400,9 @@ export function createConnectionsService(deps: {
         auth.kind === "header" && secretPath
           ? built.secrets.get(secretPath)?.["value"]
           : undefined;
-      if (headerValue) {
-        await assertProviderKeyAccepted(template.id, headerValue, id);
-      }
+      const keyCheck = headerValue
+        ? await assertProviderKeyAccepted(template.id, headerValue, id)
+        : null;
 
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
@@ -1342,7 +1423,11 @@ export function createConnectionsService(deps: {
         ownerId: deps.ownerId,
         templateId: template.id,
         name: connectionName,
-        inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
+        inputs: {
+          ...stripSecretsFromInputs(input),
+          ...sharedKbInputs,
+          ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
+        },
         auth,
         contributions,
       };

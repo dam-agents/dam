@@ -49,6 +49,7 @@ A few observations the diagram glosses over:
   Slack only: Telegram drops one at its gateway.
   A picture becomes prompt content only in a format the harness decodes, the sniffed type outranking the messenger's label.
   Everything else is written into the agent's workspace and linked by absolute path, as a web-UI upload is, whatever its format.
+  Both land under `~/.uploads/`, which the Claude Code image's managed settings allow reads from, so reading a handed file raises no permission prompt.
   Anything withheld — a refusing messenger, a failed write, a size ceiling — is named to the agent, and on an addressed turn to the sender too.
 - **A relayed turn answers its own permission prompts, and it answers them no.** A harness that stops to ask before a sensitive tool call is asking somebody who is not there: the relay holds no verdict of its own, and the conversation's other members are not the binding owner.
   So the relay refuses and the turn carries on with that one call denied, rather than waiting on an answer that cannot come — the same rule the credentialed-egress gate applies to an unattended turn ([security-and-credentials](security-and-credentials.md)).
@@ -82,6 +83,11 @@ A few observations the diagram glosses over:
   Thought and tool notifications feed it; assistant text is ignored.
   The status degrades to nothing where the workspace can't show it.
   Ambient turns present no status — nobody summoned the agent.
+- **The status carries Slack's Stop button, and it stops the turn.** Slack shows the button to apps subscribed to `agent_session_stopped`, and sends that event for the thread when someone presses it.
+  The worker cancels the turn running in that thread with ACP `session/cancel`, the same notification the web UI sends, on the connection that carries the prompt.
+  Only a person whose message the turn carries — the one who started it, or one whose message joined it — or someone whose linked platform user owns the Agent may stop it; anyone else is told so in an ephemeral notice and the turn runs on.
+  A stopped turn clears its status, finishes every stream Slack names in the event, and is recorded with the reason `stopped`; it is not handed to the delivery nudge, so the agent is not asked again to answer what the person withdrew.
+  A Stop that arrives after the turn ended only clears the status.
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
@@ -250,7 +256,7 @@ What the agent sees:
   An unnamed call while any Slack turn is live, and one naming a turn the Agent is not running, are both refused: answering them as though a turn had been declined would record nothing, and the turn would then be repaired as undelivered — posting the very answer the Agent chose to withhold.
 - **Slack reach is where the owner is a member.** A bound Agent may post beyond its bound conversations, into a channel that both the bot and the Agent's owner are members of (known from the owner's linked Slack identity), public or private alike: reaching a channel means being able to post there, and Slack lets a person post only where they have joined, so seeing a public channel is not reaching it.
   Other channels are left out of `describe_channel` and refused as a target, and an owner with no linked identity reaches none.
-  A Slack user id opens a DM.
+  A Slack user id opens a DM, but only with the owner, the person in a bound 1:1 DM, or a member of a bound channel, and a DM id is held to the same rule: the shared bot can open a DM with anyone in the workspace, so without it an Agent could message people who never met it or its owner.
   Membership is verified at send time; a bound conversation short-circuits every check, since the binding is the channel's consent.
   Every outbound post is made by the bot and footed with an [Agent Footer](#the-agent-footer).
   The binding governs who may drive the Agent inbound; the owner's membership governs where it may go outbound.
@@ -300,6 +306,6 @@ The two messengers diverge slightly on what a top-level post means:
 
 - **Slack:** the worker posts outside any thread, producing a new top-level message.
   A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
-  An Agent-initiated DM lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
+  An Agent-initiated DM goes only to someone within the Agent's reach (above); it lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
   The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

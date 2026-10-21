@@ -180,6 +180,56 @@ describe("createSessionsService", () => {
     expect(second.incomplete).toBeUndefined();
     expect(listCalls).toBe(1);
   });
+  // TEST_SCENARIO: the harness listing reaches the service through the runtime's own session/list, which already shows a renamed session under its custom title. The automatic title the runtime passes beside it stays the automatic one, so the rename dialog's placeholder is not the custom title again.
+  it("keeps the automatic title of a renamed session through the runtime's listing", async () => {
+    const caller: InProcessCaller = {
+      request: async <T>(method: string): Promise<T> => {
+        if (method !== "session/list") return {} as T;
+        return {
+          sessions: [
+            {
+              sessionId: "renamed",
+              title: "Daily brief",
+              updatedAt: null,
+              _meta: {
+                platform: {
+                  customTitle: "Daily brief",
+                  autoTitle: "Summarize the open pull requests",
+                },
+              },
+            },
+          ],
+        } as T;
+      },
+      notify: () => {},
+      close: () => {},
+    };
+    const store = fakeStore();
+    store.all = () => ({
+      renamed: {
+        meta: { mode: "chat", customTitle: "Daily brief" },
+        createdAt: "2026-08-27T10:00:00.000Z",
+      },
+    });
+    const service = createSessionsService({
+      subAgentContextOf: () => ({ harness: "claude-code", inherited: {} }),
+      openCaller: () => caller,
+      sessionMetadata: store,
+      isRunning: () => false,
+      changes: createSessionChanges(0),
+      sessionFrames: () => ({ frames: [], truncated: false }),
+      delegations: { store: () => ({ truncated: false }), read: () => null },
+      log: () => {},
+    });
+
+    const { sessions } = await service.list();
+    expect(sessions[0]).toMatchObject({
+      title: "Daily brief",
+      customTitle: "Daily brief",
+      autoTitle: "Summarize the open pull requests",
+    });
+  });
+
   // TEST_SCENARIO: the agent renames its own session through the platform tool, which knows the session only by its reference; clearing the title hands the row back to the harness's title.
   it("sets a title on the session a reference names, and clears it with null", async () => {
     const entries: Record<string, SessionMetaEntry> = {

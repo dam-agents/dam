@@ -26,12 +26,51 @@ import {
   type DefaultConverter,
   type WakeStamp,
 } from "./services/default-conversion.js";
+import { createHarnessConfigResetRepo } from "./infrastructure/reset-repo.js";
+import { createHarnessConfigReset } from "./services/harness-config-reset.js";
+import { createHarnessConfigEventQueue } from "./infrastructure/config-event-queue.js";
+import type { OutboxRepo } from "../runtime-delivery/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { emit, EventType } from "../../events.js";
 import { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
 
+export const ETE_BYPASS_RESET = {
+  reset: "ibm-litellm-bypass-mode",
+  template: "ibm-litellm",
+  harness: "claude-code",
+  from: "bypassPermissions",
+  to: "auto",
+} as const;
+
+export function composeHarnessConfigReset(deps: {
+  db: Db;
+  outboxRepo: OutboxRepo;
+  runtimeMutator: RuntimeMutator;
+  ownerOf: (agentId: string) => Promise<string | null>;
+  log: (msg: string) => void;
+}): { run(): Promise<{ reset: number; failed: number }> } {
+  return createHarnessConfigReset({
+    repo: createHarnessConfigResetRepo({
+      db: deps.db,
+      ...ETE_BYPASS_RESET,
+    }),
+    snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
+    eventQueue: createHarnessConfigEventQueue({
+      db: deps.db,
+      outboxRepo: deps.outboxRepo,
+    }),
+    enqueue: (agentId) => deps.runtimeMutator.enqueueAfterCommit(agentId),
+    ownerOf: deps.ownerOf,
+    harness: ETE_BYPASS_RESET.harness,
+    from: ETE_BYPASS_RESET.from,
+    to: ETE_BYPASS_RESET.to,
+    log: deps.log,
+  });
+}
+
 export function composeHarnessConfigModule(deps: {
   db: Db;
+  outboxRepo: OutboxRepo;
   surface: string;
   runtimeMutator: RuntimeMutator;
   catalog: HarnessCatalog;
@@ -41,12 +80,16 @@ export function composeHarnessConfigModule(deps: {
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
 }): { service: HarnessConfigService } {
-  const { db, ...serviceDeps } = deps;
+  const { db, outboxRepo, ...serviceDeps } = deps;
+  const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
       snapshotRepo: createHarnessConfigSnapshotRepo(db),
       pairRepo: createSessionPairRepo(db),
+      eventQueue: createHarnessConfigEventQueue({ db, outboxRepo }),
+      retireReset: (agentId, tx, harness) =>
+        resetRepo.retire(agentId, tx, harness),
     }),
   };
 }

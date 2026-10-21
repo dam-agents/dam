@@ -6,6 +6,8 @@ import {
 } from "api-server-api";
 import { z } from "zod";
 
+import { withoutContinuedFrom } from "./continued-from.js";
+
 export function undeliveredOf(
   id: string,
   frame: unknown,
@@ -13,7 +15,9 @@ export function undeliveredOf(
 ): PlatformUndeliveredPrompt {
   const raw = (frame as { params?: { prompt?: unknown } } | null)?.params
     ?.prompt;
-  const parsed = z.array(promptBlockSchema).safeParse(raw);
+  const parsed = z
+    .array(promptBlockSchema)
+    .safeParse(Array.isArray(raw) ? withoutContinuedFrom(raw) : raw);
   if (!parsed.success)
     return { id, recordedAt, blocks: [], droppedAttachments: [] };
   return { id, recordedAt, ...capInlineImages(parsed.data) };

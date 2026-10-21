@@ -1,6 +1,6 @@
 # Agent lifecycle
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -81,7 +81,7 @@ See [knowledge-bases](knowledge-bases.md) for what a knowledge base adds on top 
 The api-server writes a new Agent custom resource whose spec carries the Agent's image / mount declarations (copied from a Template at create time, if any), env, and secret refs.
 There is no stored desired state — running-vs-hibernated is observed status the controller derives from activity.
 The controller reconciles a paired set of owned resources: two StatefulSets (the agent and its gateway), two Services (the agent's headless ACP and the `<agent>-gateway` proxy), agent-egress and gateway-ingress NetworkPolicies, and a per-Agent Envoy bootstrap ConfigMap + leaf TLS Certificate.
-On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding `HOME` and the machine's root ([persistence](persistence.md#per-agent-pvcs)), and the agent Service selects that runner rather than a pod of its own.
+On the `vm` Backend the agent StatefulSet and its workspace PVC are not rendered at all: the Agent's storage is one disk on the owner's [VM runner](vm-runner.md), holding `HOME` and the machine's root ([vm storage](vm-storage.md#the-disk)), and the agent Service selects that runner rather than a pod of its own.
 With the [owner gateway](credential-gateway.md#owner-gateway) on, a moved `vm` Agent also has no gateway StatefulSet, bootstrap ConfigMap, leaf or gateway NetworkPolicies of its own: it keeps its `<agent>-gateway` Service, which selects the owner's gateway pod, and its ext-authz Service.
 
 When the create request carries a private-registry credential, the api-server writes an agent-scoped `dockerconfigjson` pull Secret *before* the Agent CR and rolls it back if that write fails; the controller hands that Secret first, ahead of any install-wide default, to whatever pulls the image — the kubelet, or on the vm Backend the owner's runner.
@@ -189,6 +189,8 @@ Whether an Agent is "idle" is **derived from observed activity, never stored** �
 **The decision.** The controller's idle checker scans Agents on a timer whose interval scales with the *shortest effective timeout it saw last sweep* — an Agent that chooses a window far below the cluster-wide default is swept inside its own window rather than at the default's pace, subject to a floor that keeps the sweep off the API server's back.
 It runs even when the default is never-hibernate, for the Agents that opt in, and once at start-up, since a restart forgets the shortest window it saw.
 It skips any Agent already at rest — pair observed at zero *and* hibernation published.
+It also skips any machine a [runner roll](vm-runner-upgrades.md#rolls) is waiting on: the roll's `runner-awaiting` list names the machines that were ready before it, and a hibernated machine would never come back ready.
+That check and the scale-down are taken together under the owner's lock, the one a roll start takes, so a roll that begins while the pod is being probed still sees its machine left up.
 For the rest it hibernates only when *both* checks below agree it is quiet:
 
 1. **Activity annotations** — the same `shouldRun` gate the reconciler uses to scale *up*, so scale-down and scale-up can never disagree.
@@ -200,7 +202,7 @@ For the rest it hibernates only when *both* checks below agree it is quiet:
 
 **What counts as activity.** Those two checks rest on four signals, each catching something the others miss:
 
-- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is live.
+- **agent-runtime (`idle` flag).** Busy while a prompt turn is in flight, while the harness works on in an [Autonomous Turn](sessions.md#session-inside-the-pod) after it answered one, while prompts queue behind it, while a session setting change (mode or model) waits to be sent or answered, while an agent-initiated request (e.g. a permission prompt) awaits the client, while kept background work runs — a reported Harness Task or a marked Detached Process ([agent-processes](agent-processes.md#keeping-work)), or while a terminal (PTY) is live.
   A terminal is live while a viewer is attached, inside its detach grace, or while it printed within the idle window its reap uses ([sessions](sessions.md)).
   A detached, quiet terminal held open only for its background work counts only while that work is kept, as a chat session does: unkept work holds the terminal open and dies at hibernation.
   A chat is the exception to "open connection = busy": an attached chat with no turn running reads as `idle` here, since the flag tracks work, not watchers — such a chat stays awake via `active-session` below, not this probe.
@@ -227,7 +229,11 @@ A Template can seed this override — a workload whose real work runs off-sessio
 The controller resolves the effective value (override else default) and feeds it to the same `shouldRun` gate used for scale-up and scale-down.
 The UI offers it as *Sleep after being idle for* a short list of windows or *Never* (`0`), shows a custom value that is not in the list as its own option, and shows the *effective* value; an Agent created without a pick keeps its Template's seed.
 An Agent that never sleeps carries an *Always on* tag.
-**A vm Agent has no per-agent timeout.** It boots in seconds, so it always takes the chart-wide vm idle timeout, ignores any override, and the UI does not offer the setting.
+**A vm Agent reads the vm default.** It boots in seconds, so the chart carries a separate default for it, and the UI does not offer the setting on a vm Agent.
+An override still counts where one exists — a Template or starter kit seed, or an Agent whose [Backend](vm-runtime-migration.md) moved — and it is read exactly as a container Agent's is, `0` included.
+The override is a Go duration, and the api-server runs a port of Go's own parser rather than a lookalike: the whole grammar — a sign, a leading dot, an empty fraction, either microsecond spelling — the same float64 fraction step that makes `0.9999999999999999ns` one nanosecond, and the same int64 nanosecond overflow that rejects `2562048h`.
+A nonpositive duration is never-hibernate for every reader, and a positive window under a minute shows as one minute where the platform counts minutes.
+One golden document of real `time.ParseDuration` answers holds the controller and the api-server to the same acceptance and the same minutes.
 A cold first boot can still outlast that timeout — an image no runner has cached, a fresh runner, a large nested guest — so for a vm Agent whose pair is awake the idle checker also counts the clock from the moment it turned `Ready`, and holds a boot still in progress: a machine not ready for no reason of its own, with no start failure reported — a machine the kernel, its seccomp filter or its runner's own OOM kill took down is booting again, and that reason says why the machine went down rather than that it is up to nothing.
 The hold ends at the start failure report, and a boot that has not finished a quarter of an hour past the timeout is hibernated anyway.
 A boot the runner reports as copying a disk, a conversion or a migration seed's restore, is held for as long as the runner says so, since the runner bounds it at six hours and a hibernation would start the copy again from nothing; reclaim counts it as booting for the same reason.
