@@ -90,12 +90,14 @@ it("offers the Pinned tile only while a pin is stored", () => {
   expect(render()).toContain('data-testid="sidebar-rail-pinned"');
 });
 
-// TEST_SCENARIO: an Agent awaiting an approval, or holding an unread Session, marks its tile, and its own accessible name says which, since the dot alone is a colour.
+// TEST_SCENARIO: an Agent awaiting an approval, or holding an unread Session, marks its tile, and its own accessible name says which, since the dot alone is a colour, and the name leads with the New session action its click takes.
 it("marks an Agent that needs attention in its name", () => {
   expect(render()).not.toContain("needs your approval");
   env.approvals = [{ status: "pending", agentId: "a2", sessionId: "s1" }];
-  expect(render()).toContain('aria-label="other, needs your approval"');
+  expect(render()).toContain(
+    'aria-label="New session with other, needs your approval"',
+  );
   env.approvals = [];
   env.unread = new Set(["a2"]);
-  expect(render()).toContain('aria-label="other, unread"');
+  expect(render()).toContain('aria-label="New session with other, unread"');
 });

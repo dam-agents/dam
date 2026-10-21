@@ -1,11 +1,13 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: JanUI's collapsed sidebar opens an Agent's popover on hover, a moment after the pointer rests on its tile, and closes it only after a grace period long enough to move into the popover; the popover carries the same session filter, New session button and actions menu as the Agent's row in the tree.
+// TEST_OVERVIEW: JanUI's collapsed sidebar opens an Agent's new-session page when its tile is clicked, and its popover on hover, a moment after the pointer rests on the tile, closing it only after a grace period long enough to move into the popover; the popover carries the same session filter, New session button and actions menu as the Agent's row in the tree.
 import { act, createElement, type ReactNode } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const env = vi.hoisted(() => ({
   agents: [{ id: "a1", name: "dam", state: "running" }],
+  startSession: vi.fn(),
+  navigated: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -31,7 +33,7 @@ vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
   usePinnedSessions: () => new Set<string>(),
 }));
 vi.mock("../../modules/sessions/hooks/use-start-session.js", () => ({
-  useStartSession: () => vi.fn(),
+  useStartSession: () => env.startSession,
 }));
 vi.mock("../../modules/sessions/lib/agent-session-filters.js", () => ({
   useAgentSessionFilter: () => undefined,
@@ -68,6 +70,7 @@ let root: Root;
 let container: HTMLDivElement;
 
 beforeEach(() => {
+  vi.clearAllMocks();
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   container = document.createElement("div");
@@ -77,7 +80,7 @@ beforeEach(() => {
     root.render(
       createElement(SidebarRail, {
         onExpand: () => {},
-        onNavigate: () => {},
+        onNavigate: env.navigated,
       }),
     ),
   );
@@ -89,7 +92,8 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const tile = () => container.querySelector('[data-agent-id="a1"]')!;
+const tile = () =>
+  container.querySelector<HTMLButtonElement>('[data-agent-id="a1"]')!;
 const popover = () =>
   document.body.querySelector("[data-radix-popper-content-wrapper]");
 
@@ -128,4 +132,21 @@ it("keeps the popover open while the pointer is in it, and closes it after a gra
   expect(popover()).not.toBeNull();
   act(() => void vi.advanceTimersByTime(200));
   expect(popover()).toBeNull();
+});
+
+// TEST_SCENARIO: clicking an Agent's tile in the rail takes the same action as its New session row, now that hover opens the popover and leaves the click free; a press held long enough opens the popover instead, so a device without hover still reaches its menu.
+it("opens the Agent's new-session page on click, and its popover on a long press", () => {
+  act(() => tile().click());
+  expect(env.startSession).toHaveBeenCalledWith("a1");
+  expect(env.navigated).toHaveBeenCalled();
+  expect(popover()).toBeNull();
+
+  vi.clearAllMocks();
+  act(() => {
+    tile().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+  });
+  act(() => void vi.advanceTimersByTime(600));
+  act(() => tile().click());
+  expect(env.startSession).not.toHaveBeenCalled();
+  expect(popover()).not.toBeNull();
 });

@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from "react";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
   Popover,
+  PopoverAnchor,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover.js";
@@ -28,7 +29,7 @@ import { AgentSessionList } from "./agent-session-list.js";
 import { PinnedList } from "./pinned-rows.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, the Pinned section, one avatar per Agent in the same manual order and Settings. An avatar opens what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus as well as on click, and choosing a Session closes it; the pin icon opens the Pinned section on click. The rail never leaves the layout, so the page always has a way back to the tree.
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, the Pinned section, one avatar per Agent in the same manual order and Settings. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover; choosing a Session closes the popover; the pin icon opens the Pinned section on click. The rail never leaves the layout, so the page always has a way back to the tree.
  */
 export function SidebarRail({
   onExpand,
@@ -162,6 +163,7 @@ export function SidebarRail({
 
 const HOVER_OPEN_MS = 150;
 const HOVER_CLOSE_MS = 250;
+const LONG_PRESS_MS = 500;
 
 function AgentTile({
   agent,
@@ -179,9 +181,15 @@ function AgentTile({
   onNavigate: () => void;
 }) {
   const startSession = useStartSession();
-  const name = cue
-    ? `${agent.name}, ${cue === "approval" ? "needs your approval" : "unread"}`
-    : agent.name;
+  const shortPress = useRef(false);
+  const name = `New session with ${agent.name}${
+    cue ? `, ${cue === "approval" ? "needs your approval" : "unread"}` : ""
+  }`;
+  const newSession = () => {
+    onOpenChange(false);
+    onNavigate();
+    startSession(agent.id);
+  };
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const closedAt = useRef(0);
   const content = useRef<HTMLDivElement>(null);
@@ -202,19 +210,34 @@ function AgentTile({
   useEffect(() => cancel, []);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverTrigger asChild>
+      <PopoverAnchor asChild>
         <button
           type="button"
           aria-label={name}
-          aria-current={open ? "page" : undefined}
+          aria-current={current ? "page" : undefined}
           data-testid="sidebar-rail-agent"
           data-agent-id={agent.id}
           className={cn(railTile(current || open), FOCUS_RING)}
+          onClick={() => {
+            if (shortPress.current) shortPress.current = false;
+            else newSession();
+          }}
+          onPointerDown={() => {
+            shortPress.current = false;
+            cancel();
+            timer.current = setTimeout(() => {
+              shortPress.current = true;
+              onOpenChange(true);
+            }, LONG_PRESS_MS);
+          }}
+          onPointerUp={cancel}
+          onPointerLeave={(e) => {
+            cancel();
+            if (e.pointerType !== "touch") closeSoon();
+          }}
+          onPointerCancel={cancel}
           onPointerEnter={(e) => {
             if (e.pointerType !== "touch") openSoon();
-          }}
-          onPointerLeave={(e) => {
-            if (e.pointerType !== "touch") closeSoon();
           }}
           onFocus={(e) => {
             // UNIT_BOUNDARY_DESCRIPTION: Escape returns focus to this tile, and must not reopen what it closed.
@@ -243,7 +266,7 @@ function AgentTile({
             />
           )}
         </button>
-      </PopoverTrigger>
+      </PopoverAnchor>
       <PopoverContent
         ref={content}
         side="right"
