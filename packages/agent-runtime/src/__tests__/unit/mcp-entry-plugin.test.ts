@@ -136,7 +136,10 @@ describe("mcp-entry plugin", () => {
       "platform-outbound": {
         type: "http",
         url: "http://hs/mcp",
-        headers: { "X-A": "1", "x-platform-session-ref": "${PLATFORM_SESSION_REF}" },
+        headers: {
+          "X-A": "1",
+          "x-platform-session-ref": "${PLATFORM_SESSION_REF}",
+        },
       },
       linear: { type: "http", url: "https://mcp.linear.app/mcp" },
     });
