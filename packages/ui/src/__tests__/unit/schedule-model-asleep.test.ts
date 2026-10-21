@@ -101,11 +101,17 @@ vi.mock("../../modules/schedules/api/session-model.js", () => ({
   useSessionModelChoices: () => [],
 }));
 
+interface Choices {
+  harness: string;
+  model: string;
+  settings: Record<string, string>;
+}
+
 function Field() {
-  const { control } = useForm({
+  const { control } = useForm<Choices>({
     defaultValues: { harness: "", model: "", settings: {} },
   });
-  return createElement(ScheduleChoicesField, {
+  return createElement(ScheduleChoicesField<Choices>, {
     agentId: "agent",
     control,
     migrationNote: null,
