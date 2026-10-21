@@ -155,6 +155,7 @@ export function SidebarV2() {
           onClose={() => setOverlaid(false)}
           onClosed={() => {}}
           showBackdrop={false}
+          animated={false}
           // UNIT_BOUNDARY_DESCRIPTION: a narrow viewport has no room for a page beside the navigation, so the navigation takes the screen up to the right rail rather than lying over the page.
           containerClassName="right-[60px]"
           className="w-full"
