@@ -26,7 +26,7 @@ An **Environment** is a sandbox an Agent creates and controls to run software fo
 - **The owning Agent reaches it directly**, over a one-way link the VM runner brokers between the two machines. Everyone else goes through the platform.
 - **One origin per endpoint**, `<endpoint>-<environment>.<environments domain>`, behind one wildcard Ingress and one wildcard certificate, so Environments cannot read each other's storage. Not paths on a shared host, not a streamed browser.
 - **The owner chooses who.** The owner keeps a list of emails per agent; the agent can narrow it per Environment, never widen it. People sign in through a dedicated identity provider client; other agents enter as their owner, proven by their own gateway.
-- **Network** follows the owning Agent's egress rules; only the owner grants an Environment a connection.
+- **Network** follows the owning Agent's egress rules, and an Environment holds no connection; granting the owner's connections on one is left for later.
 
 ## Alternatives Considered
 

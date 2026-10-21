@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Only the owner, signed in to the app, grants or removes a connection on an Environment. An API key — which an agent or a script may hold — is refused for an Environment before the connections service is reached, so an Owning Agent cannot pass its own connections to the software it runs; the same key still manages an ordinary agent's connections.
+// TEST_OVERVIEW: An Environment holds no connections. A grant or removal on one is refused for every caller — an API key, which an agent or a script may hold, and the owner's own session alike — before the connections service is reached, so an Owning Agent cannot pass its own connections to the software it runs; the same callers still manage an ordinary agent's connections.
 import { describe, expect, it, vi } from "vitest";
 import type { ApiContext } from "api-server-api";
 import { appRouter } from "api-server-api/router";
@@ -32,9 +32,12 @@ function setup(user: User) {
 }
 
 describe("connection grants on an Environment", () => {
-  // TEST_SCENARIO: an API key cannot grant or remove a connection on an Environment, and the service is never reached.
-  it("refuses an API key for an Environment", async () => {
-    const { caller, connections } = setup(owner("key-1"));
+  // TEST_SCENARIO: neither an API key nor the owner's session can grant or remove a connection on an Environment, and the service is never reached.
+  it.each([
+    ["an API key", "key-1"],
+    ["the owner's session", undefined],
+  ])("refuses %s for an Environment", async (_who, keyId) => {
+    const { caller, connections } = setup(owner(keyId));
 
     await expect(
       caller.connections.setAgentConnections({
@@ -53,18 +56,8 @@ describe("connection grants on an Environment", () => {
     expect(connections.updateAgentConnections).not.toHaveBeenCalled();
   });
 
-  // TEST_SCENARIO: the owner in the app grants a connection on an Environment; an API key still manages an ordinary agent's connections as before.
-  it("lets the owner in the app grant one, and keys keep ordinary agents", async () => {
-    const inApp = setup(owner());
-    await inApp.caller.connections.setAgentConnections({
-      agentId: "agent-env",
-      connectionIds: ["conn-1"],
-    });
-    expect(inApp.connections.setAgentConnections).toHaveBeenCalledWith(
-      "agent-env",
-      ["conn-1"],
-    );
-
+  // TEST_SCENARIO: an API key still manages an ordinary agent's connections as before.
+  it("keeps keys managing ordinary agents", async () => {
     const withKey = setup(owner("key-1"));
     await withKey.caller.connections.updateAgentConnections({
       agentId: "agent-owning",

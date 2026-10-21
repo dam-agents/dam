@@ -20,7 +20,7 @@ So an Environment runs on its owner's [VM runner](vm-runner.md), beside its Owni
 It is created with nothing that would let it act as its Owning Agent:
 
 - **No harness.** The machine is told it is an Environment (`PLATFORM_ENVIRONMENT_OF`, set after the owner's own secret, so neither an ordinary Agent's secret can make it one nor the reverse); its runtime starts no chat harness and no session-history workers, and refuses chat and terminal connections.
-- **No connections** and no default model provider, and no egress preset: it holds no credential unless its owner grants one.
+- **No connections** and no default model provider, and no egress preset: it holds no credential, and a grant on it is refused.
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
 
 A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints, the access list, and its expiry.
@@ -60,7 +60,7 @@ An Environment runs the app its agent built, which reaches registries, mirrors a
   The hosts the Owning Agent's path-scoped rules promote to inspection are inspected on the Environment's gateway too, within five minutes of a new Environment or a newly narrowed rule, so those rules hold there.
 - **A new host** files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
 - **Connections.** An Environment holds none: granting the owner's connections on one (for example a model for a nested platform) is not built yet, because a granted connection's rules would be written under the Environment while its egress is decided under the Owning Agent.
-  An API key is refused for a grant on an Environment, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
+  A grant on an Environment is refused for every caller, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
 
 ## Addresses
 

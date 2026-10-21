@@ -26,18 +26,16 @@ import {
   connectionUpdateInputSchema,
 } from "./schemas.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: only the owner, signed in to the app, grants or removes a connection on an Environment: never an API key, which an agent or a script may hold, so the Owning Agent cannot pass its own connections to the software it runs.
-async function ownerInAppForEnvironment(
-  ctx: { user: { keyId?: string }; agents: ApiContext["agents"] },
+// UNIT_BOUNDARY_DESCRIPTION: an Environment holds no connection, whoever asks: an API key, which an agent or a script may hold, the CLI and the app are all refused, so the Owning Agent can never pass its connections to the software it runs. Granting the owner's connections on an Environment is not built yet.
+async function refuseOnEnvironment(
+  ctx: { agents: ApiContext["agents"] },
   agentId: string,
 ): Promise<void> {
-  if (ctx.user.keyId === undefined) return;
   const agent = await ctx.agents.get(agentId);
   if (agent?.spec.environmentOf)
     throw new TRPCError({
       code: "FORBIDDEN",
-      message:
-        "Connections on an Environment are granted by its owner in the app, not with an API key",
+      message: "An Environment holds no connections",
     });
 }
 
@@ -131,7 +129,7 @@ export const connectionsRouter = t.router({
   setAgentConnections: manageAgentsProcedure
     .input(connectionSetAgentConnectionsInputSchema)
     .mutation(async ({ ctx, input }) => {
-      await ownerInAppForEnvironment(ctx, input.agentId);
+      await refuseOnEnvironment(ctx, input.agentId);
       return ctx.connections.setAgentConnections(
         input.agentId,
         input.connectionIds,
@@ -141,7 +139,7 @@ export const connectionsRouter = t.router({
   updateAgentConnections: manageAgentsProcedure
     .input(connectionUpdateAgentConnectionsInputSchema)
     .mutation(async ({ ctx, input }) => {
-      await ownerInAppForEnvironment(ctx, input.agentId);
+      await refuseOnEnvironment(ctx, input.agentId);
       return ctx.connections.updateAgentConnections(input.agentId, {
         grant: input.grant,
         revoke: input.revoke,
