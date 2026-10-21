@@ -25,7 +25,7 @@ import {
   parseAtFlag,
   recurringFlagsGiven,
 } from "../domain/once-flags.js";
-import { parseSettingFlags } from "../domain/setting-flags.js";
+import { parseSettingFlags } from "../../shared/setting-flags.js";
 import type {
   ScheduleService,
   ScheduleView,

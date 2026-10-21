@@ -113,7 +113,7 @@ The CLI is at parity with the web UI across these groups.
 Each concept's depth lives on its owning architecture page; per-verb flags, exit-code numbers, and tRPC procedure names live in the code, not here.
 
 - **`auth`** — login, logout, status, and API-key management ([Authentication](#authentication)).
-- **`agent`** — list, get, create, interactive create, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
+- **`agent`** — list, get, create, interactive create, update, models, delete, restart, disable, enable, plus read-only template listing ([Agent lifecycle](#agent-lifecycle)).
 - **`chat`** / **`session`** — attach a local terminal to a running agent's TUI, and list an agent's sessions ([Terminal attach](#terminal-attach)).
 - **`telemetry`** — list a session's turns with the Metered Spend of each ([Spend limits](spend-limits.md#ledger)), and export its traces and log records as newline-delimited JSON ([Agent telemetry](agent-telemetry.md)).
 - **`metrics`** — an agent's measured spend by model and by session, and its recent calls ([Metrics](metrics.md), [Spend limits](spend-limits.md#ledger)).
@@ -191,6 +191,9 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
 - **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
+- **Providers, harnesses and defaults** are the agent's Providers page: `get` shows the granted model-provider Connections, the harnesses the runtime reports carrying and the three Session Pair defaults ([harness configuration](harness-config.md)); `update` grants and revokes provider Connections and saves or clears a default through the same procedures the page calls, so the server keeps every rule about which pair is valid; `models` lists a harness's model catalog from the agent-runtime.
+  An `update` flag changes only what it names: a new model keeps the default's harness and settings, a new harness drops the settings, since they belong to one harness.
+  A part `get` may not read, such as the providers for a key without credential-read permission, shows as unknown and leaves the rest.
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero.
   A refused start — the agent parked because its owner's pool is full ([budgets](budgets.md)) — also ends the wait: it names the refusal, says how to free room, and exits non-zero, leaving the agent parked.
   A refusal already standing before a restart counts only once the wait saw another state or a short grace passed, because the first poll can still read the previous attempt's denial.
@@ -220,7 +223,9 @@ On disconnect or exit the CLI prints a ready-to-paste resume command and the lea
 `dam run <agent>` is the CI verb: it speaks ACP to the relay like the UI does — open a Session, submit one prompt, stream the assistant's text to stdout — and exits with a code derived from the turn's stop reason, so a pipeline can branch on the outcome.
 The prompt comes from a flag or a file (`-` reads stdin — never implicitly, so a promptless invocation errors instead of hanging a CI job).
 Sessions it creates are typed `cli_run` through the same session metadata every other surface uses — the UI groups them under their own category, and `dam session list` shows the type on each row; every prompt is stamped with a minted prompt identity and the CLI surface marker, so the runtime reports the prompt's fate, frames the turn as a direct one, and records the turn's outcome even when the prompt was sent into a Session another surface created.
-It names no model: the relay fills in the agent's chat default ([harness configuration](harness-config.md)), so a run starts on the model the web chat would start on.
+Without `--harness`, `--model` or `--setting` it names no model: the relay fills in the agent's chat default ([harness configuration](harness-config.md)), so a run starts on the model the web chat would start on.
+With them, `session/new` carries the choice as the web chat's picker sends it, and the session keeps its own choice instead of following the chat default; a session continued with `--session` keeps its own pair, so the flags are refused there.
+A run refused for having no model adds the CLI commands that set one to the runtime's reason.
 
 The headline property is that **the caller may leave**.
 Detaching never cancels a running turn, so `--async` exits once the runtime reports the prompt started, printing the session id to poll with `dam run get`.
