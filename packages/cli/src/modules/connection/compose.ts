@@ -61,13 +61,7 @@ export function composeConnectionModule(
       browserOpener: opts.browserOpener,
     }),
   );
-  parent.addCommand(
-    buildDisconnectCommand({
-      compatService: opts.compatService,
-      configService: opts.configService,
-      createConnectionService: createService,
-    }),
-  );
+  parent.addCommand(buildDisconnectCommand(agentScoped));
   parent.addCommand(
     buildUpdateCommand({
       compatService: opts.compatService,
