@@ -1,6 +1,6 @@
 # Per-user resource budgets
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -55,7 +55,7 @@ spec:
 
 Every field but `owner` is optional, and each falls back on its own.
 For container agents `cpu` and `memory` are the Ceiling, else the chart defaults.
-For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory.md)): `memory` is their VM runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which every VM disk may grow into and which their claim is created at and grows to ([persistence](persistence.md)), else `virtualization.runner`.
+For vm agents the same UserBudget sets the user's VM pool ([vm-memory](vm-memory.md)): `memory` is their VM runner's memory limit, `cpu` caps its CPU limit and `storage` is their storage pool, which every VM disk may grow into and which their claim is created at and grows to ([vm storage](vm-storage.md#the-owners-claim)), else `virtualization.runner`.
 One number therefore raises both kinds of agent for a user who has both.
 
 The name↔owner pin makes one-budget-per-user structural (a second budget is a name collision), and the schema validates quantities at admission, so a malformed ceiling is rejected rather than silently parsed to zero.
@@ -185,7 +185,7 @@ Reserved is computed from live state and never persisted, so a hibernate or dele
 
 ## Resource alerts
 
-A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 95% — writes are failing ([persistence](persistence.md)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
+A vm agent's owner hears about a severe resource problem even when nobody is looking at the web app: the platform sends them a Slack direct message ([channels](channels.md)) when their agents' shared storage passes 90% — no new agent can be created — or 95% — writes are failing ([vm storage](vm-storage.md#the-owners-claim)), and when their runner was killed for running out of memory ([vm-memory](vm-memory.md)).
 Each message gives the figures or the agents affected, and what to do.
 Lower levels show only in the web app.
 
