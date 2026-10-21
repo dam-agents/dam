@@ -299,6 +299,7 @@ export const KEY_CHECK_TEMPLATE_IDS = [
   "openai",
   "ibm-litellm",
   "curve-bender",
+  "bedrock",
 ] as const;
 export type KeyCheckTemplateId = (typeof KEY_CHECK_TEMPLATE_IDS)[number];
 
