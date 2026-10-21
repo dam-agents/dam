@@ -270,6 +270,83 @@ async fn a_sigkill_the_cgroup_did_not_count_is_not_a_memory_kill() {
     assert_eq!(status.reason, REASON_OOM_KILLED, "{status:?}");
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the runner's grouping gauge as the last scrape reads it, and the runner's own console saying nothing here: a test that polls it has no other way to see the sampler's work.
+fn grouping_gauge(h: &Harness) -> String {
+    let text = h.server.metrics_text();
+    let line = text
+        .lines()
+        .find(|l| l.starts_with("platform_vm_runner_memory_oom_group "))
+        .unwrap_or_else(|| panic!("no grouping gauge in\n{text}"));
+    line.rsplit(' ').next().unwrap().to_owned()
+}
+
+// TEST_SCENARIO: a node's kubelet can turn OOM-kill grouping on or off under a running runner, so the runner reads memory.oom.group at every sampler tick rather than once at start, and both directions of the change reach its gauge without a restart. The cgroup holds the setting and no pressure figures, as one whose working set cannot be read does, so the grouping must be sampled on its own: a pressure read that fails must not take the grouping with it.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_gauge_follows_the_grouping_at_every_sampler_tick() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-oom-group-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    let grouping = |value: &str| fs::write(cgroup.join("memory.oom.group"), value).unwrap();
+    grouping("0\n");
+    let h = Harness::with("oom-group", |config| {
+        config.cgroup_dir = Some(cgroup.clone())
+    });
+    // UNIT_BOUNDARY_DESCRIPTION: waits for the sampler to carry a write into the gauge, which takes one SAMPLE_EVERY; only a missing sample reaches the deadline.
+    let until_grouping = |want: &str| {
+        let deadline = Instant::now() + ACTION_DEADLINE;
+        loop {
+            let gauge = grouping_gauge(&h);
+            if gauge == want {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "the gauge never read {want}, it reads {gauge}"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    };
+    until_grouping("0");
+    grouping("1\n");
+    until_grouping("1");
+    grouping("0\n");
+    until_grouping("0");
+    let _ = fs::remove_dir_all(&cgroup);
+}
+
+// TEST_SCENARIO: the gauge is the sample, not the file: a runner that read the cgroup again on every scrape would say a machine's memory ends alone as soon as the file says so, and one that reports only what its sampler read waits for the next tick. A cgroup the sample could not read is unknown, never a pass.
+#[tokio::test(flavor = "multi_thread")]
+async fn the_gauge_reports_the_sample_rather_than_reading_the_file_again() {
+    let cgroup = std::env::temp_dir().join(format!("vmr-oom-group-read-{}", std::process::id()));
+    let _ = fs::remove_dir_all(&cgroup);
+    fs::create_dir_all(&cgroup).unwrap();
+    let h = Harness::new("oom-group-read");
+    assert_eq!(
+        grouping_gauge(&h),
+        "NaN",
+        "an unsampled cgroup says nothing"
+    );
+    fs::write(cgroup.join("memory.oom.group"), "0\n").unwrap();
+    h.server.sample_oom_group(&cgroup);
+    assert_eq!(grouping_gauge(&h), "0");
+    fs::write(cgroup.join("memory.oom.group"), "1\n").unwrap();
+    h.server.sample_oom_group(&cgroup);
+    assert_eq!(
+        grouping_gauge(&h),
+        "1",
+        "a kubelet can group under a running runner"
+    );
+    fs::remove_file(cgroup.join("memory.oom.group")).unwrap();
+    assert_eq!(
+        grouping_gauge(&h),
+        "1",
+        "the gauge reads the sample, not the file"
+    );
+    h.server.sample_oom_group(&cgroup);
+    assert_eq!(grouping_gauge(&h), "NaN");
+    let _ = fs::remove_dir_all(&cgroup);
+}
+
 // TEST_SCENARIO: a VMM that dies while its machine's start call is still running is the case the runtime's own sweep hides: the reaper cannot report a kill the start might itself be causing, and the sweep in the same tick reads the status and drops it, so the machine would restart under a boot failure and the kill would go unrecorded. The status is collected once, before either decides, and kept until the start returns: the kill is then named as the boot after it.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_kill_during_a_boot_outlives_the_sweep_that_would_have_erased_it() {
