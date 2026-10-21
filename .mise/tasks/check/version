@@ -6,8 +6,10 @@ version=$(
     yq -r .version    helm/Chart.yaml
     yq -r .appVersion helm/Chart.yaml
     yq -r .version    packages/cli/package.json
+    if [[ -f skills/dam/SKILL.md ]]; then sed -n -E 's/^This page describes `dam` CLI ([^ ]+)\.$/\1/p' skills/dam/SKILL.md; fi
   } | sort -u
 )
+if [[ -f skills/dam/SKILL.md ]] && ! grep -q '^This page describes `dam` CLI ' skills/dam/SKILL.md; then echo "ERROR: skills/dam/SKILL.md does not say which CLI version it describes" >&2; exit 1; fi
 if [[ $(wc -l <<<"$version") -ne 1 ]]; then echo "ERROR: Version mismatch detected: $(echo $version)" >&2; exit 1; fi
 if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc[0-9]+)?$ ]]; then echo "ERROR: $version is not valid semver (X.Y.Z or X.Y.Z-rcN)" >&2; exit 1; fi
 if [[ "${GITHUB_REF:-}" == refs/tags/* ]] && [[ $GITHUB_REF != "refs/tags/v$version" ]]; then echo "ERROR: GITHUB_REF '$GITHUB_REF' does not match 'refs/tags/v$version'" >&2; exit 1; fi

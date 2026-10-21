@@ -10,6 +10,9 @@ DAM runs the user's AI agents in isolated sandboxes on a server.
 The `dam` CLI on this machine is how you drive it: everything the DAM web app does has a `dam` command.
 You act as the user, with the user's own rights, so treat every command as if the user typed it.
 
+This page describes `dam` CLI 0.2.24.
+Before you rely on it, compare that with the CLI you have: see [Match this skill to the CLI](#match-this-skill-to-the-cli).
+
 ## Hard rules
 
 1. **You never see a secret.**
@@ -43,8 +46,18 @@ npm install -g @dam-agents/cli
 ```
 
 `pnpm add -g @dam-agents/cli` and `yarn global add @dam-agents/cli` work too.
-To update, install `@dam-agents/cli@latest` the same way.
-Then reinstall this skill at the new version, so it keeps matching the CLI: `npx skills add 'dam-agents/dam/skills/dam#v<version>' -g`, with the version `dam --version` prints.
+To update, install `@dam-agents/cli@latest` the same way, then match this skill to it again.
+
+### Match this skill to the CLI
+
+Compare the version at the top of this page with what `dam --version` prints:
+
+- **The same**: this page describes your CLI.
+- **The CLI is newer**: reinstall this skill at the CLI's version, `npx skills add 'dam-agents/dam/skills/dam#v<version>' -g`, with the version `dam --version` prints, and read it again.
+- **The CLI is older**: update the CLI, then compare again.
+  If the newest CLI is still older, this skill came from the repository's `main` branch and describes a CLI that is not released yet: commands and flags here may not exist in yours, or may work differently.
+  Trust `dam <command> --help` wherever it disagrees with this page, and tell the user that the skill is ahead of their CLI.
+  The first release with this skill is 0.2.24; an older CLI has no skill at its version.
 
 ### Point it at the server
 
