@@ -2636,11 +2636,19 @@ fn end_cgroup(stopping: &mut bool) {
 // UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
 fn stop(openrc: bool) -> ! {
     if openrc {
-        // UNIT_BOUNDARY_DESCRIPTION: the spawn is what the stop's own state is about, so it runs under that state's lock: a shutdown started beside the kill would either be killed under it or stop services that are already gone.
-        if let Some(shutdown) = vm::begin_shutdown(|| spawn_openrc("shutdown", &[])) {
-            finish_openrc("shutdown", shutdown, &mut true);
-        } else {
-            logf!("the workload was already killed; openrc shutdown would stop no service");
+        // UNIT_BOUNDARY_DESCRIPTION: the shutdown's start and the stop's kill are one decision, and a child that lost that race stops nothing, so it is ended rather than waited on.
+        match vm::begin_shutdown(|| spawn_openrc("shutdown", &[])) {
+            vm::Begun::Started(shutdown) => finish_openrc("shutdown", shutdown, &mut true),
+            vm::Begun::Refused => {
+                logf!("the workload was already killed; openrc shutdown would stop no service")
+            }
+            vm::Begun::TooLate(Some(mut shutdown)) => {
+                logf!("the stop was killed while openrc shutdown started; ending it");
+                // SAFETY: kill(2) reads no memory. The child is not reaped yet, so its pid still names it.
+                unsafe { libc::kill(shutdown.id() as libc::pid_t, libc::SIGKILL) };
+                let _ = shutdown.wait();
+            }
+            vm::Begun::TooLate(None) => {}
         }
         end_the_rest(&mut true);
     }
