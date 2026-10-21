@@ -3,7 +3,7 @@ name: dam
 description: >
   Drive the user's DAM deployment from this machine with the `dam` CLI: create, run, restart and delete their DAM agents, give them prompts and read the answers, move files in and out, and manage schedules, connections, network rules, approvals, channels, skills and spend.
   Use whenever the user asks to do anything on DAM or with one of their DAM agents, or mentions the `dam` command — even when they don't say "CLI".
-  Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential into a command you hand them.
+  Covers installing the CLI, signing in, and the rule that you never see a secret: the user types every credential on a DAM web page or into a command you hand them.
 ---
 
 DAM runs the user's AI agents in isolated sandboxes on a server.
@@ -18,7 +18,7 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
 1. **You never see a secret.**
    Never ask the user for an API key, token, password, client secret, private key or access key.
    Never read one from a file, an environment variable or the clipboard, and never put one in a command you run.
-   When a step needs a secret, follow [Secrets](#secrets): print the command, let the user run it in their own terminal, then check the result.
+   When a step needs a secret, follow [Secrets](#secrets): run the command without it, and the user types it on a DAM web page the command opens.
 2. **Never touch the user's DAM sign-in.**
    Don't read the CLI's state directory (`~/.local/state/dam/`), and don't print or export `DAM_TOKEN`.
    `dam auth status` is safe: it never prints tokens.
@@ -98,20 +98,24 @@ Run `dam terms accept --yes` only after the user says they accept.
 Some commands store a credential on DAM: a model provider key, an API key or header value, an OAuth client secret, a GitHub App private key, object storage keys, a new DAM API key.
 The credential must go from the user to DAM without passing through you.
 
-1. Work out the full command **without** the secret flag.
-   For `dam connection connect` and `dam connection update`, the CLI asks for a missing required secret at a hidden prompt when a person runs it.
-2. Print that command and ask the user to run it **in a terminal of their own** — not through you, and not with an in-chat shell such as a `!` prefix, which shows the output to you and has no hidden prompt.
-3. Wait for the user to say it is done.
-4. Check the result yourself, for example with `dam connection list --json`.
+For `dam connection connect` and `dam connection update`, the user types the secret on a DAM web page:
 
-Some secrets can't be typed at the prompt:
+1. Run the command yourself, with every input except the secret.
+2. The CLI opens a DAM page in the user's browser and waits; with `--no-browser` it prints the link instead, and you show the user that link.
+   Tell the user to sign in as themselves, check what the page shows — the connection, its type and every host the secret is sent to — and enter the secret there.
+3. The command ends when the user saves (exit `0`; `--json` gives the connection's ID), cancels, or lets the link expire after ten minutes (exit `1`).
+   Run it again for a new link.
 
-- **A multi-line key** (a GitHub App private key in PEM) is passed from a file the user names: `--private-key "$(cat path/to/app.pem)"` on connect, `--value "$(cat path/to/app.pem)"` on update.
-  Print the command with the user's path in it; don't open the file yourself.
-- **An optional secret** (the client secret of the user's own OAuth app) is not prompted for: tell the user which flag to add, and let them type it.
+The page takes a multi-line key (a GitHub App private key in PEM) as well, so don't build a `--private-key "$(cat …)"` command.
+If the page warns that the secret will go to a host the template does not use, tell the user to cancel unless they asked for that host.
+
+A command can't open the page for some secrets; then print the command for the user to run **in a terminal of their own** — not through you, and not with an in-chat shell such as a `!` prefix, which shows the output to you and has no hidden prompt — wait for them to say it is done, and check the result yourself, for example with `dam connection list --json`:
+
+- **The user prefers a terminal**, or the server is older than the page (the CLI says `this server has no secret-entry page`): the command with `--prompt` asks at a hidden prompt.
+- **An optional secret** (the client secret of the user's own OAuth app) is not asked for: tell the user which flag to add, and let them type it.
 - **A new DAM API key** (`dam auth token create`) is printed once on stderr to whoever runs the command, so the user runs it.
 
-If a command you ran stops with `error: missing required input(s): --value` or similar, that is the CLI asking for a secret: switch to the steps above.
+If a command stops with `error: missing required input(s): --value` or similar, the CLI could not open the page there: switch to the terminal steps above.
 Don't put secrets in `dam agent create --env` either.
 A custom header connection keeps the credential out of sight and can still hand it to the DAM agent as an environment variable (`--env-name`).
 

@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -88,6 +88,13 @@ A provider that cannot say leaves the key unverified; a provider with no check (
 The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, the built-in platform provider excepted, which replaces each result, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
+A credential can also be typed on a **secret-entry page** of the web app instead of into the client that asked for it.
+The client hands the api-server every input except the secret and gets a single-use link that expires after ten minutes; the request lives in Redis and the link carries only a random id.
+The page and its submit run as the signed-in user and refuse a request another user made, so a link sent to someone else collects nothing.
+Before the user types, the page shows what the save will do — the template, the name, every host the secret is sent to with its header, the env vars agents see, and for a rotation the agents it is granted to — computed by the same builder the create runs, and it warns when a host is not one the template presets.
+The submit then runs the ordinary create or rotation, with its validation; a refused secret leaves the link usable until it expires.
+The client polls a status that says only pending, saved (with the Connection's id), cancelled or expired: no reader gets the secret back.
+The page covers the static and minting kinds; OAuth needs no secret here.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
 A credential that stops working reads as **expired**: the refresh loop persists a marker when the token endpoint *rejects* it rather than merely failing to answer, and a marked Connection stops being retried until a new credential clears it.
 A rejected *operator-supplied* client secret stays retryable, so a centrally-fixed one revives without per-connection action.
