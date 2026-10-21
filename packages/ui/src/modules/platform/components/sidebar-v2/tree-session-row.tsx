@@ -191,9 +191,7 @@ export function TreeSessionRow({
               </span>
             </span>
           ) : (
-            <span className={cn(TREE_LEADING, "h-5 items-center self-start")}>
-              {dot}
-            </span>
+            <span className={cn(TREE_LEADING, "items-center")}>{dot}</span>
           )
         }
         activityIndicators={false}
