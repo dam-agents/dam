@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The new layout's sidebar tree keeps which Agents are open across page changes. The open state lives in the store, not in the tree, since the chat and the other pages mount their own sidebar; and the Agent last open in the page stays the one that opens on its own while a page with no Agent, such as Home, shows.
+// TEST_OVERVIEW: JanUI's sidebar tree keeps which Agents are open across page changes. The open state lives in the store, not in the tree, since the chat and the other pages mount their own sidebar; and the Agent last open in the page stays the one that opens on its own while a page with no Agent, such as Home, shows.
 import { expect, it, vi } from "vitest";
 import { createStore } from "zustand/vanilla";
 

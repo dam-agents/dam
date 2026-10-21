@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A pinned Session in the new layout's sidebar, and a Session in its flat all-sessions list, keeps the actions and spend it had in its Agent's own list. A row the owner's attention feed supplies renders through the same tree row, so it shows the Session's cost, offers Export telemetry when telemetry is on, and reads history ahead of a click while its Agent can answer.
+// TEST_OVERVIEW: A pinned Session in JanUI's sidebar, and a Session in its flat all-sessions list, keeps the actions and spend it had in its Agent's own list. A row the owner's attention feed supplies renders through the same tree row, so it shows the Session's cost, offers Export telemetry when telemetry is on, and reads history ahead of a click while its Agent can answer.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

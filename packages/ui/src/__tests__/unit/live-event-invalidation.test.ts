@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and with the new layout on, an attention hint also refreshes the named agent's own session pages and single-Session lookups (a sync, every cached agent's), and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
+// TEST_OVERVIEW: a live-event hint refetches the active queries it names: an agents or harnessConfig hint refreshes the agent list and the harnessConfig queries of the named agent only, and with JanUI on, an attention hint also refreshes the named agent's own session pages and single-Session lookups (a sync, every cached agent's), and a burst of hints for one query family runs at most one refetch after the one in flight, never one per hint.
 import { type QueryKey, QueryObserver } from "@tanstack/react-query";
 import { afterEach, expect, it, vi } from "vitest";
 
@@ -244,8 +244,8 @@ it("bounds refetches and trailing passes across overlapping syncs", async () => 
   expect(calls).toBeLessThanOrEqual(30 + 8);
 });
 
-// TEST_SCENARIO: with the new layout off, no sidebar tree reads other agents' session pages, so an attention hint must not refetch them; the current layout's open chat keeps its own session watch.
-it("leaves session pages alone on an attention hint while the new layout is off", async () => {
+// TEST_SCENARIO: with JanUI off, no sidebar tree reads other agents' session pages, so an attention hint must not refetch them; the current layout's open chat keeps its own session watch.
+it("leaves session pages alone on an attention hint while JanUI is off", async () => {
   const { acpSessionsKeys } =
     await import("../../modules/sessions/api/keys.js");
   newLayout(false);
@@ -258,7 +258,7 @@ it("leaves session pages alone on an attention hint while the new layout is off"
   expect(pagesA.calls()).toBe(1);
 });
 
-// TEST_SCENARIO: after a reload the sidebar draws the new layout from the preference this browser saved, before the feature flags answer; the first sync and named hints in that window must still refresh the tree's session pages, using the same decision the layout uses.
+// TEST_SCENARIO: after a reload the sidebar draws JanUI from the preference this browser saved, before the feature flags answer; the first sync and named hints in that window must still refresh the tree's session pages, using the same decision the layout uses.
 it("refreshes session pages from the saved layout preference before flags load", async () => {
   const { acpSessionsKeys } =
     await import("../../modules/sessions/api/keys.js");

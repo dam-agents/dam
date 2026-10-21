@@ -102,7 +102,7 @@ export function togglePinKeepingFocus(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Session row of the new layout's sidebar tree,
+ * UNIT_BOUNDARY_DESCRIPTION: One Session row of JanUI's sidebar tree,
  * read from its Agent's own list: the activity dot, the context line, and the
  * row's actions. A pin keeps keyboard focus on the moved row, or on its Agent
  * row when the row's new place is closed or still closing, or, in the flat

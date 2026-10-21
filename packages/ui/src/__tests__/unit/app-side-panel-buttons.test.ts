@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-// TEST_OVERVIEW: On a phone, the top bar of a page outside an Agent's chat holds the side panel's buttons. An Agent's configuration page has an Artifacts button that opens that Agent's artifacts; Home and the other pages leave Artifacts to the Artifacts page. With the new layout on, the side panel offers Artifacts on every page, as before the Artifacts page came back, and Home's Artifacts card and the Getting started artifact task open the side panel.
+// TEST_OVERVIEW: On a phone, the top bar of a page outside an Agent's chat holds the side panel's buttons. An Agent's configuration page has an Artifacts button that opens that Agent's artifacts; Home and the other pages leave Artifacts to the Artifacts page. With JanUI on, the side panel offers Artifacts on every page, as before the Artifacts page came back, and Home's Artifacts card and the Getting started artifact task open the side panel.
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -75,12 +75,12 @@ it("TEST_SCENARIO: the chat's top bar keeps its own Artifacts button, so the sha
   expect(buttons("sandbox-home", false)).toEqual(["approvals"]);
 });
 
-it("TEST_SCENARIO: with the new layout on, every page offers Artifacts in the side panel", () => {
+it("TEST_SCENARIO: with JanUI on, every page offers Artifacts in the side panel", () => {
   fake.newLayout = true;
   expect(buttons("home", true)).toEqual(["artifacts", "approvals"]);
 });
 
-it("TEST_SCENARIO: the new layout's Home Artifacts card opens the Artifacts side panel, not a page", async () => {
+it("TEST_SCENARIO: JanUI's Home Artifacts card opens the Artifacts side panel, not a page", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const { ArtifactsCard } =
     await import("../../modules/home/components/home-cards.js");
@@ -93,7 +93,7 @@ it("TEST_SCENARIO: the new layout's Home Artifacts card opens the Artifacts side
   expect(fake.setView).not.toHaveBeenCalled();
 });
 
-it("TEST_SCENARIO: with the new layout on, the Getting started artifact task on Home opens the Artifacts side panel, not a page", async () => {
+it("TEST_SCENARIO: with JanUI on, the Getting started artifact task on Home opens the Artifacts side panel, not a page", async () => {
   fake.newLayout = true;
   fake.view = "home";
   const { useStartTask } =

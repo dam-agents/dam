@@ -240,7 +240,7 @@ body:has([role="alertdialog"], [aria-modal="true"]) [data-sonner-toaster] {
   --ring: #ffffff;
 }
 
-/* The new layout sets its side chrome apart from the page. */
+/* JanUI sets its side chrome apart from the page. */
 :root[data-layout="new"] {
   --chrome: #fafafa;
 }

@@ -6,7 +6,7 @@ Home answers one question: what has happened since you last looked, and what sti
 It is the first surface a user sees, and the only one that spans every Agent they own — including the ones that are asleep.
 Two surfaces read it: the sidebar's **Activity** section lists the newest Sessions of every Agent, and the **approvals bell** lists what waits on the user's decision.
 The bell sits in the icon bar on the right edge of every page and opens the Approvals side panel, which takes its room from the page.
-In an Agent's chat with the new layout off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
+In an Agent's chat with the JanUI experiment off, the chat has no icon bar: the bell sits in the chat's top bar and opens the same panel in the slot beside the conversation.
 
 ## What Home reads
 
@@ -75,12 +75,12 @@ That boundary is what makes the record safe to rebuild or discard.
 Dropping it costs a user their feed history and nothing else; the next capture refills it from the pods.
 It is deliberately not in the [kept-on-purpose set](persistence.md#lifetime) that the session directory belongs to — the session directory is kept because spend must stay attributable, while the attention record is a convenience that may be thrown away.
 
-## The new layout
+## The JanUI experiment
 
-The **new layout** [experimental feature](features.md) replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
+The **JanUI experiment** is an [experimental feature](features.md): it replaces the app shell for the user who turns it on; with it off, everything above holds unchanged.
 The sidebar becomes one tree: every Agent is a row that opens to that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
 The Agent open in the page opens in the tree until its row closes it, and closes again when another Agent opens in the page, unless the user opened it; any other Agent opens and closes from its row, and the open state lasts until the page reloads; a page with no Agent open, such as Home, leaves every list as it was.
-While the new layout is on (the saved preference decides until the flags load), each attention hint, which names its Agent, refreshes that Agent's own list and its single-Session lookups, and a sync (sent when the owner stream overflows or a tab subscribes again) refreshes them for every Agent in the cache, at most eight of these Session families at a time across all hints, a family already queued joining that pass, while the Agent list and other families refresh at once since a Session read waiting for its Agent to start ends only when the Agent list refreshes, so an open list and an old pin stay live without that Agent's chat, for Sessions outside the record window too.
+While the JanUI experiment is on (the saved preference decides until the flags load), each attention hint, which names its Agent, refreshes that Agent's own list and its single-Session lookups, and a sync (sent when the owner stream overflows or a tab subscribes again) refreshes them for every Agent in the cache, at most eight of these Session families at a time across all hints, a family already queued joining that pass, while the Agent list and other families refresh at once since a Session read waiting for its Agent to start ends only when the Agent list refreshes, so an open list and an old pin stay live without that Agent's chat, for Sessions outside the record window too.
 A closed Agent row shows a mark for a waiting approval, or else for an unread Session, with a text equivalent; its New session and actions buttons show on hover or keyboard focus, and at all times on a device without hover; the header's plus creates an Agent; a New session row ends an open list only while its Agent has no Sessions, and a New agent row shows only while there is no Agent.
 On an Agent's new-session page, that New session row, or else the Agent row's New session plus, is the current page, not the Agent row.
 A Home row at the top of the tree opens the dashboard.
