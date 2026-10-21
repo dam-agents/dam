@@ -79,7 +79,7 @@ export function createLinkedKits(
           "starter kits: a linked kit could not be read",
         );
         throw new TRPCError({
-          code: result.kind === "rejected" ? "BAD_REQUEST" : "BAD_GATEWAY",
+          code: result.kind === "unreadable" ? "BAD_GATEWAY" : "BAD_REQUEST",
           message: result.reason,
         });
       }

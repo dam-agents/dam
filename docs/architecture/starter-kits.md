@@ -236,6 +236,9 @@ No admin is involved and no catalog changes.
 - **Created from the commit the user saw.** Apply names the link and that commit; the server reads the kit again at the commit rather than trusting what the browser sends, and refuses when the repository now holds a different kit.
   The Agent is stamped `link/<kit>@<commit>`.
 - **A refusal says why.** A repository with no `kit.yaml`, an invalid field, a missing or private repository, and one that cannot be reached right now each come back as a message the person who pasted the link can act on.
+  GitHub answers an anonymous read of a missing, renamed or private repository the same way (401 or 404 on the ref advertisement), so all three read as "could not be found, or it is not public" — for the kit and for its seed.
+  The catalog refresh holds on that same answer rather than withdrawing the catalog's kits, so a renamed catalog repository never empties the kit list.
+  The modal shows a linked kit's install command and environment values in full, never clamped, since they are what the user is asked to check.
 - **Kit Updates work as for a catalog kit**, because detection follows the Seed Stamp, not the catalog ([below](#kit-update)).
   With no catalog row to compare against, the update's briefing covers the definition only.
   A kit's avatar image is not stored for a Linked Kit, since no row would keep it from the sweep; the kit keeps the default avatar, and an avatar character still applies.

@@ -117,6 +117,7 @@ function Row({
   title,
   tag,
   detail,
+  code,
   action,
 }: {
   icon?: React.ReactNode;
@@ -124,6 +125,7 @@ function Row({
   title: string;
   tag?: React.ReactNode;
   detail?: string;
+  code?: string;
   action?: React.ReactNode;
 }) {
   const tile =
@@ -153,6 +155,11 @@ function Row({
             text={detail}
             className="mt-0.5 text-sm text-muted-foreground"
           />
+        )}
+        {code !== undefined && (
+          <pre className="mt-1.5 whitespace-pre-wrap break-all rounded-md bg-muted px-3 py-2 font-mono text-xs text-foreground">
+            {code}
+          </pre>
         )}
       </div>
       {action}
@@ -643,7 +650,7 @@ function KitDetail({
             <Section label="Install command">
               <Row
                 title="Runs in the agent's workspace when it is created"
-                detail={kit.install.command}
+                code={kit.install.command}
               />
             </Section>
           )}
@@ -654,7 +661,7 @@ function KitDetail({
                 <Row
                   key={variable.name}
                   title={variable.name}
-                  detail={variable.value}
+                  code={variable.value}
                 />
               ))}
             </Section>

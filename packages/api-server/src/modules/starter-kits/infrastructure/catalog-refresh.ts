@@ -52,7 +52,7 @@ export interface CatalogRefresh {
 }
 
 export interface KitFailure {
-  kind: "rejected" | "unreadable";
+  kind: "rejected" | "unreadable" | "unseen";
   reason: string;
 }
 
@@ -76,12 +76,19 @@ function unreadable(reason: string): KitFailure {
   return { kind: "unreadable", reason };
 }
 
+function unseen(reason: string): KitFailure {
+  return { kind: "unseen", reason };
+}
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Reads one kit the way a catalog entry names it:
  * resolves its ref to a commit, reads and validates `kit.yaml` there, pins its
  * seed and scans its bundled skills. The catalog refresh runs it for every
  * entry; a Linked Kit runs it for the one repository a user pasted. A failure
  * says why in words a user can act on, beside the log line an operator reads.
+ * A repository the host will not show (`unseen`: missing, renamed or private)
+ * is held by the refresh like an unreachable one, so a rename never prunes a
+ * catalog, while a Linked Kit tells the user to check the link.
  * Without an avatar store a kit's avatar image is dropped and the kit keeps
  * the default one.
  */
@@ -163,7 +170,9 @@ export function createKitResolver(deps: KitResolverDeps): KitResolver {
                 ? `${gitUrl} has no branch, tag or commit named ${ref}`
                 : `${gitUrl} could not be found, or it is not public`,
             )
-          : unreadable(`${gitUrl} could not be reached; try again`);
+          : resolution.unseen
+            ? unseen(`${gitUrl} could not be found, or it is not public`)
+            : unreadable(`${gitUrl} could not be reached; try again`);
       }
       version = resolution.sha;
       source = deps.sourceForEntry(gitUrl, resolution.sha);
@@ -235,7 +244,11 @@ export function createKitResolver(deps: KitResolverDeps): KitResolver {
             ? rejected(
                 `the kit's seed ${seedUrl} has no ${kit.seed?.ref ?? "default branch"}`,
               )
-            : unreadable(`the kit's seed ${seedUrl} could not be reached`);
+            : resolution.unseen
+              ? unseen(
+                  `the kit's seed ${seedUrl} could not be found, or it is not public`,
+                )
+              : unreadable(`the kit's seed ${seedUrl} could not be reached`);
         }
         seedRef = resolution.sha;
       }
@@ -343,7 +356,7 @@ export function createCatalogRefresh(deps: CatalogRefreshDeps): CatalogRefresh {
     }
     const rows = [...byId.values()];
     const unread = resolved.filter(
-      (row) => "kind" in row && row.kind === "unreadable",
+      (row) => "kind" in row && row.kind !== "rejected",
     ).length;
     if (unread > 0) {
       getLogger().warn(
