@@ -92,9 +92,7 @@ export function loginItemBootCaption(
   item: Pick<StartupItem, "disabled" | "listed">,
 ) {
   if (!item.listed) return "Not in the list, so it won't start again";
-  return item.disabled
-    ? "Your choice. The agent can't turn it back on."
-    : "Set up by the agent";
+  return item.disabled ? "Won't start at the next wake" : "Set up by the agent";
 }
 
 export function loginItemOutputKey(id: string): string {

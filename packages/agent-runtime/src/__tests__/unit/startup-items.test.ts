@@ -72,7 +72,7 @@ function inventory(extra: ScannedProcess[]) {
     scannedAt: 0,
     baseline: null,
     previous: [],
-    resolveKeep: createKeepResolver({ marks: [], overrides: [], holds: true }),
+    resolveKeep: createKeepResolver({ marks: [], overrides: [] }),
   });
   return { trees, ...result };
 }
@@ -320,7 +320,6 @@ describe("the user's control of Startup Items", () => {
       outputs: { tail: async (path) => ({ text: path, truncated: false }) },
       signals: { send: () => true },
       keep: { setKeptProcesses: () => {}, taskKeepChanged: () => {} } as never,
-      backgroundWorkHolds: true,
       runtimePid: RUNTIME,
       harnessWork: {
         harnesses: () => [],
@@ -427,7 +426,6 @@ describe("the user's control of Startup Items", () => {
         setKeptProcesses: () => {},
         taskKeepChanged: () => {},
       } as never,
-      backgroundWorkHolds: true,
       runtimePid: RUNTIME,
       harnessWork: {
         harnesses: () => [],

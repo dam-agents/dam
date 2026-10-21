@@ -86,7 +86,7 @@ describe("login items", () => {
       "Running, no longer in the list",
     );
     expect(loginItemBootCaption(item({ disabled: true }))).toBe(
-      "Your choice. The agent can't turn it back on.",
+      "Won't start at the next wake",
     );
     expect(loginItemBootCaption(item({}))).toBe("Set up by the agent");
   });
