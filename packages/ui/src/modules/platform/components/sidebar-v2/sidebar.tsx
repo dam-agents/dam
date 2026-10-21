@@ -95,7 +95,8 @@ export function SidebarV2() {
           !expanded && !over && "w-14 overflow-visible",
         )}
         style={
-          over ? { right: RIGHT_RAIL_W } : expanded ? { width } : undefined
+          // UNIT_BOUNDARY_DESCRIPTION: the pane reaches one pixel into the right rail so its own right border lands on the bar's left border, rather than beside it, and the two read as one line.
+          over ? { right: RIGHT_RAIL_W - 1 } : expanded ? { width } : undefined
         }
         data-testid="app-sidebar"
         data-pinned={expanded || undefined}
