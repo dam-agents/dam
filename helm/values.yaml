@@ -441,8 +441,8 @@ virtualization:
     # A directory on each node where a stager DaemonSet copies the runner
     # release this chart's runner image carries: the runner, the two guest
     # binaries it hands every machine, and the loader above it. Required with
-    # runner pods. A runner
-    # pod keeps the image it was created with, and a new runner image reaches
+    # runner pods. A runner pod keeps the image it was created with, and a
+    # new runner image reaches
     # it without a restart: the controller names the release over the
     # runner's machine API, the pod's loader drains the old runner, starts
     # the new one from this directory, and the new runner adopts every
@@ -453,8 +453,8 @@ virtualization:
     # pod's loader become it before it starts the release's runner, so a
     # release that changes only the loader reaches the pods in place; a
     # release's loader that cannot start leaves the pod on the loader and the
-    # release it has, held as failed. A release built against another VM runtime
-    # (a new smolvm, libkrun or crane) brings its runtime along: machines
+    # release it has, held as failed. A release built against another VM
+    # runtime (a new smolvm, libkrun or crane) brings its runtime along: machines
     # already running keep the runtime they booted, and machines started after
     # the hand-off boot the new one. A release the pod's loader cannot load (a
     # newer base image's libc) rolls the pods through `rollout` too, as does

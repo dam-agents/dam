@@ -219,7 +219,10 @@ struct Running {
 // UNIT_BOUNDARY_DESCRIPTION: how long the check that a release's binary loads in this pod may take. It only prints the binary's usage.
 const LOAD_CHECK: Duration = Duration::from_secs(10);
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a binary of a release loads in this pod at all: it prints its usage and exits, which one linked against a newer libc than the pod's image has cannot. The loader itself is checked the same way before its release is handed the machines, since the exec that becomes it never comes back.
+// UNIT_BOUNDARY_DESCRIPTION: how long a release's loader may take to say it starts here: it does everything a start does but supervise, which includes copying the release and its runtime into the pod, so it takes as long as a start instead of as long as a usage line.
+const START_CHECK: Duration = Duration::from_secs(120);
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a binary of a release loads in this pod at all: it prints its usage and exits, which one linked against a newer libc than the pod's image has cannot. A release's loader is not checked this way — the exec that becomes it never comes back, so it is asked for its whole start (below).
 async fn loads(binary: &Path) -> Result<(), String> {
     let usage = Command::new(binary)
         .arg("--help")
@@ -243,7 +246,7 @@ async fn starts(loader: &Path) -> Result<(), String> {
         .stdin(std::process::Stdio::null())
         .kill_on_drop(true)
         .output();
-    match tokio::time::timeout(LOAD_CHECK, check).await {
+    match tokio::time::timeout(START_CHECK, check).await {
         Ok(Ok(out)) if out.status.success() => Ok(()),
         Ok(Ok(out)) => Err(format!(
             "{} {}",
