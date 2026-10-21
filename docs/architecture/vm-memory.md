@@ -184,6 +184,8 @@ The runner reads it at every sample rather than once at start, since a kubelet c
 It says on its console each time it sees the setting set or cleared, reports it as a gauge of its own, and raises a critical alert.
 A gauge no sample has read, or none could read, is NaN, and NaN is not a pass: the critical alert drops an unread sample, so a warning alert fires while a runner cannot say whether it groups.
 A node turns grouping off by setting `singleProcessOOMKill: true` in the kubelet's configuration; until it does, one machine's memory takes every machine of its owner down, which is the state these alerts exist to name rather than prevent.
+The local k3s clusters set it where they launch k3s: the lima dev and e2e VMs in their provision script, and the plain-process launch in a sandbox.
+A cluster installed before that change keeps grouping until its VM is recreated.
 The kubelet writes the setting when it creates a container, so a runner pod already running keeps the cgroup it was created with until it is recreated, and restarting the node's kubelet alone changes nothing for it.
 When the killed process is the runner's own container, the owner is told which agents it took down: every agent whose machine was holding memory on that runner when the kill landed names it, whatever reason the restarted runner reports meanwhile — a refused start for room, a reclaim, or a boot the restart broke — since all of them describe that one taking down.
 The kill and its time are the runner pod's own record of its container: the terminated container's id and the kernel's finished time, which name the same kill before and after that container restarts, and never a reconcile.
