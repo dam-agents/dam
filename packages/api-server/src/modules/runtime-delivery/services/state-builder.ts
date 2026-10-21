@@ -53,18 +53,12 @@ export interface StateBuilder {
   ): Promise<StatePayload>;
 }
 
-export type PendingEventResolver = (
-  agentId: string,
-  event: Event,
-) => Promise<Event | null>;
-
 export function createStateBuilder(deps: {
   db: Db;
   outboxRepo: OutboxRepo;
   builtin: BuiltinContributions;
   agentName: (agentId: string) => Promise<string | null>;
   egressDenies: (agentId: string) => EgressDenies;
-  resolveEvent?: PendingEventResolver;
 }): StateBuilder {
   return {
     async build(agentId, capabilities): Promise<StatePayload> {
@@ -88,16 +82,10 @@ export function createStateBuilder(deps: {
       const pending = await deps.outboxRepo.pendingEvents(agentId);
       const events = pending.map(toEvent).filter((e): e is Event => e !== null);
       const filtered = filterByCapabilities(capabilities, rawContribs, events);
-      const resolve = deps.resolveEvent;
-      const delivered = resolve
-        ? (
-            await Promise.all(filtered.events.map((e) => resolve(agentId, e)))
-          ).filter((e): e is Event => e !== null)
-        : filtered.events;
       return {
         contributions: filtered.contributions,
         hash: contributionHash(filtered.contributions),
-        events: delivered,
+        events: filtered.events,
         droppedContributionKinds: filtered.droppedContributionKinds,
         droppedEventKinds: filtered.droppedEventKinds,
       };

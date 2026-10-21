@@ -3,6 +3,15 @@ import { describe, expect, it, vi } from "vitest";
 import type { SessionPair } from "api-server-api";
 import { createInitializationPairResolver } from "../../modules/harness-config/services/initialization-pair.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
+import type { Event } from "agent-runtime-api";
+import { createWorkerHandler } from "../../modules/runtime-delivery/services/worker-handler.js";
+import type {
+  AgentsRuntimeRepo,
+  OutboxRepo,
+} from "../../modules/runtime-delivery/infrastructure/outbox-repo.js";
+import type { AgentRuntimeClient } from "../../modules/runtime-delivery/infrastructure/agent-runtime-client.js";
+import type { HarnessConfigSnapshotWriter } from "../../modules/runtime-delivery/services/snapshot-writer.js";
+import { outboxRow } from "../helpers/outbox-row.js";
 
 const AGENT = "agent-1";
 const SAVED: SessionPair = {
@@ -103,5 +112,89 @@ describe("an onboarding turn queued before the agent's default", () => {
     expect(await resolve(AGENT, named)).toBe(named);
     expect(await resolve(AGENT, seed)).toBe(seed);
     expect(firePair).not.toHaveBeenCalled();
+  });
+});
+
+describe("the delivery worker with the resolver", () => {
+  const seed = {
+    id: `workspace-seed:${AGENT}:1`,
+    kind: "workspace-seed" as const,
+    version: 3,
+    expiresAt: new Date(Date.now() + 60_000).toISOString(),
+    payload: { url: "https://example.com/kit.git" },
+  };
+  const turn = {
+    ...onboarding(),
+    version: 3,
+    expiresAt: seed.expiresAt,
+  } as Event;
+
+  async function deliver(firePair: () => Promise<SessionPair | undefined>) {
+    const sent: Event[][] = [];
+    const handler = createWorkerHandler({
+      outboxRepo: {
+        getRow: async () => outboxRow({ version: 3, lastSettledVersion: 2 }),
+        recordOutcome: async () => ({
+          newlyFailed: [],
+          recovered: [],
+          gaveUp: [],
+          eventsGaveUp: [],
+          settledEvents: [],
+          droppedKindsChanged: false,
+        }),
+      } as unknown as OutboxRepo,
+      agentsRuntimeRepo: {
+        get: async () => ({
+          runtimeCapabilities: { contributions: [], events: [] },
+        }),
+      } as unknown as AgentsRuntimeRepo,
+      stateBuilder: {
+        build: async () => ({
+          contributions: [],
+          hash: "h1",
+          events: [seed, turn],
+          droppedContributionKinds: [],
+          droppedEventKinds: [],
+        }),
+      },
+      agentRunningPort: { isRunning: async () => true },
+      snapshotWriter: {} as HarnessConfigSnapshotWriter,
+      clientFor: () =>
+        ({
+          applyState: async (input: { events: Event[] }) => {
+            sent.push(input.events);
+            return {
+              status: "ok",
+              appliedVersion: 3,
+              appliedHash: "h1",
+              failures: [],
+              settledEvents: [],
+            };
+          },
+        }) as unknown as AgentRuntimeClient,
+      resolveOwner: async () => null,
+      resolveEvent: createInitializationPairResolver({
+        firePair,
+        log: () => {},
+      }),
+      log: () => {},
+    });
+    await handler(AGENT);
+    return sent[0] ?? [];
+  }
+
+  // TEST_SCENARIO: the agent has said hello and has no default model yet; the worker sends the kit's seed but not the onboarding turn, which the runtime would refuse every minute for 30 days.
+  it("sends the other events and holds the turn back", async () => {
+    const sent = await deliver(async () => {
+      throw new NoDefaultModelError();
+    });
+    expect(sent.map((e) => e.id)).toEqual([seed.id]);
+  });
+
+  // TEST_SCENARIO: once the default is saved, the same delivery sends the turn carrying it.
+  it("sends the turn on the saved default", async () => {
+    const sent = await deliver(async () => SAVED);
+    expect(sent.map((e) => e.id)).toEqual([seed.id, turn.id]);
+    expect(sent[1]?.payload).toMatchObject({ model: SAVED.model });
   });
 });

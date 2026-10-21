@@ -30,14 +30,12 @@ import {
   type RunningWorker,
   type StateQueue,
 } from "./infrastructure/state-queue.js";
-import {
-  createStateBuilder,
-  type PendingEventResolver,
-} from "./services/state-builder.js";
+import { createStateBuilder } from "./services/state-builder.js";
 import { createBuiltinContributions } from "./services/builtin-contributions.js";
 import {
   createWorkerHandler,
   type IsAgentRunning,
+  type PendingEventResolver,
 } from "./services/worker-handler.js";
 import { createCronSweep, type CronSweep } from "./services/cron-sweep.js";
 import { createHelloHandler } from "./services/hello-handler.js";
@@ -154,7 +152,6 @@ export function composeRuntimeDelivery(
     egressDenies: (agentId) => async (host, method, path) =>
       (await egressRules.match(agentId, host, 443, true, method, path))
         ?.verdict === "deny",
-    ...(opts.resolveEvent && { resolveEvent: opts.resolveEvent }),
   });
   const queue = createStateQueue(opts.bullConnection);
 
@@ -173,6 +170,7 @@ export function composeRuntimeDelivery(
     clientFor: (agentId) => createAgentRuntimeClient(agentId, opts.namespace),
     resolveOwner: opts.resolveOwner,
     notifyLifecycle,
+    ...(opts.resolveEvent && { resolveEvent: opts.resolveEvent }),
     log,
   });
   const worker = startStateWorker({
