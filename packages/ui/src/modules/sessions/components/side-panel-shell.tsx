@@ -133,11 +133,29 @@ export function SidePanelShell({
       ? null
       : shownSidePanelWidth(rightW, sidePanelMinW, sidePanelMaxW);
 
+  // UNIT_BOUNDARY_DESCRIPTION: which page the panel was opened beside, told apart from what the panel itself shows, so that going somewhere else from the rail ends a panel that had taken the screen.
+  const pageKey = useStore((s) =>
+    [
+      s.view,
+      s.selectedAgent ?? s.agentId ?? "",
+      s.sessionId ?? "",
+      s.settingsTab ?? "",
+      s.sandboxSection ?? "",
+      s.starterKitCatalog ?? "",
+      s.starterKitId ?? "",
+    ].join("|"),
+  );
+  const beside = useRef(pageKey);
   const closeMobilePanel = useCallback(() => {
     setSidePanelTab(null);
     setMobileScreen("chat");
   }, [setSidePanelTab, setMobileScreen]);
   const mobileOverlay = mobilePanelOpen && !desktop;
+  useEffect(() => {
+    if (beside.current === pageKey) return;
+    beside.current = pageKey;
+    if (tiles && mobileOverlay) closeMobilePanel();
+  }, [pageKey, tiles, mobileOverlay, closeMobilePanel]);
   useEffect(() => {
     if (!mobileOverlay) return;
     const before = document.activeElement as HTMLElement | null;
