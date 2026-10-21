@@ -755,10 +755,10 @@ fn online_memory(start: u64, length: u64) -> io::Result<()> {
 enum Phase {
     // UNIT_BOUNDARY_DESCRIPTION: the workload has been signalled and has its grace, and no shutdown has been asked for, so the kill comes at the end of that grace.
     Stopping,
-    // UNIT_BOUNDARY_DESCRIPTION: the supervisor is spawning openrc's shutdown, which counts as a shutdown in progress from the moment it was asked for: the kill keeps off until the shutdown's own window has passed, however long the spawn takes.
+    // UNIT_BOUNDARY_DESCRIPTION: the supervisor is spawning openrc's shutdown, which counts as a shutdown in progress from the moment it was asked for: the kill keeps off until the shutdown's own window has passed, however long the spawn takes. It becomes `Shutdown` once the spawn returns, or stays `Killed` if the stop gave up while it ran.
     Starting,
-    // UNIT_BOUNDARY_DESCRIPTION: openrc's shutdown has been running since this instant, and must not be killed under it.
-    Shutdown(Instant),
+    // UNIT_BOUNDARY_DESCRIPTION: openrc's shutdown is running, and must not be killed under it.
+    Shutdown,
     // UNIT_BOUNDARY_DESCRIPTION: the kill was issued at this instant, so nothing new may start.
     Killed(Instant),
     // UNIT_BOUNDARY_DESCRIPTION: the supervisor finished the stop, so the home is written out.
@@ -773,7 +773,7 @@ pub enum Begun<T> {
     Started(T),
     // UNIT_BOUNDARY_DESCRIPTION: the kill was already decided, so `start` was never called: everything a shutdown stops is gone by then.
     Refused,
-    // UNIT_BOUNDARY_DESCRIPTION: the kill was decided while the child was being made, so this one stops nothing. It must be ended and not waited on, since the stop has already given up on the shutdown.
+    // UNIT_BOUNDARY_DESCRIPTION: the kill was decided while the child was being made, so this one stops nothing. The caller drops it and does not wait on it, since the stop has already given up on the shutdown and the namespace cleanup after it ends the child and its tree under a bound.
     TooLate(T),
 }
 
@@ -787,7 +787,7 @@ pub fn stopped() -> ! {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: starts openrc's shutdown unless the kill is already decided. The phase is taken under the lock and `start` runs outside it: the lock is what makes the start and the kill one decision, and the spawn is unbounded work that the stop must not be made to wait on. So the phase says `Starting` from the instant the shutdown is asked for, which the kill path reads as a shutdown in progress and keeps off for that shutdown's window; whatever the spawn returns is then reported against the phase it landed in, and a child that lost the race is handed back for the caller to end.
+// UNIT_BOUNDARY_DESCRIPTION: starts openrc's shutdown unless the kill is already decided. The phase is taken under the lock and `start` runs outside it: the lock is what makes the start and the kill one decision, and the spawn is unbounded work that the stop must not be made to wait on. So the phase says `Starting` from the instant the shutdown is asked for, which the kill path reads as a shutdown in progress and keeps off for that shutdown's window; whatever the spawn returns is then reported against the phase it landed in, and a child that lost the race is handed back for the caller to drop.
 pub fn begin_shutdown<T>(start: impl FnOnce() -> T) -> Begun<T> {
     let (lock, cvar) = &STOP;
     {
@@ -801,7 +801,7 @@ pub fn begin_shutdown<T>(start: impl FnOnce() -> T) -> Begun<T> {
     let started = start();
     let mut phase = lock.lock().unwrap_or_else(|e| e.into_inner());
     if matches!(*phase, Phase::Starting) {
-        *phase = Phase::Shutdown(Instant::now());
+        *phase = Phase::Shutdown;
         cvar.notify_all();
         return Begun::Started(started);
     }
@@ -864,7 +864,7 @@ fn quiesce(conn: &mut File, grace: Duration) -> AgentResponse {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits for the supervisor to finish the stop, telling the host it is still at work once a second, and issues `kill` once the phase allows it. The kill is decided under the phase's own lock, so it lands either before openrc's shutdown starts, which then does not start at all, or after it, and then only `shutdown_grace` past the instant that shutdown began. `after_kill` stays for the supervisor to write the home out and say so. Every instant here bounds this wait alone: the guard release, the sync and the disk freeze that follow it are unbounded work, as they were before.
+// UNIT_BOUNDARY_DESCRIPTION: waits for the supervisor to finish the stop, telling the host it is still at work once a second, and issues `kill` once the phase allows it. The kill is decided under the phase's own lock, so it lands either before openrc's shutdown was asked for, which the supervisor then never starts, or after it, and then only once the shutdown's own window has passed. Both windows are counted from this wait's own start: `grace` from it, and `shutdown_grace` on top once a shutdown has been asked for. `after_kill` then stays for the supervisor to write the home out and say so. Every instant here bounds this wait alone: the guard release, the sync and the disk freeze that follow it are unbounded work, as they were before, and outlast any pending spawn because that work runs outside this lock.
 fn wait_out_stop(
     conn: &mut File,
     grace: Duration,
@@ -891,7 +891,7 @@ fn wait_out_stop(
                 // UNIT_BOUNDARY_DESCRIPTION: the workload's grace, and the shutdown's own window on top of it once one has been asked for: the shutdown comes after the entrypoint has had its grace, so its window is added and does not overlap it. A shutdown that is still being spawned counts here too, since it is a shutdown the stop must not kill.
                 let kill_at = waiting
                     + grace
-                    + if matches!(running, Phase::Shutdown(_) | Phase::Starting) {
+                    + if matches!(running, Phase::Shutdown | Phase::Starting) {
                         shutdown_grace
                     } else {
                         Duration::ZERO
@@ -1186,15 +1186,16 @@ mod tests {
             "a stop killed openrc's shutdown before a service's stop ran ({slow:?})"
         );
 
-        // TEST_SCENARIO: the window is added to the workload's grace, not laid over it. With production's ratio an openrc shutdown begins well inside that grace, so an overlap would leave it killed at the plain grace with nothing extra: a container runtime's ten-second stop ahead of the probe service still loses the probe. Here the shutdown begins a tenth of the way into the grace and its service's stop lands past that grace, which the added window must cover.
+        // TEST_SCENARIO: the window is added to the workload's grace, not laid over it. An openrc shutdown begins well inside that grace, so an overlap would leave it killed at the plain grace with nothing extra: a container runtime's ten-second stop ahead of the probe service still loses the probe, which is the reported trigger. The graces here keep production's two-to-one ratio, and the service's stop lands past the grace, which only the added window covers.
+        // UNIT_BOUNDARY_DESCRIPTION: production's own ratio, a workload grace twice the shutdown's window, with enough room that host sleep and exec latency cannot decide the outcome.
         let early = run(
+            Duration::from_millis(900),
+            Duration::from_millis(800),
+            Duration::from_millis(400),
             Duration::from_millis(600),
-            Duration::from_millis(400),
-            Duration::from_millis(300),
-            Duration::from_millis(400),
             true,
             false,
-            Duration::from_millis(1200),
+            Duration::from_millis(2400),
             Duration::ZERO,
         );
         assert!(

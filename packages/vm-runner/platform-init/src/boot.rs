@@ -2642,18 +2642,20 @@ fn stop(openrc: bool) -> ! {
             vm::Begun::Refused => {
                 logf!("the workload was already killed; openrc shutdown would stop no service")
             }
-            vm::Begun::TooLate(Some(mut shutdown)) => {
-                logf!("the stop was killed while openrc shutdown started; ending it");
-                // SAFETY: kill(2) reads no memory. The child is not reaped yet, so its pid still names it.
-                unsafe { libc::kill(shutdown.id() as libc::pid_t, libc::SIGKILL) };
-                let _ = shutdown.wait();
-            }
-            vm::Begun::TooLate(None) => {}
+            vm::Begun::TooLate(shutdown) => abandon_shutdown(shutdown),
         }
         end_the_rest(&mut true);
     }
     flush_home_on_stop();
     vm::stopped()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an openrc shutdown that started only after the kill stops nothing, so it is dropped rather than waited on. Waiting on the direct child would hold the supervisor exactly where it is already behind, and a child a stop already gave up on can sit in uninterruptible I/O for as long as its storage wants. Nothing is signalled here either: the shutdown may have forked its own children by then, and one pid is not its tree. `end_the_rest` ends the whole namespace under END_GRACE and reaps it, this child included, since the init is the reaper of every child it has.
+fn abandon_shutdown(shutdown: Option<std::process::Child>) {
+    if shutdown.is_some() {
+        logf!("the stop was killed while openrc shutdown started; its tree is ended with the rest");
+    }
+    drop(shutdown);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here means that power-off never costs what the agent last wrote, whatever version the host runs.
@@ -2925,6 +2927,35 @@ mod tests {
 
     // UNIT_BOUNDARY_DESCRIPTION: the guard tests share one process-wide slot, and the mutex protects each look at it, not a test's setup and assertions, so the standard runner's concurrent tests would have one test's stop release another test's guard.
     static GUARD_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    // TEST_SCENARIO: an openrc shutdown that starts only after the kill is abandoned, not waited on. Waiting on its direct child would hold the supervisor on the one path where it is already behind, and the shutdown's own children would go on running until the namespace cleanup behind it. So the drop returns at once even while the child and a child of its own are alive, and no single pid is signalled: the group here is ended by the test itself, after the call, as `end_the_rest` ends the namespace in a guest.
+    #[test]
+    fn an_abandoned_shutdown_is_not_waited_on() {
+        use std::os::unix::process::CommandExt;
+        let child = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg("sleep 30 & sleep 30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = child.id() as libc::pid_t;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let started = std::time::Instant::now();
+        abandon_shutdown(Some(child));
+        let waited = started.elapsed();
+        assert!(
+            waited < std::time::Duration::from_millis(500),
+            "abandoning a live shutdown waited {waited:?} on it"
+        );
+        // SAFETY: kill(2) with signal 0 only checks for the process, and reads no memory.
+        let alive = unsafe { libc::kill(pid, 0) } == 0;
+        assert!(
+            alive,
+            "the shutdown was gone; nothing showed that the call did not wait on it"
+        );
+        // SAFETY: kill(2) reads no memory; the pid leads the group this test made, which holds nothing else.
+        unsafe { libc::kill(-pid, libc::SIGKILL) };
+    }
 
     // TEST_SCENARIO: a guard that held room when the guest stopped is detached from its slot before it is released, so the running guard cannot regrow it and the filesystem frees its blocks once the last descriptor closes; the stop's sync then has nothing left to wait for. That the room is room the guest can write again is measured in `a_smaller_guard_gives_up_its_files` and, on a bounded disk, in `a_btrfs_guard_move_returns_the_room`: this test's own filesystem is shared with the rest of the suite's tests, so their writes move its free space. The guard thread then finds nothing and ends.
     #[test]
