@@ -283,6 +283,10 @@ function useRailPopover(
     },
     content: {
       ref: content,
+      // UNIT_BOUNDARY_DESCRIPTION: a pointer resting on a tile opens the popover without taking the keyboard out of what the user was typing in; a keyboard focus still moves into it, so its rows are reachable by Tab.
+      onOpenAutoFocus: (e: Event) => {
+        if (hovering.current) e.preventDefault();
+      },
       onPointerEnter: cancel,
       onPointerLeave: closeSoon,
       // UNIT_BOUNDARY_DESCRIPTION: a click or a focus moving into that portal is not a click outside the popover.
