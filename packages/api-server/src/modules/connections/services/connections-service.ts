@@ -194,6 +194,7 @@ export function createConnectionsService(deps: {
 
   async function firstProviderPerAlias(
     fits: (type: ProviderPresetType, templateId: string) => boolean,
+    harness?: string,
   ): Promise<{ id: string; type: ProviderPresetType }[]> {
     const usable = (
       await deps.repo.listByOwnerOldestFirst(deps.ownerId)
@@ -206,7 +207,7 @@ export function createConnectionsService(deps: {
         : [];
     });
     const aliases = new Set<string>();
-    return orderByAlias(usable).filter((c) => {
+    return orderByAlias(usable, harness).filter((c) => {
       const alias = aliasForProviderType(c.type);
       if (aliases.has(alias)) return false;
       aliases.add(alias);
@@ -989,8 +990,8 @@ export function createConnectionsService(deps: {
       }
     },
 
-    async defaultProviderConnections(fits) {
-      return (await firstProviderPerAlias(fits)).map((c) => c.id);
+    async defaultProviderConnections(fits, harness) {
+      return (await firstProviderPerAlias(fits, harness)).map((c) => c.id);
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {

@@ -188,7 +188,7 @@ The CLI presents Agents as single, atomic entities — one resource carrying bot
   **Restart** deletes the agent's pod; the controller recreates it with the current spec and persistent volumes survive.
   **Disable** puts the agent to sleep and keeps anything from waking it until **Enable**, which leaves it asleep until its next use ([agent-lifecycle](agent-lifecycle.md#disable)).
   Both refuse with a conflict while a runtime migration holds the agent, and `list` and `get` show a disabled agent's state as `disabled`.
-- **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants every provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
+- **Scripted create may name a model-provider Connection**, by id or unique name; without one the server grants one provider of the caller's that the harness runs on ([agent-lifecycle](agent-lifecycle.md#create)), and each session picks its harness and model.
   An id goes directly to creation with agent-management permission; name lookup additionally needs credential-read permission and rejects ambiguous matches.
   Before creating the Agent, the server checks that a named Connection belongs to the caller and is an active model provider, then includes it in the initial grants; an invalid one fails with guidance to choose or reconnect a provider.
 - **`--wait`** on create and restart polls until the agent settles on running (success) or error (terminal), with a bounded timeout after which the agent is left as-is and the command exits non-zero.

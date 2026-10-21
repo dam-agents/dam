@@ -36,6 +36,7 @@ import type { OutboxRepo } from "../runtime-delivery/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { emit, EventType } from "../../events.js";
 import { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
+import { createInitializationPairResolver } from "./services/initialization-pair.js";
 
 export const ETE_BYPASS_RESET = {
   reset: "ibm-litellm-bypass-mode",
@@ -136,6 +137,16 @@ export function composeFirePair(deps: {
   };
   return (agentId, kind, preferred) =>
     resolveFirePair(resolver, agentId, kind, preferred);
+}
+
+export function composeInitializationPairResolver(deps: {
+  firePair: (
+    agentId: string,
+    preferred: { harness?: string },
+  ) => Promise<SessionPair | null | undefined>;
+  log: (msg: string) => void;
+}): ReturnType<typeof createInitializationPairResolver> {
+  return createInitializationPairResolver(deps);
 }
 
 export function composeDefaultConverter(deps: {
