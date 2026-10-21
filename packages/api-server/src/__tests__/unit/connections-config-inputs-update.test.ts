@@ -32,6 +32,7 @@ function makeService() {
   const probed: string[] = [];
   const fannedOut: string[] = [];
   const svc = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
     platformProviderEnabled: async () => false,
     platformProviderKey: null,
     ownerId: "owner",

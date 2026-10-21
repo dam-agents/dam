@@ -149,6 +149,12 @@ export interface ProviderKeyRecheck {
   check: ProviderKeyCheck | null;
 }
 
+export const connectionProviderView = z.object({
+  alias: z.string(),
+  harnesses: z.array(z.string()),
+});
+export type ConnectionProviderView = z.infer<typeof connectionProviderView>;
+
 export const connectionView = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -174,6 +180,9 @@ export const connectionView = z.object({
     .optional(),
   githubUserToken: z
     .object({ scope: githubUserTokenScope.optional() })
+    .optional(),
+  provider: connectionProviderView
+    .extend({ preferred: z.boolean() })
     .optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
@@ -215,6 +224,7 @@ export const connectionTemplateView = z.object({
   authKind: authKind,
   inputs: z.array(templateInput),
   extras: z.record(z.string(), z.unknown()).optional(),
+  provider: connectionProviderView.optional(),
 });
 export type ConnectionTemplateView = z.infer<typeof connectionTemplateView>;
 

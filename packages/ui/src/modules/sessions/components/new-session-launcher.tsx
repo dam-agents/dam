@@ -15,7 +15,7 @@ import { cliAgentRef } from "../../sandboxes/lib/cli-agent-ref.js";
 
 type LocalTarget = "terminal" | "ide";
 
-// UNIT_BOUNDARY_DESCRIPTION: the new layout offers the Agent home's action list, whose CLI, editor and messenger rows slide open in place; the current layout offers the launcher cards.
+// UNIT_BOUNDARY_DESCRIPTION: JanUI offers the Agent home's action list, whose CLI, editor and messenger rows slide open in place; the current layout offers the launcher cards.
 export function NewSessionOptions({
   agent,
   newLayout,

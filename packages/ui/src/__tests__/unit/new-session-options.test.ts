@@ -39,7 +39,7 @@ function render(newLayout: boolean) {
 }
 
 // TEST_SCENARIO: with the flag on, CLI and SSH, VS Code and Zed and Slack are closed sections behind buttons that name what they control, and Configure agent ends the list.
-it("shows the sliding sections in the new layout", () => {
+it("shows the sliding sections in JanUI", () => {
   const html = render(true);
   expect(html).not.toContain('data-testid="new-session-launcher"');
   const toggles = html.match(/<button[^>]*aria-expanded="false"[^>]*>/g) ?? [];

@@ -716,7 +716,7 @@ describe("one model list on a runtime that routes by model name", () => {
   });
 });
 
-describe("the new layout's picker and the default's editor", () => {
+describe("JanUI's picker and the default's editor", () => {
   beforeEach(() => {
     state.models = {};
     state.loading = false;
@@ -741,7 +741,7 @@ describe("the new layout's picker and the default's editor", () => {
       }),
     );
 
-  /** TEST_SCENARIO: In the new layout the picker neither attaches nor
+  /** TEST_SCENARIO: In JanUI the picker neither attaches nor
    * disconnects providers; one row counts the attached providers among the
    * owner's and leads to the agent's Providers page. The current layout
    * keeps its controls. */

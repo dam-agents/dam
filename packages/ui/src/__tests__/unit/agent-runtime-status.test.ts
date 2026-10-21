@@ -132,7 +132,7 @@ describe("SandboxIdentity", () => {
     env.newLayout = false;
   });
 
-  // TEST_SCENARIO: the runtime block belongs to the default layout; the experimental new layout shares this page and stays as it was.
+  // TEST_SCENARIO: the runtime block belongs to the default layout; the experimental JanUI shares this page and stays as it was.
   it("shows the runtime block in the default layout only", () => {
     expect(renderIdentity()).toContain("Runs in a VM");
     env.newLayout = true;

@@ -35,13 +35,19 @@ export function buildStatusCommand(deps: StatusCommandDeps): Command {
 
       const lines = report.entries.map((entry) => {
         const marker = entry.isActive ? "*" : " ";
-        const expires =
-          entry.expiresAt !== undefined
+        const expires = entry.sessionExpired
+          ? " (session expired; run `dam auth login`)"
+          : entry.expiresAt !== undefined
             ? ` (expires ${entry.expiresAt.toISOString()})`
             : "";
         return `${marker} ${entry.host}  user=${entry.username}  source=${entry.source}  issuer=${entry.issuer}${expires}`;
       });
       process.stdout.write(`${lines.join("\n")}\n`);
+      if (report.uncheckedReason !== undefined) {
+        process.stderr.write(
+          `warning: could not check the active session: ${report.uncheckedReason}\n`,
+        );
+      }
       process.exit(
         report.activeHostValid ? EXIT_SUCCESS : EXIT_AUTH_STATUS_NO_VALID,
       );

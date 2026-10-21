@@ -62,6 +62,7 @@ function setup(
   templates: Record<string, Partial<TemplateSpec>> = {},
 ) {
   const connections = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
     platformProviderEnabled: async () => false,
     platformProviderKey: null,
     isOwnedAgent: async () => true,

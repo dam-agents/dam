@@ -106,7 +106,7 @@ const SOURCE: Record<SessionType, string> = {
 };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar tree: which Session
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar tree: which Session
  * rows sit in the Pinned section, which Agents are open, the activity dot a
  * Session row shows, and the context line under its title (harness, model and
  * where the Session came from). A terminal Session names no source there: the

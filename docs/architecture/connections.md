@@ -78,6 +78,7 @@ An Agent may hold several **provider Connections**, at most one per **provider a
 A session picks its model per turn, and the provider follows from the name.
 Creation grants the one it names, else one provider Connection the owner holds that the harness runs on, the first in the harness's provider order ([agent-lifecycle](agent-lifecycle.md#create)).
 The agent's Providers section lists every provider Connection the owner holds with a grant toggle and picks the default pair for new sessions ([harness-config](harness-config.md)).
+A provider Connection, and its Template, carry their alias and the harnesses of the catalog that run on it in every listing, so a caller tells providers apart without knowing template ids; the listing also marks one **preferred**: the one a create that names no provider gives the install's default harness first.
 A provider Connection's env lands in a per-provider layer the Model Router reads; granting or revoking one recycles the [Harness Leases](sessions.md#session-inside-the-pod).
 
 Credentials carry their own lifecycle.

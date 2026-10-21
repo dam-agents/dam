@@ -31,9 +31,12 @@ export function mountRoutes(app: App, boot: ApiServerDeps): void {
   );
   app.get("/api/version", (c) =>
     c.json({
-      serverVersion: config.serverVersion,
+      serverVersion: config.appVersion,
       ...(config.minClientCliVersion !== undefined && {
         minClientVersion: config.minClientCliVersion,
+      }),
+      ...(config.recommendedClientCliVersion !== undefined && {
+        recommendedClientVersion: config.recommendedClientCliVersion,
       }),
       appVersion: config.appVersion,
     }),

@@ -59,7 +59,7 @@ export function AppSidePanelButtons({
  * Artifacts, scoped to that Agent with a switch to the whole library. Other
  * pages leave Artifacts to the Artifacts page, whose opened artifact docks
  * here without the interactive bridge, because no chat is open to receive a
- * prompt. With the new layout on, every page offers Artifacts, listing the
+ * prompt. With JanUI on, every page offers Artifacts, listing the
  * whole library.
  */
 export function AppSidePanelHost({ children }: { children: ReactNode }) {

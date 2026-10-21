@@ -13,7 +13,7 @@ import { FIRST_MESSAGE_PREFILL, SCHEDULE_PREFILL } from "../lib/tasks.js";
  * UNIT_BOUNDARY_DESCRIPTION: A click on a checklist task takes the user to the
  * place where they do it. Tasks done on an Agent open the newest one, and a
  * chat task leaves a starting line in its composer. The artifact task opens
- * the Artifacts tab in a chat or with the new layout on, and the Artifacts
+ * the Artifacts tab in a chat or with JanUI on, and the Artifacts
  * page elsewhere. With no Agent yet, those
  * tasks create one first, because each needs an Agent to act on.
  */

@@ -73,7 +73,7 @@ const REVEAL =
   "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 has-[[data-state=open]]:pointer-events-auto has-[[data-state=open]]:opacity-100";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar as one tree: the pinned
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one tree: the pinned
  * Sessions of every Agent in a Pinned section at the top, then every Agent,
  * each opening to its own Sessions. The Agent that is open in the page opens
  * in the tree too until its row closes it, and stays open on a page with no

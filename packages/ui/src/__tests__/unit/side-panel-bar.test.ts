@@ -154,8 +154,8 @@ it("marks only the open tab with the inner-edge bar", () => {
   expect(html).toContain('width="24"');
 });
 
-// TEST_SCENARIO: In the new layout the rail matches the sidebar strip: 40 px rounded tiles with 20 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
-it("draws the new layout's tiles, with the bar on the right edge", () => {
+// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 20 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
+it("draws JanUI's tiles, with the bar on the right edge", () => {
   const html = renderToStaticMarkup(
     createElement(
       TooltipProvider,

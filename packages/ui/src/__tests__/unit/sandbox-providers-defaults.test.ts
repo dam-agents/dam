@@ -245,8 +245,8 @@ describe("agent default on a runtime that routes by model name", () => {
   });
 });
 
-describe("the new layout's default editor", () => {
-  // TEST_SCENARIO: with the new layout on, the Providers page edits the saved default with the new session's picker, in its default mode: it shows the saved pair, and a pick saves the whole pair, session settings included.
+describe("JanUI's default editor", () => {
+  // TEST_SCENARIO: with JanUI on, the Providers page edits the saved default with the new session's picker, in its default mode: it shows the saved pair, and a pick saves the whole pair, session settings included.
   it("hands the saved pair to the session picker, which saves each pick", () => {
     state.newLayout = true;
     state.routed = true;
@@ -285,7 +285,7 @@ describe("the new layout's default editor", () => {
     state.routed = false;
   });
 
-  // TEST_SCENARIO: on a routed runtime the server refuses a default with no model, so a harness picked in the new layout's default editor waits for its model instead of being saved.
+  // TEST_SCENARIO: on a routed runtime the server refuses a default with no model, so a harness picked in JanUI's default editor waits for its model instead of being saved.
   it("does not save a routed harness pick until its model is picked", () => {
     state.newLayout = true;
     state.routed = true;

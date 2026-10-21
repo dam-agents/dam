@@ -35,35 +35,29 @@ export function DashboardHomeView() {
       </div>
     );
 
+  if (visible.length === 0) return <WelcomeEntryPoints />;
+
   return (
     <div className="@container flex flex-col gap-4 md:pt-5">
       <div className="grid grid-flow-row-dense grid-cols-1 gap-4 @xl:grid-cols-2 @5xl:grid-cols-4">
         <HeroCard />
-        {visible.length === 0 ? (
-          <div className="col-span-full">
-            <WelcomeEntryPoints />
-          </div>
-        ) : (
-          <>
-            <TipCard />
-            <ResourcesBarsCard />
-            <AgentStatesCard />
-            <div className="@xl:col-span-2 [&>div]:h-full [&>div]:rounded-xl">
-              <SpendWidget />
-            </div>
-            <ChannelsCard />
-            <BusiestCard />
-            <ActivityCard />
-            <SchedulesCard />
-            <HarnessCard />
-            <ConnectionsCard />
-            <ArtifactsCard />
-            <ApiKeysCard />
-            <SpendByKindCard />
-            <ModelsCard />
-            <TokensCard />
-          </>
-        )}
+        <TipCard />
+        <ResourcesBarsCard />
+        <AgentStatesCard />
+        <div className="@xl:col-span-2 [&>div]:h-full [&>div]:rounded-xl">
+          <SpendWidget />
+        </div>
+        <ChannelsCard />
+        <BusiestCard />
+        <ActivityCard />
+        <SchedulesCard />
+        <HarnessCard />
+        <ConnectionsCard />
+        <ArtifactsCard />
+        <ApiKeysCard />
+        <SpendByKindCard />
+        <ModelsCard />
+        <TokensCard />
       </div>
     </div>
   );

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: An artifact is drawn with the document-attachment icon in the new layout, wherever it appears, and with the folders icon in the current layout.
+// TEST_OVERVIEW: An artifact is drawn with the document-attachment icon in JanUI, wherever it appears, and with the folders icon in the current layout.
 import { DocumentAttachment, Folders } from "@carbon/icons-react";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";

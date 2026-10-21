@@ -165,7 +165,7 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   category: "app",
   isCustom: false,
   description:
-    "LiteLLM proxy for Claude, GPT and other models, supporting Claude Code, Codex, Pi and Bob.",
+    "LiteLLM proxy for Claude, GPT and other models, supporting Claude Code, Codex, Pi, Bob and Copilot.",
   iconSlug: "ibm",
   authKind: "header",
   host: IBM_LITELLM_HOST,

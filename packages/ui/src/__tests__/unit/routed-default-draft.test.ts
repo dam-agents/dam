@@ -101,7 +101,7 @@ const renderDefault = () => {
   return (body.props.children[0] as Element).props.defaultPair;
 };
 
-// TEST_SCENARIO: on a routed runtime a harness picked in the new layout's default editor waits for its model; settings picked meanwhile stay with the draft and are saved with the model.
+// TEST_SCENARIO: on a routed runtime a harness picked in JanUI's default editor waits for its model; settings picked meanwhile stay with the draft and are saved with the model.
 it("keeps settings picked while a routed harness waits for its model", () => {
   renderDefault().onChoose({ harness: "pi", provider: null, model: null });
   renderDefault().onChoose({

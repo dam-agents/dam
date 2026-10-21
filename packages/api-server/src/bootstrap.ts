@@ -816,6 +816,7 @@ export async function bootstrap() {
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
       platformProviderCa: config.platformProvider?.ca ?? null,
+      harnesses: harnessCatalog,
       platformProviderEnabled: async () =>
         (
           await composeFeaturesForOwner({
