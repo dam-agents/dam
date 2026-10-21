@@ -57,8 +57,8 @@ cargo build --release --locked -p vm-runner
 # installed beside them too, since a release carries the loader a pod becomes:
 # the copy on PATH is the pod's entrypoint, and the one here is what a pod
 # takes when its release is named.
-install -m 755 "$target/release/vm-image-cache" "$target/release/vm-seed" "$b/usr/local/bin/"
-install -m 755 "$target/release/vm-runner-loader" "$b/usr/local/bin/" "$rel/"
+install -m 755 "$target/release/vm-runner-loader" "$target/release/vm-image-cache" "$target/release/vm-seed" "$b/usr/local/bin/"
+install -m 755 "$target/release/vm-runner" "$target/release/vm-runner-loader" "$rel/"
 # platform-init and platform-runc run inside the agent's image, which shares no
 # libc with this one, so they are linked statically, against glibc's static archive. The static
 # flag is scoped to platform-init's own target triple, so it reaches neither

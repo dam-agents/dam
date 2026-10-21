@@ -1,6 +1,7 @@
 use std::path::{Path, PathBuf};
 
 use anyhow::Context;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::api::{RunnerRelease, HELD_REBOOT, HELD_UNSTAGED};
@@ -144,6 +145,39 @@ pub fn target_file(loader_dir: &Path) -> PathBuf {
     loader_dir.join("target")
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: what a loader hands the one that replaces it, across an exec that keeps the process and loses everything it held: which loader binary this process is, so the loader of a release it is named is compared with the loader it really runs and not with that of a runner it went back to, and which release it ran before, so a release that fails right after it takes over gives the machines back to that one rather than to the pod's image. A pod that never became another loader has none, and its loader is the one its image carries.
+#[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct Handover {
+    pub loader: PathBuf,
+    pub replaced: Option<Replaced>,
+}
+
+#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Replaced {
+    pub name: String,
+    pub dir: PathBuf,
+    pub runtime: PathBuf,
+}
+
+pub fn handover_file(loader_dir: &Path) -> PathBuf {
+    loader_dir.join("handover.json")
+}
+
+pub fn write_handover(path: &Path, handover: &Handover) -> anyhow::Result<()> {
+    replace(path, &serde_json::to_vec(handover)?)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: reads what the loader this process replaced left and removes it, so a runner that restarts later is not handed an old one: a handover describes the one exec that followed it, and the release it names has been started by then.
+pub fn take_handover(path: &Path) -> Handover {
+    let read = std::fs::read(path)
+        .ok()
+        .and_then(|raw| serde_json::from_slice(&raw).ok())
+        .unwrap_or_default();
+    let _ = std::fs::remove_file(path);
+    read
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: replaces a file of the loader directory whole, so the side that reads it never reads half of one.
 pub fn replace(path: &Path, bytes: &[u8]) -> anyhow::Result<()> {
     let scratch = path.with_extension("partial");
@@ -207,7 +241,7 @@ fn is_runtime(path: &Path) -> bool {
         .is_some_and(|name| name.starts_with("runtime-"))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: copies a release's own files under its key in `into`, replacing a copy whose bytes differ, and returns where it is. The loader uses it to copy a staged release into the pod. Everything a release carries is copied, so a release the stager put on the node before loaders travelled in one is copied without a loader, and the pod keeps its own.
+// UNIT_BOUNDARY_DESCRIPTION: copies a release's own files under its key in `into`, replacing a copy whose bytes differ, and returns where it is. The loader uses it to copy a staged release into the pod. Every file the release must have is copied or the copy fails; the two it may lack are copied where they are, so a release staged before loaders travelled in releases is copied without one and the pod keeps its own.
 pub fn stage_files(builtin: &Path, into: &Path, release: &str) -> anyhow::Result<PathBuf> {
     let name = key(release);
     let dest = into.join(&name);
@@ -219,12 +253,12 @@ pub fn stage_files(builtin: &Path, into: &Path, release: &str) -> anyhow::Result
         }
         std::fs::create_dir_all(&scratch)
             .with_context(|| format!("creating {}", scratch.display()))?;
-        for file in FILES.iter().chain(&TRAVELLING) {
-            let from = builtin.join(file);
-            if !from.is_file() {
-                continue;
-            }
-            std::fs::copy(&from, scratch.join(file))
+        for file in FILES.iter().chain(
+            TRAVELLING
+                .iter()
+                .filter(|file| builtin.join(file).is_file()),
+        ) {
+            std::fs::copy(builtin.join(file), scratch.join(file))
                 .with_context(|| format!("copying {file} into {}", scratch.display()))?;
             std::fs::File::open(scratch.join(file))?.sync_all()?;
         }
@@ -303,23 +337,27 @@ fn same_release(a: &Path, b: &Path) -> bool {
         .all(|file| same_bytes(&a.join(file), &b.join(file)))
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether two files hold the same bytes, one a file the release carries and the other possibly absent: a release built before the file travelled in releases, or one the pod's own image lacks. Absent on both sides is the same, absent on one is not.
+// UNIT_BOUNDARY_DESCRIPTION: whether two files hold the same bytes. A file neither of them has is the same on both sides, which is how a release and a pod that carry no loader — one staged before loaders travelled in releases, one from an image before them — compare. A file one side has and the other does not, and a file either cannot read, are not the same: a required file that cannot be read is a release that is not whole, not one that matches.
 pub fn same_bytes(a: &Path, b: &Path) -> bool {
     match (digest(a), digest(b)) {
-        (None, None) => true,
-        (Some(a), Some(b)) => a == b,
+        (Ok(Some(a)), Ok(Some(b))) => a == b,
+        (Ok(None), Ok(None)) => true,
         _ => false,
     }
 }
 
-fn digest(path: &Path) -> Option<Vec<u8>> {
+fn digest(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
     use std::io::Read;
-    let mut file = std::fs::File::open(path).ok()?;
+    let mut file = match std::fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(e),
+    };
     let mut hasher = Sha256::new();
     let mut chunk = vec![0; 1 << 16];
     loop {
-        match file.read(&mut chunk).ok()? {
-            0 => return Some(hasher.finalize().to_vec()),
+        match file.read(&mut chunk)? {
+            0 => return Ok(Some(hasher.finalize().to_vec())),
             n => hasher.update(&chunk[..n]),
         }
     }
@@ -386,6 +424,25 @@ mod tests {
         }
         std::fs::write(dir.join(RUNNER), runner).unwrap();
         std::fs::write(dir.join(RUNTIME_ID), runtime).unwrap();
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: what one loader leaves the loader that replaces it is read once and then gone: a handover names the one exec that followed it, so a runner that restarts later is not handed an old one.
+    #[test]
+    fn a_handover_is_read_once_and_then_gone() {
+        let dir = TempDir::new("handover");
+        let path = handover_file(dir.path());
+        assert_eq!(take_handover(&path), Handover::default());
+        let handover = Handover {
+            loader: PathBuf::from("/releases/a/vm-runner-loader"),
+            replaced: Some(Replaced {
+                dir: PathBuf::from("/releases/b"),
+                name: "runner:2".into(),
+                runtime: PathBuf::from("/runtimes/a"),
+            }),
+        };
+        write_handover(&path, &handover).unwrap();
+        assert_eq!(take_handover(&path), handover);
+        assert_eq!(take_handover(&path), Handover::default());
     }
 
     fn boots(dir: &Path, key: &str) {

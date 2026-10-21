@@ -30,6 +30,9 @@ enum Mode {
         // UNIT_BOUNDARY_DESCRIPTION: the smolvm runtime the pod's image carries, which the runner's own arguments name. A staged release built against another runtime runs against the pod's copy of that one instead.
         #[arg(long = "builtin-runtime")]
         builtin_runtime: PathBuf,
+        // UNIT_BOUNDARY_DESCRIPTION: every step this loader takes before it supervises, and then exit: the pod's own loader runs it on the loader a release carries before it becomes it, since the exec never comes back.
+        #[arg(long)]
+        check: bool,
         #[arg(last = true)]
         args: Vec<String>,
     },
@@ -65,6 +68,32 @@ const RESTART_BACKOFF_MAX: Duration = Duration::from_secs(30);
 // UNIT_BOUNDARY_DESCRIPTION: how often a stop of the pod looks whether the runner it passes the stop to has set up its own stop yet.
 const CATCH_POLL: Duration = Duration::from_millis(50);
 
+// UNIT_BOUNDARY_DESCRIPTION: the two signals a stop of the pod arrives as, held or released for one call.
+fn stop_signals() -> libc::sigset_t {
+    // SAFETY: these take a signal set this call owns and no pointers of ours, and a zeroed set is what sigemptyset fills.
+    unsafe {
+        let mut set: libc::sigset_t = std::mem::zeroed();
+        libc::sigemptyset(&mut set);
+        libc::sigaddset(&mut set, libc::SIGTERM);
+        libc::sigaddset(&mut set, libc::SIGINT);
+        set
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: holds a stop for the transition an exec makes, which keeps a signal mask and nothing else: a stop delivered after the loader's last look at its token would otherwise be taken by a handler the exec discards, and the machines it would have stopped are powered off with the pod instead.
+fn block_stop_signals() {
+    let set = stop_signals();
+    // SAFETY: the set lives for the call and the mask it replaces is not read.
+    unsafe { libc::pthread_sigmask(libc::SIG_BLOCK, &raw const set, std::ptr::null_mut()) };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: releases what block_stop_signals held, which a loader does once it has handlers of its own: a stop held across the exec reaches those rather than the default action that would end the pod with its machines running.
+fn unblock_stop_signals() {
+    let set = stop_signals();
+    // SAFETY: as above.
+    unsafe { libc::pthread_sigmask(libc::SIG_UNBLOCK, &raw const set, std::ptr::null_mut()) };
+}
+
 fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
 }
@@ -95,10 +124,15 @@ async fn main() -> anyhow::Result<()> {
         Mode::Run {
             builtin,
             builtin_runtime,
+            check,
             args,
         } => {
             let staged = env(release::RELEASES_ENV);
             if staged.is_empty() {
+                // UNIT_BOUNDARY_DESCRIPTION: a pod whose controller sets no release directory runs the pod's own runner, as the runner pod did before there was a loader. A check has nothing to look at there, and starting the runner from one would be a second runner for the same machines.
+                if check {
+                    return Ok(());
+                }
                 return Err(std::process::Command::new(builtin.join(RUNNER))
                     .args(&args)
                     .exec()
@@ -112,7 +146,8 @@ async fn main() -> anyhow::Result<()> {
             for dir in [&copies, &runtimes] {
                 std::fs::create_dir_all(dir)?;
             }
-            let code = Loader {
+            let handover = release::handover_file(&loader_dir);
+            let mut loader = Loader {
                 releases: Releases {
                     builtin,
                     builtin_runtime,
@@ -122,14 +157,28 @@ async fn main() -> anyhow::Result<()> {
                 args,
                 target_file: release::target_file(&loader_dir),
                 status_file: release::status_file(&loader_dir),
+                handover_file: handover.clone(),
+                handover: if check {
+                    release::Handover::default()
+                } else {
+                    release::take_handover(&handover)
+                },
                 copies,
                 runtimes,
                 failed: None,
                 unloadable: None,
                 exits,
+            };
+            if check {
+                return match loader.check().await {
+                    Ok(()) => Ok(()),
+                    Err((_, message)) => {
+                        eprintln!("{message}");
+                        std::process::exit(1)
+                    }
+                };
             }
-            .run()
-            .await?;
+            let code = loader.run().await?;
             std::process::exit(code)
         }
     }
@@ -140,6 +189,9 @@ struct Loader {
     args: Vec<String>,
     target_file: PathBuf,
     status_file: PathBuf,
+    handover_file: PathBuf,
+    // UNIT_BOUNDARY_DESCRIPTION: what the loader this process replaced left for it, which an exec keeps no other trace of: the loader binary this process is, and the release it ran before.
+    handover: release::Handover,
     copies: PathBuf,
     runtimes: PathBuf,
     failed: Option<(String, String)>,
@@ -181,6 +233,27 @@ async fn loads(binary: &Path) -> Result<(), String> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: whether a release's loader starts in this pod at all, asked of the loader itself: it is run in check mode, which is every step it takes before it supervises — the release the controller named, the pod's copy of it, and the release's runner loading here. That is what the pod's own loader asks before it becomes another, since the exec never comes back: a loader that could not start would leave the pod with nothing to supervise its machines, and only a new pod would bring them back.
+async fn starts(loader: &Path) -> Result<(), String> {
+    let mut argv: Vec<std::ffi::OsString> = std::env::args_os().skip(1).collect();
+    // UNIT_BOUNDARY_DESCRIPTION: the subcommand, then the check, then the rest of what this loader was given, the runner's own arguments after its `--` among them.
+    argv.insert(1, "--check".into());
+    let check = Command::new(loader)
+        .args(&argv)
+        .stdin(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .output();
+    match tokio::time::timeout(LOAD_CHECK, check).await {
+        Ok(Ok(out)) if out.status.success() => Ok(()),
+        Ok(Ok(out)) => Err(format!(
+            "{} {}",
+            out.status,
+            String::from_utf8_lossy(&out.stderr).trim()
+        )),
+        outcome => Err(format!("{outcome:?}")),
+    }
+}
+
 impl Loader {
     fn target(&self) -> String {
         release::read_target(&self.target_file)
@@ -192,6 +265,28 @@ impl Loader {
             dir: self.releases.builtin.clone(),
             runtime: self.releases.builtin_runtime.clone(),
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the release the loader this process replaced ran, which a release that fails right after it takes over gives the machines back to. A pod that never became another loader has none, and the pod's image is what it goes back to.
+    fn replaced(&self) -> Option<Release> {
+        self.handover.replaced.as_ref().map(|replaced| Release {
+            name: replaced.name.clone(),
+            dir: replaced.dir.clone(),
+            runtime: replaced.runtime.clone(),
+        })
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the loader binary this process runs. A pod whose loader has never been replaced runs the copy its image carries, beside the release's other files.
+    fn me(&self) -> PathBuf {
+        if self.handover.loader.as_os_str().is_empty() {
+            return self.releases.builtin.join(LOADER);
+        }
+        self.handover.loader.clone()
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: every step this loader takes before it supervises, so the pod's own loader can tell whether the release's loader would start here at all. Nothing of it outlives the check: the release it copies in is what the loader that follows copies too.
+    async fn check(&mut self) -> Result<(), (&'static str, String)> {
+        self.choose(&self.target()).await.map(|_| ())
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copies of it and its runtime, so a release the stager removes from the node never leaves a runner without its guest binaries or a VMM without its runtime. A release whose runner cannot even load in this pod — one linked against a newer libc than the pod's image has — is held as built for another pod, which the controller answers by rolling the pod, and is not checked again until the controller names another.
@@ -238,11 +333,10 @@ impl Loader {
         Ok(release)
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: the loader a release carries, where it is not the one this process runs: a hand-off replaces the runner process and never the loader above it, so a pod keeps the loader of its own image until the release it is named carries another. A release that carries none, which one staged before loaders travelled in releases does, is run by the loader the pod has. Only a loader already in the image can become one, since only it reads this.
-    fn release_loader(&self, running: &Running, release: &Release) -> Option<PathBuf> {
+    // UNIT_BOUNDARY_DESCRIPTION: the loader a release carries, where it is not the one this process runs: a pod keeps the loader of the release it last became until the release it is named carries another. A release that carries none, which one staged before loaders travelled in releases does, is run by the loader the pod has. Only a loader that knows how to become another can, which is what the release that first ships one asks a pod roll for.
+    fn release_loader(&self, release: &Release) -> Option<PathBuf> {
         let theirs = release.dir.join(LOADER);
-        let mine = running.release.dir.join(LOADER);
-        (theirs.is_file() && !release::same_bytes(&theirs, &mine)).then_some(theirs)
+        (theirs.is_file() && !release::same_bytes(&theirs, &self.me())).then_some(theirs)
     }
 
     fn spawn(&self, release: Release, replaced: Option<Release>) -> anyhow::Result<Running> {
@@ -281,12 +375,17 @@ impl Loader {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: removes the pod's copies the loader no longer needs: every release but the one running and the one it would go back to, and every runtime none of those runs against and no running VMM boots from. A machine booted before a hand-off keeps the runtime it booted until it stops.
+    // UNIT_BOUNDARY_DESCRIPTION: removes the pod's copies the loader no longer needs: every release but the one running, the one it would go back to, and the one whose loader this process is. That last one is not a release it runs — it went back to another after the release's loader replaced it — but deleting the file the running loader is made of would leave it with nothing to compare a release against. A machine booted before a hand-off keeps the runtime it booted until it stops.
     fn prune(&self, running: &Running) {
         let kept: Vec<&Release> = std::iter::once(&running.release)
             .chain(running.replaced.as_ref())
             .collect();
-        let releases: Vec<&Path> = kept.iter().map(|r| r.dir.as_path()).collect();
+        let me = self.me();
+        let releases: Vec<&Path> = kept
+            .iter()
+            .map(|r| r.dir.as_path())
+            .chain(me.parent())
+            .collect();
         let mut runtimes: Vec<PathBuf> = kept.iter().map(|r| r.runtime.clone()).collect();
         runtimes.extend(
             std::fs::read_dir(&self.runtimes)
@@ -327,6 +426,8 @@ impl Loader {
         {
             let mut term = signal(SignalKind::terminate())?;
             let mut interrupt = signal(SignalKind::interrupt())?;
+            // UNIT_BOUNDARY_DESCRIPTION: the handlers are this process's now, so a stop the loader this process replaced held across the exec reaches them rather than killing it with the default action.
+            unblock_stop_signals();
             let stopping = stopping.clone();
             tokio::spawn(async move {
                 tokio::select! {
@@ -337,8 +438,9 @@ impl Loader {
             });
         }
         let builtin = self.builtin();
+        let fallback = self.replaced().unwrap_or_else(|| builtin.clone());
         let mut running = match self.choose(&self.target()).await {
-            Ok(release) if release.dir != builtin.dir => self.take_over(release, builtin)?,
+            Ok(release) if release.dir != builtin.dir => self.take_over(release, fallback)?,
             _ => self.spawn(builtin, None)?,
         };
         let mut backoff = Duration::from_secs(1);
@@ -380,7 +482,7 @@ impl Loader {
         }
     }
 
-    // UNIT_BOUNDARY_DESCRIPTION: hands `running`'s machines to `release`, and, where the release carries another loader, this process becomes that loader. The exec keeps the pid, the subreaper and every machine this process holds, so the release's loader takes them up as any loader does and starts the release's runner for them. A loader that does not even start in this pod is checked before the machines are handed off, since the exec never comes back; one that starts and then dies is a release that takes the pod with it, the failure a release whose binary is broken enough looks like.
+    // UNIT_BOUNDARY_DESCRIPTION: hands `running`'s machines to `release`, and, where the release carries another loader, this process becomes that loader. The exec keeps the pid, the subreaper and every machine this process holds, so the release's loader takes them up as any loader does and starts the release's runner for them. A loader that does not start is checked before the machines are handed anything, since the exec never comes back.
     async fn hand_over(
         &mut self,
         running: Running,
@@ -388,9 +490,9 @@ impl Loader {
         stopping: &CancellationToken,
     ) -> anyhow::Result<(Running, Option<(&'static str, String)>)> {
         let name = release.name.clone();
-        let loader = self.release_loader(&running, &release);
+        let loader = self.release_loader(&release);
         if let Some(loader) = &loader {
-            if let Err(outcome) = loads(loader).await {
+            if let Err(outcome) = starts(loader).await {
                 let message = format!(
                     "{name}'s loader does not start in this pod ({outcome}), so the pod keeps the loader it has"
                 );
@@ -413,16 +515,35 @@ impl Loader {
             );
             return Ok((self.spawn(replaced, None)?, None));
         }
+        self.leave_handover(&loader, &replaced);
+        // UNIT_BOUNDARY_DESCRIPTION: a stop delivered after the last look at the token is taken by this process's handler and would go with the exec. The mask an exec keeps holds it until the loader that becomes this one has a handler of its own, which is where it stops the machines the release's runner was started for.
+        block_stop_signals();
         // UNIT_BOUNDARY_DESCRIPTION: an exec that returns is one that could not start the release's loader, and the runner that was handed off is gone: the release is held as failed and the machines go back to the release this pod ran, which is the loader it still has.
         let error = std::process::Command::new(&loader)
             .args(std::env::args_os().skip(1))
             .exec();
+        unblock_stop_signals();
         let message = format!(
             "{name}'s loader could not be started ({error}), so the pod keeps the loader it has"
         );
         tracing::error!(release = name, loader = %loader.display(), error = %error, "the release's loader could not be started; going back to the release this pod ran");
         self.failed = Some((name, message.clone()));
         Ok((self.spawn(replaced, None)?, Some((HELD_FAILED, message))))
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: writes what the loader that replaces this process cannot otherwise know — which loader binary it is and which release this one ran — where it reads it at start. A write that fails leaves the successor with the pod's image as its own loader and as the release to go back to, which is what a pod that never became another loader has, so the hand-off is worth taking anyway and the console says so.
+    fn leave_handover(&self, loader: &Path, replaced: &Release) {
+        let handover = release::Handover {
+            loader: loader.to_path_buf(),
+            replaced: Some(release::Replaced {
+                name: replaced.name.clone(),
+                dir: replaced.dir.clone(),
+                runtime: replaced.runtime.clone(),
+            }),
+        };
+        if let Err(e) = release::write_handover(&self.handover_file, &handover) {
+            tracing::warn!(error = %format!("{e:#}"), path = %self.handover_file.display(), "writing what the next loader needs; it will treat this pod's image as the loader it is");
+        }
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what runs in place of a runner that exited: the release it replaced, where the new one did not last its settle window, and otherwise the same one again after a backoff that grows while a release keeps failing on start. A stop that arrives during the backoff ends the wait, and the next runner is started with the stop already waiting for it.
@@ -732,6 +853,7 @@ mod tests {
             Ok(Mode::Run {
                 builtin,
                 builtin_runtime,
+                check: _,
                 args,
             }) => {
                 assert_eq!(builtin_runtime, PathBuf::from("/opt/smolvm"));

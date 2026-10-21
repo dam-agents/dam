@@ -81,7 +81,7 @@ It supervises one runner process and runs the release the controller names over 
 The name lives as long as the pod: a runner process that restarts keeps it, and a new pod runs its own image until the controller names the release again.
 The pod's own image is always available as a release.
 A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its agent rootfs from the other.
-Before a hand-off the loader checks that the release's runner loads in the pod at all, and, where that release carries a loader of its own, that its loader starts there too.
+Before a hand-off the loader checks that the release's runner loads in the pod at all, and, where that release carries a loader of its own, that its loader starts there too: the candidate is started as the pod's loader would be, with the same arguments and the flag that makes it do everything a start does but supervise, so a loader that answers a usage flag and cannot take the pod's release is caught as well as one that does not load.
 The loader restarts a runner that exits, with a backoff, and passes a stop of the pod to the runner, which then stops every machine as the [runner](vm-runner.md) page describes.
 A stop that arrives while no runner can take it — the old one closing for a hand-off, a release being copied in, a backoff — is kept: a hand-off not yet begun is dropped, a backoff is cut short, and the stop goes to the next runner once that runner has set up its own stop, since one killed before that leaves its machines to be powered off with the pod.
 
@@ -90,7 +90,9 @@ The loader signals the runner, which closes as it would for a stop but leaves ev
 The exec keeps the loader's pid, its place as the pod's subreaper, and every machine it holds, so the release's loader takes them up as any loader does and starts the release's runner for them.
 A release that carries no loader, as one staged before loaders travelled in releases does, is run by the loader the pod has.
 A release's loader that cannot start costs the pod nothing, since the check above comes before the machines are handed anything: an exec never comes back, so a loader that could not start would leave the pod with nothing to supervise its machines.
-One that cannot start is held as `failed`, and the pod keeps the loader and the release it runs.
+One that cannot start, or one whose exec fails, is held as `failed` with what it said, and the pod keeps the loader and the release it runs.
+The stop signals of a pod are held for the moment of the exec and released by the loader that follows, so a stop that arrives between the loader's last look and the exec reaches that loader rather than killing the process with every machine still running.
+What a loader cannot carry across an exec it writes down for the one that replaces it: which loader binary it is, so a release's loader is compared with the loader this pod really became and not with that of the release it went back to, and which release it ran, so a release that fails just after taking over gives the machines back to that one ([below](#hand-offs)).
 The loader the pod's image carries is the only one that can become another, since only it reads the release's, so the change that first ships such a loader is delivered once by a pod roll, through its reboot key ([below](#hand-offs)).
 The new runner reads each machine's record, finds its VMM alive, and publishes its port again, as any restarted runner does.
 The machines and their disks are untouched, and each keeps the runtime it booted; the machines the new runner starts boot its own runtime, so a machine moves to a new runtime at its next boot.
