@@ -12,6 +12,7 @@ import {
   SessionType,
   type PlatformRunResult,
 } from "api-server-api";
+import { NO_MODEL_REASON } from "agent-runtime-api";
 
 import { err, ok, type Result } from "../../../result.js";
 import {
@@ -23,6 +24,18 @@ import { acpUrl } from "../infrastructure/acp-session-client.js";
 import type { BootstrapContext, BootstrapError } from "./bootstrap.js";
 
 export const DEFAULT_RUN_TIMEOUT_SECONDS = 3600;
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the runtime's own refusal names the web app's
+ * Providers page; the CLI adds the commands that do the same from here.
+ */
+export function noModelHint(error: { data?: unknown }): string {
+  const reason = (error.data as { platform?: { reason?: unknown } } | undefined)
+    ?.platform?.reason;
+  return reason === NO_MODEL_REASON
+    ? "\nhint: list the models with `dam agent models <agent>`, then pass one with `--model`, or save a default with `dam agent update <agent> --model <provider>/<model id>`"
+    : "";
+}
 
 const RECONNECT_BACKOFF_MS = [1_000, 2_000, 5_000, 10_000, 30_000];
 
@@ -46,12 +59,19 @@ export type CancelOutcome =
   | { kind: "cancelled"; sessionId: string }
   | { kind: "not-running"; sessionId: string };
 
+export interface SessionChoices {
+  harness?: string;
+  model?: string;
+  settings?: Record<string, string>;
+}
+
 export interface RunService {
   run(input: {
     agentRef: string;
     serverFlag?: string;
     prompt: string;
     sessionId?: string;
+    choices?: SessionChoices;
     async?: boolean;
     timeoutSeconds: number;
   }): Promise<Result<RunOutcome, RunError>>;
@@ -469,13 +489,17 @@ export function createRunService(deps: RunServiceDeps): RunService {
             cwd: ".",
             mcpServers: [],
             _meta: {
-              platform: { mode: SessionMode.Chat, type: SessionType.CliRun },
+              platform: {
+                mode: SessionMode.Chat,
+                type: SessionType.CliRun,
+                ...(input.choices && { ...input.choices, follows: null }),
+              },
             },
           });
           if (!created.ok)
             return err({
               kind: "run-failed" as const,
-              reason: `session could not be created: ${created.error.message}`,
+              reason: `session could not be created: ${created.error.message}${noModelHint(created.error)}`,
             });
           sessionId = resultSessionId(created.result);
           if (sessionId === null)
@@ -566,7 +590,7 @@ export function createRunService(deps: RunServiceDeps): RunService {
               kind: "run-failed" as const,
               reason: queueFull
                 ? "the session's prompt queue is full — try again later"
-                : `prompt failed: ${outcome.error.message}`,
+                : `prompt failed: ${outcome.error.message}${noModelHint(outcome.error)}`,
               sessionId: sid,
             });
           }

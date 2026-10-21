@@ -14,9 +14,11 @@ import {
   DEFAULT_RUN_TIMEOUT_SECONDS,
   type RunError,
   type RunService,
+  type SessionChoices,
 } from "../services/run-service.js";
 import { exitCodeFor, printError } from "./chat.js";
 import { errorMessage } from "../../shared/error-message.js";
+import { parseSettingFlags } from "../../shared/setting-flags.js";
 
 const END_TURN = "end_turn";
 
@@ -37,6 +39,31 @@ export function resolvePrompt(opts: {
       `could not read prompt file '${opts.promptFile}': ${errorMessage(e)}`,
     );
   }
+}
+
+export function choicesOrInvalid(opts: {
+  session?: string;
+  harness?: string;
+  model?: string;
+  setting: readonly string[];
+}): Result<SessionChoices | undefined, string> {
+  let settings: Record<string, string> | undefined;
+  try {
+    settings = parseSettingFlags(opts.setting);
+  } catch (e) {
+    return err(errorMessage(e));
+  }
+  const choices: SessionChoices = {
+    ...(opts.harness !== undefined && { harness: opts.harness }),
+    ...(opts.model !== undefined && { model: opts.model }),
+    ...(settings && { settings }),
+  };
+  if (Object.keys(choices).length === 0) return ok(undefined);
+  if (opts.session !== undefined)
+    return err(
+      "--harness, --model and --setting choose for a new session; a session from --session keeps its own",
+    );
+  return ok(choices);
 }
 
 function fail(e: RunError): void {
@@ -85,6 +112,20 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
     .option("-p, --prompt <text>", "the prompt text")
     .option("--prompt-file <path>", "read the prompt from a file ('-' = stdin)")
     .option("--session <id>", "continue an existing session")
+    .option(
+      "--harness <name>",
+      "harness a new session runs on, one the agent carries (default: the agent's default)",
+    )
+    .option(
+      "--model <model>",
+      "model a new session runs on, as <provider>/<model id> (default: the agent's default; see `dam agent models`)",
+    )
+    .option(
+      "--setting <id=value>",
+      "a per-session setting of the harness for a new session, e.g. effort=high (repeatable)",
+      (v: string, acc: string[]) => [...acc, v],
+      [] as string[],
+    )
     .option("--async", "exit once the prompt has started; poll with 'run get'")
     .option(
       "--timeout <seconds>",
@@ -98,10 +139,19 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           prompt?: string;
           promptFile?: string;
           session?: string;
+          harness?: string;
+          model?: string;
+          setting: string[];
           async?: boolean;
           timeout?: string;
         },
       ) => {
+        const choices = choicesOrInvalid(opts);
+        if (!choices.ok) {
+          process.stderr.write(`error: ${choices.error}\n`);
+          process.exitCode = EXIT_INVALID_INPUT;
+          return;
+        }
         const prompt = resolvePrompt({
           prompt: opts.prompt,
           promptFile: opts.promptFile,
@@ -118,6 +168,7 @@ export function buildRunCommand(deps: { runService: RunService }): Command {
           serverFlag: opts.server,
           prompt: prompt.value,
           sessionId: opts.session,
+          ...(choices.value && { choices: choices.value }),
           async: opts.async,
           timeoutSeconds: timeoutOrInvalid(opts.timeout),
         });

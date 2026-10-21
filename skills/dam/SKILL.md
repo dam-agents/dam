@@ -153,6 +153,7 @@ dam agent create my-agent --wait --json
 - `--template <id>` picks a template from `dam template list`; without it the deployment's default is used.
 - `--provider <connection>` picks the model provider connection; without it the user's preferred one is used.
   If `dam connection list` shows no model provider, the user connects one first ([Secrets](#secrets)).
+  To change the providers or the default model later, see [Models and harnesses](#models-and-harnesses).
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.
 
 ### Give an agent work
@@ -175,6 +176,36 @@ dam run cancel my-agent <session-id>
 
 `--async` prints only the session id on stdout.
 A run that outlasts `--timeout` keeps going on the agent, and the CLI prints its session id so you can check it with `dam run get`.
+
+A new run starts on the agent's default harness and model.
+To choose for one run, pass `--harness`, `--model` or `--setting`; see [Models and harnesses](#models-and-harnesses).
+
+### Models and harnesses
+
+Every session of an agent runs on a **harness** (the coding agent inside it, such as `claude-code` or `codex`) and a **model** from a **model provider** connection granted to the agent.
+The agent keeps a default for each kind of session: chat (also `dam run`), channel (Slack and Telegram) and scheduled.
+A channel or scheduled default that is not set is the same as chat.
+
+```sh
+dam agent get my-agent --json
+dam agent models my-agent
+dam agent update my-agent --model ibm/gpt-5.5
+dam agent update my-agent --harness codex --model openai/gpt-5.5 --setting effort=high
+dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
+```
+
+- `dam agent get` shows the granted providers, the harnesses and the defaults; under `--json` they are in `models`.
+  A default with a `null` model, or "not set" in the table, means runs fail until one is chosen.
+- `dam agent models` lists the models the agent's providers offer for its default harness (`--harness` for another), named the way `--model` takes them: `<provider>/<model id>`.
+  A provider that has not listed its models yet is named in a note; ask again in a minute.
+- `dam agent update` changes only what you pass.
+  `--provider <connection>` grants a model provider and `--remove-provider <connection>` takes one away; `dam connection list` names them.
+  `--kind channel` or `--kind scheduled` changes that default instead of chat's, and `--same-as-chat` makes it follow chat again.
+  Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
+- `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
+
+When a run fails because the session has no model, the agent has no default model: run `dam agent models my-agent`, then pass one with `--model`, or ask the user whether to save it as the default with `dam agent update`.
+When it fails because no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).
 
 ### Files
 
