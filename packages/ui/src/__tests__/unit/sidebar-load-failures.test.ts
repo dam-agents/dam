@@ -289,6 +289,15 @@ it("offers the New session row only for a list known to be empty", () => {
   expect(render()).not.toContain("data-new-session");
 });
 
+const chat = (sessionId: string) => ({
+  sessionId,
+  type: SessionType.Regular,
+  mode: SessionMode.Chat,
+  scheduleId: null,
+  createdAt: "2026-10-01T08:00:00Z",
+  updatedAt: "2026-10-01T08:00:00Z",
+});
+
 // TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, so it ends with the New session row an Agent with no Sessions at all gets. A filter that hid an unpinned Session says so above that row, also when the Sessions it left are all pinned.
 it("offers the New session row for a list whose Sessions are all pinned or filtered out", () => {
   const render = () =>
@@ -298,14 +307,6 @@ it("offers the New session row for a list whose Sessions are all pinned or filte
         newSessionRow: createElement("i", { "data-new-session": true }),
       }),
     );
-  const chat = (sessionId: string) => ({
-    sessionId,
-    type: SessionType.Regular,
-    mode: SessionMode.Chat,
-    scheduleId: null,
-    createdAt: "2026-10-01T08:00:00Z",
-    updatedAt: "2026-10-01T08:00:00Z",
-  });
   list.failed = false;
   rows.sessions = [chat("s1"), chat("s2")];
   expect(render()).not.toContain("data-new-session");
@@ -332,4 +333,21 @@ it("offers the New session row for a list whose Sessions are all pinned or filte
 
   rows.filters = defaultActivityFilters();
   expect(render()).not.toContain("No sessions match the filter.");
+});
+
+// TEST_SCENARIO: on an Agent's new-session page its New session row shows whatever the list holds, so the page has a row of its own to mark current; it goes back to showing only for a list that lists no Session once the user leaves the page.
+it("shows the New session row on the Agent's new-session page", () => {
+  const render = (newSessionPage: boolean) =>
+    renderToStaticMarkup(
+      createElement(AgentSessionList, {
+        agentId: "a",
+        newSessionRow: createElement("i", { "data-new-session": true }),
+        newSessionPage,
+      }),
+    );
+  list.failed = false;
+  rows.sessions = [chat("s1")];
+  expect(render(false)).not.toContain("data-new-session");
+  expect(render(true)).toContain("data-new-session");
+  expect(render(false)).not.toContain("data-new-session");
 });

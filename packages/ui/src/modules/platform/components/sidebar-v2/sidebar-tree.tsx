@@ -367,7 +367,7 @@ function AgentNode({
   useAutoWakeOnSidebarOpen(agent, expanded);
   const newSessionPage = useStore((s) => current && s.view === "chat");
   const [noSessions, setNoSessions] = useState(false);
-  const rowShown = expanded && noSessions;
+  const rowShown = expanded && (noSessions || newSessionPage);
   const startSession = useStartSession();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const setView = useStore((s) => s.setView);
@@ -527,6 +527,7 @@ function AgentNode({
             agentId={agent.id}
             onNavigate={onNavigate}
             onEmptyChange={setNoSessions}
+            newSessionPage={newSessionPage}
             newSessionRow={
               <AddRow
                 icon={Add}
