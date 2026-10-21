@@ -95,7 +95,7 @@ export const SECTIONS: SectionEntry[] = [
     pictogram: CloudComputing,
     title: "Environments",
     description:
-      "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them, and grant connections.",
+      "Sandboxes this agent creates to run its work for you and others to open, such as one per pull request. It controls them; you decide who may open them.",
   },
   {
     section: "usage",
