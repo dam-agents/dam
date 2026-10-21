@@ -7,7 +7,9 @@ import {
 } from "../../acp/session-projection.js";
 import type { AcpUpdate, FrameMeta, UpdateHandler } from "../../acp/types.js";
 
-export function useAcpUpdateHandler(): () => UpdateHandler {
+export function useAcpUpdateHandler(
+  onSessionReset: (sessionId: string) => void,
+): () => UpdateHandler {
   const setMessages = useStore((s) => s.setMessages);
 
   const dismissStalePermission = useCallback(
@@ -25,6 +27,7 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
     return (update: AcpUpdate, sessionId: string, frame?: FrameMeta) => {
       const viewing = useStore.getState().sessionId;
       if (viewing !== null && viewing !== sessionId) return;
+      if (useStore.getState().takingBack === sessionId) return;
 
       const { sessionUpdate: kind } = update;
 
@@ -46,9 +49,15 @@ export function useAcpUpdateHandler(): () => UpdateHandler {
         return;
       }
 
+      if (kind === "platform_session_reset") {
+        if (useStore.getState().rewritePending !== sessionId)
+          onSessionReset(sessionId);
+        return;
+      }
+
       if (kind === "config_option_update") return;
 
       setMessages((prev) => applyUpdate(prev, update, frame));
     };
-  }, [dismissStalePermission, setMessages]);
+  }, [dismissStalePermission, setMessages, onSessionReset]);
 }

@@ -127,7 +127,12 @@ export function useAcpSession(
 
   const [delivery] = useState(createPromptDelivery);
 
-  const makeUpdateHandler = useAcpUpdateHandler();
+  const reloadAfterResetRef = useRef<(sessionId: string) => void>(() => {});
+  const onSessionReset = useCallback(
+    (sid: string) => reloadAfterResetRef.current(sid),
+    [],
+  );
+  const makeUpdateHandler = useAcpUpdateHandler(onSessionReset);
 
   const {
     ensureLive,
@@ -365,9 +370,9 @@ export function useAcpSession(
         { kind: "text" as const, text: rewrite.text },
       ];
       const promptId = crypto.randomUUID();
-      const result = (await live.connection.agent.request(
-        "platform/rewriteFrom",
-        {
+      useStore.getState().setRewritePending(live.sessionId);
+      const result = (await live.connection.agent
+        .request("platform/rewriteFrom", {
           sessionId: live.sessionId,
           mode: rewrite.mode,
           messageId: rewrite.messageId,
@@ -384,12 +389,15 @@ export function useAcpSession(
                     : rewrite.title,
               }
             : {}),
-        },
-      )) as { sessionId: string };
-      bindEngagement(result.sessionId);
-      setSessionId(result.sessionId);
+        })
+        .finally(() => useStore.getState().setRewritePending(null))) as {
+        sessionId: string;
+      };
       setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
       useStore.getState().setRewriting(null);
+      if (result.sessionId === live.sessionId) return;
+      bindEngagement(result.sessionId);
+      setSessionId(result.sessionId);
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(selectedAgent),
       });
@@ -397,11 +405,16 @@ export function useAcpSession(
     [selectedAgent, ensureLive, bindEngagement, setSessionId, setMessages],
   );
 
+  reloadAfterResetRef.current = (sid: string) => {
+    if (useStore.getState().sessionId === sid) void resumeSession(sid);
+  };
+
   const takeBackPrompt = useTakeBackPrompt({
     selectedAgent,
     stopAgent,
     ensureLive,
     bindEngagement,
+    reloadSession: resumeSession,
   });
 
   const sendPrompt = useCallback(

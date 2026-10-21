@@ -42,3 +42,11 @@ Apply `/react-ui-engineering`.
 `mise run //packages/ui:test` (covers `rewrite-echo.test.ts`, `rewrite-points.test.ts`).
 
 On the local cluster with the UI rebuilt from this branch (clear the service worker first — the stale-bundle note in `cluster-ops`), run the README's whole-feature smoke test, steps 1–5 and 7.
+
+## As built
+
+- Take-back is optimistic: on Escape the message and its empty reply go at once and the text returns to the input, while the stop and the cut run behind it.
+  Updates for that Session are ignored until the runtime answers, so the stop's "stopped" marker never shows.
+  A refusal or a failure reloads the Session and takes the restored text back out of the input, unless the user already changed it.
+  The operator asked for this after a cluster test: a take-back must look instant, or not happen at all.
+- Other tabs reload through `resumeSession`, the path that opens a Session on a fresh socket, since the reset moved their cursors to the end of the refilled log.

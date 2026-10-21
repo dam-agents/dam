@@ -4,6 +4,7 @@ import {
   platformPromptStartedParamsSchema,
   platformQueueChangedParamsSchema,
   platformRunStartedParamsSchema,
+  platformSessionResetParamsSchema,
   platformTurnEndedParamsSchema,
 } from "api-server-api";
 import type { z } from "zod";
@@ -55,6 +56,7 @@ export const PLATFORM_NOTIFICATION_METHODS = [
   "platform/promptStarted",
   "platform/runStarted",
   "platform/queueChanged",
+  "platform/sessionReset",
 ] as const;
 
 interface RoutedExtUpdate {
@@ -122,6 +124,19 @@ export function routeExtNotification(
       if (!p) return null;
       return {
         update: { sessionUpdate: "platform_queue_changed", ...p },
+        sessionId: p.sessionId,
+        frame,
+      };
+    }
+    case "platform/sessionReset": {
+      const p = parseExtParams(
+        method,
+        platformSessionResetParamsSchema,
+        params,
+      );
+      if (!p) return null;
+      return {
+        update: { sessionUpdate: "platform_session_reset", ...p },
         sessionId: p.sessionId,
         frame,
       };
