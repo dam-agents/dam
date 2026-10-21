@@ -3,7 +3,7 @@
 # cluster's *.localhost hosts kept off the agent proxy, and a viewport tall
 # enough that most dialogs fit. The app scrolls inner containers, which
 # agent-browser does not scroll before clicking: scrollintoview first.
-# Usage: ab <agent-browser args...>   e.g. ab open http://localhost:5555/
+# Usage: ab <agent-browser args...>   e.g. ab open http://localhost:6555/
 export AGENT_BROWSER_EXECUTABLE_PATH="${AGENT_BROWSER_EXECUTABLE_PATH:-$(ls -d /opt/pw-browsers/chromium-*/chrome-linux/chrome 2>/dev/null | head -1)}"
 export AGENT_BROWSER_PROXY_BYPASS="localhost,*.localhost,127.0.0.1"
 if [ "${1:-}" = open ] && [ -z "${AB_KEEP_VIEWPORT:-}" ]; then
