@@ -128,7 +128,9 @@ describe("starter kits: a kit from a link", () => {
       missing.kits.read("https://github.com/acme/shared-kit"),
     );
     expect(err.code).toBe("BAD_REQUEST");
-    expect(err.message).toBe("https://github.com/acme/shared-kit has no kit.yaml");
+    expect(err.message).toBe(
+      "https://github.com/acme/shared-kit has no kit.yaml",
+    );
 
     const invalid = linked({
       files: { "kit.yaml": KIT("shared", "video: not-a-url\n") },

@@ -110,10 +110,7 @@ export function createKitResolver(deps: KitResolverDeps): KitResolver {
         store.maxBytes,
       );
       if (bytes === null) return fail("file not found");
-      const stored = await store.store(
-        bytes,
-        `kit:${named.name}/${kit.id}`,
-      );
+      const stored = await store.store(bytes, `kit:${named.name}/${kit.id}`);
       return "error" in stored ? fail(stored.error) : stored.avatar;
     } catch (err) {
       return fail(err instanceof Error ? err.message : String(err));

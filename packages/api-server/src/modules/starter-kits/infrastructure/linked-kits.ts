@@ -64,8 +64,14 @@ export function createLinkedKits(
         .catch((err: unknown): KitFailure => {
           const message = err instanceof Error ? err.message : String(err);
           return err instanceof Error && err.name === "YAMLException"
-            ? { kind: "rejected", reason: `kit.yaml is not valid YAML: ${message}` }
-            : { kind: "unreadable", reason: `the kit could not be read: ${message}` };
+            ? {
+                kind: "rejected",
+                reason: `kit.yaml is not valid YAML: ${message}`,
+              }
+            : {
+                kind: "unreadable",
+                reason: `the kit could not be read: ${message}`,
+              };
         });
       if ("kind" in result) {
         getLogger().info(

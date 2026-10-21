@@ -455,11 +455,7 @@ export async function bootstrap() {
   });
   const kitRefs = createGitRefResolver(kitGitHosts);
   const kitUpstream = createKitUpstream({ hosts: kitGitHosts, refs: kitRefs });
-  const scanKitSkills = async (
-    gitUrl: string,
-    ref: string,
-    subPath: string,
-  ) =>
+  const scanKitSkills = async (gitUrl: string, ref: string, subPath: string) =>
     (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
       name: skill.name,
       description: skill.description,

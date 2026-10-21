@@ -64,7 +64,11 @@ export function KitLinkForm({ onOpenKit }: { onOpenKit?: () => void }) {
         </Button>
       </div>
       {invalid && (
-        <p id="kit-link-error" role="alert" className="mt-2 text-sm text-danger">
+        <p
+          id="kit-link-error"
+          role="alert"
+          className="mt-2 text-sm text-danger"
+        >
           Paste a repository link such as https://github.com/owner/repository,
           not a link to a branch or folder.
         </p>
