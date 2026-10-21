@@ -152,7 +152,8 @@ dam agent create my-agent --wait --json
 
 - `--template <id>` picks a template from `dam template list`; without it the deployment's default is used.
 - `--provider <connection>` picks the model provider connection; without it the user's preferred one is used.
-  If `dam connection list` shows no model provider, the user connects one first ([Secrets](#secrets)).
+  `dam connection list --providers` lists the model providers: the PROVIDER column names each one's alias and the harnesses that run on it, and marks the preferred one (`provider.preferred` in `--json`).
+  If it lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.
 
 ### Give an agent work

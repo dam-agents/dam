@@ -155,6 +155,7 @@ function makeService(
       .filter(([c]) => c === connectionId)
       .map(([, a]) => a!);
   const svc = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
     isOwnedAgent: async () => true,
     ownerId: "owner",
     templates: createConnectionTemplateRegistry(
