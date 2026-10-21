@@ -81,7 +81,7 @@ test("any channel member drives the agent through a shared binding", async () =>
   });
 });
 
-// TEST_SCENARIO: A shared binding runs the turn under the OWNER's credential whoever asked, so the stranger's fetch of the echo endpoint carries the real secret in place of the egress placeholder. A gateway that is being re-certified answers that fetch with a 503 or drops it, so a turn whose fetch did not answer 200 is retried in a new turn, up to five of them; a reply that never carries the secret still fails the 180 s bound.
+// TEST_SCENARIO: A shared binding runs the turn under the OWNER's credential whoever asked, so the stranger's fetch of the echo endpoint carries the real secret in place of the egress placeholder. The e2e Slack gateway signs every agent post with the agent's name, so the reply is matched with includes, not with a prefix. A gateway that is being re-certified answers that fetch with a 503 or drops it, so a turn whose fetch did not answer 200 is retried in a new turn, up to five of them; a reply that never carries the secret still fails the 180 s bound.
 test("shared turns run under the OWNER's credentials whoever asked", async () => {
   test.setTimeout(240_000);
 
@@ -101,15 +101,13 @@ test("shared turns run under the OWNER's credentials whoever asked", async () =>
         async () => {
           const { records } = await api.e2e.slackReadOutbound.query();
           const replies = records.flatMap((r) =>
-            r.kind === "message" && r.text.startsWith("[fetch ")
-              ? [r.text]
-              : [],
+            r.kind === "message" && r.text.includes("[fetch ") ? [r.text] : [],
           );
           const replyText = replies.at(-1) ?? "";
           if (
             replies.length >= turnsFired &&
             turnsFired < fetchTurnAttempts &&
-            !replyText.startsWith("[fetch 200]")
+            !replyText.includes("[fetch 200]")
           ) {
             turnsFired += 1;
             await api.e2e.slackFireMention.mutate({
