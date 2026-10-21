@@ -1,5 +1,4 @@
 // UNIT_BOUNDARY_DESCRIPTION: the posh, old-fashioned British household-staff first names a new agent is given by default — butlers and valets, lady's maids, housekeepers and governesses, half of them female and half male — so a cute vector alien answers to "Bartholomew" or "Clementine". The list skips every name that reads or sounds like a rude word in English or Czech; a new name must pass the same test.
-// Butlers and valets.
 export const MALE_STAFF_NAMES: readonly string[] = [
   "Alfred",
   "Jeeves",
@@ -183,7 +182,6 @@ export const MALE_STAFF_NAMES: readonly string[] = [
   "Ainsley",
 ];
 
-// Lady's maids, housekeepers and governesses.
 export const FEMALE_STAFF_NAMES: readonly string[] = [
   "Agatha",
   "Beatrice",
