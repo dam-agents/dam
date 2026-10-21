@@ -231,6 +231,21 @@ Creating one, rotating its credential, and removing it are `dam connection conne
 `dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
 Without `--yes` it names the agents that would lose the connection.
 
+A grant gives the agent everything the connection reaches, so limit a GitHub connection before you grant it.
+This works for a GitHub sign-in (`github`, `github-enterprise`) and for a GitHub App connection:
+
+```sh
+dam connection connect github --account acme --repositories api,web --permissions contents:read,pull_requests:write
+dam connection scope github --json
+dam connection scope github --repositories api
+dam connection scope github --clear
+```
+
+`dam connection scope <connection>` with no flags changes nothing: it shows the current scope and, under `available`, the accounts, repositories and permissions you can choose from.
+A flag you leave out keeps that part of the scope; `--clear` removes the limit.
+A narrowed sign-in reaches one account, given with `--account`; when the app is installed on one account only, you can leave it out.
+`dam connection list --json` shows each GitHub connection's `scope`: `{ "restricted": false }` means it reaches everything the sign-in or installation can.
+
 ### Network rules and approvals
 
 A DAM agent reaches outside hosts only through rules, and asks the user when it hits one it has no rule for.
