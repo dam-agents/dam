@@ -225,14 +225,6 @@ fn raise_oom_score_adj(path: &Path) {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes ask for the lowest score there is. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself. A kernel refuses any score below the one the container started with unless the process holds CAP_SYS_RESOURCE in the kernel's own user namespace, which this pod adds for the case the node runs it without a user namespace of its own: a pod that has one holds the capability in that namespace, the write is refused anyway, and the line on the console says which score the runner keeps.
-fn lower_own_oom_score_adj() {
-    const PATH: &str = "/proc/self/oom_score_adj";
-    if let Err(e) = std::fs::write(PATH, "-1000") {
-        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it above the machines it hosts");
-    }
-}
-
 fn main() -> anyhow::Result<()> {
     smolvm::internal_boot::GUEST_AGENT.store(false, std::sync::atomic::Ordering::Relaxed);
     if let Some((id, command)) = exec_args(std::env::args_os()) {
@@ -252,9 +244,6 @@ fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     tracing_subscriber::fmt().json().init();
-    if cfg!(target_os = "linux") {
-        lower_own_oom_score_adj();
-    }
     let args = Args::parse();
     anyhow::ensure!(
         args.memory_mib > 0,
@@ -570,26 +559,6 @@ mod tests {
             .unwrap()
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner asks for the lowest score there is, and a kernel that refuses it without CAP_SYS_RESOURCE in its own user namespace leaves the runner with the score it was handed rather than a worse one.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn the_runner_asks_for_the_lowest_score_the_kernel_allows_it() {
-        let before: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        lower_own_oom_score_adj();
-        let after: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        assert!(
-            after == -1000 || after == before,
-            "the runner's own score is {after}, which is neither the lowest there is nor the one it was handed ({before})"
-        );
     }
 
     // TEST_SCENARIO: the OOM killer picks the process with the highest score in the cgroup, and the runner and the loader hold every machine of the owner between them. A VMM asks for the kernel's maximum, and a VMM that cannot write its score — a host runner with no /proc — still boots.

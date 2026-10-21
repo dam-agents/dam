@@ -700,7 +700,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "58aebcc11cdfde48", dep.Annotations[annRunnerTemplate])
+	assert.Equal(t, "d8a60be9a6efa104", dep.Annotations[annRunnerTemplate])
 }
 
 // TEST_SCENARIO: the chart gives every runner pod a PriorityClass, and a roll hash that covered it would reboot every machine of every owner on the install that first set one. The class is left out of what the roll compares, so an existing runner keeps its pod and takes the class at its next replacement, while a change to the pod itself still rolls.
@@ -1589,7 +1589,7 @@ func runnerReplicaSet(t *testing.T, r *AgentReconciler, owner, reason string, mu
 			Type:    appsv1.ReplicaSetReplicaFailure,
 			Status:  corev1.ConditionTrue,
 			Reason:  reason,
-			Message: `.containers[0].capabilities.add: Invalid value: "SYS_RESOURCE": capability may not be added`,
+			Message: `.containers[0].capabilities.add: Invalid value: "DAC_OVERRIDE": capability may not be added`,
 		}}
 	}
 	created, err := r.client.AppsV1().ReplicaSets(dep.Namespace).Create(context.Background(), rs, metav1.CreateOptions{})
