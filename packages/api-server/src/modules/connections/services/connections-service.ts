@@ -926,7 +926,7 @@ export function createConnectionsService(deps: {
       }
     },
 
-    async defaultProviderConnections(fits) {
+    async defaultProviderConnections(fits, harness) {
       const usable = (
         await deps.repo.listByOwnerOldestFirst(deps.ownerId)
       ).flatMap((c) => {
@@ -938,7 +938,7 @@ export function createConnectionsService(deps: {
           : [];
       });
       const aliases = new Set<string>();
-      return orderByAlias(usable).flatMap((c) => {
+      return orderByAlias(usable, harness).flatMap((c) => {
         const alias = aliasForProviderType(c.type);
         if (aliases.has(alias)) return [];
         aliases.add(alias);
