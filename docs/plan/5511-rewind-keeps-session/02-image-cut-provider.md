@@ -14,6 +14,7 @@ Nothing calls it yet; slice 03 does.
    Generalize it to call `fn(msg.input)` and post `{id, result}`, and add a small `createWorkerCall({modulePath, exportName, log})` that returns `call(input, timeoutMs): Promise<unknown>`, rejecting on error and on timeout.
    Rebuild the history provider on top of it (its `validateLines` and null-on-failure stay), so there is one worker protocol.
    A timeout does not stop the call in the worker: for the cut, slice 03 treats a timeout as an unexpected failure and reloads the history, never as "nothing changed".
+
 2. **Manifest** — `packages/agent-runtime/src/modules/runtime-channel/manifest.ts` (`runtimeManifestSchema`, beside `sessionHistory` at ~164): add `sessionCut: z.object({ module: z.string().min(1), exportName: z.string().min(1).optional() }).optional()`.
    Add the field to `HarnessRuntime` in `packages/agent-runtime/src/modules/acp/compose.ts` (~112) and pass it through in `packages/agent-runtime/src/server.ts` (~459), the same way `sessionHistory` goes through.
    In `compose.ts`, build one `SessionCutProvider` per harness beside `historyProviders` (`historyProviderOf`, ~201), and hand each lease's runtime its own (`ownHistory`, ~335), as `deps.sessionCut`:
@@ -29,6 +30,7 @@ Nothing calls it yet; slice 03 does.
    }
    ```
    No prestart (a cut is rare); the worker starts on first use and stays.
+
 3. **The module** — new `packages/agents/claude-code/rootfs/usr/local/lib/harness-cut-lib.mjs`, importing the SDK from the adapter bundle as `harness-history-lib.mjs` does (`/usr/local/lib/harness/claude-code/adapter/claude-agent-sdk.js`).
    `cutSession({ sessionId, before, dropsTurn })`:
    - Read the chain with `sdk.getSessionMessages(sessionId, { includeSystemMessages: true })`; find the entry whose `uuid === before`.
@@ -42,8 +44,10 @@ Nothing calls it yet; slice 03 does.
    - The query runs with the pod's own environment, so it reaches the model router like every other harness process.
      The study saw no model call; confirm that on the cluster (no new spend row after a cut).
      Find the CLI path from `packages/agents/claude-code/rootfs/usr/local/bin/harness-chat` (it sets the executable for the bundled adapter); reuse the same variable or path.
+
 4. **Declaration** — `packages/agents/claude-code/rootfs/app/runtime-manifest.yaml`, beside `sessionHistory` (~39): `sessionCut: { module: "/usr/local/lib/harness-cut-lib.mjs", exportName: "cutSession" }`.
    Check `packages/agents/.mise/tasks/oci` copies `rootfs/usr/local/lib/*` into the image (it copies the whole rootfs; confirm).
+
 5. Docs: one line in `packages/agents/claude-code/` README if it lists the image's libs.
 
 Apply `/typescript-engineering`.
@@ -64,7 +68,8 @@ Then, in any sandbox with the image's adapter installed (`npm:@agentclientprotoc
 
 1. With a node script, `query()` two turns, "Remember APPLE" then "Remember BANANA", in a scratch `cwd`.
 2. `cutSession({ sessionId, before: <uuid of the BANANA user entry>, dropsTurn: <same> })` → `{ ok: true }`.
-3. `getSessionMessages` shows only the APPLE turn; a resume asking "which words?" answers APPLE only.
+3. `getSessionMessages` shows only the APPLE turn; a resume asking "which words?"
+   answers APPLE only.
 4. Repeat with `dropsTurn` set to the APPLE entry while BANANA follows → `{ ok: false, refused: true }`.
 
 Point the module's SDK import at the installed SDK for this run (an env override or a copy that rewrites the import); do not change the shipped path.

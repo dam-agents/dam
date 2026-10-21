@@ -120,7 +120,8 @@ On the local cluster (`cluster-ops` skill), with the agent image and agent-runti
 3. In tab 1, send a fourth prompt and press Escape at once with the input empty.
    The prompt returns to the input; the URL does not change; the three replies keep their costs; the total in the list does not drop.
    Tab 2 reloads and shows three turns.
-4. Send "List what I asked you so far." — the reply does not mention the taken-back prompt.
+4. Send "List what I asked you so far."
+   — the reply does not mention the taken-back prompt.
 5. Rewind to the second message with an edited text.
    The URL does not change; the first reply keeps its cost; tab 2 reloads and shows the edited conversation.
 6. Restart the agent pod and open the chat: the history shows the cut conversation, not the dropped turns.
