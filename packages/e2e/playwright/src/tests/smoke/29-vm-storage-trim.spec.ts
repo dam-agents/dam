@@ -51,6 +51,8 @@ const FILLED_KB = `echo "avail-after-fill=$(df -Pk /home/agent | tail -1 | awk '
 const AVAILABLE_AFTER_PROBE_KB = `echo "avail-after-probe=$(df -Pk /home/agent | tail -1 | awk '{ print $4 }')"`;
 // UNIT_BOUNDARY_DESCRIPTION: the grant the runner published, printed on a line of its own so a look's reads are told apart from whatever else the guest prints. Each line carries the word, so a parser can pick the grant lines out of a look that also holds a fill's report and a refusal's error text.
 const GRANT = `grant() { printf "grant %s\\n" "$(cat /platform/storage-room 2>/dev/null || echo -)"; }`;
+// UNIT_BOUNDARY_DESCRIPTION: the grant generation the guard has taken up, printed beside the runner's published one. The two are different facts: the runner writes a new id every look, and the guard reads that file on a look of its own, so the published id names a grant the guard may not have counted yet. A look is judged on this line and never on the published one.
+const APPLIED = `applied() { printf "applied %s\\n" "$(cat /run/platform-storage-applied 2>/dev/null || echo -)"; }`;
 // UNIT_BOUNDARY_DESCRIPTION: how long the ceiling case may spend reaching the refusal: filling a budget of many GiB, and waiting out the runner's 30 s grant look and the guard's 30 s backoff after every refusal the guest recovers from.
 const CEILING_MS = 600_000;
 
@@ -86,14 +88,16 @@ function claimKb(): { used: number; capacity: number } {
   return { used, capacity: used + avail };
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine and the guest's own free space, read in one guest command with the grant bracketing the room. The guest's free space is what the guard leaves it, so it is the guard's own answer, and `parseRoom` says why the two grant lines have to agree.
+// UNIT_BOUNDARY_DESCRIPTION: the grant the runner published to the probe's machine, the generation the guard has taken up, and the guest's own free space, read in one guest command with both lines bracketing the room. The guard's generation is the one fact that says whose room this is: the runner publishes a new id every look and the guard reads that file on a look of its own, so the published id can name a grant the guard has not counted, and `parseRoom` says why both lines have to agree.
 function readRoom(id: string = probeId): Room {
   return parseRoom(
-    inGuest(id, [GRANT, "grant", AVAIL_KB, "grant"].join("\n")).split("\n"),
+    inGuest(id, [GRANT, APPLIED, AVAIL_KB, GRANT, APPLIED].join("\n")).split(
+      "\n",
+    ),
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: waits for a reading the guard has settled on and returns it: a grant published after `after`, the id the case saw once its own write had landed, and one whose guest room meets both of the caller's bounds at once. Three things make that a settled reading rather than a passing figure. The id differs from `after`, so the renewal the runner publishes over the case's own writes is exercised and not skipped when the room happens to read well. The bounds are one pair, both applied to the same reading, so a room the guard has not yet shrunk cannot pass as a healthy one, and a room it has not yet grown cannot fail as a wedged one. And the two grant lines around the room agree, so the free space belongs to one grant version. The window is `WAIT_MS`, well past the runner's 30 s look and the guard's 30 s backoff; a claim with no grant is no claim measured and fails at once rather than looping on a figure no bound can satisfy.
+// UNIT_BOUNDARY_DESCRIPTION: waits for a reading the guard has settled on and returns it: a generation the guard took up after `after`, the generation the case saw once its own write had landed, and one whose guest room meets both of the caller's bounds at once. The generation is what makes the reading a settled one and not a passing figure: the runner publishes a new id at every look, so the published id differs from `after` long before the guard has read the file, while the applied generation is the one whose room the guard has counted, and requiring it to differ is what exercises the renewal over the case's own writes instead of skipping it when the room happens to read well. The bounds are one pair, both applied to the same reading, so a room the guard has not yet shrunk cannot pass as a healthy one, and a room it has not yet grown cannot fail as a wedged one. And both lines agree across the room, so the free space belongs to one generation. The window is `WAIT_MS`, well past the runner's 30 s look and the guard's 30 s backoff; a claim with no grant is no claim measured and fails at once rather than looping on a figure no bound can satisfy.
 async function settledRoom(
   after: string,
   fits: (room: Room) => boolean,
@@ -118,9 +122,9 @@ async function settledRoom(
   }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one attempt at the case's refusal: the guest clears the last attempt, marks its whole remaining room, reads the room that left it, makes the write an agent would make next, reads the room again, all between three grant lines. The published grant lines say when the runner republished, and the two room readings say what the guard did about it: the guard reads the grant file on its own two-second look, so an id can print unchanged while the guard has not yet consumed it, and a guard that consumes a renewal after the fill counts it from the bytes the guest had written then and gives the marked room back. Both readings are therefore the guard's own evidence, and `judgeable` says what a look must show for the probe line to mean anything. Each attempt clears the last one's markings first, so a retry measures the room it means to and not a disk the previous attempt filled.
+// UNIT_BOUNDARY_DESCRIPTION: one attempt at the case's refusal: the guest clears the last attempt, marks its whole remaining room, reads the room that left it, makes the write an agent would make next, reads the room again, all between three published-line and applied-line pairs. The discriminator is the guard's applied generation and not the runner's published id: the runner writes a new id every look and the guard reads that file on its own two-second look, so a published id can print unchanged across all three pairs while the guard is still counting from an older grant, and requiring the published id to be stable has always been too weak. A look whose applied generation moved is one a renewal reached mid-fill or mid-probe, which gives the marked room back by design, and it is thrown away and taken again; that is the only reason a look is ever retaken. A look whose applied generation stood still is the guard's whole answer: whatever the probe did under it is the product's behaviour, so a `probe=marked` under a stable generation is returned and fails the case instead of being retried into a pass. Each attempt clears the last one's markings first, so a retry measures the room it means to and not a disk the previous attempt filled.
 async function markAndProbe(after: string): Promise<{
-  id: string;
+  generation: string;
   filledMiB: number;
   measures: string;
 }> {
@@ -132,7 +136,7 @@ async function markAndProbe(after: string): Promise<{
       [
         "rm -rf /tmp/e2e-fill/*",
         GRANT,
-        "grant",
+        APPLIED,
         ROOM_KB,
         'if fallocate -l "$(( room / 1024 ))M" /tmp/e2e-fill/full 2>/tmp/e2e-fill/full.err; then echo "fill=whole"; else',
         'echo "fill=chunked"',
@@ -143,23 +147,25 @@ async function markAndProbe(after: string): Promise<{
         "fi",
         "sync",
         FILLED_KB,
-        "grant",
+        GRANT,
+        APPLIED,
         `if fallocate -l ${NEXT_WRITE_MIB}M /tmp/e2e-fill/probe-$(date +%s%N) 2>/tmp/e2e-fill/probe.err; then echo "probe=marked"; else echo "probe=refused"; cat /tmp/e2e-fill/probe.err 2>/dev/null; fi`,
         AVAILABLE_AFTER_PROBE_KB,
-        "grant",
+        GRANT,
+        APPLIED,
       ].join("\n"),
     ).split("\n");
     const look = parseLook(lines);
-    if (judgeable(look, after, GUARD_FLOOR_MIB, SLACK_MIB)) {
+    if (judgeable(look, after, NEXT_WRITE_MIB)) {
       return {
-        id: look.id,
+        generation: look.generation,
         filledMiB: look.filledMiB,
         measures: lines.join(" "),
       };
     }
     expect(
       Date.now(),
-      `the guest's refusal could not be read inside one grant after ${after}, under the grant ${look.id || "the case started with"}: ${lines.join(" ")}`,
+      `the guest's refusal could not be read under one generation of the storage guard after ${after}, under the generation ${look.generation || "the case started with"}: ${lines.join(" ")}`,
     ).toBeLessThan(deadline);
     await new Promise((resolve) => setTimeout(resolve, 5_000));
   }
@@ -350,7 +356,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
     ).toBe(true);
     // UNIT_BOUNDARY_DESCRIPTION: and neither below nor above the renewed grant: the guest may still write the whole grant the runner published over its own writes, and no more than that grant plus the one floor every guest keeps. A guest held to a fraction of its grant is the defect a user reports — an agent refused at three quarters of its storage with the claim a third empty — and a guard that released its whole hold, or moved before the runner could renew, would leave the guest the disk instead. Both bounds are one sample's, waited for together: a room the guard has not finished shrinking yet must not pass the upper bound, and a room it has not finished growing yet must not fail the lower one. The slack is what the case's own measurements and the guard's step can account for, and a guest that never reaches either bound fails inside the same window a wedged one would.
     const afterWrite = await settledRoom(
-      written.id,
+      written.generation,
       (room) =>
         room.availMiB >= room.grantMiB - SLACK_MIB - GUARD_STEP_MIB &&
         room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB,
@@ -371,12 +377,13 @@ test("a writing agent stops at its share, and writes again when its share grows"
       (mib) => mib <= diskBefore + SLACK_MIB,
       "the real bytes the guest deleted across a renewal never left the claim",
     );
-    // UNIT_BOUNDARY_DESCRIPTION: the guest marks its whole remaining room and then makes the write an agent would make next, in one command, with the guest's room read on both sides of that write and the runner's grant printed around the fill and around the probe. The marking reaches the share in one call whatever the pool is, and falls back to chunks when the filesystem refuses an allocation it cannot reserve whole: btrfs answers that to a request for the full free space, and a case that read the room figure alone would report the guard as broken when the fill never ran. The chunks go a size at a time and only get smaller, so the room left is under the smallest of them: an allocation is all or nothing, so a refused 256 MiB says nothing about a 64 MiB one, and stopping at the first refusal would leave the guest room the request below is then allowed to take. The refusal has to be read in the same look as the fill, and the room on both sides of it, because a renewal gives the marked room back by design and the guard reads the grant file on its own two-second look: an unchanged published id alone does not say the guard consumed it before the fill, so the guard's own room is what the case judges. A look that shows a moved grant, or room the guard gave back, is thrown away and taken again, which costs nothing the claim pays for: the fill only marks blocks, and each attempt starts by clearing them.
-    const refused = await markAndProbe(written.id);
+    // UNIT_BOUNDARY_DESCRIPTION: the guest marks its whole remaining room and then makes the write an agent would make next, in one command, with the guest's room read after the fill and the guard's applied generation printed around the fill and around the probe. The marking reaches the share in one call whatever the pool is, and falls back to chunks when the filesystem refuses an allocation it cannot reserve whole: btrfs answers that to a request for the full free space, and a case that read the room figure alone would report the guard as broken when the fill never ran. The chunks go a size at a time and only get smaller, so the room left is under the smallest of them: an allocation is all or nothing, so a refused 256 MiB says nothing about a 64 MiB one, and stopping at the first refusal would leave the guest room the request below is then allowed to take. The refusal has to be read under one generation of the guard, because a renewal gives the marked room back by design and the guard reads the grant file on its own two-second look: the published id alone does not say the guard consumed it before the fill, and within one applied generation any room given back is the defect the case exists for. Only a look whose applied generation moved is thrown away and taken again, which costs nothing the claim pays for: the fill only marks blocks, and each attempt starts by clearing them.
+    const refused = await markAndProbe(written.generation);
+    // UNIT_BOUNDARY_DESCRIPTION: the fill left the guest less room than the write the case then asks of it, so that write met the guard and not the disk's arithmetic: `judgeable` required it of the look, and it is restated here so a reader sees the figure the case judges on.
     expect(
       refused.filledMiB,
       `the guest still had ${refused.filledMiB} MiB after marking its own room, and the fill reported ${refused.measures}`,
-    ).toBeLessThanOrEqual(GUARD_FLOOR_MIB + SLACK_MIB);
+    ).toBeLessThan(NEXT_WRITE_MIB);
     // UNIT_BOUNDARY_DESCRIPTION: the write is refused for the guard's reason and not the disk's arithmetic: the fill only stops once the smallest chunk it tries is refused, so the room it leaves is no room for the fixed few MiB an agent's next write needs, and the error the guest itself printed names the shortage.
     expect(
       refused.measures,
@@ -395,7 +402,7 @@ test("a writing agent stops at its share, and writes again when its share grows"
     // UNIT_BOUNDARY_DESCRIPTION: a renewal window later the guest is back on its share, and that is the design rather than a leak: the runner writes a new grant at every look, and the guard counts one from what the guest had written when it came, so a fill the claim never paid for — which the assertion just above checks it did not — is room the guest is given again. The bound is therefore the renewed grant the runner published, not the floor: below it the agent has been left less than its share (the defect a user reports, a refusal at three quarters of the claim with the claim a third empty), and above it by more than one floor the guard released more than the grant it was told to hold. The grant the refused guest held at its refusal is the baseline, so the sample must be a renewal published past it and not the grant the fill ran into.
     await new Promise((resolve) => setTimeout(resolve, RENEWAL_MS));
     const resettled = await settledRoom(
-      refused.id,
+      refused.generation,
       (room) =>
         room.availMiB >= room.grantMiB - SLACK_MIB - GUARD_STEP_MIB &&
         room.availMiB <= room.grantMiB + GUARD_FLOOR_MIB + SLACK_MIB,

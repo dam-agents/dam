@@ -1769,6 +1769,8 @@ fn guard_pool(dir: File) {
     let mut marked: Option<Room> = None;
     let mut marked_at: Option<std::time::Instant> = None;
     let mut trim_failing = false;
+    let mut applied_written = String::new();
+    let mut applied_failing = false;
     loop {
         std::thread::sleep(POOL_GUARD_INTERVAL);
         // UNIT_BOUNDARY_DESCRIPTION: the guard is read and the disk is looked at outside POOL_GUARD, and the mutex is taken only to size the file: a stop's release takes it to empty the file, and a stop must never wait on a trim or a sync, which is unbounded work, because the host gives a stop 5 s of silence before it cuts the machine down.
@@ -1824,6 +1826,18 @@ fn guard_pool(dir: File) {
             held,
         ) {
             return;
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: the generation the guard has taken up, written where the guest can read it, so a reader in the guest can tell a grant this guard is counting on from one only the runner has published. The runner writes a new id every look and the guard reads that file on a look of its own, so the published id can name a grant whose room the guard has not counted yet; this file names the one it has. It is written after the look that counted the room and only when it changes, since a look that took up nothing new has nothing to say. A guest that finds no file reads no generation and judges nothing.
+        let applied = state.applied().unwrap_or("-").to_string();
+        if applied != applied_written {
+            match fs::write(guest::STORAGE_APPLIED_PATH, &applied) {
+                Ok(()) => applied_written = applied,
+                Err(e) => {
+                    if !std::mem::replace(&mut applied_failing, true) {
+                        logf!("WARNING: writing the applied storage grant ({e}); a look in the guest cannot tell a grant the guard took up from one it has not read");
+                    }
+                }
+            }
         }
         let mark = room_of(room, marked);
         let since = marked_at.map_or(std::time::Duration::ZERO, |at| at.elapsed());

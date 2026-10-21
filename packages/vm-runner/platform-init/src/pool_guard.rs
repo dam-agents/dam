@@ -42,6 +42,11 @@ impl PoolGuard {
         avail.saturating_sub(self.keep)
     }
 
+    // UNIT_BOUNDARY_DESCRIPTION: the grant generation the guard's accounting is based on, which is the one it last took up and not the one the runner last published: the two differ for as long as it takes the guard's own look to read the file. `size` is what sets it, so a generation reported here has had its room counted from the bytes the guest had written when the guard read it.
+    pub fn applied(&self) -> Option<&str> {
+        self.grant.as_ref().map(|(id, ..)| id.as_str())
+    }
+
     // UNIT_BOUNDARY_DESCRIPTION: grows the guard from `held` toward `want` through `fits`, which resizes the file to the given size and says whether the disk took it: a preallocation takes all of it or nothing. When `want` does not fit, the disk holds less than statvfs reported, so it bisects between the two until within POOL_GUARD_STEP, for the largest guard that fits, about 14 preallocations on a 200 GiB disk; which is what the guest could write without one. A coarser ceiling would hand its gap back to the guest at every look, past its grant. That is the ceiling until the guest frees room (guard_look), and the guard settles at it less the room the guest is to keep, in one more resize. Returns the size the guard settled at and whether this refusal starts a shortage, the one time it is worth a warning.
     pub fn grow(
         &mut self,
@@ -625,5 +630,22 @@ mod tests {
             "wrote {} bytes past a grant of nothing",
             mine - start
         );
+    }
+
+    // TEST_SCENARIO: the guard reports the generation it has taken up and not the one the runner published. A runner that republishes while the guard still holds the old id leaves the reported generation on the old id, because that is the grant its room is counted from; a guest comparing room figures across that moment would otherwise judge a renewal the guard had not read yet. It reports no generation once no grant holds the guest.
+    #[test]
+    fn a_generation_is_reported_only_once_the_guard_took_it_up() {
+        let (disk, used) = (100 * GIB, 20 * GIB);
+        let mut state = PoolGuard::default();
+        assert_eq!(state.applied(), None);
+        let avail = disk - used;
+        state.size(Some(("1".into(), 10 * GIB)), avail, used);
+        assert_eq!(state.applied(), Some("1"));
+        state.size(Some(("1".into(), 10 * GIB)), avail, used);
+        assert_eq!(state.applied(), Some("1"));
+        state.size(Some(("2".into(), 10 * GIB)), avail, used);
+        assert_eq!(state.applied(), Some("2"));
+        state.size(None, disk, used);
+        assert_eq!(state.applied(), None);
     }
 }
