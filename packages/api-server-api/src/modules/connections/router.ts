@@ -1,3 +1,5 @@
+import { TRPCError } from "@trpc/server";
+import type { ApiContext } from "../../context.js";
 import { t } from "../../trpc.js";
 import {
   checkAgentBinding,
@@ -23,6 +25,19 @@ import {
   connectionStartOAuthInputSchema,
   connectionUpdateInputSchema,
 } from "./schemas.js";
+
+// UNIT_BOUNDARY_DESCRIPTION: an Environment holds no connection, whoever asks: an API key, which an agent or a script may hold, the CLI and the app are all refused, so the Owning Agent can never pass its connections to the software it runs. Granting the owner's connections on an Environment is not built yet.
+async function refuseOnEnvironment(
+  ctx: { agents: ApiContext["agents"] },
+  agentId: string,
+): Promise<void> {
+  const agent = await ctx.agents.get(agentId);
+  if (agent?.spec.environmentOf)
+    throw new TRPCError({
+      code: "FORBIDDEN",
+      message: "An Environment holds no connections",
+    });
+}
 
 export const connectionsRouter = t.router({
   listTemplates: readCredentialsProcedure.query(({ ctx }) =>
@@ -113,18 +128,23 @@ export const connectionsRouter = t.router({
 
   setAgentConnections: manageAgentsProcedure
     .input(connectionSetAgentConnectionsInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.connections.setAgentConnections(input.agentId, input.connectionIds),
-    ),
+    .mutation(async ({ ctx, input }) => {
+      await refuseOnEnvironment(ctx, input.agentId);
+      return ctx.connections.setAgentConnections(
+        input.agentId,
+        input.connectionIds,
+      );
+    }),
 
   updateAgentConnections: manageAgentsProcedure
     .input(connectionUpdateAgentConnectionsInputSchema)
-    .mutation(({ ctx, input }) =>
-      ctx.connections.updateAgentConnections(input.agentId, {
+    .mutation(async ({ ctx, input }) => {
+      await refuseOnEnvironment(ctx, input.agentId);
+      return ctx.connections.updateAgentConnections(input.agentId, {
         grant: input.grant,
         revoke: input.revoke,
-      }),
-    ),
+      });
+    }),
 
   setPreferredConnection: manageAgentsProcedure
     .input(connectionSetPreferredConnectionInputSchema)

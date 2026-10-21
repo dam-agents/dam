@@ -76,7 +76,7 @@ export interface AgentsRepository {
   getOwner(id: string): Promise<string | null>;
   resolveIdentity(
     id: string,
-  ): Promise<{ owner: string; agentId: string } | null>;
+  ): Promise<{ owner: string; agentId: string; environmentOf?: string } | null>;
   patchAnnotation(id: string, key: string, value: string): Promise<void>;
   setInvocationPin(id: string): Promise<boolean>;
   readInvocationPin(id: string): Promise<string | null>;
@@ -392,7 +392,12 @@ export function createAgentsRepository(
       if (!obj) return null;
       const owner = agentOwner(obj);
       if (!owner) return null;
-      return { owner, agentId: id };
+      const environmentOf = (
+        obj.spec as { environmentOf?: unknown } | undefined
+      )?.environmentOf;
+      return typeof environmentOf === "string" && environmentOf !== ""
+        ? { owner, agentId: id, environmentOf }
+        : { owner, agentId: id };
     },
 
     async setInvocationPin(id) {

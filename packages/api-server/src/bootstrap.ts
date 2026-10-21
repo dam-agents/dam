@@ -258,6 +258,8 @@ import {
 import {
   composeEnvironmentGate,
   composeEnvironments,
+  createEgressIdentityResolver,
+  environmentNameLookup,
 } from "./modules/environments/index.js";
 import {
   composeApprovalsSystem,
@@ -1493,14 +1495,11 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
-    identityResolver: {
-      resolve: async (agentId) => {
-        const rootId = await invocationDriverResolution.resolveRoot(agentId);
-        if (!rootId) return null;
-        const r = await agentsRepo.resolveIdentity(rootId);
-        return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
-      },
-    },
+    identityResolver: createEgressIdentityResolver({
+      resolveRoot: (agentId) => invocationDriverResolution.resolveRoot(agentId),
+      identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
+      environmentName: environmentNameLookup(db),
+    }),
     ruleMatcher: createEgressRuleMatchAdapter(db),
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,

@@ -20,7 +20,7 @@ So an Environment runs on its owner's [VM runner](vm-runner.md), beside its Owni
 It is created with nothing that would let it act as its Owning Agent:
 
 - **No harness.** The machine is told it is an Environment (`PLATFORM_ENVIRONMENT_OF`, set after the owner's own secret, so neither an ordinary Agent's secret can make it one nor the reverse); its runtime starts no chat harness and no session-history workers, and refuses chat and terminal connections.
-- **No connections** and no default model provider, and no egress preset.
+- **No connections** and no default model provider, and no egress preset: it holds no credential, and a grant on it is refused.
 - **The platform's default image**, with Docker, k3s and openrc; the software it runs goes inside, as containers or processes.
 
 A row in the `environments` table holds what only this module reads: its name among the Owning Agent's Environments, its host label, its endpoints, the access list, and its expiry.
@@ -51,6 +51,16 @@ The link is one-way: only the Owning Agent's machine can open it, the runner joi
 - **An open link keeps both machines awake.** The proxy on the agent and the script `socat` starts for the connection on the Environment carry `PLATFORM_LINK` from their start, and the runtime reads as busy while one runs; it reports one link per marked tree, not per process.
 
 The agent's side is a small Python helper, since Node has no vsock, and both sides carry the bytes with `socat`.
+
+## Network access
+
+An Environment runs the app its agent built, which reaches registries, mirrors and models, and it runs untrusted code for visitors, so it never carries the Owning Agent's credentials.
+
+- **Egress follows the Owning Agent's rules.** The egress gate resolves an Environment to its Owning Agent, of the same owner, and decides by the Owning Agent's rules: a host the agent may reach, the Environment may reach; a host denied stays denied.
+  The hosts the Owning Agent's path-scoped rules promote to inspection are inspected on the Environment's gateway too, within five minutes of a new Environment or a newly narrowed rule, so those rules hold there.
+- **A new host** files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
+- **Connections.** An Environment holds none: granting the owner's connections on one (for example a model for a nested platform) is not built yet, because a granted connection's rules would be written under the Environment while its egress is decided under the Owning Agent.
+  A grant on an Environment is refused for every caller, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
 
 ## Addresses
 
