@@ -285,11 +285,12 @@ Every harness reaches the endpoint through the [Model Router](harness-config.md#
 The endpoint caches a Claude prompt only when the request marks it: Claude Code marks its own, and the image's Pi extension marks Pi's.
 GPT models cache on their own.
 
-### App preset: IBM ETE LiteLLM CurveBender
+### App preset: IBM ETE LiteLLM CurveBender (custom key)
 
 A second LiteLLM proxy, fronting open models hosted on RITS rather than Claude and GPT.
 An Agent can hold either proxy or both.
 CurveBender uses the same routing and credential scheme, including Bob's prefix rewrite, aimed at its own host; its model defaults differ.
+This is the user-keyed integration: the user connects it with their own CurveBender key, and Settings / Providers names it `IBM ETE LiteLLM CurveBender (custom key)` so it cannot be confused with the deployment's, below.
 
 Work runs on GLM.
 Claude Code reserves a separate model slot for its non-reasoning permission classifier; the Connection pins both roles ([harness configuration](harness-config.md#model-discovery-and-the-agents-default-model)).
@@ -297,6 +298,16 @@ The endpoint's model list names models but does not describe them, so the Connec
 Pi also needs the reasoning capability and OpenAI-style reasoning effort: the endpoint ignores the switch GLM's own vendor API uses, so Pi's built-in description would be wrong here.
 Pi applies these hints to every listed model.
 Its stream can carry the end of thinking and the start of the answer in one piece, so the image's Pi extension preserves thinking-before-answer order.
+
+### Deployment preset: IBM ETE LiteLLM CurveBender
+
+The same proxy, reached with a key the deployment provides instead of the user's.
+The install sets that key in its chart values (exact keys in [`helm/values.yaml`](../../helm/values.yaml)); without a key the preset does not exist, so the deployment offers no shared CurveBender and every user keeps their own.
+It is not behind a feature flag: where the key is set, every user has it.
+The Connection is the deployment's, managed exactly like the built-in preset's below — provisioned by the user's own Connection listing, following the deployment's key, removed when the deployment drops the key, and refused to the user's own create, update and delete.
+It is named `IBM ETE LiteLLM CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
+Its Secret holds a copy of the deployment's key, which the gateway injects on CurveBender's host exactly as it injects a user's key on a user-keyed Connection, so calls are metered and attributed to the Connection that made them and the key never reaches the agent or a browser.
+Both CurveBender presets share one provider alias, `cb`, so their models are named alike and one Agent holds at most one of them.
 
 ### Built-in preset: platform LLM
 

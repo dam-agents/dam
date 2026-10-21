@@ -1,6 +1,6 @@
 import {
   aliasForTemplateId,
-  PROVIDERS,
+  displayNameForTemplate,
   providerTypeForTemplateId,
   parseQualifiedModel,
 } from "api-server-api";
@@ -91,7 +91,7 @@ export function createModelCatalog(deps: ModelCatalogDeps): ModelCatalog {
       alias: alias ?? ("ibm" as const),
       displayName:
         layer.env.PLATFORM_LLM_NAME ??
-        (type ? PROVIDERS[type].displayName : template || layer.id),
+        (displayNameForTemplate(template) || template || layer.id),
       dialects: alias ? PROVIDER_DIALECTS[alias] : [],
       ...(listing?.harnesses && { harnesses: listing.harnesses }),
     };

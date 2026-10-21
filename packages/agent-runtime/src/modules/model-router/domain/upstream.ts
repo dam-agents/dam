@@ -36,7 +36,8 @@ export function upstreamWireOf(
       : null;
   switch (template) {
     case "ibm-litellm":
-    case "curve-bender": {
+    case "curve-bender":
+    case "curve-bender-deployment": {
       const base = env.OPENAI_BASE_URL ?? env.ANTHROPIC_BASE_URL;
       return base
         ? {

@@ -1229,6 +1229,20 @@ apiServer:
     caConfigMap:
       name: ""
       key: ""
+  # -- CurveBender offered to every user of this install, called with the
+  # deployment's key instead of one each user enters. An empty key offers no
+  # shared CurveBender: the provider exists only where a key does, and every
+  # user otherwise connects their own. Name an existing Secret in the release
+  # namespace in `apiKeySecret`, or set `apiKey` from a secret values layer,
+  # which lands in the chart's credentials Secret. The api-server reads the key
+  # at start, so after rotating it in an existing Secret restart the api-server;
+  # it then rewrites the copy each user's Connection holds. Calls are metered
+  # per user like any other provider.
+  curveBenderDeployment:
+    apiKeySecret:
+      name: ""
+      key: api-key
+    apiKey: ""
   # -- Extra annotations for the Deployment object / its pod template
   # (merged over commonAnnotations / commonPodAnnotations).
   annotations: {}

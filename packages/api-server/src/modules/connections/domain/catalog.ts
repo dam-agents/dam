@@ -5,6 +5,7 @@ import {
   BOB_INFERENCE_PREFIX_REWRITE,
   ibmLitellmEnvMappings,
   curveBenderEnvMappings,
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
   openaiEnvMappings,
   bobEnvMappings,
   bedrockEnvMappings,
@@ -183,18 +184,8 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   ],
 };
 
-const CURVE_BENDER: HeaderConnectionTemplate = {
-  id: "curve-bender",
-  name: "IBM ETE LiteLLM CurveBender",
-  category: "app",
-  isCustom: false,
-  description: "LiteLLM proxy fronting open models hosted on RITS.",
-  iconSlug: "ibm",
-  authKind: "header",
-  host: CURVE_BENDER_HOST,
-  headerName: "Authorization",
-  valueFormat: "Bearer {value}",
-  contributions: [
+function curveBenderContributions(): Contribution[] {
+  return [
     ...envContributions(curveBenderEnvMappings()),
     {
       kind: "egress-inject",
@@ -203,7 +194,41 @@ const CURVE_BENDER: HeaderConnectionTemplate = {
       valueFormat: "Bearer {value}",
       pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
     },
-  ],
+  ];
+}
+
+const CURVE_BENDER: HeaderConnectionTemplate = {
+  id: "curve-bender",
+  name: "IBM ETE LiteLLM CurveBender (custom key)",
+  category: "app",
+  isCustom: false,
+  description: "LiteLLM proxy fronting open models hosted on RITS.",
+  iconSlug: "ibm",
+  authKind: "header",
+  host: CURVE_BENDER_HOST,
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: curveBenderContributions(),
+};
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: CurveBender reached with the deployment's key,
+ * which the operator configures; it exists only where that key is, and the
+ * connection it feeds is the deployment's, never the user's.
+ */
+const CURVE_BENDER_DEPLOYMENT: HeaderConnectionTemplate = {
+  id: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  name: "IBM ETE LiteLLM CurveBender",
+  category: "app",
+  isCustom: false,
+  description:
+    "The deployment's LiteLLM CurveBender, reached with the deployment's key. It is connected for everyone.",
+  iconSlug: "ibm",
+  authKind: "header",
+  host: CURVE_BENDER_HOST,
+  headerName: "Authorization",
+  valueFormat: "Bearer {value}",
+  contributions: curveBenderContributions(),
 };
 
 const BOB_QUERY_PARAM_HEADER = "X-Bobshell-Internal";
@@ -980,10 +1005,12 @@ export function buildCatalog(
   opts: {
     shareBaseUrl?: string;
     platformProvider?: PlatformProviderEndpoint | null;
+    curveBenderDeployment?: boolean;
   } = {},
 ): ConnectionTemplate[] {
   return assertContributionsParse([
     ...(opts.platformProvider ? [platformLlm(opts.platformProvider)] : []),
+    ...(opts.curveBenderDeployment ? [CURVE_BENDER_DEPLOYMENT] : []),
     sharedKnowledgeBase(opts.shareBaseUrl),
     ANTHROPIC,
     ANTHROPIC_OAUTH,

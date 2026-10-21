@@ -11,15 +11,19 @@ import {
   type PlatformProviderEndpoint,
 } from "../../modules/connections/domain/catalog.js";
 import { createConnectionTemplateRegistry } from "../../modules/connections/domain/connection-template.js";
-import type { ConnectionsRepository } from "../../modules/connections/infrastructure/connections-repository.js";
-import { createConnectionsService } from "../../modules/connections/services/connections-service.js";
 import { startAttachFirstProviderSaga } from "../../modules/connections/sagas/attach-first-provider.js";
 import {
   startPlatformProviderSaga,
-  sweepPlatformConnections,
+  sweepManagedConnections,
 } from "../../modules/connections/sagas/platform-provider.js";
-import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { XactLock } from "../../core/xact-lock.js";
+import {
+  type ConnectionsStore,
+  keyedMutex,
+  newConnectionsStore,
+  serviceHarness,
+  type StoredSecret,
+} from "../helpers/connections-service.js";
 import { configureLogger } from "../../core/logger.js";
 import { emit, events$, EventType } from "../../events.js";
 
@@ -36,15 +40,6 @@ import { emit, events$, EventType } from "../../events.js";
  */
 
 configureLogger({ level: "error", write: () => {} });
-
-function unused<T extends object>(fields: Partial<T> = {}): T {
-  return new Proxy(fields, {
-    get(target, key) {
-      if (key in target) return Reflect.get(target, key);
-      throw new Error(`Unexpected dependency: ${String(key)}`);
-    },
-  }) as T;
-}
 
 const ENDPOINT: PlatformProviderEndpoint = {
   baseUrl: "https://llm.models.svc:8443",
@@ -82,143 +77,38 @@ gpmG4FXPs9BzzUPlMAoGCCqGSM49BAMCA0gAMEUCIHw6/ro6BBHZ7XK+QdasOxJz
 uoE=
 -----END CERTIFICATE-----`;
 
-function keyedMutex(): XactLock {
-  const tails = new Map<string, Promise<unknown>>();
-  return <T>(key: string, fn: () => Promise<T>): Promise<T> => {
-    const run = (tails.get(key) ?? Promise.resolve()).then(fn);
-    tails.set(
-      key,
-      run.catch(() => {}),
-    );
-    return run;
-  };
-}
-
-interface StoredSecret {
-  fields: Record<string, string>;
-  annotations: Record<string, string>;
-  purpose: string;
-}
-
-interface Store {
-  rows: Map<string, Connection>;
-  grants: Set<string>;
-  secrets: Map<string, StoredSecret>;
-}
-
-const newStore = (): Store => ({
-  rows: new Map(),
-  grants: new Set(),
-  secrets: new Map(),
-});
-
-function memorySecretStore(secrets: Map<string, StoredSecret>): SecretStore {
-  let minted = 0;
-  return unused<SecretStore>({
-    storeId: "test",
-    mintRef: (meta) => ({
-      storeId: "test",
-      path: `${meta.purpose}-${++minted}`,
-      field: "",
-    }),
-    put: async (ref, fields, meta) =>
-      void secrets.set(ref.path, {
-        fields,
-        annotations: meta.extraAnnotations ?? {},
-        purpose: meta.purpose,
-      }),
-    getField: async (ref) => secrets.get(ref.path)?.fields[ref.field] ?? null,
-    delete: async (ref) => void secrets.delete(ref.path),
-  });
-}
-
 function makeService(
   opts: {
     endpoint?: PlatformProviderEndpoint | null;
     apiKey?: string | null;
     ca?: string;
-    store?: Store;
+    store?: ConnectionsStore;
     lock?: XactLock;
     flag?: { on: boolean };
   } = {},
 ) {
-  const { rows, grants, secrets } = opts.store ?? newStore();
   const base = opts.endpoint === undefined ? ENDPOINT : opts.endpoint;
   const endpoint = base && opts.ca ? { ...base, ca: opts.ca } : base;
-  const fannedOut: string[] = [];
   const flag = opts.flag ?? { on: false };
-  const grantKey = (connectionId: string, agentId: string) =>
-    `${connectionId}|${agentId}`;
-  const agentsOf = (connectionId: string) =>
-    [...grants]
-      .map((g) => g.split("|"))
-      .filter(([c]) => c === connectionId)
-      .map(([, a]) => a!);
-  const svc = createConnectionsService({
-    harnesses: { default: "claude-code", harnesses: [] },
-    isOwnedAgent: async () => true,
-    ownerId: "owner",
+  const harness = serviceHarness({
     templates: createConnectionTemplateRegistry(
       buildCatalog({}, { platformProvider: endpoint }),
     ),
-    repo: unused<ConnectionsRepository>({
-      insert: async (c) => {
-        if ([...rows.values()].some((r) => r.name === c.name))
-          throw Object.assign(new Error("duplicate"), { code: "23505" });
-        rows.set(c.id, c);
-      },
-      get: async (id) => rows.get(id) ?? null,
-      listByOwner: async () => [...rows.values()],
-      listByOwnerOldestFirst: async () => [...rows.values()],
-      updateContributions: async (id, contributions) =>
-        void rows.set(id, { ...rows.get(id)!, contributions }),
-      updateName: async (id, name) =>
-        void rows.set(id, { ...rows.get(id)!, name }),
-      delete: async (id) => {
-        rows.delete(id);
-        for (const g of grants) if (g.startsWith(`${id}|`)) grants.delete(g);
-      },
-      grant: async (c, a) => void grants.add(grantKey(c, a)),
-      revoke: async (c, a) => void grants.delete(grantKey(c, a)),
-      listAgentGrants: async (agentId) =>
-        [...rows.keys()]
-          .filter((c) => grants.has(grantKey(c, agentId)))
-          .map((connectionId) => ({
-            connectionId,
-            grantedAt: new Date(0),
-            preferred: false,
-          })),
-      listAgentsForConnection: async (id) =>
-        rows.has(id) ? ["agent-1", ...agentsOf(id)] : [],
-      listConnectionsForAgent: async (agentId) =>
-        [...rows.values()].filter((c) => grants.has(grantKey(c.id, agentId))),
-    }),
-    secretStore: memorySecretStore(secrets),
-    fanOut: unused({
-      apply: async (input) => void fannedOut.push(input.agentId),
-    }),
-    oauthFlow: unused(),
-    oauthEngine: unused(),
-    githubAppEngine: unused(),
-    s3CredentialProbe: unused(),
-    providerBalance: unused(),
-    providerKeyProbe: { probe: async () => ({ ok: true }) },
-    oauthCallbackUrl: "https://example.com/callback",
+    ...(opts.store ? { store: opts.store } : {}),
+    ...(opts.lock ? { lock: opts.lock } : {}),
     brandName: endpoint?.name ?? "Acme",
-    connectionLock: opts.lock ?? keyedMutex(),
-    resolveKbShare: unused(),
     platformProviderEnabled: async () => flag.on,
     platformProviderKey:
       opts.apiKey === undefined ? "sk-operator" : opts.apiKey,
     platformProviderCa: opts.ca ?? null,
   });
-  return { svc, rows, grants, secrets, flag, fannedOut };
+  return { ...harness, flag };
 }
 
 const platformRows = (rows: Map<string, Connection>) =>
   [...rows.values()].filter((c) => c.templateId === "platform-llm");
 
-function secretOf(store: Pick<Store, "secrets">, conn: Connection) {
+function secretOf(store: Pick<ConnectionsStore, "secrets">, conn: Connection) {
   if (conn.auth.kind !== "header") throw new Error("not a header Connection");
   return store.secrets.get(conn.auth.valueRef.path);
 }
@@ -326,7 +216,7 @@ describe("platform provider connection", () => {
   it("removes a leftover connection on listing while the flag is off", async () => {
     const { svc, rows, flag, fannedOut } = makeService();
     flag.on = true;
-    await svc.reconcilePlatformConnection();
+    await svc.reconcileManagedConnections();
     flag.on = false;
 
     await svc.listAndReconcileConnections();
@@ -338,7 +228,7 @@ describe("platform provider connection", () => {
   it("removes the connection when the flag is turned off", async () => {
     const { svc, rows, flag, fannedOut } = makeService();
     flag.on = true;
-    await svc.reconcilePlatformConnection();
+    await svc.reconcileManagedConnections();
     subs.push(startPlatformProviderSaga(() => svc));
 
     toggle(false, flag);
@@ -359,7 +249,7 @@ describe("platform provider connection", () => {
       }
       return mutex(key, fn);
     };
-    const store = newStore();
+    const store = newConnectionsStore();
     const flag = { on: true };
     const listing = makeService({ store, lock, flag });
     const saga = makeService({ store, lock, flag });
@@ -382,7 +272,7 @@ describe("platform provider connection", () => {
     subs.push(
       startPlatformProviderSaga((owner) =>
         owner === "slow"
-          ? { reconcilePlatformConnection: () => new Promise(() => {}) }
+          ? { reconcileManagedConnections: () => new Promise(() => {}) }
           : svc,
       ),
     );
@@ -394,10 +284,10 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: an existing Connection follows the operator's new model, endpoint and brand, its Secret names the new host for injection, and the agents holding it are re-delivered.
   it("refreshes an existing connection when the operator changes the endpoint", async () => {
-    const store = newStore();
+    const store = newConnectionsStore();
     const before = makeService({ store });
     before.flag.on = true;
-    await before.svc.reconcilePlatformConnection();
+    await before.svc.reconcileManagedConnections();
     const [old] = platformRows(store.rows);
 
     const after = makeService({
@@ -434,7 +324,7 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: a user who already owns Connections named after the brand gets the built-in provider under the next free fallback name.
   it("falls back to a free name when the brand name is taken", async () => {
-    const store = newStore();
+    const store = newConnectionsStore();
     for (const name of ["Acme", "Acme LLM"])
       store.rows.set(`conn-${name}`, userConnection(name));
     const { svc, rows, flag } = makeService({ store });
@@ -447,14 +337,14 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: the boot sweep removes every built-in provider Connection once the operator no longer names a model server, re-delivering the agents.
   it("sweeps leftover connections when no model server is configured", async () => {
-    const store = newStore();
+    const store = newConnectionsStore();
     const before = makeService({ store });
     before.flag.on = true;
-    await before.svc.reconcilePlatformConnection();
+    await before.svc.reconcileManagedConnections();
 
     const after = makeService({ store, endpoint: null });
     after.flag.on = true;
-    await sweepPlatformConnections(
+    await sweepManagedConnections(
       async () => ["owner"],
       () => after.svc,
     );
@@ -466,7 +356,7 @@ describe("platform provider connection", () => {
   it("refuses to delete, create or update the connection by hand", async () => {
     const { svc, rows, flag } = makeService();
     flag.on = true;
-    await svc.reconcilePlatformConnection();
+    await svc.reconcileManagedConnections();
     const [conn] = platformRows(rows);
 
     await expect(svc.deleteConnection(conn!.id)).rejects.toMatchObject({
@@ -487,10 +377,10 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: when the operator rotates the key, the next listing rewrites the Connection's Secret with the new key in place and re-delivers the agents holding it, once.
   it("rewrites the secret and fans out when the operator key rotates", async () => {
-    const store = newStore();
+    const store = newConnectionsStore();
     const before = makeService({ store });
     before.flag.on = true;
-    await before.svc.reconcilePlatformConnection();
+    await before.svc.reconcileManagedConnections();
     const [old] = platformRows(store.rows);
 
     const after = makeService({ store, apiKey: "sk-rotated" });
@@ -512,7 +402,7 @@ describe("platform provider connection", () => {
   it("writes the operator's CA into the secret only when one is configured", async () => {
     const withCa = makeService({ ca: CA_A });
     withCa.flag.on = true;
-    await withCa.svc.reconcilePlatformConnection();
+    await withCa.svc.reconcileManagedConnections();
     const secret = secretOf(withCa, platformRows(withCa.rows)[0]!);
     expect(secret?.fields["upstream-ca.crt"]).toBe(CA_A);
     expect(injectionHosts(secret)).toEqual([
@@ -524,7 +414,7 @@ describe("platform provider connection", () => {
 
     const without = makeService();
     without.flag.on = true;
-    await without.svc.reconcilePlatformConnection();
+    await without.svc.reconcileManagedConnections();
     const plain = secretOf(without, platformRows(without.rows)[0]!);
     expect(plain?.fields).not.toHaveProperty("upstream-ca.crt");
     expect(injectionHosts(plain)[0]).not.toHaveProperty("caKey");
@@ -532,10 +422,10 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: the operator replacing the CA, adding one, or removing it rewrites the Connection's Secret in place on the next listing and re-delivers the agents holding it, once per change.
   it("rewrites the secret and fans out when the operator's CA changes", async () => {
-    const store = newStore();
+    const store = newConnectionsStore();
     const first = makeService({ store });
     first.flag.on = true;
-    await first.svc.reconcilePlatformConnection();
+    await first.svc.reconcileManagedConnections();
     const [old] = platformRows(store.rows);
 
     for (const [ca, caKey] of [
@@ -558,7 +448,7 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: a keyless Connection left from before the provider was metered has no Secret to rewrite, so a listing replaces it with one holding the key.
   it("replaces a keyless connection with a keyed one", async () => {
-    const store = newStore();
+    const store = newConnectionsStore();
     store.rows.set("conn-old", {
       ...userConnection("Acme"),
       id: "conn-old",
@@ -575,10 +465,10 @@ describe("platform provider connection", () => {
 
   // TEST_SCENARIO: an install that names a model server but no key offers no built-in provider: a flag that reads on creates nothing, and a leftover Connection is removed.
   it("creates nothing and removes a leftover without an operator key", async () => {
-    const store = newStore();
+    const store = newConnectionsStore();
     const before = makeService({ store });
     before.flag.on = true;
-    await before.svc.reconcilePlatformConnection();
+    await before.svc.reconcileManagedConnections();
 
     const after = makeService({ store, apiKey: null });
     after.flag.on = true;

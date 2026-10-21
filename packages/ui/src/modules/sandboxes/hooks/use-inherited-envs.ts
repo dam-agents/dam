@@ -1,5 +1,6 @@
 import {
   type ConnectionView,
+  displayNameForTemplate,
   isProtectedAgentEnvName,
   providerTypeForTemplateId,
 } from "api-server-api";
@@ -40,7 +41,10 @@ export function inheritedEnvs({
   for (const a of apps.filter((a) => appIdsSet.has(a.id))) {
     const provider = providerTypeForTemplateId(a.templateId);
     const source = provider
-      ? { label: providerName(provider), kind: "provider" as const }
+      ? {
+          label: displayNameForTemplate(a.templateId) ?? providerName(provider),
+          kind: "provider" as const,
+        }
       : { label: a.name, kind: "connection" as const };
     for (const c of a.contributions)
       if (c.kind === "env")

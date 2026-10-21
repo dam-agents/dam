@@ -14,6 +14,7 @@ import { ProviderKeyStatus } from "./provider-key-status.js";
 
 interface Props {
   type: ProviderPresetType;
+  name?: string;
   harnesses?: readonly HarnessFamily[];
   connected: boolean;
   degraded?: boolean;
@@ -26,6 +27,7 @@ interface Props {
 
 export function ProviderRow({
   type,
+  name: givenName,
   harnesses,
   connected,
   degraded = false,
@@ -35,7 +37,7 @@ export function ProviderRow({
   onOpen,
   connectedAction = "Edit",
 }: Props) {
-  const name = providerName(type);
+  const name = givenName ?? providerName(type);
   const refused = connected && keyCheck?.result === "refused";
   const body = (
     <>

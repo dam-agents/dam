@@ -1,8 +1,14 @@
+import {
+  CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+  displayNameForTemplate,
+} from "api-server-api";
+
 import { getBrand } from "../../../brand.js";
 import { type ProviderPresetType, PROVIDERS } from "../../../types.js";
 
-interface ProviderRowDef {
+export interface ProviderRowDef {
   type: ProviderPresetType;
+  templateId?: string;
   description: string;
 }
 
@@ -16,6 +22,17 @@ export function providerName(type: ProviderPresetType): string {
   return type === "platform" ? getBrand().name : PROVIDERS[type].displayName;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: one preset can offer two rows, a user-keyed
+ * template and the deployment's, so a row names its own template when it has
+ * one and otherwise takes the preset's name.
+ */
+export function providerRowName(row: ProviderRowDef): string {
+  return row.templateId
+    ? (displayNameForTemplate(row.templateId) ?? providerName(row.type))
+    : providerName(row.type);
+}
+
 export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   {
     type: "platform",
@@ -27,7 +44,14 @@ export const PROVIDER_ROWS: readonly ProviderRowDef[] = [
   },
   {
     type: "curve-bender",
+    templateId: "curve-bender",
     description: CURVE_BENDER_DESCRIPTION,
+  },
+  {
+    type: "curve-bender",
+    templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    description:
+      "GLM 5.3 on RITS via LiteLLM, with the key this deployment provides. No key of your own needed.",
   },
   {
     type: "bob",

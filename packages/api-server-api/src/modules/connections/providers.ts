@@ -30,6 +30,7 @@ export const DEFAULT_ENV_PLACEHOLDER = "dummy-placeholder";
 
 export const IBM_LITELLM_HOST = "ete-litellm.ai-models.vpc.res.ibm.com";
 export const CURVE_BENDER_HOST = "litellm.cb.ete.res.ibm.com";
+export const CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID = "curve-bender-deployment";
 
 export const BOB_INFERENCE_PREFIX_REWRITE = {
   prefix: "/inference/v1/",
@@ -250,8 +251,15 @@ export const PROVIDERS = {
   "curve-bender": {
     id: "curve-bender",
     alias: "cb",
-    displayName: "IBM ETE LiteLLM CurveBender",
-    modes: [{ key: "api-key", label: "API token", templateId: "curve-bender" }],
+    displayName: "IBM ETE LiteLLM CurveBender (custom key)",
+    modes: [
+      { key: "api-key", label: "API token", templateId: "curve-bender" },
+      {
+        key: "deployment",
+        label: "Deployment key",
+        templateId: CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+      },
+    ],
   },
   openai: {
     id: "openai",
@@ -347,6 +355,22 @@ export function aliasForTemplateId(templateId: string): ProviderAlias | null {
   return type === null ? null : aliasForProviderType(type);
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a preset's name is what users see, and one
+ * preset can offer more than one template under different names (the
+ * deployment CurveBender beside the user-keyed one); a template without an
+ * entry of its own takes its preset's name.
+ */
+const TEMPLATE_DISPLAY_NAMES: Readonly<Record<string, string>> = {
+  [CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID]: "IBM ETE LiteLLM CurveBender",
+};
+
+export function displayNameForTemplate(templateId: string): string | null {
+  const type = providerTypeForTemplateId(templateId);
+  if (type === null) return null;
+  return TEMPLATE_DISPLAY_NAMES[templateId] ?? PROVIDERS[type].displayName;
+}
+
 export function templateIdsForAlias(alias: ProviderAlias): string[] {
   return PROVIDER_PRESET_TYPES.filter(
     (type) => PROVIDERS[type].alias === alias,
@@ -405,7 +429,13 @@ export function providerAliasConflict(
   );
   if (!held) return null;
   const heldType = providerTypeForTemplateId(held.templateId)!;
-  return { alias, displayName: PROVIDERS[heldType].displayName, held };
+  return {
+    alias,
+    displayName:
+      displayNameForTemplate(held.templateId) ??
+      PROVIDERS[heldType].displayName,
+    held,
+  };
 }
 
 export function templateIdForProvider(

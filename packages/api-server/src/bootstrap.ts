@@ -295,12 +295,12 @@ import {
   createProviderEgressScopes,
   listConnectionGrantAgentIds,
   listConnectionTemplateIds,
-  listPlatformConnectionOwners,
+  listManagedConnectionOwners,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
 import {
   startPlatformProviderSaga,
-  sweepPlatformConnections,
+  sweepManagedConnections,
 } from "./modules/connections/sagas/platform-provider.js";
 import { composeFeaturesForOwner } from "./modules/features/index.js";
 import { createConnectionRulesSyncAdapter } from "./modules/egress-rules/compose.js";
@@ -777,6 +777,7 @@ export async function bootstrap() {
   const connectionsBoot = composeConnectionsAtBoot({
     db,
     shareBaseUrl: config.shareBaseUrl,
+    curveBenderDeployment: config.curveBenderDeployment !== null,
     platformProvider: config.platformProvider && {
       baseUrl: config.platformProvider.baseUrl,
       model: config.platformProvider.model,
@@ -843,6 +844,7 @@ export async function bootstrap() {
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
       platformProviderCa: config.platformProvider?.ca ?? null,
+      curveBenderDeploymentKey: config.curveBenderDeployment?.apiKey ?? null,
       harnesses: harnessCatalog,
       platformProviderEnabled: async () =>
         (
@@ -926,8 +928,8 @@ export async function bootstrap() {
       ),
   );
   const platformProviderSub = startPlatformProviderSaga(connectionsServiceFor);
-  sweepPlatformConnections(
-    () => listPlatformConnectionOwners(db),
+  sweepManagedConnections(
+    () => listManagedConnectionOwners(db),
     connectionsServiceFor,
   ).catch((err: unknown) =>
     getLogger().error(

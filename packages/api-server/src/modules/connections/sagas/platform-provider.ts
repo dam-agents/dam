@@ -9,16 +9,16 @@ import {
   type FeatureFlagChanged,
   ofType,
 } from "../../../events.js";
-import type { PlatformLlmConnections } from "../services/connections-service.js";
+import type { ManagedProviderConnections } from "../services/connections-service.js";
 
 const PLATFORM_PROVIDER: FeatureId = "platform-provider";
 
 async function reconcile(
-  platformFor: (owner: string) => PlatformLlmConnections,
+  managedFor: (owner: string) => ManagedProviderConnections,
   owner: string,
 ): Promise<void> {
   try {
-    await platformFor(owner).reconcilePlatformConnection();
+    await managedFor(owner).reconcileManagedConnections();
   } catch (err) {
     getLogger().error(
       { owner, reason: formatError(err) },
@@ -35,28 +35,28 @@ async function reconcile(
  * settles on the last state, and one slow owner holds up no other.
  */
 export function startPlatformProviderSaga(
-  platformFor: (owner: string) => PlatformLlmConnections,
+  managedFor: (owner: string) => ManagedProviderConnections,
 ): Subscription {
   return events$()
     .pipe(
       ofType<FeatureFlagChanged>(EventType.FeatureFlagChanged),
       filter((ev) => ev.feature === PLATFORM_PROVIDER),
-      mergeMap((ev) => reconcile(platformFor, ev.actorSub)),
+      mergeMap((ev) => reconcile(managedFor, ev.actorSub)),
     )
     .subscribe();
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: a listing only reconciles the user who lists, so
- * after the operator removes the model server or changes it, Connections of
+ * after the operator removes a model server or changes it, Connections of
  * users who do not come back would keep pointing agents at the old endpoint.
- * At boot every user holding the built-in provider is reconciled once, which
- * removes it everywhere when the install names no model server and otherwise
- * brings it to the current endpoint and brand.
+ * At boot every user holding a deployment-owned provider is reconciled once,
+ * which removes it everywhere when the install no longer configures it and
+ * otherwise brings it to the current key and name.
  */
-export async function sweepPlatformConnections(
+export async function sweepManagedConnections(
   owners: () => Promise<string[]>,
-  platformFor: (owner: string) => PlatformLlmConnections,
+  managedFor: (owner: string) => ManagedProviderConnections,
 ): Promise<void> {
-  for (const owner of await owners()) await reconcile(platformFor, owner);
+  for (const owner of await owners()) await reconcile(managedFor, owner);
 }

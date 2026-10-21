@@ -1,4 +1,5 @@
 import {
+  displayNameForTemplate,
   harnessFits,
   type HarnessView,
   type ProviderPresetType,
@@ -101,7 +102,7 @@ export function grantedProviderRefs(
       ? [
           {
             id: c.id,
-            name: providerName(type),
+            name: displayNameForTemplate(c.templateId) ?? providerName(type),
             type,
             templateId: c.templateId,
           },
