@@ -160,8 +160,7 @@ export function buildScopeCommand(deps: {
       }
 
       const after = await svc.getConnection(match.id);
-      exitOnServiceError(after, host);
-      const scope = after.value ? scopeOf(after.value) : undefined;
+      const scope = after.ok && after.value ? scopeOf(after.value) : undefined;
       if (json) {
         return writeStdoutAndExit(
           `${JSON.stringify({ ok: true, id: match.id, name: match.name, kind, scope })}\n`,
@@ -169,7 +168,7 @@ export function buildScopeCommand(deps: {
         );
       }
       return writeStdoutAndExit(
-        `✓ Scoped ${match.name} (${match.id}): ${formatScope(scope)}\n`,
+        `✓ Scoped ${match.name} (${match.id})${scope ? `: ${formatScope(scope)}` : ""}\n`,
         EXIT_SUCCESS,
       );
     });

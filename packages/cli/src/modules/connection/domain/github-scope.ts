@@ -31,10 +31,7 @@ export type ScopeKind = "github-user-token" | "github-app";
 
 export function scopeKindOf(view: ConnectionView): ScopeKind | undefined {
   if (view.authKind === "github-app") return "github-app";
-  if (
-    view.authKind === "oauth" &&
-    (view.githubUserToken || isGitHubUserTokenTemplate(view.templateId))
-  ) {
+  if (view.authKind === "oauth" && view.githubUserToken) {
     return "github-user-token";
   }
   return undefined;
