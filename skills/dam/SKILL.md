@@ -67,7 +67,7 @@ The server is saved as the active one, so later commands don't need `--server`.
 When the saved session still works, `dam auth login` refuses without a terminal; add `--force` only when the user wants to sign in again.
 If any command later says the session expired, run `dam auth login` again: an expired session does not count as signed in, so it needs no `--force`.
 `dam auth status` marks such a session `session expired`.
-An older CLI may still answer "already logged in" for an expired session; then `dam auth login --force` signs in again.
+If `dam auth login` still answers "already logged in" while other commands say the session expired (an older CLI does), run `dam auth login --force`.
 
 ### Check the version
 
