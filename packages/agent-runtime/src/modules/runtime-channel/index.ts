@@ -3,6 +3,11 @@ export { createArtifactTouchReporter } from "./artifact-touch-reporter.js";
 export { createToolApprovalReporter } from "./tool-approval-reporter.js";
 export { createHarnessClient, type HarnessClient } from "./harness-client.js";
 export {
+  createInvocationWatch,
+  type InvocationWatch,
+} from "./services/invocation-watch.js";
+export { createSubAgentsRunning } from "./infrastructure/sub-agents-running.js";
+export {
   loadManifest,
   harnessConfigBindingOf,
   resolveDrivers,

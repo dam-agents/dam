@@ -70,6 +70,7 @@ export enum EventType {
   StarterKitOnboarded = "StarterKitOnboarded",
   IdentityLinked = "IdentityLinked",
   AgentOutOfMemory = "AgentOutOfMemory",
+  AgentResourceRemoved = "AgentResourceRemoved",
   AvatarUnlocked = "AvatarUnlocked",
   GettingStartedReset = "GettingStartedReset",
 }
@@ -491,6 +492,13 @@ export type AgentOutOfMemory = {
   memory?: string;
 };
 
+export type AgentResourceRemoved = {
+  type: EventType.AgentResourceRemoved;
+  agentId: string;
+  ownerSub: string;
+  name: string;
+};
+
 export type AvatarUnlocked = {
   type: EventType.AvatarUnlocked;
   ownerSub: string;
@@ -560,6 +568,7 @@ export type DomainEvent =
   | StarterKitOnboarded
   | IdentityLinked
   | AgentOutOfMemory
+  | AgentResourceRemoved
   | AvatarUnlocked
   | GettingStartedReset;
 

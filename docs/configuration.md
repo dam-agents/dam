@@ -163,6 +163,11 @@ Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from th
 The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
 The Stop button on an agent's working status needs the `agent_session_stopped` subscription the same way; without it Slack answers a press with "Stop isn't available for this agent".
 
+The Stop button also needs Slack's agent messaging (`agent_view` in the manifest), which replaces the older `assistant_view`.
+Slack refuses a manifest that declares both, so an app created from an earlier manifest is moved in its app settings: the **Agent** tab offers the update.
+The switch is one-way, people in the workspace see it only after a hard refresh of Slack, and a distributed app may need Marketplace review again.
+Until the app is moved, the working status still shows through the older assistant API, without a Stop button.
+
 ### Connecting a workspace
 
 1. Open **Settings → Slack workspaces** and press *Connect a workspace*.

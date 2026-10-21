@@ -34,7 +34,9 @@ export function createChildAgentProcess(
     env: cleanEnv,
   });
 
+  let exitCause: string | null = null;
   child.on("error", (err) => {
+    exitCause ??= `spawn error: ${err.message}`;
     process.stderr.write(`[agent-process] spawn error: ${err.message}\n`);
   });
 
@@ -53,7 +55,13 @@ export function createChildAgentProcess(
   });
 
   const exited = new Promise<void>((resolve) => {
-    child.on("exit", () => resolve());
+    child.on("exit", (code, signal) => {
+      exitCause ??= signal ? `killed by ${signal}` : `exit code ${code}`;
+      resolve();
+    });
+    child.on("error", () => {
+      if (child.pid === undefined) resolve();
+    });
   });
 
   return {
@@ -69,5 +77,6 @@ export function createChildAgentProcess(
       child.kill();
     },
     exited,
+    exitCause: () => exitCause,
   };
 }

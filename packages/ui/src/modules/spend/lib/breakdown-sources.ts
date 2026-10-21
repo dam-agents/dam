@@ -5,8 +5,8 @@ import {
   type SpendBreakdown,
 } from "api-server-api";
 
-import { DELETED_AGENT_NAME } from "./copy.js";
-import { amountsBy } from "./measured-spend.js";
+import { DELETED_AGENT_NAME, moreSubAgents } from "./copy.js";
+import { amountsBy, unitTotals } from "./measured-spend.js";
 import type { RowSource } from "./spend-rows.js";
 
 interface Counted extends SpendAmount {
@@ -28,7 +28,11 @@ function freeCallsBy<T extends Counted>(
 function sourcesBy<T extends Counted>(
   rows: readonly T[],
   keyOf: (row: T) => string,
-  describe: (key: string) => { label: string; notPriced: boolean },
+  describe: (key: string) => {
+    label: string;
+    hint?: string;
+    notPriced: boolean;
+  },
 ): RowSource[] {
   const freeCalls = freeCallsBy(rows, keyOf);
   return [...amountsBy(rows, keyOf)].map(([key, amounts]) => ({
@@ -39,18 +43,67 @@ function sourcesBy<T extends Counted>(
   }));
 }
 
+type AgentRow = SpendBreakdown["byAgent"][number] & {
+  agentTask?: string | null;
+};
+
+export const MORE_SUB_AGENTS_KEY = "more-sub-agents";
+
+export function agentNameOf(
+  rows: readonly AgentRow[],
+): (agentId: string) => string | null {
+  const names = new Map(rows.map((row) => [row.agentId, row.agentName]));
+  return (agentId) => names.get(agentId) ?? null;
+}
+
+export function agentLabel(agentName: string | null): string {
+  return agentName ?? DELETED_AGENT_NAME;
+}
+
 export function agentSources(
-  byAgent: SpendBreakdown["byAgent"],
-  nameOf: (agentId: string) => string | undefined,
+  rows: readonly AgentRow[],
+  labelOf: (agentId: string, agentName: string | null) => string = (
+    _agentId,
+    agentName,
+  ) => agentLabel(agentName),
 ): RowSource[] {
+  const nameOf = agentNameOf(rows);
+  const taskOf = new Map(rows.map((row) => [row.agentId, row.agentTask]));
   return sourcesBy(
-    byAgent,
+    rows,
     (row) => row.agentId,
-    (agentId) => ({
-      label: nameOf(agentId) ?? DELETED_AGENT_NAME,
-      notPriced: false,
-    }),
+    (agentId) => {
+      const task = taskOf.get(agentId);
+      return {
+        label: labelOf(agentId, nameOf(agentId)),
+        ...(task && { hint: task }),
+        notPriced: false,
+      };
+    },
   );
+}
+
+export function moreSubAgentsSource(
+  other: SpendBreakdown["otherSubAgents"],
+): RowSource {
+  return {
+    key: MORE_SUB_AGENTS_KEY,
+    label: moreSubAgents(other.count),
+    amounts: unitTotals(other.amounts),
+    freeCalls: other.amounts
+      .filter((amount) => amount.unit === "free")
+      .reduce((sum, amount) => sum + amount.calls, 0),
+    notPriced: false,
+  };
+}
+
+export function inServerOrder<T extends { key: string }>(
+  rows: readonly T[],
+  agentIds: readonly string[],
+): T[] {
+  const rank = new Map(agentIds.map((agentId, index) => [agentId, index]));
+  const rankOf = (key: string) => rank.get(key) ?? Number.MAX_SAFE_INTEGER;
+  return [...rows].sort((a, b) => rankOf(a.key) - rankOf(b.key));
 }
 
 export function sessionTypeSources(

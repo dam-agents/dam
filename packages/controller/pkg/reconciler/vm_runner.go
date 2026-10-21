@@ -909,19 +909,19 @@ const runnerVolumeBindGrace = 3 * time.Minute
 // UNIT_BOUNDARY_DESCRIPTION: runnerNodeLostGrace is the kubelet's default eviction toleration — a node that comes back inside it keeps its pods, and one that does not has begun evicting them — so that is where a not-ready node turns into a lost one, and a blip stays a blip.
 const runnerNodeLostGrace = 5 * time.Minute
 
-// UNIT_BOUNDARY_DESCRIPTION: when the kernel last OOM-killed the owner's runner, from its pods' container statuses; zero when it never did or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
-func (r *AgentReconciler) runnerOOMKilledAt(ctx context.Context, owner string) time.Time {
+// UNIT_BOUNDARY_DESCRIPTION: the latest OOM kill of the owner's runner, from its pods' container statuses; zero when it never was or the pods cannot be read. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten, which the rule that reads this allows for.
+func (r *AgentReconciler) runnerOOMKill(ctx context.Context, owner string) runnerKill {
 	pods, err := r.runnerPods(ctx, owner, true)
 	if err != nil {
-		return time.Time{}
+		return runnerKill{}
 	}
-	var at time.Time
+	var latest runnerKill
 	for i := range pods {
-		if killed := runnerOOMKilledAt(&pods[i]); killed.After(at) {
-			at = killed
+		if kill := runnerOOMKillOf(&pods[i]); kill.At.After(latest.At) {
+			latest = kill
 		}
 	}
-	return at
+	return latest
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: what cert-manager says about a Certificate it has not issued yet — a missing issuer, a CA that is not ready, a rate limit — from its Ready condition. Empty when it says nothing, or the Certificate cannot be read.

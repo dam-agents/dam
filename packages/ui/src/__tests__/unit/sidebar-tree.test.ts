@@ -1,5 +1,5 @@
-// TEST_OVERVIEW: The new layout's sidebar is one tree of Agents. An Agent row opens and closes its Session list (the open Agent opens on its own, and only that one),  a "New session" row ends each open list and a "New agent" row ends the tree, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, a pin the bounded feed does not hold is looked up by its id, a closed Agent shows a pending approval before unread, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
-import { AddAlt, AddComment } from "@carbon/icons-react";
+// TEST_OVERVIEW: The new layout's sidebar is one tree of Agents. An Agent row opens and closes its Session list (the open Agent opens on its own, and only that one),  a "New session" row ends an open list with no Sessions and a "New agent" row ends a tree with no Agents, a pinned Session moves into the Pinned section at the top and leaves its Agent's list, a pin the bounded feed does not hold is looked up by its id, a closed Agent shows a pending approval before unread, and each Session row carries an activity dot whose state has a text label and whose spin stops under reduced motion.
+import { Add, AddAlt } from "@carbon/icons-react";
 import { SessionMode, SessionType, type SessionView } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -12,6 +12,7 @@ import {
 import { AddRow } from "../../modules/platform/components/sidebar-v2/add-row.js";
 import {
   activityTone,
+  agentSubline,
   awaitsApproval,
   isExpanded,
   offFeedPins,
@@ -19,6 +20,7 @@ import {
   splitPinned,
   toggleExpanded,
 } from "../../modules/platform/lib/sidebar-tree.js";
+import type { AgentView } from "../../types.js";
 
 describe("sidebar tree", () => {
   // TEST_SCENARIO: opening one Agent leaves the others as they are, and a second toggle closes it again.
@@ -167,7 +169,7 @@ describe("sidebar tree", () => {
     expect(idle).not.toContain("animate-spin");
   });
 
-  // TEST_SCENARIO: the line under a Session title names the harness, the model and where the Session came from.
+  // TEST_SCENARIO: the line under a Session title names the harness, the model and where the Session came from; a terminal Session names no source, since the row's terminal icon says it.
   it("names harness, model and source", () => {
     const session: SessionView = {
       sessionId: "s1",
@@ -190,15 +192,37 @@ describe("sidebar tree", () => {
       }),
     ).toBe("Chat");
     expect(sessionContext({ ...session, mode: SessionMode.Terminal })).toBe(
-      "Claude · Opus 4.7 · Terminal",
+      "Claude · Opus 4.7",
     );
+  });
+
+  // TEST_SCENARIO: the second line of an Agent row names its state the way the Agent list's badge does: disabled and over budget outrank the pod state, and a refused start reads "Can't start".
+  it("names the Agent state under its name", () => {
+    const agent = {
+      state: "running",
+      disabled: false,
+      overBudget: false,
+      vm: false,
+    } as AgentView;
+    expect(agentSubline(agent)).toBe("Running");
+    expect(agentSubline({ ...agent, state: "hibernated" })).toBe("Sleeping");
+    expect(agentSubline({ ...agent, overBudget: true })).toBe("Over budget");
+    expect(agentSubline({ ...agent, disabled: true })).toBe("Disabled");
+    expect(agentSubline({ ...agent, state: "error" })).toBe("Error");
+    expect(
+      agentSubline({
+        ...agent,
+        state: "error",
+        podTerminationCode: "MachineBootFailed",
+      }),
+    ).toBe("Can't start");
   });
 });
 
 describe("sidebar tree add rows", () => {
   // TEST_SCENARIO: the "New session" row closing an Agent's list and the "New agent" row closing the Agent list are real buttons a keyboard reaches, named by their text, with the plus icon hidden from assistive technology.
   it.each([
-    ["New session", "sidebar-new-session-row", AddComment],
+    ["New session", "sidebar-new-session-row", Add],
     ["New agent", "sidebar-new-agent-row", AddAlt],
   ] as const)("draws %s as a button", (label, testId, icon) => {
     const html = renderToStaticMarkup(
@@ -211,11 +235,11 @@ describe("sidebar tree add rows", () => {
     expect(html).not.toContain('disabled=""');
   });
 
-  // TEST_SCENARIO: every open Agent ends with its own New session row, so each row's accessible name names its Agent while the visible text stays short.
+  // TEST_SCENARIO: every open Agent with no Sessions ends with its own New session row, so each row's accessible name names its Agent while the visible text stays short.
   it("names the Agent in a New session row", () => {
     const html = renderToStaticMarkup(
       createElement(AddRow, {
-        icon: AddComment,
+        icon: Add,
         label: "New session",
         ariaLabel: "New session with dam",
         testId: "sidebar-new-session-row",
@@ -224,6 +248,23 @@ describe("sidebar tree add rows", () => {
     );
     expect(html).toContain('aria-label="New session with dam"');
     expect(html).toContain(">New session</span>");
+  });
+
+  // TEST_SCENARIO: on an Agent's new-session page, its New session row is the current page, drawn selected; anywhere else it is not.
+  it("marks the New session row as the current page", () => {
+    const row = (current: boolean) =>
+      renderToStaticMarkup(
+        createElement(AddRow, {
+          icon: Add,
+          label: "New session",
+          testId: "sidebar-new-session-row",
+          current,
+          onClick: () => {},
+        }),
+      );
+    expect(row(true)).toContain('aria-current="page"');
+    expect(row(true)).toContain("aria-[current=page]:bg-muted");
+    expect(row(false)).not.toContain("aria-current");
   });
 
   // TEST_SCENARIO: while a new Agent cannot be created yet, its row is disabled rather than silently doing nothing.

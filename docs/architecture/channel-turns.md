@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -79,8 +79,12 @@ A few observations the diagram glosses over:
   A mention or DM turn is marked addressed, and the contract names the ways people reach an agent — the bot's tag, the agent's signed name, and (only where plain messages reach it) the bot name with no tag.
 - **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from that messenger, answered where it arrived, reaching the messenger on request ([platform-topology](platform-topology.md), §ui).
   So both messengers send it with every turn, a resumed one included: a relayed message without it would read as one from elsewhere, and its answer would never be posted.
-- **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn *presenter* drives Slack's assistant-status surface — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
+- **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn *presenter* drives Slack's working status — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
   Thought and tool notifications feed it; assistant text is ignored.
+  The status is the thread's agent session: `processing` while the turn works, `active` once it ends — after a Stop too, or Slack keeps the session working for up to an hour.
+  A session status carries no text, so Slack shows its own working indicator in place of the presenter's words.
+  When Slack refuses the session call, as an app without agent messaging can, the status falls back to the older assistant API, which shows the text but no Stop button.
+  A failed status write stops the status updates for the rest of the turn, but the turn still sends `active` when it ends.
   The status degrades to nothing where the workspace can't show it.
   Ambient turns present no status — nobody summoned the agent.
 - **The status carries Slack's Stop button, and it stops the turn.** Slack shows the button to apps subscribed to `agent_session_stopped`, and sends that event for the thread when someone presses it.

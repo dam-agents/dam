@@ -69,8 +69,6 @@ type AgentReconciler struct {
 	nodeCache             corelisters.NodeLister
 	nodeCacheSynced       cache.InformerSynced
 	vmRunning             sync.Map
-	vmRunningSince        sync.Map
-	vmRecoveredAt         sync.Map
 	vmLive                sync.Map
 	vmAnswers             sync.Map
 	grantHolds            sync.Map
@@ -514,10 +512,16 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		machineLock.Lock()
 		r.noteMachineUse(name, machine)
 		machineLock.Unlock()
+		// UNIT_BOUNDARY_DESCRIPTION: the machine's episode is stamped as it is watched, so a kill of the runner can later be held to the machines that were on it: a machine started after a kill is no victim of it, and one booting at the kill is.
+		if stamped, err := r.stampMachine(ctx, agent, machine, runnerReached); err != nil {
+			slog.Warn("stamping the machine's episode", "agent", name, "error", err)
+		} else {
+			agent = stamped
+		}
 		timer.mark("vmMachine")
-		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer.
-		if pairAtRest && runnerReached && machineStopped(machine) && (lastReady == nil || lastReady.Reason != apiv1.ReasonHibernated) {
-			if err := publishHibernated(ctx, r.dynamic, r.config.Namespace, name); err != nil {
+		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer. It is published on every reconcile of a resting agent rather than only the first, so a kill that took its machine down comes off AgentPodReady once its episode ends: nothing else writes that condition on an agent that stays asleep.
+		if pairAtRest && runnerReached && machineStopped(machine) {
+			if _, err := r.publishKill(ctx, agent, hibernatedStatus); err != nil {
 				return fmt.Errorf("agent %s: publishing hibernation: %w", name, err)
 			}
 		}
@@ -646,18 +650,25 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
-	if overBudget != "" {
-		err = r.publishOverBudget(ctx, agent, overBudget)
+	// UNIT_BOUNDARY_DESCRIPTION: a refusal for room and a start waiting for the node are published under their own reason on Ready, which is what the budget surfaces and the parked retry read, and the kill goes on AgentPodReady in the same update, so the owner still hears what took their machine down.
+	own := func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", agent.Generation)
+		s.ObservedGeneration = agent.Generation
+	}
+	switch {
+	case overBudget != "":
+		own = func(s *apiv1.AgentStatus) { parkStatus(s, agent.Generation, apiv1.ReasonOverBudget, overBudget) }
 		timer.mark("overBudget")
-		return err
-	}
-	if awaiting != "" {
-		err = r.publishParked(ctx, agent, awaitingReason, awaiting)
+	case awaiting != "":
+		own = func(s *apiv1.AgentStatus) { parkStatus(s, agent.Generation, awaitingReason, awaiting) }
 		timer.mark("awaitingAllocation")
-		return err
+	default:
+		timer.mark("reconciled")
 	}
-	err = r.publishReconciled(ctx, agent)
-	timer.mark("reconciled")
+	if !agentSpec.IsVM() {
+		return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, own)
+	}
+	_, err = r.publishKill(ctx, agent, own)
 	return err
 }
 
@@ -886,8 +897,6 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 		return err
 	}
 	r.vmRunning.Delete(name)
-	r.vmRunningSince.Delete(name)
-	r.vmRecoveredAt.Delete(name)
 	r.vmAnswers.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)

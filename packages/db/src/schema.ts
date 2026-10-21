@@ -1174,6 +1174,13 @@ export const spendCalls = pgTable(
   ],
 );
 
+export const spendAgentNames = pgTable("spend_agent_names", {
+  agentId: text("agent_id").primaryKey(),
+  ownerSub: text("owner_sub").notNull(),
+  name: text("name").notNull(),
+  removedAt: timestamp("removed_at", { withTimezone: true }).notNull(),
+});
+
 export const spendMetering = pgTable(
   "spend_metering",
   {

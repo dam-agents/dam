@@ -13,7 +13,16 @@ import {
 } from "api-server-api";
 import { match } from "ts-pattern";
 import { emit, EventType } from "../../../events.js";
-import { foldBreakdown, type BreakdownRow } from "../domain/breakdown.js";
+import {
+  agentIdsOf,
+  agentNames,
+  foldBreakdown,
+  labelAgents,
+  labelCallingAgents,
+  topSubAgents,
+  type AgentLabels,
+  type BreakdownRow,
+} from "../domain/breakdown.js";
 import { utcDay } from "../domain/ledger.js";
 import {
   ceilingCounter,
@@ -44,6 +53,17 @@ export interface ConnectionNames {
   namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
 }
 
+export interface AgentNames {
+  namesOf(ownerSub: string): Promise<ReadonlyMap<string, string>>;
+}
+
+export interface InvocationTasks {
+  tasksOf(
+    ownerSub: string,
+    agentIds: readonly string[],
+  ): Promise<ReadonlyMap<string, { name: string; task: string }>>;
+}
+
 export interface OwnedAgentAges {
   anyCreatedBefore(ownerSub: string, at: Date): Promise<boolean>;
 }
@@ -68,6 +88,13 @@ export function createSpendService(deps: {
   meteringStart(): Promise<Date>;
   isAgentOwnedBy(agentId: string, ownerSub: string): Promise<boolean>;
   connectionNames(): Promise<ReadonlyMap<string, string>>;
+  liveAgentNames(): Promise<ReadonlyMap<string, string>>;
+  lastKnownNames(
+    agentIds: readonly string[],
+  ): Promise<ReadonlyMap<string, string>>;
+  invocationTasks(
+    agentIds: readonly string[],
+  ): Promise<ReadonlyMap<string, { name: string; task: string }>>;
   ownedAgentCreatedBefore(at: Date): Promise<boolean>;
   telemetryStoreOn: boolean;
   ownerSub: string;
@@ -165,6 +192,30 @@ export function createSpendService(deps: {
     );
   };
 
+  const labelsOf = async (
+    agentIds: readonly string[],
+    callingAgentIds: readonly string[],
+  ): Promise<AgentLabels> => {
+    const [liveNames, invocationTasks, lastKnownNames] = await Promise.all([
+      deps.liveAgentNames(),
+      deps.invocationTasks(callingAgentIds),
+      deps.lastKnownNames(agentIds),
+    ]);
+    const tasks = [...invocationTasks];
+    return {
+      names: agentNames({
+        subAgentNames: new Map(
+          tasks.flatMap(([id, { name }]) =>
+            name ? [[id, name] as const] : [],
+          ),
+        ),
+        liveNames,
+        lastKnownNames,
+      }),
+      tasks: new Map(tasks.map(([id, { task }]) => [id, task])),
+    };
+  };
+
   return {
     async daily({ agentId, from, to }) {
       return deps.ledger.daily({
@@ -188,7 +239,7 @@ export function createSpendService(deps: {
         }),
         deps.connectionNames(),
       ]);
-      return foldBreakdown({
+      const breakdown = foldBreakdown({
         from,
         to,
         rows,
@@ -196,6 +247,33 @@ export function createSpendService(deps: {
         sessionCategories: await categoriesOf(rows),
         scope,
       });
+      return labelAgents(
+        breakdown,
+        await labelsOf(
+          agentIdsOf([...breakdown.byAgent, ...breakdown.byCallingAgent]),
+          agentIdsOf(breakdown.byCallingAgent),
+        ),
+      );
+    },
+
+    async subAgents({ agentId, from, to, limit }) {
+      if ((await deps.payers.payerOf(agentId)) !== agentId) {
+        return { count: 0, rows: [] };
+      }
+      const top = topSubAgents(
+        await deps.ledger.breakdownRows({
+          ownerSub: deps.ownerSub,
+          agentIds: scopedAgents(agentId),
+          from,
+          to,
+        }),
+        limit,
+      );
+      const agentIds = agentIdsOf(top.rows);
+      return {
+        count: top.count,
+        rows: labelCallingAgents(top.rows, await labelsOf(agentIds, agentIds)),
+      };
     },
 
     async sessions({ agentId, from, to, sessionIds, limit }) {

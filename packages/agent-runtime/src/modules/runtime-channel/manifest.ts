@@ -240,6 +240,10 @@ const BUILTIN_DRIVERS: Record<
     binding: { impl: "sub-agent-outcome" },
     defaultOn: true,
   },
+  "session-message": {
+    binding: { impl: "session-message" },
+    defaultOn: true,
+  },
 };
 
 const KNOWN_KINDS = new Set<string>([

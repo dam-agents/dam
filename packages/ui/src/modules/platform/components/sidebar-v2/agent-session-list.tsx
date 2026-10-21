@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 
@@ -50,11 +50,21 @@ function useAgentTreeRows(agentId: string) {
 export function AgentSessionList({
   agentId,
   onNavigate,
+  newSessionRow,
+  onEmptyChange,
 }: {
   agentId: string;
   onNavigate?: () => void;
+  newSessionRow?: ReactNode;
+  onEmptyChange?: (empty: boolean) => void;
 }) {
   const { list, filters, rows, rest } = useAgentTreeRows(agentId);
+  const empty =
+    !list.loading &&
+    !list.failed &&
+    !list.hasNextPage &&
+    list.sessions.length === 0;
+  useEffect(() => onEmptyChange?.(empty), [empty, onEmptyChange]);
   const runState = useAgentRunState(agentId);
   const asleep =
     list.loading &&
@@ -70,11 +80,9 @@ export function AgentSessionList({
   const filtered = isFiltered(filters);
   const readableNext = hasNextPage && list.answerable;
   const canFetch = readableNext && !isFetchingNextPage && !fetchNextPageFailed;
-  const emptyText = !filtered
-    ? "No sessions yet."
-    : hasNextPage
-      ? "No loaded sessions match the filter."
-      : "No sessions match the filter.";
+  const emptyText = hasNextPage
+    ? "No loaded sessions match the filter."
+    : "No sessions match the filter.";
   const endRef = useLoadOnReach(
     canFetch && !filtered,
     () => void fetchNextPage(),
@@ -89,7 +97,7 @@ export function AgentSessionList({
     >
       {asleep ? (
         <p
-          className="py-1.5 pl-[42px] text-xs text-muted-foreground"
+          className="py-1.5 pl-[58px] text-xs text-muted-foreground"
           data-testid="sidebar-agent-asleep"
         >
           Its sessions show when it wakes.
@@ -105,14 +113,11 @@ export function AgentSessionList({
           onRetry={() => void list.retry()}
         />
       )}
-      {!list.loading &&
-        !list.failed &&
-        rows.length === 0 &&
-        (!hasNextPage || filtered) && (
-          <p className="py-1.5 pl-[42px] text-xs text-muted-foreground">
-            {emptyText}
-          </p>
-        )}
+      {!list.loading && !list.failed && rows.length === 0 && filtered && (
+        <p className="py-1.5 pl-[58px] text-xs text-muted-foreground">
+          {emptyText}
+        </p>
+      )}
       {rest.map(({ session, state }) => (
         <TreeSessionRow
           key={session.sessionId}
@@ -142,7 +147,7 @@ export function AgentSessionList({
           onClick={() => {
             if (!isFetchingNextPage) void fetchNextPage();
           }}
-          className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[42px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
+          className={`flex h-[30px] w-full items-center rounded-lg pr-2 pl-[58px] text-left text-xs text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-disabled:cursor-default aria-disabled:opacity-60 ${FOCUS_RING}`}
         >
           {isFetchingNextPage ? "Loading…" : "Load more"}
         </button>
@@ -158,6 +163,7 @@ export function AgentSessionList({
           }}
         />
       )}
+      {empty && newSessionRow}
     </div>
   );
 }

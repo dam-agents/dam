@@ -8,6 +8,7 @@ import type {
   spendLimitStateSchema,
   spendSessionsInputSchema,
   spendSetLimitInputSchema,
+  spendSubAgentsInputSchema,
   spendTurnsInputSchema,
   spendStatusInputSchema,
   spendUnitSchema,
@@ -17,6 +18,7 @@ export type SpendUnit = z.infer<typeof spendUnitSchema>;
 export type SpendDailyInput = z.infer<typeof spendDailyInputSchema>;
 export type SpendBreakdownInput = z.infer<typeof spendBreakdownInputSchema>;
 export type SpendSessionsInput = z.infer<typeof spendSessionsInputSchema>;
+export type SpendSubAgentsInput = z.infer<typeof spendSubAgentsInputSchema>;
 export type SpendTurnsInput = z.infer<typeof spendTurnsInputSchema>;
 export type SpendLimitScope = z.infer<typeof spendLimitScopeSchema>;
 export type SpendLimitState = z.infer<typeof spendLimitStateSchema>;
@@ -94,12 +96,18 @@ export interface SpendCounts {
   webSearches: number;
 }
 
+interface SpendAgentRow {
+  agentId: string;
+  agentName: string | null;
+  calls: number;
+}
+
 export interface SpendBreakdown {
   from: string;
   to: string;
   totals: (SpendAmount & SpendCounts)[];
   byDay: (SpendAmount & { day: string })[];
-  byAgent: (SpendAmount & { agentId: string; calls: number })[];
+  byAgent: (SpendAmount & SpendAgentRow)[];
   byModel: (SpendAmount & SpendCounts & { model: string })[];
   byConnection: (SpendAmount &
     SpendCounts & {
@@ -111,7 +119,17 @@ export interface SpendBreakdown {
   bySessionType: (SpendAmount & {
     category: SessionCategory | "subagents" | "none";
   })[];
-  byCallingAgent: (SpendAmount & { agentId: string; calls: number })[];
+  byCallingAgent: (SpendAmount &
+    SpendAgentRow & { agentTask: string | null })[];
+  otherSubAgents: {
+    count: number;
+    amounts: (SpendAmount & { calls: number })[];
+  };
+}
+
+export interface SpendSubAgents {
+  count: number;
+  rows: SpendBreakdown["byCallingAgent"];
 }
 
 export interface SpendSessionRow {
@@ -189,6 +207,7 @@ export interface SpendService {
   daily(input: SpendDailyInput): Promise<SpendDailyRow[]>;
   breakdown(input: SpendBreakdownInput): Promise<SpendBreakdown>;
   sessions(input: SpendSessionsInput): Promise<SpendSessions>;
+  subAgents(input: SpendSubAgentsInput): Promise<SpendSubAgents>;
   turns(input: SpendTurnsInput): Promise<SpendTurns>;
   metering(): Promise<SpendMetering>;
   status(input: SpendStatusInput): Promise<SpendStatus>;

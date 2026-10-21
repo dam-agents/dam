@@ -1,5 +1,9 @@
 import { Bot, Chat, StopFilledAlt } from "@carbon/icons-react";
-import type { DelegationNode, TurnSummary } from "api-server-api";
+import {
+  type DelegationNode,
+  delegationTitle,
+  type TurnSummary,
+} from "api-server-api";
 import { type ReactNode, useMemo, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -19,7 +23,6 @@ import {
   type DelegationModel,
   delegationModel,
   delegationState,
-  firstLine,
 } from "../lib/delegation-state.js";
 import { DelegationStatePill } from "./delegation-state-pill.js";
 
@@ -71,7 +74,7 @@ export function DelegationCard({
             className="truncate text-sm font-medium text-foreground"
             title={node.prompt}
           >
-            {firstLine(node.prompt)}
+            {delegationTitle(node)}
           </span>
           <span
             className={cn(

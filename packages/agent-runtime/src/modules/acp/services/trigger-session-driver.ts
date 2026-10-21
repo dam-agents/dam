@@ -2,6 +2,7 @@ import { PIN_MODEL_METHOD } from "agent-runtime-api";
 import { createInProcessCaller } from "../infrastructure/in-process-request.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
 import {
+  MESSAGE_SURFACE,
   SCHEDULE_SURFACE,
   type AcpRuntime,
 } from "./acp-runtime/acp-runtime.js";
@@ -13,6 +14,7 @@ export interface TriggerSessionDriver {
     resumeSessionId?: string;
     platformMeta?: PlatformSessionMeta;
     unattended?: boolean;
+    steer?: boolean;
     model?: string;
     keepSessionModel?: boolean;
   }): Promise<{ sessionId: string; openedOn: string | null }>;
@@ -68,6 +70,7 @@ export function createTriggerSessionDriver(deps: {
       resumeSessionId,
       platformMeta,
       unattended,
+      steer,
       model,
       keepSessionModel,
     }) {
@@ -134,12 +137,15 @@ export function createTriggerSessionDriver(deps: {
           openedOn = openedModel(res);
         }
 
+        const surface = steer
+          ? MESSAGE_SURFACE
+          : unattended
+            ? SCHEDULE_SURFACE
+            : null;
         caller.notify("session/prompt", {
           sessionId,
           prompt: [{ type: "text", text: task }],
-          ...(unattended && {
-            _meta: { platform: { surface: SCHEDULE_SURFACE } },
-          }),
+          ...(surface && { _meta: { platform: { surface } } }),
         });
 
         return { sessionId, openedOn };

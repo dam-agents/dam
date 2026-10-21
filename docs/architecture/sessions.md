@@ -100,6 +100,24 @@ A turn that ends first starts the waiting prompts as the next turn, again as one
 Until then it is an ordinary queued prompt the user can still change.
 A refused steer queues again at the head, so the agent receives each prompt once and in order.
 Scheduled fires, invocation outcomes and CLI runs always queue.
+A message from another of the agent's sessions is steered like a typed one.
+
+### Messages between sessions
+
+An agent can send a message from one of its sessions into another, for example from a Slack thread into a session that is working on the change the thread is about.
+The `list_sessions` tool lists the agent's chat sessions with whether a turn is running in each; `send_session_message` sends text into one of them.
+Both reach only the calling agent's own sessions.
+
+The message travels as a **session-message** [event](runtime-delivery.md#event), not over a connection to the pod: the platform resolves the sending session from the session reference the tool call carries, writes the event, and the runtime resumes the target session with the text.
+So the sender is the one the platform resolved, never one the caller wrote; the prompt opens with a line naming the sending session's title, type and id.
+The prompt is unattended, as a scheduled fire is, and steerable, as a typed message is: in a running turn it joins at the next steer point, and an idle session starts a turn with it.
+The answer stays in the receiving session.
+The tool only queues the message.
+The runtime reports the outcome over the event report, and a message not delivered within an hour expires.
+A failed or expired message comes back to its sender as a **notice** from the platform, with the reason and a short quote; a delivered one sends nothing back.
+A notice that fails is only logged, so notices never answer each other.
+A sender the platform could not identify gets no notice, and the tool says so.
+An agent whose runtime does not advertise the event kind is refused at the tool, rather than its message waiting until it expires.
 
 This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived".
 A client fails a prompt on evidence instead:

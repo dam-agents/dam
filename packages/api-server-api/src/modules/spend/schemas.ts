@@ -23,34 +23,51 @@ const utcDaySchema = z
     { message: "not a valid UTC day" },
   );
 
+function checkDayRange(
+  input: { from: string; to: string },
+  ctx: z.RefinementCtx,
+): void {
+  const days =
+    (Date.parse(`${input.to}T00:00:00Z`) -
+      Date.parse(`${input.from}T00:00:00Z`)) /
+      86_400_000 +
+    1;
+  if (days < 1) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["from"],
+      message: "from must be on or before to",
+    });
+  } else if (days > SPEND_DAILY_MAX_DAYS) {
+    ctx.addIssue({
+      code: "custom",
+      path: ["from"],
+      message: `at most ${SPEND_DAILY_MAX_DAYS} days`,
+    });
+  }
+}
+
 export const spendDailyInputSchema = z
   .object({
     agentId: z.string().min(1).optional(),
     from: utcDaySchema,
     to: utcDaySchema,
   })
-  .superRefine((input, ctx) => {
-    const days =
-      (Date.parse(`${input.to}T00:00:00Z`) -
-        Date.parse(`${input.from}T00:00:00Z`)) /
-        86_400_000 +
-      1;
-    if (days < 1) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["from"],
-        message: "from must be on or before to",
-      });
-    } else if (days > SPEND_DAILY_MAX_DAYS) {
-      ctx.addIssue({
-        code: "custom",
-        path: ["from"],
-        message: `at most ${SPEND_DAILY_MAX_DAYS} days`,
-      });
-    }
-  });
+  .superRefine(checkDayRange);
 
 export const spendBreakdownInputSchema = spendDailyInputSchema;
+
+export const SPEND_SUB_AGENTS_PAGE = 50;
+export const SPEND_SUB_AGENTS_MAX = 10_000;
+
+export const spendSubAgentsInputSchema = z
+  .object({
+    agentId: z.string().min(1),
+    from: utcDaySchema,
+    to: utcDaySchema,
+    limit: z.number().int().min(1).max(SPEND_SUB_AGENTS_MAX),
+  })
+  .superRefine(checkDayRange);
 
 export const SPEND_SESSIONS_MAX = 200;
 export const SPEND_SESSIONS_DEFAULT_LIMIT = 50;

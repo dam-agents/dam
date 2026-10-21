@@ -8,6 +8,7 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: content that slides open and closed; content that is open when it first renders shows at once, with no slide.
 export function Collapse({
   open,
   className,
@@ -18,12 +19,14 @@ export function Collapse({
   children: ReactNode;
 }) {
   const [mounted, setMounted] = useState(open);
+  const [appear, setAppear] = useState(!open);
 
   useEffect(() => {
     if (open) {
       setMounted(true);
       return;
     }
+    setAppear(true);
     if (prefersReducedMotion()) {
       setMounted(false);
       return;
@@ -42,7 +45,10 @@ export function Collapse({
       className={cn(
         "grid transition-[grid-template-rows,opacity] duration-200 ease-out motion-reduce:transition-none",
         open
-          ? "grid-rows-[1fr] opacity-100 starting:grid-rows-[0fr] starting:opacity-0"
+          ? [
+              "grid-rows-[1fr] opacity-100",
+              appear && "starting:grid-rows-[0fr] starting:opacity-0",
+            ]
           : "grid-rows-[0fr] opacity-0",
         className,
       )}

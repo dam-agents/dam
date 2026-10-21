@@ -17,6 +17,7 @@ import { createCatalogEndpoints } from "./services/catalog-endpoints.js";
 import {
   createModelRouter,
   type ModelCallRecord,
+  type ModelRefusal,
   type ModelRouter,
   type SessionModelChoice,
 } from "./services/model-router.js";
@@ -31,6 +32,9 @@ export interface ComposeModelRouterOpts {
   terminalSessionOf?: (harnessSessionId: string) => string | undefined;
   runningSessionsOf?: (harness: string) => string[];
   onCall?: (record: ModelCallRecord) => void;
+  onCallStarted?: (session: string | null) => void;
+  onCallEnded?: (session: string | null, answered: boolean) => void;
+  onRefused?: (refusal: ModelRefusal) => void;
   port?: number;
   log: (msg: string) => void;
 }
@@ -93,6 +97,9 @@ export function composeModelRouter(opts: ComposeModelRouterOpts): ModelRouter {
       ),
     extensions: [createCatalogEndpoints(opts.catalog)],
     ...(opts.onCall && { onCall: opts.onCall }),
+    ...(opts.onCallStarted && { onCallStarted: opts.onCallStarted }),
+    ...(opts.onCallEnded && { onCallEnded: opts.onCallEnded }),
+    ...(opts.onRefused && { onRefused: opts.onRefused }),
     ...(opts.port !== undefined && { port: opts.port }),
     log: opts.log,
   });
