@@ -12,6 +12,7 @@ const env = vi.hoisted(() => ({
   ],
   startSession: vi.fn(),
   navigated: vi.fn(),
+  filtered: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -49,9 +50,49 @@ vi.mock("../../modules/agents/api/mutations.js", () => ({
 vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
   useConfirmDeleteAgent: () => vi.fn(),
 }));
-vi.mock("../../modules/home/components/activity-filter-menu.js", () => ({
-  ActivityFilterMenu: () => createElement("i", { "data-filter": true }),
-}));
+vi.mock("../../modules/home/components/activity-filter-menu.js", async () => {
+  const { createElement: h, useState } = await import("react");
+  const { createPortal } = await import("react-dom");
+  // UNIT_BOUNDARY_DESCRIPTION: the stand-in filter menu renders in a portal of its own, the shape every menu in the popover has.
+  return {
+    ActivityFilterMenu: () => {
+      const [open, setOpen] = useState(false);
+      return h(
+        "div",
+        null,
+        h(
+          "button",
+          {
+            type: "button",
+            "data-testid": "rail-popover-filter",
+            onClick: () => setOpen((prev) => !prev),
+          },
+          "filter",
+        ),
+        open &&
+          createPortal(
+            h(
+              "div",
+              { role: "menu", "data-state": "open" },
+              h(
+                "div",
+                {
+                  role: "menuitemcheckbox",
+                  "data-testid": "rail-popover-filter-option",
+                  onClick: () => {
+                    env.filtered("unread");
+                    setOpen(false);
+                  },
+                },
+                "Unread only",
+              ),
+            ),
+            document.body,
+          ),
+      );
+    },
+  };
+});
 vi.mock("@/components/ui/tooltip", async () => {
   const { createElement: h } = await import("react");
   return {
@@ -125,7 +166,9 @@ it("opens an Agent's popover on hover and carries its row's actions", () => {
   expect(
     document.body.querySelector('[data-testid="sidebar-agent-menu"]'),
   ).not.toBeNull();
-  expect(document.body.querySelector("[data-filter]")).not.toBeNull();
+  expect(
+    document.body.querySelector('[data-testid="rail-popover-filter"]'),
+  ).not.toBeNull();
 });
 
 // TEST_SCENARIO: the pointer leaving the tile for the popover keeps it open, and it closes only once the pointer leaves the popover for good.
@@ -173,6 +216,43 @@ it("keeps the next Agent's popover open when the pointer moves on", () => {
   act(() => void vi.advanceTimersByTime(400));
   expect(popover()).not.toBeNull();
   expect(popover()!.textContent).toContain("other");
+});
+
+// TEST_SCENARIO: the filter menu opens in a portal of its own, outside the popover's own box; the popover waits for it to shut and then for its own grace, and picking an option applies it and leaves the popover standing.
+it("keeps the popover open while an option is picked from its filter menu", () => {
+  // UNIT_BOUNDARY_DESCRIPTION: the filter button lives in the popover, so finding it says the popover itself is still mounted.
+  const popoverOpen = () =>
+    document.body.querySelector('[data-testid="rail-popover-filter"]');
+  pointer("pointerover", document.body);
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popoverOpen()).not.toBeNull();
+  act(() =>
+    document.body
+      .querySelector<HTMLButtonElement>('[data-testid="rail-popover-filter"]')!
+      .click(),
+  );
+  const option = document.body.querySelector<HTMLElement>(
+    '[data-testid="rail-popover-filter-option"]',
+  )!;
+  expect(option).not.toBeNull();
+  // UNIT_BOUNDARY_DESCRIPTION: the pointer steps off the tile into the popover, then out of the popover's box towards the menu.
+  pointer("pointerout", popover()!);
+  const content = popover()!.firstElementChild!;
+  act(() => {
+    content.dispatchEvent(
+      new PointerEvent("pointerout", {
+        bubbles: true,
+        pointerType: "mouse",
+        relatedTarget: document.body,
+      }),
+    );
+  });
+  act(() => void vi.advanceTimersByTime(400));
+  expect(popoverOpen()).not.toBeNull();
+  act(() => option.click());
+  expect(env.filtered).toHaveBeenCalledWith("unread");
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popoverOpen()).not.toBeNull();
 });
 
 // TEST_SCENARIO: once the rail has a popover up, the pointer running along the rail shows the tile under it at once, without sitting out the open delay again.

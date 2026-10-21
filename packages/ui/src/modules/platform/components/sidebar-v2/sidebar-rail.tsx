@@ -166,6 +166,7 @@ export function SidebarRail({
 
 const HOVER_OPEN_MS = 150;
 const HOVER_CLOSE_MS = 250;
+const MENU_POLL_MS = 50;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: What a tile of the rail needs to open what it holds in a popover beside it: the pointer resting on the tile opens it after a moment — or at once, when the rail already has a popover open and the pointer is merely moving along it — leaving the tile and the popover closes it after a grace long enough to move between them, keyboard focus opens it, and a menu opened from the popover keeps it alive.
@@ -179,14 +180,31 @@ function useRailPopover(
   const content = useRef<HTMLDivElement>(null);
   const hovering = useRef(false);
   const cancel = () => clearTimeout(timer.current);
+  // UNIT_BOUNDARY_DESCRIPTION: a menu opened from the popover outlives the pointer leaving it, and most of them render in a portal of their own on the body, outside the content's box, so the search has to reach the page. While one is open the close waits, checking every MENU_POLL_MS; once the menu is shut the pointer gets the full grace again to come back. The cost is a timer that ticks while a menu is open.
+  const menuOpen = () =>
+    content.current?.querySelector('[data-state="open"]') !== null ||
+    document.querySelector('[role="menu"][data-state="open"]') !== null;
+  const shut = () => {
+    closedAt.current = Date.now();
+    onOpenChange(false);
+  };
   const closeSoon = () => {
     cancel();
-    timer.current = setTimeout(() => {
-      // UNIT_BOUNDARY_DESCRIPTION: a menu opened from the popover outlives the pointer leaving it.
-      if (content.current?.querySelector('[data-state="open"]')) return;
-      closedAt.current = Date.now();
-      onOpenChange(false);
-    }, HOVER_CLOSE_MS);
+    const afterGrace = () => {
+      if (!menuOpen()) {
+        shut();
+        return;
+      }
+      const waitForMenu = () => {
+        if (menuOpen()) {
+          timer.current = setTimeout(waitForMenu, MENU_POLL_MS);
+          return;
+        }
+        timer.current = setTimeout(shut, HOVER_CLOSE_MS);
+      };
+      timer.current = setTimeout(waitForMenu, MENU_POLL_MS);
+    };
+    timer.current = setTimeout(afterGrace, HOVER_CLOSE_MS);
   };
   const openSoon = () => {
     cancel();
@@ -233,6 +251,10 @@ function useRailPopover(
       ref: content,
       onPointerEnter: cancel,
       onPointerLeave: closeSoon,
+      // UNIT_BOUNDARY_DESCRIPTION: a click or a focus moving into that portal is not a click outside the popover.
+      onInteractOutside: (e: Event) => {
+        if (menuOpen()) e.preventDefault();
+      },
     },
   };
 }
