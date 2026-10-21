@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -94,9 +94,9 @@ An agent that crashed is back in seconds instead of at the runner's ten-minute u
 A stop signal ends the supervision instead.
 platform-init's refusals to boot, the steps of each boot, each hand-off and each exit reach the console as kernel log lines, because its own log is on the disk the host never reads ([observability](observability.md#vm-runner)).
 A machine's egress allows one destination, the paired gateway, so the controller marks the address ranges a guest might itself hold — the private, carrier-grade-NAT and link-local ones — as local to it, and a client that honors that marking reaches them directly rather than through a gateway that could never route them.
-What a machine keeps across a stop is its storage disk on the runner's one PVC: `HOME`, and the upper layer of its root for as long as its images share a root generation ([persistence](persistence.md#per-agent-pvcs) owns the rule).
+What a machine keeps across a stop is its storage disk on the runner's one PVC: `HOME`, and the upper layer of its root for as long as its images share a root generation ([vm storage](vm-storage.md#the-disk) owns the rule).
 It is the machine's one disk.
-The guest's init is platform-init, not smolvm's guest agent: smolvm boots it from the agent root as PID 1, and it sets up the network, mounts the disk and the shares, boots the image on one overlay over the image tree and a per-boot layer that maps `agent` to uid 0 ([persistence](persistence.md#per-agent-pvcs)), and answers the runner's host side (ping, quiesced stop, memory onlining, an operator's `vm-runner exec`), so no container runtime and no second root stand between the VM and the image.
+The guest's init is platform-init, not smolvm's guest agent: smolvm boots it from the agent root as PID 1, and it sets up the network, mounts the disk and the shares, boots the image on one overlay over the image tree and a per-boot layer that maps `agent` to uid 0 ([vm storage](vm-storage.md#the-disk)), and answers the runner's host side (ping, quiesced stop, memory onlining, an operator's `vm-runner exec`), so no container runtime and no second root stand between the VM and the image.
 An image that ships `/sbin/openrc` opts in to its services: platform-init runs openrc's `sysinit`, `boot` and `default` runlevels before the entrypoint and openrc's `shutdown` on a stop, and starts the entrypoint in a cgroup of its own, so a restart of the entrypoint ends what it left and keeps the services.
 `sysinit`, `boot` and `default` run in the entrypoint's environment, of which openrc passes a service only what the image's openrc config names, and `shutdown` runs with `PATH` alone.
 The default image's runlevels are empty, and its docker and k3s services are in none until the agent adds them ([agent images](agent-images.md#what-the-agent-gets)).
@@ -139,7 +139,7 @@ A stopped machine takes the change when it next starts.
 A start also checks that what the record names to boot is still on the host, and resolves the image again when it is not: the record holds a path, so a tree evicted or relaid under a stopped machine would otherwise fail every start it makes.
 Each runner has its own limits, so a machine is admitted against its owner's memory alone, counted by what the machines use, and against the memory the node has actually granted the runner pod — what the scheduler reserved for it, which is below its limit while an in-place resize waits ([vm-memory](vm-memory.md)).
 The controller resizes the pod's memory request in place to match, and its memory limit to the owner's pool; each boots with part of its memory and grows once up ([vm-memory](vm-memory.md)).
-It is admitted against its owner's claim too: on a claim past 90% used no machine is created or grown, and past 95% none is started or restarted ([persistence](persistence.md#per-agent-pvcs)).
+It is admitted against its owner's claim too: on a claim past 90% used no machine is created or grown, and past 95% none is started or restarted ([vm storage](vm-storage.md#the-owners-claim)).
 Without in-place resize, or on a node that defers or refuses it, the request stays put and the controller reports it ([vm-memory](vm-memory.md)).
 The pod also requests ephemeral storage it never fills, unless the install sets its own: a node short of disk evicts first the pods over their request, and an evicted runner kills every machine of its owner.
 For the same reason it runs under a PriorityClass above the agent pods', so a node under memory pressure takes an agent pod first: an evicted runner costs its owner every agent they have at once, and an evicted agent pod one agent.

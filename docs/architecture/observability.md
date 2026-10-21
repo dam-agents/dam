@@ -1,6 +1,6 @@
 # Observability (agent telemetry)
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -240,7 +240,7 @@ What a runner measures is what judging the vm backend against the container one 
 - **Kills** by reason: a machine whose VMM the kernel killed for memory, and one its seccomp filter killed, counted apart from the restarts the runner decides on its own.
 - **CPU** the runner's cgroup used, its limit, and the scheduler periods the limit throttled it in: every machine's vCPUs share that limit, so throttled periods over periods is how far the owner's machines are slowed down.
 - **The image cache** — creates that found a bootable tree and creates that did not, fetch durations by outcome, evictions and the bytes they freed, and the bytes held against the budget.
-- **Storage** — the bytes in use on the owner's claim and the bytes the runner may use there, which the claim's guard judges ([persistence](persistence.md#per-agent-pvcs)).
+- **Storage** — the bytes in use on the owner's claim and the bytes the runner may use there, which the claim's guard judges ([vm storage](vm-storage.md#the-owners-claim)).
 
 The [usage counters](#usage-counters)' identity-free rule holds here with a sharper edge: a runner exists per owner, so a machine id, an image reference or the runner's owner label would each make a series a person.
 Every dimension comes from a closed set — operation, outcome, failure reason, cache result — and the scrape copies no pod label onto a series.
@@ -254,7 +254,7 @@ The two arrive apart — the runtime files the agent's output as the console and
 platform-init writes its own verdicts there too, as kernel log lines at a level the guest's quiet console still prints — a refusal to boot, each step of a boot that a host must be able to follow, each hand-off to the image's entrypoint and each exit of it — so a machine that will not boot, or whose agent keeps exiting, says why, and a boot the host cut short says how far it got.
 The steps are the disk mounted, the layout mark written, the platform's root laid over the image and the agent's home mounted from the disk, and the line of a boot that found the disk with no room and freed what a boot discards.
 A guest that keeps running marks what room its storage guard leaves it there as well, full, nearly full and room again, and the runner reads those marks from the same console to say in the machine's usage read that the agent's writes are failing, which no boot-time verdict can carry ([vm-runner](vm-runner.md)).
-An exit with less than 64 MiB left in the agent's home says so, and the runner then reports the boot as a full home, which the Agent carries as `HomeVolumeFull`, the reason a container agent's full home gets; a boot that fails while the owner's claim is critically full is reported as that claim being full instead ([persistence](persistence.md#per-agent-pvcs)).
+An exit with less than 64 MiB left in the agent's home says so, and the runner then reports the boot as a full home, which the Agent carries as `HomeVolumeFull`, the reason a container agent's full home gets; a boot that fails while the owner's claim is critically full is reported as that claim being full instead ([vm storage](vm-storage.md#the-owners-claim)).
 When a boot fails, and when a guest has not answered for a minute after it was asked to start, the status message carries the end of that console: a few kilobytes of each source, stripped to printable text, and redacted with every env value the machine has been given — longest first, and each line of a value that spans lines — because a guest that prints its environment puts an operator's Secret there; a value of three characters or fewer is left as it is.
 Every start empties both of the console's sources first — the runner does so itself rather than trusting the runtime's own removal of its log — because the file outlives the runner and a restarted runner knows only the current spec: what a tail quotes is then a boot this runner started, with values it holds.
 A console the runner cannot redact, holding no spec for the machine, is not shown.
