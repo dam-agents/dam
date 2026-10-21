@@ -7,25 +7,18 @@ seccomp (all from restricted-v2). The two real relaxations are:
 
   - runAsUser: RunAsAny — the iptablesInit init container needs root
     because containerd doesn't promote capabilities.add into the
-    ambient set, so non-root processes can't exercise NET_ADMIN. The VM
-    runner needs root for its DAC_OVERRIDE, and every VMM it hosts runs as
-    that same uid — smolvm can give each machine one of its own, but a
-    VMM that takes one cannot read the shared image, so the pod is the
-    boundary around all of them rather than one boundary each.
+    ambient set, so non-root processes can't exercise NET_ADMIN.
   - allowedCapabilities: NET_ADMIN + NET_RAW — opt-in via container
-    caps.add. NET_ADMIN and NET_RAW are the init container's alone.
-    DAC_OVERRIDE is the VM runner's alone: it lets its VMMs read an
-    image's files that the image keeps from root, such as a 0000
-    /etc/shadow, to serve them to the guest. A runner mounts the node
-    image cache's hostPath, which this SCC refuses, so it runs under
-    `virtualization.runner.scc`. The runner's own pod spec already asks
-    for what this SCC requires — drop ALL, no escalation, runtime/default
-    seccomp — so admission changes nothing about it.
+    caps.add, and the iptablesInit init container's alone.
+
+No VM workload runs under this SCC: a runner mounts the node image cache's
+hostPath, which it refuses, so `virtualization.runner.scc` is what admits a
+runner — and its DAC_OVERRIDE, which this SCC does not carry.
 
 Priority intentionally `null` (= 0): admission prefers more restrictive
 SCCs the SA already has access to (restricted-v2 default), and only
 falls through to this one for pods that actually request a capability it
-adds — NET_ADMIN for an agent's iptables init, DAC_OVERRIDE for the runner alone.
+adds — NET_ADMIN for an agent's iptables init.
 */}}
 apiVersion: security.openshift.io/v1
 kind: SecurityContextConstraints
@@ -43,7 +36,6 @@ allowPrivilegedContainer: false
 allowedCapabilities:
   - NET_ADMIN
   - NET_RAW
-  - DAC_OVERRIDE
 defaultAddCapabilities: null
 fsGroup:
   type: RunAsAny
