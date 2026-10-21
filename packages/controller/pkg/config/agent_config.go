@@ -144,7 +144,7 @@ type VMRunnerRollout struct {
 	MaxConcurrent int `json:"maxConcurrent,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: the roll's width as a share of the runners the install has, 1 to 100, rounded up to at least one runner. Zero leaves the width to MaxConcurrent.
 	MaxConcurrentPercent int `json:"maxConcurrentPercent,omitempty"`
-	// UNIT_BOUNDARY_DESCRIPTION: how long a roll may hold its place in the width while its new pod never becomes ready. A pod that does not start is a broken release, so the roll keeps its place and halts the fleet for a while — but not for good: past this the place is released, the runner keeps its stalled mark, and the next runner may roll, so one owner's refusal at admission cannot freeze every owner's upgrade.
+	// UNIT_BOUNDARY_DESCRIPTION: how long a roll may hold its place in the width while its new pod never becomes ready. A pod that does not start is a broken release, so the roll keeps its place and halts the fleet for a while — but not for good while another runner is ready on the same pod: past this the place is released, the runner keeps its stalled mark, and the next runner may roll, so one owner's stall cannot freeze every owner's upgrade. With no ready runner on the new pod the hold has no bound.
 	StalledTimeout Duration `json:"stalledTimeout,omitempty"`
 	SettleTimeout  Duration `json:"settleTimeout,omitempty"`
 	IdleWait       Duration `json:"idleWait,omitempty"`

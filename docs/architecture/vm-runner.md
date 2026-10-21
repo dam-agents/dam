@@ -75,7 +75,7 @@ Each is held in golden JSON documents beside the runner ([`packages/vm-runner/co
 The command line has no defaults anyone relies on: the image sets the paths that are its own layout, and the controller sets everything it chose — the port range it also opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials, and the budgets.
 
 **A change to the runner pod rolls across owners, not all at once**, and a new runner image need not roll the pod at all — unless that release declares a reboot key its pod does not run, which rolls it to reboot the machines (a pod whose own release declares no key takes it in place): [upgrades](vm-runner-upgrades.md) owns both.
-A roll whose new pod never becomes ready halts the fleet, and `rollout.stalledTimeout` bounds that halt so one owner's admission refusal cannot freeze every owner's upgrade ([upgrades](vm-runner-upgrades.md#rolls) owns the bound and the refusal it may skip).
+A roll whose new pod never becomes ready halts the fleet, and `rollout.stalledTimeout` bounds that halt, while another runner is ready on the new pod, so one owner's stall cannot freeze every owner's upgrade ([upgrades](vm-runner-upgrades.md#rolls) owns the bound and the refusal it may skip).
 
 A machine may reach only its paired gateway, so the guest cannot fetch its own image: it is fetched for it, with the pull secrets a pod would list, into a node cache that unpacks each image once, evicting inside a stated budget and never freeing a tree a machine is still running from.
 Every machine of an image boots that one tree rather than extracting its own copy: an archive is unpacked again into each machine's disk, seconds of boot and a gigabyte of disk apiece for identical bytes.

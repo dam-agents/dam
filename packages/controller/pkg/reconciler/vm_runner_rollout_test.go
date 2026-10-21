@@ -1699,11 +1699,12 @@ func midRoll(t *testing.T, r *AgentReconciler) []string {
 	return rolling
 }
 
-// TEST_SCENARIO: a release whose new pod never becomes ready halts the roll at the first runner, so the release goes no further — but only for `rollout.stalledTimeout`. Past it the stalled runner gives up its place, keeps its stalled mark and gains a Warning Event, and the next owner's runner rolls, so a broken release breaks owners one at a time instead of freezing every owner's upgrade.
+// TEST_SCENARIO: a release whose new pod never becomes ready on one owner, while another owner's runner is already ready on that pod, halts the roll at that runner — but only for `rollout.stalledTimeout`. Past it the stalled runner gives up its place, keeps its stalled mark and gains a Warning Event, and the next owner's runner rolls, so one owner's stall does not freeze every owner's upgrade.
 func TestAStalledRollGivesUpItsPlaceAtTheStalledTimeout(t *testing.T) {
 	ctx := context.Background()
-	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
 	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
@@ -1738,27 +1739,26 @@ func TestARunnerThatGaveUpItsPlaceClearsItsMarkWhenItsPodIsReady(t *testing.T) {
 	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
 }
 
-// TEST_SCENARIO: the dev incident itself. One owner's runner is refused at admission for a capability its SCC does not allow — no pod, an owned FailedCreate, and no peer on that pod shape, since every other owner is still on the old one. The roll halts at the first runner, as a broken release must, and the runner is marked and gets a Warning Event. Past `rollout.stalledTimeout` the place is released, the next owner rolls, the stalled mark stays with its own Warning Event, and later passes add no second Event of either kind.
-func TestOneOwnersRefusalAtAdmissionIsBounded(t *testing.T) {
+// TEST_SCENARIO: the dev incident itself. A release adds a capability the security policy does not allow, so admission refuses every owner's new pod: the first rolled runner has no pod, an owned FailedCreate, and no peer that runs its pod shape. No runner on the new pod has ever become ready, so the refusal is the release's: the roll halts at the first runner, which is marked once with a Warning Event, and it keeps its place far past `rollout.stalledTimeout`, so no second owner loses its runner to the same release.
+func TestARefusalOfEveryNewPodNeverRollsASecondOwner(t *testing.T) {
 	ctx := context.Background()
-	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b", "owner-c")
 	changeRunnerPod(r)
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	runnerReplicaSet(t, r, "owner-a", "FailedCreate")
 	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
-
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
-	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the roll halts at the first runner while no peer runs its pod shape")
-	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+	require.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
 
-	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
-	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
-	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "past the stalled timeout the place is released")
-	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled], "the stalled mark stays")
-
-	for range 2 {
-		require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-10*defaultRunnerStalledTimeout))
+	for range 3 {
+		for _, owner := range []string{"owner-a", "owner-b", "owner-c"} {
+			require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+		}
 	}
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "no runner on the new pod is ready, so the release goes no further")
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-c"))
+	assert.Contains(t, midRoll(t, r), r.runnerName("owner-a"), "the stalled runner keeps its place")
 	var stalled, givenUp int
 	for _, event := range eventsOn(t, r, r.runnerName("owner-a")) {
 		switch event.Reason {
@@ -1769,14 +1769,15 @@ func TestOneOwnersRefusalAtAdmissionIsBounded(t *testing.T) {
 		}
 	}
 	assert.Equal(t, 1, stalled, "a stall is reported once")
-	assert.Equal(t, 1, givenUp, "giving up the place is reported once")
+	assert.Zero(t, givenUp, "a place that is kept is not reported as given up")
 }
 
-// TEST_SCENARIO: the write that releases a stalled place is refused, so the runner still holds its annotations. A place that is still taken must stay taken: the next owner does not roll, no give-up Event is written for a transition that did not land, and a later pass that lands the write releases the place with one Event.
+// TEST_SCENARIO: the write that releases a stalled place is refused, beside a ready peer on the same pod, so the runner still holds its annotations. A place that is still taken must stay taken: the next owner does not roll, no give-up Event is written for a transition that did not land, and a later pass that lands the write releases the place with one Event.
 func TestAFailedGiveUpWriteKeepsThePlace(t *testing.T) {
 	ctx := context.Background()
-	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
 	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
@@ -1848,11 +1849,12 @@ func TestAStallThatCannotBeRecordedSaysNothing(t *testing.T) {
 	assert.Equal(t, 1, stalled, "the transition is announced once, on the pass that records it")
 }
 
-// TEST_SCENARIO: the last changed runner of an upgrade has no ready machine, so its roll writes no awaiting list and no other owner asks for a roll place. Its own turn must still bound the stall: past the settle timeout it is marked and gets its Event, and past the stalled timeout it gives up the place, so a place cannot outlive its bound just because no one else asked.
+// TEST_SCENARIO: the last changed runner of an upgrade has no ready machine, so its roll writes no awaiting list and no other owner asks for a roll place; a peer is already ready on its pod. Its own turn must still bound the stall: past the settle timeout it is marked and gets its Event, and past the stalled timeout it gives up the place, so a place cannot outlive its bound just because no one else asked.
 func TestTheLastRunnerWithNoMachinesIsStillBounded(t *testing.T) {
 	ctx := context.Background()
-	r, _ := setupRolloutReconciler(t, "owner-a")
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer")
 	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	require.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerAwaiting], "a runner with no ready machine waits on no machine")
 	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
