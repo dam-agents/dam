@@ -27,6 +27,10 @@ import {
   aliasForProviderType,
   orderByAlias,
   providerAliasConflict,
+  harnessFits,
+  type ConnectionProviderView,
+  type HarnessCatalog,
+  type ProviderPresetType,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -172,10 +176,53 @@ export function createConnectionsService(deps: {
   platformProviderEnabled: () => Promise<boolean>;
   platformProviderKey: string | null;
   platformProviderCa?: string | null;
+  harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
 }): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
-  function toView(conn: Connection): ConnectionView {
+
+  function providerView(templateId: string): ConnectionProviderView | null {
+    const type = providerTypeForTemplateId(templateId);
+    if (type === null) return null;
+    return {
+      alias: aliasForProviderType(type),
+      harnesses: deps.harnesses.harnesses
+        .filter((h) => harnessFits(deps.harnesses, h.name, type, templateId))
+        .map((h) => h.name),
+    };
+  }
+
+  async function firstProviderPerAlias(
+    fits: (type: ProviderPresetType, templateId: string) => boolean,
+  ): Promise<{ id: string; type: ProviderPresetType }[]> {
+    const usable = (
+      await deps.repo.listByOwnerOldestFirst(deps.ownerId)
+    ).flatMap((c) => {
+      const type = providerTypeForTemplateId(c.templateId);
+      return type !== null &&
+        fits(type, c.templateId) &&
+        PROVIDER_IS_ACTIVE[deriveStatus(c)]
+        ? [{ id: c.id, type }]
+        : [];
+    });
+    const aliases = new Set<string>();
+    return orderByAlias(usable).filter((c) => {
+      const alias = aliasForProviderType(c.type);
+      if (aliases.has(alias)) return false;
+      aliases.add(alias);
+      return true;
+    });
+  }
+
+  async function preferredProviderId(): Promise<string | undefined> {
+    const harness = deps.harnesses.default;
+    const granted = await firstProviderPerAlias((type, templateId) =>
+      harnessFits(deps.harnesses, harness, type, templateId),
+    );
+    return orderByAlias(granted, harness)[0]?.id;
+  }
+
+  function toView(conn: Connection, preferredId?: string): ConnectionView {
     const template = deps.templates.get(conn.templateId);
     const accountLabel = accountLabelOf(conn);
     const keyCheck = keyCheckOf(conn);
@@ -231,6 +278,7 @@ export function createConnectionsService(deps: {
               : {}),
           }
         : {};
+    const provider = providerView(conn.templateId);
     return {
       id: conn.id,
       ownerId: conn.ownerId,
@@ -244,6 +292,9 @@ export function createConnectionsService(deps: {
       ...(accountLabel ? { accountLabel } : {}),
       ...(keyCheck ? { keyCheck } : {}),
       ...oauthExtras,
+      ...(provider
+        ? { provider: { ...provider, preferred: conn.id === preferredId } }
+        : {}),
     };
   }
 
@@ -865,13 +916,22 @@ export function createConnectionsService(deps: {
         const preset = creds
           ? { clientId: creds.clientId, hasSecret: !!creds.clientSecretRef }
           : undefined;
-        return templateToView(t, deps.oauthCallbackUrl, preset);
+        const provider = providerView(t.id);
+        return {
+          ...templateToView(t, deps.oauthCallbackUrl, preset),
+          ...(provider ? { provider } : {}),
+        };
       });
     },
 
     async listConnections(): Promise<ConnectionView[]> {
       const conns = await deps.repo.listByOwner(deps.ownerId);
-      const views = conns.map(toView);
+      const preferredId = conns.some((c) =>
+        PROVIDER_TEMPLATE_IDS.has(c.templateId),
+      )
+        ? await preferredProviderId()
+        : undefined;
+      const views = conns.map((conn) => toView(conn, preferredId));
       await Promise.all(
         views.map(async (view, i) => {
           const conn = conns[i]!;
@@ -900,7 +960,10 @@ export function createConnectionsService(deps: {
 
     async getConnection(id: string): Promise<ConnectionView | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
-      return conn ? toView(conn) : null;
+      if (!conn) return null;
+      return PROVIDER_TEMPLATE_IDS.has(conn.templateId)
+        ? toView(conn, await preferredProviderId())
+        : toView(conn);
     },
 
     async validateProviderConnection(id: string): Promise<void> {
@@ -927,23 +990,7 @@ export function createConnectionsService(deps: {
     },
 
     async defaultProviderConnections(fits) {
-      const usable = (
-        await deps.repo.listByOwnerOldestFirst(deps.ownerId)
-      ).flatMap((c) => {
-        const type = providerTypeForTemplateId(c.templateId);
-        return type !== null &&
-          fits(type, c.templateId) &&
-          PROVIDER_IS_ACTIVE[deriveStatus(c)]
-          ? [{ id: c.id, type }]
-          : [];
-      });
-      const aliases = new Set<string>();
-      return orderByAlias(usable).flatMap((c) => {
-        const alias = aliasForProviderType(c.type);
-        if (aliases.has(alias)) return [];
-        aliases.add(alias);
-        return [c.id];
-      });
+      return (await firstProviderPerAlias(fits)).map((c) => c.id);
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {
