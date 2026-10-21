@@ -170,16 +170,18 @@ export function AgentContextMenu({
   agent,
   current,
   onNavigate,
+  onOpenChange,
   children,
 }: {
   agent: AgentView;
   current: boolean;
   onNavigate: (() => void) | undefined;
+  onOpenChange?: ((open: boolean) => void) | undefined;
   children: ReactNode;
 }) {
   const actions = useAgentMenuActions({ agent, current, onNavigate });
   return (
-    <ContextMenu>
+    <ContextMenu onOpenChange={onOpenChange}>
       <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
       <ContextMenuContent>
         <AgentMenuItems menu="context" {...actions} />

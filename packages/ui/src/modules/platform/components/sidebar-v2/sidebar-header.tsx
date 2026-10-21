@@ -28,7 +28,7 @@ export function SidebarHeader({ onCollapse, onHome }: Props) {
         type="button"
         onClick={onHome}
         aria-label={getBrand().name}
-        className={`min-w-0 rounded-lg py-1 pr-1.5 pl-0.5 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+        className={`-ml-1 min-w-0 rounded-lg py-1 pr-1.5 pl-0 text-foreground/80 transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
       >
         <BrandLogo />
       </button>
