@@ -41,6 +41,7 @@ export function createCompatService(deps: CompatServiceDeps): CompatService {
           localCli: deps.localCliVersion,
           serverVersion: probed.value.serverVersion,
           serverMinClient: probed.value.minClientVersion,
+          serverRecommendedClient: probed.value.recommendedClientVersion,
         }),
       );
     },

@@ -82,7 +82,11 @@ describe("dam ping (integration)", () => {
 
   it("BehindCurrent: warning on stderr, ok on stdout, exit 0", async () => {
     fixture.setResponse({
-      body: { serverVersion: "99.0.0", minClientVersion: "0.0.0" },
+      body: {
+        serverVersion: "99.0.0",
+        minClientVersion: "0.0.0",
+        recommendedClientVersion: "99.0.0",
+      },
     });
     await configureServer(fixture.url);
 
@@ -92,7 +96,9 @@ describe("dam ping (integration)", () => {
     });
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain("ok — server 99.0.0");
-    expect(r.stderr).toMatch(/warning:.*behind server 99\.0\.0/);
+    expect(r.stderr).toMatch(
+      /warning:.*behind the server's recommended CLI 99\.0\.0/,
+    );
   });
 
   it("BelowFloor: error on stderr, non-zero exit, no stdout", async () => {
