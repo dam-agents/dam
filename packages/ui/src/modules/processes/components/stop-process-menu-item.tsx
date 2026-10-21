@@ -42,7 +42,7 @@ export function StopProcessMenuItem({ agentId, row }: Props) {
       onSelect={() => void handleStop()}
     >
       <StopFilledAlt size={14} />
-      Stop…
+      Stop
     </DropdownMenuItem>
   );
 }
