@@ -63,7 +63,7 @@ export function SidebarRail({
           onClick={onExpand}
           aria-label="Expand navigation"
           data-testid="sidebar-rail-expand"
-          className={cn(railTile(false), FOCUS_RING)}
+          className={cn(railTile(false), "mb-1.5", FOCUS_RING)}
         >
           <ChevronRight size={RAIL_GLYPH} />
         </button>

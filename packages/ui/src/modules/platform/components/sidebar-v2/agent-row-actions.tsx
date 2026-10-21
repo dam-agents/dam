@@ -13,6 +13,7 @@ import {
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
+import { SIDEBAR_GLYPH } from "@/components/ui/rail-tile";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
@@ -95,7 +96,7 @@ export function AgentRowActions({
               FOCUS_RING,
             )}
           >
-            <Add size={16} />
+            <Add size={SIDEBAR_GLYPH} />
           </button>
         </Tooltip>
         <RowActionsMenu

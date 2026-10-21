@@ -1,8 +1,9 @@
 import { cn } from "@/lib/utils";
 
-// UNIT_BOUNDARY_DESCRIPTION: every item of the left and right rails is drawn at one of these sizes, so the rails read as one column of equally sized targets; the Avatar is the size of an Agent's avatar in the expanded sidebar.
-export const RAIL_GLYPH = 24;
-export const RAIL_AVATAR = 40;
+// UNIT_BOUNDARY_DESCRIPTION: every item of the left and right rails is drawn at one of these sizes, so the rails read as one column of equally sized targets; the Avatar is the size of an Agent's avatar in the expanded sidebar, and SIDEBAR_GLYPH the icons inside its rows.
+export const RAIL_GLYPH = 22;
+export const RAIL_AVATAR = 36;
+export const SIDEBAR_GLYPH = 14;
 
 export function railTile(active: boolean): string {
   return cn(

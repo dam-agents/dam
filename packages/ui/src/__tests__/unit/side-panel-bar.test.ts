@@ -155,7 +155,7 @@ it("marks only the open tab with the inner-edge bar", () => {
   expect(html).toContain('width="24"');
 });
 
-// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 20 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
+// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 48 px rounded tiles with 22 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
 it("draws JanUI's tiles, with the bar on the right edge", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -182,7 +182,8 @@ it("draws JanUI's tiles, with the bar on the right edge", () => {
   const open = buttons.find(([, tab]) => tab === "files")![0];
   expect(open).toContain("size-12");
   expect(open).toContain("bg-muted");
-  expect(html).toContain('width="24"');
+  expect(html).toContain('width="22"');
+  expect(html).toContain('width="22"');
   const order = ["getting-started", "docs", "approvals"].map((id) =>
     html.indexOf(
       id === "docs"

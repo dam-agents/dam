@@ -2,7 +2,9 @@ import { ChevronLeft } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
+import { RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
+import { cn } from "@/lib/utils";
 
 import { getBrand } from "../../../../brand.js";
 
@@ -13,15 +15,15 @@ interface Props {
 
 export function SidebarHeader({ onCollapse, onHome }: Props) {
   return (
-    <div className="flex h-12 shrink-0 items-center border-b border-border px-2">
+    <div className="flex h-12 shrink-0 items-center border-b border-border px-1">
       <Tooltip content="Collapse navigation" side="bottom">
         <button
           type="button"
           onClick={onCollapse}
           aria-label="Collapse navigation"
-          className={`flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
+          className={cn(railTile(false), FOCUS_RING)}
         >
-          <ChevronLeft size={16} />
+          <ChevronLeft size={RAIL_GLYPH} />
         </button>
       </Tooltip>
       <button

@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
+import { RAIL_GLYPH, SIDEBAR_GLYPH } from "@/components/ui/rail-tile";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
@@ -413,7 +414,7 @@ function AgentNode({
                 className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
               />
               <ChevronRight
-                size={16}
+                size={SIDEBAR_GLYPH}
                 aria-hidden
                 className={cn(
                   "invisible absolute text-muted-foreground transition-transform group-has-[:focus-visible]/agent:visible group-hover/agent:visible motion-reduce:transition-none [@media(hover:none)]:visible",
@@ -496,7 +497,7 @@ function CreateAgentMenu({
               FOCUS_RING,
             )}
           >
-            <Add size={16} />
+            <Add size={SIDEBAR_GLYPH} />
           </button>
         </DropdownMenuTrigger>
       </Tooltip>
@@ -553,7 +554,7 @@ function NavRow({
       data-testid={testId}
       onClick={onClick}
       className={cn(
-        "flex h-[34px] w-full items-center gap-2.5 rounded-lg px-2 text-sm font-medium transition-colors",
+        "flex h-[34px] w-full items-center gap-2.5 rounded-lg pr-2 pl-0 text-sm font-medium transition-colors",
         FOCUS_RING,
         current
           ? "bg-muted text-foreground"
@@ -561,7 +562,7 @@ function NavRow({
       )}
     >
       <span className={TREE_LEADING}>
-        <Icon size={16} />
+        <Icon size={RAIL_GLYPH} />
       </span>
       {label}
     </button>
