@@ -175,6 +175,30 @@ it("keeps the next Agent's popover open when the pointer moves on", () => {
   expect(popover()!.textContent).toContain("other");
 });
 
+// TEST_SCENARIO: once the rail has a popover up, the pointer running along the rail shows the tile under it at once, without sitting out the open delay again.
+it("switches to the next Agent's popover at once while one is up", () => {
+  pointer("pointerover", document.body);
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popover()!.textContent).toContain("dam");
+  pointer("pointerout", tile("a2"));
+  pointer("pointerover", document.body, "a2");
+  expect(popover()!.textContent).toContain("other");
+});
+
+// TEST_SCENARIO: a pointer that left the rail for longer than the close grace starts over, so the next tile it rests on opens after the full delay rather than jumping up.
+it("waits out the open delay again once the rail has been quiet", () => {
+  pointer("pointerover", document.body);
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popover()).not.toBeNull();
+  pointer("pointerout", document.body);
+  for (let i = 0; i < 6; i++) act(() => void vi.advanceTimersByTime(100));
+  expect(popover()).toBeNull();
+  pointer("pointerover", document.body, "a2");
+  expect(popover()).toBeNull();
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popover()!.textContent).toContain("other");
+});
+
 // TEST_SCENARIO: clicking an Agent's tile opens its new-session page and leaves the popover it opened on hover in place, so the pointer is not robbed of the rows it was reaching for.
 it("leaves the popover open when the tile is clicked", () => {
   pointer("pointerover", document.body);

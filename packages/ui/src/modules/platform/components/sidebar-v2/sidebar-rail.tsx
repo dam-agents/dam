@@ -57,6 +57,18 @@ export function SidebarRail({
   const setView = useStore((s) => s.setView);
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const [open, setOpen] = useState<string | null>(null);
+  // UNIT_BOUNDARY_DESCRIPTION: while one popover is open or within its close grace, the pointer is already inside the rail, so the next tile opens at once; HOVER_CLOSE_MS after the last one shut, a rest on a tile needs the full HOVER_OPEN_MS again.
+  const groupUntil = useRef(0);
+  const hadOpen = useRef(false);
+  useEffect(() => {
+    if (open !== null) {
+      hadOpen.current = true;
+      groupUntil.current = Number.POSITIVE_INFINITY;
+    } else if (hadOpen.current) {
+      groupUntil.current = Date.now() + HOVER_CLOSE_MS;
+    }
+  }, [open]);
+  const skipDelay = () => Date.now() < groupUntil.current;
   const close = () => setOpen(null);
   const navigate = () => {
     close();
@@ -95,6 +107,7 @@ export function SidebarRail({
       </button>
       {pins.size > 0 && (
         <PinnedTile
+          skipDelay={skipDelay}
           open={open === "pinned"}
           onOpenChange={(next) =>
             setOpen((prev) =>
@@ -123,6 +136,7 @@ export function SidebarRail({
                   ? "unread"
                   : null
             }
+            skipDelay={skipDelay}
             open={open === agent.id}
             onOpenChange={(next) =>
               setOpen((prev) =>
@@ -154,9 +168,12 @@ const HOVER_OPEN_MS = 150;
 const HOVER_CLOSE_MS = 250;
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: What a tile of the rail needs to open what it holds in a popover beside it: the pointer resting on the tile opens it after a moment, leaving the tile and the popover closes it after a grace long enough to move between them, keyboard focus opens it, and a menu opened from the popover keeps it alive.
+ * UNIT_BOUNDARY_DESCRIPTION: What a tile of the rail needs to open what it holds in a popover beside it: the pointer resting on the tile opens it after a moment — or at once, when the rail already has a popover open and the pointer is merely moving along it — leaving the tile and the popover closes it after a grace long enough to move between them, keyboard focus opens it, and a menu opened from the popover keeps it alive.
  */
-function useRailPopover(onOpenChange: (open: boolean) => void) {
+function useRailPopover(
+  onOpenChange: (open: boolean) => void,
+  skipDelay: () => boolean,
+) {
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const closedAt = useRef(0);
   const content = useRef<HTMLDivElement>(null);
@@ -173,6 +190,10 @@ function useRailPopover(onOpenChange: (open: boolean) => void) {
   };
   const openSoon = () => {
     cancel();
+    if (skipDelay()) {
+      onOpenChange(true);
+      return;
+    }
     timer.current = setTimeout(() => onOpenChange(true), HOVER_OPEN_MS);
   };
   useEffect(() => cancel, []);
@@ -221,6 +242,7 @@ function AgentTile({
   current,
   cue,
   open,
+  skipDelay,
   onOpenChange,
   onNavigate,
 }: {
@@ -228,6 +250,7 @@ function AgentTile({
   current: boolean;
   cue: "approval" | "unread" | null;
   open: boolean;
+  skipDelay: () => boolean;
   onOpenChange: (open: boolean) => void;
   onNavigate: () => void;
 }) {
@@ -235,7 +258,7 @@ function AgentTile({
   const name = `New session with ${agent.name}${
     cue ? `, ${cue === "approval" ? "needs your approval" : "unread"}` : ""
   }`;
-  const rail = useRailPopover(onOpenChange);
+  const rail = useRailPopover(onOpenChange, skipDelay);
   const newSession = () => {
     onNavigate();
     startSession(agent.id);
@@ -314,14 +337,16 @@ function AgentTile({
  */
 function PinnedTile({
   open,
+  skipDelay,
   onOpenChange,
   onNavigate,
 }: {
   open: boolean;
+  skipDelay: () => boolean;
   onOpenChange: (open: boolean) => void;
   onNavigate: () => void;
 }) {
-  const rail = useRailPopover(onOpenChange);
+  const rail = useRailPopover(onOpenChange, skipDelay);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <PopoverAnchor asChild>
