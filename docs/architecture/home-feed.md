@@ -58,7 +58,8 @@ Opening a Session from Activity leaves its Agent's row as it was, closed or open
 The sidebar lists Agents **newest created first**, in one **manual order** the user changes by drag and drop or with Alt+Up and Alt+Down.
 An Agent the order does not name yet, a new Agent, goes to the top of the list, newest first, and neither a click nor activity moves an Agent.
 Hibernated Agents fold under **See all (N hibernating)**, unless the user has clicked its row or its chat or configuration page is shown, so closing an Agent's Sessions keeps its row in place.
-An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
+An Agent's row shows a blue dot, also while it is open and shown, when one of its Sessions is unread in the record or in its own list already loaded; its hover actions are a session **filter**, **New session** and **Configure agent**, and a ⋮ menu with Add to Slack channel or Telegram chat only where the installation has them.
+The Agent's filter keeps its Sessions by status and by type, like the Activity filter, but narrows only that Agent's list, not Activity; it is kept in the browser per Agent, and while it is on its control stays shown with a mark.
 A move stores the whole list as the user sees it, so the Agents the user did not touch keep their places too.
 The api-server keeps the order per user, so it follows the user to every browser, and drops an Agent's entry when the Agent is deleted.
 The order is only a list of ids: it never decides that an Agent exists, and an id that names nothing shows nothing.
@@ -68,6 +69,7 @@ A Session row shows a blue dot while it is unread, and an approval dot in its pl
 
 The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's avatar and name and its time.
 Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
+The filter is kept in the browser, so it survives a reload but does not follow the user to another device; both layouts share it.
 The two sections scroll together, each header staying at the top while its section is in view.
 The record's rows and the Agent's own list are both newest first, and each View more appends an older page, so the rows already shown keep their places.
 
@@ -81,7 +83,7 @@ The **JanUI experiment** is an [experimental feature](features.md): it replaces 
 The sidebar becomes one tree: every Agent is a row that opens to that Agent's own list, every page of it, the next page loaded when the list scrolls near its end.
 The Agent open in the page opens in the tree until its row closes it, and closes again when another Agent opens in the page, unless the user opened it; any other Agent opens and closes from its row, and the open state lasts until the page reloads; a page with no Agent open, such as Home, leaves every list as it was.
 While the JanUI experiment is on (the saved preference decides until the flags load), each attention hint, which names its Agent, refreshes that Agent's own list and its single-Session lookups, and a sync (sent when the owner stream overflows or a tab subscribes again) refreshes them for every Agent in the cache, at most eight of these Session families at a time across all hints, a family already queued joining that pass, while the Agent list and other families refresh at once since a Session read waiting for its Agent to start ends only when the Agent list refreshes, so an open list and an old pin stay live without that Agent's chat, for Sessions outside the record window too.
-A closed Agent row shows a mark for a waiting approval, or else for an unread Session, with a text equivalent; its New session and actions buttons show on hover or keyboard focus, and at all times on a device without hover; the header's plus creates an Agent; a New session row ends an open list only while its Agent has no Sessions, and a New agent row shows only while there is no Agent.
+A closed Agent row shows a mark for a waiting approval, or else for an unread Session, with a text equivalent; its filter, New session and actions buttons show on hover or keyboard focus, and at all times on a device without hover; the header's plus creates an Agent; a New session row ends an open list only while its Agent has no Sessions, and a New agent row shows only while there is no Agent.
 On an Agent's new-session page, that New session row, or else the Agent row's New session plus, is the current page, not the Agent row.
 A Home row at the top of the tree opens the dashboard.
 An Agent's open list with no Sessions shows only its New session row; a filter that leaves it empty says so.
@@ -91,10 +93,11 @@ An Agent's list slides open and closed in 200 ms, but not under reduced motion a
 Each Session row has an activity dot: orange for a waiting approval, a spinning blue ring while working, a green ring for background work, green for unread, a pen for a draft and gray when idle; unlike the current layout's blue unread dot, unread is green here, and a line naming its harness, model and source; a Session from the record alone has no model, and a terminal Session names no source, its terminal icon marking it instead.
 A Session row shows its harness icon in place of the harness name in its context line, and keeps its schedule, terminal and messenger icons; a pinned row leads with its Agent's avatar under the activity dot, since the Pinned section mixes Agents.
 A pinned row shows no pin mark, since its section says it is pinned; its unpin button shows with its other actions, on hover or while the row holds keyboard focus.
-The tree's Agents header carries one session filter, by state and by Session type: it narrows the Pinned section and every Agent's list, and the control shows a mark while a filter is on.
-Beside it, a Group by menu offers All sessions or Group by agents, the tree; like the filter, the choice lasts until the page reloads.
+The tree's Agents header carries one session filter, by state and by Session type: it narrows the Pinned section, the All sessions list and every Agent's list that has no filter of its own, and the control shows a mark while a filter is on.
+Each Agent row carries that Agent's own filter, the same one the current layout's Agent row sets: while it is on it replaces the header's filter for that Agent's list, and its control stays shown with a mark.
+Beside it, a Group by menu offers All sessions or Group by agents, the tree; the choice lasts until the page reloads.
 All sessions replaces the Agents with one list of the unpinned Sessions in the owner's attention record, newest activity first, each row led by its Agent's avatar and name, twenty at a time with View more; a Session older than the record shows only under its Agent, which the list says at its end when the record is full.
-The filter narrows the pages already loaded, so while it is on an Agent's list loads a further page only when the user clicks **Load more**; when the filter is removed, every Agent's list keeps its first page only.
+A filter narrows the pages already loaded, so while the filter an Agent's list applies is on, the list loads a further page only when the user clicks **Load more**; when a filter is removed, every Agent's list keeps its first page only.
 The tree keeps the same manual Agent order, set by drag and drop or with Alt+Up and Alt+Down; an Agent's own list keeps the newest-first order.
 A Session can be **pinned**: a pinned Session moves to a **Pinned** section above every Agent and leaves its Agent's list; pinning from the keyboard keeps focus on the moved row, or on its Agent's row when that Agent is closed or still closing, or, in the All sessions list, which shows no Agent rows, on the Group by control.
 Pins are kept in the browser, so they do not follow the user to another device.
