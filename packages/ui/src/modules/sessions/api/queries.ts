@@ -254,7 +254,7 @@ export function useSessionPages(
                 ...(pageParam && { after: pageParam }),
                 limit: SESSION_PAGE_SIZE,
               }),
-            () => untilAgentOperable(agentId),
+            () => untilAgentOperable(agentId, { evenUnreachable: true }),
           );
           if (pageParam) return page;
           const coversAll =
