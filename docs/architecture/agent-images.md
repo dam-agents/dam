@@ -1,13 +1,13 @@
 # Agent images
 
-Last verified: 2026-10-19
+Last verified: 2026-10-21
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
 The default image bakes the **harness tools**, base's and every harness's, in a layer of their own.
 A workload bakes only its own Python, whole, and the mock the node it runs on.
 Nothing installs lazily, and no tool runs through a shim.
-Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob), which is a source of the default image and no image of its own.
+Sources live in [`packages/agents/`](../../packages/agents/): one directory per image, and one per harness (Claude Code, Codex, pi, Bob, Copilot), which is a source of the default image and no image of its own.
 
 ## One base, one image over it
 
@@ -15,7 +15,7 @@ Every image is a Debian system-package base and directory trees packed onto it a
 The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, and `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake.
 
 - **A harness** is mise config over the base — its tools and env — and a `rootfs/` of its files at their image paths.
-  The default image carries all four.
+  The default image carries all five.
 - **A workload** is the default image under its own files and env, so a kit image carries every harness and runs the one its kit names.
   Its Python package is installed into a venv and shipped as a whole Python at a fixed path, the interpreter and its standard library copied in, named in an environment variable; the entrypoint and login shells put it first on `PATH`, so `python` is the workload's, whatever Python the node's tools hold.
   **k-search** also ships its upstream source trees, pinned by commit and checksum and patched at install, at fixed paths.
@@ -74,9 +74,9 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
-  SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([persistence](persistence.md#per-agent-pvcs)).
+  SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([vm storage](vm-storage.md#the-disk)).
   The entrypoint prepares sshd.
-  The image's build gives uid 0 the agent's home, so OpenSSH keeps its keys there.
+  The image's build gives uid 0 the agent's home, so a login's own keys and known hosts are kept there; what admits a connection — sshd's host key, its config and the keys a connection registers — lives outside the home ([cli](cli.md#ssh-access)).
   The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
   The cache is the runtime's alone: no harness or command it starts inherits it.
 
@@ -110,7 +110,7 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
   A service gets only `PATH` and the gateway's proxy and CA variables of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
 - aube stands in for pnpm; npm stays for tools that call it.
-  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([persistence](persistence.md)).
+  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.
   A tool pin in the home applies whenever the home holds it; a pinned tool the home has not installed shows as missing until `mise install`.
 
@@ -129,7 +129,7 @@ A hibernated, stopped or over-budget Agent moves at once and takes the image on 
 That wake costs nothing extra for the default image on the `vm` Backend: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
 A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
-An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, an open terminal and kept background work.
+An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, a live terminal and kept background work ([what counts as activity](agent-lifecycle.md#hibernate)).
 The job re-reads each Agent before deciding, probes the pod after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
 A prompt arriving in the seconds between the write and the pod's restart is the one window it cannot close.
 
@@ -150,7 +150,7 @@ Nor does the boot that follows a machine the kernel killed for memory or the gue
 Or, on the container backend, admission refused the agent StatefulSet with this spec's image, as a cluster policy that blocks images older than a year does.
 The old pod then keeps running and no pod of the new spec ever starts, so the refusal is the only failure there is to report.
 It counts only when the refused write changes the agent container's image: a refusal of a StatefulSet already on that image is not the new image's fault, and a move back would not cure it.
-The vm bound is short because a moved vm Agent takes the new image when it wakes, and the vm idle timeout hibernates it again five minutes later.
+The vm bound is short because a moved vm Agent takes the new image when it wakes, and a vm idle timeout hibernates it again five minutes later, or its own override does where it carries one.
 At ten minutes, the runner's own restart of the quiet guest would also stop the clock first.
 An exit from out of memory or a full home volume does not count, since any image meets it.
 A harness that crash-loops on any image, from something in the Agent's home, also moves the Agent back, and the new image is then refused for this Agent although it is not at fault.

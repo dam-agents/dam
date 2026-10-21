@@ -1,5 +1,5 @@
 export type ProviderKeyProbeOutcome =
-  | { ok: true }
+  | { ok: true; unchecked?: true }
   | { ok: false; reason: "refused" | "unverified"; detail: string };
 
 export interface ProviderKeyProbe {

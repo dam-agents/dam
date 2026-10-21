@@ -1,4 +1,5 @@
 import type { IncomingMessage } from "node:http";
+import type { ModelRouterBinding } from "../../runtime-channel/manifest.js";
 
 export const SESSION_HEADER = "x-platform-session";
 
@@ -95,4 +96,19 @@ function harnessSessionOf(
   const legacy = CLAUDE_SESSION_IN_USER_ID.exec(userId);
   if (legacy?.[1]) return { sessionId: legacy[1] };
   return null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a harness whose calls carry no session marker
+ * (Copilot) serves every session from one process; while exactly one of its
+ * sessions runs a turn, an unmarked call is that turn's, so its spend is the
+ * session's. With several turns at once the call names none.
+ */
+export function sessionOfRunningTurn(
+  binding: ModelRouterBinding | undefined,
+  running: readonly string[],
+): SessionHandle | null {
+  return binding?.sessionFromRunningTurn && running.length === 1
+    ? { sessionId: running[0]! }
+    : null;
 }

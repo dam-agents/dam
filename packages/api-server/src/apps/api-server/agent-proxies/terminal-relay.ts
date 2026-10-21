@@ -11,6 +11,7 @@ import { readyOrAnswering } from "./ready-or-answering.js";
 import type { SessionPresence } from "./session-presence.js";
 import type { RedisBus } from "../../../core/redis-bus.js";
 import { sanitizeCloseCode } from "./acp-relay.js";
+import { keepAlive } from "./heartbeat.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 const EVICT_CHANNEL = "terminal:evict";
@@ -90,6 +91,7 @@ export function createTerminalRelay(
           client.terminate();
         } catch {}
       });
+      keepAlive(client);
 
       const key = clientKey(agentId, sessionId);
       evictLocal(key, "superseded");

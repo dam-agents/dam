@@ -117,8 +117,6 @@ export interface RuntimeMigration {
   phase: RuntimeMigrationPhase;
   message?: string;
   attempts?: number;
-  abortable: boolean;
-  retryable: boolean;
 }
 
 export type WorkspaceMutationKind = "workspace-seed" | "workspace-command";
@@ -143,7 +141,6 @@ export interface Agent {
   templateId?: string;
   templateUpdate?: TemplateUpdate;
   runtimeMigration?: RuntimeMigration;
-  runtimeMigratable?: boolean;
   spec: AgentSpec;
   state: AgentState;
   effectiveHibernationTimeoutMin: number;
@@ -210,51 +207,6 @@ export type UpgradeAgentError =
 export type UpgradeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: UpgradeAgentError };
 
-export type MigrateRuntimeError =
-  | { type: "AgentNotFound" }
-  | { type: "AlreadyOnVm" }
-  | { type: "VirtualizationDisabled" }
-  | { type: "RuntimeMigrationInProgress" }
-  | { type: "StorageMigrationInProgress" }
-  | { type: "PersistsUnmovablePaths"; paths: UnmovablePath[] }
-  | { type: "HomeNotPersisted" }
-  | {
-      type: "VmStorageInsufficient";
-      neededBytes: number;
-      usedBytes: number;
-      usableBytes: number;
-    }
-  | {
-      type: "VmMemoryInsufficient";
-      committedMiB: number;
-      limitMiB: number;
-    }
-  | { type: "ConcurrentUpdate" };
-
-export interface UnmovablePath {
-  path: string;
-  reason: string;
-}
-
-export type RuntimeMigrationRefusal = Exclude<
-  MigrateRuntimeError,
-  { type: "AgentNotFound" }
->;
-
-export interface RuntimeMigrationPlan {
-  unmovable: UnmovablePath[];
-  bootsSleepingAgent: boolean;
-  retentionMs: number | null;
-  refusal: RuntimeMigrationRefusal | null;
-}
-
-export type PlanRuntimeMigrationResult =
-  | { ok: true; value: RuntimeMigrationPlan }
-  | { ok: false; error: { type: "AgentNotFound" } };
-
-export type MigrateRuntimeResult =
-  { ok: true; value: Agent } | { ok: false; error: MigrateRuntimeError };
-
 export type WakeAgentError =
   | { type: "AgentNotFound" }
   | { type: "AgentDisabled" }
@@ -268,24 +220,6 @@ export type SetAgentDisabledResult =
 
 export type WakeAgentResult =
   { ok: true; value: Agent } | { ok: false; error: WakeAgentError };
-
-export type AbortRuntimeMigrationError =
-  | { type: "AgentNotFound" }
-  | { type: "NoRuntimeMigration" }
-  | { type: "RuntimeMigrationVerified" }
-  | { type: "ConcurrentUpdate" };
-
-export type AbortRuntimeMigrationResult =
-  { ok: true; value: Agent } | { ok: false; error: AbortRuntimeMigrationError };
-
-export type RetryRuntimeMigrationError =
-  | { type: "AgentNotFound" }
-  | { type: "NoRuntimeMigration" }
-  | { type: "RuntimeMigrationNotFailed" }
-  | { type: "ConcurrentUpdate" };
-
-export type RetryRuntimeMigrationResult =
-  { ok: true; value: Agent } | { ok: false; error: RetryRuntimeMigrationError };
 
 export type ConnectSlackError =
   | { type: "AgentNotFound" }
@@ -373,10 +307,6 @@ export interface AgentsService {
     id: string,
     expectedToImage?: string,
   ) => Promise<UpgradeAgentResult>;
-  migrateRuntime: (id: string) => Promise<MigrateRuntimeResult>;
-  planRuntimeMigration: (id: string) => Promise<PlanRuntimeMigrationResult>;
-  abortRuntimeMigration: (id: string) => Promise<AbortRuntimeMigrationResult>;
-  retryRuntimeMigration: (id: string) => Promise<RetryRuntimeMigrationResult>;
   ensureReady: (id: string, opts?: { onWaking?: () => void }) => Promise<void>;
   connectSlack: (
     id: string,

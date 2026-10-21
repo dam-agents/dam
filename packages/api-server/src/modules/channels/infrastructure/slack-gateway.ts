@@ -65,6 +65,14 @@ export interface SlackBotJoinedChannelEvent {
   teamId: SlackWorkspace;
 }
 
+export interface SlackSessionStoppedEvent {
+  channel: string;
+  threadTs: string;
+  user: string;
+  streamingMessageTs: string[];
+  teamId: SlackWorkspace;
+}
+
 export interface SlackGatewayHandlers {
   onMention: (event: SlackMentionEvent) => Promise<void>;
   onCommand: (command: SlackSlashCommand, ack: SlackAck) => Promise<void>;
@@ -72,6 +80,7 @@ export interface SlackGatewayHandlers {
   onDirectMessage: (event: SlackChannelMessageEvent) => Promise<void>;
   onBotJoinedChannel: (event: SlackBotJoinedChannelEvent) => Promise<void>;
   onViewSubmission: (event: SlackViewSubmission) => Promise<void>;
+  onSessionStopped: (event: SlackSessionStoppedEvent) => Promise<void>;
 }
 
 export interface SlackViewSubmission {

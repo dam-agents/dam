@@ -5,7 +5,11 @@ import type { JsonRpcId } from "../../domain/frames.js";
 import { rewriteAuthError, rewriteCwd } from "../../domain/mappers.js";
 import type { ClientChannel } from "../../infrastructure/client-channel.js";
 import type { HistoryProvider } from "../../infrastructure/history-provider.js";
-import type { PlatformUndeliveredPrompt, QueuedPrompt } from "api-server-api";
+import type {
+  PlatformContinuedFrom,
+  PlatformUndeliveredPrompt,
+  QueuedPrompt,
+} from "api-server-api";
 import type { ReplayClip, SessionTranscript } from "./session-transcript.js";
 
 type WaiterKind = "load" | "resume";
@@ -76,6 +80,7 @@ export interface SessionBootstrapDeps {
   queueOf(sessionId: string): QueuedPrompt[];
   supersededFor(sessionId: string): string[];
   runStartsOf(sessionId: string): string[];
+  continuedFromOf(sessionId: string): PlatformContinuedFrom | null;
   onLoadOrphaned(sessionId: string, outboundId: number): void;
   mcpServersFor(sessionId: string): unknown[];
 }
@@ -130,6 +135,7 @@ export function createSessionBootstrap(
     superseded: string[],
     runStarts: string[],
     queue: QueuedPrompt[],
+    continuedFrom: PlatformContinuedFrom | null,
   ): unknown {
     const extras: Record<string, unknown> = {};
     if (clip.clipped)
@@ -139,6 +145,7 @@ export function createSessionBootstrap(
     if (superseded.length > 0) extras.superseded = superseded;
     if (runStarts.length > 0) extras.runStarts = runStarts;
     if (queue.length > 0) extras.queue = queue;
+    if (continuedFrom !== null) extras.continuedFrom = continuedFrom;
     if (Object.keys(extras).length === 0) return value;
     const base =
       typeof value === "object" && value !== null
@@ -210,6 +217,7 @@ export function createSessionBootstrap(
         kind === "load" ? deps.supersededFor(sessionId) : [],
         kind === "load" ? deps.runStartsOf(sessionId) : [],
         kind === "load" ? deps.queueOf(sessionId) : [],
+        kind === "load" ? deps.continuedFromOf(sessionId) : null,
       ),
     });
     if (channel.isOpen()) channel.send(rewriteAuthError(response));
@@ -396,6 +404,7 @@ export function createSessionBootstrap(
               [],
               [],
               [],
+              null,
             ),
           });
           if (channel.isOpen()) channel.send(rewriteAuthError(response));

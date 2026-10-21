@@ -394,7 +394,9 @@ async function resolveAndDeliverAcpNative(
   if (!casWon) return outcome;
   const rpcId = row.payload.rpcId;
   if (rpcId === undefined || rpcId === null) return outcome;
-  const optionId = pickOptionId(row.payload.options ?? [], verdict);
+  const optionId = pickOptionId(row.payload.options ?? [], verdict, {
+    idsWhole: row.payload.optionsWhole === true,
+  });
   const frame = JSON.stringify(buildAcpPermissionResponse(rpcId, optionId));
   try {
     await deps.wrapperFrameSender.send(row.agentId, frame);

@@ -36,7 +36,6 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   spawnedBy: null,
   vm: false,
   runtimeMigration: null,
-  runtimeMigratable: false,
 });
 
 describe("resolveAgentDisplay", () => {

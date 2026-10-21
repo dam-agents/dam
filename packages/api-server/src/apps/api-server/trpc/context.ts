@@ -76,6 +76,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     agentCleanupHooks,
     secretStore,
     runtimeMutator,
+    outboxRepo,
     contributionsProgress,
     onboardingChecklists,
     gettingStarted,
@@ -338,6 +339,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { service: harnessConfig } = composeHarnessConfigModule({
       catalog: harnesses,
       db,
+      outboxRepo,
       ownerSub: user.sub,
       surface,
       runtimeMutator,

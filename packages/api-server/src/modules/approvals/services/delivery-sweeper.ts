@@ -37,7 +37,9 @@ export function createDeliverySweeper(
         if (row.verdict === null) continue;
         const rpcId = row.payload.rpcId;
         if (rpcId === undefined || rpcId === null) continue;
-        const optionId = pickOptionId(row.payload.options ?? [], row.verdict);
+        const optionId = pickOptionId(row.payload.options ?? [], row.verdict, {
+          idsWhole: row.payload.optionsWhole === true,
+        });
         const frame = JSON.stringify(
           buildAcpPermissionResponse(rpcId, optionId),
         );

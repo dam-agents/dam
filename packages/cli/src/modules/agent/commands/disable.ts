@@ -49,7 +49,7 @@ export function buildDisableCommand(
         }
         if (result.error.kind === "runtime-migrating") {
           process.stderr.write(
-            `error: agent "${agent.name}" is moving to the new runtime; abort the move to ${verb} it\n`,
+            `error: agent "${agent.name}" is moving to the new runtime; it can be ${disabled ? "disabled" : "enabled"} once the move ends\n`,
           );
           process.exit(EXIT_RUNTIME_FAILURE);
         }

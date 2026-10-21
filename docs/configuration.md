@@ -23,6 +23,7 @@ Each agent's gateway verifies the upstream before it injects a credential.
 If something on the cluster's egress path intercepts TLS with its own CA (a corporate inspecting proxy, or the platform's own gateway when the platform runs inside one of its agents), every injected connection fails its handshake and the agent reports a 503.
 Name that CA with `controller.gatewayUpstreamExtraCAs`: `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
 Gateways then trust it on top of the public roots, and agents trust it beside their gateway's CA, since the proxy also intercepts the hosts a gateway passes through untouched.
+The api-server trusts it too, for its own outbound calls on the same path: Slack's Socket Mode and Web API, GitHub, and OAuth token exchanges.
 A connection that carries its upstream's own CA still validates against that CA alone.
 `mise run cluster:install` sets the value by itself when it runs inside one of the platform's vm agents.
 
@@ -160,6 +161,7 @@ The footer under every agent post opens with the same emoji, then "Sent by" and 
 **Upgrading an app you created earlier:** Slack never applies later manifest changes to an app that already exists, so an app predating a scope or event the platform has since started using keeps working while that one feature silently does nothing.
 Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from the app's **App Manifest** page and re-run the install flow when Slack asks.
 The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
+The Stop button on an agent's working status needs the `agent_session_stopped` subscription the same way; without it Slack answers a press with "Stop isn't available for this agent".
 
 ### Connecting a workspace
 
@@ -260,7 +262,9 @@ The api-server offers no way to ask, so only someone who can edit Agent resource
 
 ### vm-backend agents (VM runner)
 
-Agents created with `backend.type: vm` — chosen beside the image rather than by a template of its own, by an API caller directly or for every agent a flagged-in owner creates in the browser — run as smolvm microVMs inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
+An install that can virtualize creates every new agent on the `vm` Backend, whichever path makes it ([features](architecture/features.md)).
+In the cluster, each runs as a smolvm microVM inside a **VM runner** — a pod per owner that holds `/dev/kvm`, created by the controller, keeping that owner's machine disks on its own PVC.
+A local install on an Apple silicon Mac has no such pod, unless it keeps the runner pods on nested virtualization: one runner outside the cluster serves every owner from the Mac's own hypervisor ([vm-host-runner](architecture/vm-host-runner.md)).
 Such an agent persists the agent's home and nothing else: the rest of the machine is a root overlay discarded every time it stops.
 Turn it on with `virtualization.enabled=true`, which then requires `virtualization.runner.resources.limits.memory`, the limit the runner admits machines against, or the install refuses to render.
 It also needs cert-manager, which issues each runner's serving certificate from a CA of the runners' own that the chart renders beside them (`virtualization.runnerCA`).

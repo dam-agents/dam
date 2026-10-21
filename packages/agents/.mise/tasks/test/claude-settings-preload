@@ -3,8 +3,8 @@
 //MISE sources=["claude-code/rootfs/usr/local/lib/sync-claude-settings.mjs", "claude-code/rootfs/usr/local/bin/harness-chat", ".mise/tasks/test/claude-settings-preload"]
 //MISE outputs=[]
 import assert from "node:assert/strict";
-import { spawnSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -56,4 +56,49 @@ const malformed = run((home) => {
 });
 assert.equal(malformed.stop, 0);
 assert.match(malformed.stderr, /sync-claude-settings: /);
+
+// TEST_SCENARIO: A starter kit merges its hooks through ~/.claude/settings.json.tmp and moves that file into place. The sync writes through a name of its own, so the kit's temporary file is still there for its own mv.
+const home = mkdtempSync(join(tmpdir(), "claude-settings-tmp-"));
+try {
+  const settings = join(home, ".claude/settings.json");
+  const kitTmp = `${settings}.tmp`;
+  mkdirSync(join(home, ".claude"));
+  writeFileSync(settings, JSON.stringify({ theme: "dark" }));
+  writeFileSync(kitTmp, JSON.stringify({ theme: "dark", hooks: { Stop: [] } }));
+  const r = spawnSync(process.execPath, ["--import", script, "-e", ""], {
+    env: { PATH: process.env.PATH, HOME: home },
+    encoding: "utf8",
+  });
+  assert.equal(r.status, 0, r.stderr);
+  assert.equal(
+    readFileSync(kitTmp, "utf8"),
+    JSON.stringify({ theme: "dark", hooks: { Stop: [] } }),
+  );
+  assert.match(readFileSync(script, "utf8"), /\$\{path\}\.\$\{process\.pid\}\.tmp/);
+  assert.equal(readdirSync(join(home, ".claude")).sort().join(","), "settings.json,settings.json.tmp");
+
+  // TEST_SCENARIO: Two chats open at once run two syncs on the same settings file. Each writes through its own temporary name, so neither renames the other's file away and both leave a settings file that still parses.
+  writeFileSync(kitTmp, "{}");
+  const exits = await Promise.all(
+    Array.from({ length: 4 }, () =>
+      new Promise((resolve, reject) => {
+        const child = spawn(process.execPath, ["--import", script, "-e", ""], {
+          env: { PATH: process.env.PATH, HOME: home },
+        });
+        let stderr = "";
+        child.stderr.on("data", (d) => (stderr += d));
+        child.on("error", reject);
+        child.on("exit", (code) => resolve({ code, stderr }));
+      }),
+    ),
+  );
+  assert.deepEqual(exits.map((e) => e.stderr), ["", "", "", ""]);
+  assert.deepEqual(exits.map((e) => e.code), [0, 0, 0, 0]);
+  const synced = JSON.parse(readFileSync(settings, "utf8"));
+  assert.equal(synced.theme, "dark");
+  assert.deepEqual(Object.keys(synced.hooks).sort(), ["Stop", "SubagentStop"]);
+  assert.equal(readdirSync(join(home, ".claude")).sort().join(","), "settings.json,settings.json.tmp");
+} finally {
+  rmSync(home, { recursive: true, force: true });
+}
 console.log("Claude Code's settings sync runs before the ACP adapter in its node and never stops it");

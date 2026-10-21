@@ -2,6 +2,9 @@ import { Hono } from "hono";
 import { describe, expect, it } from "vitest";
 
 import { createByLinkHostGate } from "../../modules/artifact-library/viewer/by-link-host-gate.js";
+import { ARTIFACT_PROMPT_TYPE, ARTIFACT_REQUEST_TYPE } from "api-server-api";
+
+import { SHARED_BRIDGE_REFUSAL } from "../../modules/artifact-library/viewer/bridge-shim.js";
 import { createContentApp } from "../../modules/artifact-library/viewer/content-app.js";
 import { createShareViewerApp } from "../../modules/artifact-library/viewer/viewer-app.js";
 import type {
@@ -243,6 +246,35 @@ describe("content app", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("Referrer-Policy")).toBe("no-referrer");
     expect(res.headers.get("Set-Cookie")).toBeNull();
+  });
+
+  /**
+   * TEST_SCENARIO: The owner shared an interactive page with named viewers.
+   * The content host renders it with the refusing bridge: buttons on the
+   * page fail at once with a notice, and the page gets no way to post a
+   * prompt or a request toward any agent.
+   */
+  it("renders an interactive page with the refusing bridge", async () => {
+    const app = contentAppWith(
+      publicViewer({
+        resolveArtifact: () =>
+          Promise.resolve({
+            state: "ok",
+            artifact: artifactRow({ interactive: true }),
+          } satisfies SharedResolution),
+      }),
+    );
+    const html = await (await app.request("/a/slug-a?v=1")).text();
+    expect(html).toContain(SHARED_BRIDGE_REFUSAL);
+    expect(html).not.toContain(ARTIFACT_PROMPT_TYPE);
+    expect(html).not.toContain(ARTIFACT_REQUEST_TYPE);
+  });
+
+  it("renders a plain page without any bridge", async () => {
+    const html = await (
+      await contentAppWith(publicViewer()).request("/a/slug-a?v=1")
+    ).text();
+    expect(html).not.toContain("window.platform");
   });
 
   it("renders images through the relative raw URL on the same host", async () => {

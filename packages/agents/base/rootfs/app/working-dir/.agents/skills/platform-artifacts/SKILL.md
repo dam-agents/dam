@@ -11,7 +11,9 @@ description: >
 
 Publish with `create_artifact({ ..., interactive: true })`.
 Only HTML supports prompt buttons and shared state.
-The artifact remains private and cannot later become shareable; publish a separate static copy for sharing.
+The artifact can never be public.
+The owner can share it with named people in the app's Share dialog; you cannot.
+For those people the page renders as stored, and its buttons and requests fail at once with a notice that only the owner can use them, so a viewer can never make you act.
 Omit `interactive` for ordinary pages.
 
 The platform injects `platform.sendPrompt(text)` into the page.
@@ -29,7 +31,7 @@ The agent replies in chat and may publish a new artifact version normally.
 The function returns no answer or delivery receipt; do not await a result or claim the task is complete.
 
 Buttons do not send prompts from library previews, shared pages, historical versions, another agent's chat, or while the feature is disabled.
-Keep the page readable without this capability.
+Keep the page readable without this capability, and put what a viewer of a shared copy should see into the HTML itself.
 Send prompts only in response to user actions, never automatically on load or on a timer.
 Prompts must be nonempty strings of at most 16,384 characters.
 
@@ -95,7 +97,8 @@ Only `content-type` passes through: the platform drops every other request and r
 ### Where it works
 
 The same rules as `sendPrompt`: only in the owner's docked preview beside a chat with the publishing agent, on the latest version, with the feature enabled.
-Elsewhere, the call rejects with `timeout` after 3 minutes.
+On a page shared with named people, the call rejects at once with `not-allowed`.
+In the app elsewhere, the call rejects with `timeout` after 3 minutes.
 The wait is that long because waking a hibernated agent can take up to 2 minutes.
 Show a loading state while you wait.
 

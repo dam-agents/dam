@@ -34,7 +34,7 @@ func TestOwnerCredentialSecret_HoldsOnlyWhatTheOwnersAgentsAreGranted(t *testing
 	agentA := filterByGrants("agent-a", all, nil, []string{"gh"})
 	agentB := append(filterByGrants("agent-b", all, nil, []string{"foreign"}), foreign)
 
-	got := buildOwnerGatewaySecret("owner-1", cfg, ownerGatewayConfig{}, "", [][]corev1.Secret{agentA, agentB}, nil)
+	got, _ := buildOwnerGatewaySecret("owner-1", cfg, ownerGatewayConfig{}, "", [][]corev1.Secret{agentA, agentB}, nil)
 	var keys []string
 	for k := range got.Data {
 		if !slices.Contains(configFileKeys(got), k) {
@@ -49,8 +49,8 @@ func TestOwnerCredentialSecret_HoldsOnlyWhatTheOwnersAgentsAreGranted(t *testing
 // TEST_SCENARIO: revoking a grant takes the Connection's keys out of the owner's Secret on the next render, and its content hash changes, which is what makes the controller write it.
 func TestOwnerCredentialSecret_RevokedGrantLeaves(t *testing.T) {
 	gh := grantedConnection("owner-1", "platform-conn-gh", "gh", "api.github.com")
-	before := buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil)
-	after := buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{}}, nil)
+	before, _ := buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil)
+	after, _ := buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{}}, nil)
 	require.NotEmpty(t, credentialKeys(before))
 	assert.Empty(t, credentialKeys(after))
 	assert.NotEqual(t, before.Annotations[annOwnerCredentialsHash], after.Annotations[annOwnerCredentialsHash])
@@ -104,14 +104,15 @@ func TestOwnerCredentialSecret_WrittenOnlyWhenItChanges(t *testing.T) {
 		}
 		return n
 	}
-	err := r.applyOwnerGatewayFiles(context.Background(), buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil))
-	require.NoError(t, err)
+	apply := func() error {
+		files, _ := buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil)
+		return r.applyOwnerGatewayFiles(context.Background(), files)
+	}
+	require.NoError(t, apply())
 	assert.Equal(t, 1, writes())
-	err = r.applyOwnerGatewayFiles(context.Background(), buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil))
-	require.NoError(t, err)
+	require.NoError(t, apply())
 	assert.Equal(t, 1, writes(), "an unchanged rendering writes nothing")
 	gh.Data[envoyCredentialKeySDS] = []byte("rotated")
-	err = r.applyOwnerGatewayFiles(context.Background(), buildOwnerGatewaySecret("owner-1", bootstrapTestCfg, ownerGatewayConfig{}, "", [][]corev1.Secret{{gh}}, nil))
-	require.NoError(t, err)
+	require.NoError(t, apply())
 	assert.Equal(t, 2, writes())
 }

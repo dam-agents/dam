@@ -29,6 +29,7 @@ function isOutputLimitStop(stopReason: string | undefined): boolean {
 }
 
 const PLUMBING_TAGS = [
+  "continued-from",
   "how-to-respond",
   "addressed-to-you",
   "reading-along",

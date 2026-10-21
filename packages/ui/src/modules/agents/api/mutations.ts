@@ -21,7 +21,7 @@ import { seedEmptySessionList } from "../../sessions/api/queries.js";
 import { agentsKeys } from "./queries.js";
 
 const invalidatesAgentsList = {
-  invalidates: [agentsKeys.listWithChannels()],
+  invalidates: [agentsKeys.listWithChannels(), trpc.attention.pathKey()],
 };
 
 const invalidatesAgentsAndBudget = {
@@ -193,36 +193,6 @@ export function useUpgradeAgentMutation() {
     meta: {
       ...invalidatesAgentsAndBudget,
       errorToast: "Couldn't update agent",
-    },
-  });
-}
-
-export function useMigrateRuntimeMutation() {
-  return useMutation({
-    ...trpc.agents.migrateRuntime.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't move the agent to the new runtime",
-    },
-  });
-}
-
-export function useAbortRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.abortRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't undo the move to the new runtime",
-    },
-  });
-}
-
-export function useRetryRuntimeMigrationMutation() {
-  return useMutation({
-    ...trpc.agents.retryRuntimeMigration.mutationOptions(),
-    meta: {
-      ...invalidatesAgentsAndBudget,
-      errorToast: "Couldn't retry the move to the new runtime",
     },
   });
 }

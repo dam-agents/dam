@@ -69,14 +69,11 @@ fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the loader holds every machine of its owner as their parent, and the kernel weighs a victim by memory plus its own adjustment: one it inherits from the container runtime ties with a VMM at the maximum as soon as it holds a few pages. It asks for the lowest score the kernel allows it, as the runner does, and a kernel that refuses leaves the inherited one in place, which is said on the console.
+// UNIT_BOUNDARY_DESCRIPTION: the loader holds every machine of its owner as their parent, and the kernel weighs a victim by memory plus its own adjustment: one it inherits from the container runtime ties with a VMM at the maximum as soon as it holds a few pages. It asks for the lowest score there is, as the runner does, and a kernel that refuses leaves the inherited one in place, which is said on the console.
 fn lower_own_oom_score_adj() {
     const PATH: &str = "/proc/self/oom_score_adj";
-    if std::fs::write(PATH, "-1000").is_ok() {
-        return;
-    }
-    if let Err(e) = std::fs::write(PATH, "0") {
-        tracing::warn!(path = PATH, error = %e, "could not lower the loader's own OOM score; the kernel may weigh it against a machine");
+    if let Err(e) = std::fs::write(PATH, "-1000") {
+        tracing::warn!(path = PATH, error = %e, "could not lower the loader's own OOM score; the kernel may weigh it above the machines it holds");
     }
 }
 
@@ -420,28 +417,51 @@ impl Loader {
 fn reap_children(runner: i32, exits: &Path) -> Option<ExitStatus> {
     let mut runner_status = None;
     loop {
-        let mut status = 0;
-        // SAFETY: WNOHANG never blocks, and the kernel writes at most the status word at `status`.
-        let pid = unsafe { libc::waitpid(-1, &raw mut status, libc::WNOHANG) };
+        let mut info: libc::siginfo_t = unsafe { std::mem::zeroed() };
+        // SAFETY: WNOHANG never blocks and WNOWAIT leaves the child unreaped, so its identity can still be read before this takes it away.
+        let peeked = unsafe {
+            libc::waitid(
+                libc::P_ALL,
+                0,
+                &raw mut info,
+                libc::WEXITED | libc::WNOWAIT | libc::WNOHANG,
+            )
+        };
+        if peeked != 0 {
+            break;
+        }
+        let pid = unsafe { info.si_pid() };
         if pid <= 0 {
             break;
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: the start time is read from the child while it is still a zombie, since the reap below is what takes its last readable trace away, and the record has to say which process it names.
+        let start = smolvm::process::process_start_time(pid);
+        let mut status = 0;
+        // SAFETY: the child is this process's own and reaping it here is what the record above is about.
+        let reaped = unsafe { libc::waitpid(pid, &raw mut status, libc::WNOHANG) };
+        if reaped != pid {
+            continue;
         }
         if pid == runner {
             runner_status = Some(ExitStatus::from_raw(status));
             continue;
         }
         if libc::WIFSIGNALED(status) {
-            if let Err(e) = std::fs::create_dir_all(exits).and_then(|()| {
-                std::fs::write(
-                    exits.join(pid.to_string()),
-                    libc::WTERMSIG(status).to_string(),
-                )
-            }) {
+            if let Err(e) = record_exit(exits, pid, start, libc::WTERMSIG(status)) {
                 tracing::warn!(pid, error = %e, "recording a machine's VMM exit for the next runner");
             }
         }
     }
     runner_status
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: writes a reaped VMM's death where the runner that adopted the machine reads it, whole or not at all: the runner reads the moment a record appears, and a record caught half-written would name no signal — a death read as a machine that exited on its own, and pruned with the kill inside it. A rename within the directory is the one write a reader cannot see in pieces. The record carries the start time the kernel gave that process, read before the reap took it away: a pid is a number the kernel hands out again, so the number alone cannot tell the runner whether a record names the VMM the machine runs now or the one before it.
+fn record_exit(exits: &Path, pid: i32, start: Option<u64>, signal: i32) -> std::io::Result<()> {
+    std::fs::create_dir_all(exits)?;
+    let scratch = exits.join(format!(".{pid}.part"));
+    let start = start.map_or_else(String::new, |at| at.to_string());
+    std::fs::write(&scratch, format!("{start}\n{signal}"))?;
+    std::fs::rename(scratch, exits.join(pid.to_string()))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the directory the runner reads a handed-over machine's exit from: its own state directory, which the loader sees in the arguments it passes on. The runner falls back to the same default when it names none.
@@ -550,10 +570,17 @@ mod tests {
             reap_children(-1, &exits);
             std::thread::sleep(Duration::from_millis(5));
         }
+        let record = std::fs::read_to_string(exits.join(pid.to_string())).unwrap();
+        let (start, signal) = record.split_once('\n').expect("a start time and a signal");
         assert_eq!(
-            std::fs::read_to_string(exits.join(pid.to_string())).unwrap(),
+            signal,
             libc::SIGSYS.to_string(),
             "the VMM's signal is what the next runner names the kill by"
+        );
+        // TEST_SCENARIO: the record names the process it is about, and the loader read that identity from the child while it was still a zombie: the kernel stops answering for a reaped process, so the field is what that read produced rather than anything this test can ask for now.
+        assert!(
+            start.parse::<u64>().is_ok(),
+            "the record carries no start time, so nothing could tell this death from a predecessor's: {record:?}"
         );
         let _ = vmm.wait();
 
@@ -573,6 +600,43 @@ mod tests {
             "a child that exited on its own left a kill record"
         );
         let _ = quiet.wait();
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    // TEST_SCENARIO: the runner reads a record the moment it appears, so a record is never written in place: a reader that caught it empty would read a VMM that exited on its own, drop the kill, and let the file be pruned. It is written aside and renamed, and a write that stops before the rename leaves nothing the runner reads as a death.
+    #[test]
+    fn a_record_is_never_visible_half_written() {
+        let dir = std::env::temp_dir().join(format!("vmr-exits-part-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let exits = dir.join(vm_runner::state::EXIT_RECORDS);
+        record_exit(&exits, 4242, Some(77), libc::SIGSYS).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(exits.join("4242")).unwrap(),
+            format!("77\n{}", libc::SIGSYS),
+            "the record names the death and the process it belongs to"
+        );
+        assert!(
+            !exits.join(".4242.part").exists(),
+            "the scratch file is renamed away"
+        );
+        // TEST_SCENARIO: what a reader sees if the write stopped before the rename, which is a name no reader looks for.
+        std::fs::write(exits.join(".4243.part"), "").unwrap();
+        assert!(!exits.join("4243").exists());
+        // TEST_SCENARIO: a record published by rename replaces the name a reader polls, and never writes through it: a writer that opened the final path would truncate a record another death left there, and a reader of that name would catch it empty, which is the failure the rename exists to rule out. The name points at a file here, so a write through it lands in that file and the rename leaves it alone.
+        let pointed_at = dir.join("pointed-at");
+        std::fs::write(&pointed_at, "").unwrap();
+        std::os::unix::fs::symlink(&pointed_at, exits.join("4244"))
+            .expect("a name to publish over");
+        record_exit(&exits, 4244, None, libc::SIGTERM).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&pointed_at).unwrap(),
+            "",
+            "the final name is replaced, never written through"
+        );
+        assert_eq!(
+            std::fs::read_to_string(exits.join("4244")).unwrap(),
+            format!("\n{}", libc::SIGTERM)
+        );
         let _ = std::fs::remove_dir_all(&dir);
     }
 

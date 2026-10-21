@@ -229,7 +229,10 @@ virtualization:
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0 and DAC_OVERRIDE, so its VMMs can
     # read the image files a guest is served even where the image keeps them
-    # from root. The runner drops every other capability, cannot escalate,
+    # from root, and SYS_RESOURCE, so the runner and its loader can lower
+    # their own OOM score below the 997 the container runtime starts them at
+    # and the kernel picks a machine's VMM over them when the pod's cgroup
+    # runs out. The runner drops every other capability, cannot escalate,
     # and runs under the runtime/default seccomp profile. That SCC refuses
     # the hostPath of the node image cache and the release directory, so on
     # OpenShift this is
@@ -386,6 +389,8 @@ virtualization:
     # does not run (`packages/vm-runner/reboot-id`): a runner refuses it, its
     # pod rolls instead, and that roll does not wait for a busy agent, so the
     # fix reaches every machine within the roll rather than after `idleWait`.
+    # The key covers the pod's loader too, which a hand-off never replaces:
+    # only the pod's image carries it.
     # A pod built from a release that declares no key takes the release in
     # place, since there is nothing to compare it with.
     # A roll for a changed pod shape keeps its idle wait. A runner that
@@ -397,6 +402,15 @@ virtualization:
       # of the install's runners; `maxConcurrent` is then ignored.
       maxConcurrentPercent: 0
       settleTimeout: 10m
+      # A roll whose new pod never becomes ready is a broken release, and it
+      # keeps its place so the release goes no further. `stalledTimeout`
+      # bounds that hold while another runner is ready on the new pod: past
+      # it the place is released and the next runner may roll, so one
+      # owner's stall does not freeze every owner's upgrade. With no ready
+      # runner on the new pod the hold has no bound. The stalled runner
+      # keeps its `agent-platform.ai/runner-roll-stalled` mark and a Warning
+      # Event.
+      stalledTimeout: 30m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
     # release this chart's runner image carries: the runner and the two guest
@@ -446,8 +460,6 @@ virtualization:
   # `agent-platform.ai/retained-until` (edit it to keep the volume longer) and
   # `agent-platform.ai/retained-mount` (the path it held). Nothing mounts it;
   # the controller deletes it when the window passes or the agent is deleted.
-  # The api-server reads the same value to name the window in the Migrate
-  # dialog.
   # `concurrency` caps the copy Jobs running at once in the install and
   # `ownerConcurrency` those of one owner, whose copies all land on the same
   # runner claim; a migration past either cap waits, and says so on the Agent.
@@ -629,8 +641,8 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and DAC_OVERRIDE which only the VM runner
-    # requests. No agent workload can take them: agent containers are
+    # allowedCapabilities, and DAC_OVERRIDE and SYS_RESOURCE, which only the
+    # VM runner requests. No agent workload can take them: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent
     # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to
@@ -1043,6 +1055,14 @@ keycloak:
     enabled: false
     username: null
     password: null
+
+  # -- More test users bootstrapped via realm import, for QA installs that need
+  # more than one account. Empty by default — the same rule as `testUser`.
+  # Each entry: `username`, `password`, optional `firstName`/`lastName`, and
+  # `groups` — any of `inspectors`, `slack-installers` (ignored when that role
+  # is disabled). The email is `<username>@platform.local`; `requiredRole`,
+  # when set, is granted as for `testUser`.
+  extraTestUsers: []
 
   # -- Database connection (empty host = use shared local postgres)
   db:
@@ -2041,11 +2061,13 @@ controller:
   envoyImage: mirror.gcr.io/envoyproxy/envoy:distroless-v1.39.4
   # -- PEM CA certificates every agent gateway trusts upstream, on top of the
   # public roots, and every agent trusts beside its gateway's CA, for the hosts
-  # its gateway passes through untouched. Needed when something on the
-  # cluster's egress path intercepts TLS with its own CA: a corporate
-  # TLS-inspecting proxy, or the platform's own gateway when the platform runs
-  # inside one of its agents (`mise run cluster:install` sets it there). Empty
-  # leaves each gateway on its image's own roots. Set with --set-file, e.g.
+  # its gateway passes through untouched. The api-server trusts them too
+  # (NODE_EXTRA_CA_CERTS), for its own Slack, GitHub and OAuth calls. Needed
+  # when something on the cluster's egress path intercepts TLS with its own
+  # CA: a corporate TLS-inspecting proxy, or the platform's own gateway when
+  # the platform runs inside one of its agents (`mise run cluster:install`
+  # sets it there). Empty leaves each gateway on its image's own roots. Set
+  # with --set-file, e.g.
   # `--set-file controller.gatewayUpstreamExtraCAs=proxy-ca.crt`.
   gatewayUpstreamExtraCAs: ""
   # -- Where each agent gateway may send traffic. The controller renders a
@@ -2243,6 +2265,15 @@ harnesses:
       # Code writes, so it rides its own env rail.
       telemetry: bob
       tags: ["Anthropic", "Mistral", "Granite"]
+    copilot:
+      enabled: true
+      displayName: "Copilot"
+      description: "GitHub Copilot CLI coding agent"
+      releaseNotesUrl: "https://github.com/github/copilot-cli/releases"
+      # Copilot's BYOK provider speaks Chat Completions through the Model
+      # Router, which meters its spend; no export rail.
+      providers: [ibm-litellm, curve-bender, openai, platform]
+      tags: ["Any provider"]
 
 # -- E2E test affordances. Gated test-only surface: the api-server
 # registers a control tRPC namespace that drives the mock Agent harness over

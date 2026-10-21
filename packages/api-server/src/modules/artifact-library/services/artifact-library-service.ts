@@ -111,7 +111,7 @@ type AgentApiAccess =
         | "missing"
         | "not-html"
         | "not-interactive"
-        | "not-private"
+        | "public"
         | "not-agent-published"
         | "agent-not-bound";
     };
@@ -133,8 +133,7 @@ function agentApiAccess(
   if (!row) return { allowed: false, denial: "missing" };
   if (row.kind !== "html") return { allowed: false, denial: "not-html" };
   if (!row.interactive) return { allowed: false, denial: "not-interactive" };
-  if (row.visibility !== "private")
-    return { allowed: false, denial: "not-private" };
+  if (row.visibility === "public") return { allowed: false, denial: "public" };
   if (row.agentId === null)
     return { allowed: false, denial: "not-agent-published" };
   if (agentIds !== "*" && !agentIds.includes(row.agentId))
@@ -374,7 +373,7 @@ export function createArtifactLibraryService(
         {
           title: row.title,
           fileName: ref.fileName,
-          interactive: row.interactive,
+          ...(row.interactive ? { bridge: "owner" as const } : {}),
         },
       );
     },
@@ -416,7 +415,7 @@ export function createArtifactLibraryService(
         throw new TRPCError({
           code: "BAD_REQUEST",
           message:
-            "an interactive artifact can talk to your agent, so it cannot be shared",
+            "an interactive artifact can talk to your agent, so it cannot be public",
         });
       }
       const id = randomUUID();
@@ -570,15 +569,11 @@ export function createArtifactLibraryService(
         parsed.viewers,
         (before) => {
           requireSharingPermission(before, parsed);
-          if (
-            before.interactive &&
-            parsed.visibility !== undefined &&
-            parsed.visibility !== "private"
-          ) {
+          if (before.interactive && parsed.visibility === "public") {
             throw new TRPCError({
               code: "PRECONDITION_FAILED",
               message:
-                "this page can talk to your agent, so it cannot be shared — it stays private",
+                "this page can talk to your agent, so it cannot be public — share it with named people in the app instead",
             });
           }
         },

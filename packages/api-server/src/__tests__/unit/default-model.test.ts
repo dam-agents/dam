@@ -240,6 +240,8 @@ describe("the one-time default conversion", () => {
             model: opts.setting === undefined ? "opus[1m]" : opts.setting,
           }) as never,
         merge: async () => {},
+        locked: (async (_agentId: string, work: (tx: never) => unknown) =>
+          work({} as never)) as never,
       },
       catalog: CATALOG,
       getCapabilities: async () => opts.capabilities ?? ROUTED,
@@ -409,6 +411,8 @@ describe("a schedule model on a runtime that takes none per session", () => {
       snapshotRepo: {
         read: async () => ({ model: own }) as never,
         merge: async () => {},
+        locked: (async (_agentId: string, work: (tx: never) => unknown) =>
+          work({} as never)) as never,
       },
     });
 
@@ -441,6 +445,7 @@ describe("defaultModelNoticeOf", () => {
       note?: { changedFrom: string };
       aliases?: string[];
       routed?: boolean;
+      runsUnattended?: boolean;
     } = {},
   ) =>
     defaultModelNoticeOf({
@@ -449,6 +454,7 @@ describe("defaultModelNoticeOf", () => {
       pair: p,
       note: opts.note ?? null,
       grantedAliases: new Set(opts.aliases ?? ["anthropic"]),
+      runsUnattended: opts.runsUnattended ?? true,
     })?.state ?? null;
 
   // TEST_SCENARIO: the owner is told about a default with no model, one with no provider to pick from, one whose model names a provider alias the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default and one that runs as saved say nothing.
@@ -479,5 +485,24 @@ describe("defaultModelNoticeOf", () => {
     expect(
       notice(pair("ibm/aws/claude-opus-4-8", "lite"), { routed: false }),
     ).toBeNull();
+  });
+
+  // TEST_SCENARIO: a default that stops runs fails nothing on an Agent with no enabled Schedule and no Slack or Telegram Channel bound, so its owner is not told; a run of any of those kinds makes every such state count.
+  it("says nothing where no unattended run exists", () => {
+    const idle = { runsUnattended: false };
+    expect(notice(pair(null, null), idle)).toBeNull();
+    expect(notice(pair(null, null), { ...idle, aliases: [] })).toBeNull();
+    expect(notice(pair("ibm/aws/claude-opus-4-8", "lite"), idle)).toBeNull();
+    expect(notice(pair(null, null), { runsUnattended: true })).toBe("not-set");
+  });
+
+  // TEST_SCENARIO: a converted default names the model every run pays for, so its owner is told even on an Agent that runs nothing unattended.
+  it("tells a conversion whatever the Agent runs", () => {
+    expect(
+      notice(pair("anthropic/claude-sonnet-5-5"), {
+        note: { changedFrom: "haiku" },
+        runsUnattended: false,
+      }),
+    ).toBe("changed");
   });
 });

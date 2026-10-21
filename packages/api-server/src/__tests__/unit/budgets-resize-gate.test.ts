@@ -167,6 +167,7 @@ describe("budgets meter (#1900)", () => {
           memoryUsedBytes: 640 * 1024 ** 2,
           storageUsedBytes: 0,
           cpuMilli: 0,
+          homeFull: false,
         },
       ],
       observedAt: "2026-10-13T12:00:00.000Z",
@@ -218,6 +219,7 @@ function usage(usedGi: number, usableGi: number) {
         diskGiB: 100,
         diskUsedBytes: 0,
         cpuMilli: 0,
+        homeFull: false,
       },
       {
         id: "someone-elses",
@@ -226,6 +228,7 @@ function usage(usedGi: number, usableGi: number) {
         diskGiB: 100,
         diskUsedBytes: 0,
         cpuMilli: 0,
+        homeFull: false,
       },
     ],
     observedAt: "2026-10-13T12:00:00.000Z",

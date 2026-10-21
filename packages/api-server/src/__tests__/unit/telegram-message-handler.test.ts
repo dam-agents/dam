@@ -8,6 +8,7 @@ import {
 } from "../../modules/channels/infrastructure/telegram.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
+import { EventType, type DomainEvent } from "../../events.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -41,15 +42,20 @@ function harness(opts?: {
   isAdmin?: boolean;
   termsAccepted?: boolean;
   readsGroupMessages?: boolean;
+  ownerOf?: (agentId: string) => Promise<string | null>;
 }) {
   const { store: pendingOAuthFlows, map: pendingOAuthFlowsMap } =
     createInspectableTtlStore<TelegramOAuthPending>();
-  const unbind = vi.fn(async () => {});
+  const bindings = opts?.bindings;
+  const unbind = vi.fn(async (conversationId: string) => {
+    if (bindings) delete bindings[conversationId];
+  });
   const bind = vi.fn(async () => "bound" as const);
   const setAmbient = vi.fn(async () => {});
   const relay = vi.fn();
+  const emitted: DomainEvent[] = [];
   const agentFor = (conversationId: string) =>
-    opts?.bindings ? opts.bindings[conversationId] : opts?.boundTo;
+    bindings ? bindings[conversationId] : opts?.boundTo;
 
   const handle = createTelegramMessageHandler({
     conversations: {
@@ -75,6 +81,8 @@ function harness(opts?: {
     oauthConfig,
     pendingOAuthFlows,
     isTermsAccepted: async () => opts?.termsAccepted ?? true,
+    ownerOf: opts?.ownerOf ?? (async () => "kc|owner-1"),
+    emit: (event) => emitted.push(event),
     uiBaseUrl: "https://app.example",
     brandName: "Platform",
     botUsername: () => "krodo_bot",
@@ -89,6 +97,7 @@ function harness(opts?: {
     bind,
     setAmbient,
     relay,
+    emitted,
   };
 }
 
@@ -132,6 +141,49 @@ describe("telegram message handler", () => {
     expect(posted).toContain("Connect this chat to one of your agents");
     expect(posted).toContain("link-button");
     expect(posted).toContain("https://kc.example");
+  });
+
+  // TEST_SCENARIO: an in-chat unbind removes the Agent's last Telegram run, so its owner's attention query must re-read; the handler therefore sends the owner an unbind event naming the Agent.
+  it("tells the owner a chat was unbound", async () => {
+    const h = harness({ boundTo: "agent-1" });
+    await h.handle(makeThread(), { text: "/unbind", author: author() }, true);
+    expect(h.emitted).toContainEqual({
+      type: EventType.TelegramChatUnbound,
+      ownerSub: "kc|owner-1",
+      agentId: "agent-1",
+    });
+  });
+
+  // TEST_SCENARIO: the owner lookup can fail while the Agent cache is not synced, and its live Kubernetes fallback is transient. The binding must survive such a failure, so the retry still finds the chat bound, unbinds it, and sends the owner the hint the failed attempt could not.
+  it("keeps the binding when the owner lookup fails, so a retry still hints", async () => {
+    const bindings: Record<string, string> = { "chat-42": "agent-1" };
+    let failLookup = true;
+    const h = harness({
+      bindings,
+      ownerOf: async () => {
+        if (failLookup) throw new Error("kubernetes read failed");
+        return "kc|owner-1";
+      },
+    });
+
+    await expect(
+      h.handle(makeThread(), { text: "/unbind", author: author() }, true),
+    ).rejects.toThrow("kubernetes read failed");
+    expect(h.unbind).not.toHaveBeenCalled();
+    expect(bindings["chat-42"]).toBe("agent-1");
+    expect(h.emitted).toEqual([]);
+
+    failLookup = false;
+    const thread = makeThread();
+    await h.handle(thread, { text: "/unbind", author: author() }, true);
+    expect(h.unbind).toHaveBeenCalledWith("chat-42");
+    expect(bindings["chat-42"]).toBeUndefined();
+    expect(h.emitted).toContainEqual({
+      type: EventType.TelegramChatUnbound,
+      ownerSub: "kc|owner-1",
+      agentId: "agent-1",
+    });
+    expect(thread.posts.join("\n")).toContain("Chat disconnected");
   });
 
   it("unbinds on `/unbind` from a bound chat", async () => {
