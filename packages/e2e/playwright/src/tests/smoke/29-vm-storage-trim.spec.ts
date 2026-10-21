@@ -158,8 +158,8 @@ function markRoom(id: string, dir: string): string {
   );
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: puts every other running vm agent of the test user to sleep, so only the case's own machines change how many run. Agents earlier specs left running are hibernated by the idle sweep after 5 minutes, and one that hibernates while a case starts a machine cancels the move the case waits for (#5624).
-async function sleepOtherMachines(): Promise<void> {
+// UNIT_BOUNDARY_DESCRIPTION: puts every other running vm agent of the test user to sleep, so only the case's own machines change how many run, and returns them for the case to wake again. Agents earlier specs left running are hibernated by the idle sweep after 5 minutes, and one that hibernates while a case starts a machine cancels the move the case waits for (#5624).
+async function sleepOtherMachines(): Promise<string[]> {
   const ours = new Set([probeId, siblingId]);
   const others = (await api.agents.list.query()).filter(
     (agent) => agent.vm && !ours.has(agent.id) && agent.state !== "hibernated",
@@ -170,6 +170,17 @@ async function sleepOtherMachines(): Promise<void> {
     await waitAgentState(api, agent.id, "hibernated", {
       failOnError: false,
     }).catch(() => undefined);
+  return others.map((agent) => agent.id);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: wakes the agents `sleepOtherMachines` put to sleep, so the cases after the share move run among the machines they ran among before it. The writing case needs that: its fill marks the guest's whole room without the claim paying for it, so a grant of half the claim, which two machines alone are given, is more than the guest's disk can give back on top of the fill.
+async function wakeMachines(ids: string[]): Promise<void> {
+  for (const id of ids)
+    await api.agents.wake.mutate({ id }).catch(() => undefined);
+  for (const id of ids)
+    await waitAgentState(api, id, "running", { failOnError: false }).catch(
+      () => undefined,
+    );
 }
 
 async function waitFor(
@@ -280,43 +291,47 @@ test("room a home of small files frees goes back too", async () => {
   );
 });
 
-// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. The user's other vm agents are put to sleep first, so the case's machines are the only ones that start or stop. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
+// TEST_SCENARIO: a share is the claim's room below its 95% ceiling divided among the machines that are running, so stopping a sibling doubles the probe's share and starting one halves it again, and the guard must take both moves and give the room back both ways: stopping the sibling grows the share, which shrinks the guard, and the guest's free space must rise; starting another grows the guard back, and the free space must fall. The user's other vm agents are put to sleep first, so the case's machines are the only ones that start or stop, and woken again at its end. Two cycles, because a resize that frees only part of a preallocated extent loses a little room on every move, and the loss adds up. The claim's own use is not asserted here: every round boots a machine, and a boot writes onto the claim, so what the claim gains is the new machine's own room.
 test("the guard gives a machine the room its share gains, and takes it back", async () => {
   test.setTimeout(900_000);
   test.skip(!probeDisk, "an earlier case did not measure a machine's disk");
-  await sleepOtherMachines();
-  await keepAwake(probeId);
-  await keepAwake(siblingId);
-  const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
-  for (const round of [1, 2]) {
+  const slept = await sleepOtherMachines();
+  try {
     await keepAwake(probeId);
-    const base = guestAvailMiB();
-    await api.agents.delete.mutate({ id: siblingId });
-    siblingId = "";
-    await keepAwake(probeId);
-    const stopped = await waitFor(
-      guestAvailMiB,
-      (mib) => mib >= base + MOVE_MIB,
-      `round ${round}: the guest's free space did not grow when a machine stopped`,
-    );
-    siblingId = await createAgentOn(
-      api,
-      "vm",
-      `e2e-storage-trim-peer-${round}`,
-      harnessName,
-    );
-    await waitAgentState(api, siblingId, "running");
-    await keepAwake(probeId);
-    await waitFor(
-      guestAvailMiB,
-      (mib) => mib <= stopped - MOVE_MIB,
-      `round ${round}: the guest's free space did not fall when another machine started`,
-    );
+    await keepAwake(siblingId);
+    const probeDiskBefore = machineDisks().get(probeDisk) ?? 0;
+    for (const round of [1, 2]) {
+      await keepAwake(probeId);
+      const base = guestAvailMiB();
+      await api.agents.delete.mutate({ id: siblingId });
+      siblingId = "";
+      await keepAwake(probeId);
+      const stopped = await waitFor(
+        guestAvailMiB,
+        (mib) => mib >= base + MOVE_MIB,
+        `round ${round}: the guest's free space did not grow when a machine stopped`,
+      );
+      siblingId = await createAgentOn(
+        api,
+        "vm",
+        `e2e-storage-trim-peer-${round}`,
+        harnessName,
+      );
+      await waitAgentState(api, siblingId, "running");
+      await keepAwake(probeId);
+      await waitFor(
+        guestAvailMiB,
+        (mib) => mib <= stopped - MOVE_MIB,
+        `round ${round}: the guest's free space did not fall when another machine started`,
+      );
+    }
+    expect(
+      Math.abs((machineDisks().get(probeDisk) ?? 0) - probeDiskBefore),
+      "the guard's moves must leave the probe's own disk where it was, since its blocks are marked in the guest's filesystem and never written onto the claim",
+    ).toBeLessThanOrEqual(2 * MOVE_MIB);
+  } finally {
+    await wakeMachines(slept);
   }
-  expect(
-    Math.abs((machineDisks().get(probeDisk) ?? 0) - probeDiskBefore),
-    "the guard's moves must leave the probe's own disk where it was, since its blocks are marked in the guest's filesystem and never written onto the claim",
-  ).toBeLessThanOrEqual(2 * MOVE_MIB);
 });
 
 // TEST_SCENARIO: a guest the guard holds at its share is not wedged there: the renewal that follows gives it its share back, it writes real bytes of it, and it writes again once a machine stops and its share grows. This is the defect a user reports — a steadily writing agent that hits "no space left on device" at three quarters of the storage and stays stuck — and it needs no room on the claim to reproduce: the guest's whole remaining room is filled without writing bytes, so the guest's own filesystem counts it as used and the claim does not pay for it, and the case costs a disk of the size the install already gives it and works on any pool. Each comparison waits for one sample that meets both of its bounds, and the renewed one needs a grant the runner published after the case's own write, so a room the guard has not finished moving is neither accepted as healthy nor rejected as wedged. The refusal itself is the case after this one, which asks for more than any grant could give the guest so that no renewal can make its write fit.
