@@ -127,7 +127,8 @@ The image's `/etc/rc/user/rc.conf` makes every such service supervised by `super
 A service gets the environment the pod service gets: openrc keeps `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF` of the environment it starts in, and adds every variable of `~/.config/rc/profile.env` it left unset.
 The runtime writes that file when it starts and whenever the platform changes its env, connection placeholders included, so `gh` and git in a service act as the agent's account; a value openrc's file parser would change, one with a quote, a `#` or a leading `$`, is left out.
 The runtime's own `PORT` is left out too, so a service that serves on `PORT` does not take the runtime's.
-A running service keeps the environment it started with, and gets a changed one at its next start, from the panel or `rc-service --user`; at boot, services start before the runtime, from the file it wrote before the machine stopped.
+A process keeps the environment it started with, so when the file changes the runtime restarts every running service, as it respawns the pod service: a connection added or removed reaches the services at once, and interrupts what they were doing.
+At boot, services start before the runtime, from the file it wrote before the machine stopped; the platform's first env push restarts them only when the env moved meanwhile.
 User services need OpenRC 0.60 or later; the image takes OpenRC alone from Debian testing through an apt pin, until its stable release ships one.
 
 The supervisor of a user service carries its name (`RC_USER_SERVICES`, `RC_SVCNAME`), which the process scan reads beside the keep mark, so its tree under the reaper is one **Startup Item** row rather than a Detached Process; a process below another root that only inherited those variables is not.

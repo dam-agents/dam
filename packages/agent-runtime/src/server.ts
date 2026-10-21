@@ -586,14 +586,12 @@ const {
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
 
-function writeStartupItemEnv(): void {
-  try {
-    startupItemEnv.write(mergedSpawnEnv(envStore));
-  } catch (err) {
+function applyStartupItemEnv(): void {
+  startupItemEnv.apply(mergedSpawnEnv(envStore)).catch((err: unknown) => {
     process.stderr.write(
-      `[processes] Startup Item env not written: ${err instanceof Error ? err.message : String(err)}\n`,
+      `[processes] Startup Item env not applied: ${err instanceof Error ? err.message : String(err)}\n`,
     );
-  }
+  });
 }
 
 let recoveryScheduled = false;
@@ -647,7 +645,7 @@ const runtimeChannel = await composeRuntimeChannel({
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
-        writeStartupItemEnv();
+        applyStartupItemEnv();
         void modelCatalog.refresh();
         scheduleRecovery();
       },
@@ -1332,7 +1330,7 @@ server.listen(config.PORT, () => {
 
   if (envStore.ready()) {
     podService?.refreshEnv();
-    writeStartupItemEnv();
+    applyStartupItemEnv();
   }
 
   modelCatalog.onChange(() =>
