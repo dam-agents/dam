@@ -46,6 +46,7 @@ export interface GitTraceReader {
  */
 export function createGitTraceReader(deps: {
   dir: string;
+  sessionEnvVars: readonly string[];
   onCommand: (command: GitCommand) => void;
   log: (msg: string) => void;
   now?: () => number;
@@ -79,7 +80,7 @@ export function createGitTraceReader(deps: {
         }
       }
       await rm(path, { force: true }).catch(() => undefined);
-      const command = gitCommandOf(text);
+      const command = gitCommandOf(text, deps.sessionEnvVars);
       if (command) deps.onCommand(command);
     }
     return unfinished;

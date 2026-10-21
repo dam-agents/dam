@@ -11,7 +11,8 @@ import { createToolActivityReader } from "../../modules/changes/domain/tool-acti
 import {
   gitCommandOf,
   gitTraceEnv,
-  SESSION_ENV_VARS,
+  PLATFORM_SESSION_ENV_VAR,
+  sessionEnvVarsOf,
 } from "../../modules/changes/domain/git-trace.js";
 import { INERT_GITHUB_TOKEN } from "../../modules/skills/infrastructure/github-token.js";
 import { createPullRequestFinder } from "../../modules/changes/infrastructure/pull-requests.js";
@@ -179,6 +180,13 @@ describe("tool activity", () => {
 });
 
 describe("git trace", () => {
+  const vars = sessionEnvVarsOf([
+    "CLAUDE_CODE_SESSION_ID",
+    "CODEX_THREAD_ID",
+    "PI_SESSION_ID",
+  ]);
+  const commandOf = (text: string) => gitCommandOf(text, vars);
+
   const event = (fields: Record<string, unknown>, sid = "20261021T1-P1") =>
     JSON.stringify({ sid, thread: "main", ...fields });
 
@@ -215,7 +223,7 @@ describe("git trace", () => {
    * secret, is not part of the result.
    */
   it("should read the worktree and Session of a commit", () => {
-    const command = gitCommandOf(
+    const command = commandOf(
       trace("commit", { params: { CLAUDE_CODE_SESSION_ID: "s1" } }),
     );
 
@@ -233,7 +241,7 @@ describe("git trace", () => {
    * Session still gives its command, for agent-runtime to decide.
    */
   it("should mark a push and keep a command that names no Session", () => {
-    expect(gitCommandOf(trace("push"))).toEqual({
+    expect(commandOf(trace("push"))).toEqual({
       name: "push",
       worktree: "/w/app",
       sessionId: null,
@@ -243,11 +251,11 @@ describe("git trace", () => {
 
   /**
    * TEST_SCENARIO: The platform's own variable wins over a harness's, and
-   * among a harness's the first listed wins.
+   * among the harnesses' the one listed first wins.
    */
   it("should prefer the platform's Session variable", () => {
     expect(
-      gitCommandOf(
+      commandOf(
         trace("commit", {
           params: {
             PI_SESSION_ID: "pi",
@@ -258,7 +266,7 @@ describe("git trace", () => {
       )?.sessionId,
     ).toBe("term");
     expect(
-      gitCommandOf(
+      commandOf(
         trace("commit", {
           params: { PI_SESSION_ID: "pi", CODEX_THREAD_ID: "codex" },
         }),
@@ -271,12 +279,12 @@ describe("git trace", () => {
    * one outside any repository and an unfinished trace give nothing.
    */
   it("should give nothing for a command that records no work", () => {
-    expect(gitCommandOf(trace("status"))).toBeNull();
-    expect(gitCommandOf(trace("checkout"))).toBeNull();
-    expect(gitCommandOf(trace("commit", { code: 1 }))).toBeNull();
-    expect(gitCommandOf(trace("commit", { worktree: "" }))).toBeNull();
+    expect(commandOf(trace("status"))).toBeNull();
+    expect(commandOf(trace("checkout"))).toBeNull();
+    expect(commandOf(trace("commit", { code: 1 }))).toBeNull();
+    expect(commandOf(trace("commit", { worktree: "" }))).toBeNull();
     expect(
-      gitCommandOf(trace("commit").split("\n").slice(0, 4).join("\n")),
+      commandOf(trace("commit").split("\n").slice(0, 4).join("\n")),
     ).toBeNull();
   });
 
@@ -300,7 +308,7 @@ describe("git trace", () => {
       event({ event: "atexit", code: 0 }),
     ].join("\n");
 
-    expect(gitCommandOf(text)).toMatchObject({
+    expect(commandOf(text)).toMatchObject({
       name: "commit",
       worktree: "/w/app",
     });
@@ -311,11 +319,43 @@ describe("git trace", () => {
    * into a directory and records only the Session variables.
    */
   it("should configure a per-process trace with only the Session variables", () => {
-    expect(gitTraceEnv("/home/agent/.platform/git-traces")).toMatchObject({
+    expect(
+      gitTraceEnv("/home/agent/.platform/git-traces", ["A_ID", "B_ID"]),
+    ).toMatchObject({
       GIT_TRACE2_EVENT: "/home/agent/.platform/git-traces/",
       GIT_TRACE2_BRIEF: "1",
-      GIT_TRACE2_ENV_VARS: SESSION_ENV_VARS.join(","),
+      GIT_TRACE2_ENV_VARS: "A_ID,B_ID",
     });
+  });
+
+  /**
+   * TEST_SCENARIO: The Session variables are the platform's own first, then
+   * each harness manifest's in order, each once; a harness that declares
+   * none adds nothing.
+   */
+  it("should collect the Session variables the harness manifests declare", () => {
+    expect(
+      sessionEnvVarsOf([
+        "CODEX_THREAD_ID",
+        undefined,
+        "PI_SESSION_ID",
+        "CODEX_THREAD_ID",
+      ]),
+    ).toEqual([PLATFORM_SESSION_ENV_VAR, "CODEX_THREAD_ID", "PI_SESSION_ID"]);
+    expect(sessionEnvVarsOf([])).toEqual([PLATFORM_SESSION_ENV_VAR]);
+  });
+
+  /**
+   * TEST_SCENARIO: A variable no harness declares does not name a Session,
+   * even when git recorded it.
+   */
+  it("should ignore a Session variable no harness declares", () => {
+    expect(
+      gitCommandOf(trace("commit", { params: { PI_SESSION_ID: "pi" } }), [
+        PLATFORM_SESSION_ENV_VAR,
+        "CLAUDE_CODE_SESSION_ID",
+      ])?.sessionId,
+    ).toBeNull();
   });
 });
 

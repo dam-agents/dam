@@ -15,8 +15,14 @@ import {
 import {
   gitCommandOf,
   gitTraceEnv,
-  SESSION_ENV_VARS,
+  sessionEnvVarsOf,
 } from "../../modules/changes/domain/git-trace.js";
+
+const sessionEnvVars = sessionEnvVarsOf([
+  "CLAUDE_CODE_SESSION_ID",
+  "CODEX_THREAD_ID",
+  "PI_SESSION_ID",
+]);
 
 /**
  * TEST_OVERVIEW: the changes service finds every git repository the agent
@@ -119,10 +125,10 @@ async function traced(
     env: {
       ...Object.fromEntries(
         Object.entries(process.env).filter(
-          ([key]) => !(SESSION_ENV_VARS as readonly string[]).includes(key),
+          ([key]) => !sessionEnvVars.includes(key),
         ),
       ),
-      ...gitTraceEnv(dir),
+      ...gitTraceEnv(dir, sessionEnvVars),
       ...sessionEnv,
     },
     timeoutMs: 30_000,
@@ -131,6 +137,7 @@ async function traced(
   for (const name of await fs.readdir(dir)) {
     const command = gitCommandOf(
       await fs.readFile(path.join(dir, name), "utf8"),
+      sessionEnvVars,
     );
     if (command) await service.onGitCommand(command);
   }

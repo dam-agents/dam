@@ -178,6 +178,11 @@ export const runtimeManifestSchema = z.object({
 
   sessionMcpEntry: z.boolean().default(true),
 
+  sessionEnvVar: z
+    .string()
+    .regex(/^[A-Z_][A-Z0-9_]*$/)
+    .optional(),
+
   agentProcesses: z.array(z.string().min(1).max(15)).default([]),
 
   extensions: z

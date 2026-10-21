@@ -24,6 +24,7 @@ let clock: number;
 const reader = () =>
   createGitTraceReader({
     dir,
+    sessionEnvVars: ["CLAUDE_CODE_SESSION_ID"],
     onCommand: (command) => commands.push(command),
     log: () => undefined,
     now: () => clock,
@@ -151,6 +152,7 @@ describe("git trace reader", () => {
   it("should read a trace that finishes after the watch fired", async () => {
     const traces = createGitTraceReader({
       dir,
+      sessionEnvVars: ["CLAUDE_CODE_SESSION_ID"],
       onCommand: (command) => commands.push(command),
       log: () => undefined,
       unfinishedSweepMs: 100,

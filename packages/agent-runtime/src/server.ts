@@ -76,6 +76,7 @@ import {
   composeChanges,
   createGitTraceReader,
   gitTraceEnv,
+  sessionEnvVarsOf,
 } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import {
@@ -214,8 +215,12 @@ const changes = composeChanges({
   log: changesLog,
 });
 const gitTraceDir = join(homeDir, ".platform", "git-traces");
+const sessionEnvVars = sessionEnvVarsOf(
+  Object.values(harnessManifests).map((m) => m.sessionEnvVar),
+);
 const gitTraces = createGitTraceReader({
   dir: gitTraceDir,
+  sessionEnvVars,
   onCommand: (command) => void changes.onGitCommand(command),
   log: changesLog,
 });
@@ -552,7 +557,7 @@ const {
   agentRequests: toolApprovalReporter,
   onToolActivity: ({ sessionId }) =>
     void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
-  gitTraceEnv: gitTraceEnv(gitTraceDir),
+  gitTraceEnv: gitTraceEnv(gitTraceDir, sessionEnvVars),
   onTurnOutcome: (sessionId, end) =>
     invocationWatch.turnOutcome(sessionId, end),
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
@@ -980,7 +985,7 @@ function attachPty(
           ...terminalModelEnv(lease),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
-          ...gitTraceEnv(gitTraceDir),
+          ...gitTraceEnv(gitTraceDir, sessionEnvVars),
           HARNESS_SESSION_ID: sessionId,
           PLATFORM_TERMINAL_ID: terminalId,
         },

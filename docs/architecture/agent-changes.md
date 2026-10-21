@@ -54,6 +54,7 @@ A command that only reads (`status`, `log`) or switches branches records nothing
 
 git records only the environment variables it is told to, and those name the Session.
 A terminal Session's processes carry the platform's own Session id; a harness sets its own on the shell commands of a chat Session — `CLAUDE_CODE_SESSION_ID` on Claude Code, `CODEX_THREAD_ID` on Codex, `PI_SESSION_ID` on Pi — each the same id the runtime knows the Session by.
+Each harness's runtime manifest names its variable (`sessionEnvVar`), so a new harness brings its own without a runtime change; the platform's own variable comes first.
 A harness that sets none, Bob today, has a command linked to the only Session running a turn, and to nobody when several are, logged rather than guessed.
 A pushed branch is looked up on the remote it tracks.
 
