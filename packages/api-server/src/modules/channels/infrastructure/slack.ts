@@ -1663,6 +1663,18 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
   const turnReplies = (refs: TurnRef[]) =>
     refs.flatMap((ref) => ref.replyTexts ?? []);
 
+  function noteCarriedByThread(
+    instanceName: string,
+    threadKey: string,
+    tss: readonly string[],
+  ): void {
+    if (tss.length === 0) return;
+    replaceSeenAbove(instanceName, threadKey, [
+      ...readSeenAbove(instanceName, threadKey),
+      ...tss,
+    ]);
+  }
+
   const lingeringTurns = new Map<string, Map<TurnRef, number>>();
 
   function beginTurn(instanceName: string, ref: TurnRef) {
@@ -3255,10 +3267,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       outcome = "success";
     } catch (err) {
       if (superseded)
-        replaceSeenAbove(instanceName, threadKey, [
-          ...readSeenAbove(instanceName, threadKey),
-          ...verdictRefs().map((ref) => ref.eventTs),
-        ]);
+        noteCarriedByThread(
+          instanceName,
+          threadKey,
+          verdictRefs().map((ref) => ref.eventTs),
+        );
       if (stopped()) {
         outcome = "success";
         getLogger().info(
@@ -5246,16 +5259,23 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       settleMs,
       canSteer: (msg) => !carriesAttachments(msg),
       runTurn: async (queued, onSession) => {
-        const batch = conversation.oneThread
-          ? queued
-          : queued.filter(
-              (m) =>
-                !threadSupersede.isSuperseded(
-                  conversation.instanceName,
-                  conversation.channelId,
-                  m.eventTs,
-                ),
-            );
+        const threadKey = slackThreadKey(
+          conversation.channelId,
+          conversation.threadTs,
+        );
+        const isCarriedByThread = (m: AddressedPending) =>
+          !conversation.oneThread &&
+          threadSupersede.isSuperseded(
+            conversation.instanceName,
+            conversation.channelId,
+            m.eventTs,
+          );
+        noteCarriedByThread(
+          conversation.instanceName,
+          threadKey,
+          queued.filter(isCarriedByThread).map((m) => m.eventTs),
+        );
+        const batch = queued.filter((m) => !isCarriedByThread(m));
         const latest = batch.at(-1);
         if (!latest) return;
         const { kept, dropped } = batchFiles(batch);
@@ -5264,7 +5284,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           : holdSupersedable(
               conversation.instanceName,
               conversation.channelId,
-              slackThreadKey(conversation.channelId, conversation.threadTs),
+              threadKey,
               () => [
                 ...batch.map((m) => m.eventTs),
                 ...steeredRefs.map((ref) => ref.eventTs),
@@ -5713,10 +5733,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     } catch (err) {
       if (superseded()) {
         outcome = "success";
-        replaceSeenAbove(args.instanceName, args.threadKey, [
-          ...readSeenAbove(args.instanceName, args.threadKey),
-          ...args.messages.map((m) => m.eventTs),
-        ]);
+        noteCarriedByThread(
+          args.instanceName,
+          args.threadKey,
+          args.messages.map((m) => m.eventTs),
+        );
         getLogger().info(
           { agentId: args.instanceName, error: formatError(err) },
           "slack.ambient_turn.superseded",
@@ -5874,16 +5895,20 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
             );
             continue;
           }
-          const shown = batch.filter(
-            (m) =>
-              senderReaches(m.sender, reader) &&
-              (inThread ||
-                !threadSupersede.isSuperseded(
-                  reader.instanceName,
-                  channelId,
-                  m.eventTs,
-                )),
+          const reached = batch.filter((m) => senderReaches(m.sender, reader));
+          const isCarriedByThread = (m: PendingMessage) =>
+            !inThread &&
+            threadSupersede.isSuperseded(
+              reader.instanceName,
+              channelId,
+              m.eventTs,
+            );
+          noteCarriedByThread(
+            reader.instanceName,
+            ambientThreadKey(channelId),
+            reached.filter(isCarriedByThread).map((m) => m.eventTs),
           );
+          const shown = reached.filter((m) => !isCarriedByThread(m));
           const last = shown.at(-1);
           if (!last) continue;
           const earlierTurn = inThread
