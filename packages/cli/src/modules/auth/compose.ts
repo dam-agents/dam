@@ -101,6 +101,7 @@ export function composeAuthModule(opts: AuthModuleOptions): AuthModule {
     browserOpener,
     authStore,
     authEnvReader,
+    savedTokenProvider: tokenProvider,
   });
 
   const authParent = new Command("auth").description(
