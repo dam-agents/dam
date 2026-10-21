@@ -89,7 +89,7 @@ func classifyWaiting(w *corev1.ContainerStateWaiting) (reason, message string, o
 	return "", "", false
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: one OOM kill of a runner pod's runner container, named by the container that died and the time it finished: the pod's name and the container's id are what tell two kills of one owner's runner apart, and the finished time is what dates the ten minutes the kill explains. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten.
+// UNIT_BOUNDARY_DESCRIPTION: one OOM kill of a runner pod's runner container, named by the container that died and the time it finished: the terminated container's own id and the kernel's finished time are what tell two kills of one owner's runner apart, and neither changes when the pod's container restarts, so the same kill keeps the same name across a controller or a runner restart. A pod keeps only its container's last termination, so a kill older than the restart after it is forgotten.
 type runnerKill struct {
 	ID string
 	At time.Time
@@ -108,10 +108,7 @@ func runnerOOMKillOf(pod *corev1.Pod) runnerKill {
 			if t == nil || t.Reason != "OOMKilled" || !t.FinishedAt.After(kill.At) {
 				continue
 			}
-			kill = runnerKill{
-				ID: pod.Name + "/" + cs.ContainerID + "@" + t.FinishedAt.UTC().Format(time.RFC3339),
-				At: t.FinishedAt.Time,
-			}
+			kill = runnerKill{ID: t.ContainerID + "@" + t.FinishedAt.UTC().Format(time.RFC3339), At: t.FinishedAt.Time}
 		}
 	}
 	return kill

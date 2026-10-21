@@ -66,67 +66,89 @@ func killTheRunnerForMemory(t *testing.T, r *AgentReconciler, at time.Time) {
 	require.NoError(t, err)
 }
 
-// TEST_SCENARIO: an OOM kill of the runner takes every machine of its owner down at once — the runner pod is the cgroup, and the VMMs of all its machines live in it — so it explains every agent that was running when it landed, whatever reason the restarted runner gives it afterwards. The report is read from two persisted facts and no clock of its own: the kill the runner pod records, and what the agent's AgentPodReady last said, dated to the kill by the publish that named it.
-func TestARunnerOOMKillExplainsEveryAgentItTookDown(t *testing.T) {
-	now := time.Now()
-	killed := now.Add(-time.Minute).Truncate(time.Second)
-	kill := runnerKill{ID: "runner-pod/containerd://abc@1", At: killed}
+// TEST_SCENARIO: the same termination names the same kill before and after the runner container restarts, because the name is the terminated container's own id and finished time: a kill read from the live state and one read from the last termination are one kill, so an agent attributed it is never told about it again.
+func TestOneKillKeepsOneNameAcrossTheContainersRestart(t *testing.T) {
+	at := time.Now().Add(-time.Minute).Truncate(time.Second)
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "runner"}, Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+		Name:        vmRunnerComponent,
+		ContainerID: "containerd://dead",
+		State:       corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", FinishedAt: metav1.NewTime(at), ContainerID: "containerd://dead"}},
+	}}}}
+	before := runnerOOMKillOf(pod)
+	require.Equal(t, at, before.At)
 
-	cond := func(status metav1.ConditionStatus, reason string, at time.Time) *metav1.Condition {
-		return &metav1.Condition{Type: apiv1.ConditionAgentPodReady, Status: status, Reason: reason, LastTransitionTime: metav1.NewTime(at)}
+	// TEST_SCENARIO: the pod restarts its runner, so the kill is only its last termination now, and the container id on the status is the new one.
+	pod.Status.ContainerStatuses[0] = corev1.ContainerStatus{
+		Name:                 vmRunnerComponent,
+		ContainerID:          "containerd://new",
+		State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", FinishedAt: metav1.NewTime(at), ContainerID: "containerd://dead"}},
 	}
-	explains := func(c *metav1.Condition, k runnerKill) bool {
-		if c == nil {
-			return killExplainsAgent(nil, k, now)
-		}
-		return killExplainsAgent([]metav1.Condition{*c}, k, now)
-	}
-
-	// TEST_SCENARIO: the agent was up when the kill landed, so it names the kill while the episode lasts.
-	assert.True(t, explains(cond(metav1.ConditionTrue, "PodReady", killed.Add(-time.Hour)), kill), "up when the kill landed")
-	// TEST_SCENARIO: the agent already names the kill, dated to the kill by the publish that named it: repeated reconciles cannot extend the ten minutes, whichever reason the agent carries on Ready.
-	assert.True(t, explains(cond(metav1.ConditionFalse, apiv1.ReasonRunnerOutOfMemory, killed), kill), "named at the kill's own time")
-	assert.True(t, explains(cond(metav1.ConditionFalse, apiv1.ReasonRunnerOutOfMemory, killed), runnerKill{}), "named, whose kill the restarted runner no longer records")
-	expiredAt := killed.Add(-runnerOOMEpisode - 30*time.Second)
-	expired := cond(metav1.ConditionFalse, apiv1.ReasonRunnerOutOfMemory, expiredAt)
-	assert.False(t, explains(expired, runnerKill{}), "named by a kill the restarted runner no longer records, past the episode")
-	// TEST_SCENARIO: a second kill of the runner opens its own episode on an agent the first has not released.
-	assert.True(t, explains(expired, runnerKill{ID: "second", At: killed}), "a second kill, named over the expired reason of the first")
-
-	// TEST_SCENARIO: an agent already down when the kill landed was not taken down by it: one the idle checker put to sleep before it, one whose start was already refused.
-	assert.False(t, explains(cond(metav1.ConditionFalse, apiv1.ReasonHibernated, killed.Add(-time.Hour)), kill), "asleep when the kill landed")
-	assert.False(t, explains(cond(metav1.ConditionFalse, apiv1.ReasonOverBudget, killed.Add(-time.Minute)), kill), "refused room before the kill landed")
-	// TEST_SCENARIO: an agent put to sleep or refused room after the kill was up through it, so the kill is what took its machine down.
-	assert.True(t, explains(cond(metav1.ConditionFalse, apiv1.ReasonHibernated, killed.Add(time.Minute)), kill), "reclaimed after the kill")
-	assert.True(t, explains(cond(metav1.ConditionFalse, apiv1.ReasonOverBudget, killed.Add(time.Minute)), kill), "refused room by the restarted runner")
-	// TEST_SCENARIO: an agent woken and refused room after the kill published that refusal after it, so the kill explains it too, since every machine of the owner lived in the killed pod.
-	assert.True(t, explains(cond(metav1.ConditionTrue, "PodReady", killed.Add(30*time.Second)), kill), "up again after the kill")
-	// TEST_SCENARIO: nothing else explains an agent.
-	assert.False(t, explains(nil, kill), "an agent that never published readiness")
-	assert.False(t, explains(cond(metav1.ConditionTrue, "PodReady", killed.Add(-time.Hour)), runnerKill{}), "no kill")
-	assert.False(t, explains(cond(metav1.ConditionTrue, "PodReady", killed.Add(-time.Hour)), runnerKill{ID: "old", At: now.Add(-runnerOOMEpisode - time.Minute)}), "a kill older than the episode")
+	assert.Equal(t, before.ID, runnerOOMKillOf(pod).ID, "the same terminated container names the same kill")
 }
 
 // TEST_SCENARIO: two kills of one owner's runner are told apart by the container that died and the time it finished, so a second kill opens its own episode rather than being read as the first one still in the pod's history.
 func TestASecondKillOfTheRunnerIsItsOwn(t *testing.T) {
 	now := time.Now()
 	first, second := now.Add(-20*time.Minute), now.Add(-time.Minute)
-	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "runner-pod"}, Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
+	pod := &corev1.Pod{ObjectMeta: metav1.ObjectMeta{Name: "runner"}, Status: corev1.PodStatus{ContainerStatuses: []corev1.ContainerStatus{{
 		Name:                 vmRunnerComponent,
 		ContainerID:          "containerd://second",
-		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", FinishedAt: metav1.NewTime(second)}},
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", FinishedAt: metav1.NewTime(second), ContainerID: "containerd://second"}},
 	}}}}
 	kill := runnerOOMKillOf(pod)
 	assert.Equal(t, second, kill.At)
-	assert.NotEqual(t, pod.Name+"/containerd://first@"+first.UTC().Format(time.RFC3339), kill.ID)
-	assert.Equal(t, pod.Name+"/containerd://second@"+second.UTC().Format(time.RFC3339), kill.ID)
+	assert.Equal(t, "containerd://second@"+second.UTC().Format(time.RFC3339), kill.ID)
 
-	// TEST_SCENARIO: the pod is restarted after the second kill and only carries the first in its history until the new container dies: the older kill is what the pod reports, so the episode of the newer one is read from the newer one alone.
-	pod.Status.ContainerStatuses[0] = corev1.ContainerStatus{
-		Name:                 vmRunnerComponent,
-		ContainerID:          "containerd://third",
-		State:                corev1.ContainerState{Running: &corev1.ContainerStateRunning{}},
-		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{Reason: "OOMKilled", FinishedAt: metav1.NewTime(second)}},
+	// TEST_SCENARIO: a kill that was not an OOM kill names nothing.
+	pod.Status.ContainerStatuses[0].LastTerminationState.Terminated.Reason = "Error"
+	assert.True(t, runnerOOMKillOf(pod).IsZero(), "a restart that was not an OOM kill")
+	assert.NotEqual(t, "containerd://first@"+first.UTC().Format(time.RFC3339), kill.ID)
+}
+
+// TEST_SCENARIO: a kill goes only to an agent whose machine was holding memory on that runner at the kill, read from the two stamps the controller writes as it watches the machine. A machine started after the kill is no victim; one booting, running or stopping at it is; one a reclaim put to sleep after it is, since its start went before the kill and its end did not; and one already asleep, or seen stopped before the kill, is not.
+func TestAKillGoesOnlyToMachinesThatWereOnTheRunner(t *testing.T) {
+	killed := time.Now().Add(-time.Minute).Truncate(time.Second)
+	stamped := func(up, down time.Time) *apiv1.Agent {
+		agent := &apiv1.Agent{}
+		agent.Annotations = map[string]string{}
+		if !up.IsZero() {
+			agent.Annotations[annMachineUp] = up.Format(time.RFC3339Nano)
+		}
+		if !down.IsZero() {
+			agent.Annotations[annMachineDown] = down.Format(time.RFC3339Nano)
+		}
+		return agent
 	}
-	assert.Equal(t, second, runnerOOMKillOf(pod).At)
+	assert.True(t, machineOccupiedAt(stamped(killed.Add(-time.Hour), time.Time{}), killed), "booting or running at the kill")
+	assert.True(t, machineOccupiedAt(stamped(killed.Add(-time.Hour), killed.Add(time.Minute)), killed), "put to sleep after the kill")
+	assert.False(t, machineOccupiedAt(stamped(killed.Add(-time.Hour), killed.Add(-time.Second)), killed), "seen stopped before the kill")
+	assert.False(t, machineOccupiedAt(stamped(killed.Add(time.Minute), time.Time{}), killed), "started after the kill")
+	assert.False(t, machineOccupiedAt(stamped(time.Time{}, time.Time{}), killed), "an agent the controller never saw run a machine")
+}
+
+// TEST_SCENARIO: a kill ends for an agent once the agent answered ready after it, which is stamped, or once the ten minutes the kill explains have passed: both are durable, so the reason never comes back to that agent however long the runner keeps the termination and whatever its machine does next.
+func TestAKillEndsForAnAgentThatAnsweredOrWhoseEpisodeIsOver(t *testing.T) {
+	killed := time.Now().Add(-time.Minute).Truncate(time.Second)
+	kill := runnerKill{ID: "containerd://dead@" + killed.UTC().Format(time.RFC3339), At: killed}
+	agent := func(done string) *apiv1.Agent {
+		a := &apiv1.Agent{}
+		a.Annotations = map[string]string{}
+		if done != "" {
+			a.Annotations[annRunnerOOMDone] = done
+		}
+		return a
+	}
+	assert.False(t, killIsOver(agent(""), kill, time.Now()), "still inside its episode")
+	assert.True(t, killIsOver(agent(killed.Add(time.Second).UTC().Format(time.RFC3339Nano)), kill, time.Now()), "the agent answered after the kill")
+	assert.False(t, killIsOver(agent(killed.Add(-time.Hour).UTC().Format(time.RFC3339Nano)), kill, time.Now()), "an answer from before this kill does not end it")
+	assert.True(t, killIsOver(agent(""), kill, killed.Add(runnerOOMEpisode+time.Minute)), "the episode is over")
+
+	// TEST_SCENARIO: the record of the attribution is what the agent carries, so a name and time read back are the kill that was attributed.
+	attributed := &apiv1.Agent{}
+	attributed.Annotations = map[string]string{annRunnerOOMKill: kill.ID}
+	carried := carriedKill(attributed)
+	assert.Equal(t, kill.ID, carried.ID)
+	assert.Equal(t, killed.UTC(), carried.At.UTC())
+	assert.True(t, carriedKill(&apiv1.Agent{}).IsZero(), "an agent that carries no kill")
 }

@@ -314,6 +314,9 @@ func TestTheKillIsDatedByTheKillAndNotByTheReconcile(t *testing.T) {
 	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
 	require.NoError(t, err)
 	// TEST_SCENARIO: the agent was up before the kill, so its condition predates it.
+	require.NoError(t, unstructured.SetNestedMap(stored.Object, map[string]any{
+		annMachineUp: killed.Add(-time.Hour).UTC().Format(time.RFC3339Nano),
+	}, "metadata", "annotations"))
 	require.NoError(t, unstructured.SetNestedSlice(stored.Object, []any{map[string]any{
 		"type":               apiv1.ConditionAgentPodReady,
 		"status":             string(metav1.ConditionTrue),

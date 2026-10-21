@@ -104,7 +104,10 @@ func TestEveryAgentOfAnOOMKilledRunnerNamesTheKill(t *testing.T) {
 	r, _, _ := setupVMReconciler(t, agent)
 	ctx := context.Background()
 	killed := time.Now().Add(-time.Minute).Truncate(time.Second)
-	// TEST_SCENARIO: the agent was up when the kill landed, so its condition predates it.
+	// TEST_SCENARIO: the agent's machine was up when the kill landed, so its start and its condition both predate it.
+	require.NoError(t, patchAgentAnnotations(ctx, r.dynamic, "test-agents", agent.Name, map[string]*string{
+		annMachineUp: new(killed.Add(-time.Hour).UTC().Format(time.RFC3339Nano)),
+	}))
 	require.NoError(t, updateAgentStatus(ctx, r.dynamic, "test-agents", agent.Name, func(s *apiv1.AgentStatus) {
 		setStatusCondition(s, apiv1.ConditionAgentPodReady, true, "PodReady", "", "", agent.Generation)
 		setConditionTime(s, apiv1.ConditionAgentPodReady, killed.Add(-time.Hour))

@@ -511,6 +511,12 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		machineLock.Lock()
 		r.noteMachineUse(name, machine)
 		machineLock.Unlock()
+		// UNIT_BOUNDARY_DESCRIPTION: the machine's episode is stamped as it is watched, so a kill of the runner can later be held to the machines that were on it: a machine started after a kill is no victim of it, and one booting at the kill is.
+		if stamped, err := r.stampMachine(ctx, agent, machine, runnerReached); err != nil {
+			slog.Warn("stamping the machine's episode", "agent", name, "error", err)
+		} else {
+			agent = stamped
+		}
 		timer.mark("vmMachine")
 		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer. It is published on every reconcile of a resting agent rather than only the first, so a kill that took its machine down comes off AgentPodReady once its episode ends: nothing else writes that condition on an agent that stays asleep.
 		if pairAtRest && runnerReached && machineStopped(machine) {
