@@ -11,6 +11,7 @@ interface Props {
   side: "left" | "right";
   label: string;
   closing: boolean;
+  showBackdrop?: boolean;
   onClose: () => void;
   onClosed: () => void;
   className?: string;
@@ -22,6 +23,7 @@ export function SideDrawer({
   side,
   label,
   closing,
+  showBackdrop = true,
   onClose,
   onClosed,
   className,
@@ -54,15 +56,17 @@ export function SideDrawer({
         containerClassName,
       )}
     >
-      <button
-        type="button"
-        aria-label={`Close ${label.toLowerCase()}`}
-        onClick={onClose}
-        className={cn(
-          "absolute inset-0 bg-black/50 backdrop-blur-[4px] transition-opacity duration-150",
-          open ? "opacity-100" : "opacity-0",
-        )}
-      />
+      {showBackdrop && (
+        <button
+          type="button"
+          aria-label={`Close ${label.toLowerCase()}`}
+          onClick={onClose}
+          className={cn(
+            "absolute inset-0 bg-black/50 backdrop-blur-[4px] transition-opacity duration-150",
+            open ? "opacity-100" : "opacity-0",
+          )}
+        />
+      )}
       <div
         ref={panelRef}
         role="dialog"

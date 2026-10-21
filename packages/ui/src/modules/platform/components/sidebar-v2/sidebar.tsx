@@ -28,7 +28,7 @@ export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
   const setPinned = useStore((s) => s.setSidebarPinned);
   const setView = useStore((s) => s.setView);
-  const { width, resizing, resize, endResize } = useSidebarWidth({
+  const { width, resizing, setWidthTo, endResize } = useSidebarWidth({
     key: "platform-sidebar-v2-w",
     fallback: 325,
   });
@@ -54,8 +54,9 @@ export function SidebarV2() {
     rightRailWidth: 60,
     contentMinWidth: MIN_CONTENT_WIDTH,
   });
-  const railDrag = useRef(0);
-  const dragRaw = useRef<number | null>(null);
+  // UNIT_BOUNDARY_DESCRIPTION: a drag is read from where it started and how far it has gone, so the edge stays under the pointer whatever the pane was clamped to on the way.
+  const dragFrom = useRef<number | null>(null);
+  const dragBy = useRef(0);
   const over = overlaid && mode === "rail";
 
   useEffect(() => {
@@ -97,22 +98,22 @@ export function SidebarV2() {
           />
         )}
       </nav>
-      {mode === "rail" && (
+      {mode === "rail" && !over && (
         <div className="flex" data-testid="app-sidebar-resize-rail">
           <ResizeHandle
             side="left"
             label="Resize navigation"
             value={SIDEBAR_COLLAPSED_W}
             onResize={(delta) => {
-              railDrag.current += delta;
-              const dragged = SIDEBAR_COLLAPSED_W + railDrag.current;
-              if (dragged < SIDEBAR_COLLAPSED_W * 2) return;
+              dragBy.current += delta;
+              const dragged = SIDEBAR_COLLAPSED_W + dragBy.current;
+              if (snapSidebarWidth(dragged, maxWidth) === "rail") return;
               setPinned(true);
-              railDrag.current = 0;
-              resize(dragged - width, maxWidth);
+              setWidthTo(dragged, maxWidth);
             }}
             onDragEnd={() => {
-              railDrag.current = 0;
+              dragBy.current = 0;
+              dragFrom.current = null;
               endResize();
             }}
           />
@@ -126,17 +127,21 @@ export function SidebarV2() {
             value={width}
             onResize={(delta) => {
               // UNIT_BOUNDARY_DESCRIPTION: the snap reads the drag as the user made it rather than the width the drag was last held to, so pulling the edge most of the way down gives the navigation up instead of resting at its narrowest.
-              const raw = (dragRaw.current ?? width) + delta;
-              dragRaw.current = raw;
-              const snapped = snapSidebarWidth(raw, maxWidth);
+              dragFrom.current ??= width;
+              dragBy.current += delta;
+              const snapped = snapSidebarWidth(
+                dragFrom.current + dragBy.current,
+                maxWidth,
+              );
               if (snapped === "rail") {
                 setPinned(false);
                 return;
               }
-              resize(snapped - width, maxWidth);
+              setWidthTo(snapped, maxWidth);
             }}
             onDragEnd={() => {
-              dragRaw.current = null;
+              dragBy.current = 0;
+              dragFrom.current = null;
               endResize();
             }}
           />
@@ -149,8 +154,10 @@ export function SidebarV2() {
           closing={false}
           onClose={() => setOverlaid(false)}
           onClosed={() => {}}
-          containerClassName={cn(`right-14`, "md:right-[60px]")}
-          className="w-[min(325px,calc(100%-56px))]"
+          showBackdrop={false}
+          // UNIT_BOUNDARY_DESCRIPTION: a narrow viewport has no room for a page beside the navigation, so the navigation takes the screen up to the right rail rather than lying over the page.
+          containerClassName="right-[60px]"
+          className="w-full"
         >
           <SidebarHeader
             onCollapse={() => setOverlaid(false)}
