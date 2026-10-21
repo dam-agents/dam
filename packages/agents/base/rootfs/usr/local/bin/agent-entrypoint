@@ -60,7 +60,7 @@ if [ ! -f "$home/.initialized" ]; then
 	touch "$home/.initialized"
 	echo "agent-entrypoint: seeded home from image workspace"
 fi
-mkdir -p "$home/work"
+mkdir -p "$home/work" "$home/.local/state/rc"
 
 # docker runs only on a machine. Its client passes the agent's gateway, which
 # differs per agent, to every container and build; the rest of the file, logins

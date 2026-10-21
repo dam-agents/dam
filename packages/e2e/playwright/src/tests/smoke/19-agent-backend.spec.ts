@@ -37,6 +37,8 @@ let agentName = "";
 const marker = `home-survives-${randomUUID()}`;
 const probeService = "e2e-probe";
 const probeStopped = `/home/agent/${probeService}.stopped`;
+const startupItem = "e2e-item";
+const startupItemRuns = `/home/agent/${startupItem}.runs`;
 
 async function chatTurn(
   page: Page,
@@ -141,7 +143,7 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold no service. The test then adds one of its own to the default runlevel and starts it, as an agent does; openrc stops only a started service, and the hibernate-and-wake test reads back both its stop and its start at the boot.
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again.
 test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
   test.skip(
     laneBackend !== "vm",
@@ -155,9 +157,9 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
   const [, procs] = /^entrypoint (\d+)$/m.exec(guest) ?? [];
   expect(Number(procs), "the entrypoint runs in its cgroup").toBeGreaterThan(0);
   expect(
-    inGuest(agentId, "find /etc/runlevels -mindepth 2 | wc -l").trim(),
-    "a fresh machine starts no openrc service",
-  ).toBe("0");
+    inGuest(agentId, "find /etc/runlevels -mindepth 2 -printf '%P\\n'").trim(),
+    "a fresh machine starts only the agent's own services",
+  ).toBe("default/user.root");
   inGuest(
     agentId,
     [
@@ -173,8 +175,24 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       `rm -f ${probeStopped}`,
       `/sbin/rc-update add ${probeService} default >/dev/null`,
       `/sbin/rc-service ${probeService} start >/dev/null`,
+      `rm -f ${startupItemRuns}`,
+      "mkdir -p /home/agent/.config/rc/init.d /home/agent/.config/rc/runlevels/default",
+      `cat > /home/agent/.config/rc/init.d/${startupItem} <<'EOF'`,
+      "#!/sbin/openrc-run",
+      "command=/bin/sh",
+      `command_args="-c 'echo run >> ${startupItemRuns}; exec sleep infinity'"`,
+      "EOF",
+      `chmod 755 /home/agent/.config/rc/init.d/${startupItem}`,
+      `ln -sf /home/agent/.config/rc/init.d/${startupItem} /home/agent/.config/rc/runlevels/default/${startupItem}`,
+      `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} start >/dev/null`,
     ].join("\n"),
   );
+  await expect
+    .poll(() => inGuest(agentId, `cat ${startupItemRuns} 2>/dev/null; true`), {
+      timeout: 30_000,
+      message: "rc-service --user starts the item at once",
+    })
+    .toMatch(/^run$/m);
 });
 
 // TEST_SCENARIO: the image's docker is an openrc service the agent starts from its own shell. The daemon answers, gets the agent's gateway but no other variable of the agent's environment, has platform-runc first on its PATH, and openrc stops it again.
@@ -277,7 +295,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   if (laneBackend === "vm") {
     const guest = inGuest(
       agentId,
-      `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; true`,
+      `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; echo item-runs $(grep -c run ${startupItemRuns}); true`,
     );
     expect(guest, "openrc ran the service's stop_post on the stop").toMatch(
       /^stopped$/m,
@@ -286,7 +304,17 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
       guest,
       "the service in the default runlevel started at the boot",
     ).toMatch(/status: started/);
-    inGuest(agentId, `/sbin/rc-update del ${probeService} default >/dev/null`);
+    expect(guest, "the Startup Item started again at the boot").toMatch(
+      /^item-runs 2$/m,
+    );
+    inGuest(
+      agentId,
+      [
+        `/sbin/rc-update del ${probeService} default >/dev/null`,
+        `HOME=/home/agent XDG_RUNTIME_DIR=/tmp/platform-display rc-service --user ${startupItem} stop >/dev/null`,
+        `rm -f /home/agent/.config/rc/runlevels/default/${startupItem} /home/agent/.config/rc/init.d/${startupItem}`,
+      ].join("\n"),
+    );
   }
   await chatTurn(page, "hello-after-wake", "backend-reply-after-wake");
 });

@@ -1,7 +1,7 @@
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
 
 import { useIsAgentOperable } from "../../agents/api/queries.js";
-import { processesClientFor } from "./client.js";
+import { fetchProcessList, processesClientFor } from "./client.js";
 import { processKeys } from "./keys.js";
 
 const LIST_POLL_MS = 5_000;
@@ -14,7 +14,7 @@ export function useProcesses(
   const operable = useIsAgentOperable(agentId);
   return useQuery({
     queryKey: processKeys.list(agentId ?? "_none"),
-    queryFn: () => processesClientFor(agentId!).processes.list.query(),
+    queryFn: () => fetchProcessList(agentId!),
     enabled: enabled && !!agentId && operable,
     refetchInterval: poll ? LIST_POLL_MS : false,
     staleTime: 2_000,
