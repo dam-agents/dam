@@ -203,7 +203,7 @@ test("switches the chat between the sections and the side panel", async ({
   await expect(page.getByTestId("chat-sections")).toBeVisible();
 });
 
-// TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent. Done from the keyboard, focus follows the Session to its new row, or lands on its Agent's row when that Agent is closed.
+// TEST_SCENARIO: a pin moves a Session out of its Agent's list into the Pinned section above every Agent, and the pin survives a reload; unpinning returns it to the Agent. The pin is one of the row's menu actions, and focus follows the Session to its new row, or lands on its Agent's row when that Agent is closed.
 test("pins a Session above every Agent", async ({ page }) => {
   test.setTimeout(240_000);
   await setNewLayout(true);
@@ -228,30 +228,34 @@ test("pins a Session above every Agent", async ({ page }) => {
     `[data-testid="session-row"][data-session-id="${sessionId}"]`,
   );
   await row.hover();
-  await row.getByTestId("session-pin-button").click();
+  await row.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Pin to top" }).click();
   await expect(inPinned).toBeVisible({ timeout: 30_000 });
   await expect(inAgent).toHaveCount(0);
 
   await page.reload();
   await expect(inPinned).toBeVisible({ timeout: 30_000 });
   await inPinned.hover();
-  await inPinned.getByTestId("session-pin-button").click();
+  await inPinned.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Unpin session" }).click();
   await expect(pinnedSection).toHaveCount(0);
   await expect(inAgent).toBeVisible();
 
-  await inAgent.getByTestId("session-pin-button").focus();
+  await inAgent.getByTestId("session-menu-button").focus();
   await page.keyboard.press("Enter");
-  await expect(inPinned.getByTestId("session-pin-button")).toBeFocused();
   await page.keyboard.press("Enter");
-  await expect(inAgent.getByTestId("session-pin-button")).toBeFocused();
+  await expect(inPinned.locator("[data-row-main]")).toBeFocused();
+  await inPinned.hover();
+  await inPinned.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Unpin session" }).click();
+  await expect(inAgent.locator("[data-row-main]")).toBeFocused();
 
-  await page.keyboard.press("Enter");
-  await expect(inPinned.getByTestId("session-pin-button")).toBeFocused();
   const agentRow = node.getByTestId("sidebar-agent-row");
   await agentRow.click();
   await expect(agentRow).toHaveAttribute("aria-expanded", "false");
-  await inPinned.getByTestId("session-pin-button").focus();
-  await page.keyboard.press("Enter");
+  await inPinned.hover();
+  await inPinned.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Unpin session" }).click();
   await expect(pinnedSection).toHaveCount(0);
   await expect(agentRow).toBeFocused();
 });
@@ -267,7 +271,8 @@ test("filters, then deletes, a pinned Session", async ({ page }) => {
   await expect(row).toBeVisible({ timeout: 30_000 });
   const sessionId = await row.getAttribute("data-session-id");
   await row.hover();
-  await row.getByTestId("session-pin-button").click();
+  await row.getByTestId("session-menu-button").click();
+  await page.getByRole("menuitem", { name: "Pin to top" }).click();
   const pinnedSection = page.getByRole("region", { name: "Pinned" });
   const inPinned = pinnedSection.locator(
     `[data-testid="session-row"][data-session-id="${sessionId}"]`,

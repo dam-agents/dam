@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A pinned Session row marks its pin with an icon, except where its section already says it is pinned (JanUI's Pinned section): there the pin shows only with the row's actions, on hover or while the row holds keyboard focus, and the unpin button stays in the row for the keyboard.
+// TEST_OVERVIEW: A pinned Session row marks its pin with an icon, except where its section already says it is pinned (JanUI's Pinned section): there the pin shows only with the row's actions, on hover or while the row holds keyboard focus. The pin itself is one of the row's menu actions, not a button of its own.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -46,7 +46,7 @@ function render(
   );
 }
 
-// TEST_SCENARIO: the current layout keeps the pin mark; a quiet pin drops it, and its actions open on keyboard focus anywhere in the row, the unpin button among them.
+// TEST_SCENARIO: the current layout keeps the pin mark, and a quiet pin drops it; the pin itself is an action of the row's menu, so the row holds no pin button of its own.
 it("shows a quiet pin only with the row's actions", () => {
   expect(render(false)).toContain('aria-label="Pinned"');
   const quiet = render(true);
@@ -54,7 +54,8 @@ it("shows a quiet pin only with the row's actions", () => {
   expect(quiet).toMatch(
     /data-row-actions[^>]*group-has-\[:focus-visible\]:w-auto/,
   );
-  expect(quiet).toContain('aria-label="Unpin session"');
+  expect(quiet).not.toContain('aria-label="Unpin session"');
+  expect(quiet).not.toContain("session-pin-button");
 });
 
 // TEST_SCENARIO: a terminal Session is marked by the terminal icon, with its accessible name, as before JanUI's context line existed.

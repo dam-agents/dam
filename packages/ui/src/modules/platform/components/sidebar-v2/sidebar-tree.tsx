@@ -26,6 +26,7 @@ import { FOCUS_RING } from "@/components/ui/focus-ring";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { SectionLabel } from "@/components/ui/section-label";
 import { Tooltip } from "@/components/ui/tooltip";
+import { formatTimestamp, timeAgo } from "@/lib/format-time";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
@@ -61,7 +62,6 @@ import {
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import {
-  agentSubline,
   awaitsApproval,
   isExpanded,
   offFeedPins,
@@ -109,6 +109,15 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   );
   const expandAgentId = openAgentId ?? lastOpenAgentId;
   const approvals = useApprovalsForOwner().data;
+  const lastActivityAt = useMemo(() => {
+    const at = new Map<string, string>();
+    for (const item of activity.items) {
+      const seen = at.get(item.agent.id);
+      if (!seen || Date.parse(item.at) > Date.parse(seen))
+        at.set(item.agent.id, item.at);
+    }
+    return at;
+  }, [activity.items]);
 
   const groupBy = useStore((s) => s.sidebarGroupBy);
   const setGroupBy = useStore((s) => s.setSidebarGroupBy);
@@ -306,6 +315,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
                   }
                   order={orderActions}
                   shownIds={shownIds}
+                  lastActivityAt={lastActivityAt.get(agent.id)}
                   onNavigate={onNavigate}
                 />
               ))}
@@ -397,6 +407,7 @@ function AgentNode({
   onToggle,
   order,
   shownIds,
+  lastActivityAt,
   onNavigate,
 }: {
   agent: AgentView;
@@ -406,6 +417,7 @@ function AgentNode({
   onToggle: () => void;
   order: ReturnType<typeof useSidebarOrderActions>;
   shownIds: readonly string[];
+  lastActivityAt?: string | undefined;
   onNavigate?: () => void;
 }) {
   useAutoWakeOnSidebarOpen(agent, expanded);
@@ -457,9 +469,8 @@ function AgentNode({
           data-testid="sidebar-agent-row"
           className={cn(
             "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2 text-left select-none",
-            agentFilter
-              ? "pr-[88px]"
-              : "pr-16 group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
+            agentFilter ? "pr-14" : "pr-16",
+            "group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
             FOCUS_RING,
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"
@@ -490,9 +501,10 @@ function AgentNode({
             <span
               id={sublineId}
               aria-hidden
+              title={lastActivityAt && formatTimestamp(lastActivityAt)}
               className="truncate text-2xs font-normal text-muted-foreground"
             >
-              {agentSubline(agent)}
+              {lastActivityAt && timeAgo(lastActivityAt)}
             </span>
           </span>
           {cue && !expanded && <AgentCue tone={cue} />}
@@ -512,6 +524,8 @@ function AgentNode({
               "flex items-center gap-0.5",
               REVEAL,
               "has-[[aria-current=page]]:pointer-events-auto has-[[aria-current=page]]:opacity-100",
+              agentFilter &&
+                "hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover/agent:w-auto hover-capable:group-has-[:focus-visible]/agent:w-auto hover-capable:group-has-[[data-state=open]]/agent:w-auto hover-capable:has-[[aria-current=page]]:w-auto",
             )}
           >
             <Tooltip content="New session" side="bottom">

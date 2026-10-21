@@ -61,8 +61,10 @@ interface Props {
   backgroundWork?: readonly BackgroundWorkItemView[];
   cost?: SpendSessionRow;
   conversation?: ReactNode;
+  metaLead?: ReactNode;
   leading?: ReactNode;
   titleIcon?: ReactNode;
+  harnessIcon?: ReactNode;
   activityIndicators?: boolean;
   repositoryBadges?: boolean;
   pinned?: boolean;
@@ -86,8 +88,10 @@ export function SessionRow({
   backgroundWork = NO_WORK,
   cost,
   conversation,
+  metaLead,
   leading,
   titleIcon,
+  harnessIcon,
   activityIndicators = true,
   repositoryBadges = true,
   pinned = false,
@@ -236,6 +240,7 @@ export function SessionRow({
             )}
           >
             <SessionIndicators
+              harnessIcon={harnessIcon}
               scheduled={scheduled}
               terminal={terminal}
               messenger={messenger}
@@ -256,21 +261,6 @@ export function SessionRow({
                   "hover-capable:group-has-[:focus-visible]:w-auto group-has-[:focus-visible]:opacity-100",
               )}
             >
-              {onTogglePin && (
-                <button
-                  type="button"
-                  aria-label={pinned ? "Unpin session" : "Pin to top"}
-                  aria-pressed={pinned}
-                  data-testid="session-pin-button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    onTogglePin();
-                  }}
-                  className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground"
-                >
-                  {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
-                </button>
-              )}
               <RowActionsMenu
                 label="More actions"
                 testId="session-menu-button"
@@ -290,6 +280,15 @@ export function SessionRow({
                   },
                 }}
               >
+                {onTogglePin && (
+                  <DropdownMenuItem
+                    data-testid="session-pin-button"
+                    onSelect={() => onTogglePin()}
+                  >
+                    {pinned ? <PinFilled size={14} /> : <Pin size={14} />}{" "}
+                    {pinned ? "Unpin session" : "Pin to top"}
+                  </DropdownMenuItem>
+                )}
                 {onExportTimeline && (
                   <DropdownMenuItem
                     data-testid="session-export-timeline-button"
@@ -320,7 +319,7 @@ export function SessionRow({
           </div>
         </div>
         <span id={metaId} className="text-2xs text-muted-foreground truncate">
-          {conversation && <>{conversation} · </>}
+          {metaLead}
           <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
             {timeAgo(s.updatedAt ?? s.createdAt)}
           </span>
@@ -340,6 +339,12 @@ export function SessionRow({
               {costLabel}
             </span>
           )}
+          {conversation && (
+            <>
+              {" · "}
+              {conversation}
+            </>
+          )}
         </span>
         {repositoryBadges && s.repositories && s.repositories.length > 0 && (
           <SessionRepositoryBadges repositories={s.repositories} />
@@ -350,6 +355,7 @@ export function SessionRow({
 }
 
 function SessionIndicators({
+  harnessIcon,
   scheduled,
   terminal,
   messenger,
@@ -359,6 +365,7 @@ function SessionIndicators({
   backgroundWork = NO_WORK,
   unread = false,
 }: {
+  harnessIcon?: ReactNode;
   scheduled: boolean;
   terminal: boolean;
   messenger: ChannelType | null;
@@ -370,6 +377,7 @@ function SessionIndicators({
 }) {
   const hasBackgroundWork = backgroundWork.length > 0;
   if (
+    !harnessIcon &&
     !scheduled &&
     !terminal &&
     !messenger &&
@@ -384,6 +392,7 @@ function SessionIndicators({
     <span
       className={cn("flex shrink-0 items-center gap-2.5 pl-2", HOVER_YIELD)}
     >
+      {harnessIcon}
       {terminal && (
         <Terminal size={16} className="text-foreground" aria-label="Terminal" />
       )}

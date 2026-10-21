@@ -90,7 +90,7 @@ export function togglePinKeepingFocus(
     (
       [
         ...document.querySelectorAll<HTMLElement>(
-          `[data-pin-key="${CSS.escape(key)}"] button[aria-pressed]`,
+          `[data-pin-key="${CSS.escape(key)}"] [data-row-main]`,
         ),
       ].find((button) => !button.closest("[inert]")) ??
       document.querySelector<HTMLElement>(
@@ -164,19 +164,16 @@ export function TreeSessionRow({
       <SessionRow
         session={s}
         {...state}
-        conversation={
-          <>
-            {withAgent && `${withAgent.name} · `}
-            {harnessIcon && (
-              <HarnessIcons
-                harnesses={[s.harness!]}
-                size="xs"
-                focusable={false}
-                className="mr-1 inline-flex align-[-2px]"
-              />
-            )}
-            {context}
-          </>
+        conversation={context}
+        metaLead={withAgent && `${withAgent.name} · `}
+        harnessIcon={
+          harnessIcon && (
+            <HarnessIcons
+              harnesses={[s.harness!]}
+              size="xs"
+              focusable={false}
+            />
+          )
         }
         leading={
           withAgent ? (
