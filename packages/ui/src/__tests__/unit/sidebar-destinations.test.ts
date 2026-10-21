@@ -7,6 +7,9 @@ const state = vi.hoisted(() => ({
   navigateToSettings: vi.fn(),
 }));
 
+vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
+  useNewLayout: () => false,
+}));
 vi.mock("../../store.js", () => ({
   useStore: (select: (s: typeof state) => unknown) => select(state),
 }));

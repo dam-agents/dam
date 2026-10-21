@@ -8,11 +8,36 @@ import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 
 import type { AgentView } from "../../../types.js";
 import { useAgents } from "../../agents/api/queries.js";
+import { AgentUsageActions } from "../../sandboxes/components/agent-usage-actions.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { cliAgentRef } from "../../sandboxes/lib/cli-agent-ref.js";
 
 type LocalTarget = "terminal" | "ide";
+
+// UNIT_BOUNDARY_DESCRIPTION: the new layout offers the Agent home's action list, whose CLI, editor and messenger rows slide open in place; the current layout offers the launcher cards.
+export function NewSessionOptions({
+  agent,
+  newLayout,
+  onNewTerminal,
+}: {
+  agent: AgentView;
+  newLayout: boolean;
+  onNewTerminal: () => void;
+}) {
+  if (!newLayout)
+    return <NewSessionLauncher agent={agent} onNewTerminal={onNewTerminal} />;
+  return (
+    <div className="mt-5 w-full max-w-[640px] text-left">
+      <AgentUsageActions
+        agent={agent}
+        showChat={false}
+        showConfigure
+        onNewTerminal={onNewTerminal}
+      />
+    </div>
+  );
+}
 
 // UNIT_BOUNDARY_DESCRIPTION: the cards an empty chat offers for starting a session somewhere other than this chat: a web terminal here, the agent from a local terminal or editor, or a Slack channel or Telegram chat. The local ones show the CLI command to copy; the messengers show how to bind the agent.
 export function NewSessionLauncher({

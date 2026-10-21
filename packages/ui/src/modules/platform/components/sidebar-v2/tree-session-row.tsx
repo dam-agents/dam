@@ -1,7 +1,7 @@
 import { SessionMode, TELEMETRY_MAX_SINCE_HOURS } from "api-server-api";
 import { type ComponentProps, useState } from "react";
 
-import { HarnessIcons } from "@/components/harness-icons";
+import { HARNESS_ICONS, HarnessIcons } from "@/components/harness-icons";
 import { cn } from "@/lib/utils";
 
 import { queryClient } from "../../../../query-client.js";
@@ -32,10 +32,11 @@ import { sessionTitleLabel } from "../../../sessions/lib/session-title.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
 import { activityTone, sessionContext } from "../../lib/sidebar-tree.js";
 import { ActivityDot } from "./activity-dot.js";
-import { TREE_LEADING } from "./add-row.js";
+import { TREE_AVATAR, TREE_LEADING } from "./add-row.js";
 
 type RowState = Omit<
   ComponentProps<typeof SessionRow>,
+  | "conversation"
   | "session"
   | "onResume"
   | "onRename"
@@ -44,7 +45,8 @@ type RowState = Omit<
   | "leading"
   | "titleIcon"
   | "activityIndicators"
->;
+  | "repositoryBadges"
+> & { conversation?: string };
 
 export const TREE_ROW_CLASS = "min-w-0 gap-2.5 rounded-lg border-b-0 px-2 py-2";
 
@@ -86,12 +88,15 @@ export function togglePinKeepingFocus(
   if (!hadFocus) return;
   requestAnimationFrame(() => {
     (
-      document.querySelector<HTMLElement>(
-        `[data-pin-key="${CSS.escape(key)}"] button[aria-pressed]`,
-      ) ??
+      [
+        ...document.querySelectorAll<HTMLElement>(
+          `[data-pin-key="${CSS.escape(key)}"] button[aria-pressed]`,
+        ),
+      ].find((button) => !button.closest("[inert]")) ??
       document.querySelector<HTMLElement>(
         `[data-agent-id="${CSS.escape(agentId)}"] button[aria-expanded]`,
-      )
+      ) ??
+      document.querySelector<HTMLElement>('[data-testid="sidebar-group-by"]')
     )?.focus();
   });
 }
@@ -100,7 +105,9 @@ export function togglePinKeepingFocus(
  * UNIT_BOUNDARY_DESCRIPTION: One Session row of the new layout's sidebar tree,
  * read from its Agent's own list: the activity dot, the context line, and the
  * row's actions. A pin keeps keyboard focus on the moved row, or on its Agent
- * row when the row's new place is closed. Rename and Delete wake the Agent and
+ * row when the row's new place is closed or still closing, or, in the flat
+ * All sessions list, which shows no Agent rows and only its first pages, on
+ * the Group by control. Rename and Delete wake the Agent and
  * run once it answers.
  */
 export function TreeSessionRow({
@@ -109,7 +116,7 @@ export function TreeSessionRow({
   state,
   operable,
   pinned,
-  pinnedAgent,
+  withAgent,
   onNavigate,
 }: {
   agentId: string;
@@ -117,7 +124,7 @@ export function TreeSessionRow({
   state: RowState;
   operable: boolean;
   pinned: boolean;
-  pinnedAgent?: AgentView;
+  withAgent?: AgentView;
   onNavigate?: () => void;
 }) {
   const actWhenAwake = useActWhenAwake(agentId);
@@ -136,7 +143,11 @@ export function TreeSessionRow({
     backgroundWork: state.backgroundWork,
     draft: state.draft,
   });
-  const context = sessionContext(s, state.conversation);
+  const harnessIcon = !!s.harness && s.harness in HARNESS_ICONS;
+  const context = sessionContext(
+    harnessIcon ? { ...s, harness: null } : s,
+    state.conversation,
+  );
   const dot = (
     <ActivityDot
       tone={tone}
@@ -144,7 +155,7 @@ export function TreeSessionRow({
         state.backgroundWork && {
           label: backgroundWorkLabel(state.backgroundWork),
         })}
-      className={pinnedAgent && "rounded-full bg-chrome"}
+      className={withAgent && "rounded-full bg-chrome"}
     />
   );
 
@@ -154,18 +165,29 @@ export function TreeSessionRow({
         session={s}
         {...state}
         conversation={
-          pinnedAgent ? `${pinnedAgent.name} · ${context}` : context
+          <>
+            {withAgent && `${withAgent.name} · `}
+            {harnessIcon && (
+              <HarnessIcons
+                harnesses={[s.harness!]}
+                size="xs"
+                focusable={false}
+                className="mr-1 inline-flex align-[-2px]"
+              />
+            )}
+            {context}
+          </>
         }
         leading={
-          pinnedAgent ? (
-            <span className={cn(TREE_LEADING, "relative -mt-0.5 self-start")}>
+          withAgent ? (
+            <span className={cn(TREE_LEADING, "relative mt-0.5 self-start")}>
               <AgentAvatar
-                name={pinnedAgent.name}
-                avatar={pinnedAgent.avatar}
-                size={24}
-                mood={avatarMood(pinnedAgent.state, pinnedAgent)}
+                name={withAgent.name}
+                avatar={withAgent.avatar}
+                size={TREE_AVATAR}
+                mood={avatarMood(withAgent.state, withAgent)}
               />
-              <span className="absolute -right-1 -bottom-1">{dot}</span>
+              <span className="absolute right-0 -bottom-1">{dot}</span>
             </span>
           ) : (
             <span className={cn(TREE_LEADING, "h-5 items-center self-start")}>
@@ -173,12 +195,9 @@ export function TreeSessionRow({
             </span>
           )
         }
-        titleIcon={
-          s.harness && (
-            <HarnessIcons harnesses={[s.harness]} size="xs" focusable={false} />
-          )
-        }
         activityIndicators={false}
+        repositoryBadges={false}
+        quietPin
         className={TREE_ROW_CLASS}
         pinned={pinned}
         onTogglePin={() => togglePinKeepingFocus(key, agentId, s)}

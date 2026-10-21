@@ -16,11 +16,19 @@ const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 const SIDEBAR_V2_PINNED_STORAGE_KEY = "platform-sidebar-v2-pinned";
 
+export type SidebarGroupBy = "agents" | "all";
+
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
+  sidebarGroupBy: SidebarGroupBy;
+  setSidebarGroupBy: (groupBy: SidebarGroupBy) => void;
+  sidebarTreeToggled: ReadonlyMap<string, boolean>;
+  setSidebarTreeToggled: (toggled: ReadonlyMap<string, boolean>) => void;
+  sidebarTreeOpenAgent: string | null;
+  setSidebarTreeOpenAgent: (agentId: string | null) => void;
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgentOpen: Readonly<Record<string, boolean>>;
@@ -53,6 +61,14 @@ export const createSidebarSlice: StateCreator<
     if (isFiltered(get().sidebarActivityFilters) && !isFiltered(filters))
       keepFirstSessionPages();
     set({ sidebarActivityFilters: filters });
+  },
+  sidebarGroupBy: "agents",
+  setSidebarGroupBy: (groupBy) => set({ sidebarGroupBy: groupBy }),
+  sidebarTreeToggled: new Map(),
+  setSidebarTreeToggled: (toggled) => set({ sidebarTreeToggled: toggled }),
+  sidebarTreeOpenAgent: null,
+  setSidebarTreeOpenAgent: (agentId) => {
+    if (agentId) set({ sidebarTreeOpenAgent: agentId });
   },
   sidebarShowHibernating: readPersistedFlag(
     SIDEBAR_HIBERNATING_STORAGE_KEY,

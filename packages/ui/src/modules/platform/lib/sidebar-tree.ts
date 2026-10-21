@@ -1,6 +1,7 @@
 import {
   type ApprovalView,
   type HarnessFamily,
+  isStartRefusal,
   SessionMode,
   SessionType,
   type SessionView,
@@ -8,6 +9,9 @@ import {
 
 import { HARNESS_ICONS } from "@/components/harness-icons";
 
+import type { AgentView } from "../../../types.js";
+import { badgeLabel } from "../../agents/lib/state-label.js";
+import { resolveAgentDisplay } from "../../agents/utils/agent-resolver.js";
 import { acpSessionsKeys } from "../../sessions/api/keys.js";
 import { modelDisplayName } from "../../sessions/lib/model-name.js";
 
@@ -105,7 +109,8 @@ const SOURCE: Record<SessionType, string> = {
  * UNIT_BOUNDARY_DESCRIPTION: The new layout's sidebar tree: which Session
  * rows sit in the Pinned section, which Agents are open, the activity dot a
  * Session row shows, and the context line under its title (harness, model and
- * where the Session came from).
+ * where the Session came from). A terminal Session names no source there: the
+ * row's terminal icon says it.
  */
 export function sessionContext(
   s: Pick<SessionView, "harness" | "model" | "type" | "mode" | "scheduleId">,
@@ -113,7 +118,7 @@ export function sessionContext(
 ): string {
   const source =
     s.mode === SessionMode.Terminal
-      ? "Terminal"
+      ? null
       : s.scheduleId
         ? SOURCE[SessionType.ScheduleCron]
         : SOURCE[s.type];
@@ -121,7 +126,7 @@ export function sessionContext(
     s.harness &&
       (HARNESS_ICONS[s.harness as HarnessFamily]?.label ?? s.harness),
     s.model && modelDisplayName(s.model),
-    conversation ? `${source} ${conversation}` : source,
+    source && (conversation ? `${source} ${conversation}` : source),
   ]
     .filter(Boolean)
     .join(" · ");
@@ -139,5 +144,15 @@ export function awaitsApproval(
       a.status === "pending" &&
       a.agentId === agentId &&
       (sessionId === undefined || a.sessionId === sessionId),
+  );
+}
+
+const NO_IDS: ReadonlySet<string> = new Set();
+
+export function agentSubline(agent: AgentView): string {
+  return badgeLabel(
+    resolveAgentDisplay(agent, NO_IDS).state,
+    agent.vm,
+    isStartRefusal(agent.podTerminationCode),
   );
 }
