@@ -5,7 +5,10 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const env = vi.hoisted(() => ({
-  agents: [{ id: "a1", name: "dam", state: "running" }],
+  agents: [
+    { id: "a1", name: "dam", state: "running" },
+    { id: "a2", name: "other", state: "running" },
+  ],
   startSession: vi.fn(),
   navigated: vi.fn(),
 }));
@@ -92,14 +95,18 @@ afterEach(() => {
   vi.useRealTimers();
 });
 
-const tile = () =>
-  container.querySelector<HTMLButtonElement>('[data-agent-id="a1"]')!;
+const tile = (id = "a1") =>
+  container.querySelector<HTMLButtonElement>(`[data-agent-id="${id}"]`)!;
 const popover = () =>
   document.body.querySelector("[data-radix-popper-content-wrapper]");
 
-function pointer(type: "pointerover" | "pointerout", related: Element | null) {
+function pointer(
+  type: "pointerover" | "pointerout",
+  related: Element | null,
+  id = "a1",
+) {
   act(() => {
-    tile().dispatchEvent(
+    tile(id).dispatchEvent(
       new PointerEvent(type, { bubbles: true, relatedTarget: related }),
     );
   });
@@ -152,4 +159,27 @@ it("opens the Agent's menu on a right click", () => {
   });
   expect(document.body.textContent).toContain("Configure");
   expect(env.startSession).not.toHaveBeenCalled();
+});
+
+// TEST_SCENARIO: the pointer moving from one Agent's tile to the next leaves the second Agent's popover open: the first tile's close timer must not take the second's popover down with it.
+it("keeps the next Agent's popover open when the pointer moves on", () => {
+  pointer("pointerover", document.body);
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popover()).not.toBeNull();
+  pointer("pointerout", tile("a2"));
+  pointer("pointerover", document.body, "a2");
+  act(() => void vi.advanceTimersByTime(400));
+  expect(popover()).not.toBeNull();
+  expect(popover()!.textContent).toContain("other");
+});
+
+// TEST_SCENARIO: clicking an Agent's tile opens its new-session page and leaves the popover it opened on hover in place, so the pointer is not robbed of the rows it was reaching for.
+it("leaves the popover open when the tile is clicked", () => {
+  pointer("pointerover", document.body);
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popover()).not.toBeNull();
+  act(() => tile().click());
+  expect(env.startSession).toHaveBeenCalledWith("a1");
+  act(() => void vi.advanceTimersByTime(400));
+  expect(popover()).not.toBeNull();
 });

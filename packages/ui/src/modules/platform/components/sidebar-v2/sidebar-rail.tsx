@@ -137,7 +137,11 @@ export function SidebarRail({
                   : null
             }
             open={open === agent.id}
-            onOpenChange={(next) => setOpen(next ? agent.id : null)}
+            onOpenChange={(next) =>
+              setOpen((prev) =>
+                next ? agent.id : prev === agent.id ? null : prev,
+              )
+            }
             onNavigate={navigate}
           />
         ))}
@@ -183,10 +187,12 @@ function AgentTile({
   const name = `New session with ${agent.name}${
     cue ? `, ${cue === "approval" ? "needs your approval" : "unread"}` : ""
   }`;
+  const hovering = useRef(false);
   const newSession = () => {
-    onOpenChange(false);
     onNavigate();
     startSession(agent.id);
+    // UNIT_BOUNDARY_DESCRIPTION: a click opens the Agent's page and is no reason to dismiss the popover the hover opened, so a pointer that is still over the tile gets it back after the press closed it.
+    if (hovering.current) onOpenChange(true);
   };
   const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const closedAt = useRef(0);
@@ -218,12 +224,17 @@ function AgentTile({
             data-agent-id={agent.id}
             className={cn(railTile(current || open), FOCUS_RING)}
             onClick={newSession}
+
             onPointerLeave={(e) => {
               cancel();
-              if (e.pointerType !== "touch") closeSoon();
+              if (e.pointerType === "touch") return;
+              hovering.current = false;
+              closeSoon();
             }}
             onPointerEnter={(e) => {
-              if (e.pointerType !== "touch") openSoon();
+              if (e.pointerType === "touch") return;
+              hovering.current = true;
+              openSoon();
             }}
             onFocus={(e) => {
               // UNIT_BOUNDARY_DESCRIPTION: Escape returns focus to this tile, and must not reopen what it closed.
