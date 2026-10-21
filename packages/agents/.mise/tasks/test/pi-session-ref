@@ -1,0 +1,153 @@
+#!/usr/bin/env node
+//MISE description="Test that each Pi chat session reaches the platform MCP server with its own session ref, two at once and after a reload, through the patched pi-acp"
+//MISE sources=["pi-agent/rootfs/usr/local/bin/pi-platform", "pi-agent/rootfs/usr/local/bin/harness-chat", "pi-agent/rootfs/usr/local/share/pi-platform/**", "pi-agent/image.toml", "test-lib/acp-client.mjs", ".mise/tasks/test/pi-session-ref", "../../pnpm-lock.yaml"]
+//MISE outputs=[]
+import assert from "node:assert/strict";
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
+import { createServer } from "node:http";
+import { tmpdir } from "node:os";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
+import { acpClient, responsesText } from "../../../test-lib/acp-client.mjs";
+
+const root = fileURLToPath(new URL("../../../pi-agent/", import.meta.url));
+const share = join(root, "rootfs/usr/local/share/pi-platform");
+const modules = join(share, "extensions/pi-dynamic-providers/node_modules");
+const cli = join(modules, "@earendil-works/pi-coding-agent/dist/cli.js");
+const piAcp = join(modules, "pi-acp/dist/index.js");
+const home = mkdtempSync(join(tmpdir(), "pi-session-ref-"));
+const work = join(home, "work");
+const HEADER = "x-platform-session-ref";
+const MODEL = "ibm/gpt-5.5";
+const imageRef = readFileSync(join(root, "image.toml"), "utf8").match(/^PLATFORM_SESSION_REF = "([^"]*)"$/m)?.[1];
+assert.equal(typeof imageRef, "string", "image.toml sets no PLATFORM_SESSION_REF");
+
+const router = createServer((req, res) => {
+  const path = new URL(req.url, "http://127.0.0.1").pathname.replace(/^\/v1\/v1\//, "/v1/");
+  if (req.method === "GET" && path === "/v1/models") {
+    res.setHeader("content-type", "application/json");
+    const all = ["anthropic-messages", "openai-chat", "openai-responses"];
+    const metadata = { alias: "ibm", upstreamId: "gpt-5.5", dialects: all, contextWindow: 200000, maxOutputTokens: 8192, reasoning: true, vision: true, cacheControl: null, thinkingFormat: null, prices: null };
+    return res.end(JSON.stringify({ data: [{ id: MODEL, object: "model", owned_by: "ibm", display_name: "gpt-5.5", description: "ibm", metadata }], has_more: false }));
+  }
+  let body = "";
+  req.on("data", (chunk) => { body += chunk; });
+  req.on("end", () => {
+    const json = JSON.parse(body);
+    const reply = responsesText(json.model, "ok", json.stream === true);
+    res.setHeader("content-type", reply.contentType);
+    res.end(reply.body);
+  });
+});
+
+// The platform MCP server, reduced to what a client needs to connect and list
+// no tools; it records the session ref each pi connects with: a client sends
+// one initialize per connection.
+const refs = [];
+const waiters = [];
+const platform = createServer((req, res) => {
+  if (req.method !== "POST") {
+    res.statusCode = 405;
+    return res.end();
+  }
+  let body = "";
+  req.on("data", (chunk) => { body += chunk; });
+  req.on("end", () => {
+    const message = JSON.parse(body);
+    if (message.method === "initialize") {
+      refs.push(req.headers[HEADER]);
+      for (const w of waiters.splice(0)) w();
+    }
+    if (message.id === undefined) {
+      res.statusCode = 202;
+      return res.end();
+    }
+    const result = message.method === "initialize"
+      ? { protocolVersion: message.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: "platform", version: "0" } }
+      : message.method === "tools/list" ? { tools: [] } : {};
+    res.setHeader("content-type", "application/json");
+    res.end(JSON.stringify({ jsonrpc: "2.0", id: message.id, result }));
+  });
+});
+const connections = async (count, timeoutMs = 60_000) => {
+  const deadline = Date.now() + timeoutMs;
+  while (refs.length < count) {
+    const left = deadline - Date.now();
+    assert.ok(left > 0, `the platform server saw ${refs.length} of ${count} connections: ${JSON.stringify(refs)}`);
+    await new Promise((resolve) => {
+      const timer = setTimeout(resolve, left);
+      waiters.push(() => { clearTimeout(timer); resolve(); });
+    });
+  }
+  return refs.slice(0, count);
+};
+
+router.listen(0, "127.0.0.1");
+platform.listen(0, "127.0.0.1");
+await Promise.all([once(router, "listening"), once(platform, "listening")]);
+const platformUrl = `http://127.0.0.1:${platform.address().port}/mcp`;
+
+// The home as the runtime leaves it: the mcp-entry binding of the pi-agent
+// manifest writes the platform entry with the header naming the variable.
+const shared = join(home, ".pi/agent");
+mkdirSync(shared, { recursive: true });
+mkdirSync(work);
+writeFileSync(join(shared, "settings.json"), JSON.stringify({ packages: [] }));
+writeFileSync(join(shared, "mcp.json"), JSON.stringify({
+  mcpServers: { "platform-outbound": { type: "http", url: platformUrl, headers: { [HEADER]: "${PLATFORM_SESSION_REF}" }, exposure: "direct" } },
+}));
+mkdirSync(join(home, "bin"));
+writeFileSync(join(home, "bin/pi"), `#!/bin/sh\nexec '${process.execPath}' '${cli}' "$@"\n`, { mode: 0o755 });
+writeFileSync(join(home, "bin/mise"), "#!/bin/sh\nexit 1\n", { mode: 0o755 });
+writeFileSync(join(home, "bin/pi-acp"), `#!/bin/sh\nexec '${process.execPath}' '${piAcp}' "$@"\n`, { mode: 0o755 });
+const wrapper = readFileSync(join(root, "rootfs/usr/local/bin/pi-platform"), "utf8").replace("extensions=/usr/local/share/pi-platform/extensions", `extensions=${join(share, "extensions")}`);
+writeFileSync(join(home, "pi-platform"), wrapper, { mode: 0o755 });
+const harnessChat = readFileSync(join(root, "rootfs/usr/local/bin/harness-chat"), "utf8").replaceAll("/usr/local/share/pi-platform/", `${share}/`);
+writeFileSync(join(home, "harness-chat"), harnessChat, { mode: 0o755 });
+
+const env = {
+  PATH: `${home}/bin:${process.env.PATH}`, HOME: home, PI_OFFLINE: "1", NO_PROXY: "127.0.0.1,localhost",
+  PI_ACP_PI_COMMAND: join(home, "pi-platform"), PLATFORM_SESSION_REF: imageRef,
+  PLATFORM_MODEL_ROUTER_URL: `http://127.0.0.1:${router.address().port}`, PLATFORM_MODEL: MODEL,
+};
+const stderr = [];
+const acp = acpClient("/bin/sh", [join(home, "harness-chat")], { env, cwd: work, name: "pi-acp", log: (line) => stderr.push(line), onRequest: () => ({}) });
+const platformServer = (ref) => [{ type: "http", name: "platform-outbound", url: platformUrl, headers: [{ name: HEADER, value: ref }] }];
+
+let terminal;
+try {
+  await acp.request("initialize", { protocolVersion: 1, clientCapabilities: { fs: { readTextFile: true, writeTextFile: true } } }, 60_000);
+  assert.equal(stderr.some((line) => line.includes("pi-acp-patch: not applied")), false, stderr.join("\n"));
+
+  // TEST_SCENARIO: Two sessions opened one after the other each start their own pi, and each pi reaches the platform server with the ref its own session/new carried, while the other's pi stays alive.
+  const a = await acp.request("session/new", { cwd: work, mcpServers: platformServer("ref-a") });
+  const b = await acp.request("session/new", { cwd: work, mcpServers: platformServer("ref-b") });
+  assert.deepEqual(await connections(2), ["ref-a", "ref-b"]);
+  assert.notEqual(a.sessionId, b.sessionId);
+  const turnA = await acp.request("session/prompt", { sessionId: a.sessionId, prompt: [{ type: "text", text: "Say ok." }] });
+  assert.equal(turnA.stopReason, "end_turn");
+
+  // TEST_SCENARIO: A session closed and loaded again starts a new pi that carries the ref the session had.
+  await acp.request("session/close", { sessionId: a.sessionId });
+  await acp.request("session/load", { sessionId: a.sessionId, cwd: work, mcpServers: platformServer("ref-a") });
+  assert.deepEqual((await connections(3)).slice(2), ["ref-a"]);
+
+  // TEST_SCENARIO: A session whose pi is gone gets a new pi on its next prompt, which names no MCP servers, and that pi keeps the session's ref.
+  await acp.request("session/close", { sessionId: b.sessionId });
+  const turnB = await acp.request("session/prompt", { sessionId: b.sessionId, prompt: [{ type: "text", text: "Say ok again." }] });
+  assert.equal(turnB.stopReason, "end_turn");
+  assert.deepEqual(await connections(4), ["ref-a", "ref-b", "ref-a", "ref-b"]);
+
+  // TEST_SCENARIO: A pi that serves no chat session, as in the terminal, starts on the image's blank ref, still connects, and names no session.
+  terminal = spawn(join(home, "pi-platform"), ["--mode", "rpc", "--no-session"], { cwd: work, env, stdio: ["pipe", "pipe", "pipe"] });
+  assert.deepEqual((await connections(5)).slice(4), [""]);
+  console.log("each pi session reaches the platform server with its own session ref, after a reload too");
+} finally {
+  if (terminal && terminal.exitCode === null) { terminal.kill(); await once(terminal, "exit"); }
+  await acp.close();
+  router.close();
+  platform.close();
+  rmSync(home, { recursive: true, force: true });
+}
