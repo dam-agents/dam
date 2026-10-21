@@ -29,6 +29,19 @@ vi.mock("../../modules/approvals/api/queries.js", () => ({
 vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
   usePinnedSessions: () => env.pins,
 }));
+vi.mock("../../modules/agents/api/mutations.js", () => ({
+  useDeleteAgent: () => ({ mutate: () => {} }),
+}));
+vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
+  useConfirmDeleteAgent: () => async () => false,
+}));
+vi.mock("../../modules/sessions/lib/agent-session-filters.js", () => ({
+  useAgentSessionFilter: () => undefined,
+  setAgentSessionFilter: () => {},
+}));
+vi.mock("../../modules/home/components/activity-filter-menu.js", () => ({
+  ActivityFilterMenu: () => null,
+}));
 vi.mock("../../modules/sessions/hooks/use-start-session.js", () => ({
   useStartSession: () => vi.fn(),
 }));

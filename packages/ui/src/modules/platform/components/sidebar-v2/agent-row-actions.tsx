@@ -1,5 +1,13 @@
 import { Add, Tools, TrashCan } from "@carbon/icons-react";
+import type { ReactNode } from "react";
 
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuSeparator,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import {
   DropdownMenuItem,
   DropdownMenuSeparator,
@@ -22,6 +30,11 @@ import {
 } from "../../../sessions/lib/agent-session-filters.js";
 import { REVEAL } from "../../lib/sidebar-tree.js";
 
+const MENU_PARTS = {
+  dropdown: { Item: DropdownMenuItem, Separator: DropdownMenuSeparator },
+  context: { Item: ContextMenuItem, Separator: ContextMenuSeparator },
+};
+
 /**
  * UNIT_BOUNDARY_DESCRIPTION: An Agent's session filter, its New session button and its "⋯" actions menu, which its row in the tree shows on hover or keyboard focus and its popover in the collapsed sidebar's rail shows at all times.
  */
@@ -39,11 +52,8 @@ export function AgentRowActions({
   revealedOnHover?: boolean;
 }) {
   const startSession = useStartSession();
-  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const setView = useStore((s) => s.setView);
-  const confirmDelete = useConfirmDeleteAgent();
-  const deleteAgent = useDeleteAgent();
   const agentFilter = useAgentSessionFilter(agent.id);
+  const actions = useAgentMenuActions({ agent, current, onNavigate });
   const go = (fn: () => void) => () => {
     fn();
     onNavigate?.();
@@ -93,26 +103,87 @@ export function AgentRowActions({
           testId="sidebar-agent-menu"
           dense
         >
-          <DropdownMenuItem
-            onSelect={go(() => navigateToSandboxHome(agent.id))}
-          >
-            <Tools size={14} /> Configure
-          </DropdownMenuItem>
-          <DropdownMenuSeparator />
-          <DropdownMenuItem
-            tone="danger"
-            onSelect={() =>
-              void confirmDelete(agent).then((ok) => {
-                if (!ok) return;
-                deleteAgent.mutate({ id: agent.id });
-                if (current) setView("home");
-              })
-            }
-          >
-            <TrashCan size={14} /> Remove
-          </DropdownMenuItem>
+          <AgentMenuItems {...actions} />
         </RowActionsMenu>
       </div>
     </div>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: An Agent's Configure and Remove items, drawn by its row's "⋯" menu and by the menu a right click on its row opens.
+ */
+export function AgentMenuItems({
+  onConfigure,
+  onRemove,
+  menu = "dropdown",
+}: {
+  onConfigure: () => void;
+  onRemove: () => void;
+  menu?: keyof typeof MENU_PARTS;
+}) {
+  const { Item, Separator } = MENU_PARTS[menu];
+  return (
+    <>
+      <Item onSelect={onConfigure}>
+        <Tools size={14} /> Configure
+      </Item>
+      <Separator />
+      <Item tone="danger" onSelect={onRemove}>
+        <TrashCan size={14} /> Remove
+      </Item>
+    </>
+  );
+}
+
+function useAgentMenuActions({
+  agent,
+  current,
+  onNavigate,
+}: {
+  agent: AgentView;
+  current: boolean;
+  onNavigate: (() => void) | undefined;
+}) {
+  const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
+  const setView = useStore((s) => s.setView);
+  const confirmDelete = useConfirmDeleteAgent();
+  const deleteAgent = useDeleteAgent();
+  return {
+    onConfigure: () => {
+      navigateToSandboxHome(agent.id);
+      onNavigate?.();
+    },
+    onRemove: () =>
+      void confirmDelete(agent).then((ok) => {
+        if (!ok) return;
+        deleteAgent.mutate({ id: agent.id });
+        if (current) setView("home");
+      }),
+  };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The menu a right click on an Agent's row or on its tile in the rail opens, at the pointer: the same Configure and Remove items as its row's "⋯" menu.
+ */
+export function AgentContextMenu({
+  agent,
+  current,
+  onNavigate,
+  children,
+}: {
+  agent: AgentView;
+  current: boolean;
+  onNavigate: (() => void) | undefined;
+  children: ReactNode;
+}) {
+  const actions = useAgentMenuActions({ agent, current, onNavigate });
+  return (
+    <ContextMenu>
+      <ContextMenuTrigger asChild>{children}</ContextMenuTrigger>
+      <ContextMenuContent>
+        <AgentMenuItems menu="context" {...actions} />
+      </ContextMenuContent>
+    </ContextMenu>
   );
 }

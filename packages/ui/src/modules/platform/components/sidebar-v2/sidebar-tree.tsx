@@ -56,7 +56,7 @@ import {
 import type { SidebarGroupBy } from "../../store/sidebar.js";
 import { AgentCue } from "./activity-dot.js";
 import { AddRow, TREE_AVATAR, TREE_LEADING } from "./add-row.js";
-import { AgentRowActions } from "./agent-row-actions.js";
+import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
 
@@ -377,74 +377,76 @@ function AgentNode({
       data-agent-name={agent.name}
       data-expanded={expanded || undefined}
     >
-      <div
-        {...drag.dragProps}
-        className={cn(
-          "group/agent relative flex items-center rounded-lg transition-colors",
-          current && !newSessionPage ? "bg-muted" : "hover:bg-muted",
-        )}
-      >
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={expanded}
-          aria-controls={expanded ? listId : undefined}
-          aria-current={current && !newSessionPage ? "page" : undefined}
-          aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
-          aria-describedby={sublineId}
-          data-testid="sidebar-agent-row"
+      <AgentContextMenu agent={agent} current={current} onNavigate={onNavigate}>
+        <div
+          {...drag.dragProps}
           className={cn(
-            "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2 text-left select-none",
-            agentFilter ? "pr-14" : "pr-16",
-            "group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
-            FOCUS_RING,
-            mood !== "awake" && !expanded
-              ? "text-muted-foreground hover:text-foreground"
-              : "text-foreground",
+            "group/agent relative flex items-center rounded-lg transition-colors",
+            current && !newSessionPage ? "bg-muted" : "hover:bg-muted",
           )}
         >
-          <span className={cn(TREE_LEADING, "relative items-center")}>
-            <AgentAvatar
-              name={agent.name}
-              avatar={agent.avatar}
-              size={TREE_AVATAR}
-              mood={mood}
-              className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
-            />
-            <ChevronRight
-              size={16}
-              aria-hidden
-              className={cn(
-                "invisible absolute text-muted-foreground transition-transform group-has-[:focus-visible]/agent:visible group-hover/agent:visible motion-reduce:transition-none [@media(hover:none)]:visible",
-                expanded && "rotate-90",
-              )}
-            />
-          </span>
-          <span className="flex min-w-0 flex-1 flex-col gap-0.5">
-            <span title={agent.name} className="truncate text-sm font-medium">
-              {agent.name}
+          <button
+            type="button"
+            onClick={onToggle}
+            aria-expanded={expanded}
+            aria-controls={expanded ? listId : undefined}
+            aria-current={current && !newSessionPage ? "page" : undefined}
+            aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
+            aria-describedby={sublineId}
+            data-testid="sidebar-agent-row"
+            className={cn(
+              "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2 text-left select-none",
+              agentFilter ? "pr-14" : "pr-16",
+              "group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
+              FOCUS_RING,
+              mood !== "awake" && !expanded
+                ? "text-muted-foreground hover:text-foreground"
+                : "text-foreground",
+            )}
+          >
+            <span className={cn(TREE_LEADING, "relative items-center")}>
+              <AgentAvatar
+                name={agent.name}
+                avatar={agent.avatar}
+                size={TREE_AVATAR}
+                mood={mood}
+                className="group-has-[:focus-visible]/agent:invisible group-hover/agent:invisible [@media(hover:none)]:invisible"
+              />
+              <ChevronRight
+                size={16}
+                aria-hidden
+                className={cn(
+                  "invisible absolute text-muted-foreground transition-transform group-has-[:focus-visible]/agent:visible group-hover/agent:visible motion-reduce:transition-none [@media(hover:none)]:visible",
+                  expanded && "rotate-90",
+                )}
+              />
             </span>
-            <span
-              id={sublineId}
-              aria-hidden
-              title={lastActivityAt && formatTimestamp(lastActivityAt)}
-              className="truncate text-2xs font-normal text-muted-foreground"
-            >
-              {lastActivityAt && timeAgo(lastActivityAt)}
+            <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span title={agent.name} className="truncate text-sm font-medium">
+                {agent.name}
+              </span>
+              <span
+                id={sublineId}
+                aria-hidden
+                title={lastActivityAt && formatTimestamp(lastActivityAt)}
+                className="truncate text-2xs font-normal text-muted-foreground"
+              >
+                {lastActivityAt && timeAgo(lastActivityAt)}
+              </span>
             </span>
-          </span>
-          {cue && !expanded && <AgentCue tone={cue} />}
-        </button>
-        <div className="absolute right-1">
-          <AgentRowActions
-            agent={agent}
-            current={current}
-            newSessionCurrent={newSessionPage && !rowShown}
-            onNavigate={onNavigate}
-          />
+            {cue && !expanded && <AgentCue tone={cue} />}
+          </button>
+          <div className="absolute right-1">
+            <AgentRowActions
+              agent={agent}
+              current={current}
+              newSessionCurrent={newSessionPage && !rowShown}
+              onNavigate={onNavigate}
+            />
+          </div>
+          <OrderDropIndicator at={drag.indicator} />
         </div>
-        <OrderDropIndicator at={drag.indicator} />
-      </div>
+      </AgentContextMenu>
       <Collapse open={expanded}>
         <div className="pt-px pb-3" id={listId}>
           <SidebarEnvironments

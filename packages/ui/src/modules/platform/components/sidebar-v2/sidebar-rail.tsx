@@ -24,7 +24,7 @@ import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
 import { AddRow } from "./add-row.js";
-import { AgentRowActions } from "./agent-row-actions.js";
+import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { PinnedList } from "./pinned-rows.js";
 
@@ -163,7 +163,6 @@ export function SidebarRail({
 
 const HOVER_OPEN_MS = 150;
 const HOVER_CLOSE_MS = 250;
-const LONG_PRESS_MS = 500;
 
 function AgentTile({
   agent,
@@ -181,7 +180,6 @@ function AgentTile({
   onNavigate: () => void;
 }) {
   const startSession = useStartSession();
-  const shortPress = useRef(false);
   const name = `New session with ${agent.name}${
     cue ? `, ${cue === "approval" ? "needs your approval" : "unread"}` : ""
   }`;
@@ -210,63 +208,52 @@ function AgentTile({
   useEffect(() => cancel, []);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <PopoverAnchor asChild>
-        <button
-          type="button"
-          aria-label={name}
-          aria-current={current ? "page" : undefined}
-          data-testid="sidebar-rail-agent"
-          data-agent-id={agent.id}
-          className={cn(railTile(current || open), FOCUS_RING)}
-          onClick={() => {
-            if (shortPress.current) shortPress.current = false;
-            else newSession();
-          }}
-          onPointerDown={() => {
-            shortPress.current = false;
-            cancel();
-            timer.current = setTimeout(() => {
-              shortPress.current = true;
-              onOpenChange(true);
-            }, LONG_PRESS_MS);
-          }}
-          onPointerUp={cancel}
-          onPointerLeave={(e) => {
-            cancel();
-            if (e.pointerType !== "touch") closeSoon();
-          }}
-          onPointerCancel={cancel}
-          onPointerEnter={(e) => {
-            if (e.pointerType !== "touch") openSoon();
-          }}
-          onFocus={(e) => {
-            // UNIT_BOUNDARY_DESCRIPTION: Escape returns focus to this tile, and must not reopen what it closed.
-            if (
-              e.currentTarget.matches(":focus-visible") &&
-              Date.now() - closedAt.current > HOVER_CLOSE_MS
-            ) {
+      <AgentContextMenu agent={agent} current={current} onNavigate={onNavigate}>
+        <PopoverAnchor asChild>
+          <button
+            type="button"
+            aria-label={name}
+            aria-current={current ? "page" : undefined}
+            data-testid="sidebar-rail-agent"
+            data-agent-id={agent.id}
+            className={cn(railTile(current || open), FOCUS_RING)}
+            onClick={newSession}
+            onPointerLeave={(e) => {
               cancel();
-              onOpenChange(true);
-            }
-          }}
-        >
-          <AgentAvatar
-            name={agent.name}
-            avatar={agent.avatar}
-            size={26}
-            mood={avatarMood(agent.state, agent)}
-          />
-          {cue && (
-            <span
-              aria-hidden
-              className={cn(
-                "absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-chrome",
-                cue === "approval" ? "bg-warning" : "bg-success",
-              )}
+              if (e.pointerType !== "touch") closeSoon();
+            }}
+            onPointerEnter={(e) => {
+              if (e.pointerType !== "touch") openSoon();
+            }}
+            onFocus={(e) => {
+              // UNIT_BOUNDARY_DESCRIPTION: Escape returns focus to this tile, and must not reopen what it closed.
+              if (
+                e.currentTarget.matches(":focus-visible") &&
+                Date.now() - closedAt.current > HOVER_CLOSE_MS
+              ) {
+                cancel();
+                onOpenChange(true);
+              }
+            }}
+          >
+            <AgentAvatar
+              name={agent.name}
+              avatar={agent.avatar}
+              size={26}
+              mood={avatarMood(agent.state, agent)}
             />
-          )}
-        </button>
-      </PopoverAnchor>
+            {cue && (
+              <span
+                aria-hidden
+                className={cn(
+                  "absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-chrome",
+                  cue === "approval" ? "bg-warning" : "bg-success",
+                )}
+              />
+            )}
+          </button>
+        </PopoverAnchor>
+      </AgentContextMenu>
       <PopoverContent
         ref={content}
         side="right"

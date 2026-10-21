@@ -16,17 +16,19 @@ import {
   type SessionView,
   type SpendSessionRow,
 } from "api-server-api";
-import {
-  type ReactNode,
-  useCallback,
-  useEffect,
-  useId,
-  useRef,
-  useState,
-} from "react";
+import { type ReactNode, useCallback, useEffect, useId, useRef } from "react";
 
 import { Badge } from "@/components/ui/badge";
-import { DropdownMenuItem } from "@/components/ui/dropdown-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuItem,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+} from "@/components/ui/dropdown-menu";
 import { HOVER_ACTION, HOVER_YIELD } from "@/components/ui/hover-action";
 import { RowActionsMenu } from "@/components/ui/row-actions-menu";
 import { formatTimestamp, timeAgo } from "@/lib/format-time";
@@ -45,7 +47,11 @@ import { sessionTitleLabel } from "../lib/session-title.js";
 import { backgroundWorkLabel } from "./background-work-indicator.js";
 import { WorkingDots } from "./working-dots.js";
 
-const LONG_PRESS_MS = 400;
+const MENU_PARTS = {
+  dropdown: { Item: DropdownMenuItem, Separator: DropdownMenuSeparator },
+  context: { Item: ContextMenuItem, Separator: ContextMenuItem },
+};
+
 // UNIT_BOUNDARY_DESCRIPTION: a pointer resting this long on a row reads its history ahead of the click; a pointer sweeping across the list reads nothing.
 const PREFETCH_DWELL_MS = 100;
 
@@ -104,20 +110,9 @@ export function SessionRow({
   onExportTimeline,
   className,
 }: Props) {
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const didLongPress = useRef(false);
-  const [menuOpen, setMenuOpen] = useState(false);
   const mainRef = useRef<HTMLButtonElement>(null);
   const metaId = useId();
   const afterMenu = useRef<(() => void) | null>(null);
-
-  const startPress = useCallback(() => {
-    didLongPress.current = false;
-    timerRef.current = setTimeout(() => {
-      didLongPress.current = true;
-      setMenuOpen(true);
-    }, LONG_PRESS_MS);
-  }, []);
 
   const dwellRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const startDwell = useCallback(() => {
@@ -129,21 +124,6 @@ export function SessionRow({
     dwellRef.current = null;
   }, []);
   useEffect(() => endDwell, [endDwell]);
-
-  const endPress = useCallback(() => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  }, []);
-
-  const handleClick = useCallback(() => {
-    if (didLongPress.current) {
-      didLongPress.current = false;
-      return;
-    }
-    onResume();
-  }, [onResume]);
 
   const titleLabel = sessionTitleLabel(s);
   const titleClass = !s.title
@@ -170,187 +150,223 @@ export function SessionRow({
         ? ChannelType.Telegram
         : null;
 
+  const menuProps = {
+    pinned,
+    ...(onTogglePin && { onTogglePin }),
+    ...(onExportTimeline && { onExportTimeline }),
+    onRename: () => {
+      afterMenu.current = onRename;
+    },
+    onDelete: () => {
+      afterMenu.current = onDelete;
+    },
+  };
+  const closeContextMenu = (event: Event) => {
+    const act = afterMenu.current;
+    if (!act) return;
+    afterMenu.current = null;
+    event.preventDefault();
+    mainRef.current?.focus();
+    act();
+  };
+
   return (
-    <div
-      data-testid="session-row"
-      data-session-id={s.sessionId}
-      data-active={active ? "true" : "false"}
-      className={cn(
-        "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
-        "has-[[data-row-main]:focus-visible]:outline-2 has-[[data-row-main]:focus-visible]:-outline-offset-2 has-[[data-row-main]:focus-visible]:outline-accent",
-        active ? "bg-muted" : "hover:bg-muted/60",
-        className,
-      )}
-      onClick={handleClick}
-      onPointerEnter={startDwell}
-      onPointerLeave={endDwell}
-      onFocus={onPrefetch}
-      onTouchStart={startPress}
-      onTouchEnd={endPress}
-      onTouchCancel={endPress}
-      onContextMenu={(e) => {
-        e.preventDefault();
-        setMenuOpen(true);
-      }}
-    >
-      {leading}
-      <div className="flex-1 min-w-0 flex flex-col gap-0.5">
-        <div className="flex items-center gap-1.5">
-          <button
-            ref={mainRef}
-            type="button"
-            data-row-main
-            title={titleLabel}
-            aria-current={active ? "page" : undefined}
-            aria-describedby={metaId}
-            className="flex min-w-0 items-center gap-1.5 text-left outline-none"
-          >
-            {titleIcon && (
-              <span aria-hidden className="flex shrink-0">
-                {titleIcon}
-              </span>
-            )}
-            <span className={`text-sm min-w-0 truncate ${titleClass}`}>
-              {titleLabel}
-            </span>
-            {onboarding && (
-              <Badge
-                variant={onboarding.variant}
-                size="sm"
-                className="shrink-0"
-              >
-                {onboarding.label}
-              </Badge>
-            )}
-          </button>
-          {pinned && !quietPin && (
-            <PinFilled
-              size={12}
-              aria-label="Pinned"
-              className={cn(
-                "ml-auto shrink-0 text-muted-foreground group-has-[[data-row-actions]_:focus-visible]:hidden group-has-[[data-row-actions]_[data-state=open]]:hidden hover-capable:group-hover:hidden",
-                onTogglePin && "[@media(hover:none)]:hidden",
-              )}
-            />
+    <ContextMenu>
+      <ContextMenuTrigger asChild>
+        <div
+          data-testid="session-row"
+          data-session-id={s.sessionId}
+          data-active={active ? "true" : "false"}
+          className={cn(
+            "group relative flex items-center gap-1 px-4 py-3 cursor-pointer border-b border-border transition-colors select-none",
+            "has-[[data-row-main]:focus-visible]:outline-2 has-[[data-row-main]:focus-visible]:-outline-offset-2 has-[[data-row-main]:focus-visible]:outline-accent",
+            active ? "bg-muted" : "hover:bg-muted/60",
+            className,
           )}
-          <div
-            className={cn(
-              "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
-              pinned && !quietPin ? "ml-1" : "ml-auto",
-            )}
-          >
-            <SessionIndicators
-              harnessIcon={harnessIcon}
-              scheduled={scheduled}
-              terminal={terminal}
-              messenger={messenger}
-              {...(activityIndicators && {
-                needsApproval,
-                working,
-                draft,
-                backgroundWork,
-                unread,
-              })}
-            />
-            <div
-              data-row-actions
-              className={cn(
-                "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
-                HOVER_ACTION,
-                quietPin &&
-                  "hover-capable:group-has-[:focus-visible]:w-auto group-has-[:focus-visible]:opacity-100",
-              )}
-            >
-              <RowActionsMenu
-                label="More actions"
-                testId="session-menu-button"
-                dense
-                stopPropagation
-                open={menuOpen}
-                onOpenChange={setMenuOpen}
-                contentProps={{
-                  onClick: (event) => event.stopPropagation(),
-                  onCloseAutoFocus: (event) => {
-                    const act = afterMenu.current;
-                    if (!act) return;
-                    afterMenu.current = null;
-                    event.preventDefault();
-                    mainRef.current?.focus();
-                    act();
-                  },
-                }}
+          onClick={() => onResume()}
+          onPointerEnter={startDwell}
+          onPointerLeave={endDwell}
+          onFocus={onPrefetch}
+        >
+          {leading}
+          <div className="flex-1 min-w-0 flex flex-col gap-0.5">
+            <div className="flex items-center gap-1.5">
+              <button
+                ref={mainRef}
+                type="button"
+                data-row-main
+                title={titleLabel}
+                aria-current={active ? "page" : undefined}
+                aria-describedby={metaId}
+                className="flex min-w-0 items-center gap-1.5 text-left outline-none"
               >
-                {onTogglePin && (
-                  <DropdownMenuItem
-                    data-testid="session-pin-button"
-                    onSelect={() => onTogglePin()}
-                  >
-                    {pinned ? <PinFilled size={14} /> : <Pin size={14} />}{" "}
-                    {pinned ? "Unpin session" : "Pin to top"}
-                  </DropdownMenuItem>
+                {titleIcon && (
+                  <span aria-hidden className="flex shrink-0">
+                    {titleIcon}
+                  </span>
                 )}
-                {onExportTimeline && (
-                  <DropdownMenuItem
-                    data-testid="session-export-timeline-button"
-                    onSelect={onExportTimeline}
+                <span className={`text-sm min-w-0 truncate ${titleClass}`}>
+                  {titleLabel}
+                </span>
+                {onboarding && (
+                  <Badge
+                    variant={onboarding.variant}
+                    size="sm"
+                    className="shrink-0"
                   >
-                    <Download size={14} /> Export telemetry
-                  </DropdownMenuItem>
+                    {onboarding.label}
+                  </Badge>
                 )}
-                <DropdownMenuItem
-                  data-testid="session-rename-button"
-                  onSelect={() => {
-                    afterMenu.current = onRename;
-                  }}
+              </button>
+              {pinned && !quietPin && (
+                <PinFilled
+                  size={12}
+                  aria-label="Pinned"
+                  className={cn(
+                    "ml-auto shrink-0 text-muted-foreground group-has-[[data-row-actions]_:focus-visible]:hidden group-has-[[data-row-actions]_[data-state=open]]:hidden hover-capable:group-hover:hidden",
+                    onTogglePin && "[@media(hover:none)]:hidden",
+                  )}
+                />
+              )}
+              <div
+                className={cn(
+                  "flex shrink-0 items-center gap-1 hover-capable:grid hover-capable:justify-items-end hover-capable:*:[grid-area:1/1]",
+                  pinned && !quietPin ? "ml-1" : "ml-auto",
+                )}
+              >
+                <SessionIndicators
+                  harnessIcon={harnessIcon}
+                  scheduled={scheduled}
+                  terminal={terminal}
+                  messenger={messenger}
+                  {...(activityIndicators && {
+                    needsApproval,
+                    working,
+                    draft,
+                    backgroundWork,
+                    unread,
+                  })}
+                />
+                <div
+                  data-row-actions
+                  className={cn(
+                    "-mr-1 flex items-center hover-capable:w-0 hover-capable:overflow-hidden hover-capable:group-hover:w-auto hover-capable:has-[:focus-visible]:w-auto hover-capable:has-[[data-state=open]]:w-auto",
+                    HOVER_ACTION,
+                    quietPin &&
+                      "hover-capable:group-has-[:focus-visible]:w-auto group-has-[:focus-visible]:opacity-100",
+                  )}
                 >
-                  <Edit size={14} /> Rename session
-                </DropdownMenuItem>
-                <DropdownMenuItem
-                  data-testid="session-delete-button"
-                  tone="danger"
-                  onSelect={() => {
-                    afterMenu.current = onDelete;
-                  }}
-                >
-                  <TrashCan size={14} /> Delete session
-                </DropdownMenuItem>
-              </RowActionsMenu>
+                  <RowActionsMenu
+                    label="More actions"
+                    testId="session-menu-button"
+                    dense
+                    stopPropagation
+                    contentProps={{
+                      onClick: (event) => event.stopPropagation(),
+                      onCloseAutoFocus: (event) => {
+                        const act = afterMenu.current;
+                        if (!act) return;
+                        afterMenu.current = null;
+                        event.preventDefault();
+                        mainRef.current?.focus();
+                        act();
+                      },
+                    }}
+                  >
+                    <SessionMenuItems menu="dropdown" {...menuProps} />
+                  </RowActionsMenu>
+                </div>
+              </div>
             </div>
+            <span
+              id={metaId}
+              className="text-2xs text-muted-foreground truncate"
+            >
+              {metaLead}
+              <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
+                {timeAgo(s.updatedAt ?? s.createdAt)}
+              </span>
+              {runTime && (
+                <span data-testid="session-run-time">
+                  {" · "}
+                  {runTime}
+                </span>
+              )}
+              {costLabel && cost && (
+                <span
+                  className="tabular-nums"
+                  data-testid="session-spend"
+                  title={sessionSpendTitle(cost)}
+                >
+                  {" · "}
+                  {costLabel}
+                </span>
+              )}
+              {conversation && (
+                <>
+                  {" · "}
+                  {conversation}
+                </>
+              )}
+            </span>
+            {repositoryBadges &&
+              s.repositories &&
+              s.repositories.length > 0 && (
+                <SessionRepositoryBadges repositories={s.repositories} />
+              )}
           </div>
         </div>
-        <span id={metaId} className="text-2xs text-muted-foreground truncate">
-          {metaLead}
-          <span title={formatTimestamp(s.updatedAt ?? s.createdAt)}>
-            {timeAgo(s.updatedAt ?? s.createdAt)}
-          </span>
-          {runTime && (
-            <span data-testid="session-run-time">
-              {" · "}
-              {runTime}
-            </span>
-          )}
-          {costLabel && cost && (
-            <span
-              className="tabular-nums"
-              data-testid="session-spend"
-              title={sessionSpendTitle(cost)}
-            >
-              {" · "}
-              {costLabel}
-            </span>
-          )}
-          {conversation && (
-            <>
-              {" · "}
-              {conversation}
-            </>
-          )}
-        </span>
-        {repositoryBadges && s.repositories && s.repositories.length > 0 && (
-          <SessionRepositoryBadges repositories={s.repositories} />
-        )}
-      </div>
-    </div>
+      </ContextMenuTrigger>
+      <ContextMenuContent onCloseAutoFocus={closeContextMenu}>
+        <SessionMenuItems menu="context" {...menuProps} />
+      </ContextMenuContent>
+    </ContextMenu>
+  );
+}
+
+function SessionMenuItems({
+  menu,
+  pinned,
+  onTogglePin,
+  onExportTimeline,
+  onRename,
+  onDelete,
+}: {
+  menu: keyof typeof MENU_PARTS;
+  pinned: boolean;
+  onTogglePin?: (() => void) | undefined;
+  onExportTimeline?: (() => void) | undefined;
+  onRename: () => void;
+  onDelete: () => void;
+}) {
+  const { Item } = MENU_PARTS[menu];
+  return (
+    <>
+      {onTogglePin && (
+        <Item data-testid="session-pin-button" onSelect={() => onTogglePin()}>
+          {pinned ? <PinFilled size={14} /> : <Pin size={14} />}{" "}
+          {pinned ? "Unpin session" : "Pin to top"}
+        </Item>
+      )}
+      {onExportTimeline && (
+        <Item
+          data-testid="session-export-timeline-button"
+          onSelect={onExportTimeline}
+        >
+          <Download size={14} /> Export telemetry
+        </Item>
+      )}
+      <Item data-testid="session-rename-button" onSelect={onRename}>
+        <Edit size={14} /> Rename session
+      </Item>
+      <Item
+        data-testid="session-delete-button"
+        tone="danger"
+        onSelect={onDelete}
+      >
+        <TrashCan size={14} /> Delete session
+      </Item>
+    </>
   );
 }
 

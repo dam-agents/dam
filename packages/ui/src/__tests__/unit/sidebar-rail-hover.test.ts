@@ -134,19 +134,25 @@ it("keeps the popover open while the pointer is in it, and closes it after a gra
   expect(popover()).toBeNull();
 });
 
-// TEST_SCENARIO: clicking an Agent's tile in the rail takes the same action as its New session row, now that hover opens the popover and leaves the click free; a press held long enough opens the popover instead, so a device without hover still reaches its menu.
-it("opens the Agent's new-session page on click, and its popover on a long press", () => {
+// TEST_SCENARIO: clicking an Agent's tile in the rail takes the same action as its New session row, now that hover opens the popover and leaves the click free; a right click on the tile opens the Agent's actions menu instead, at the pointer.
+it("opens the Agent's new-session page on click", () => {
   act(() => tile().click());
   expect(env.startSession).toHaveBeenCalledWith("a1");
   expect(env.navigated).toHaveBeenCalled();
   expect(popover()).toBeNull();
+});
 
+it("opens the Agent's menu on a right click", () => {
   vi.clearAllMocks();
   act(() => {
-    tile().dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    tile().dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        clientX: 40,
+        clientY: 80,
+      }),
+    );
   });
-  act(() => void vi.advanceTimersByTime(600));
-  act(() => tile().click());
+  expect(document.body.textContent).toContain("Configure");
   expect(env.startSession).not.toHaveBeenCalled();
-  expect(popover()).not.toBeNull();
 });
