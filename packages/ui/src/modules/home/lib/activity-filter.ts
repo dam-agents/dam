@@ -50,6 +50,32 @@ export function isFiltered(filters: ActivityFilters): boolean {
   );
 }
 
+export interface StoredActivityFilters {
+  types: ChannelType[];
+  state: StateFilter;
+}
+
+export function serializeActivityFilters(
+  filters: ActivityFilters,
+): StoredActivityFilters {
+  return {
+    types: CHANNEL_TYPES.filter((type) => filters.channelTypes.has(type)),
+    state: filters.state,
+  };
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: reads a filter saved by serializeActivityFilters, from storage another version of the UI may have written: types it does not know are dropped, an unknown state is All, and anything that is not a saved filter is the default.
+export function parseActivityFilters(raw: unknown): ActivityFilters {
+  if (typeof raw !== "object" || raw === null) return defaultActivityFilters();
+  const { types, state } = raw as Record<string, unknown>;
+  if (!Array.isArray(types) || typeof state !== "string")
+    return defaultActivityFilters();
+  return {
+    channelTypes: new Set(CHANNEL_TYPES.filter((type) => types.includes(type))),
+    state: STATE_FILTERS.find((s) => s === state) ?? "any",
+  };
+}
+
 export function toggleChannelType(
   filters: ActivityFilters,
   type: ChannelType,

@@ -68,6 +68,7 @@ A Session row shows a blue dot while it is unread, and an approval dot in its pl
 
 The **Activity** section, below the Agents, lists the record's rows for every Agent, newest activity first, each with its Agent's avatar and name and its time.
 Its filter keeps Sessions by status (All, Needs attention, In progress, Unread) and by type (Chat, Slack, Telegram, Schedule, Terminal); Needs attention is a Session with an approval waiting on the user.
+The filter is kept in the browser, so it survives a reload but does not follow the user to another device; both layouts share it.
 The two sections scroll together, each header staying at the top while its section is in view.
 The record's rows and the Agent's own list are both newest first, and each View more appends an older page, so the rows already shown keep their places.
 
