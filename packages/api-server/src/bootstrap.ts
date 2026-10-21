@@ -239,6 +239,7 @@ import {
   createGitRefResolver,
   createKitUpstream,
   createKitUpdateReporter,
+  createLinkedKits,
   createResolvedCatalogRepository,
   parseCatalogSeeds,
   parseKitRef,
@@ -454,6 +455,23 @@ export async function bootstrap() {
   });
   const kitRefs = createGitRefResolver(kitGitHosts);
   const kitUpstream = createKitUpstream({ hosts: kitGitHosts, refs: kitRefs });
+  const scanKitSkills = async (
+    gitUrl: string,
+    ref: string,
+    subPath: string,
+  ) =>
+    (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
+      name: skill.name,
+      description: skill.description,
+    }));
+  const kitSourceForEntry = (gitUrl: string, ref: string) =>
+    createGitCatalogSource(kitGitHosts, gitUrl, ref);
+  const linkedKits = createLinkedKits({
+    refs: kitRefs,
+    appVersion: config.appVersion,
+    scanSkills: scanKitSkills,
+    sourceForEntry: kitSourceForEntry,
+  });
   const starterKitsRefresh = createCatalogRefresh({
     catalogs: parseCatalogSeeds(
       config.starterKitsCatalogs,
@@ -477,14 +495,9 @@ export async function bootstrap() {
     }),
     repo: resolvedCatalog,
     refs: kitRefs,
-    sourceForEntry: (gitUrl, ref) =>
-      createGitCatalogSource(kitGitHosts, gitUrl, ref),
+    sourceForEntry: kitSourceForEntry,
     appVersion: config.appVersion,
-    scanSkills: async (gitUrl, ref, subPath) =>
-      (await scanPublicGithubArchive(gitUrl, subPath, ref)).map((skill) => ({
-        name: skill.name,
-        description: skill.description,
-      })),
+    scanSkills: scanKitSkills,
     avatar: {
       maxBytes: MAX_AVATAR_BYTES,
       store: (bytes, ownerSub) =>
@@ -2094,6 +2107,7 @@ export async function bootstrap() {
     harnessCatalog,
     starterKitsRepo: resolvedCatalog,
     kitUpstream,
+    linkedKits,
     firePair,
     reposService,
     apiKeysModule,

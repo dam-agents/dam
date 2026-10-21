@@ -271,6 +271,7 @@ export type {
   KitUpdateChanges,
 } from "./modules/starter-kits/types.js";
 export {
+  LINKED_KIT_CATALOG,
   onboardingStepSchema,
   starterKitApplyInputSchema,
   starterKitCatalogSchema,

@@ -215,9 +215,21 @@ export const starterKitScheduleOverrideSchema = z.object({
   precheck: precheckSchema.nullable().optional(),
 });
 
+export const LINKED_KIT_CATALOG = "link";
+
+export const starterKitInspectInputSchema = z.object({
+  url: z.url({ protocol: /^https$/ }),
+});
+
+export const starterKitLinkSchema = z.object({
+  url: z.url({ protocol: /^https$/ }),
+  commit: z.string().regex(/^[0-9a-f]{40}$/),
+});
+
 export const starterKitApplyInputSchema = z.object({
   catalog: starterKitCatalogNameSchema,
   kitId: starterKitIdSchema,
+  link: starterKitLinkSchema.optional(),
   name: agentNameSchema,
   avatar: avatarSchema.optional(),
   templateId: z.string().min(1).optional(),
@@ -225,6 +237,8 @@ export const starterKitApplyInputSchema = z.object({
   slackChannelId: z.string().min(1).optional(),
   skipSchedules: z.array(z.string().min(1)).default([]),
   scheduleOverrides: z.array(starterKitScheduleOverrideSchema).default([]),
+}).refine((input) => (input.catalog === LINKED_KIT_CATALOG) === !!input.link, {
+  message: `a kit from a link names catalog "${LINKED_KIT_CATALOG}" and its link; a catalog kit names neither`,
 });
 
 export const seedStampSchema = z.object({

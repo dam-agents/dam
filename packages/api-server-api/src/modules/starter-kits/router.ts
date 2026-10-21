@@ -9,6 +9,7 @@ import {
   kitUpdateAgentInputSchema,
   starterKitApplyInputSchema,
   starterKitGetInputSchema,
+  starterKitInspectInputSchema,
 } from "./schemas.js";
 
 export const starterKitsRouter = t.router({
@@ -21,6 +22,10 @@ export const starterKitsRouter = t.router({
       if (!kit) throw new TRPCError({ code: "NOT_FOUND" });
       return kit;
     }),
+
+  inspect: readAgentProcedure
+    .input(starterKitInspectInputSchema)
+    .query(({ ctx, input }) => ctx.starterKits.inspect(input.url)),
 
   create: manageAgentsProcedure
     .input(starterKitApplyInputSchema)
