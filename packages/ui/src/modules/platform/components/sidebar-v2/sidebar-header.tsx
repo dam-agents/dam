@@ -1,4 +1,4 @@
-import { Pin, PinFilled } from "@carbon/icons-react";
+import { ChevronLeft } from "@carbon/icons-react";
 
 import { BrandLogo } from "@/components/brand-logo";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
@@ -7,13 +7,11 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { getBrand } from "../../../../brand.js";
 
 interface Props {
-  pinned: boolean;
-  onTogglePin: () => void;
+  onCollapse: () => void;
   onHome: () => void;
 }
 
-export function SidebarHeader({ pinned, onTogglePin, onHome }: Props) {
-  const pinLabel = pinned ? "Unpin navigation" : "Pin navigation";
+export function SidebarHeader({ onCollapse, onHome }: Props) {
   return (
     <div className="flex h-12 shrink-0 items-center justify-between gap-2 border-b border-border px-2">
       <button
@@ -24,15 +22,14 @@ export function SidebarHeader({ pinned, onTogglePin, onHome }: Props) {
       >
         <BrandLogo />
       </button>
-      <Tooltip content={pinLabel} side="bottom">
+      <Tooltip content="Collapse navigation" side="bottom">
         <button
           type="button"
-          onClick={onTogglePin}
-          aria-label={pinLabel}
-          aria-pressed={pinned}
+          onClick={onCollapse}
+          aria-label="Collapse navigation"
           className={`flex size-7 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground ${FOCUS_RING}`}
         >
-          {pinned ? <PinFilled size={14} /> : <Pin size={14} />}
+          <ChevronLeft size={16} />
         </button>
       </Tooltip>
     </div>

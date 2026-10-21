@@ -4,6 +4,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
 
+vi.stubGlobal("window", new EventTarget());
+
 const seen = vi.hoisted(() => ({ props: [] as Record<string, unknown>[] }));
 const env = vi.hoisted(() => ({ telemetry: true, operable: true }));
 const cost = vi.hoisted(() => ({ sessionId: "s1", amounts: [] }));

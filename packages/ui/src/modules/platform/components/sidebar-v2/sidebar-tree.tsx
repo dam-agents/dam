@@ -9,7 +9,6 @@ import {
   Tools,
   TrashCan,
 } from "@carbon/icons-react";
-import { useQueries } from "@tanstack/react-query";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
 
 import { Collapse } from "@/components/ui/collapse";
@@ -60,12 +59,9 @@ import {
   useAgentSessionFilter,
 } from "../../../sessions/lib/agent-session-filters.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
-import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import {
   awaitsApproval,
   isExpanded,
-  offFeedPins,
-  pinActivityQuery,
   splitPinned,
   toggleExpanded,
 } from "../../lib/sidebar-tree.js";
@@ -73,7 +69,7 @@ import type { SidebarGroupBy } from "../../store/sidebar.js";
 import { AgentCue } from "./activity-dot.js";
 import { AddRow, TREE_AVATAR, TREE_LEADING } from "./add-row.js";
 import { AgentSessionList } from "./agent-session-list.js";
-import { FeedSessionRow, OffFeedPinnedRow } from "./pinned-rows.js";
+import { FeedSessionRow, PinnedList } from "./pinned-rows.js";
 
 // UNIT_BOUNDARY_DESCRIPTION: the flat list pages the owner's attention feed, which holds at most ATTENTION_FEED_LIMIT Sessions; older ones show only under their Agent. Paging the server would lift that ceiling.
 const FLAT_PAGE = 20;
@@ -122,52 +118,19 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
   const groupBy = useStore((s) => s.sidebarGroupBy);
   const setGroupBy = useStore((s) => s.setSidebarGroupBy);
   const [flatShown, setFlatShown] = useState(FLAT_PAGE);
-  const [pinned, unpinned] = useMemo(
+  const unpinned = useMemo(
     () =>
       splitPinned(filterActivitySessions(activity.items, filters), (item) =>
         pins.has(item.id),
-      ),
+      )[1],
     [activity.items, filters, pins],
   );
   const flat = useMemo(
     () => (groupBy === "all" ? unpinned.slice(0, flatShown) : []),
     [groupBy, unpinned, flatShown],
   );
-  const shownSessions = useMemo(
-    () => [...pinned, ...flat].map((item) => item.session),
-    [pinned, flat],
-  );
+  const shownSessions = useMemo(() => flat.map((item) => item.session), [flat]);
   const conversationOf = useActivityConversations(shownSessions, allAgents);
-  const inFeed = useMemo(
-    () => new Set(activity.items.map((item) => item.id)),
-    [activity.items],
-  );
-  const offFeed = offFeedPins(
-    pins,
-    inFeed,
-    agents.map((agent) => agent.id),
-  ).flatMap(({ agentId, sessionId }) =>
-    agents
-      .filter((agent) => agent.id === agentId)
-      .map((agent) => ({ agent, sessionId })),
-  );
-  const offFeedAt = useQueries({
-    queries: offFeed.map(({ agent, sessionId }) =>
-      pinActivityQuery(agent.id, sessionId),
-    ),
-  });
-  const pinRows = newestFirst(
-    [
-      ...pinned.map((item) => ({ key: item.id, at: item.at, item })),
-      ...offFeed.map((pin, i) => ({
-        key: `${pin.agent.id}:${pin.sessionId}`,
-        at: offFeedAt[i]?.data,
-        pin,
-      })),
-    ],
-    (row) => row.at,
-    (row) => row.key,
-  );
   const orderActions = useSidebarOrderActions();
   const shownIds = agents.map((agent) => agent.id);
   const defaultAgent = useCreateDefaultAgent();
@@ -192,34 +155,15 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
             }}
           />
         </div>
-        {(pinned.length > 0 || offFeed.length > 0) && (
-          <section
-            aria-label="Pinned"
-            className="mb-2 hidden has-[[data-pin-key]]:block"
-          >
-            <ListLabel>Pinned</ListLabel>
-            <div className="flex flex-col gap-px">
-              {pinRows.map((row) =>
-                "item" in row ? (
-                  <FeedSessionRow
-                    key={row.key}
-                    item={row.item}
-                    pinned
-                    conversation={conversationOf(row.item.session)}
-                    onNavigate={onNavigate}
-                  />
-                ) : (
-                  <OffFeedPinnedRow
-                    key={row.key}
-                    agent={row.pin.agent}
-                    sessionId={row.pin.sessionId}
-                    onNavigate={onNavigate}
-                  />
-                ),
-              )}
-            </div>
-          </section>
-        )}
+        <section
+          aria-label="Pinned"
+          className="mb-2 hidden has-[[data-pin-key]]:block"
+        >
+          <ListLabel>Pinned</ListLabel>
+          <div className="flex flex-col gap-px">
+            <PinnedList onNavigate={onNavigate} />
+          </div>
+        </section>
         <section aria-label={groupBy === "all" ? "Sessions" : "Agents"}>
           <ListLabel
             actions={

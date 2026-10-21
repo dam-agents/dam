@@ -1,15 +1,22 @@
+import { useQueries } from "@tanstack/react-query";
 import { useMemo } from "react";
 
 import { failedLoad } from "../../../../lib/failed-load.js";
 import { useStore } from "../../../../store.js";
 import type { AgentView, SessionView } from "../../../../types.js";
 import {
+  useAgentsList,
   useIsAgentAnswerableSoon,
   useIsAgentOperable,
 } from "../../../agents/api/queries.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
+import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import type { AgentActivitySession } from "../../../home/hooks/use-activity-sessions.js";
-import { matchesActivityFilters } from "../../../home/lib/activity-sessions.js";
+import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
+import {
+  filterActivitySessions,
+  matchesActivityFilters,
+} from "../../../home/lib/activity-sessions.js";
 import { isUnreadSession } from "../../../home/lib/unread.js";
 import { useSessionBackgroundWork } from "../../../sessions/api/background-work.js";
 import {
@@ -20,9 +27,15 @@ import {
   draftKey,
   keysWithDraftContent,
 } from "../../../sessions/lib/draft-key.js";
+import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
+import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import { useSessionConversations } from "../../../sessions/lib/use-session-conversations.js";
 import { useSessionSpend } from "../../../spend/api/queries.js";
-import { awaitsApproval } from "../../lib/sidebar-tree.js";
+import {
+  awaitsApproval,
+  offFeedPins,
+  pinActivityQuery,
+} from "../../lib/sidebar-tree.js";
 import { RetryRow } from "./add-row.js";
 import { TreeSessionRow } from "./tree-session-row.js";
 
@@ -109,6 +122,79 @@ export function OffFeedPinnedRow({
       conversation={conversationOf(session)}
       onNavigate={onNavigate}
     />
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Pinned section of JanUI's tree: every pinned Session of every Agent, ordered by latest activity, read from the owner's attention record or, for a pin the record does not hold, from its own Agent. The tree shows it above the Agents and the collapsed rail shows it in a popover, so both draw the same rows.
+ */
+export function PinnedList({ onNavigate }: { onNavigate?: () => void }) {
+  const activity = useActivitySessions();
+  const pins = usePinnedSessions();
+  const filters = useStore((s) => s.sidebarActivityFilters);
+  const agents = useAgentsList();
+  const pinned = useMemo(
+    () =>
+      filterActivitySessions(activity.items, filters).filter((item) =>
+        pins.has(item.id),
+      ),
+    [activity.items, filters, pins],
+  );
+  const inFeed = useMemo(
+    () => new Set(activity.items.map((item) => item.id)),
+    [activity.items],
+  );
+  const offFeed = offFeedPins(
+    pins,
+    inFeed,
+    agents.map((agent) => agent.id),
+  ).flatMap(({ agentId, sessionId }) =>
+    agents
+      .filter((agent) => agent.id === agentId)
+      .map((agent) => ({ agent, sessionId })),
+  );
+  const offFeedAt = useQueries({
+    queries: offFeed.map(({ agent, sessionId }) =>
+      pinActivityQuery(agent.id, sessionId),
+    ),
+  });
+  const rows = newestFirst(
+    [
+      ...pinned.map((item) => ({ key: item.id, at: item.at, item })),
+      ...offFeed.map((pin, i) => ({
+        key: `${pin.agent.id}:${pin.sessionId}`,
+        at: offFeedAt[i]?.data,
+        pin,
+      })),
+    ],
+    (row) => row.at,
+    (row) => row.key,
+  );
+  const conversationOf = useActivityConversations(
+    pinned.map((item) => item.session),
+    agents,
+  );
+  return (
+    <>
+      {rows.map((row) =>
+        "item" in row ? (
+          <FeedSessionRow
+            key={row.key}
+            item={row.item}
+            pinned
+            conversation={conversationOf(row.item.session)}
+            onNavigate={onNavigate}
+          />
+        ) : (
+          <OffFeedPinnedRow
+            key={row.key}
+            agent={row.pin.agent}
+            sessionId={row.pin.sessionId}
+            onNavigate={onNavigate}
+          />
+        ),
+      )}
+    </>
   );
 }
 
