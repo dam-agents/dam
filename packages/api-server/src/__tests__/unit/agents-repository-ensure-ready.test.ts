@@ -45,6 +45,22 @@ const AWAITING_ALLOCATION: Condition[] = [
       "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does.",
   },
 ];
+const AWAITING_WARM_UP: Condition[] = [
+  {
+    type: "Ready",
+    status: "False",
+    reason: "AwaitingWarmUp",
+    message:
+      "Your VM agents are still starting up after their runner restarted, so this one waits for them to settle instead of putting one of them to sleep. It starts on its own once room frees up.",
+  },
+  {
+    type: "AgentPodReady",
+    status: "False",
+    reason: "AwaitingWarmUp",
+    message:
+      "Your VM agents are still starting up after their runner restarted, so this one waits for them to settle instead of putting one of them to sleep. It starts on its own once room frees up.",
+  },
+];
 const OVER_BUDGET: Condition[] = [
   {
     type: "Ready",
@@ -408,6 +424,17 @@ describe("ensureReady", () => {
   // TEST_SCENARIO: a start the runner's pool has room for but the node has not yet granted memory for is refused by the node's grant, not admitted: it waits for the node's resize, which lands within seconds and needs nothing from the owner. It is not one of the refusals a wake gives up on, so the wake keeps waiting past the grace window and succeeds when the machine boots.
   it("waits out a start waiting for the node rather than failing fast", async () => {
     const { repo, store } = harness([agentObj("a1", AWAITING_ALLOCATION)]);
+    const p = repo.ensureReady("a1");
+    p.catch(() => {});
+    await vi.advanceTimersByTimeAsync(30_000);
+    store.set("a1", agentObj("a1", READY));
+    await vi.advanceTimersByTimeAsync(10_000);
+    await expect(p).resolves.toBeUndefined();
+  });
+
+  // TEST_SCENARIO: a start held back by the machines a runner restart is still bringing back is a wait, not a refusal: the pool it does not fit in counts those machines at their warm-up floors and settles below it once they have warmed, so the wake keeps waiting past the grace window and succeeds when the machine boots.
+  it("waits out a start held back by its owner's warm-up rather than failing fast", async () => {
+    const { repo, store } = harness([agentObj("a1", AWAITING_WARM_UP)]);
     const p = repo.ensureReady("a1");
     p.catch(() => {});
     await vi.advanceTimersByTimeAsync(30_000);

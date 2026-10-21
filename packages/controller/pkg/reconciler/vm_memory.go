@@ -172,6 +172,53 @@ func (r *AgentReconciler) reclaimRunnerMemory(ctx context.Context, owner, self s
 	return true, r.hibernateReclaimed(ctx, chosen, owner, self, why)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: how long after its runner pod started an owner's
+// UNIT_BOUNDARY_DESCRIPTION: machines are still coming back. A restart, a roll or a
+// UNIT_BOUNDARY_DESCRIPTION: drain boots them again, and the runner counts each boot
+// UNIT_BOUNDARY_DESCRIPTION: at its warm-up floor for two minutes until it has warmed,
+// UNIT_BOUNDARY_DESCRIPTION: so the pool reads full until they have all settled.
+// UNIT_BOUNDARY_DESCRIPTION: KNOWN CEILING: the pod's clock knows only that the
+// UNIT_BOUNDARY_DESCRIPTION: runner restarted, never which machines are warming, so it
+// UNIT_BOUNDARY_DESCRIPTION: misses a single guest restarted by the runner's own health
+// UNIT_BOUNDARY_DESCRIPTION: prober, and a wave that outlasts the window; the upgrade
+// UNIT_BOUNDARY_DESCRIPTION: path is the runner-reported warm-up the history of this
+// UNIT_BOUNDARY_DESCRIPTION: issue carries.
+const runnerWarmUpWindow = 10 * time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the owner's runner pod started within
+// UNIT_BOUNDARY_DESCRIPTION: runnerWarmUpWindow, from the times Kubernetes keeps on
+// UNIT_BOUNDARY_DESCRIPTION: the pod itself: the newest of the pod's own start and its
+// UNIT_BOUNDARY_DESCRIPTION: containers' starts, since a runner whose container restarted
+// UNIT_BOUNDARY_DESCRIPTION: is one whose machines came back with it. The figure is the
+// UNIT_BOUNDARY_DESCRIPTION: pod's, so a controller restarted mid-wave reads the same one
+// UNIT_BOUNDARY_DESCRIPTION: the controller before it read, where nothing in a
+// UNIT_BOUNDARY_DESCRIPTION: controller's own memory would survive it. A pod the cluster
+// UNIT_BOUNDARY_DESCRIPTION: does not hold, or one that reports no time at all, is no
+// UNIT_BOUNDARY_DESCRIPTION: evidence of a wave, and the pool is the owner's to free.
+func (r *AgentReconciler) runnerWarmingUp(ctx context.Context, owner string) bool {
+	pods, err := r.runnerPods(ctx, owner, true)
+	if err != nil {
+		return false
+	}
+	var started time.Time
+	later := func(at time.Time) {
+		if at.After(started) {
+			started = at
+		}
+	}
+	for _, pod := range pods {
+		if pod.Status.StartTime != nil {
+			later(pod.Status.StartTime.Time)
+		}
+		for _, container := range pod.Status.ContainerStatuses {
+			if running := container.State.Running; running != nil {
+				later(running.StartedAt.Time)
+			}
+		}
+	}
+	return !started.IsZero() && r.clockNow().Sub(started) < runnerWarmUpWindow
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a running machine's use is learned only when its
 // UNIT_BOUNDARY_DESCRIPTION: agent reconciles, which a settled agent does every
 // UNIT_BOUNDARY_DESCRIPTION: few minutes, while guests grow within seconds. So
@@ -291,6 +338,10 @@ func (r *AgentReconciler) ownerMemoryPass(ctx context.Context, owner string, age
 			}
 			return max(r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), pressure.WorkingSetMiB-limit*memoryTargetPercent/100), nil
 		case pressure == nil && r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryPressurePercent) > 0:
+			// UNIT_BOUNDARY_DESCRIPTION: the counted total is the boot floors of a wave while one is still coming back, and falls to what the machines measure once they have warmed, so the pass hibernates nobody for that share, as a refused start does not take its room from an idle agent either. The pressure pass below keeps reclaiming, since the kernel's working set is what kills a machine, and a machine near the limit is not a wave.
+			if r.runnerWarmingUp(ctx, owner) {
+				return 0, nil
+			}
 			return r.runnerOvershootMiB(ctx, owner, demand.memoryMiB, memoryTargetPercent), nil
 		}
 		return 0, nil
@@ -332,6 +383,16 @@ func (r *AgentReconciler) hibernateReclaimed(ctx context.Context, chosen []recla
 
 // UNIT_BOUNDARY_DESCRIPTION: what the owner reads while a start waits for the node: it is not their memory that is gone, so the message says what the platform is doing about it rather than quote a pool that has room. Where the node has deferred or refused the resize the controller frees that room from their idle agents itself, and the sentence stays true: the machine starts once the node grants what it holds.
 const vmAwaitingAllocationMessage = "Your VM agent is waiting for the node to grant its runner the memory this start needs. It starts on its own as soon as the node does."
+
+// UNIT_BOUNDARY_DESCRIPTION: what the owner reads while a start waits out the
+// UNIT_BOUNDARY_DESCRIPTION: machines their runner is bringing back after it
+// UNIT_BOUNDARY_DESCRIPTION: restarted: the pool is not short of their memory, it is
+// UNIT_BOUNDARY_DESCRIPTION: holding the warm-up floors of machines that are still
+// UNIT_BOUNDARY_DESCRIPTION: settling, so the sentence says what the platform is
+// UNIT_BOUNDARY_DESCRIPTION: waiting for rather than quote a pool that will have room.
+// UNIT_BOUNDARY_DESCRIPTION: It names no time, since this is a bound on how long the
+// UNIT_BOUNDARY_DESCRIPTION: platform waits rather than a promise of when the start runs.
+const vmAwaitingWarmUpMessage = "Your VM agents are still starting up after their runner restarted, so this one waits for them to settle instead of putting one of them to sleep. It starts on its own once room frees up."
 
 // UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for memory frees the
 // UNIT_BOUNDARY_DESCRIPTION: room it lacks from the owner's idle agents, and
