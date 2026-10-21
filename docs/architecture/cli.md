@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -141,6 +141,30 @@ The recurring patterns, stated once:
 - **Client-side ref resolution.** Agent refs resolve through `resolveAgent`; connection and skill-source refs generally resolve id-or-value against a team list before mutating, so a typo can't ride through a server-side no-op and report a false success.
 - **Full-replace mutations are read-merge-write.** Where a server mutation replaces an entire set (agent grants, allow-lists, egress presets, a schedule's whole spec), the CLI reads the current value, overlays the change, and writes the whole set back, so the server re-derives the downstream effects for the correct final state.
 - **Shared formatting and builders.** Where the CLI and UI must render or compute identically — egress-rule and approval-payload labels, the recurrence builder and its human-readable text — the logic is a React-free helper in the contract package that both consume, so the two can never drift.
+
+## Agent skill
+
+The repository ships agent skills for agents that run outside the platform ([`skills/`](../../skills/)).
+They sit at the top level, not inside a client package, because a skill is not owned by any one client.
+The repository's contributor skills ([`.agents/skills/`](../../.agents/skills/)) are for working on the repository, not for users.
+Its [`skills-lock.json`](../../skills-lock.json) lists them, and a skills installer leaves out the skills that file lists, so an installer pointed at the repository offers only the skills in `skills/`.
+A repository check fails when a contributor skill is missing from that list.
+The `dam` skill teaches an agent on the user's own machine — any harness that loads skills — to drive a Platform deployment through the CLI.
+The user installs it from the repository with an open skills installer, pinned to the release tag of the CLI they run.
+The tag of a CLI from before the first release that ships the skill does not hold it, so the user updates the CLI first.
+The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
+
+The CLI's test suite checks the `dam` skill against the CLI.
+It resolves every command the skill names against the CLI's command tree, every flag against the command it is given to, and the skill's exit-code table against the exit-code registry.
+A CLI change that leaves the skill describing a command that no longer exists fails there, before it ships.
+
+The `dam` skill extends the CLI's [trust boundary](#trust-boundary) to the agent that runs it: the agent never handles a credential.
+Sign-in stays the device flow the user approves in a browser, and the agent never reads the credential store or the bearer variable.
+Every command that stores a secret — a connection's credential, a rotated one, a new API key — is handed to the user to run in a terminal of their own, where the CLI's masked prompt takes it, and the agent then verifies the outcome with a read verb.
+Approvals and Terms acceptance stay the user's decisions, which the agent relays rather than makes.
+
+The agent reaches the deployment only through the CLI, never through the API directly.
+A task the CLI cannot do is a gap in the CLI's parity with the web UI, closed in the CLI, not a reason to hand the agent a bearer.
 
 ## Agent lifecycle
 
