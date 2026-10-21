@@ -347,6 +347,7 @@ export function createTelegramMessageHandler(deps: {
       await thread.post("This chat isn't connected to an agent.");
       return;
     }
+    const ownerSub = await deps.ownerOf(binding.agentId);
     await deps.conversations.unbind(chat);
     securityLog("info", "channel.chat_unbound", {
       category: "authz-list",
@@ -357,7 +358,6 @@ export function createTelegramMessageHandler(deps: {
       result: "success",
       detail: { conversationId: chat, byTelegramUserId: telegramUserId },
     });
-    const ownerSub = await deps.ownerOf(binding.agentId);
     if (ownerSub)
       deps.emit({
         type: EventType.TelegramChatUnbound,
