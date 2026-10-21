@@ -51,6 +51,7 @@ An open Agent that is not the shown one lists the record's rows; the shown Agent
 It offers more only when rows are hidden or more may exist: a feed shorter than its row limit lists every row filed for the owner.
 An open Agent with no row in a whole, loaded record shows "No sessions yet."; while the record is cut off, loading or unreadable, it lists its own list instead.
 Opening an Agent's Sessions wakes a hibernated Agent once per open, as opening its chat does ([agent-lifecycle](agent-lifecycle.md#wake)), so its own list loads when it answers.
+An open lasts until the Agent's row closes: a sidebar that mounts again, or the mobile drawer's copy of it, does not wake the Agent again.
 When it stays asleep, because its wake failed or is not allowed, and the record holds none of its Sessions, the list offers a retry that wakes it.
 When that list's own first read fails, it offers a retry instead of "No sessions yet."
 View more asks the Agent for one more page of its list only when the loaded rows run out, and the list stops offering more when a page brings no new Session or the Agent's cursor does not move.

@@ -3,7 +3,6 @@ import { type ReactNode, useEffect, useRef, useState } from "react";
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 
 import { useStore } from "../../../../store.js";
-import { useAutoWakeOnOpen } from "../../../agents/hooks/use-auto-wake-on-open.js";
 import { isFiltered } from "../../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../../home/lib/activity-sessions.js";
 import { SessionListSkeleton } from "../../../sessions/components/session-list-skeleton.js";
@@ -47,7 +46,7 @@ function useAgentTreeRows(agentId: string) {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in JanUI's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the filter it applies (its own, else the header's) is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. Opening the list wakes a hibernated Agent, so its Sessions show once it answers; when the Agent stays asleep and its record holds none of its Sessions, the list offers a wake as its retry.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in JanUI's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the filter it applies (its own, else the header's) is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. When the Agent stays asleep and its record holds none of its Sessions, the list offers a wake as its retry.
  */
 export function AgentSessionList({
   agentId,
@@ -61,7 +60,6 @@ export function AgentSessionList({
   onEmptyChange?: (empty: boolean) => void;
 }) {
   const { list, filters, rows, rest } = useAgentTreeRows(agentId);
-  useAutoWakeOnOpen(agentId);
   const empty =
     !list.loading &&
     !list.failed &&

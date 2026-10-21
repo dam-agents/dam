@@ -37,6 +37,7 @@ import {
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
 import { OrderDropIndicator } from "../../../agents/components/order-drop-indicator.js";
+import { useAutoWakeOnSidebarOpen } from "../../../agents/hooks/use-auto-wake-on-sidebar-open.js";
 import { useConfirmDeleteAgent } from "../../../agents/hooks/use-confirm-delete-agent.js";
 import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useOrderDrag } from "../../../agents/hooks/use-order-drag.js";
@@ -407,6 +408,7 @@ function AgentNode({
   shownIds: readonly string[];
   onNavigate?: () => void;
 }) {
+  useAutoWakeOnSidebarOpen(agent, expanded);
   const newSessionPage = useStore((s) => current && s.view === "chat");
   const [noSessions, setNoSessions] = useState(false);
   const rowShown = expanded && noSessions;

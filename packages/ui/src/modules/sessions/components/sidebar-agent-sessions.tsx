@@ -11,7 +11,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import { useActWhenAwake } from "../../agents/hooks/use-act-when-awake.js";
-import { useAutoWakeOnOpen } from "../../agents/hooks/use-auto-wake-on-open.js";
 import {
   useFeatures,
   useInstallCapabilities,
@@ -85,7 +84,6 @@ export function SidebarAgentSessions({
   const actWhenAwake = useActWhenAwake(agentId);
   const filter = useAgentSessionFilter(agentId);
   const filtered = !!filter && isFiltered(filter);
-  useAutoWakeOnOpen(agentId);
 
   const sessionActions: SessionActions = {
     rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),

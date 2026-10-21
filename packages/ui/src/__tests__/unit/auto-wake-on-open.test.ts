@@ -4,10 +4,12 @@ import { createRoot } from "react-dom/client";
 import { describe, expect, it, vi } from "vitest";
 
 import { useAutoWakeOnOpen } from "../../modules/agents/hooks/use-auto-wake-on-open.js";
+import { useAutoWakeOnSidebarOpen } from "../../modules/agents/hooks/use-auto-wake-on-sidebar-open.js";
 import { nextAutoWake } from "../../modules/agents/lib/auto-wake.js";
 import { useStore } from "../../store.js";
+import type { AgentView } from "../../types.js";
 
-// TEST_OVERVIEW: opening a sleeping agent's chat or its sidebar session list wakes it once per open, and a wake already running counts as that open's wake. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget, disabled or already awake is not woken.
+// TEST_OVERVIEW: opening a sleeping agent's chat or its sidebar session list wakes it once per open, and a wake already running counts as that open's wake. A sidebar open lasts until its row closes, so a sidebar that mounts again does not wake the agent again. Re-renders and list refetches in the same open do not wake it again, leaving and reopening does, and an agent over its budget, disabled or already awake is not woken.
 
 const wake = vi.hoisted(() => vi.fn());
 vi.mock("../../modules/agents/api/queries.js", () => ({
@@ -52,6 +54,14 @@ describe("waking a sleeping agent on open", () => {
   it("waits for the agent to load", () => {
     expect(nextAutoWake(null, "a1", undefined)).toEqual({
       decidedFor: null,
+      wake: false,
+    });
+  });
+
+  // TEST_SCENARIO: a wake from another view or a click is still running when the open decides; the open counts it as its own and asks for no second wake.
+  it("counts a running wake as the open's wake", () => {
+    expect(nextAutoWake(null, "a1", asleep, true)).toEqual({
+      decidedFor: "a1",
       wake: false,
     });
   });
@@ -121,5 +131,40 @@ describe("a wake already running", () => {
     const next = openView();
     expect(wake).toHaveBeenCalledExactlyOnceWith("a1");
     next.close();
+  });
+});
+
+const sleepingRow = { id: "a1", ...asleep } as AgentView;
+
+function Row({ open }: { open: boolean }) {
+  useAutoWakeOnSidebarOpen(sleepingRow, open);
+  return null;
+}
+
+function mountRow(open: boolean) {
+  const root = createRoot(document.createElement("div"));
+  const render = (isOpen: boolean) =>
+    act(() => root.render(createElement(Row, { open: isOpen })));
+  render(open);
+  return { render, unmount: () => act(() => root.unmount()) };
+}
+
+describe("a sidebar row's open", () => {
+  // TEST_SCENARIO: the user opens a sleeping agent's row; the sidebar then mounts again (a move between a chat and Home), and the mobile drawer mounts its own copy of the row, both with the row still open; the agent is woken once, since the open goes on. Closing the row and opening it again is a new open and wakes it again.
+  it("wakes once per open of the row, across remounts", () => {
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    wake.mockClear();
+    const first = mountRow(true);
+    expect(wake).toHaveBeenCalledExactlyOnceWith("a1");
+    first.unmount();
+    const again = mountRow(true);
+    const drawer = mountRow(true);
+    expect(wake).toHaveBeenCalledOnce();
+
+    again.render(false);
+    drawer.unmount();
+    again.render(true);
+    expect(wake).toHaveBeenCalledTimes(2);
+    again.unmount();
   });
 });

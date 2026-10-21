@@ -122,7 +122,7 @@ A runtime advertising kinds its predecessor did not is re-delivered the Contribu
 
 Every caller that sends work to a pod — the api-server's ACP relay, channel adapters, skills management — routes through a single reachability primitive in the api-server.
 The primitive's contract: **the controller-published `Ready` condition is the authoritative answer to "can I call this pod?"** The primitive pokes activity by bumping the `agent-platform.ai/last-activity` annotation (the reconciler scales up any Agent with recent activity), single-flights concurrent waits per Agent, and bumps the same annotation on every successful call, so any caller implicitly keeps the pod warm.
-Opening a sleeping Agent's chat or its sidebar session list in the web UI wakes it once per open, a stopped Agent included but not a disabled one or one held over its budget.
+Opening a sleeping Agent's chat or its sidebar session list in the web UI wakes it once per open (a list's open lasts until its sidebar row closes), a stopped Agent included but not a disabled one or one held over its budget.
 An Agent still falling asleep is woken once it is asleep, and a wake already running counts as the open's wake, so a chat and a list opened together wake it once.
 An Agent that falls asleep while the view stays open, or whose wake fails, shows a Start button, or a retry in its session list ([home-feed](home-feed.md)), until the next open.
 The deliberate opt-outs never wake anything: a **passive** relay connection (`passive=1`) fails closed unless `Ready`, takes no pin and never bumps activity; the per-agent tRPC relay takes no pin, waits out a wake already asked for without stamping activity, and keeps the stamp fresh while a view is open.
