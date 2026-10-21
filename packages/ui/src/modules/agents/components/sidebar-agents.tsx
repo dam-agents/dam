@@ -8,13 +8,19 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
 import type { AgentView } from "../../../types.js";
+import { ActivityFilterMenu } from "../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
+import { defaultActivityFilters } from "../../home/lib/activity-filter.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
 import { useAgentsWithUnreadListedSessions } from "../../sessions/api/queries.js";
 import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
+import {
+  setAgentSessionFilter,
+  useAgentSessionFilters,
+} from "../../sessions/lib/agent-session-filters.js";
 import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents, useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
@@ -62,6 +68,7 @@ export function SidebarAgents({
     useStore(shownSessionId),
   );
   const [binding, setBinding] = useState<BindMessenger | null>(null);
+  const agentFilters = useAgentSessionFilters();
 
   const navigate = (go: () => void) => () => {
     go();
@@ -85,7 +92,18 @@ export function SidebarAgents({
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}
         onSelect={() => setAgentOpen(agent.id, !open)}
-        actionCount={hasChannelActions(available) ? 3 : 2}
+        actionCount={hasChannelActions(available) ? 4 : 3}
+        filtered={agentFilters.has(agent.id)}
+        filter={
+          <ActivityFilterMenu
+            filters={agentFilters.get(agent.id) ?? defaultActivityFilters()}
+            onChange={(next) => setAgentSessionFilter(agent.id, next)}
+            name={`Filter sessions of ${agent.name}`}
+            testId="sidebar-agent-session-filter"
+            className={cn("hover:bg-background", FOCUS_RING)}
+            stopPropagation
+          />
+        }
         actions={
           <SidebarAgentActions
             channels={available}
