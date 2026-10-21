@@ -143,7 +143,7 @@ test("keeps /tmp and /var/tmp as directories of the root", async () => {
   expect(guest.split("\n")).toEqual(["0", "1777 root", "1777 root"]);
 });
 
-// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again.
+// TEST_SCENARIO: the base image ships openrc, so platform-init boots its runlevels before the entrypoint, and runs the entrypoint in a cgroup of its own, which a restart of the entrypoint ends without openrc's services. A fresh machine's runlevels hold only the image's service that runs the agent's own services. The test then adds a system service of its own to the default runlevel and starts it, as an agent does, and a Startup Item, an openrc user service in ~/.config/rc that runs as root; openrc stops only a started service, and the hibernate-and-wake test reads back the service's stop and its start at the boot, and the item started again. The item records PLATFORM_GH_TOKEN_AVAILABLE, which the runtime sets and openrc's env filter drops, so only the runtime's ~/.config/rc/profile.env can give it to the item, at a start from the shell and at the boot.
 test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async () => {
   test.skip(
     laneBackend !== "vm",
@@ -180,7 +180,7 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       `cat > /home/agent/.config/rc/init.d/${startupItem} <<'EOF'`,
       "#!/sbin/openrc-run",
       "command=/bin/sh",
-      `command_args="-c 'echo run >> ${startupItemRuns}; exec sleep infinity'"`,
+      `command_args="-c 'echo run >> ${startupItemRuns}; echo env \\\${PLATFORM_GH_TOKEN_AVAILABLE:-unset} >> ${startupItemRuns}; exec sleep infinity'"`,
       "EOF",
       `chmod 755 /home/agent/.config/rc/init.d/${startupItem}`,
       `ln -sf /home/agent/.config/rc/init.d/${startupItem} /home/agent/.config/rc/runlevels/default/${startupItem}`,
@@ -193,6 +193,10 @@ test("boots openrc's runlevels and runs the entrypoint in its own cgroup", async
       message: "rc-service --user starts the item at once",
     })
     .toMatch(/^run$/m);
+  expect(
+    inGuest(agentId, `cat ${startupItemRuns}`),
+    "the item has the runtime's env, which openrc's filter alone would drop",
+  ).toMatch(/^env (true|false)$/m);
 });
 
 // TEST_SCENARIO: the image's docker is an openrc service the agent starts from its own shell. The daemon answers, gets the agent's gateway but no other variable of the agent's environment, has platform-runc first on its PATH, and openrc stops it again.
@@ -295,7 +299,7 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
   if (laneBackend === "vm") {
     const guest = inGuest(
       agentId,
-      `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; echo item-runs $(grep -c run ${startupItemRuns}); true`,
+      `test -e ${probeStopped} && echo stopped; /sbin/rc-service ${probeService} status 2>&1; echo item-runs $(grep -c '^run$' ${startupItemRuns}); echo item-env $(grep -cE '^env (true|false)$' ${startupItemRuns}); true`,
     );
     expect(guest, "openrc ran the service's stop_post on the stop").toMatch(
       /^stopped$/m,
@@ -307,6 +311,10 @@ test("hibernates and wakes with HOME intact", async ({ page }) => {
     expect(guest, "the Startup Item started again at the boot").toMatch(
       /^item-runs 2$/m,
     );
+    expect(
+      guest,
+      "the item has the runtime's env at the boot, before the runtime starts",
+    ).toMatch(/^item-env 2$/m);
     inGuest(
       agentId,
       [

@@ -3,7 +3,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   readlinkSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -21,6 +24,7 @@ import {
 } from "../../modules/processes/domain/startup-items.js";
 import { createProcessTable } from "../../modules/processes/infrastructure/proc-scan.js";
 import { openProcessesDocument } from "../../modules/processes/infrastructure/processes-document.js";
+import { createStartupItemEnv } from "../../modules/processes/infrastructure/startup-item-env.js";
 import {
   createStartupItemStore,
   type StartupItemStore,
@@ -338,6 +342,53 @@ describe("the agent's services on disk", () => {
     expect(
       createStartupItemStore(mkdtempSync(join(tmpdir(), "empty-"))).list(),
     ).toEqual([]);
+  });
+});
+
+describe("the env a Startup Item starts with", () => {
+  // TEST_SCENARIO: openrc adds every variable of ~/.config/rc/profile.env that its filter left unset to a user service, so the runtime writes its own env there, connection placeholders included, and a GitHub item can use gh. A value openrc's parser would cut at a quote or `#`, or keep whole when it starts with `$`, and a name no shell takes, are left out rather than delivered wrong, and so is the runtime's own PORT, which a service's server would take; the file is root's alone and replaced whole, so a new env drops a variable that went away.
+  it("writes the runtime's env as openrc reads it, leaving out what its parser would change", () => {
+    const dir = mkdtempSync(join(tmpdir(), "home-"));
+    const env = createStartupItemEnv(dir, () => true);
+    const path = join(dir, ".config", "rc", "profile.env");
+
+    env.write({
+      PLATFORM_GH_TOKEN_AVAILABLE: "true",
+      GH_TOKEN: "platform:conn:abc",
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:9/v1?a=b c",
+      QUOTED: 'say "hi"',
+      SINGLE: "it's",
+      HASH: "a#b",
+      DOLLAR: "$HOME",
+      MULTI: "a\nb",
+      "BAD-NAME": "x",
+      UNSET: undefined,
+      PORT: "8080",
+      PWD: "/app",
+    });
+    expect(readFileSync(path, "utf8")).toBe(
+      [
+        "ANTHROPIC_BASE_URL=http://127.0.0.1:9/v1?a=b c",
+        "GH_TOKEN=platform:conn:abc",
+        "PLATFORM_GH_TOKEN_AVAILABLE=true",
+        "",
+      ].join("\n"),
+    );
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+
+    env.write({ PLATFORM_GH_TOKEN_AVAILABLE: "false" });
+    expect(readFileSync(path, "utf8")).toBe(
+      "PLATFORM_GH_TOKEN_AVAILABLE=false\n",
+    );
+    expect(readdirSync(join(dir, ".config", "rc"))).toEqual(["profile.env"]);
+  });
+
+  // TEST_SCENARIO: a container agent runs the same image without openrc, so it has no Startup Items and the runtime writes nothing into its home.
+  it("writes nothing where openrc did not boot", () => {
+    const dir = mkdtempSync(join(tmpdir(), "home-"));
+    createStartupItemEnv(dir, () => false).write({ GH_TOKEN: "x" });
+
+    expect(existsSync(join(dir, ".config"))).toBe(false);
   });
 });
 

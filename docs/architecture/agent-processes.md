@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -124,7 +124,10 @@ OpenRC itself does the work.
 platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel beside `platform-env`, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
 Its `/etc/conf.d/user.root` keeps their state in the image's `XDG_RUNTIME_DIR`, which the agent's shell and the runtime share, starts them after docker and k3s, and waits up to a minute for them all to stop, each within its own stop timeout.
 The image's `/etc/rc/user/rc.conf` makes every such service supervised by `supervise-daemon`, which restarts it two seconds after it exits, run in `~/work`, logged to `~/.local/state/rc/<name>.log`, and stopped with its whole process group; a script overrides any of it.
-A service gets what the image's own services get of the environment, `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF`, and no credential placeholder.
+A service gets the environment the pod service gets: openrc keeps `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF` of the environment it starts in, and adds every variable of `~/.config/rc/profile.env` it left unset.
+The runtime writes that file when it starts and whenever the platform changes its env, connection placeholders included, so `gh` and git in a service act as the agent's account; a value openrc's file parser would change, one with a quote, a `#` or a leading `$`, is left out.
+The runtime's own `PORT` is left out too, so a service that serves on `PORT` does not take the runtime's.
+A running service keeps the environment it started with, and gets a changed one at its next start, from the panel or `rc-service --user`; at boot, services start before the runtime, from the file it wrote before the machine stopped.
 User services need OpenRC 0.60 or later; the image takes OpenRC alone from Debian testing through an apt pin, until its stable release ships one.
 
 The supervisor of a user service carries its name (`RC_USER_SERVICES`, `RC_SVCNAME`), which the process scan reads beside the keep mark, so its tree under the reaper is one **Startup Item** row rather than a Detached Process; a process below another root that only inherited those variables is not.
