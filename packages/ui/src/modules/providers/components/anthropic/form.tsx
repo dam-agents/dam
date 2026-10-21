@@ -7,7 +7,11 @@ import { CopyButton } from "@/components/ui/copy-button";
 import { Input } from "@/components/ui/input";
 import { type TabDef, Tabs } from "@/components/ui/tabs";
 
-import { ProviderFormShell, stripWhitespace } from "../provider-form-shell.js";
+import {
+  ProviderFormShell,
+  ProviderKeyLink,
+  stripWhitespace,
+} from "../provider-form-shell.js";
 import {
   anthropicCredentialSchema,
   type AnthropicCredentialValues,
@@ -64,7 +68,6 @@ export function AnthropicForm({
             : "Pick mode and paste a new credential to replace the existing one."
           : "Required for Claude Code agents. Pick the mode that matches your credential."
       }
-      keyPage={MODES[mode].keyPage}
       onSubmit={onSubmit}
       onCancel={onCancel}
     >
@@ -85,6 +88,7 @@ export function AnthropicForm({
       )}
 
       {mode === "oauth" && <QuickSetupHint />}
+      {MODES[mode].keyPage && <ProviderKeyLink {...MODES[mode].keyPage} />}
 
       <div className="flex gap-3">
         <Input

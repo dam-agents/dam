@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: every provider form that has a key page shows the same "Get your key" link to it, at the top of the form, when connecting and when replacing a key.
+// TEST_OVERVIEW: every provider form that has a key page shows the same "Get your key" link to it, when connecting and when replacing a key. The Anthropic form shows it only for the API key mode; a subscription token has no key page.
 import { createElement, type ReactElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";

@@ -45,7 +45,7 @@ export function ProviderFormShell({
   );
 }
 
-function ProviderKeyLink({ href, hint }: ProviderKeyPage) {
+export function ProviderKeyLink({ href, hint }: ProviderKeyPage) {
   return (
     <a
       href={href}
