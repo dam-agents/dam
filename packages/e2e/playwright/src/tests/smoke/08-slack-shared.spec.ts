@@ -16,6 +16,7 @@ import {
 const sharedChannelId = "C-E2E-SHARED";
 const strangerSlackUserId = "U-E2E-STRANGER";
 const helloText = "hello from a channel member";
+const fetchTurnAttempts = 5;
 
 test("any channel member drives the agent through a shared binding", async () => {
   test.setTimeout(240_000);
@@ -80,6 +81,7 @@ test("any channel member drives the agent through a shared binding", async () =>
   });
 });
 
+// TEST_SCENARIO: A shared binding runs the turn under the OWNER's credential whoever asked, so the stranger's fetch of the echo endpoint carries the real secret in place of the egress placeholder. A gateway that is being re-certified answers that fetch with a 503 or drops it, so a turn whose fetch did not answer 200 is retried in a new turn, up to five of them; a reply that never carries the secret still fails the 180 s bound.
 test("shared turns run under the OWNER's credentials whoever asked", async () => {
   test.setTimeout(240_000);
 
@@ -92,32 +94,39 @@ test("shared turns run under the OWNER's credentials whoever asked", async () =>
 
   await test.step("a stranger's fetch turn carries the owner's credential", async () => {
     await api.e2e.slackResetOutbound.mutate();
-    await api.e2e.slackFireMention.mutate({
-      user: strangerSlackUserId,
-      channel: sharedChannelId,
-      ts: "1700000004.000100",
-      text: `__FETCH__ ${echoUrl} x-api-key:${placeholder}`,
-    });
 
-    let replyText = "";
+    let turnsFired = 0;
     await expect
       .poll(
         async () => {
           const { records } = await api.e2e.slackReadOutbound.query();
-          const reply = records.find(
-            (r) => r.kind === "message" && r.text.includes("[fetch "),
+          const replies = records.flatMap((r) =>
+            r.kind === "message" && r.text.startsWith("[fetch ")
+              ? [r.text]
+              : [],
           );
-          replyText = reply && reply.kind === "message" ? reply.text : "";
-          return replyText !== "";
+          const replyText = replies.at(-1) ?? "";
+          if (
+            replies.length >= turnsFired &&
+            turnsFired < fetchTurnAttempts &&
+            !replyText.startsWith("[fetch 200]")
+          ) {
+            turnsFired += 1;
+            await api.e2e.slackFireMention.mutate({
+              user: strangerSlackUserId,
+              channel: sharedChannelId,
+              ts: "1700000004.000100",
+              text: `__FETCH__ ${echoUrl} x-api-key:${placeholder}`,
+            });
+          }
+          return replyText;
         },
         {
           timeout: 180_000,
-          intervals: [1_000],
-          message: "the fetch result did not post back to the thread",
+          intervals: [3_000],
+          message: "the fetch the shared turn ran never carried the secret",
         },
       )
-      .toBe(true);
-
-    expect(replyText).toContain(sentinel);
+      .toContain(sentinel);
   });
 });
