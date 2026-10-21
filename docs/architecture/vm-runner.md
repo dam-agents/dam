@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -75,6 +75,8 @@ Each is held in golden JSON documents beside the runner ([`packages/vm-runner/co
 The command line has no defaults anyone relies on: the image sets the paths that are its own layout, and the controller sets everything it chose — the port range it also opens in the runner's NetworkPolicy, where it mounts the runner's state and credentials, and the budgets.
 
 **A change to the runner pod rolls across owners, not all at once**, and a new runner image need not roll the pod at all — unless that release declares a reboot key its pod does not run, which rolls it to reboot the machines (a pod whose own release declares no key takes it in place): [upgrades](vm-runner-upgrades.md) owns both.
+A roll whose new pod never becomes ready halts the fleet, so a broken release goes no further — but only for `rollout.stalledTimeout`: past it the stalled runner gives up its place and the next one rolls, so a refusal that names one owner (an SCC that denies the runner's capabilities, a quota of theirs) breaks owners one at a time instead of freezing every owner's upgrade.
+A refusal at admission leaves no pod at all, and the refused ReplicaSet's `FailedCreate` says it, which the controller reads as that owner's own fault and skips at the settle timeout instead.
 
 A machine may reach only its paired gateway, so the guest cannot fetch its own image: it is fetched for it, with the pull secrets a pod would list, into a node cache that unpacks each image once, evicting inside a stated budget and never freeing a tree a machine is still running from.
 Every machine of an image boots that one tree rather than extracting its own copy: an archive is unpacked again into each machine's disk, seconds of boot and a gigabyte of disk apiece for identical bytes.

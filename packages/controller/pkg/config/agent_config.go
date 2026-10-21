@@ -143,9 +143,11 @@ type VMRunnerRollout struct {
 	// UNIT_BOUNDARY_DESCRIPTION: how many runners may be mid-roll or mid-hand-off at once: a count, or, when MaxConcurrentPercent is set, that share of the runners the install has. A count alone cannot express a width that keeps up: one runner at a time takes an install of a thousand owners days to roll.
 	MaxConcurrent int `json:"maxConcurrent,omitempty"`
 	// UNIT_BOUNDARY_DESCRIPTION: the roll's width as a share of the runners the install has, 1 to 100, rounded up to at least one runner. Zero leaves the width to MaxConcurrent.
-	MaxConcurrentPercent int      `json:"maxConcurrentPercent,omitempty"`
-	SettleTimeout        Duration `json:"settleTimeout,omitempty"`
-	IdleWait             Duration `json:"idleWait,omitempty"`
+	MaxConcurrentPercent int `json:"maxConcurrentPercent,omitempty"`
+	// UNIT_BOUNDARY_DESCRIPTION: how long a roll may hold its place in the width while its new pod never becomes ready. A pod that does not start is a broken release, so the roll keeps its place and halts the fleet for a while — but not for good: past this the place is released, the runner keeps its stalled mark, and the next runner may roll, so one owner's refusal at admission cannot freeze every owner's upgrade.
+	StalledTimeout Duration `json:"stalledTimeout,omitempty"`
+	SettleTimeout  Duration `json:"settleTimeout,omitempty"`
+	IdleWait       Duration `json:"idleWait,omitempty"`
 }
 
 type AgentProbes struct {

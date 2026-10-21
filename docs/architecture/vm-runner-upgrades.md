@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -17,9 +17,12 @@ The list is written when the roll starts and cleared in the write that settles i
 That release happens on the owner's own turn whether or not any other runner asks for a place: a runner already on the pod it should run asks for none, so the last roll of an upgrade would otherwise keep its wait — and the pin on its machines — standing for good.
 A pod that never became ready is the other half of it: past the settle timeout that roll is marked stalled and keeps its place, so the release goes no further, and the mark is what ends its pin.
 A runner already mid-roll holds one of the width's places, so rolling it again replaces a target that failed in the place it holds rather than taking another: a fleet that shrinks under a stalled roll — owners removed, the share falling below the runners stuck on it — still takes a corrective roll, where counting its peers alone would leave every one of them blocked.
-A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled and reported as an error until its pod becomes ready or the pod changes again.
+A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled, reported as an error and written as a Warning Event on its Deployment, until its pod becomes ready or the pod changes again.
+That hold is bounded by `rollout.stalledTimeout`, half an hour by default: past it the stalled runner gives up its place and the next owner rolls, keeping the stalled mark until its pod is ready.
+A truly broken release therefore breaks owners one at a time instead of freezing every owner's upgrade, which is what one owner's refusal at admission did before this bound.
 The exception is a pod stuck in a state no release can cause: one still creating its containers, none ever started, whose claim the attach controller refuses as Multi-Attach, or an old pod that never finishes terminating because its node is gone or not ready.
-That says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
+So is a runner with no pod at all whose own ReplicaSet reports a `ReplicaFailure` of `FailedCreate`: admission refused to create the pod for something of that owner's — an SCC that denies the runner's capabilities, a quota of theirs — and nothing the release asks the whole fleet for.
+Each says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
 Every other state still halts the roll: a pod the scheduler cannot place, since a release that adds a node selector or raises a request makes every runner unplaceable, a container that started, an image that does not pull.
 The node is read through the node read grant the chart adds with virtualization; an install without it cannot tell a lost node, so a pod stuck terminating halts the roll there.
 A runner whose pod is unchanged is not rolled — unless its runner holds the configured release as one whose machines must reboot onto it, which rolls the pod with a revised template ([below](#hand-offs)) — but labels or owner references that drifted on it are put back without touching the pod.

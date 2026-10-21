@@ -1549,3 +1549,96 @@ func TestARebootHoldKeepsTheTimeItsReleaseWasNamedUntilThePodRolls(t *testing.T)
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "the runner that never answered is rolled onto the release it was named")
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: a ReplicaSet of a runner Deployment, as the Deployment controller leaves one: selected by the runner's own labels, controlled by the Deployment, and reporting the condition admission gave it.
+func runnerReplicaSet(t *testing.T, r *AgentReconciler, owner, reason string) *appsv1.ReplicaSet {
+	t.Helper()
+	dep := runnerDeploymentOf(t, r, owner)
+	controller := true
+	rs := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            dep.Name + "-abc",
+			Namespace:       dep.Namespace,
+			Labels:          vmRunnerSelector(owner),
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: dep.Name, UID: dep.UID, Controller: &controller}},
+		},
+		Spec: appsv1.ReplicaSetSpec{Selector: dep.Spec.Selector},
+	}
+	if reason != "" {
+		rs.Status.Conditions = []appsv1.ReplicaSetCondition{{
+			Type:    appsv1.ReplicaSetReplicaFailure,
+			Status:  corev1.ConditionTrue,
+			Reason:  reason,
+			Message: `.containers[0].capabilities.add: Invalid value: "SYS_RESOURCE": capability may not be added`,
+		}}
+	}
+	created, err := r.client.AppsV1().ReplicaSets(dep.Namespace).Create(context.Background(), rs, metav1.CreateOptions{})
+	require.NoError(t, err)
+	return created
+}
+
+// TEST_SCENARIO: the dev case. One owner's rolled pod is refused at admission, so no Pod object is ever created and its ReplicaSet carries the refusal as a FailedCreate — an SCC that denies a capability the runner asks for. The refusal is that owner's own fault, not the release's, so past the settle timeout the roll moves on and the next owner's runner rolls. Without that condition the same no-pod runner is a broken release and keeps its place, which is what the fleet halted on.
+func TestARunnerRefusedAtAdmissionDoesNotStallTheRoll(t *testing.T) {
+	for name, tc := range map[string]struct {
+		refusal   string
+		nextRolls bool
+	}{
+		"refused at admission": {refusal: "FailedCreate", nextRolls: true},
+		"no refusal recorded":  {nextRolls: false},
+	} {
+		t.Run(name, func(t *testing.T) {
+			ctx := context.Background()
+			r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+			changeRunnerPod(r)
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+			runnerReplicaSet(t, r, "owner-a", tc.refusal)
+			setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+			want := runnerV1
+			if tc.nextRolls {
+				want = runnerV2
+			}
+			assert.Equal(t, want, runnerImageOf(t, r, "owner-b"))
+		})
+	}
+}
+
+// TEST_SCENARIO: a release whose new pod never becomes ready halts the roll at the first runner, so the release goes no further — but only for `rollout.stalledTimeout`. Past it the stalled runner gives up its place, keeps its stalled mark and gains a Warning Event, and the next owner's runner rolls, so a broken release breaks owners one at a time instead of freezing every owner's upgrade.
+func TestAStalledRollGivesUpItsPlaceAtTheStalledTimeout(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	changeRunnerPod(r)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the roll halts at the first runner while the stall is fresh")
+	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "past the stalled timeout the place is released")
+	annotations := runnerAnnotations(t, r, "owner-a")
+	assert.NotEmpty(t, annotations[annRunnerStalled], "the stalled mark stays, as the signal that this runner's release went no further")
+	assert.Empty(t, annotations[annRunnerRolledAt], "the roll that gave up its place is no longer mid-roll")
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.NotEmpty(t, events, "a stalled roll is legible in `kubectl get events`")
+	assert.Equal(t, string(corev1.EventTypeWarning), events[len(events)-1].Type)
+	assert.Equal(t, reasonRollStallGivenUp, events[len(events)-1].Reason)
+}
+
+// TEST_SCENARIO: a runner that gave up its stalled place is still on the release it ran before, and its pod rolling ready again is what clears the mark: the next pass that sees the pod ready settles the roll and removes the sign that anything was ever wrong.
+func TestARunnerThatGaveUpItsPlaceClearsItsMarkWhenItsPodIsReady(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	changeRunnerPod(r)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
+	setRunnerAnnotation(t, r, "owner-a", annRunnerStalled, time.Now().UTC().Format(time.RFC3339))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	require.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+
+	settleRunnerPod(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+}
