@@ -14,6 +14,7 @@ const env = vi.hoisted(() => ({
   navigated: vi.fn(),
   filtered: vi.fn(),
   createAgent: vi.fn(),
+  hover: true,
 }));
 
 vi.mock("../../store.js", () => ({
@@ -125,7 +126,17 @@ let container: HTMLDivElement;
 beforeEach(() => {
   vi.clearAllMocks();
   env.pins = new Set(["a1:s1"]);
+  env.hover = true;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  Object.defineProperty(window, "matchMedia", {
+    configurable: true,
+    value: (query: string) => ({
+      matches: query === "(hover: hover)" && env.hover,
+      media: query,
+      addEventListener: () => {},
+      removeEventListener: () => {},
+    }),
+  });
   vi.useFakeTimers();
   container = document.createElement("div");
   document.body.append(container);
@@ -189,6 +200,15 @@ it("keeps the popover open while the pointer is in it, and closes it after a gra
   expect(popover()).not.toBeNull();
   act(() => void vi.advanceTimersByTime(200));
   expect(popover()).toBeNull();
+});
+
+// TEST_SCENARIO: a device that cannot hover opens the popover from a tap, since nothing else would open it, and reaches the Agent's new-session page through the popover's row instead.
+it("opens the popover on a tap where the device cannot hover", () => {
+  env.hover = false;
+  act(() => tile().click());
+  expect(popover()).not.toBeNull();
+  expect(env.startSession).not.toHaveBeenCalled();
+  expect(env.navigated).not.toHaveBeenCalled();
 });
 
 // TEST_SCENARIO: clicking an Agent's tile in the rail takes the same action as its New session row, now that hover opens the popover and leaves the click free; a right click on the tile opens the Agent's actions menu instead, at the pointer.
