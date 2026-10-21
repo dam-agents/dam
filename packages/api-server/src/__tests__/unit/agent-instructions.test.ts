@@ -21,4 +21,11 @@ describe("seedsAgentInstructions", () => {
       }),
     ).toBe(false);
   });
+
+  // TEST_SCENARIO: an Environment runs no harness, so a template in its home would have no reader.
+  it("skips an Environment", () => {
+    expect(
+      seedsAgentInstructions({ name: "calm-harbor", environmentOf: "agent-1" }),
+    ).toBe(false);
+  });
 });

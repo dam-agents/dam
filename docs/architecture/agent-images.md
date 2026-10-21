@@ -124,7 +124,7 @@ An agent's instructions live in two files, and every harness reads both, so swit
   Only Pi reads them through a path an owner can fill: a regular file there is kept and replaces them for that agent.
 - **Agent instructions**: `~/AGENTS.md`, the owner's own file beside the agent's definition.
   The work directory stays data: in a kit like Code Guardian the definition is `$HOME` and `work/` is its git-ignored data.
-  An Agent created without a kit gets a short template there, so its owner knows where to write; an Agent from a kit, a home seed or a sub-agent gets none, because its definition brings its own.
+  An Agent created without a kit gets a short template there, so its owner knows where to write; an Agent from a kit, a home seed or a sub-agent gets none, because its definition brings its own, and an Environment gets none, because it runs no harness.
   The template rides an `agent-instructions` runtime event that writes the file only when the home has none.
 
 The harnesses look for instruction files in different places, so each image wires `~/AGENTS.md` in where the harness would miss it.

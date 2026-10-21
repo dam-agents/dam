@@ -12,6 +12,7 @@ export function seedsAgentInstructions(input: AgentCreateInput): boolean {
     !input.starterKit &&
     !input.kind &&
     !input.sweepable &&
+    !input.environmentOf &&
     input.gitRepo?.into !== "home"
   );
 }
