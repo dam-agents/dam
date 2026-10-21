@@ -68,6 +68,7 @@ export function composeConnectionModule(
       compatService: opts.compatService,
       configService: opts.configService,
       createConnectionService: createService,
+      browserOpener: opts.browserOpener,
     }),
   );
   parent.addCommand(
@@ -75,7 +76,6 @@ export function composeConnectionModule(
       compatService: opts.compatService,
       configService: opts.configService,
       createConnectionService: createService,
-      browserOpener: opts.browserOpener,
     }),
   );
   parent.addCommand(
