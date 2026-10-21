@@ -1,7 +1,9 @@
 import {
   aliasForTemplateId,
+  PROVIDER_TEMPLATE_IDS,
   parseQualifiedModel,
   type ConnectionView,
+  type DefaultKind,
   type ProviderAlias,
   type SessionDefaults,
   type SessionPair,
@@ -17,7 +19,12 @@ export interface AgentModelsView {
   providers: ModelProviderView[] | null;
   harnesses: string[] | null;
   defaultHarness: string | null;
-  defaults: SessionDefaults;
+  defaults: SessionDefaults | null;
+  unreadable: Partial<Record<"providers" | "harnesses" | "defaults", string>>;
+}
+
+export function isModelProvider(connection: ConnectionView): boolean {
+  return PROVIDER_TEMPLATE_IDS.has(connection.templateId);
 }
 
 export function modelProviders(
@@ -32,15 +39,16 @@ export function modelProviders(
   });
 }
 
-function renderProviders(
-  providers: readonly ModelProviderView[] | null,
-): string {
-  if (providers === null) return "<unknown: needs credentials:read>";
-  if (providers.length === 0) return "<none>";
-  return providers.map((p) => `${p.name} (${p.alias})`).join(", ");
+const unreadable = (reason: string): string => `<could not read: ${reason}>`;
+
+function renderProviders(view: AgentModelsView): string {
+  if (view.unreadable.providers) return unreadable(view.unreadable.providers);
+  if (view.providers === null || view.providers.length === 0) return "<none>";
+  return view.providers.map((p) => `${p.name} (${p.alias})`).join(", ");
 }
 
 function renderHarnesses(view: AgentModelsView): string {
+  if (view.unreadable.harnesses) return unreadable(view.unreadable.harnesses);
   if (view.harnesses === null) return "<unknown until the agent first runs>";
   return view.harnesses
     .map((h) => (h === view.defaultHarness ? `${h} (default)` : h))
@@ -68,21 +76,22 @@ function renderPair(
   );
 }
 
-function renderKindDefault(
-  view: AgentModelsView,
-  kind: "channel" | "scheduled",
-): string {
+function renderDefault(view: AgentModelsView, kind: DefaultKind): string {
+  if (view.unreadable.defaults || view.defaults === null)
+    return unreadable(view.unreadable.defaults ?? "unknown");
   const own = view.defaults[kind];
-  return own === null ? "same as chat" : renderPair(own, view.providers);
+  return kind !== "chat" && own === null
+    ? "same as chat"
+    : renderPair(own, view.providers);
 }
 
 export function modelEntries(view: AgentModelsView): [string, string][] {
   return [
-    ["PROVIDERS", renderProviders(view.providers)],
+    ["PROVIDERS", renderProviders(view)],
     ["HARNESSES", renderHarnesses(view)],
-    ["DEFAULT", renderPair(view.defaults.chat, view.providers)],
-    ["CHANNEL DEFAULT", renderKindDefault(view, "channel")],
-    ["SCHEDULED DEFAULT", renderKindDefault(view, "scheduled")],
+    ["DEFAULT", renderDefault(view, "chat")],
+    ["CHANNEL DEFAULT", renderDefault(view, "channel")],
+    ["SCHEDULED DEFAULT", renderDefault(view, "scheduled")],
   ];
 }
 

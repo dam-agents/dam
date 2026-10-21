@@ -206,7 +206,7 @@ dam run my-agent -p "Review the diff" --model ibm/gpt-5-mini
   `--provider <connection>` grants a model provider and `--remove-provider <connection>` takes one away; `dam connection list` names them.
   `--kind channel` or `--kind scheduled` changes that default instead of chat's, and `--same-as-chat` makes it follow chat again.
   Changing the agent's defaults is a change to the user's agent, so ask first unless the user told you to.
-- `dam run --harness/--model/--setting` chooses for that one run and leaves the defaults alone.
+- `dam run` with `--harness`, `--model` or `--setting` chooses for that one run and leaves the defaults alone.
 
 When a run fails because the session has no model, the agent has no default model: run `dam agent models my-agent`, then pass one with `--model`, or ask the user whether to save it as the default with `dam agent update`.
 When it fails because no provider is granted, run `dam connection list`; grant one the user already has with `dam agent update my-agent --provider <connection>`, or have the user connect one ([Secrets](#secrets)).

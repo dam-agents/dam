@@ -12,7 +12,11 @@ import { exitOnServiceError } from "../../shared/trpc/print.js";
 import { parseSettingFlags } from "../../shared/setting-flags.js";
 import { EXIT_INVALID_INPUT, EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveAgentOrExit } from "./errors.js";
-import { modelEntries, renderEntries } from "../domain/agent-models.js";
+import {
+  isModelProvider,
+  modelEntries,
+  renderEntries,
+} from "../domain/agent-models.js";
 
 const collect = (v: string, acc: string[]): string[] => [...acc, v];
 
@@ -164,13 +168,18 @@ export function buildUpdateCommand(deps: {
         const all = await svc.connections();
         exitOnServiceError(all, host);
         const idsOf = (refs: readonly string[]): string[] =>
-          refs.map(
-            (r) =>
-              resolveConnectionRef(all.value, r)?.id ??
+          refs.map((r) => {
+            const found = resolveConnectionRef(all.value, r);
+            if (!found)
               invalid(
                 `unknown connection id or name: ${r}\nhint: run \`dam connection list\` to see ids and names`,
-              ),
-          );
+              );
+            if (!isModelProvider(found))
+              invalid(
+                `${r} is not a model-provider connection; grant other connections with \`dam connection grant\``,
+              );
+            return found.id;
+          });
         const updated = await svc.updateProviders(agent.id, {
           grant: idsOf(opts.provider),
           revoke: idsOf(opts.removeProvider),

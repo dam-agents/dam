@@ -45,6 +45,7 @@ describe("dam agent get / update / models (integration)", () => {
   let grantCalls: { grant: string[]; revoke: string[] }[];
   let catalogHarness: string | null;
   let rememberRefusal: string | null;
+  let connectionsRefusal: string | null;
 
   beforeEach(async () => {
     home = await mkdtemp(join(tmpdir(), "dam-agent-models-"));
@@ -68,6 +69,7 @@ describe("dam agent get / update / models (integration)", () => {
     grantCalls = [];
     catalogHarness = null;
     rememberRefusal = null;
+    connectionsRefusal = null;
 
     const apiContext = {
       user: { sub: "fixture-user", scopes: ALL_SCOPES, agentIds: "*" },
@@ -93,7 +95,16 @@ describe("dam agent get / update / models (integration)", () => {
         }),
       },
       connections: {
-        listAndReconcileConnections: async () => CONNECTIONS,
+        listAndReconcileConnections: async () => {
+          if (connectionsRefusal !== null) {
+            const { TRPCError } = await import("@trpc/server");
+            throw new TRPCError({
+              code: "FORBIDDEN",
+              message: connectionsRefusal,
+            });
+          }
+          return CONNECTIONS;
+        },
         getAgentConnections: async (agentId: string) => ({
           agentId,
           connections: granted.map((connectionId) => ({
@@ -304,6 +315,21 @@ describe("dam agent get / update / models (integration)", () => {
   });
 
   /**
+   * TEST_SCENARIO: an API key without credentials:read cannot list the
+   * Connections; get still shows the agent and its defaults, and says why
+   * the providers are missing instead of showing none.
+   */
+  it("agent get says which part it could not read", async () => {
+    connectionsRefusal = "Requires one of: credentials:read";
+    const r = await dam("agent", "get", AGENT_ID);
+    expect(r.exitCode, r.stderr).toBe(0);
+    expect(r.stdout).toMatch(
+      /^PROVIDERS:\s+<could not read: Requires one of: credentials:read>$/m,
+    );
+    expect(r.stdout).toMatch(/^DEFAULT:\s+ibm\/aws\/claude-opus-4-8 on/m);
+  });
+
+  /**
    * TEST_SCENARIO: changing only the model keeps the default's harness and
    * its settings, as the Providers page does when a model is picked.
    */
@@ -420,6 +446,18 @@ describe("dam agent get / update / models (integration)", () => {
     );
     expect(unknown.exitCode).toBe(2);
     expect(unknown.stderr).toContain("unknown connection id or name: nope");
+
+    const notProvider = await dam(
+      "agent",
+      "update",
+      AGENT_ID,
+      "--provider",
+      "github",
+    );
+    expect(notProvider.exitCode).toBe(2);
+    expect(notProvider.stderr).toContain(
+      "github is not a model-provider connection",
+    );
     expect(grantCalls).toHaveLength(1);
   });
 

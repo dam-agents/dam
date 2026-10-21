@@ -100,9 +100,10 @@ export function createAgentModelsService(deps: {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: a part the caller may not read, such as the
- * providers for a token without credentials:read, is null, so the rest of
- * the view still shows.
+ * UNIT_BOUNDARY_DESCRIPTION: a part that cannot be read, such as the
+ * providers for an API key without credentials:read, is null with its
+ * reason under `unreadable`, so the rest of the view still shows and a
+ * failed read never looks like a default that is not set.
  */
 export async function readAgentModels(
   svc: AgentModelsService,
@@ -114,6 +115,11 @@ export async function readAgentModels(
     svc.status(agentId),
     svc.savedDefaults(agentId),
   ]);
+  const providersFailed = !granted.ok
+    ? granted.error
+    : !connections.ok
+      ? connections.error
+      : null;
   return {
     providers:
       granted.ok && connections.ok
@@ -123,8 +129,11 @@ export async function readAgentModels(
       ? (status.value.harnesses?.map((h) => h.name) ?? null)
       : null,
     defaultHarness: status.ok ? status.value.defaultHarness : null,
-    defaults: defaults.ok
-      ? defaults.value
-      : { chat: null, channel: null, scheduled: null },
+    defaults: defaults.ok ? defaults.value : null,
+    unreadable: {
+      ...(providersFailed && { providers: providersFailed.reason }),
+      ...(!status.ok && { harnesses: status.error.reason }),
+      ...(!defaults.ok && { defaults: defaults.error.reason }),
+    },
   };
 }
