@@ -5,11 +5,13 @@ import type { ProcessesDocument } from "../domain/inventory.js";
 export interface KeepPolicy {
   isKeptTask(sessionId: string, taskId: string): boolean;
   keptProcessCount(): number;
+  openLinkCount(): number;
   onChange(cb: () => void): void;
 }
 
 export interface KeepState extends KeepPolicy {
   setKeptProcesses(count: number): void;
+  setOpenLinks(count: number): void;
   taskKeepChanged(): void;
 }
 
@@ -18,13 +20,16 @@ export interface KeepState extends KeepPolicy {
  * before the harness runtime so both sides can share it. A Harness Task is
  * kept unless the user overrode it in the processes document. The count of
  * running Detached Processes that keep the agent awake comes from the last
- * scan. Listeners hear when the user changes a Harness Task's keep decision,
+ * scan, and so does the count of open Environment Link processes, which
+ * keep it awake whatever the keep decisions say: a link is a person or the
+ * owning agent at work, as an open terminal is. Listeners hear when the user changes a Harness Task's keep decision,
  * so the harness side reads which tasks are kept again.
  */
 export function createKeepState(
   document: DocumentStore<ProcessesDocument>,
 ): KeepState {
   let kept = 0;
+  let links = 0;
   const changeListeners: (() => void)[] = [];
 
   return {
@@ -36,12 +41,18 @@ export function createKeepState(
 
     keptProcessCount: () => kept,
 
+    openLinkCount: () => links,
+
     onChange(cb) {
       changeListeners.push(cb);
     },
 
     setKeptProcesses(count) {
       kept = count;
+    },
+
+    setOpenLinks(count) {
+      links = count;
     },
 
     taskKeepChanged() {

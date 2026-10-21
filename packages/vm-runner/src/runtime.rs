@@ -25,6 +25,10 @@ pub trait Runtime: Send + Sync {
     fn delete(&self, id: &str) -> anyhow::Result<()>;
     // UNIT_BOUNDARY_DESCRIPTION: whether what the machine's record names to boot is still on the host. The record holds a path when the machine boots a cache tree or a staged tree, and the hypervisor reads that path at every start, so a tree evicted or relaid under a stopped machine fails every start until the record is rewritten. A registry reference is not a path and is always present.
     fn image_present(&self, id: &str) -> anyhow::Result<bool>;
+    // UNIT_BOUNDARY_DESCRIPTION: the directory the hypervisor keeps the machine's own files in — its sockets among them — or nothing for a runtime with none, which then has no Environment Link.
+    fn vm_dir(&self, _id: &str) -> Option<std::path::PathBuf> {
+        None
+    }
     // UNIT_BOUNDARY_DESCRIPTION: the end of the machine's console as printable text, unredacted, or nothing when the runtime keeps none.
     fn console_tail(&self, _id: &str) -> String {
         String::new()

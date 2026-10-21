@@ -6,6 +6,7 @@ const CMDLINE_MAX_BYTES = 4096;
 const KEEP_VARIABLE = Buffer.from("PLATFORM_KEEP=");
 const USER_SERVICE_VARIABLE = Buffer.from("RC_USER_SERVICES=");
 const SERVICE_NAME_VARIABLE = Buffer.from("RC_SVCNAME=");
+const LINK_VARIABLE = Buffer.from("PLATFORM_LINK=");
 
 export interface ProcessTable {
   scan(): Promise<ProcSnapshot>;
@@ -28,9 +29,13 @@ function variableOf(environ: Buffer, name: Buffer): string | null {
   return null;
 }
 
-async function readMarks(
-  dir: string,
-): Promise<{ keepMark: string | null; startupItem: string | null }> {
+interface Marks {
+  keepMark: string | null;
+  startupItem: string | null;
+  link: string | null;
+}
+
+async function readMarks(dir: string): Promise<Marks> {
   try {
     const environ = await readFile(`${dir}/environ`);
     return {
@@ -39,9 +44,10 @@ async function readMarks(
         variableOf(environ, USER_SERVICE_VARIABLE) === "yes"
           ? variableOf(environ, SERVICE_NAME_VARIABLE)
           : null,
+      link: variableOf(environ, LINK_VARIABLE),
     };
   } catch {
-    return { keepMark: null, startupItem: null };
+    return { keepMark: null, startupItem: null, link: null };
   }
 }
 
@@ -84,7 +90,7 @@ async function readProcess(
       .trim();
     if (cmdline === "") return null;
     const startTicks = Number(fields[19]);
-    const [outputPath, { keepMark, startupItem }] = await Promise.all([
+    const [outputPath, { keepMark, startupItem, link }] = await Promise.all([
       outputFileOf(dir, 1).then((path) => path ?? outputFileOf(dir, 2)),
       readMarks(dir),
     ]);
@@ -103,6 +109,7 @@ async function readProcess(
       outputPath,
       keepMark,
       startupItem,
+      link,
     };
   } catch {
     return null;
@@ -114,10 +121,10 @@ async function readProcess(
  * process inventory. It reads each process's parent, process group, session,
  * start time, CPU ticks, resident memory, command line, and the regular file
  * behind stdout or stderr, if any. A process that vanishes mid-read is
- * skipped. From the environment it takes the PLATFORM_KEEP and
- * RC_USER_SERVICES and RC_SVCNAME values alone, which name the agent's own
- * openrc service a supervisor runs, and drops every other variable at once,
- * because agents hold credentials there.
+ * skipped. From the environment it takes the PLATFORM_KEEP, PLATFORM_LINK,
+ * RC_USER_SERVICES and RC_SVCNAME values alone — the last two name the
+ * agent's own openrc service a supervisor runs — and drops every other
+ * variable at once, because agents hold credentials there.
  */
 export function createProcessTable(procRoot = "/proc"): ProcessTable {
   return {

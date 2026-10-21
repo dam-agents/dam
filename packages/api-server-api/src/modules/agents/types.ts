@@ -198,6 +198,8 @@ export interface SessionBackgroundWork {
 export interface AgentBackgroundWork {
   sessions: SessionBackgroundWork[];
   keptProcesses: number;
+  // UNIT_BOUNDARY_DESCRIPTION: Environment Links open on this machine, which hold it awake as kept work does.
+  openLinks: number;
 }
 
 export type UpgradeAgentError =

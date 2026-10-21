@@ -142,14 +142,25 @@ function withDescendants(
  * decision and is never overruled by a later mark. Stop ends a row's whole
  * tree: SIGTERM first, SIGKILL after a grace period to what is left, never to
  * a process or group that took over a pid of the tree meanwhile. Each scan
- * publishes how many Detached Processes keep the agent awake, which makes the
- * runtime busy. It also reports a harness restart that waits for kept
+ * publishes how many Detached Processes keep the agent awake, and how many
+ * processes of an open Environment Link run (PLATFORM_LINK, on either end),
+ * each of which makes the runtime busy. It also reports a harness restart that waits for kept
  * Harness Tasks, and applies it on request. It lists the agent's Startup
  * Items, its own openrc services, beside the rows, and starts, stops,
  * disables and removes one for the user through openrc. Watchers get a data-less notice
  * when a row appears, goes, or changes whether it keeps the agent awake, and
  * when a waiting restart appears or goes; CPU and memory changes are polled.
  */
+// UNIT_BOUNDARY_DESCRIPTION: how many Environment Links are open: a link is a tree of processes that inherit its mark (the proxy's shell, its subshells and socat), so only a marked process whose parent is not marked counts.
+export function countLinks(
+  processes: readonly Pick<ScannedProcess, "pid" | "ppid" | "link">[],
+): number {
+  const marked = new Set(
+    processes.filter((p) => p.link !== null).map((p) => p.pid),
+  );
+  return processes.filter((p) => p.link !== null && !marked.has(p.ppid)).length;
+}
+
 export function createProcessesService(
   deps: ProcessesServiceDeps,
 ): ProcessesService & KeepMarkSink {
@@ -292,8 +303,10 @@ export function createProcessesService(
     const keptDetached = inventory.running.filter(
       (row) => row.kind === "detached" && row.keepsAwake,
     ).length;
-    keepAlive = marks.length > 0 || keptDetached > 0;
+    const openLinks = countLinks(snapshot.processes);
+    keepAlive = marks.length > 0 || keptDetached > 0 || openLinks > 0;
     deps.keep.setKeptProcesses(keptDetached);
+    deps.keep.setOpenLinks(openLinks);
 
     const signature = `${noticeSignature(inventory.running)}|${JSON.stringify(
       deps.harnessWork.pendingRestart(),

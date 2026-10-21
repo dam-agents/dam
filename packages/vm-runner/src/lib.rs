@@ -14,6 +14,7 @@ pub mod forward;
 pub mod http;
 pub mod imagecache;
 mod launch;
+pub mod link;
 mod metrics;
 mod plan;
 pub mod preload;

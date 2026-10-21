@@ -50,6 +50,7 @@ export const PROVIDER_REMOVED_REASON = "provider-removed";
 
 export interface LeaseRouterStatus extends AcpRuntimeStatus {
   keptProcesses: number;
+  openLinks: number;
 }
 
 export interface LeaseRouterDeps {
@@ -70,7 +71,7 @@ export interface LeaseRouterDeps {
   sessionMetadata: SessionMetadataStore;
   sessionDefaults?: SessionDefaultsStore;
   backgroundWork: BackgroundWorkRegistry;
-  keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
+  keepPolicy: Pick<KeepPolicy, "keptProcessCount" | "openLinkCount">;
   agentRequests: AgentRequestObserver;
   createRuntime: (
     pair: LeasePair,
@@ -917,10 +918,13 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     status() {
       const all = [...leases.values()].map((l) => l.runtime.status());
       const keptProcesses = deps.keepPolicy.keptProcessCount();
+      const openLinks = deps.keepPolicy.openLinkCount();
       return {
-        idle: keptProcesses === 0 && all.every((s) => s.idle),
+        idle:
+          keptProcesses === 0 && openLinks === 0 && all.every((s) => s.idle),
         backgroundWork: deps.backgroundWork.held(),
         keptProcesses,
+        openLinks,
       };
     },
 

@@ -51,6 +51,7 @@ export interface OwningAgentEnvironments {
   create(input: CreateEnvironmentInput): Promise<EnvironmentView>;
   list(): Promise<EnvironmentView[]>;
   update(name: string, input: UpdateEnvironmentInput): Promise<EnvironmentView>;
+  wake(name: string): Promise<void>;
   delete(name: string): Promise<void>;
 }
 
@@ -77,8 +78,9 @@ function refuse(
  * connections and no default model provider, so nothing in it can act as the
  * owning Agent; a row beside it holds its host label, endpoints, access list
  * and expiry. A `start` command becomes its first Startup Item through the
- * runtime channel. Deleting one deletes its Agent through the agents service,
- * so the Agent's own cleanup runs too.
+ * runtime channel. The owning Agent wakes a sleeping one before it opens the
+ * Environment Link, which reaches only a running machine. Deleting one deletes
+ * its Agent through the agents service, so the Agent's own cleanup runs too.
  */
 export function createEnvironmentsService(
   deps: EnvironmentsDeps,
@@ -241,6 +243,22 @@ export function createEnvironmentsService(
           { ...record, ...patch },
           await deps.agents.get(record.agentId),
         );
+      },
+
+      async wake(name) {
+        const woke = await deps.agents.wake((await byName(name)).agentId);
+        if (woke.ok) return;
+        if (woke.error.type === "AgentDisabled")
+          refuse(
+            `${name} is turned off by your owner; it does not wake until they turn it on`,
+            "PRECONDITION_FAILED",
+          );
+        if (woke.error.type === "RuntimeMigrating")
+          refuse(
+            `${name} is moving to another runtime; try again later`,
+            "CONFLICT",
+          );
+        refuse(`no Environment named ${name}`, "NOT_FOUND");
       },
 
       async delete(name) {

@@ -230,6 +230,7 @@ export function executeTelegramBind(deps: {
 const NO_BACKGROUND_WORK: AgentBackgroundWork = {
   sessions: [],
   keptProcesses: 0,
+  openLinks: 0,
 };
 
 export function executeBackgroundWorkRead(deps: {

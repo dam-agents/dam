@@ -61,7 +61,7 @@ A pod runs one chat harness per [Harness Lease](sessions.md#session-inside-the-p
 A row carries the **output file** behind the process's stdout or stderr when that is a regular file, and the user can read its tail.
 The runtime reads only a file a scan recorded, never a path a caller names, with one exception: a Startup Item's log, which it builds from an item id that passed the same id rule as the list, and only for an item the list or a running row names.
 Claude Code writes every tool call's output, foreground or `run_in_background`, to a file of its own, so its Turn Processes and Harness Tasks always have output; a process writing to a pipe or a terminal has none.
-The scan reads each process's environment for the keep mark and the openrc user-service name, and drops the rest unread, because agents hold credentials there.
+The scan reads each process's environment for the keep mark, the openrc user-service name and the [Environment Link](environments.md#the-environment-link) mark, and drops the rest unread, because agents hold credentials there.
 
 A row also says when it is a **container** or a **container runtime**, read from its command line alone, without asking the runtime.
 Docker and k3s run each container under a containerd shim that is re-parented to the reaper, so it lists as a Detached Process; its command names the containerd namespace (`moby` for Docker) and the container id, and a k3s shim runs from k3s's own paths.
@@ -93,7 +93,7 @@ The list and the indicator show the same list: while the agent runs but the UI h
 
 ## Keeping work
 
-Only **kept** work keeps the agent awake; everything else survives the user leaving and dies at hibernation.
+Only **kept** work, and an open [Environment Link](environments.md#the-environment-link), keep the agent awake; everything else survives the user leaving and dies at hibernation.
 Each row resolves who decided, in this order:
 
 1. **The user**, through the keep switch in the panel, in either direction.
@@ -121,7 +121,7 @@ It is an openrc **user service** of root, the agent's account: a script in `~/.c
 The agent writes them as plain openrc scripts, and they live in the home, the one place every boot and every image keep.
 
 OpenRC itself does the work.
-platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
+platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel beside `platform-env`, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
 Its `/etc/conf.d/user.root` keeps their state in the image's `XDG_RUNTIME_DIR`, which the agent's shell and the runtime share, starts them after docker and k3s, and waits up to a minute for them all to stop, each within its own stop timeout.
 The image's `/etc/rc/user/rc.conf` makes every such service supervised by `supervise-daemon`, which restarts it two seconds after it exits, run in `~/work`, logged to `~/.local/state/rc/<name>.log`, and stopped with its whole process group; a script overrides any of it.
 A service gets what the image's own services get of the environment, `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF`, and no credential placeholder.
