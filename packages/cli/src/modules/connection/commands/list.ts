@@ -8,9 +8,10 @@ import { EXIT_SUCCESS } from "../../shared/exit-codes.js";
 import { resolveActiveHost } from "../../shared/preflight.js";
 import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
+import { formatScope, scopeOf } from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
-const HEADER = ["ID", "NAME", "CATEGORY", "STATUS", "HOSTS"];
+const HEADER = ["ID", "NAME", "CATEGORY", "STATUS", "HOSTS", "SCOPE"];
 
 function sortViews(
   views: readonly ConnectionView[],
@@ -33,8 +34,16 @@ function tableFor(views: readonly ConnectionView[]): string {
       c.category,
       c.status,
       c.hosts.join(","),
+      formatScope(scopeOf(c)),
     ]),
   ]);
+}
+
+function withScope(views: readonly ConnectionView[]) {
+  return views.map((c) => {
+    const scope = scopeOf(c);
+    return scope ? { ...c, scope } : c;
+  });
 }
 
 export function buildListCommand(deps: {
@@ -52,7 +61,10 @@ export function buildListCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
-    .option("--json", "emit raw JSON instead of the default table")
+    .option(
+      "--json",
+      "emit raw JSON instead of the default table; a GitHub connection carries scope { restricted, account?, repositories?, repositoryIds?, permissions? }",
+    )
     .addHelpText(
       "after",
       "\nExamples:\n" +
@@ -73,7 +85,7 @@ export function buildListCommand(deps: {
           exitOnServiceError(result, host);
           if (opts.json) {
             return writeStdoutAndExit(
-              `${JSON.stringify(result.value)}\n`,
+              `${JSON.stringify(withScope(result.value))}\n`,
               EXIT_SUCCESS,
             );
           }
@@ -110,7 +122,7 @@ export function buildListCommand(deps: {
 
         if (opts.json) {
           return writeStdoutAndExit(
-            `${JSON.stringify(matched)}\n`,
+            `${JSON.stringify(withScope(matched))}\n`,
             EXIT_SUCCESS,
           );
         }
