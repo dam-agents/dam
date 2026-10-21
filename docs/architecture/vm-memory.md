@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-21
+Last verified: 2026-10-22
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -194,10 +194,11 @@ The local k3s clusters set it where they launch k3s: the lima dev and e2e VMs in
 A lima VM created before that change keeps grouping until it is recreated, since its provision script runs once.
 The plain-process launch writes the setting again whenever it starts k3s, so a restart is enough there.
 The kubelet writes the setting when it creates a container, so a runner pod already running keeps the cgroup it was created with until it is recreated, and restarting the node's kubelet alone changes nothing for it.
-When the killed process is the runner's own container, the owner is told which agents it took down: every agent whose machine was holding memory on that runner when the kill landed names it, whatever reason the restarted runner reports meanwhile — a refused start for room, a reclaim, or a boot the restart broke — since all of them describe that one taking down.
+When the killed process is the runner's own container, the owner is told which agents it took down: every agent whose machine was holding memory on that runner when the kill landed names it, whatever reason the restarted runner reports meanwhile — a refused start for room or a reclaim — since both describe that one taking down.
 The kill and its time are the runner pod's own record of its container: the terminated container's id and the kernel's finished time, which name the same kill before and after that container restarts, and never a reconcile.
 Whether an agent's machine was on the runner then is read from two stamps the controller writes as it watches the machine, the start of the episode it is holding memory in and its last stop: a machine started after the kill is no victim, one still booting at it is, and one a reclaim put to sleep after it is, since its start went before the kill and its end did not.
 A second is all the kernel's finished time carries, and a stamp is written only while a runner answers, so the only runner that answers inside the kill's own second is the one the kill took down: a stamp in that second reads as an event from before the kill, which makes a start there a machine the kill found and a stop there one that had already stopped.
+Those two stamps and the kill's time come from two clocks, so a controller clock seconds away from the node's moves the boundary between victim and bystander by the same: a machine started just after the kill can be named a victim, and one stopped just before it can lose the notice.
 The stop is stamped where the runner answers the halt, not on the agent's next check, so a kill that lands in between does not name a machine that had already stopped.
 A wake after a sleep begins a new episode, so a kill the machine slept through is not named on it.
 An agent asleep before the kill, or one whose start was already refused, was holding nothing when it landed, so it carries nothing.
