@@ -83,9 +83,10 @@ import type {
   S3CredentialProbe,
   S3CredentialProbeFailure,
 } from "../domain/s3-credential-probe.js";
-import type {
-  ProviderKeyProbe,
-  ProviderKeyProbeOutcome,
+import {
+  providerKeyTargetOf,
+  type ProviderKeyProbe,
+  type ProviderKeyProbeOutcome,
 } from "../domain/provider-key-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
@@ -723,9 +724,14 @@ export function createConnectionsService(deps: {
     templateId: string,
     key: string,
     connectionId: string,
+    contributions: readonly Contribution[],
   ): Promise<ProviderKeyCheck | null> {
     const check = recordProviderKeyOutcome(
-      await deps.providerKeyProbe.probe(templateId, key),
+      await deps.providerKeyProbe.probe(
+        templateId,
+        key,
+        providerKeyTargetOf(contributions),
+      ),
       templateId,
       connectionId,
     );
@@ -756,7 +762,11 @@ export function createConnectionsService(deps: {
     }
     if (!key)
       return { ok: false, reason: "refused", detail: "no key is stored" };
-    return deps.providerKeyProbe.probe(conn.templateId, key);
+    return deps.providerKeyProbe.probe(
+      conn.templateId,
+      key,
+      providerKeyTargetOf(conn.contributions),
+    );
   }
 
   async function recheckProviderKey(
@@ -1080,6 +1090,7 @@ export function createConnectionsService(deps: {
               conn.templateId,
               value,
               conn.id,
+              conn.contributions,
             );
             await rotateHeaderValue(conn, conn.auth, value);
             await deps.repo.mergeInputs(conn.id, {
@@ -1449,7 +1460,12 @@ export function createConnectionsService(deps: {
           ? built.secrets.get(secretPath)?.["value"]
           : undefined;
       const keyCheck = headerValue
-        ? await assertProviderKeyAccepted(template.id, headerValue, id)
+        ? await assertProviderKeyAccepted(
+            template.id,
+            headerValue,
+            id,
+            contributions,
+          )
         : null;
 
       if (secretPath) {
