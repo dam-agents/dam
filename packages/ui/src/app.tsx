@@ -32,6 +32,7 @@ import {
 } from "./modules/sessions/components/app-side-panel.js";
 import { ChatView } from "./modules/sessions/views/chat-view.js";
 import { SettingsView } from "./modules/settings/views/settings-view.js";
+import { ConnectionSecretView } from "./modules/connections/views/connection-secret-view.js";
 import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { useStarterKit } from "./modules/starter-kits/api/queries.js";
 import { BrowseKitsModal } from "./modules/starter-kits/components/browse-kits-modal.js";
@@ -77,7 +78,12 @@ export default function App() {
   useBrowserHistory();
 
   useEffect(() => {
-    if (view === "terms" || view === "telegram-bind" || view === "slack-bind")
+    if (
+      view === "terms" ||
+      view === "telegram-bind" ||
+      view === "slack-bind" ||
+      view === "connection-secret"
+    )
       document.title = documentTitle(
         { view, settingsTab: "account" },
         {},
@@ -108,6 +114,7 @@ export default function App() {
         <DialogOverlay />
       </>
     );
+  if (view === "connection-secret") return <ConnectionSecretView />;
   if (view === "analytics") return <UsageReportView />;
   return <MainApp />;
 }

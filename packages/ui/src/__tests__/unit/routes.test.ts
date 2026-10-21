@@ -12,6 +12,7 @@ const canonicalPaths = [
   "/terms",
   "/telegram/bind",
   "/slack/bind",
+  "/connections/secret",
   "/sandboxes/sb-1",
   "/sandboxes/sb-1/connections",
   "/starter-kits/platform/code-reviewer",
