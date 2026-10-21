@@ -176,6 +176,7 @@ export interface AgentView {
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;
+  startFailure?: { reason: string; message: string };
   podRestarts: number;
   podRestartReason?: string;
   gatewayFailure?: string;

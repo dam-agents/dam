@@ -461,7 +461,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a waking gateway pod takes longer to start than the machine or agent pod beside it, mostly for the pod network and the kubelet's relist once a second, so it is scaled up before the agent side rather than after the runner call. The runner can still refuse a vm machine for lack of room, so a vm agent whose last start was refused or is waiting for the node, or one with no status yet, keeps the old order: a parked agent retried every few seconds must not start and stop a gateway pod each time. A runtime migration and a gateway going down also keep their place after the agent side, because a vm agent that is not running reads from its gateway whether it was hibernated.
 	lastReady := apimeta.FindStatusCondition(agent.Status.Conditions, apiv1.ConditionReady)
-	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAllocationUnreadable)
+	// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused for the owner's storage is answered the same way until space frees, so this pass keeps the old order rather than start a gateway pod the refusal will scale down again.
+	parkedLast := lastReady != nil && (lastReady.Reason == apiv1.ReasonOverBudget || lastReady.Reason == apiv1.ReasonAwaitingAllocation || lastReady.Reason == apiv1.ReasonAllocationUnreadable || lastReady.Reason == vmrunner.ReasonStorageFull)
 	runnerAccepted := !agentSpec.IsVM() || (lastReady != nil && !parkedLast)
 	gatewayUp := running && !hardStop && !migration.active() && runnerAccepted && !served
 	if gatewayUp {
@@ -555,6 +556,11 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 				}
 			}
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: a start the runner refused because the owner's storage is full holds nothing, so the Agent is parked with the runner's own explanation: the gateway comes down with the machine it proxies, and the parked tick asks again, which is what starts the Agent once space frees. Only a start of an Agent that should run is parked, and only when the machine is stopped or absent: an Agent that should be asleep keeps the hibernation it is already under, since a refusal from a machine it asked to keep stopped must not wake its status between the two, and a machine in any other state may still hold memory, which parking halts.
+		if running && machine.Reason == vmrunner.ReasonStorageFull && machineStopped(machine) {
+			running, parked, awaiting, awaitingReason = false, true, machine.Message, vmrunner.ReasonStorageFull
+			r.recordParkedRetry(name)
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: a start held on a node that has not reported what it granted keeps holding past the bound, but it stops promising an automatic start in seconds: it is published under a reason of its own that names the problem and is retried at the parked tick, so a person sees the diagnosis instead of a start that reads as coming up for ever.
 		if machine.Reason == apiv1.ReasonAllocationUnreadable {

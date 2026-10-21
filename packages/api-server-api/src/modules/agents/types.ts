@@ -134,6 +134,11 @@ export interface AgentReclaim {
   for: "memory" | "compute";
 }
 
+export interface AgentStartFailure {
+  reason: string;
+  message: string;
+}
+
 export interface Agent {
   id: string;
   name: string;
@@ -153,6 +158,7 @@ export interface Agent {
   podTerminationReason?: string;
   podTerminationCode?: string;
   notReadyMessage?: string;
+  startFailure?: AgentStartFailure;
   podRestarts: number;
   podRestartReason?: string;
   gatewayFailure?: string;
