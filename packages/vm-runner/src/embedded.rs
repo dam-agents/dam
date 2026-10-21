@@ -387,6 +387,10 @@ impl Runtime for Smolvm {
         console::machine_tail(&vm_data_dir(id))
     }
 
+    fn kernel_log(&self, id: &str) -> Option<std::path::PathBuf> {
+        Some(vm_data_dir(id).join(console::VMM_LOG))
+    }
+
     fn nests(&self) -> bool {
         self.nested
     }

@@ -24,6 +24,7 @@ export interface BudgetVmUsage {
     memoryUsedBytes: number;
     storageUsedBytes: number;
     cpuMilli: number;
+    homeFull?: boolean;
   }[];
   observedAt: string;
   slackUnlinked?: boolean;

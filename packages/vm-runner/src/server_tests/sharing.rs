@@ -454,3 +454,49 @@ async fn the_usage_read_names_the_seeds() {
     let storage = h.server.usage().unwrap().storage;
     assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
 }
+
+#[tokio::test]
+async fn a_running_machine_whose_guest_ran_out_of_room_says_so() {
+    let h = Harness::new("guest-full");
+    let log = h.dir.join("agent-startup-error.log");
+    let mark = |text: &str| {
+        let mut written = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&log)
+            .unwrap();
+        written
+            .write_all(format!("[ 1.0] init_or_kernel] {text}\n").as_bytes())
+            .unwrap();
+    };
+    *locked(&h.fake.kernel) = Some(log.clone());
+    h.server.put("m1", spec(true)).unwrap();
+    h.settle("m1").await;
+    let full = |h: &Harness| {
+        h.server
+            .usage()
+            .unwrap()
+            .machines
+            .into_iter()
+            .find(|m| m.id == "m1")
+            .map(|m| m.home_full)
+    };
+    assert_eq!(full(&h), Some(false), "nothing marked yet");
+
+    mark(crate::guest::GUEST_FULL);
+    h.server.probe("m1");
+    assert_eq!(full(&h), Some(true), "the agent's writes fail");
+
+    mark("the VMM relayed a connection");
+    h.server.probe("m1");
+    assert_eq!(full(&h), Some(true), "a mark is not undone by other lines");
+
+    mark(crate::guest::GUEST_ROOM);
+    h.server.probe("m1");
+    assert_eq!(full(&h), Some(false), "the guest has room back");
+
+    mark(crate::guest::GUEST_FULL);
+    h.server.put("m1", spec(false)).unwrap();
+    h.settle("m1").await;
+    assert_eq!(full(&h), Some(false), "a stopped machine carries none");
+}

@@ -39,6 +39,8 @@ pub(super) struct Fake {
     pub(super) booted_mib: Mutex<Vec<i32>>,
     pub(super) start_sizes: Mutex<Vec<i32>>,
     pub(super) console: Mutex<String>,
+    // UNIT_BOUNDARY_DESCRIPTION: the file this fake writes a machine's kernel log to, which a test fills with platform-init's marks; None for a runtime that keeps no log.
+    pub(super) kernel: Mutex<Option<std::path::PathBuf>>,
     pub(super) panic_on_state: AtomicBool,
     pub(super) nests: AtomicBool,
     pub(super) state_fails_until_start: Mutex<HashSet<String>>,
@@ -285,6 +287,10 @@ impl Runtime for Fake {
 
     fn console_tail(&self, _id: &str) -> String {
         locked(&self.console).clone()
+    }
+
+    fn kernel_log(&self, _id: &str) -> Option<std::path::PathBuf> {
+        locked(&self.kernel).clone()
     }
 }
 

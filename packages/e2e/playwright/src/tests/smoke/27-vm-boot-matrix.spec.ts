@@ -326,7 +326,7 @@ function launchFiller(sizeKiB: string, body = DEFAULT_FILL): string {
   ].join("\n");
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner-side teardown of the claim fill: it ends every process the fill started, and only then removes the file, failing rather than reporting success when any of that did not happen. The group is read from what the filler recorded of itself, and its members are read from the kernel's own records, so nothing is matched by command line and the teardown cannot find itself. The filler's leader outlives every signal, and is what proves ownership: the recorded pid must still be in the recorded group and still be the process that started at the recorded time, and that is checked again before each pass, because a group id is released the moment its last member goes and can then be handed to another session. Only members other than the leader are signalled, one pid at a time, so the proof is still there to be checked after a signal; the leader is ended last, after the fill is gone, and it is impossible to reuse its group id while it holds it. A leader that is gone, or that is no longer the process that started at the recorded time, refuses the whole teardown whatever the other members look like: an earlier pass proves nothing about a group after an interval, and nothing else here holds the identity across one. Signalling the members again on every pass is what catches a child forked between the signal and the scan: the next pass finds it, and the leader that is still alive is what lets that pass run at all. The record is kept until the fill's removal has been read back, so a removal that failed leaves a later call able to name the writer, and so does the leader: it is still there to prove the group. A call that finds no record passes only when the fill and the script are gone too, so repeating a finished teardown is safe and an unrecorded writer is not accepted. Zombies are not members to wait for, since they cannot write and their reaping is their parent's. Running out of the wait is a failure, so a writer that never ends fails the run instead of passing quietly, and the caller's retry has a real failure to retry. The removal is read back, because `rm` alone is not evidence: a claim remounted read-only leaves the fill behind, and a shell that does not test `rm` would report success over it.
+// UNIT_BOUNDARY_DESCRIPTION: the runner-side teardown of the claim fill: it ends every process the fill started, and only then removes the file, failing rather than reporting success when any of that did not happen. The group is read from what the filler recorded of itself, and its members are read from the kernel's own records, so nothing is matched by command line and the teardown cannot find itself. The filler's leader outlives every signal, and is what proves ownership: the recorded pid must still be in the recorded group and still be the process that started at the recorded time, and that is checked again before each pass, because a group id is released the moment its last member goes and can then be handed to another session. Only members other than the leader are signalled, one pid at a time, so the proof is still there to be checked after a signal. A leader that is gone, or that is no longer the process that started at the recorded time, refuses the whole teardown whatever the other members look like: an earlier pass proves nothing about a group after an interval, and nothing else here holds the identity across one. The leader is also the shell that runs the allocation, so it can start a writer at any moment, including between the last scan and the removal; it is therefore stopped before that scan, and the kernel's stopped state is what is waited for, since a stop that did not take would leave the race in place. Only then are the remaining members ended and the file removed. The leader is ended last, after the fill is gone and its removal read back, and while it holds the group id nothing can reuse it. The record is kept until the fill's removal has been read back, so a removal that failed leaves a later call able to name the writer, and so does the leader: it is still there to prove the group. A call that finds no record passes only when the fill and the script are gone too, so repeating a finished teardown is safe and an unrecorded writer is not accepted. Zombies are not members to wait for, since they cannot write and their reaping is their parent's. Running out of the wait is a failure, so a writer that never ends fails the run instead of passing quietly, and the caller's retry has a real failure to retry. The removal is read back, because `rm` alone is not evidence: a claim remounted read-only leaves the fill behind, and a shell that does not test `rm` would report success over it.
 function stopFillerAndClear(): string {
   return [
     'fail() { echo "boot-matrix teardown: $*" >&2; exit 1; }',
@@ -367,6 +367,10 @@ function stopFillerAndClear(): string {
     "unproved() {",
     '  fail "the group $p the launch recorded has no leader that is still this filler, so it is not proved to be this filler\'s and is left alone"',
     "}",
+    "state() {",
+    '  set -- $(sed "s/.*) //" "/proc/$lp/stat" 2>/dev/null)',
+    '  echo "$1"',
+    "}",
     "i=0",
     "while [ $i -lt 400 ]; do",
     "  leader || unproved",
@@ -377,6 +381,18 @@ function stopFillerAndClear(): string {
     "  i=$((i + 1))",
     "done",
     "leader || unproved",
+    'kill -STOP "$lp" 2>/dev/null',
+    "i=0",
+    'while [ $i -lt 200 ] && [ "$(state)" != "T" ]; do sleep 0.05; i=$((i + 1)); done',
+    '[ "$(state)" = "T" ] || fail "the leader $lp of group $p could not be stopped, so a writer it starts from here would outlive the removal and the group could not be proved again; nothing is removed"',
+    "i=0",
+    "while [ $i -lt 200 ]; do",
+    "  left=$(others)",
+    '  [ -z "$left" ] && break',
+    "  kill -9 $left 2>/dev/null",
+    "  sleep 0.05",
+    "  i=$((i + 1))",
+    "done",
     '[ -z "$(others)" ] || fail "the filler group $p still has $(others | wc -l | tr -d " ") process(es) after the wait"',
     `rm -f ${claimFillPath} 2>/dev/null`,
     `[ ! -e ${claimFillPath} ] || fail "${claimFillPath} is still on the claim after its removal; the identity record and the group's leader are kept so that a later call can name the writer and prove the group again"`,
@@ -766,6 +782,25 @@ test("launches the claim filler and takes it down as the runner would", () => {
       existsSync(claim),
       "the fill was removed by a teardown it refused to run",
     ).toBe(true);
+    const racer = run(
+      launch(`while [ -e ${claim} ]; do :; done; echo late > ${claim}`),
+    );
+    expect(racer.status, `the racing launch failed: ${racer.stderr}`).toBe(0);
+    const racerGroup = readFileSync(`${filler}.pid`, "utf8")
+      .trim()
+      .split(" ")[1];
+    groups.push(racerGroup);
+    const drained = run(locally(stopFillerAndClear()));
+    expect(drained.status, `the teardown failed: ${drained.stderr}`).toBe(0);
+    expect(
+      existsSync(claim),
+      "the filler wrote after the teardown removed the fill, so a writer outlived the removal",
+    ).toBe(false);
+    expect(
+      members(racerGroup),
+      "a process of the filler's group outlived the teardown",
+    ).toBe("0");
+
     const script = locally(stopFillerAndClear());
     expect(
       script,
@@ -776,6 +811,7 @@ test("launches the claim filler and takes it down as the runner would", () => {
       "the teardown signals without checking that group's leader first",
     ).toMatch(/leader \|\| unproved\n\s*left=\$\(others\)/);
 
+    writeFileSync(claim, "content");
     const longest = run(launch([`sleep 300 &`, `sleep 301`].join("\n")));
     expect(longest.status, `the launch failed: ${longest.stderr}`).toBe(0);
     const [liveLeader, liveGroup, liveStart] = readFileSync(

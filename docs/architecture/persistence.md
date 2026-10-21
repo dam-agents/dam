@@ -247,18 +247,21 @@ It is an ordinary file of the root, so `useradd` replaces it as on any root, and
 The agent runs as root there, and a tool that takes its home from the user database rather than `HOME`, as OpenSSH does for keys and known hosts, would write to `/root` on that root, so the image's build gives uid 0's entry the agent's `HOME`.
 The old upper is renamed aside with the record of its image and deleted in the background, so a root of millions of files does not hold up the boot; one a stop cut short is deleted on the next boot.
 smolvm keeps a root of its own and binds the whole disk into it; platform-init leaves both behind, and fails the boot rather than run on them.
-Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root that start empty on every boot, whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
-`/var/cache` stays part of the root, because an image ships its font, package and linker caches there, and an empty folder over them had every boot rebuild them.
-They share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their least recently used entries, never anything outside them, and never through a link or a mount: a folder that is a link, such as a `~/.cache` an agent pointed at its work, or a mount it was not at boot, is skipped, an entry holding a mount stays whole, and no delete goes into a mount.
-An entry is one name directly in such a folder, such as `~/.cache/go-build` or `/tmp/pr-body.md`, and it goes whole or not at all, because a tool that keeps part of its cache takes it for complete and fails on it.
-Use is the newest modification or change time anywhere in the entry, since the disk is mounted `relatime` and a read often leaves access times alone.
-An entry used in the last ten minutes stays, and so does one that is or holds a file a process has locked, by any kind of lock, the way `systemd-tmpfiles` leaves a locked entry.
-A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that ten-minute rule on: each request the runner sends is served once, by one pass that keeps whatever was used in the last hour and stops at the bytes the runner asked of that machine.
-A cache tagged with `CACHEDIR.TAG` goes before an untagged entry of the same age, since its tool can rebuild it and an untagged one may be the agent's work in progress.
-Each eviction, and a disk still short once nothing is left to evict, is a line on the machine's console, which the runner reads.
-An agent that exits with its home nearly out of space or inodes is reported as a full home.
-A boot that finds the disk with no space or inode left first deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
-A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, since a grown disk has more of both.
+Temporary folders are the exception: `/tmp` and `/var/tmp` are directories of that root, empty on every boot whatever the image ships there, and `HOME`'s `.cache` and `.npm` are ordinary directories of the home.
+`/var/cache` stays in the root: an image ships its caches there, and an empty folder over them rebuilt them each boot.
+The caches share the disk with the agent's work, so when it runs short, or the runner marks the owner's claim under it short, platform-init deletes their oldest entries, never through a link or a mount.
+A disk pass runs until a fifth of the disk is free; a claim's stops at the bytes the runner asked for.
+It deletes only from `HOME`'s `.cache` and `.npm`, caches by the XDG specification and by npm, and never from `/tmp` or `/var/tmp`, whatever a directory's mark or age: a tool can drop that mark, write work there and rename it while a pass runs, so nothing makes one safe to delete.
+An entry goes whole or not at all: a tool keeping part of its cache takes it for complete and fails.
+Deletion is bound to the tree it judged, not the name it listed.
+Use is the newest modification or change time in the entry: a write moves those, a read moves none the guest keeps.
+An entry used in the last ten minutes stays.
+A short claim is mostly the agents' homes, which no eviction touches, so it does not bring that rule on: each request is served once, by one pass that keeps what was used in the last hour, stops at the bytes the runner asked of that machine, and reads the request again before each entry.
+A guest at its grant's floor keeps that hour with no byte bound, served once an hour rather than at every look.
+Each eviction, and a disk still short with nothing left to evict, is a console line.
+An agent that exits with its home nearly out of space or inodes is a full home.
+A boot that finds the disk with no space or inode left deletes what earlier boots set aside and the last boot's temporary folders, which it would empty anyway, and tries again.
+A boot that still has no room stops, and its console line says the home is full, so the runner reports a full home and its fix: more storage, which brings more of both.
 platform-init mounts the guest's storage disk with synchronous discards, so a block the agent frees reaches the runner's volume as its filesystem frees it and stops counting against the owner's storage; it also trims the whole disk every minute and before its guard preallocates, which retries the ranges still free.
 Both use the same discard, so a device that refuses one returns nothing.
 Once the image runs, the disk is reachable only through what platform-init mounted from it.
@@ -293,6 +296,7 @@ A refused growth is reported and reconciliation continues: the runner still serv
 **The runner guards the claim by its use.** The disks are sparse, so they can add up to more than the claim holds, and a guest sees its own disk as free while the claim under it fills; once the claim has no block left, a guest's write into its disk has nowhere to go.
 So the runner measures the claim itself: past 75% used it asks every machine's guest, through its share, to give back scratch: each running one its even part of what would bring use back under 70%.
 It asks again only once the claim has filled five points further, and clears the request once use is back under 70%, so a claim the homes keep full has not every guest delete its scratch again every minute.
+A guest a grant holds is judged by the room its guard leaves it, not by the disk's share.
 A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init preallocates unnamed files on the disk so the guest can write only what is left of its grant.
 A claim the runner cannot measure grants nothing, so no guest is held to it, and it says so each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
@@ -301,7 +305,7 @@ A write past it fails inside the guest with "no space left on device", which the
 Their blocks are only marked in the guest's filesystem, never written, so they take nothing from the claim, and they have no names, so the filesystem frees them when the guest stops.
 btrfs reports free space late, and as an estimate that can pass the disk's size, so the guard reads what it holds from its files' blocks, syncs before it moves, moves past a margin once per commit at most, and grows only as far as the disk takes.
 A shrink drops whole files, never part of one, and a clean stop releases them all.
-Eviction does not count it as used, so a guest held to the claim does not read its own disk as short.
+Eviction counts the guard's blocks back as free while no grant holds the guest, so a guest held to the claim does not read its own disk as short.
 The guard counts what the guest's filesystem reports as used, so it does not see all that the claim gives a disk: metadata blocks are holes until first written, and blocks a guest frees take room on the claim until their discard reaches it.
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.

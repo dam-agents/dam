@@ -54,6 +54,83 @@ async fn a_stopped_machine_reports_no_cpu() {
     assert_eq!(cpu(&h), Some(0), "a stopped machine reports none");
 }
 
+#[tokio::test(flavor = "current_thread")]
+async fn a_probe_that_began_before_a_cut_publishes_nothing() {
+    let dir = crate::testdir::TempDir::new("cut-probe");
+    let path = dir.path().join(crate::console::VMM_LOG);
+    let mut log = format!(
+        "[t ERROR init_or_kernel] [    9.1] platform-init: {}: this agent may write nothing more\n",
+        crate::guest::GUEST_FULL
+    );
+    for i in 0..20_000 {
+        log.push_str(&format!("[t WARN  smolvm_network::stack] guest SYN {i}\n"));
+    }
+    std::fs::write(&path, &log).unwrap();
+    let size = std::fs::metadata(&path).unwrap().len();
+    let room = format!(
+            "[t ERROR init_or_kernel] [   60.2] platform-init: {}: the agent's writes are no longer held back\n",
+            crate::guest::GUEST_ROOM
+        );
+
+    let h = Harness::new("cut-probe");
+    h.server.put("m1", spec(true)).unwrap();
+    let began = h.machine("m1", |m| {
+        m.boot = Some(Boot {
+            at: Instant::now(),
+            action: Action::Start,
+            seed: None,
+            note: None,
+        });
+        (m.boot.as_ref().map(|boot| boot.at), m.kernel_cuts)
+    });
+    let mut sampled: Option<(u64, String)> = None;
+    let mut calls = 0;
+    crate::console::trim_with(&path, size, &mut || {
+        calls += 1;
+        if calls == 2 {
+            std::fs::OpenOptions::new()
+                .append(true)
+                .open(&path)
+                .unwrap()
+                .write_all(room.as_bytes())
+                .unwrap();
+            sampled = Some(crate::console::kernel_since(&path, 0));
+        }
+    })
+    .unwrap();
+    let (read, text) = sampled.expect("the probe read the log during the cut");
+    assert_eq!(
+        crate::console::room_full(&text),
+        Some(false),
+        "the probe read the guest's newest mark: {text:.160}"
+    );
+    let (_, stale) = crate::console::kernel_since(&path, read);
+    assert_eq!(
+        crate::console::room_full(&stale),
+        Some(true),
+        "the offset that probe read to names the older mark as the newest: {stale:.160}"
+    );
+
+    h.server.forget_kernel_read("m1");
+    let (current, from) = h.machine("m1", |m| {
+        (Server::read_current(m, began.0, began.1), m.kernel_read)
+    });
+    assert!(
+        !current,
+        "a read of the log as it was before the cut is published over the log the cut left"
+    );
+    assert_eq!(
+        from, 0,
+        "the next probe reads the log the cut left from its start"
+    );
+    let (_, after) = crate::console::kernel_since(&path, from);
+    assert_eq!(
+        crate::console::room_full(&after),
+        Some(false),
+        "the log the cut left still says the guest has room: {after:.160}"
+    );
+}
+
 // TEST_SCENARIO: a status read reads the machine's seeded record off its share, and a disk that stalls holds that read for as long as it stalls. It must hold up only the read of that machine: one held under the machine lock would freeze every ensure, status, probe and delete on the runner.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_stalled_share_holds_up_only_the_status_of_its_machine() {
