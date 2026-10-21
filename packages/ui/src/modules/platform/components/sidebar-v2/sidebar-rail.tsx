@@ -1,4 +1,11 @@
-import { Add, ChevronRight, Home, Pin, Settings } from "@carbon/icons-react";
+import {
+  Add,
+  ChevronRight,
+  Home,
+  NewTab,
+  Pin,
+  Settings,
+} from "@carbon/icons-react";
 import {
   type FocusEvent,
   type PointerEvent,
@@ -29,6 +36,7 @@ import {
   AgentAvatar,
   avatarMood,
 } from "../../../agents/components/avatar/agent-avatar.js";
+import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
@@ -50,6 +58,7 @@ export function SidebarRail({
   onNavigate?: () => void;
 }) {
   const { agents, openAgentId, unreadAgentIds } = useSidebarAgents();
+  const defaultAgent = useCreateDefaultAgent();
   const approvals = useApprovalsForOwner().data;
   const pins = usePinnedSessions();
   const homeOpen = useStore((s) => s.view === "home");
@@ -146,6 +155,19 @@ export function SidebarRail({
             onNavigate={navigate}
           />
         ))}
+        <button
+          type="button"
+          aria-label="New agent"
+          data-testid="sidebar-rail-new-agent"
+          disabled={!defaultAgent.ready}
+          onClick={() => {
+            navigate();
+            void defaultAgent.create();
+          }}
+          className={cn(railTile(false), FOCUS_RING)}
+        >
+          <NewTab size={RAIL_GLYPH} />
+        </button>
       </div>
       <button
         type="button"

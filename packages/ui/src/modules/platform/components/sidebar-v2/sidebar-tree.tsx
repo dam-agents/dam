@@ -4,6 +4,7 @@ import {
   ChevronRight,
   Home,
   ListTree,
+  NewTab,
   Settings,
 } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
@@ -252,7 +253,7 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
           {groupBy === "agents" && (
             <div className="mt-px">
               <AddRow
-                icon={Add}
+                icon={NewTab}
                 label="New agent"
                 testId="sidebar-new-agent-row"
                 disabled={!defaultAgent.ready}

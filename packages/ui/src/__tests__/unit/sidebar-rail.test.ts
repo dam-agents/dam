@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: Collapsed, JanUI's sidebar stays in the layout one icon wide: a tile that expands it again, Home, the Pinned tile once the browser holds a pin, one tile per Agent in the tree's manual order with a dot while that Agent awaits an approval or holds an unread Session, and Settings.
+// TEST_OVERVIEW: Collapsed, JanUI's sidebar stays in the layout one icon wide: a tile that expands it again, Home, the Pinned tile once the browser holds a pin, one tile per Agent in the tree's manual order with a dot while that Agent awaits an approval or holds an unread Session, a New agent tile closing them, and Settings.
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -34,6 +34,9 @@ vi.mock("../../modules/agents/api/mutations.js", () => ({
 }));
 vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
   useConfirmDeleteAgent: () => async () => false,
+}));
+vi.mock("../../modules/agents/hooks/use-create-default-agent.js", () => ({
+  useCreateDefaultAgent: () => ({ ready: true, create: () => {} }),
 }));
 vi.mock("../../modules/sessions/lib/agent-session-filters.js", () => ({
   useAgentSessionFilter: () => undefined,
@@ -94,6 +97,13 @@ it("draws the expand, home and settings tiles and one tile per Agent", () => {
       ),
     ].map((m) => m[1]),
   ).toEqual(["a1", "a2"]);
+});
+
+// TEST_SCENARIO: the Agents end with a New agent tile, in the same column and at the same size as theirs.
+it("ends the Agent tiles with a New agent tile", () => {
+  const html = render();
+  expect(html).toContain('data-testid="sidebar-rail-new-agent"');
+  expect(html).toContain('aria-label="New agent"');
 });
 
 // TEST_SCENARIO: the pin tile appears once the browser holds a pin, since the popover it opens would otherwise be empty.

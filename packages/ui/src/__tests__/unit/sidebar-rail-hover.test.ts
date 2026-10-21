@@ -13,6 +13,7 @@ const env = vi.hoisted(() => ({
   startSession: vi.fn(),
   navigated: vi.fn(),
   filtered: vi.fn(),
+  createAgent: vi.fn(),
 }));
 
 vi.mock("../../store.js", () => ({
@@ -49,6 +50,9 @@ vi.mock("../../modules/agents/api/mutations.js", () => ({
 }));
 vi.mock("../../modules/agents/hooks/use-confirm-delete-agent.js", () => ({
   useConfirmDeleteAgent: () => vi.fn(),
+}));
+vi.mock("../../modules/agents/hooks/use-create-default-agent.js", () => ({
+  useCreateDefaultAgent: () => ({ ready: true, create: env.createAgent }),
 }));
 vi.mock("../../modules/home/components/activity-filter-menu.js", async () => {
   const { createElement: h, useState } = await import("react");
@@ -288,6 +292,23 @@ it("leaves the popover open when the tile is clicked", () => {
   expect(env.startSession).toHaveBeenCalledWith("a1");
   act(() => void vi.advanceTimersByTime(400));
   expect(popover()).not.toBeNull();
+});
+
+// TEST_SCENARIO: the rail ends its Agents with a New agent tile, which does what the New agent row closing the expanded list does.
+it("creates an agent from the rail's New agent tile", () => {
+  const newAgent = container.querySelector<HTMLButtonElement>(
+    '[data-testid="sidebar-rail-new-agent"]',
+  )!;
+  expect(newAgent).not.toBeNull();
+  const tiles = [
+    ...container.querySelectorAll(
+      '[data-testid="sidebar-rail-agent"], [data-testid="sidebar-rail-new-agent"]',
+    ),
+  ];
+  expect(tiles[tiles.length - 1]).toBe(newAgent);
+  act(() => newAgent.click());
+  expect(env.createAgent).toHaveBeenCalled();
+  expect(env.navigated).toHaveBeenCalled();
 });
 
 const pinnedTile = () =>
