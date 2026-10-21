@@ -39,9 +39,9 @@ export function SidebarV2() {
   const railed = useRef(false);
   // UNIT_BOUNDARY_DESCRIPTION: the room the navigation itself is about to take is the user's own doing while they drag it, so the drag never changes the mode; only a viewport or a rail that no longer fits it does.
   const mode = resizing
-    ? railed.current
-      ? "rail"
-      : "layout"
+    ? pinned
+      ? "layout"
+      : "rail"
     : navigationMode({
         viewport,
         sidebarWidth: width,
@@ -123,46 +123,31 @@ export function SidebarV2() {
           />
         )}
       </nav>
-      {mode === "rail" && !over && (
-        <div className="flex" data-testid="app-sidebar-resize-rail">
+      {/* UNIT_BOUNDARY_DESCRIPTION: one handle serves the rail and the pane, so a drag that crosses between them keeps its grip instead of being cut short when the other handle would have taken over. */}
+      {!over && (
+        <div
+          className="flex"
+          data-testid={
+            expanded ? "app-sidebar-resize" : "app-sidebar-resize-rail"
+          }
+        >
           <ResizeHandle
             side="left"
             label="Resize navigation"
-            value={SIDEBAR_COLLAPSED_W}
-            onResize={(delta) => {
-              dragBy.current += delta;
-              const dragged = SIDEBAR_COLLAPSED_W + dragBy.current;
-              if (snapSidebarWidth(dragged, maxWidth) === "rail") return;
-              setPinned(true);
-              setWidthTo(dragged, maxWidth);
-            }}
-            onDragEnd={() => {
-              dragBy.current = 0;
-              dragFrom.current = null;
-              endResize();
-            }}
-          />
-        </div>
-      )}
-      {expanded && (
-        <div className="flex" data-testid="app-sidebar-resize">
-          <ResizeHandle
-            side="left"
-            label="Resize navigation"
-            value={width}
+            value={expanded ? width : SIDEBAR_COLLAPSED_W}
             onResize={(delta) => {
               // UNIT_BOUNDARY_DESCRIPTION: the snap reads the drag as the user made it rather than the width the drag was last held to, so pulling the edge most of the way down gives the navigation up instead of resting at its narrowest.
-              dragFrom.current ??= width;
+              dragFrom.current ??= expanded ? width : SIDEBAR_COLLAPSED_W;
               dragBy.current += delta;
               const snapped = snapSidebarWidth(
                 dragFrom.current + dragBy.current,
                 maxWidth,
               );
-              if (snapped === "rail") {
-                setPinned(false);
-                return;
+              if (snapped === "rail") setPinned(false);
+              else {
+                setPinned(true);
+                setWidthTo(snapped, maxWidth);
               }
-              setWidthTo(snapped, maxWidth);
             }}
             onDragEnd={() => {
               dragBy.current = 0;
