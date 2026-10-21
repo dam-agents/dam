@@ -29,7 +29,9 @@ async function runTurn(
   if (existing) {
     onSession();
     try {
-      await acp.sendPrompt(turn.prompt, { resumeSessionId: existing.sessionId });
+      await acp.sendPrompt(turn.prompt, {
+        resumeSessionId: existing.sessionId,
+      });
       return;
     } catch (err) {
       if (!(err instanceof AcpSessionLoadError)) throw err;

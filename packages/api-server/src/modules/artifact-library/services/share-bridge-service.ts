@@ -73,21 +73,17 @@ export function createShareBridgeService(deps: {
     kind: ViewerCallKind,
     denial: ViewerBridgeDenial | null,
   ): void {
-    securityLog(
-      denial === null ? "info" : "warn",
-      `artifact.viewer_${kind}`,
-      {
-        category: "authz",
-        actor: viewer.sub,
-        actorKind: "external",
-        surface: "share",
-        decision: denial === null ? "allow" : "deny",
-        target: artifact.id,
-        ...(artifact.agentId ? { agentId: artifact.agentId } : {}),
-        ...(denial === null ? {} : { reason: denial }),
-        detail: { viewerEmail: viewer.email, owner: artifact.owner },
-      },
-    );
+    securityLog(denial === null ? "info" : "warn", `artifact.viewer_${kind}`, {
+      category: "authz",
+      actor: viewer.sub,
+      actorKind: "external",
+      surface: "share",
+      decision: denial === null ? "allow" : "deny",
+      target: artifact.id,
+      ...(artifact.agentId ? { agentId: artifact.agentId } : {}),
+      ...(denial === null ? {} : { reason: denial }),
+      detail: { viewerEmail: viewer.email, owner: artifact.owner },
+    });
   }
 
   async function agentFor(

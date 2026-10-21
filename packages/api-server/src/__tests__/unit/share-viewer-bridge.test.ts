@@ -69,7 +69,11 @@ const alice: ShareSession = {
   emailVerified: true,
   createdAt: 0,
 };
-const bob: ShareSession = { ...alice, sub: "bob-sub", email: "bob@example.com" };
+const bob: ShareSession = {
+  ...alice,
+  sub: "bob-sub",
+  email: "bob@example.com",
+};
 
 interface World {
   artifact: ArtifactRow;
@@ -244,8 +248,13 @@ describe("a viewer's request on a shared interactive page", () => {
    */
   it("refuses anyone not signed in and on the viewer list, every call", async () => {
     const { w, app } = world();
-    expect((await call(app, "/a/slug-a/request", getState, { sid: null })).status).toBe(401);
-    expect((await call(app, "/a/slug-a/request", getState, { sid: "sid-bob" })).status).toBe(403);
+    expect(
+      (await call(app, "/a/slug-a/request", getState, { sid: null })).status,
+    ).toBe(401);
+    expect(
+      (await call(app, "/a/slug-a/request", getState, { sid: "sid-bob" }))
+        .status,
+    ).toBe(403);
     expect((await call(app, "/a/slug-a/request", getState)).status).toBe(200);
     w.viewers.length = 0;
     const removed = await call(app, "/a/slug-a/request", getState);
@@ -263,7 +272,11 @@ describe("a viewer's request on a shared interactive page", () => {
    */
   it("refuses a call that does not come from the share page's origin", async () => {
     const { w, app } = world();
-    for (const origin of ["https://content.example.com", "https://evil.example", null]) {
+    for (const origin of [
+      "https://content.example.com",
+      "https://evil.example",
+      null,
+    ]) {
       const res = await call(app, "/a/slug-a/request", getState, { origin });
       expect(res.status).toBe(403);
     }
@@ -312,7 +325,10 @@ describe("a viewer's request on a shared interactive page", () => {
     ]) {
       const res = await call(app, "/a/slug-a/request", body);
       expect(res.status).toBe(400);
-      expect(await res.json()).toEqual({ ok: false, reason: "invalid-request" });
+      expect(await res.json()).toEqual({
+        ok: false,
+        reason: "invalid-request",
+      });
     }
     expect(w.appRequests).toEqual([]);
   });
@@ -320,7 +336,10 @@ describe("a viewer's request on a shared interactive page", () => {
   it("reports an agent that does not wake as unreachable", async () => {
     const { app } = world({ wakeFails: true });
     const res = await call(app, "/a/slug-a/request", getState);
-    expect(await res.json()).toEqual({ ok: false, reason: "agent-unreachable" });
+    expect(await res.json()).toEqual({
+      ok: false,
+      reason: "agent-unreachable",
+    });
   });
 
   /**
@@ -330,7 +349,10 @@ describe("a viewer's request on a shared interactive page", () => {
    */
   it("records every call under the viewer in the security log", async () => {
     const { w, app } = world();
-    await call(app, "/a/slug-a/request", { method: "GET", path: "/secret-path" });
+    await call(app, "/a/slug-a/request", {
+      method: "GET",
+      path: "/secret-path",
+    });
     await call(app, "/a/slug-a/request", getState, { sid: "sid-bob" });
     w.featureOn = false;
     await call(app, "/a/slug-a/request", getState);
@@ -391,7 +413,12 @@ describe("a viewer's prompt on a shared interactive page", () => {
 
   it("refuses a prompt from someone not on the viewer list", async () => {
     const { w, app } = world();
-    const res = await call(app, "/a/slug-a/prompt", { prompt: "Hi" }, { sid: "sid-bob" });
+    const res = await call(
+      app,
+      "/a/slug-a/prompt",
+      { prompt: "Hi" },
+      { sid: "sid-bob" },
+    );
     expect(res.status).toBe(403);
     expect(w.delivered).toEqual([]);
     expect(loggedEvents()).toEqual([
@@ -409,7 +436,10 @@ describe("a viewer's prompt on a shared interactive page", () => {
     async (prompt) => {
       const { w, app } = world();
       const res = await call(app, "/a/slug-a/prompt", { prompt });
-      expect(await res.json()).toEqual({ ok: false, reason: "invalid-request" });
+      expect(await res.json()).toEqual({
+        ok: false,
+        reason: "invalid-request",
+      });
       expect(w.delivered).toEqual([]);
     },
   );
@@ -481,7 +511,11 @@ describe("delivering a viewer's prompt", () => {
       triggerSession: () => Promise.reject(new Error("unused")),
       turnStatus: () => Promise.resolve("unknown"),
     };
-    return { acp, sent, finishTurns: () => turns.splice(0).forEach((f) => f()) };
+    return {
+      acp,
+      sent,
+      finishTurns: () => turns.splice(0).forEach((f) => f()),
+    };
   }
 
   function delivery(

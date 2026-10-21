@@ -143,8 +143,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
     if (resolution.state !== "restricted")
       return { ok: false, response: c.json(NOT_ALLOWED, 404) };
     const session = await readShareSession(c, auth, deps.sessionCookie);
-    if (!session)
-      return { ok: false, response: c.json(NOT_ALLOWED, 401) };
+    if (!session) return { ok: false, response: c.json(NOT_ALLOWED, 401) };
     if ((await viewer.canView(resolution.artifact, session)) === "deny") {
       deps.bridge.refuse(resolution.artifact, session, kind, "not-a-viewer");
       return { ok: false, response: c.json(NOT_ALLOWED, 403) };
