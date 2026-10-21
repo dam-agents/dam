@@ -13,6 +13,7 @@ import { useStore } from "../../../../store.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { holdBackEntry } from "../../lib/back-entry.js";
 import {
+  RIGHT_RAIL_W,
   SIDEBAR_COLLAPSED_W,
   sidebarMaxWidth,
   snapSidebarWidth,
@@ -44,14 +45,14 @@ export function SidebarV2() {
     : navigationMode({
         viewport,
         sidebarWidth: width,
-        rightRailWidth: 60,
+        rightRailWidth: RIGHT_RAIL_W,
         railed: railed.current,
       });
   railed.current = mode === "rail";
   const expanded = pinned && mode === "layout";
   const maxWidth = sidebarMaxWidth({
     viewport,
-    rightRailWidth: 60,
+    rightRailWidth: RIGHT_RAIL_W,
     contentMinWidth: MIN_CONTENT_WIDTH,
   });
   // UNIT_BOUNDARY_DESCRIPTION: a drag is read from where it started and how far it has gone, so the edge stays under the pointer whatever the pane was clamped to on the way.
@@ -86,14 +87,16 @@ export function SidebarV2() {
         className={cn(
           "flex flex-col border-r border-border bg-chrome",
           over
-            ? "fixed inset-y-0 left-0 right-[60px] z-overlay"
+            ? "fixed inset-y-0 left-0 z-overlay"
             : "relative h-full shrink-0",
           !over &&
             "transition-[width] duration-200 ease-out motion-reduce:transition-none",
           resizing && "transition-none",
           !expanded && !over && "w-14 overflow-visible",
         )}
-        style={expanded && !over ? { width } : undefined}
+        style={
+          over ? { right: RIGHT_RAIL_W } : expanded ? { width } : undefined
+        }
         data-testid="app-sidebar"
         data-pinned={expanded || undefined}
         data-collapsed={!expanded || undefined}

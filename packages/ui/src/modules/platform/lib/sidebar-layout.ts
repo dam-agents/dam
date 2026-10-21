@@ -1,4 +1,6 @@
 export const SIDEBAR_COLLAPSED_W = 56;
+// UNIT_BOUNDARY_DESCRIPTION: the right rail's width, which is the side panel's bar of tile icons (`w-14`) and nothing else; a pane laid over the page stops exactly where it starts.
+export const RIGHT_RAIL_W = 56;
 export const SIDEBAR_DEFAULT_W = 260;
 export const SIDEBAR_MIN_W = 220;
 const SIDEBAR_MAX_W = 520;
