@@ -1577,19 +1577,22 @@ func runnerReplicaSet(t *testing.T, r *AgentReconciler, owner, reason string) *a
 	return created
 }
 
-// TEST_SCENARIO: the dev case. One owner's rolled pod is refused at admission, so no Pod object is ever created and its ReplicaSet carries the refusal as a FailedCreate — an SCC that denies a capability the runner asks for. The refusal is that owner's own fault, not the release's, so past the settle timeout the roll moves on and the next owner's runner rolls. Without that condition the same no-pod runner is a broken release and keeps its place, which is what the fleet halted on.
+// TEST_SCENARIO: the dev case. One owner's rolled pod is refused at admission, so no Pod object is ever created and its ReplicaSet carries the refusal as a FailedCreate — admission refused an object of that owner's own. Another owner's runner already runs that same pod shape and is ready, which proves the refusal names one owner and not the release, so past the settle timeout the roll moves on and the next owner's runner rolls. A no-pod runner with no refusal recorded is a broken release and keeps its place.
 func TestARunnerRefusedAtAdmissionDoesNotStallTheRoll(t *testing.T) {
 	for name, tc := range map[string]struct {
 		refusal   string
 		nextRolls bool
 	}{
-		"refused at admission": {refusal: "FailedCreate", nextRolls: true},
-		"no refusal recorded":  {nextRolls: false},
+		"refused at admission beside a ready peer": {refusal: "FailedCreate", nextRolls: true},
+		"no refusal recorded":                      {nextRolls: false},
 	} {
 		t.Run(name, func(t *testing.T) {
 			ctx := context.Background()
-			r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+			r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
 			changeRunnerPod(r)
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-peer", r.runnerOwnerRef(ctx), true))
+			settleRunnerPod(t, r, "owner-peer")
+			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-peer", r.runnerOwnerRef(ctx), true))
 			require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 			runnerReplicaSet(t, r, "owner-a", tc.refusal)
 			setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
@@ -1602,6 +1605,20 @@ func TestARunnerRefusedAtAdmissionDoesNotStallTheRoll(t *testing.T) {
 			assert.Equal(t, want, runnerImageOf(t, r, "owner-b"))
 		})
 	}
+}
+
+// TEST_SCENARIO: a release breaks the runner pod shape, so admission refuses every owner's create and the first rolled runner has no pod and a FailedCreate. No peer runs that template, so the refusal is the release's and not one owner's: the roll keeps its place, the next owner does not roll, and the stalled runner is marked. That is the halt the design intends, kept for a truly broken release.
+func TestARefusalThatBreaksEveryRunnerHaltsTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	changeRunnerPod(r)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	runnerReplicaSet(t, r, "owner-a", "FailedCreate")
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "no peer runs the template, so the refusal halts the roll")
+	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
 }
 
 // TEST_SCENARIO: a release whose new pod never becomes ready halts the roll at the first runner, so the release goes no further — but only for `rollout.stalledTimeout`. Past it the stalled runner gives up its place, keeps its stalled mark and gains a Warning Event, and the next owner's runner rolls, so a broken release breaks owners one at a time instead of freezing every owner's upgrade.

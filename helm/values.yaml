@@ -405,10 +405,10 @@ virtualization:
       # A roll whose new pod never becomes ready is a broken release, and it
       # keeps its place so the release goes no further. `stalledTimeout`
       # bounds that hold: past it the place is released and the next runner
-      # may roll, so a refusal that names one owner (an SCC that denies the
-      # runner's capabilities, a quota of theirs) breaks owners one at a time
-      # instead of freezing every owner's upgrade. The stalled runner keeps
-      # its `agent-platform.ai/runner-roll-stalled` mark and a Warning Event.
+      # may roll, so one owner's admission refusal breaks owners one at a
+      # time instead of freezing every owner's upgrade. The stalled runner
+      # keeps its `agent-platform.ai/runner-roll-stalled` mark and a Warning
+      # Event.
       stalledTimeout: 30m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
