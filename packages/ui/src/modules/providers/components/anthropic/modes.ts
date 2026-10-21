@@ -24,6 +24,7 @@ export const MODES = {
     placeholder: "sk-ant-oat-…",
     prefix: prefixFor("oauth"),
     templateId: modeFor("oauth").templateId,
+    keyPage: undefined,
   },
   "api-key": {
     label: modeFor("api-key").label,
@@ -42,6 +43,6 @@ export const MODES = {
     placeholder: string;
     prefix: string;
     templateId: string;
-    keyPage?: ProviderKeyPage;
+    keyPage: ProviderKeyPage | undefined;
   }
 >;
