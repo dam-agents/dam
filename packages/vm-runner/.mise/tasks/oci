@@ -136,7 +136,12 @@ fi
 # Its target stays between builds; only the sources are reset.
 git -C "$lk" checkout -q -- .
 git -C "$lk" apply "$pkg/libkrun.patch"
-env -u CARGO_TARGET_DIR LIBCLANG_PATH="$(dirname "$(find /usr/lib -name 'libclang.so*' | head -1)")" RUSTFLAGS="-C relro-level=partial" \
+# The Makefile's cargo runs in $lk, outside the repo, where mise loads no
+# config: the project's cargo wrapper, or a mise shim, finds no rust version
+# there and stops. The toolchain's own bin, resolved here in the repo, goes
+# first on PATH instead, so the build needs no global mise version.
+lk_bin="$(rustc --print sysroot)/bin"
+env -u CARGO_TARGET_DIR PATH="$lk_bin:$PATH" LIBCLANG_PATH="$(dirname "$(find /usr/lib -name 'libclang.so*' | head -1)")" RUSTFLAGS="-C relro-level=partial" \
   make -C "$lk" --no-print-directory BLK=1 NET=1 INPUT=1 GPU=1 >/dev/null
 lk_so="$lk/target/release/libkrun.so.2.0.0"
 patchelf --remove-needed libvirglrenderer.so.1 "$lk_so"
