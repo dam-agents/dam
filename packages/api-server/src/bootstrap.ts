@@ -1343,6 +1343,7 @@ export async function bootstrap() {
           },
           pendingOAuthFlows: pendingTelegramOAuthFlows,
           isTermsAccepted,
+          ownerOf: (agentId) => agentsRepo.getOwner(agentId),
           spendHold: channelSpendHold,
           uiBaseUrl: config.uiBaseUrl,
           brandName: config.brand.name,

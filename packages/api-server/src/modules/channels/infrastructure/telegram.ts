@@ -262,6 +262,8 @@ export function createTelegramMessageHandler(deps: {
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  ownerOf: (agentId: string) => Promise<string | null>;
+  emit: (event: DomainEvent) => void;
   spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
   brandName: string;
@@ -345,6 +347,7 @@ export function createTelegramMessageHandler(deps: {
       await thread.post("This chat isn't connected to an agent.");
       return;
     }
+    const ownerSub = await deps.ownerOf(binding.agentId);
     await deps.conversations.unbind(chat);
     securityLog("info", "channel.chat_unbound", {
       category: "authz-list",
@@ -355,6 +358,12 @@ export function createTelegramMessageHandler(deps: {
       result: "success",
       detail: { conversationId: chat, byTelegramUserId: telegramUserId },
     });
+    if (ownerSub)
+      deps.emit({
+        type: EventType.TelegramChatUnbound,
+        ownerSub,
+        agentId: binding.agentId,
+      });
     await thread.post("Chat disconnected. Send `/bind` to connect it again.");
   }
 
@@ -587,6 +596,7 @@ export function createTelegramWorker(deps: {
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
+  ownerOf: (agentId: string) => Promise<string | null>;
   settleMs?: number;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
@@ -910,6 +920,8 @@ export function createTelegramWorker(deps: {
           oauthConfig: deps.oauthConfig,
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
+          ownerOf: deps.ownerOf,
+          emit,
           ...(deps.spendHold ? { spendHold: deps.spendHold } : {}),
           uiBaseUrl: deps.uiBaseUrl,
           brandName,
