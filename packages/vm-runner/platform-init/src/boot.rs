@@ -3270,7 +3270,7 @@ mod tests {
         drop(taken);
     }
 
-    // TEST_SCENARIO: a stop test that deleted its own PUBLISHED acquisition is caught only when it runs alone, because the lock is then free and this try takes it; beside another test that holds PUBLISHED the try fails whether or not the caller took it, so there it proves the lock is held by someone and nothing about the caller. Every stop test takes PUBLISHED, and this is the check that catches a later edit which drops the acquisition in an isolated run.
+    // TEST_SCENARIO: a stop test that deleted its own PUBLISHED acquisition is caught when no other test holds PUBLISHED, for example in an isolated run, because the lock is then free and this try takes it; while another test holds PUBLISHED the try fails whether or not the caller took it, so then it proves the lock is held by someone and nothing about the caller. Every stop test takes PUBLISHED, and this is the check that catches a later edit which drops the acquisition.
     fn holds_publication_lock() {
         assert!(
             PUBLISHED.try_lock().is_err(),
