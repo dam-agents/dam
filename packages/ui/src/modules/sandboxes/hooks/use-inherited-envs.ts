@@ -1,6 +1,5 @@
 import {
   type ConnectionView,
-  displayNameForTemplate,
   isProtectedAgentEnvName,
   providerTypeForTemplateId,
 } from "api-server-api";
@@ -42,7 +41,7 @@ export function inheritedEnvs({
     const provider = providerTypeForTemplateId(a.templateId);
     const source = provider
       ? {
-          label: displayNameForTemplate(a.templateId) ?? providerName(provider),
+          label: providerName(provider, a.templateId),
           kind: "provider" as const,
         }
       : { label: a.name, kind: "connection" as const };

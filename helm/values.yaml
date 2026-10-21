@@ -1237,7 +1237,10 @@ apiServer:
   # which lands in the chart's credentials Secret. The api-server reads the key
   # at start, so after rotating it in an existing Secret restart the api-server;
   # it then rewrites the copy each user's Connection holds. Calls are metered
-  # per user like any other provider.
+  # per user like any other provider. Mint the key for inference only, with
+  # LiteLLM `allowed_routes: ["llm_api_routes"]`: the gateway injects it on the
+  # proxy's inference and model-listing paths alone, and the key's own scope is
+  # what keeps it off the proxy's management routes when a path slips through.
   curveBenderDeployment:
     apiKeySecret:
       name: ""

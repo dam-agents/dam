@@ -156,6 +156,7 @@ export interface ManagedProvider {
   name: string;
   key: string | null;
   ca: string | null;
+  refusal: string;
   enabled: () => Promise<boolean>;
 }
 
@@ -211,9 +212,13 @@ export function createConnectionsService(deps: {
   async function firstProviderPerAlias(
     fits: (type: ProviderPresetType, templateId: string) => boolean,
     harness?: string,
+    upTo?: string,
   ): Promise<{ id: string; type: ProviderPresetType }[]> {
+    const oldest = await deps.repo.listByOwnerOldestFirst(deps.ownerId);
+    const cutoff =
+      upTo === undefined ? -1 : oldest.findIndex((c) => c.id === upTo);
     const usable = (
-      await deps.repo.listByOwnerOldestFirst(deps.ownerId)
+      cutoff === -1 ? oldest : oldest.slice(0, cutoff + 1)
     ).flatMap((c) => {
       const type = providerTypeForTemplateId(c.templateId);
       return type !== null &&
@@ -1006,8 +1011,10 @@ export function createConnectionsService(deps: {
       }
     },
 
-    async defaultProviderConnections(fits, harness) {
-      return (await firstProviderPerAlias(fits, harness)).map((c) => c.id);
+    async defaultProviderConnections(fits, harness, upTo) {
+      return (await firstProviderPerAlias(fits, harness, upTo)).map(
+        (c) => c.id,
+      );
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {
@@ -1733,6 +1740,8 @@ export function createConnectionsService(deps: {
       name: deps.brandName,
       key: deps.platformProviderKey,
       ca: deps.platformProviderCa ?? null,
+      refusal:
+        "The built-in provider is managed by its feature. Turn the feature on or off in Settings instead.",
       enabled: deps.platformProviderEnabled,
     },
     {
@@ -1740,6 +1749,8 @@ export function createConnectionsService(deps: {
       name: displayNameForTemplate(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID)!,
       key: deps.curveBenderDeploymentKey ?? null,
       ca: null,
+      refusal:
+        "This provider is managed by the deployment, so it can be neither connected nor changed by hand.",
       enabled: async () => true,
     },
   ];
@@ -1764,13 +1775,14 @@ export function createConnectionsService(deps: {
           .map((c) => c.name),
       ),
     );
+    const stored =
+      keep?.auth.kind === "header"
+        ? await deps.secretStore.get(keep.auth.valueRef)
+        : null;
     const rotated =
       keep?.auth.kind === "header" &&
-      ((await deps.secretStore.getField(keep.auth.valueRef)) !== key ||
-        (await deps.secretStore.getField({
-          ...keep.auth.valueRef,
-          field: UPSTREAM_CA_SECRET_FIELD,
-        })) !== ca);
+      (stored?.[keep.auth.valueRef.field] !== key ||
+        (stored?.[UPSTREAM_CA_SECRET_FIELD] ?? null) !== ca);
     const stale =
       keep !== undefined &&
       (keep.name !== name ||
@@ -1864,11 +1876,11 @@ export function createConnectionsService(deps: {
       await reconcileManagedProvider(provider);
   }
 
-  const refuseUserManaged = () =>
+  const refuseUserManaged = (templateId: string) =>
     new TRPCError({
       code: "FORBIDDEN",
-      message:
-        "This provider is managed by the deployment, so it can be neither connected nor changed by hand.",
+      message: managedProviders.find((p) => p.templateId === templateId)!
+        .refusal,
     });
 
   return {
@@ -1893,21 +1905,21 @@ export function createConnectionsService(deps: {
     },
     async createFromTemplate(input) {
       if (managedProviders.some((p) => p.templateId === input.templateId)) {
-        throw refuseUserManaged();
+        throw refuseUserManaged(input.templateId);
       }
       return service.createFromTemplate(input);
     },
     async deleteConnection(id) {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (conn && isManaged(conn)) {
-        throw refuseUserManaged();
+        throw refuseUserManaged(conn.templateId);
       }
       return service.deleteConnection(id);
     },
     async update(id, credential) {
       const conn = await deps.repo.get(id, deps.ownerId);
       if (conn && isManaged(conn)) {
-        throw refuseUserManaged();
+        throw refuseUserManaged(conn.templateId);
       }
       return service.update(id, credential);
     },

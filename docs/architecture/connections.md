@@ -306,7 +306,10 @@ The install sets that key in its chart values (exact keys in [`helm/values.yaml`
 It is not behind a feature flag: where the key is set, every user has it.
 The Connection is the deployment's, managed exactly like the built-in preset's below — provisioned by the user's own Connection listing, following the deployment's key, removed when the deployment drops the key, and refused to the user's own create, update and delete.
 It is named `IBM ETE LiteLLM CurveBender` and takes the first free name, then `LLM`, then that numbered from 2, when the user already holds one by that name.
-Its Secret holds a copy of the deployment's key, which the gateway injects on CurveBender's host exactly as it injects a user's key on a user-keyed Connection, so calls are metered and attributed to the Connection that made them and the key never reaches the agent or a browser.
+Its Secret holds a copy of the deployment's key, which the gateway injects on CurveBender's inference and model-listing paths, `/v1/*` and Bob's `/inference/v1/*` rewrite, and on no other path: one key serves every user, so the proxy's management routes (`/key/*`, `/user/*`, `/spend/*`) must never receive it, or an agent could mint a key that outlives its Connection, read the shared key's spend, or delete it for everyone.
+The user-keyed preset above keeps injecting on its host's every path, since the key is that user's own.
+The route scope is the second line of defence: the operator must mint the deployment's key for inference only, with LiteLLM `allowed_routes: ["llm_api_routes"]`, so a path the gateway misses still cannot manage keys.
+Calls are metered and attributed to the Connection that made them, and the key never reaches the agent or a browser.
 Both CurveBender presets share one provider alias, `cb`, so their models are named alike and one Agent holds at most one of them.
 
 ### Built-in preset: platform LLM

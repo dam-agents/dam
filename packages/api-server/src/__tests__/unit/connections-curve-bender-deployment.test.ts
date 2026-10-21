@@ -4,6 +4,7 @@ import {
   CURVE_BENDER_HOST,
   displayNameForTemplate,
   type Connection,
+  type Contribution,
   type ConnectionTemplateView,
   type ConnectionView,
 } from "api-server-api";
@@ -76,6 +77,16 @@ function injectionHosts(secret: StoredSecret | undefined) {
   );
 }
 
+function injectionScopes(contributions: readonly Contribution[]) {
+  return contributions
+    .flatMap((c) =>
+      c.kind === "egress-inject" && c.host === CURVE_BENDER_HOST
+        ? [c.pathPattern ?? "(every path)"]
+        : [],
+    )
+    .sort();
+}
+
 function noKeyIn(answer: readonly (ConnectionView | ConnectionTemplateView)[]) {
   return !JSON.stringify(answer).includes(DEPLOYMENT_KEY);
 }
@@ -109,7 +120,15 @@ describe("deployment CurveBender connection", () => {
       expect.stringContaining(`"Bearer ${DEPLOYMENT_KEY}"`),
     );
     expect(injectionHosts(secret)).toEqual([
-      expect.objectContaining({ host: CURVE_BENDER_HOST }),
+      expect.objectContaining({
+        host: CURVE_BENDER_HOST,
+        pathPattern: "/v1/*",
+      }),
+      expect.objectContaining({
+        host: CURVE_BENDER_HOST,
+        pathPattern: "/inference/v1/*",
+        pathRewrites: [{ prefix: "/inference/v1/", replacement: "/v1/" }],
+      }),
     ]);
 
     const personalAfter = rows.get(personalId)!;
@@ -129,18 +148,54 @@ describe("deployment CurveBender connection", () => {
     expect(sharedView.name).toBe(
       displayNameForTemplate(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID),
     );
-    expect(sharedView.contributions).toContainEqual({
-      kind: "egress-inject",
-      host: CURVE_BENDER_HOST,
-      headerName: "Authorization",
-      valueFormat: "Bearer {value}",
-      pathRewrites: [{ prefix: "/inference/v1/", replacement: "/v1/" }],
-    });
+    expect(injectionScopes(sharedView.contributions)).toEqual([
+      "/inference/v1/*",
+      "/v1/*",
+    ]);
     expect(sharedView.contributions).toContainEqual({
       kind: "env",
       name: "OPENAI_BASE_URL",
       placeholder: `https://${CURVE_BENDER_HOST}`,
     });
+  });
+
+  // TEST_SCENARIO: the deployment's key is one key for every user, so the gateway injects it on the model listing and the inference paths alone, Bob's rewritten prefix included: the proxy's management routes must never receive it, while the personal preset keeps injecting on every path of the same host.
+  it("injects the key on the inference paths only", () => {
+    const catalog = buildCatalog({}, { curveBenderDeployment: true });
+    const deployment = catalog.find(
+      (t) => t.id === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
+    )!;
+    expect(injectionScopes(deployment.contributions)).toEqual([
+      "/inference/v1/*",
+      "/v1/*",
+    ]);
+    expect(
+      deployment.contributions.filter(
+        (c) => c.kind === "egress-inject" && c.host === CURVE_BENDER_HOST,
+      ),
+    ).toEqual([
+      expect.objectContaining({
+        pathPattern: "/v1/*",
+        pathRewrites: [{ prefix: "/inference/v1/", replacement: "/v1/" }],
+      }),
+      expect.objectContaining({ pathPattern: "/inference/v1/*" }),
+    ]);
+
+    const personal = catalog.find((t) => t.id === "curve-bender")!;
+    expect(injectionScopes(personal.contributions)).toEqual(["(every path)"]);
+  });
+
+  // TEST_SCENARIO: a listing checks a settled connection by reading its Secret once, not once for the key and again for a CA CurveBender never has.
+  it("reads the connection's Secret once per listing", async () => {
+    const { svc, secretReads } = makeService();
+    await svc.listAndReconcileConnections();
+
+    secretReads.get = 0;
+    secretReads.getField = 0;
+    await svc.listAndReconcileConnections();
+
+    expect(secretReads.get).toBe(1);
+    expect(secretReads.getField).toBe(0);
   });
 
   // TEST_SCENARIO: an install without a deployment key has no such template, so a listing creates nothing, and one left over from when it did is removed.
@@ -172,7 +227,7 @@ describe("deployment CurveBender connection", () => {
     expect(noKeyIn(await svc.listTemplates())).toBe(true);
   });
 
-  // TEST_SCENARIO: the user's own create, update and delete refuse the deployment provider, so its Secret keeps the deployment's key.
+  // TEST_SCENARIO: the user's own create, update and delete refuse the deployment provider with its own words, not the built-in provider's feature hint, so its Secret keeps the deployment's key.
   it("refuses to change the connection by hand", async () => {
     const { svc, rows } = makeService();
     await svc.listAndReconcileConnections();
@@ -180,6 +235,7 @@ describe("deployment CurveBender connection", () => {
 
     await expect(svc.deleteConnection(shared!.id)).rejects.toMatchObject({
       code: "FORBIDDEN",
+      message: expect.stringContaining("managed by the deployment"),
     });
     await expect(
       svc.createFromTemplate({

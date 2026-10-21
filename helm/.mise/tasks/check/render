@@ -445,3 +445,29 @@ extra_ca_env() {
   || { echo "controller.gatewayUpstreamExtraCAs does not reach the api-server as NODE_EXTRA_CA_CERTS" >&2; exit 1; }
 [ -z "$(extra_ca_env)" ] \
   || { echo "the api-server names NODE_EXTRA_CA_CERTS with no extra CA configured" >&2; exit 1; }
+# The deployment's CurveBender key reaches the api-server only when the operator
+# sets one, and then only through a secretKeyRef: unset, no env at all, so the
+# api-server offers no shared provider; an inline key lands in the credentials
+# Secret; a named Secret is read from it. Neither render prints the key.
+curve_key_env() {
+  helm template platform . "${COMMON[@]}" --show-only templates/apiserver/app.yaml "$@" |
+    yq -o=json 'select(.kind == "Deployment") | .spec.template.spec.containers[0].env // []
+      | map(select(.name == "CURVE_BENDER_DEPLOYMENT_API_KEY"))'
+}
+[ "$(curve_key_env)" = "[]" ] ||
+  { echo "an install without a CurveBender key gave the api-server one anyway" >&2; exit 1; }
+inline=$(curve_key_env --set apiServer.curveBenderDeployment.apiKey=placeholder-key)
+jq -e 'length == 1 and .[0].valueFrom.secretKeyRef.key == "CURVE_BENDER_DEPLOYMENT_API_KEY"
+  and (.[0].valueFrom.secretKeyRef.name | length) > 0 and (.[0].value // null) == null' <<<"$inline" >/dev/null ||
+  { echo "apiServer.curveBenderDeployment.apiKey did not reach the api-server as a secretKeyRef: $inline" >&2; exit 1; }
+credentials=$(helm template platform . "${COMMON[@]}" --show-only templates/apiserver/credentials.yaml \
+  --set apiServer.curveBenderDeployment.apiKey=placeholder-key | yq -o=json 'select(.kind == "Secret")')
+jq -e --arg name "$(jq -r '.[0].valueFrom.secretKeyRef.name' <<<"$inline")" \
+  '.metadata.name == $name and (.data | has("CURVE_BENDER_DEPLOYMENT_API_KEY"))' <<<"$credentials" >/dev/null ||
+  { echo "the credentials Secret the api-server reads does not carry the CurveBender key it is pointed at: $credentials" >&2; exit 1; }
+named=$(curve_key_env --set apiServer.curveBenderDeployment.apiKeySecret.name=cb-deployment --set apiServer.curveBenderDeployment.apiKeySecret.key=shared)
+jq -e 'length == 1 and .[0].valueFrom.secretKeyRef == {"name": "cb-deployment", "key": "shared"}' <<<"$named" >/dev/null ||
+  { echo "apiServer.curveBenderDeployment.apiKeySecret did not reach the api-server as a named Secret key: $named" >&2; exit 1; }
+defaulted=$(curve_key_env --set apiServer.curveBenderDeployment.apiKeySecret.name=cb-deployment)
+jq -e 'length == 1 and .[0].valueFrom.secretKeyRef == {"name": "cb-deployment", "key": "api-key"}' <<<"$defaulted" >/dev/null ||
+  { echo "a named CurveBender Secret without a key did not default to the api-key entry: $defaulted" >&2; exit 1; }

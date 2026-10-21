@@ -184,16 +184,19 @@ const IBM_LITELLM: HeaderConnectionTemplate = {
   ],
 };
 
-function curveBenderContributions(): Contribution[] {
+function curveBenderContributions(
+  pathPatterns?: readonly string[],
+): Contribution[] {
   return [
     ...envContributions(curveBenderEnvMappings()),
-    {
+    ...(pathPatterns ?? [undefined]).map((pathPattern): Contribution => ({
       kind: "egress-inject",
       host: CURVE_BENDER_HOST,
+      ...(pathPattern ? { pathPattern } : {}),
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
       pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
-    },
+    })),
   ];
 }
 
@@ -202,7 +205,7 @@ const CURVE_BENDER: HeaderConnectionTemplate = {
   name: "IBM ETE LiteLLM CurveBender (custom key)",
   category: "app",
   isCustom: false,
-  description: "LiteLLM proxy fronting open models hosted on RITS.",
+  description: "Open-source models hosted internally in IBM.",
   iconSlug: "ibm",
   authKind: "header",
   host: CURVE_BENDER_HOST,
@@ -210,6 +213,15 @@ const CURVE_BENDER: HeaderConnectionTemplate = {
   valueFormat: "Bearer {value}",
   contributions: curveBenderContributions(),
 };
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the only paths a harness calls on CurveBender,
+ * the model listing and inference, plus the prefix Bob's rewrite turns into
+ * them. The deployment's key is one key for everyone, so it stays off the
+ * proxy's management routes (`/key/*`, `/user/*`, `/spend/*`), which would
+ * let any agent mint, read or delete it.
+ */
+const CURVE_BENDER_DEPLOYMENT_PATHS = ["/v1/*", "/inference/v1/*"] as const;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: CurveBender reached with the deployment's key,
@@ -221,14 +233,13 @@ const CURVE_BENDER_DEPLOYMENT: HeaderConnectionTemplate = {
   name: "IBM ETE LiteLLM CurveBender",
   category: "app",
   isCustom: false,
-  description:
-    "The deployment's LiteLLM CurveBender, reached with the deployment's key. It is connected for everyone.",
+  description: "Open-source models hosted internally in IBM.",
   iconSlug: "ibm",
   authKind: "header",
   host: CURVE_BENDER_HOST,
   headerName: "Authorization",
   valueFormat: "Bearer {value}",
-  contributions: curveBenderContributions(),
+  contributions: curveBenderContributions(CURVE_BENDER_DEPLOYMENT_PATHS),
 };
 
 const BOB_QUERY_PARAM_HEADER = "X-Bobshell-Internal";

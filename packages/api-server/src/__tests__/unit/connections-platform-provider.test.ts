@@ -85,6 +85,7 @@ function makeService(
     store?: ConnectionsStore;
     lock?: XactLock;
     flag?: { on: boolean };
+    curveBender?: boolean;
   } = {},
 ) {
   const base = opts.endpoint === undefined ? ENDPOINT : opts.endpoint;
@@ -92,7 +93,13 @@ function makeService(
   const flag = opts.flag ?? { on: false };
   const harness = serviceHarness({
     templates: createConnectionTemplateRegistry(
-      buildCatalog({}, { platformProvider: endpoint }),
+      buildCatalog(
+        {},
+        {
+          platformProvider: endpoint,
+          curveBenderDeployment: opts.curveBender ?? false,
+        },
+      ),
     ),
     ...(opts.store ? { store: opts.store } : {}),
     ...(opts.lock ? { lock: opts.lock } : {}),
@@ -101,6 +108,7 @@ function makeService(
     platformProviderKey:
       opts.apiKey === undefined ? "sk-operator" : opts.apiKey,
     platformProviderCa: opts.ca ?? null,
+    curveBenderDeploymentKey: opts.curveBender ? "sk-deployment" : null,
   });
   return { ...harness, flag };
 }
@@ -361,6 +369,9 @@ describe("platform provider connection", () => {
 
     await expect(svc.deleteConnection(conn!.id)).rejects.toMatchObject({
       code: "FORBIDDEN",
+      message: expect.stringContaining(
+        "Turn the feature on or off in Settings",
+      ),
     });
     await expect(
       svc.createFromTemplate({
@@ -484,5 +495,63 @@ describe("platform provider connection", () => {
     await svc.listAndReconcileConnections();
     expect(rows.size).toBe(0);
     expect(buildCatalog().some((t) => t.id === "platform-llm")).toBe(false);
+  });
+
+  // TEST_SCENARIO: one listing creates the built-in provider and the deployment CurveBender, so both Connections exist before the attach saga's handler runs; a bare agent still gets exactly one, the older one, and a delayed handler does not change that.
+  it.each([0, 5])(
+    "grants one of two deployment providers created together (handler delay %i ms)",
+    async (delayMs) => {
+      const { svc, rows, grants, flag } = makeService({ curveBender: true });
+      flag.on = true;
+      subs.push(
+        startAttachFirstProviderSaga(async (_owner, connectionId) => {
+          if (delayMs)
+            await new Promise((resolve) => setTimeout(resolve, delayMs));
+          await attachProviderToBareAgents(
+            svc,
+            {
+              harnesses: [
+                {
+                  name: "claude-code",
+                  providers: ["curve-bender", "platform"],
+                },
+              ],
+            } as never,
+            [{ id: "agent-1", spec: { harness: "claude-code" } }],
+            connectionId,
+          );
+        }),
+      );
+
+      await svc.listAndReconcileConnections();
+      await vi.waitFor(() => expect(grants.size).toBe(1));
+      await new Promise((resolve) => setTimeout(resolve, 20));
+
+      expect(grants.size).toBe(1);
+      expect([...grants][0]!.split("|")[0]).toBe(platformRows(rows)[0]!.id);
+    },
+  );
+
+  // TEST_SCENARIO: control: with the built-in provider alone the same handler still attaches it, so choosing by age does not withhold a lone provider.
+  it("still grants a lone deployment provider", async () => {
+    const { svc, rows, grants, flag } = makeService();
+    flag.on = true;
+    subs.push(
+      startAttachFirstProviderSaga((_owner, connectionId) =>
+        attachProviderToBareAgents(
+          svc,
+          {
+            harnesses: [{ name: "claude-code", providers: ["platform"] }],
+          } as never,
+          [{ id: "agent-1", spec: { harness: "claude-code" } }],
+          connectionId,
+        ),
+      ),
+    );
+
+    await svc.listAndReconcileConnections();
+    await vi.waitFor(() => expect(grants.size).toBe(1));
+
+    expect([...grants][0]!.split("|")[0]).toBe(platformRows(rows)[0]!.id);
   });
 });

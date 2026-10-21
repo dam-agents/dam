@@ -6,7 +6,6 @@ import type {
 import {
   type AliasedConnection,
   aliasForProviderType,
-  displayNameForTemplate,
   type ProviderAliasConflict,
   providerAliasConflict,
   templateIdsForAlias,
@@ -54,9 +53,7 @@ export function modelGroups(
       .map((c) => ({
         connectionId: c.id,
         alias: aliasForProviderType(c.type),
-        displayName:
-          (c.templateId ? displayNameForTemplate(c.templateId) : null) ??
-          providerName(c.type),
+        displayName: providerName(c.type, c.templateId),
         status: "unavailable" as const,
         listedAt: null,
         native: false,

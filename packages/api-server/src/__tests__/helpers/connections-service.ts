@@ -50,8 +50,14 @@ export const newConnectionsStore = (): ConnectionsStore => ({
   secrets: new Map(),
 });
 
+export interface SecretReads {
+  get: number;
+  getField: number;
+}
+
 export function memorySecretStore(
   secrets: Map<string, StoredSecret>,
+  reads: SecretReads = { get: 0, getField: 0 },
 ): SecretStore {
   let minted = 0;
   return unused<SecretStore>({
@@ -67,7 +73,14 @@ export function memorySecretStore(
         annotations: meta.extraAnnotations ?? {},
         purpose: meta.purpose,
       }),
-    getField: async (ref) => secrets.get(ref.path)?.fields[ref.field] ?? null,
+    get: async (ref) => {
+      reads.get++;
+      return secrets.get(ref.path)?.fields ?? null;
+    },
+    getField: async (ref) => {
+      reads.getField++;
+      return secrets.get(ref.path)?.fields[ref.field] ?? null;
+    },
     delete: async (ref) => void secrets.delete(ref.path),
   });
 }
@@ -83,6 +96,7 @@ export function serviceHarness(opts: {
   curveBenderDeploymentKey?: string | null;
 }) {
   const { rows, grants, secrets } = opts.store ?? newConnectionsStore();
+  const secretReads: SecretReads = { get: 0, getField: 0 };
   const fannedOut: string[] = [];
   const grantKey = (connectionId: string, agentId: string) =>
     `${connectionId}|${agentId}`;
@@ -128,7 +142,7 @@ export function serviceHarness(opts: {
       listConnectionsForAgent: async (agentId) =>
         [...rows.values()].filter((c) => grants.has(grantKey(c.id, agentId))),
     }),
-    secretStore: memorySecretStore(secrets),
+    secretStore: memorySecretStore(secrets, secretReads),
     fanOut: unused({
       apply: async (input) => void fannedOut.push(input.agentId),
     }),
@@ -147,5 +161,5 @@ export function serviceHarness(opts: {
     platformProviderCa: opts.platformProviderCa ?? null,
     curveBenderDeploymentKey: opts.curveBenderDeploymentKey ?? null,
   });
-  return { svc, rows, grants, secrets, fannedOut };
+  return { svc, rows, grants, secrets, fannedOut, secretReads };
 }

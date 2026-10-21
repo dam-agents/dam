@@ -694,3 +694,27 @@ func TestBuildChainForwardRoutes_SignerBesideAHeaderInjectorLeavesTheInjectorPla
 	assert.NotContains(t, catchAll, "direct_response")
 	assert.Equal(t, []string{"conn-key", "conn-cos"}, c.ConnectionIDs())
 }
+
+func TestBuildChainForwardRoutes_ScopedInjectionCoversInferenceOnly(t *testing.T) {
+	const host = "litellm.cb.ete.res.ibm.com"
+	inference := scopedCredential("conn-cb", "platform-conn-cb", "Authorization", host, "/v1/*")
+	bob := scopedCredential("conn-cb", "platform-conn-cb", "Authorization", host, "/inference/v1/*")
+	c := connectionChain(host, inference, bob)
+	c.PathRewrites = []envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}}
+
+	routes := buildChainForwardRoutes(c)
+
+	// TEST_SCENARIO: a model-listing or inference call carries the key, so the injector scoped to /v1/ is not disabled on that route.
+	assert.NotContains(t, perFilterKeys(routeNamed(t, routes, "/v1/")), inference.FilterName(),
+		"/v1/models and inference paths must keep the credential injector")
+
+	// TEST_SCENARIO: Bob's prefix reaches the same inference paths, rewritten, still keyed.
+	rewritten := routeNamed(t, routes, "/inference/v1/")
+	assert.NotContains(t, perFilterKeys(rewritten), bob.FilterName(),
+		"the rewritten prefix must keep the credential injector")
+	assert.Equal(t, "/v1/", rewritten["route"].(ev)["prefix_rewrite"])
+
+	// TEST_SCENARIO: everything else on the host, the proxy's management routes among them, falls to the host-wide route with both injectors disabled, so a request can never mint, read or delete the shared key.
+	management := perFilterKeys(routeNamed(t, routes, "/"))
+	assert.ElementsMatch(t, []string{inference.FilterName(), bob.FilterName()}, management)
+}
