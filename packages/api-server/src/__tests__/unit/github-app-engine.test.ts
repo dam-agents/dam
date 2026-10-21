@@ -1,6 +1,9 @@
 import crypto from "node:crypto";
 import { describe, it, expect } from "vitest";
-import { createGitHubAppEngine } from "../../modules/connections/infrastructure/github-app-engine.js";
+import {
+  createGitHubAppEngine,
+  describeAppRejection,
+} from "../../modules/connections/infrastructure/github-app-engine.js";
 
 const NOW_MS = 1_800_000_000_000;
 const NOW_SEC = Math.floor(NOW_MS / 1000);
@@ -500,5 +503,107 @@ describe("github app engine readInstallation", () => {
     await expect(read(engine)).rejects.toThrow(
       /could not read the installation/,
     );
+  });
+});
+
+describe("github app engine names the wrong input", () => {
+  const githubError = (message: string, status: number) => () =>
+    jsonResponse({ message, status: String(status) }, status);
+
+  it("blames the App ID when GitHub has no such app", async () => {
+    const { engine } = makeEngine(githubError("Integration not found", 404));
+    await expect(mint(engine)).rejects.toMatchObject({
+      status: 404,
+      oauthError: "invalid_client",
+      userMessage: expect.stringMatching(
+        /^The App ID is wrong: GitHub has no app with App ID 123456\./,
+      ),
+    });
+  });
+
+  it("blames the App ID when it is not a number", () => {
+    expect(
+      describeAppRejection(
+        401,
+        JSON.stringify({
+          message: "'Issuer' claim ('iss') must be an Integer",
+        }),
+        { appId: "my-app", installationId: "987654", scoped: false },
+      ),
+    ).toMatch(/^The App ID is wrong: "my-app" is not an App ID\./);
+  });
+
+  it("blames the private key when it belongs to another app", async () => {
+    const { engine } = makeEngine(
+      githubError("A JSON web token could not be decoded", 401),
+    );
+    await expect(mint(engine)).rejects.toMatchObject({
+      userMessage: expect.stringMatching(
+        /^The private key does not belong to the app with App ID 123456\./,
+      ),
+    });
+  });
+
+  it("blames the Installation ID when the app has no such installation", async () => {
+    const { engine } = makeEngine(githubError("Not Found", 404));
+    await expect(mint(engine)).rejects.toMatchObject({
+      userMessage: expect.stringMatching(
+        /^The Installation ID is wrong: the app with App ID 123456 has no installation 987654\. Install the app/,
+      ),
+    });
+  });
+
+  it("names the installation when GitHub refuses it", async () => {
+    const { engine } = makeEngine(
+      githubError("This installation has been suspended", 403),
+    );
+    await expect(mint(engine)).rejects.toMatchObject({
+      userMessage: expect.stringContaining(
+        'installation 987654. Check that the installation is not suspended and that the app is still installed. GitHub said: "This installation has been suspended".',
+      ),
+    });
+  });
+
+  it("names the scope when GitHub refuses a narrowed token", () => {
+    expect(
+      describeAppRejection(
+        422,
+        JSON.stringify({
+          message: "There is at least one repository that does not exist",
+        }),
+        { appId: "123456", installationId: "987654", scoped: true },
+      ),
+    ).toMatch(/^GitHub refused the repositories or permissions/);
+  });
+
+  it("leaves a server error without advice", async () => {
+    const { engine } = makeEngine(() => new Response("boom", { status: 502 }));
+    const err = await mint(engine).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 502 });
+    expect((err as { userMessage?: string }).userMessage).toBeUndefined();
+  });
+
+  it("names the host when GitHub cannot be reached", async () => {
+    const { engine } = makeEngine(() => {
+      throw new TypeError("fetch failed");
+    });
+    await expect(mint(engine)).rejects.toThrow(
+      "Could not reach GitHub at https://api.github.com (fetch failed). Check the host name.",
+    );
+  });
+
+  it("names the wrong input when reading the installation too", async () => {
+    const { engine } = makeEngine(githubError("Integration not found", 404));
+    await expect(
+      engine.readInstallation({
+        id: "template:github-app",
+        appId: "123456",
+        installationId: "987654",
+        privateKeyPem: PRIVATE_KEY_PEM,
+        apiBaseUrl: "https://api.github.com",
+      }),
+    ).rejects.toMatchObject({
+      userMessage: expect.stringMatching(/^The App ID is wrong/),
+    });
   });
 });

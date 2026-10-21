@@ -816,11 +816,13 @@ export function createConnectionsService(deps: {
       }
       throw new TRPCError({
         code: "BAD_REQUEST",
-        message: rejection
-          ? `The provider rejected the credential (${reviveFailureReason(err)}).`
-          : err instanceof Error
-            ? err.message
-            : "The credential was rejected.",
+        message:
+          rejection?.userMessage ??
+          (rejection
+            ? `The provider rejected the credential (${reviveFailureReason(err)}).`
+            : err instanceof Error
+              ? err.message
+              : "The credential was rejected."),
       });
     }
   }
@@ -1402,11 +1404,13 @@ export function createConnectionsService(deps: {
             message: `template ${template.id}: missing privateKey`,
           });
         }
-        const minted = await mintGitHubAppToken(deps.githubAppEngine, {
-          connectionRef: `connection:${id}:${template.id}`,
-          auth,
-          privateKeyPem,
-        });
+        const minted = await rejectIfInvalid(() =>
+          mintGitHubAppToken(deps.githubAppEngine, {
+            connectionRef: `connection:${id}:${template.id}`,
+            auth,
+            privateKeyPem,
+          }),
+        );
         auth = {
           ...auth,
           connectedAt: Math.floor(Date.now() / 1000),
