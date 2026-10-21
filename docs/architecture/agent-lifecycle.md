@@ -178,9 +178,10 @@ That lives on [sessions](sessions.md).
 Hibernation scales an idle Agent's StatefulSets to zero to reclaim its pod's CPU and memory; the next activity wakes it (see [Wake](#wake)).
 On the `vm` Backend the gateway scales the same way and the agent side is the machine on the VM runner, which stops on the way down and starts on the way up — a stopped machine keeps its disks, so a wake is a boot of the same guest.
 A wake scales the gateway up before the agent side, because the gateway pod is the slower of the two to start.
-A `vm` Agent whose last start the runner refused for lack of room, one waiting for the node to grant its runner that room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
+A `vm` Agent whose last start the runner refused for lack of room or for the owner's full storage, one waiting for the node to grant its runner that room, or one with no status yet, keeps the gateway after the runner's answer, so a parked Agent's retries do not start and stop a gateway pod.
 When the status already holds the agent side ready and only the gateway was missing, the reconcile that sees the gateway pod ready publishes `Ready` right after it applies the gateway, before the runner call and the remaining applies.
 Only the idle checker or [reclaim](vm-memory.md) hibernates it, not a lapsed timeout.
+A start that never came up is slept the same way once its hold runs out, and the Agent keeps the `StartFailed` condition that ended it ([agent images](agent-images.md)), so a slept Agent whose machine never answered says why rather than reading as plainly asleep.
 An unreachable runner does not hold the gateway up, but the Agent is published hibernated only once its runner has confirmed the machine stopped.
 With the [owner gateway](credential-gateway.md#owner-gateway) on, a `vm` Agent has no gateway pod of its own once it is moved: whether it should be up is recorded on its gateway Service instead of a replica count, its listener stays configured while it sleeps, and hibernation stops only the machine, so a wake is ready when the guest answers.
 Until then its readiness is down and it reads as starting, the Agent's next reconcile stops the machine once the runner answers, and the idle checker tries the hibernation again on each sweep.

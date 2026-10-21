@@ -84,6 +84,9 @@ A guest a grant holds is judged by the room its guard leaves it, not by the disk
 A guest is held to the claim's room too: each look grants each machine that is neither asleep nor absent an even part of what is left below 95% of the claim, and a sleeping or absent one nothing, so a wake never boots on the room its share held; a start looks again first, and platform-init preallocates unnamed files on the disk so the guest can write only what is left of its grant.
 A claim the runner cannot measure grants nothing, so no guest is held to it, and it says so each time it loses the measure and each time it gets it back.
 A guest held below 256 MiB may still write 256 MiB in all, once, until a grant with room comes, so with N agents running the claim can pass 95% by at most N times that.
+One writer that fills its part before the next look meets "no space left on device" at its part, not at 95%: at roughly 85% with eight machines up, 87% with four, and higher with fewer, since the room below 95% is split between them and renewed every 30 s.
+The next look renews its part once the claim has moved, so its next write succeeds, and an agent that handles the error carries on.
+That is accepted for now, since the agent survives the error and its next write succeeds; a fix would renew a short machine's part in seconds rather than at the look's cadence.
 The agent that used it up gets room again once the claim has room, through a grant that holds the floor: when another agent is deleted or frees files, or the storage grows, as the full-home message says; a sleep and wake also gives the floor again, for one more way in to free its own files.
 A write past it fails inside the guest with "no space left on device", which the agent handles and the runner reports as a full home, and the claim stays writable for the owner's other agents.
 Their blocks are only marked in the guest's filesystem, never written, so they take nothing from the claim, and they have no names, so the filesystem frees them when the guest stops.
@@ -94,7 +97,9 @@ The guard counts what the guest's filesystem reports as used, so it does not see
 Past 90% it creates no machine and takes no seed, and a machine it starts boots at the disk size it has; past 95%, where guests' writes start to fail, it starts and restarts no machine either, so between the two an owner whose agents are all asleep can still get into one to clean it up.
 It reports each refusal as `MachineStorageFull` with how full the storage is and how to free it, and never stops a running machine, which would free nothing and lose what the guest holds in memory.
 An out-of-space error the runner meets anywhere on the claim is reported the same way, and so is a boot that fails while the claim is that full, since a guest whose writes fail fails its boot with nothing typed in the error.
-A storage refusal does not park the Agent the way a memory refusal does: parking would halt a machine, and nothing an idle agent holds in memory frees disk.
+A storage refusal parks the Agent when its start was what was refused: the gateway goes to zero with the machine it would proxy, the start is retried at the parked tick while the Agent should run, and it starts once space frees.
+A machine that is up is not parked for it, since parking halts a running machine and nothing a guest keeps in memory frees disk: the refusal is then only reported.
+Nor is an Agent that should be asleep: a machine that is absent while it sleeps is still shaped by a create the runner refuses on a critical claim, and parking would flip its status out of hibernated on every pass.
 The api-server says the same before an Agent is written: it reads the owner's runner through its read-only usage capability, and refuses a new vm agent — a create, a kit applied, a spawn — once the claim is 90% used, with the figures and the same three ways out.
 A move onto the vm backend meets a stricter read of the same figures: it is refused up front unless the claim would stay under that 90% with twice the home's size added ([runtime migration](vm-runtime-migration.md)).
 Usage it cannot read refuses nothing, since the runner refuses the machine anyway.

@@ -78,6 +78,7 @@ export {
 export type {
   Agent,
   AgentReclaim,
+  AgentStartFailure,
   WorkspaceFailure,
   WorkspaceMutationKind,
   AgentKind,
