@@ -548,7 +548,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     status?.defaultHarness ||
     carried[0]?.name ||
     "";
-  const { data: catalogModels, operable } = useHarnessCatalogModels(
+  const { data: catalogModels } = useHarnessCatalogModels(
     routed && agentId ? agentId : null,
     routed ? harness || null : null,
   );
@@ -559,7 +559,10 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     useHarnessConfigured(agentId, harness),
     storedModel || fallback?.model || null,
   );
-  if (agentId && status && !status.harnesses && !agentOperable)
+  const listedByRunningAgent =
+    !status?.harnesses ||
+    (!routed && status.sessionModel && !!status.defaultHarness);
+  if (agentId && status && !agentOperable && listedByRunningAgent)
     return (
       <FormField label="Model">
         <AwakeModelsGate agentId={agentId} />
@@ -599,7 +602,6 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       ...(catalogModels !== undefined && {
         description: "Not in this agent's model list",
       }),
-      ...(!operable && { description: "Start the agent to check this model" }),
     });
   const todayModel = fallback?.model
     ? modelIndicatorLabel(groups, fallback.model)

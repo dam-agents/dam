@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { ScheduleChoicesField } from "../../modules/schedules/forms/schedule-fields.js";
 
 const state = vi.hoisted(() => ({
+  routed: true,
   operable: false,
   comingUp: false,
   harnesses: [
@@ -26,7 +27,8 @@ vi.mock("@/components/ui/tooltip", () => ({
 vi.mock("../../modules/agents/api/harness-config.js", () => ({
   useHarnessConfigStatus: () => ({
     data: {
-      modelRouter: true,
+      modelRouter: state.routed,
+      sessionModel: true,
       defaultHarness: "codex",
       harnesses: state.harnesses,
     },
@@ -98,7 +100,8 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
 vi.mock("../../modules/schedules/api/session-model.js", () => ({
   useScheduleDefault: () => ({ data: undefined }),
   useHasHarnessDefault: () => false,
-  useSessionModelChoices: () => [],
+  useSessionModelChoices: () =>
+    state.operable ? [{ value: "gpt-5.5", name: "GPT-5.5" }] : [],
 }));
 
 interface Choices {
@@ -122,14 +125,16 @@ const render = () => renderToStaticMarkup(createElement(Field));
 
 describe("the schedule form's model on a sleeping agent", () => {
   afterEach(() => {
+    state.routed = true;
     state.operable = false;
     state.comingUp = false;
   });
 
-  // TEST_SCENARIO: Asleep, the Model field holds the start button, not an empty picker; woken, it says the agent is starting.
+  // TEST_SCENARIO: Asleep, the Model field holds the start button, not an empty picker, and the harness stays pickable; woken, it says the agent is starting.
   it("offers to start the agent, then says it is starting", () => {
     const asleep = render();
     expect(asleep).toContain("Start agent to edit");
+    expect(asleep).toContain('aria-label="Harness"');
     expect(asleep).not.toContain('aria-label="Model"');
     state.comingUp = true;
     const starting = render();
@@ -152,6 +157,16 @@ describe("the schedule form's model on a sleeping agent", () => {
         },
       ];
     }
+  });
+
+  // TEST_SCENARIO: On a runtime without the Model Router the single model field lists the default harness's models, read from the running agent too; asleep, it offers the start instead of vanishing.
+  it("offers to start the agent on a runtime without the Model Router", () => {
+    state.routed = false;
+    expect(render()).toContain("Start agent to edit");
+    state.operable = true;
+    const awake = render();
+    expect(awake).toContain('aria-label="Model"');
+    expect(awake).not.toContain("Start agent to edit");
   });
 
   // TEST_SCENARIO: Once the agent is up, the picker is back.
