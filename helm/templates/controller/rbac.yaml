@@ -120,8 +120,10 @@ rules:
     resources: ["deployments/finalizers"]
     verbs: ["update"]
   # A runner pod refused at admission leaves no Pod object, only its
-  # ReplicaSet's FailedCreate condition. Reading it tells an owner's own
-  # refusal (an SCC, a quota) from a broken release before the roll halts.
+  # ReplicaSet's FailedCreate condition. Reading it lets the roll skip a
+  # refusal that names one owner, which is only counted while another
+  # runner already runs the same pod shape: a refusal of the shape itself
+  # refuses every runner and must halt the roll.
   - apiGroups: ["apps"]
     resources: ["replicasets"]
     verbs: ["get", "list"]
