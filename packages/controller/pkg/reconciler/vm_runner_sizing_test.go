@@ -1063,22 +1063,22 @@ func TestAClaimThatCannotGrowIsSaidOnce(t *testing.T) {
 		}
 		return n
 	}
-	warnings := captureWarnings(t)
+	captured := captureLog(t)
 
 	for i := 0; i < 3; i++ {
 		require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 	}
-	assert.Equal(t, 1, said(warningMessages(*warnings)), "one burst says it once")
+	assert.Equal(t, 1, said(captured.messages()), "one burst says it once")
 
 	r.config.VM.Runner.Storage = "300Gi"
 	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	assert.Equal(t, 2, said(warningMessages(*warnings)), "a size nobody has been told about yet is said once")
+	assert.Equal(t, 2, said(captured.messages()), "a size nobody has been told about yet is said once")
 
 	r.config.VM.Runner.Storage = "50Gi"
 	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
 	r.config.VM.Runner.Storage = "300Gi"
 	require.NoError(t, r.applyRunnerPVC(ctx, testOwner))
-	assert.Equal(t, 3, said(warningMessages(*warnings)), "a pool that fell and rose again says it again")
+	assert.Equal(t, 3, said(captured.messages()), "a pool that fell and rose again says it again")
 }
 
 // TEST_SCENARIO: the runner admits machines against its pod's memory limit, which is the owner's whole pool and far above what the node has reserved for that pod while an in-place resize waits for room. A runner that admitted to its limit on a busy node is the pod the kubelet evicts, or the one that OOMs, and it takes every machine of that owner with it — so each ensure carries the memory the node granted, which the runner admits against. The figure is the node's allocation of the runner container, read off the pod; a kubelet that reports none leaves the request the pod carries; a runner with no pod yet sends no ceiling, since that reconcile is the one that builds it; and a cluster that cannot resize the pod sends none either, since the request there is the install's fixed floor rather than memory the node can be asked for more of.
