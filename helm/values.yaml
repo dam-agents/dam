@@ -413,10 +413,10 @@ virtualization:
     # pod rolls instead, and that roll does not wait for a busy agent, so the
     # fix reaches every machine within the roll rather than after `idleWait`.
     # The key covers what a machine booted alone: a release that changes only
-    # the pod's runner or its loader carries the key before it and is taken in
+    # the pod's runner or its loader keeps the key before it and is taken in
     # place. The loader travels in the release too, and the pod becomes it, so
-    # the release that first ships such a loader declares a key of its own and
-    # that roll is what delivers it.
+    # only the release that first ships a loader able to do that declares a key
+    # of its own, and that roll is what delivers it.
     # A pod built from a release that declares no key takes the release in
     # place, since there is nothing to compare it with.
     # A roll for a changed pod shape keeps its idle wait. A runner that

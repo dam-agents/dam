@@ -29,6 +29,13 @@ echo "$0 $*" >> "$LOADER_LOG"
 exec "$REAL_LOADER" "$@"
 "#;
 
+// UNIT_BOUNDARY_DESCRIPTION: the same release staged again with another loader, which is what a change to the loader reaches a pod as: another binary under the release's own name, replacing the file the pod copied the last one into.
+const STAGED_LOADER_AGAIN: &str = r#"#!/bin/sh
+[ "$1" = --help ] && exit 0
+echo "$0 $* again" >> "$LOADER_LOG"
+exec "$REAL_LOADER" "$@"
+"#;
+
 // UNIT_BOUNDARY_DESCRIPTION: a loader of a release that cannot start in this pod, which is what a release built for another pod's libc looks like.
 const BROKEN_LOADER: &str = "#!/bin/sh\nexit 1\n";
 
@@ -89,6 +96,16 @@ struct Pod {
 impl Pod {
     // UNIT_BOUNDARY_DESCRIPTION: a loader running the pod's own release, runner:1, whose runner is `script`.
     fn start(name: &str, script: &str) -> Self {
+        Self::start_named(name, script, None, &[])
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: a pod that has already been told which release to run — the target file of the loader directory outlives the container, so a restarted pod starts with one — and that finds that release staged on the node, with a loader of its own. `env` sets what only a test sets.
+    fn start_named(
+        name: &str,
+        script: &str,
+        target: Option<(&str, &str)>,
+        env: &[(&str, &str)],
+    ) -> Self {
         let dir =
             std::env::temp_dir().join(format!("vm-runner-loader-{name}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
@@ -96,6 +113,12 @@ impl Pod {
         let builtin_runtime = dir.join("builtin-runtime");
         release_dir(&builtin, script, "runtime-a");
         std::fs::create_dir_all(dir.join("releases")).unwrap();
+        if let Some((release, loader)) = target {
+            stage_release(&dir, release, RUNS, "runtime-a", None, Some(loader));
+            let loader_dir = dir.join("loader");
+            std::fs::create_dir_all(&loader_dir).unwrap();
+            release::replace(&release::target_file(&loader_dir), release.as_bytes()).unwrap();
+        }
         let loader = Command::new(env!("CARGO_BIN_EXE_vm-runner-loader"))
             .args(["run", "--builtin"])
             .arg(&builtin)
@@ -114,6 +137,7 @@ impl Pod {
             .env("RUNNER_PID_LOG", dir.join("runner-pids"))
             .env("LOADER_LOG", dir.join("loaders"))
             .env("REAL_LOADER", env!("CARGO_BIN_EXE_vm-runner-loader"))
+            .envs(env.iter().copied())
             .spawn()
             .unwrap();
         Self { dir, loader }
@@ -149,7 +173,25 @@ impl Pod {
         key: Option<&str>,
         loader: Option<&str>,
     ) {
-        let image = self.dir.join(format!("image-{}", release::key(release)));
+        stage_release(&self.dir, release, script, runtime, key, loader);
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the node's stager for one release: the image the chart's runner image would carry, the runtime it was built against, and the directory the pod reads.
+    fn drop_from_node(&self, release: &str) {
+        std::fs::remove_dir_all(self.dir.join("releases").join(release::key(release))).unwrap();
+    }
+}
+
+fn stage_release(
+    dir: &Path,
+    release: &str,
+    script: &str,
+    runtime: &str,
+    key: Option<&str>,
+    loader: Option<&str>,
+) {
+    {
+        let image = dir.join(format!("image-{}", release::key(release)));
         release_dir(&image, script, runtime);
         if let Some(key) = key {
             std::fs::write(image.join(REBOOT_ID), key).unwrap();
@@ -159,12 +201,14 @@ impl Pod {
             std::fs::set_permissions(image.join(LOADER), std::fs::Permissions::from_mode(0o755))
                 .unwrap();
         }
-        let tree = self.dir.join(format!("runtime-tree-{runtime}"));
+        let tree = dir.join(format!("runtime-tree-{runtime}"));
         std::fs::create_dir_all(&tree).unwrap();
         std::fs::write(tree.join("smolvm"), runtime).unwrap();
-        release::stage(&image, &tree, &self.dir.join("releases"), release, 10).unwrap();
+        release::stage(&image, &tree, &dir.join("releases"), release, 10).unwrap();
     }
+}
 
+impl Pod {
     // UNIT_BOUNDARY_DESCRIPTION: the reboot key the pod's own release declares, which its loader compares every release it is named against.
     fn boots(&self, key: &str) {
         std::fs::write(self.dir.join("builtin").join(REBOOT_ID), key).unwrap();
@@ -175,6 +219,7 @@ impl Drop for Pod {
     // UNIT_BOUNDARY_DESCRIPTION: a runner the loader left running is a shell the loader's own kill does not reach, and one of those waits on its machine for ever and holds the test's output open: every runner script names its pid for this.
     fn drop(&mut self) {
         let _ = self.loader.kill();
+        let _ = self.loader.wait();
         for log in ["runner-pids", "machines"] {
             for pid in lines(&self.dir.join(log)) {
                 let _ = Command::new("kill").arg("-9").arg(&pid).status();
@@ -539,10 +584,16 @@ fn a_stop_during_a_hand_off_to_another_loader_reaches_a_runner() {
     });
 
     let exited = pod.terminate();
+    // TEST_SCENARIO: the release's loader was asked to start, and never started: one entry, and it is the probe.
+    let loaders = lines(&dir.join("loaders"));
     assert_eq!(
-        lines(&dir.join("loaders")).len(),
-        0,
-        "the loader became another with the pod's stop already in hand"
+        loaders.len(),
+        1,
+        "the loader became another with the pod's stop already in hand: {loaders:?}"
+    );
+    assert!(
+        loaders[0].contains("run --check "),
+        "the pod did more than ask whether the release's loader starts: {loaders:?}"
     );
     assert_eq!(
         lines(&dir.join("runners")).last().map(String::as_str),
@@ -652,4 +703,249 @@ fn a_release_whose_loader_loads_but_cannot_start_is_held() {
     );
     let exited = pod.terminate();
     assert!(exited.success(), "the loader exited with {exited}");
+}
+
+// TEST_SCENARIO: a pod that restarts finds the release the controller named already in its loader directory, and its own image's loader is not the one that release carries: it asks the release's loader to start, becomes it, and only then starts the release's runner. Nothing else would ever do it, since the loop sees the release it runs as the one that was asked for.
+#[test]
+fn a_restarted_pod_becomes_the_loader_of_the_release_it_finds_named() {
+    let mut pod = Pod::start_named(
+        "restart-into-loader",
+        RUNS,
+        Some(("runner:2", STAGED_LOADER)),
+        &[],
+    );
+    let dir = pod.dir.clone();
+    wait_for("the release the pod found named", || {
+        pod.status().running == "runner:2" && lines(&dir.join("machines")).len() == 1
+    });
+    let copy = dir.join("loader/releases").join(release::key("runner:2"));
+    let loaders = lines(&dir.join("loaders"));
+    assert_eq!(
+        loaders.len(),
+        2,
+        "the pod started the release without becoming its loader: {loaders:?}"
+    );
+    assert!(
+        loaders[0].starts_with(&format!("{} run --check ", copy.join(LOADER).display())),
+        "the release's loader was not asked to start before it was become: {loaders:?}"
+    );
+    assert!(
+        loaders[1].starts_with(&format!("{} run --builtin ", copy.join(LOADER).display())),
+        "the pod became another loader than the release's: {loaders:?}"
+    );
+    let runners = lines(&dir.join("runners"));
+    assert_eq!(
+        runners.len(),
+        1,
+        "the release was started before the pod became its loader, or twice: {runners:?}"
+    );
+    assert!(
+        runners[0].starts_with(&copy.join(RUNNER).display().to_string()),
+        "the release's runner did not run from the pod's own copy: {runners:?}"
+    );
+    let exited = pod.terminate();
+    assert!(exited.success(), "the loader exited with {exited}");
+}
+
+// TEST_SCENARIO: a loader that became another starts the release it was given, from the copy it accepted, even where the node no longer stages it: a hand-off is decided once, and a stager that moves on between the loader's decision and the release's start does not turn it into a fallback to the pod's image.
+#[test]
+fn a_loader_starts_the_release_it_was_given_after_the_node_drops_it() {
+    let mut pod = Pod::start("hand-off-to-a-dropped-release", RUNS);
+    let dir = pod.dir.clone();
+    wait_for("the pod's own runner", || {
+        pod.status().running == "runner:1"
+    });
+    pod.stage_declaring("runner:2", SLOW, "runtime-a", None, None);
+    pod.name("runner:2");
+    // UNIT_BOUNDARY_DESCRIPTION: the runner logs that it started only after it takes its own stop, so a hand-off that comes later is one it closes for rather than dies of.
+    wait_for("runner:2 to take its stop", || {
+        lines(&dir.join("runners"))
+            .iter()
+            .any(|line| line.starts_with("started "))
+    });
+
+    pod.stage_declaring("runner:3", RUNS, "runtime-a", None, Some(STAGED_LOADER));
+    pod.name("runner:3");
+    wait_for("runner:2 to begin closing", || {
+        lines(&dir.join("runners"))
+            .iter()
+            .any(|line| line.starts_with("closing "))
+    });
+    // TEST_SCENARIO: the node drops the release the pod is handing off to, after the pod copied it and before the release starts.
+    pod.drop_from_node("runner:3");
+    let copy = dir.join("loader/releases").join(release::key("runner:3"));
+    wait_for("runner:3 to run from the pod's own copy", || {
+        lines(&dir.join("runners"))
+            .iter()
+            .any(|line| line.starts_with(&format!("{} ", copy.join(RUNNER).display())))
+    });
+    assert_eq!(
+        pod.status().running,
+        "runner:3",
+        "the successor did not settle on the release it was given: {:?}",
+        lines(&dir.join("runners"))
+    );
+    let exited = pod.terminate();
+    assert!(exited.success(), "the loader exited with {exited}");
+}
+
+// TEST_SCENARIO: a loader that cannot write down what the loader after it needs does not become it: the release is held as failed and the pod goes on running the release it has, rather than a successor that would take the pod's image for its own loader and start a release nobody accepted.
+#[test]
+fn a_loader_that_cannot_write_down_what_follows_it_is_not_become() {
+    let mut pod = Pod::start("handover-not-written", RUNS);
+    let dir = pod.dir.clone();
+    wait_for("the pod's own runner", || {
+        pod.status().running == "runner:1" && lines(&dir.join("machines")).len() == 1
+    });
+    let machine = lines(&dir.join("machines"))[0].clone();
+    // UNIT_BOUNDARY_DESCRIPTION: a directory where the handover belongs, which no write can replace.
+    std::fs::create_dir_all(dir.join("loader/handover.json")).unwrap();
+    std::fs::write(dir.join("loader/handover.json/keep"), "x").unwrap();
+
+    pod.stage_declaring("runner:2", RUNS, "runtime-a", None, Some(STAGED_LOADER));
+    pod.name("runner:2");
+    wait_for("runner:2 to be held as failed", || {
+        pod.status().held == HELD_FAILED
+    });
+    let status = pod.status();
+    assert_eq!(
+        (status.running.as_str(), status.target.as_str()),
+        ("runner:1", "runner:2"),
+        "{status:?}"
+    );
+    assert!(
+        status.message.contains("was not taken"),
+        "the hold does not say why: {}",
+        status.message
+    );
+    let loaders = lines(&dir.join("loaders"));
+    assert_eq!(
+        loaders.len(),
+        1,
+        "the pod became a loader it could not describe to the one that follows: {loaders:?}"
+    );
+    assert!(
+        loaders[0].contains("run --check "),
+        "the pod did no more than ask: {loaders:?}"
+    );
+    assert!(alive(&machine), "the failed change stopped a machine");
+    let exited = pod.terminate();
+    assert!(exited.success(), "the loader exited with {exited}");
+}
+
+// TEST_SCENARIO: a release staged again under the same name with another loader is become: the pod compares the bytes of the loader it is against the release's, not the file that a path names, which the restaging replaced under this very process.
+#[test]
+fn a_release_staged_again_with_another_loader_is_become_again() {
+    let mut pod = Pod::start("restaged-loader", RUNS);
+    let dir = pod.dir.clone();
+    wait_for("the pod's own runner", || {
+        pod.status().running == "runner:1"
+    });
+    pod.stage_declaring("runner:2", RUNS, "runtime-a", None, Some(STAGED_LOADER));
+    pod.name("runner:2");
+    wait_for("the pod to become runner:2's loader", || {
+        pod.status().running == "runner:2"
+    });
+    // TEST_SCENARIO: a release of its own with no loader, so the pod keeps the loader it became for the restaging below.
+    pod.stage_declaring("runner:3", RUNS, "runtime-a", None, None);
+    pod.name("runner:3");
+    wait_for("runner:3 to run", || pod.status().running == "runner:3");
+
+    pod.stage_declaring(
+        "runner:2",
+        RUNS,
+        "runtime-a",
+        None,
+        Some(STAGED_LOADER_AGAIN),
+    );
+    pod.name("runner:2");
+    wait_for("the pod to become runner:2's loader again", || {
+        pod.status().running == "runner:2" && lines(&dir.join("loaders")).len() == 4
+    });
+    let loaders = lines(&dir.join("loaders"));
+    assert!(
+        loaders[3].ends_with(" again"),
+        "the pod compared a path rather than the bytes of the loader it is: {loaders:?}"
+    );
+    let exited = pod.terminate();
+    assert!(exited.success(), "the loader exited with {exited}");
+}
+
+// TEST_SCENARIO: a stop that arrives while the loader is deciding whether to become another is not lost: the mask goes on before the loader looks, and the stop is then found either in the flag this process's handler set or in what the kernel still holds, so the pod keeps the release it runs and a runner of it takes the stop, rather than the pod ending from an exec that left nobody to take it.
+#[test]
+fn a_stop_in_the_window_before_the_exec_is_not_lost() {
+    let mut pod = Pod::start_named(
+        "stop-in-the-window",
+        RUNS,
+        None,
+        &[("VM_RUNNER_LOADER_TEST_STOP_WINDOW_MS", "4000")],
+    );
+    let dir = pod.dir.clone();
+    wait_for("the pod's own runner", || {
+        pod.status().running == "runner:1" && lines(&dir.join("machines")).len() == 1
+    });
+    pod.stage_declaring("runner:2", RUNS, "runtime-a", None, Some(STAGED_LOADER));
+    pod.name("runner:2");
+    // TEST_SCENARIO: the release's loader is asked to start at once, and the window the loader opens before it looks lasts four seconds, so the stop lands inside it.
+    wait_for("the release's loader to be asked", || {
+        !lines(&dir.join("loaders")).is_empty()
+    });
+    std::thread::sleep(Duration::from_millis(250));
+    // SAFETY: kill(2) takes plain integers and touches no memory of this process.
+    unsafe { libc::kill(i32::try_from(pod.loader.id()).unwrap(), libc::SIGTERM) };
+    let exited = pod.loader.wait().unwrap();
+    let loaders = lines(&dir.join("loaders"));
+    assert_eq!(
+        loaders.len(),
+        1,
+        "the pod became the release's loader with a stop already in hand ({exited}): {loaders:?}"
+    );
+    assert!(
+        loaders[0].contains("run --check "),
+        "the pod did more than ask: {loaders:?}"
+    );
+}
+
+// TEST_SCENARIO: a stop that arrives after the loader has looked is held by the mask the process keeps across the exec, and the loader that follows takes it: it starts the release's runner and stops it, so no machine is left running under a pod that is ending. Linux only: the mask and the signals still waiting survive an exec there, and the loader runs only in a Linux pod.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_stop_after_the_last_look_is_taken_by_the_loader_that_follows() {
+    let mut pod = Pod::start_named(
+        "stop-after-the-look",
+        SLOW,
+        None,
+        &[("VM_RUNNER_LOADER_TEST_EXEC_WINDOW_MS", "4000")],
+    );
+    let dir = pod.dir.clone();
+    wait_for("the pod's own runner", || {
+        pod.status().running == "runner:1"
+    });
+    pod.stage_declaring("runner:2", SLOW, "runtime-a", None, Some(STAGED_LOADER));
+    pod.name("runner:2");
+    wait_for("the release's loader to be asked", || {
+        !lines(&dir.join("loaders")).is_empty()
+    });
+    // TEST_SCENARIO: the window the loader opened after its last look is four seconds, so the stop waits in the mask for whoever execs.
+    std::thread::sleep(Duration::from_millis(500));
+    // SAFETY: kill(2) takes plain integers and touches no memory of this process.
+    unsafe { libc::kill(i32::try_from(pod.loader.id()).unwrap(), libc::SIGTERM) };
+    let exited = pod.loader.wait().unwrap();
+    assert!(exited.success(), "the loader exited with {exited}");
+    let loaders = lines(&dir.join("loaders"));
+    assert_eq!(
+        loaders.len(),
+        2,
+        "the pod did not become the release's loader: {loaders:?}"
+    );
+    assert!(
+        loaders[1].contains("run --builtin "),
+        "the pod became another loader than the release's: {loaders:?}"
+    );
+    assert!(
+        lines(&dir.join("runners"))
+            .last()
+            .is_some_and(|line| line.starts_with("stopped ")),
+        "the stop was lost across the exec: {:?}",
+        lines(&dir.join("runners"))
+    );
 }

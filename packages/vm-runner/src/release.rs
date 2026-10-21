@@ -145,16 +145,18 @@ pub fn target_file(loader_dir: &Path) -> PathBuf {
     loader_dir.join("target")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: what a loader hands the one that replaces it, across an exec that keeps the process and loses everything it held: which loader binary this process is, so the loader of a release it is named is compared with the loader it really runs and not with that of a runner it went back to, and which release it ran before, so a release that fails right after it takes over gives the machines back to that one rather than to the pod's image. A pod that never became another loader has none, and its loader is the one its image carries.
+// UNIT_BOUNDARY_DESCRIPTION: what a loader hands the one that replaces it, across an exec that keeps the process and loses everything it held: the loader binary this process is, by its bytes, so a release's loader is compared with the loader this pod really became and not with whatever sits where that one was staged; the release this process accepted for it to start, which it must start even where the node no longer stages it; and the release this process ran before, so a release that fails right after it takes over gives the machines back to that one rather than to the pod's image. A pod that never became another loader has none, and its loader is the one its image carries.
 #[derive(Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Handover {
-    pub loader: PathBuf,
-    pub replaced: Option<Replaced>,
+    pub loader_digest: Vec<u8>,
+    pub start: Option<Snapshot>,
+    pub replaced: Option<Snapshot>,
 }
 
-#[derive(Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct Replaced {
+// UNIT_BOUNDARY_DESCRIPTION: a release the pod runs from its own copy of it: the name it was staged under, the directory the loader copied it into, and the runtime that copy boots from. The pod's copied release outlives the node's staging of it, so this is what a loader passes on rather than a reference to look up again.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snapshot {
     pub name: String,
     pub dir: PathBuf,
     pub runtime: PathBuf,
@@ -168,14 +170,17 @@ pub fn write_handover(path: &Path, handover: &Handover) -> anyhow::Result<()> {
     replace(path, &serde_json::to_vec(handover)?)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: reads what the loader this process replaced left and removes it, so a runner that restarts later is not handed an old one: a handover describes the one exec that followed it, and the release it names has been started by then.
-pub fn take_handover(path: &Path) -> Handover {
-    let read = std::fs::read(path)
-        .ok()
-        .and_then(|raw| serde_json::from_slice(&raw).ok())
-        .unwrap_or_default();
-    let _ = std::fs::remove_file(path);
-    read
+// UNIT_BOUNDARY_DESCRIPTION: reads what the loader this process replaced left and removes it, so a runner that restarts later is not handed a handover that named the one exec before it: a handover describes that exec alone, and the release it names has been started by then. A file that cannot be read, or read back as a handover, or removed, is an error and not a default, since a default leaves the pod running its image after a loader became another.
+pub fn take_handover(path: &Path) -> anyhow::Result<Handover> {
+    let raw = match std::fs::read(path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Handover::default()),
+        Err(e) => return Err(e).with_context(|| format!("reading {}", path.display())),
+    };
+    let handover =
+        serde_json::from_slice(&raw).with_context(|| format!("reading {}", path.display()))?;
+    std::fs::remove_file(path).with_context(|| format!("removing {}", path.display()))?;
+    Ok(handover)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: replaces a file of the loader directory whole, so the side that reads it never reads half of one.
@@ -346,7 +351,8 @@ pub fn same_bytes(a: &Path, b: &Path) -> bool {
     }
 }
 
-fn digest(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
+// UNIT_BOUNDARY_DESCRIPTION: a file's bytes, or that it is absent, so two loaders can be told apart by what they are rather than by where they were staged: a release staged again under the same name replaces the file a path would name.
+pub fn digest(path: &Path) -> std::io::Result<Option<Vec<u8>>> {
     use std::io::Read;
     let mut file = match std::fs::File::open(path) {
         Ok(file) => file,
@@ -431,18 +437,25 @@ mod tests {
     fn a_handover_is_read_once_and_then_gone() {
         let dir = TempDir::new("handover");
         let path = handover_file(dir.path());
-        assert_eq!(take_handover(&path), Handover::default());
+        assert_eq!(take_handover(&path).unwrap(), Handover::default());
         let handover = Handover {
-            loader: PathBuf::from("/releases/a/vm-runner-loader"),
-            replaced: Some(Replaced {
+            loader_digest: b"the loader".to_vec(),
+            start: Some(Snapshot {
+                name: "runner:3".into(),
+                dir: PathBuf::from("/releases/c"),
+                runtime: PathBuf::from("/runtimes/b"),
+            }),
+            replaced: Some(Snapshot {
                 dir: PathBuf::from("/releases/b"),
                 name: "runner:2".into(),
                 runtime: PathBuf::from("/runtimes/a"),
             }),
         };
         write_handover(&path, &handover).unwrap();
-        assert_eq!(take_handover(&path), handover);
-        assert_eq!(take_handover(&path), Handover::default());
+        assert_eq!(take_handover(&path).unwrap(), handover);
+        assert_eq!(take_handover(&path).unwrap(), Handover::default());
+        std::fs::write(&path, b"not a handover").unwrap();
+        assert!(take_handover(&path).is_err());
     }
 
     fn boots(dir: &Path, key: &str) {
