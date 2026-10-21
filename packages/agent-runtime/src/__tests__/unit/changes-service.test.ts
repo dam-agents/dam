@@ -94,7 +94,7 @@ function serviceFor(
 }
 
 /**
- * Runs git with its trace written into a directory, as agent-runtime
+ * UNIT_BOUNDARY_DESCRIPTION: runs git with its trace written into a directory, as agent-runtime
  * configures it for its harnesses, then hands every finished trace to the
  * service the way the trace reader does. The Session variables of the shell
  * running the tests are dropped, so only the ones a spec sets are recorded.

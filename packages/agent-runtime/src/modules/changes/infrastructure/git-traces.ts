@@ -13,6 +13,14 @@ export const STALE_TRACE_MS = 10 * 60_000;
 
 const COMPLETE = /"event":"atexit"/;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the file git writes when the directory holds as
+ * many traces as it allows, telling every later git process to skip its
+ * trace. It is deleted at once, so tracing resumes as soon as the backlog is
+ * read.
+ */
+const DISCARD_MARKER = "git-trace2-discard";
+
 export interface GitTraceReader {
   start(): Promise<void>;
   drain(): Promise<void>;
@@ -41,6 +49,11 @@ export function createGitTraceReader(deps: {
     const names = await readdir(deps.dir).catch(() => [] as string[]);
     for (const name of names) {
       const path = join(deps.dir, name);
+      if (name === DISCARD_MARKER) {
+        deps.log("git skipped traces while their directory was full");
+        await rm(path, { force: true }).catch(() => undefined);
+        continue;
+      }
       const text = await readFile(path, "utf8").catch(() => null);
       if (text === null) continue;
       if (!COMPLETE.test(text)) {

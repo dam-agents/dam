@@ -125,4 +125,20 @@ describe("git trace reader", () => {
     await expect.poll(() => commands.length, { timeout: 10_000 }).toBe(1);
     traces.close();
   });
+
+  /**
+   * TEST_SCENARIO: git marks a full directory with a file that makes every
+   * later git process skip its trace. The reader deletes the marker at
+   * once, so tracing resumes.
+   */
+  it("should delete the marker git leaves in a full directory", async () => {
+    const traces = reader();
+    await traces.start();
+    await fs.writeFile(path.join(dir, "git-trace2-discard"), "");
+
+    await traces.drain();
+    traces.close();
+
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
 });
