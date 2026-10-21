@@ -61,6 +61,11 @@ export interface WrapperInput {
   relay?: boolean;
 }
 
+const FRAME_SANDBOX =
+  "allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox";
+export const RELAYED_FRAME_SANDBOX =
+  "allow-scripts allow-popups allow-popups-to-escape-sandbox";
+
 export const VIEWER_PROMPT_NOTICES = {
   sent: "Sent to the agent. It answers on the page, not here.",
   "spend-limit":
@@ -70,12 +75,11 @@ export const VIEWER_PROMPT_NOTICES = {
   "invalid-request": "The page sent a prompt the agent cannot take.",
 } as const;
 
-function renderViewerRelay(slug: string, contentUrl: string): string {
+function renderViewerRelay(slug: string): string {
   const base = `/a/${encodeURIComponent(slug)}`;
   return `<script>
 (() => {
   const frame = document.querySelector("iframe");
-  const contentOrigin = new URL(${jsStringLiteral(contentUrl)}).origin;
   const notices = ${JSON.stringify(VIEWER_PROMPT_NOTICES).replaceAll("<", "\\u003c")};
   const status = document.getElementById("relay-status");
   let inFlight = 0;
@@ -95,7 +99,7 @@ function renderViewerRelay(slug: string, contentUrl: string): string {
     }).then((res) => res.json()).catch(() => ({ ok: false, reason: "agent-unreachable" }));
   window.addEventListener("message", (event) => {
     const page = frame && frame.contentWindow;
-    if (!page || event.source !== page || event.origin !== contentOrigin) return;
+    if (!page || event.source !== page) return;
     const data = event.data;
     if (!data || typeof data !== "object") return;
     if (data.type === ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}) {
@@ -107,7 +111,7 @@ function renderViewerRelay(slug: string, contentUrl: string): string {
     if (data.type !== ${JSON.stringify(ARTIFACT_REQUEST_TYPE)} || typeof data.id !== "string") return;
     const reply = (result) => {
       if (frame.contentWindow !== page) return;
-      page.postMessage(Object.assign({ type: ${JSON.stringify(ARTIFACT_RESPONSE_TYPE)}, id: data.id }, result), contentOrigin);
+      page.postMessage(Object.assign({ type: ${JSON.stringify(ARTIFACT_RESPONSE_TYPE)}, id: data.id }, result), "*");
     };
     if (inFlight >= ${ARTIFACT_REQUEST_MAX_IN_FLIGHT}) {
       reply({ ok: false, reason: "too-many-requests" });
@@ -153,8 +157,8 @@ export function renderWrapper(input: WrapperInput): string {
   <span class="spacer"></span>
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
-<iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
-${input.relay ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug, input.contentUrl)}` : ""}
+<iframe sandbox="${input.relay ? RELAYED_FRAME_SANDBOX : FRAME_SANDBOX}" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+${input.relay ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug)}` : ""}
 </body>
 </html>`;
 }

@@ -29,7 +29,10 @@ import type {
   ShareViewerService,
   SharedResolution,
 } from "../../modules/artifact-library/services/share-viewer-service.js";
-import { renderWrapper } from "../../modules/artifact-library/viewer/renderer.js";
+import {
+  RELAYED_FRAME_SANDBOX,
+  renderWrapper,
+} from "../../modules/artifact-library/viewer/renderer.js";
 import { createShareViewerApp } from "../../modules/artifact-library/viewer/viewer-app.js";
 import { createMemoryTtlStore } from "../../core/ttl-store.js";
 
@@ -467,8 +470,24 @@ describe("the share page relay", () => {
     expect(page(false)).not.toContain("/request");
     const html = page(true);
     expect(html).toContain('"/a/slug-a"');
-    expect(html).toContain("event.origin !== contentOrigin");
+    expect(html).toContain("event.source !== page");
     expect(html).toContain('credentials: "same-origin"');
+  });
+
+  /**
+   * TEST_SCENARIO: Every artifact runs on the one content origin. If the
+   * relayed frame kept that origin, another artifact could open this share
+   * page in a popup, script the frame and make the relay act as the viewer.
+   * The relayed frame gets an opaque origin instead; a page with no relay
+   * keeps the sandbox it had.
+   */
+  it("gives the relayed frame an origin no other artifact shares", () => {
+    const sandboxOf = (html: string) =>
+      /<iframe sandbox="([^"]*)"/.exec(html)?.[1];
+    expect(sandboxOf(page(true))).toBe(RELAYED_FRAME_SANDBOX);
+    expect(RELAYED_FRAME_SANDBOX).not.toContain("allow-same-origin");
+    expect(RELAYED_FRAME_SANDBOX).toContain("allow-scripts");
+    expect(sandboxOf(page(false))).toContain("allow-same-origin");
   });
 });
 

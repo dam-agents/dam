@@ -71,7 +71,9 @@ The dialog warns the owner there that viewers can read and change the Agent's da
 
 A viewer uses a shared interactive page as its owner does: they act under the owner's grant, as a person in a shared Slack channel does.
 On the share host the content host injects the owner's bridge, and the share page relays the frame's messages to two share-host routes, one for requests and one for prompts.
-The share page accepts a message only from its own frame on the content origin, and the routes accept a call only from the share origin, so artifact code cannot use the viewer's share session behind the share page's back.
+The relayed frame is sandboxed without same-origin, so its document has an opaque origin of its own: no other artifact's code on the content origin can script it, even when it opens the share page in a popup.
+The share page accepts a message only from that frame's window, and the routes accept a call only from the share origin, so artifact code cannot use the viewer's share session behind the share page's back.
+A page that relies on its own browser storage loses it there, as in the in-app preview.
 Each call is checked again from the start: the viewer's share session and the viewer list, then that the artifact is still restricted, interactive and published by an Agent, and that its owner has the interactive-artifacts feature on.
 A page the owner makes private or plain, a viewer the owner removes, and turning the feature off all stop the next call.
 
@@ -122,6 +124,7 @@ Two dedicated by-link hosts (separate subdomains, both mandatory, wired through 
 - The **share host** serves *only* the by-link surfaces — share pages and their source download, folder pages, the share sign-in routes, the relay routes for [viewers of a shared interactive page](#viewers-of-a-shared-page), and the read-only knowledge-base MCP endpoint — never an app route.
 - The **content host** serves *only* the framed artifact document and its raw bytes.
   It has no cookie, no sign-in, and no page of its own, so there is nothing on that origin for artifact code to act as.
+  The one frame whose bridge reaches an Agent — a restricted interactive page on its share page — does not run on that origin at all: its sandbox gives it an opaque origin, so artifact code on the content origin cannot script it.
 
 The api-server host-gates every request before any app route or auth middleware: requests for the share host go to a self-contained share-host app — the artifact viewer, share sign-in, plus the read-only [knowledge-base MCP endpoint](knowledge-bases.md#sharing) under `/mcp/kb` — requests for the content host go to the content app, and everything else falls through to the platform surface.
 The app origin shares nothing with either by-link origin — no cookie, no token — so a malicious artifact cannot reach Keycloak tokens, the tRPC surface, or app cookies, because none of them exist on its origin.
