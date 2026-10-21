@@ -1,5 +1,5 @@
 import { Add, ChevronRight, Home, Pin, Settings } from "@carbon/icons-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
@@ -23,11 +23,12 @@ import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
 import { AddRow } from "./add-row.js";
+import { AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
 import { PinnedList } from "./pinned-rows.js";
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, the Pinned section, one avatar per Agent in the same manual order and Settings. An avatar or the pin icon opens what the expanded tree would show under it, in a popover beside the rail, and choosing a Session closes it. The rail never leaves the layout, so the page always has a way back to the tree.
+ * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, the Pinned section, one avatar per Agent in the same manual order and Settings. An avatar opens what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus as well as on click, and choosing a Session closes it; the pin icon opens the Pinned section on click. The rail never leaves the layout, so the page always has a way back to the tree.
  */
 export function SidebarRail({
   onExpand,
@@ -159,6 +160,9 @@ export function SidebarRail({
   );
 }
 
+const HOVER_OPEN_MS = 150;
+const HOVER_CLOSE_MS = 250;
+
 function AgentTile({
   agent,
   current,
@@ -178,43 +182,84 @@ function AgentTile({
   const name = cue
     ? `${agent.name}, ${cue === "approval" ? "needs your approval" : "unread"}`
     : agent.name;
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const closedAt = useRef(0);
+  const content = useRef<HTMLDivElement>(null);
+  const cancel = () => clearTimeout(timer.current);
+  const closeSoon = () => {
+    cancel();
+    timer.current = setTimeout(() => {
+      // UNIT_BOUNDARY_DESCRIPTION: a menu opened from the popover outlives the pointer leaving it.
+      if (content.current?.querySelector('[data-state="open"]')) return;
+      closedAt.current = Date.now();
+      onOpenChange(false);
+    }, HOVER_CLOSE_MS);
+  };
+  const openSoon = () => {
+    cancel();
+    timer.current = setTimeout(() => onOpenChange(true), HOVER_OPEN_MS);
+  };
+  useEffect(() => cancel, []);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
-      <Tooltip content={agent.name} side="right">
-        <PopoverTrigger asChild>
-          <button
-            type="button"
-            aria-label={name}
-            aria-current={open ? "page" : undefined}
-            data-testid="sidebar-rail-agent"
-            data-agent-id={agent.id}
-            className={cn(railTile(current || open), FOCUS_RING)}
-          >
-            <AgentAvatar
-              name={agent.name}
-              avatar={agent.avatar}
-              size={26}
-              mood={avatarMood(agent.state, agent)}
+      <PopoverTrigger asChild>
+        <button
+          type="button"
+          aria-label={name}
+          aria-current={open ? "page" : undefined}
+          data-testid="sidebar-rail-agent"
+          data-agent-id={agent.id}
+          className={cn(railTile(current || open), FOCUS_RING)}
+          onPointerEnter={(e) => {
+            if (e.pointerType !== "touch") openSoon();
+          }}
+          onPointerLeave={(e) => {
+            if (e.pointerType !== "touch") closeSoon();
+          }}
+          onFocus={(e) => {
+            // UNIT_BOUNDARY_DESCRIPTION: Escape returns focus to this tile, and must not reopen what it closed.
+            if (
+              e.currentTarget.matches(":focus-visible") &&
+              Date.now() - closedAt.current > HOVER_CLOSE_MS
+            ) {
+              cancel();
+              onOpenChange(true);
+            }
+          }}
+        >
+          <AgentAvatar
+            name={agent.name}
+            avatar={agent.avatar}
+            size={26}
+            mood={avatarMood(agent.state, agent)}
+          />
+          {cue && (
+            <span
+              aria-hidden
+              className={cn(
+                "absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-chrome",
+                cue === "approval" ? "bg-warning" : "bg-success",
+              )}
             />
-            {cue && (
-              <span
-                aria-hidden
-                className={cn(
-                  "absolute top-0.5 right-0.5 size-2 rounded-full ring-2 ring-chrome",
-                  cue === "approval" ? "bg-warning" : "bg-success",
-                )}
-              />
-            )}
-          </button>
-        </PopoverTrigger>
-      </Tooltip>
+          )}
+        </button>
+      </PopoverTrigger>
       <PopoverContent
+        ref={content}
         side="right"
         align="start"
         className="max-h-[70vh] w-[320px] overflow-y-auto p-2"
+        onPointerEnter={cancel}
+        onPointerLeave={closeSoon}
       >
-        <div className="truncate px-2 pb-1 text-sm font-medium">
-          {agent.name}
+        <div className="flex h-8 items-center justify-between gap-2 pr-1 pl-2">
+          <span className="truncate text-sm font-medium">{agent.name}</span>
+          <AgentRowActions
+            agent={agent}
+            current={current}
+            onNavigate={onNavigate}
+            revealedOnHover={false}
+          />
         </div>
         <AgentSessionList
           agentId={agent.id}

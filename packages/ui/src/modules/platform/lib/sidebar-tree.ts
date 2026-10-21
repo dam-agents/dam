@@ -142,3 +142,6 @@ export function awaitsApproval(
       (sessionId === undefined || a.sessionId === sessionId),
   );
 }
+
+export const REVEAL =
+  "transition-opacity hover-capable:pointer-events-none hover-capable:opacity-0 group-hover/agent:pointer-events-auto group-hover/agent:opacity-100 group-has-[:focus-visible]/agent:pointer-events-auto group-has-[:focus-visible]/agent:opacity-100 group-has-[[data-state=open]]/agent:pointer-events-auto group-has-[[data-state=open]]/agent:opacity-100";
