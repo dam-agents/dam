@@ -6,24 +6,27 @@ import {
   defaultModelAction,
   defaultModelHeadline,
   defaultModelStopsRuns,
+  stoppedRuns,
 } from "../../home/lib/default-model-copy.js";
 
 export function DefaultModelNotice({ agentId }: { agentId: string }) {
   const { byAgentEvenDismissed } = useDefaultModelNotices();
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
-  const notice = byAgentEvenDismissed.get(agentId);
-  if (!notice || !defaultModelStopsRuns(notice)) return null;
+  const notices = (byAgentEvenDismissed.get(agentId) ?? []).filter(
+    defaultModelStopsRuns,
+  );
+  if (notices.length === 0) return null;
 
-  return (
+  return notices.map((notice) => (
     <p
+      key={notice.id}
       role="status"
       data-testid="default-model-notice"
       className="flex flex-wrap items-center gap-x-1.5 pl-3 text-xs text-muted-foreground"
     >
       <span className="size-1.5 shrink-0 rounded-full bg-warning" />
       <span>
-        {defaultModelHeadline(notice)}: schedules and Slack or Telegram turns
-        won't run.
+        {defaultModelHeadline(notice)}: {stoppedRuns(notice.kinds)} won't run.
       </span>
       <Button
         variant="link"
@@ -34,5 +37,5 @@ export function DefaultModelNotice({ agentId }: { agentId: string }) {
         {defaultModelAction(notice)}
       </Button>
     </p>
-  );
+  ));
 }

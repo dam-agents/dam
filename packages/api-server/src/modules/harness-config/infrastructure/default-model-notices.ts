@@ -19,12 +19,18 @@ import {
   providerTypeForTemplateId,
   sessionPairSchema,
   type DefaultModelNotice,
+  type SessionPair,
 } from "api-server-api";
 
 import {
   defaultModelNoteSchema,
-  defaultModelNoticeOf,
+  defaultModelNoticesOf,
 } from "../domain/default-model-notice.js";
+
+const parsePair = (value: unknown): SessionPair | null => {
+  const parsed = sessionPairSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the default-model notices of the given Agents
@@ -46,6 +52,8 @@ export function createDefaultModelNoticeReader(
       .select({
         id: agentsTable.id,
         pair: agentsTable.sessionPair,
+        channelPair: agentsTable.channelSessionPair,
+        scheduledPair: agentsTable.scheduledSessionPair,
         note: agentsTable.defaultModelNote,
         capabilities: agentsTable.runtimeCapabilities,
       })
@@ -57,7 +65,10 @@ export function createDefaultModelNoticeReader(
           isNull(agentsTable.spawnedByAgentId),
         ),
       );
-    const withPair = rows.filter((r) => r.pair !== null);
+    const withPair = rows.filter(
+      (r) =>
+        r.pair !== null || r.channelPair !== null || r.scheduledPair !== null,
+    );
     if (withPair.length === 0) return [];
     const grants = await db
       .select({
@@ -116,17 +127,19 @@ export function createDefaultModelNoticeReader(
       [...scheduleRows, ...channelRows, ...telegramRows].map((r) => r.agentId),
     );
     return withPair.flatMap((r) => {
-      const pair = sessionPairSchema.safeParse(r.pair);
       const note = defaultModelNoteSchema.safeParse(r.note);
-      const notice = defaultModelNoticeOf({
+      return defaultModelNoticesOf({
         agentId: r.id,
         routed: routesByModelName(r.capabilities),
-        pair: pair.success ? pair.data : null,
+        saved: {
+          chat: parsePair(r.pair),
+          channel: parsePair(r.channelPair),
+          scheduled: parsePair(r.scheduledPair),
+        },
         note: note.success ? note.data : null,
         grantedAliases: granted.get(r.id) ?? new Set(),
         runsUnattended: unattended.has(r.id),
       });
-      return notice ? [notice] : [];
     });
   };
 }

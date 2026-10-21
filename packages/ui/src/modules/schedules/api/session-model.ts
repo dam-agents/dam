@@ -57,7 +57,9 @@ export function useScheduleDefault(
 ) {
   return useQuery({
     ...trpc.harnessConfig.defaultFor.queryOptions(
-      agentId ? { agentId, ...(harness ? { harness } : {}) } : skipToken,
+      agentId
+        ? { agentId, kind: "scheduled", ...(harness ? { harness } : {}) }
+        : skipToken,
     ),
     staleTime: 60_000,
     retry: false,

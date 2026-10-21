@@ -253,7 +253,7 @@ describe("a subagent model beside a natively run provider", () => {
       pairRepo,
       snapshotRepo: { read: async () => null },
       getCapabilities: async () => capabilities,
-      firePair: (agentId, preferred) =>
+      firePair: (agentId, kind, preferred) =>
         resolveFirePair(
           {
             catalog,
@@ -262,6 +262,7 @@ describe("a subagent model beside a natively run provider", () => {
             specHarness: async () => undefined,
           },
           agentId,
+          kind,
           preferred,
         ),
     });

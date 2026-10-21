@@ -16,7 +16,10 @@ import {
   run,
   textResult,
 } from "../../core/mcp-tool-result.js";
-import type { SubAgentAwaitMarks } from "../../modules/invocations/index.js";
+import {
+  NO_SPAWN_MODEL_MESSAGE,
+  type SubAgentAwaitMarks,
+} from "../../modules/invocations/index.js";
 import type { DriverOps, SpawnRequest } from "./driver-ops.js";
 
 /**
@@ -378,6 +381,9 @@ function unlistedModel(
   return `no granted provider lists ${model} for that harness; listed: ${names.length > 0 ? names.join(", ") : "none"}`;
 }
 
+const UNIDENTIFIED_SESSION =
+  "this session does not identify itself to the platform (Bob and Pi sessions and terminal sessions do not), so its platform sub-agent settings cannot apply. Pass a harness and a provider-qualified model (list_harnesses lists each harness's models).";
+
 export function registerSubAgentTools(
   server: McpServer,
   deps: {
@@ -386,6 +392,7 @@ export function registerSubAgentTools(
     spawningSession: () => Promise<string | null>;
     requestSignal?: AbortSignal;
     sessionContext?: () => Promise<SessionSubAgentContext | null>;
+    sessionIdentified?: boolean;
     catalogModels?: (harness: string) => Promise<CatalogModelRef[] | null>;
     waitMs?: number;
     pollMs?: number;
@@ -407,6 +414,7 @@ export function registerSubAgentTools(
           "spawn_subagent refused: this session's settings could not be read, so its platform sub-agent settings cannot be applied. Try again.",
         );
       }
+      const unidentified = session === null && deps.sessionIdentified === false;
       const resolved = resolveSubAgent(rest, session);
       if (!resolved.ok)
         return errorResult(`spawn_subagent refused: ${resolved.message}`);
@@ -420,7 +428,9 @@ export function registerSubAgentTools(
       );
       if (!parsed.success) {
         return errorResult(
-          `spawn_subagent refused: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
+          unidentified && rest.harness === undefined && rest.image === undefined
+            ? `spawn_subagent refused: ${UNIDENTIFIED_SESSION}`
+            : `spawn_subagent refused: ${parsed.error.issues.map((i) => i.message).join("; ")}`,
         );
       }
       const body = parsed.data;
@@ -456,7 +466,11 @@ export function registerSubAgentTools(
         driverSessionId,
       });
       if (!outcome.ok) {
-        return errorResult(`spawn_subagent refused: ${outcome.message}`);
+        return errorResult(
+          unidentified && outcome.message === NO_SPAWN_MODEL_MESSAGE
+            ? `spawn_subagent refused: nothing names the sub-agent's model, and ${UNIDENTIFIED_SESSION}`
+            : `spawn_subagent refused: ${outcome.message}`,
+        );
       }
       const tag = body.label ?? body.harness ?? body.image ?? outcome.id;
       return textResult(

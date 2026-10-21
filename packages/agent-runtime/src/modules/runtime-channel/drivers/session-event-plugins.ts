@@ -42,6 +42,7 @@ export const createInitializationPlugin = sessionEventPlugin(
         type: SessionType.Regular,
         mode: SessionMode.Chat,
         initialization: true,
+        follows: "chat",
         ...pair,
       },
     };
@@ -69,6 +70,7 @@ export const createSatelliteOutcomePlugin = sessionEventPlugin(
       platformMeta: {
         type: SessionType.Regular,
         mode: SessionMode.Chat,
+        follows: "chat",
         ...pair,
       },
     };
@@ -112,6 +114,7 @@ export function createSubAgentOutcomePlugin(deps: {
                 platformMeta: {
                   type: SessionType.Regular,
                   mode: SessionMode.Chat,
+                  follows: "chat",
                   ...pair,
                 },
               },

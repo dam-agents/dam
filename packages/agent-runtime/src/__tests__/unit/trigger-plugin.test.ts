@@ -31,6 +31,7 @@ const scheduleMeta = (scheduleId: string) => ({
   type: SessionType.ScheduleCron,
   mode: SessionMode.Chat,
   scheduleId,
+  follows: null,
 });
 
 const allows: PrecheckRunner = async () => ({ verdict: "allowed" });

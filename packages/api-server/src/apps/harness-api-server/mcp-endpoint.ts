@@ -184,6 +184,12 @@ export interface McpSessionDeps {
   } | null;
 }
 
+const SESSION_SETTINGS_INSTRUCTIONS =
+  "Your model, effort and other session settings, apart from the permission mode, are not set in your harness's own settings file: a session runs on what was picked in it, else on the default the owner set for its kind (chat, Slack or Telegram, or schedules) on the agent's Providers page. Editing the settings file does not change them. When someone asks you to change your model or effort, tell them to pick it in this session's model menu, or to change the default on the Providers page.";
+
+const KB_SHARE_INSTRUCTIONS =
+  "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.";
+
 export function createMcpSession(
   agentId: string,
   deps: McpSessionDeps,
@@ -194,12 +200,12 @@ export function createMcpSession(
       name: `platform-${agentId}`,
       version: "1.0.0",
     },
-    deps.kbShares
-      ? {
-          instructions:
-            "This agent is a knowledge base. Knowledge base sharing is paused while it is redesigned: do not offer to share this knowledge base and do not start a new share. If it is already shared, call refresh_knowledge_base_share after substantial edits and get_share_status to check it. The share link is never available to you.",
-        }
-      : undefined,
+    {
+      instructions: [
+        SESSION_SETTINGS_INSTRUCTIONS,
+        ...(deps.kbShares ? [KB_SHARE_INSTRUCTIONS] : []),
+      ].join("\n\n"),
+    },
   );
 
   const runtimeClient = createTRPCClient<AppRouter>({
@@ -1028,17 +1034,17 @@ export function createMcpSession(
       harness: scheduleHarnessSchema
         .optional()
         .describe(
-          "Optional harness this schedule's sessions run on, one the agent's image carries (`get_agent_config` lists them); omit it to run on the agent's default harness.",
+          "Optional harness this schedule's sessions run on, one the agent's image carries. Omit it: the sessions run on the scheduled default the owner set for this agent (harness, provider, model and settings together). Set a harness, model or settings of the schedule's own only for a clear reason the task gives; the owner sees every schedule that does.",
         ),
       model: scheduleModelSchema
         .optional()
         .describe(
-          "Optional model this schedule's sessions run on, instead of the default, e.g. a cheap model for a frequent routine check. Name it with its provider, as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001, ibm/gpt-5-mini); the agent's model settings list the names. The provider must be one this agent holds and the harness accepts, else the schedule is refused with the reason. Omit it to run on the harness's own default, what the agent's Default model setting gives, not on whatever model the agent is currently set to. A model the agent can no longer reach at fire time fails that run with the reason rather than running on a substitute.",
+          "Optional model this schedule's sessions run on instead of the owner's scheduled default, only for a clear reason the task gives (e.g. a cheap model for a frequent routine check). Name it with its provider, as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001, ibm/gpt-5-mini); the agent's model settings list the names. The provider must be one this agent holds and the harness accepts, else the schedule is refused with the reason. Omit it to run on the scheduled default. A model the agent can no longer reach at fire time fails that run with the reason rather than running on a substitute.",
         ),
       settings: scheduleSettingsSchema
         .optional()
         .describe(
-          'Optional per-session settings of the harness the sessions run on, as {settingId: value} (e.g. {"effort": "high"}); the agent\'s model settings list each harness\'s settings and their values. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
+          'Optional per-session settings of the harness the sessions run on, as {settingId: value} (e.g. {"effort": "high"}), instead of the scheduled default\'s, only for a clear reason the task gives; the agent\'s model settings list each harness\'s settings and their values. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
         ),
       sessionTitle: sessionTitleSchema
         .optional()
@@ -1163,19 +1169,19 @@ export function createMcpSession(
       harness: scheduleHarnessSchema
         .optional()
         .describe(
-          "Harness the new session runs on, one the agent's image carries (`get_agent_config` lists them); omit to run on the agent's default harness. Not with inSession continue, which keeps this session's harness.",
+          "Harness the new session runs on, one the agent's image carries. Omit it: the session runs on the scheduled default the owner set for this agent (harness, provider, model and settings together). Set a harness, model or settings of its own only for a clear reason the task gives. Not with inSession continue, which keeps this session's harness.",
         ),
       model: z
         .string()
         .min(1)
         .optional()
         .describe(
-          "Model the new session runs on, named with its provider as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001 for a routine check, ibm/gpt-5 for a hard one); the agent's model settings list the names. Omit to run on the harness's own default (what the agent's Default model setting gives), not on whatever model the agent is currently set to. Not with inSession continue, which keeps this session's model. A model this agent cannot reach is refused with the reason.",
+          "Model the new session runs on, named with its provider as <provider>/<model id> (e.g. anthropic/claude-haiku-4-5-20251001 for a routine check, ibm/gpt-5 for a hard one); the agent's model settings list the names. Set one only for a clear reason the task gives; omit it to run on the owner's scheduled default. Not with inSession continue, which keeps this session's model. A model this agent cannot reach is refused with the reason.",
         ),
       settings: scheduleSettingsSchema
         .optional()
         .describe(
-          'Per-session settings of the harness the session runs on, as {settingId: value} (e.g. {"effort": "high"}); the agent\'s model settings list each harness\'s settings and their values. Not with inSession continue. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
+          'Per-session settings of the harness the session runs on, as {settingId: value} (e.g. {"effort": "high"}), instead of the scheduled default\'s, only for a clear reason the task gives; the agent\'s model settings list each harness\'s settings and their values. Not with inSession continue. A setting the harness does not offer, or a value not valid for the chosen model, is refused with the reason.',
         ),
       sessionTitle: sessionTitleSchema
         .optional()
@@ -1403,6 +1409,7 @@ export function createMcpSession(
       }
     },
     requestSignal: deps.requestSignal,
+    sessionIdentified: deps.sessionRef !== undefined,
     sessionContext: async () => {
       const ref = deps.sessionRef;
       if (!ref) return null;

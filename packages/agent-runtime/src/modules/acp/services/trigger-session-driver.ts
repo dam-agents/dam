@@ -1,4 +1,4 @@
-import { PIN_MODEL_METHOD } from "agent-runtime-api";
+import { PIN_MODEL_METHOD, type SessionDefaultKind } from "agent-runtime-api";
 import { createInProcessCaller } from "../infrastructure/in-process-request.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
 import {
@@ -17,6 +17,7 @@ export interface TriggerSessionDriver {
     steer?: boolean;
     model?: string;
     keepSessionModel?: boolean;
+    follows?: SessionDefaultKind | null;
   }): Promise<{ sessionId: string; openedOn: string | null }>;
 }
 
@@ -73,6 +74,7 @@ export function createTriggerSessionDriver(deps: {
       steer,
       model,
       keepSessionModel,
+      follows,
     }) {
       const pins =
         !!resumeSessionId &&
@@ -103,9 +105,14 @@ export function createTriggerSessionDriver(deps: {
         let openedOn: string | null;
 
         if (resumeSessionId) {
+          const intent = follows === undefined ? {} : { follows };
           if (pins && model)
             await caller
-              .request(PIN_MODEL_METHOD, { sessionId: resumeSessionId, model })
+              .request(PIN_MODEL_METHOD, {
+                sessionId: resumeSessionId,
+                model,
+                ...intent,
+              })
               .catch((err: unknown) => {
                 throw new SessionModelError(
                   model,

@@ -1,4 +1,5 @@
 import { randomBytes } from "node:crypto";
+import { match } from "ts-pattern";
 
 import {
   isNonNullObject,
@@ -8,6 +9,7 @@ import {
   type JsonRpcFrame,
 } from "../domain/frames.js";
 import type { ClientChannel } from "../infrastructure/client-channel.js";
+import type { SessionDefaultsStore } from "../infrastructure/session-defaults-store.js";
 import type { SessionMetadataStore } from "../infrastructure/session-metadata-store.js";
 import type { BackgroundWorkRegistry } from "./background-work-registry.js";
 import type {
@@ -20,7 +22,11 @@ import {
   isPlatformSubagentSetting,
   NO_MODEL_REASON,
   PIN_MODEL_METHOD,
+  podSessionTypeSchema,
+  sessionDefaultKind,
   sessionSettingsSchema,
+  type SessionDefaultKind,
+  type SessionDefaultsEventPayload,
   type SessionSettings,
 } from "agent-runtime-api";
 import { parseQualifiedModel, RUN_ENDED_CAPABILITY } from "api-server-api";
@@ -62,6 +68,7 @@ export interface LeaseRouterDeps {
   initializeFor: (harness: string) => Record<string, unknown> | null;
   listSessions: (isRunning: (sessionId: string) => boolean) => unknown;
   sessionMetadata: SessionMetadataStore;
+  sessionDefaults?: SessionDefaultsStore;
   backgroundWork: BackgroundWorkRegistry;
   keepPolicy: Pick<KeepPolicy, "keptProcessCount">;
   agentRequests: AgentRequestObserver;
@@ -87,6 +94,7 @@ export interface LeaseRouter extends AcpRuntime {
   leases(): LeasePair[];
   sessionChoice(sessionId: string): SessionChoice;
   modelMissing(sessionId: string): boolean;
+  receiveDefaults(defaults: SessionDefaultsEventPayload): void;
 }
 
 interface Lease {
@@ -608,6 +616,8 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       v.deliver(data);
       return;
     }
+    if (method === "session/prompt" || method === REWRITE_FROM_METHOD)
+      followDefault(sessionId);
     const choice = sessionChoice(sessionId, true);
     if (!deps.harnessKnown(choice.harness)) {
       if (isRequest(frame))
@@ -649,6 +659,100 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     v.deliver(
       method === "session/resume" ? JSON.stringify(withoutChoice(frame)) : data,
     );
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a session on the default of its kind takes
+   * that default's model and settings before each turn, so a changed default
+   * reaches it from its next turn. A default on another harness is not
+   * applied, since a session keeps its harness; the session stays on the last
+   * values it took and follows again once the default is back on its harness.
+   * A change that moves the session to another process waits while its turn
+   * runs. Only the metadata changes here: the prompt that follows sends the
+   * session's settings to the harness, after loading the session again when
+   * the harness closed it.
+   */
+  function followDefault(sessionId: string): void {
+    const entry = deps.sessionMetadata.get(sessionId);
+    const kind = entry?.meta.follows;
+    if (!entry || !kind) return;
+    const after = entry.meta.followsAfter;
+    if (after !== undefined && (deps.sessionDefaults?.revision() ?? 0) <= after)
+      return;
+    const target = deps.sessionDefaults?.get()?.[kind];
+    if (!target || target.model === null) return;
+    const choice = sessionChoice(sessionId, false);
+    if (target.harness !== choice.harness) return;
+    const model = canonicalModel(target.model);
+    const settings = target.settings ?? {};
+    if (model === choice.model && sameSettings(settings, choice.settings ?? {}))
+      return;
+    const from = leases.get(keyOf(leasePairOf(choice)));
+    const moving =
+      keyOf(leasePairOf(choice)) !==
+      keyOf(leasePairOf({ ...choice, model, settings }));
+    if (moving && from?.runtime.isSessionRunning(sessionId)) return;
+    const { model: _model, settings: _settings, ...meta } = entry.meta;
+    deps.sessionMetadata.set(sessionId, {
+      ...meta,
+      model,
+      ...(Object.keys(settings).length > 0 && { settings }),
+    });
+    if (moving) moveSession(sessionId, from);
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: sessions from before the agent held its
+   * defaults carry no follow marker, and nobody can tell whether their pair
+   * was picked or taken from a default. So a session whose harness, model and
+   * settings all equal its kind's default follows that default, and every
+   * other one keeps its own choice. A session whose kind has no default yet,
+   * as on a first hello before the old default is converted, waits unmarked
+   * for a delivery that carries one.
+   */
+  function convertSessions(defaults: SessionDefaultsEventPayload): void {
+    for (const [sessionId, entry] of Object.entries(
+      deps.sessionMetadata.all(),
+    )) {
+      if (entry.meta.follows !== undefined) continue;
+      const kind = defaultKindOfType(entry.meta.type);
+      const target = kind ? defaults[kind] : null;
+      if (kind && (!target || target.model === null)) continue;
+      const choice = sessionChoice(sessionId, false);
+      const matches =
+        !!target &&
+        target.model !== null &&
+        target.harness === choice.harness &&
+        canonicalModel(target.model) === choice.model &&
+        sameSettings(target.settings ?? {}, choice.settings ?? {});
+      deps.sessionMetadata.set(sessionId, {
+        ...entry.meta,
+        follows: matches ? kind : null,
+      });
+    }
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: a caller that just saved this session's pair
+   * as the default asks it to follow from the next delivery, since the
+   * defaults the runtime holds are still the old ones and would move the
+   * session off the pair it was set from.
+   */
+  function followsParam(
+    params: Record<string, unknown> | undefined,
+  ):
+    | { follows: SessionDefaultKind | null; followsAfter: number | undefined }
+    | undefined {
+    if (!params || !("follows" in params)) return undefined;
+    const parsed = sessionDefaultKind.nullable().safeParse(params.follows);
+    if (!parsed.success) return undefined;
+    return {
+      follows: parsed.data,
+      followsAfter:
+        parsed.data !== null && params.afterNextDefaults === true
+          ? (deps.sessionDefaults?.revision() ?? 0)
+          : undefined,
+    };
   }
 
   function pinModel(
@@ -696,6 +800,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       ...meta,
       ...(model !== null && { model }),
       ...(Object.keys(settings).length > 0 && { settings }),
+      ...followsParam(params),
     });
     if (moving) moveSession(sessionId, from);
     else leaseOfSession(sessionId)?.runtime.syncSessionSettings(sessionId);
@@ -753,6 +858,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
     deps.sessionMetadata.set(sessionId, {
       ...meta,
       ...(Object.keys(parsed.data).length > 0 && { settings: parsed.data }),
+      ...followsParam(params),
     });
     if (moving) moveSession(sessionId, from);
     else from?.runtime.syncSessionSettings(sessionId);
@@ -828,6 +934,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     sessionChoice: (sessionId) => sessionChoice(sessionId, false),
     modelMissing: (sessionId) => missesModel(sessionChoice(sessionId, false)),
+
+    receiveDefaults(defaults) {
+      if (!deps.sessionDefaults) return;
+      deps.sessionDefaults.set(defaults);
+      convertSessions(defaults);
+    },
 
     sessionFrames(sessionId) {
       return (
@@ -926,6 +1038,29 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
       leases.clear();
     },
   };
+}
+
+function sameSettings(
+  a: Readonly<Record<string, string>>,
+  b: Readonly<Record<string, string>>,
+): boolean {
+  const keys = Object.keys(a);
+  return (
+    keys.length === Object.keys(b).length && keys.every((k) => a[k] === b[k])
+  );
+}
+
+function defaultKindOfType(
+  type: string | undefined,
+): SessionDefaultKind | null {
+  const parsed = podSessionTypeSchema.safeParse(type ?? "regular");
+  if (!parsed.success) return null;
+  return match(parsed.data)
+    .with("regular", "cli_run", () => "chat" as const)
+    .with("channel_slack", "channel_telegram", () => "channel" as const)
+    .with("schedule_cron", "schedule_once", () => "scheduled" as const)
+    .with("invocation", () => null)
+    .exhaustive();
 }
 
 const SETTINGS_SHAPE_MESSAGE =

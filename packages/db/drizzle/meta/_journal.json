@@ -694,6 +694,13 @@
       "when": 1792568627019,
       "tag": "0098_spend_agent_names",
       "breakpoints": true
+    },
+    {
+      "idx": 99,
+      "version": "7",
+      "when": 1792572237026,
+      "tag": "0099_session_defaults_per_kind",
+      "breakpoints": true
     }
   ]
 }

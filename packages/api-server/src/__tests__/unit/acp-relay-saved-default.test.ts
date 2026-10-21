@@ -112,6 +112,7 @@ describe("ACP relay: the saved default on a new session", () => {
       mcpServers: [],
       _meta: {
         platform: {
+          follows: "chat",
           mode: "chat",
           type: "cli_run",
           harness: "claude-code",
@@ -120,7 +121,7 @@ describe("ACP relay: the saved default on a new session", () => {
         },
       },
     });
-    expect(firePair).toHaveBeenCalledWith("agent-1", {});
+    expect(firePair).toHaveBeenCalledWith("agent-1", "chat", {});
   });
 
   // TEST_SCENARIO: frames sent while the saved default is looked up must not overtake the `session/new` before them, or a prompt would reach the runtime before its session exists.
@@ -239,7 +240,7 @@ describe("fillSavedDefault", () => {
         },
       },
     });
-    expect(pick).toHaveBeenCalledWith("agent-1", { harness: "codex" });
+    expect(pick).toHaveBeenCalledWith("agent-1", "chat", { harness: "codex" });
   });
 
   // TEST_SCENARIO: a runtime that does not route Session Pairs, or a saved default with no model, leaves nothing to fill.

@@ -23,6 +23,7 @@ export const eventKind = z.enum([
   "satellite-outcome",
   "sub-agent-outcome",
   "session-message",
+  "session-defaults",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -179,8 +180,37 @@ export const triggerEventPayload = z.object({
   precheck: z.string().min(1).optional(),
   fireAt: z.string().datetime({ offset: true }).optional(),
   lastRunAt: z.string().datetime({ offset: true }).optional(),
+  onDefault: z.literal(true).optional(),
 });
 export type TriggerEventPayload = z.infer<typeof triggerEventPayload>;
+
+export const sessionDefaultKind = z.enum(["chat", "channel", "scheduled"]);
+export type SessionDefaultKind = z.infer<typeof sessionDefaultKind>;
+
+export const sessionDefaultPair = z.object({
+  harness: z.string().min(1),
+  provider: z.string().min(1).nullable(),
+  model: z.string().min(1).nullable(),
+  settings: sessionSettingsSchema.optional(),
+});
+export type SessionDefaultPair = z.infer<typeof sessionDefaultPair>;
+
+export const sessionDefaultsEventPayload = z.object({
+  chat: sessionDefaultPair.nullable(),
+  channel: sessionDefaultPair.nullable(),
+  scheduled: sessionDefaultPair.nullable(),
+});
+export type SessionDefaultsEventPayload = z.infer<
+  typeof sessionDefaultsEventPayload
+>;
+
+export const sessionDefaultsEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("session-defaults"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: sessionDefaultsEventPayload,
+});
 
 export const triggerEvent = z.object({
   id: z.string().min(1),
@@ -370,6 +400,7 @@ export const event = z.discriminatedUnion("kind", [
   satelliteOutcomeEvent,
   subAgentOutcomeEvent,
   sessionMessageEvent,
+  sessionDefaultsEvent,
 ]);
 export type Event = z.infer<typeof event>;
 
@@ -422,6 +453,7 @@ export const harnessCapability = z.object({
   derivedStartMode: z.array(z.string().min(1)).optional(),
   nativeTemplates: z.array(z.string().min(1)).optional(),
   platformSubagentSettings: z.boolean().optional(),
+  identifiesSession: z.boolean().optional(),
 });
 export type HarnessCapability = z.infer<typeof harnessCapability>;
 export function routesSessionPairs(

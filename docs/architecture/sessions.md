@@ -7,6 +7,11 @@ Last verified: 2026-10-20
 agent-runtime holds one harness process, a **Harness Lease**, per harness and set of process-scoped [session settings](harness-config.md#session-settings) its sessions ask for; the provider and model are no fact of a process.
 Every model call goes through the [Model Router](harness-config.md#the-model-router) by the session's model name: a per-turn choice kept in the session's metadata and applied through the harness's own per-session call before each prompt and after every cold load; a harness that refuses the name is asked once more, then the queued prompts fail with its reason rather than run on a substitute.
 A model change applies to the next turn; a setting change moves the next turn to the matching lease.
+A session is either **on the default** of its kind (chat, channel or scheduled; a sub-agent session has none) or on its **own choice**, and the metadata keeps which.
+Before each turn of a session on the default, the runtime applies the newest default of that kind: its model, and its settings, a process-scoped one moving the session only once a running turn ends.
+A default on another harness is not applied, since a session keeps its harness; the session runs on what it last took and follows again when the default is back on its harness.
+A pick by hand in the session, or a configure call, makes it its own choice; **Back to default** and **Set as default** make it follow again.
+A session from before this marker follows its default once, when the runtime first holds the defaults, only if its harness, model and settings all equal that default; every other one keeps its own choice.
 The default harness's lease starts once the server listens, so a waking chat finds it loaded; any other starts on the first frame naming a session on its harness.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.

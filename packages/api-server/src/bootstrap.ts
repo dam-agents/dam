@@ -634,7 +634,7 @@ export async function bootstrap() {
     agentId: string,
   ): Promise<Record<string, unknown>> =>
     sessionPairFields(
-      await firePair(agentId, {}).catch((err: unknown) => {
+      await firePair(agentId, "chat", {}).catch((err: unknown) => {
         if (!isNoDefaultModelError(err)) throw err;
         getLogger().info(
           { err, agentId },
@@ -1017,6 +1017,7 @@ export async function bootstrap() {
           await runtimeDelivery.agentsRuntimeRepo.get(agentId)
         )?.runtimeLastHelloAt?.getTime() ?? null,
       ownerOf: async (agentId) => (await agentsRepo.get(agentId))?.owner,
+      runtimeMutator: runtimeDelivery.runtimeMutator,
       log: (msg) => getLogger().info(msg),
     });
 
@@ -1230,7 +1231,7 @@ export async function bootstrap() {
   };
   const channelSpendHold = async (agentId: string) => {
     const provider = (
-      await firePair(agentId, {}).catch((err: unknown) => {
+      await firePair(agentId, "channel", {}).catch((err: unknown) => {
         if (isNoDefaultModelError(err)) return undefined;
         throw err;
       })
@@ -1273,12 +1274,13 @@ export async function bootstrap() {
       ? () => fakeSlackGateway
       : undefined;
 
+  const channelFirePair = composeConvertingFirePair(defaultConverter, firePair);
   const makeAcpClient: AcpClientFactory = (instanceName) =>
     createAcpClient({
       namespace: config.namespace,
       instanceName,
       stallProbeMs: config.acpTurnStallProbeSeconds * 1000,
-      firePair: composeConvertingFirePair(defaultConverter, firePair),
+      firePair: (agentId) => channelFirePair(agentId, "channel"),
     });
 
   const agentIcons =

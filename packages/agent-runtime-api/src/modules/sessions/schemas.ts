@@ -35,6 +35,7 @@ export const podSessionSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   settings: sessionSettingsSchema.optional(),
+  follows: z.enum(["chat", "channel", "scheduled"]).nullable().optional(),
   repositories: z.array(sessionRepositorySchema).optional(),
 });
 

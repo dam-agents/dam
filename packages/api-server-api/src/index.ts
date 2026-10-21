@@ -49,12 +49,15 @@ export type {
 export type {
   HarnessConfigChange,
   HarnessConfigStatus,
+  DefaultKind,
+  SessionDefaults,
   SessionPair,
   HarnessConfigService,
   HarnessConfigSnapshot,
   HarnessConfigSnapshotPatch,
 } from "./modules/harness-config/types.js";
 export {
+  defaultKindSchema,
   harnessConfigSnapshotSchema,
   sessionPairSchema,
 } from "./modules/harness-config/schemas.js";

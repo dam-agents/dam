@@ -1,3 +1,4 @@
+import type { DefaultKind } from "../harness-config/types.js";
 import type { SessionMode, SessionType } from "../sessions/types.js";
 
 export const ATTENTION_FEED_LIMIT = 200;
@@ -16,6 +17,7 @@ export type DefaultModelState =
 export interface DefaultModelNotice {
   id: string;
   agentId: string;
+  kinds: DefaultKind[];
   state: DefaultModelState;
   harness: string;
   model: string | null;

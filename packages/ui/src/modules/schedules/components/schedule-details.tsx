@@ -198,10 +198,10 @@ function ScheduleModel({
     if (!model)
       return (
         <>
-          Agent default
+          Scheduled default
           {fallback?.model && (
             <p className="mt-1 text-xs font-normal text-muted-foreground">
-              Today: {modelIndicatorLabel(groups, fallback.model)}
+              Now: {modelIndicatorLabel(groups, fallback.model)}
             </p>
           )}
         </>
