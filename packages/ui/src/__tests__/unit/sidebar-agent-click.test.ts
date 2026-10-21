@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: In the classic sidebar a click on an Agent row opens the Agent's Sessions under it, so the click always shows something true: "No sessions yet." only when the attention record loaded whole and holds no row of the Agent, else the Agent's own list, which says a hibernated Agent's Sessions show when it wakes instead of loading forever. A hibernated Agent the user clicked stays out of See all, so a second click or Show less never moves it or the See all control.
+// TEST_OVERVIEW: In the classic sidebar a click on an Agent row opens the Agent's Sessions under it, so the click always shows something true: "No sessions yet." only when the attention record loaded whole and holds no row of the Agent, else the Agent's own list, which shows its loading placeholder while a hibernated Agent wakes. A hibernated Agent the user clicked stays out of See all, so a second click or Show less never moves it or the See all control.
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -151,13 +151,14 @@ describe("a click on an Agent with no Sessions in the attention record", () => {
     fake.failed = false;
   });
 
-  // TEST_SCENARIO: the Agent is hibernated, so its own list cannot load until it wakes, whether or not the lookup of its last known Sessions answered; the row says so and is not busy, instead of a skeleton that never ends.
-  it("says a hibernated Agent's Sessions show when it wakes", () => {
+  // TEST_SCENARIO: the Agent is hibernated, so its own list waits for the wake that opening it asks for; the row shows the busy loading placeholder and no note.
+  it("shows a hibernated Agent's list as loading while it wakes", () => {
     fake.runState = "hibernated";
     fake.loading = true;
     const out = openedAgent(false);
-    expect(out).toContain("Its sessions show when it wakes.");
-    expect(out).toContain('aria-busy="false"');
+    expect(out).toContain("animate-pulse");
+    expect(out).toContain('aria-busy="true"');
+    expect(out).not.toContain("No sessions yet.");
   });
 });
 
