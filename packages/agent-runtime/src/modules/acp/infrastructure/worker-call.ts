@@ -8,7 +8,11 @@ export type WorkerCallOutcome =
   { ok: true; result: unknown } | { ok: false; error: string };
 
 export interface WorkerCall {
-  call(input: unknown, timeoutMs: number): Promise<WorkerCallOutcome>;
+  call(
+    input: unknown,
+    timeoutMs: number,
+    opts?: { stopOnTimeout?: boolean },
+  ): Promise<WorkerCallOutcome>;
   warm(): void;
 }
 
@@ -23,7 +27,8 @@ interface WorkerHandle extends StartedWorker {
  * and export, or else spawned on first use. Every failure — spawn, import, the
  * export throwing, a crash, a timeout — settles that call as not ok with its
  * reason; a dead worker is respawned on the next call. A timeout settles the
- * call only: the export may still be running in the worker.
+ * call only, and the export may still be running in the worker, unless the
+ * caller asks to stop the worker on a timeout.
  */
 export function createWorkerCall(deps: {
   modulePath: string;
@@ -70,7 +75,7 @@ export function createWorkerCall(deps: {
 
   return {
     warm: () => void ensureWorker(),
-    async call(input, timeoutMs) {
+    async call(input, timeoutMs, opts) {
       const current = ensureWorker();
       if (!(await current.ready)) {
         if (handle === current) handle = null;
@@ -81,7 +86,15 @@ export function createWorkerCall(deps: {
       return new Promise<WorkerCallOutcome>((resolve) => {
         const timer = setTimeout(() => {
           current.inFlight.delete(id);
-          resolve({ ok: false, error: `timed out after ${timeoutMs}ms` });
+          const stopped = opts?.stopOnTimeout === true;
+          if (stopped) {
+            if (handle === current) handle = null;
+            void current.worker.terminate();
+          }
+          resolve({
+            ok: false,
+            error: `timed out after ${timeoutMs}ms${stopped ? "; the worker was stopped" : ""}`,
+          });
         }, timeoutMs);
         current.inFlight.set(id, (outcome) => {
           clearTimeout(timer);

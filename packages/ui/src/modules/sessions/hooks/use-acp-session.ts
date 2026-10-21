@@ -395,9 +395,10 @@ export function useAcpSession(
       };
       setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
       useStore.getState().setRewriting(null);
-      if (result.sessionId === live.sessionId) return;
-      bindEngagement(result.sessionId);
-      setSessionId(result.sessionId);
+      if (result.sessionId !== live.sessionId) {
+        bindEngagement(result.sessionId);
+        setSessionId(result.sessionId);
+      }
       void queryClient.invalidateQueries({
         queryKey: acpSessionsKeys.agent(selectedAgent),
       });

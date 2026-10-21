@@ -27,7 +27,7 @@ export function useAcpUpdateHandler(
     return (update: AcpUpdate, sessionId: string, frame?: FrameMeta) => {
       const viewing = useStore.getState().sessionId;
       if (viewing !== null && viewing !== sessionId) return;
-      if (useStore.getState().takingBack === sessionId) return;
+      const takingBack = useStore.getState().takingBack === sessionId;
 
       const { sessionUpdate: kind } = update;
 
@@ -43,19 +43,20 @@ export function useAcpUpdateHandler(
         useStore.getState().addRunStart(update.at);
       }
 
+      if (kind === "platform_session_reset") {
+        if (!takingBack && useStore.getState().rewritePending !== sessionId)
+          onSessionReset(sessionId);
+        return;
+      }
+
       if (kind === "platform_queue_changed") {
         useStore.getState().setQueuedPrompts(update.items);
         setMessages((prev) => withoutQueuedSends(prev, update.items));
         return;
       }
 
-      if (kind === "platform_session_reset") {
-        if (useStore.getState().rewritePending !== sessionId)
-          onSessionReset(sessionId);
-        return;
-      }
-
       if (kind === "config_option_update") return;
+      if (takingBack) return;
 
       setMessages((prev) => applyUpdate(prev, update, frame));
     };

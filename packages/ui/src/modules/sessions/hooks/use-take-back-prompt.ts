@@ -5,6 +5,7 @@ import { emitToast } from "../../../lib/toast.js";
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
 import { extractErrorMessage } from "../../acp/errors.js";
+import { finalizeRunningReply } from "../../acp/session-projection.js";
 import { removeQueuedPrompt } from "../api/acp-session-ops.js";
 import { acpSessionsKeys } from "../api/keys.js";
 import { draftKey } from "../lib/draft-key.js";
@@ -83,7 +84,6 @@ export function useTakeBackPrompt({
       }
 
       useStore.getState().setTakingBack(sid);
-      useStore.getState().setRewritePending(sid);
       takeBackLocally();
       let result: { sessionId: string };
       try {
@@ -106,12 +106,11 @@ export function useTakeBackPrompt({
         );
       } catch (err) {
         useStore.getState().setTakingBack(null);
-        useStore.getState().setRewritePending(null);
         undoLocally();
         throw err;
       }
       useStore.getState().setTakingBack(null);
-      useStore.getState().setRewritePending(null);
+      if (inView()) setMessages((prev) => finalizeRunningReply(prev));
       if (result.sessionId === sid) return;
       useStore
         .getState()

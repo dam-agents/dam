@@ -49,7 +49,7 @@ Otherwise, or on provider failure, the runtime's own `session/load` fills the lo
 Waiters are then served from the log; the UI also reads its newest tail as data and renders it while the load engages the session.
 On a waking Agent the UI asks for that tail at the click, as it asks for the session list: the agent's tRPC relay holds the ask until the Agent answers, and an ask it refuses is asked again once the Agent is operable.
 When the socket that carries the load goes away, as when an api-server replica shuts down, the UI asks the load again on a new socket instead of reporting that the Session would not load.
-An image may also declare a **session-cut provider**, a module in a worker thread of its own: it cuts a closed Session's stored conversation in place, keeping everything before a given user message under the same id ([ADR-115](../adrs/115-session-reset-in-place.md)).
+An image may also declare a **session-cut provider**, a module in a worker thread of its own: it cuts a closed Session's stored conversation in place, keeping everything before a given user message under the same id.
 It drives the harness's own store directly, never the harness's protocol, since the adapter would replay a cut passed to it whenever it rebuilds the session.
 
 **Rewinding and forking from a message.** A user can take an earlier message of an idle chat Session, edit it, and either **rewind** the conversation to it or **fork** a new one from it.

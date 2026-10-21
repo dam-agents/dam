@@ -31,7 +31,9 @@ function outcomeOf(result: unknown): SessionCutOutcome | null {
  * the same id. `dropsTurn` names the one turn the cut may drop; the module
  * refuses, changing nothing, when anything else would go. A refusal comes back
  * as `refused`; a throw, a crash, a timeout or a malformed answer comes back
- * as not refused, since the store may or may not have been cut.
+ * as not refused, since the store may or may not have been cut. A timeout
+ * stops the worker, and with it the cut's CLI, so no cut lands after the
+ * runtime has read the store again.
  */
 export function createWorkerSessionCutProvider(deps: {
   modulePath: string;
@@ -48,7 +50,9 @@ export function createWorkerSessionCutProvider(deps: {
   const timeoutMs = deps.timeoutMs ?? CUT_TIMEOUT_MS;
   return {
     async cut(input) {
-      const called = await worker.call(input, timeoutMs);
+      const called = await worker.call(input, timeoutMs, {
+        stopOnTimeout: true,
+      });
       const outcome = called.ok
         ? (outcomeOf(called.result) ?? {
             ok: false as const,

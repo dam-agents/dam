@@ -90,6 +90,16 @@ export async function cutSession({ sessionId, before, dropsTurn }) {
       message: "the conversation cannot be cut before its first message",
     };
   }
+  let executable;
+  try {
+    executable = claudeExecutable();
+  } catch {
+    return {
+      ok: false,
+      refused: true,
+      message: "the Claude CLI was not found",
+    };
+  }
   const query = sdk.query({
     prompt: emptyNote(),
     options: {
@@ -97,7 +107,7 @@ export async function cutSession({ sessionId, before, dropsTurn }) {
       resume: sessionId,
       resumeSessionAt: parent,
       ...(dropsTurn !== undefined && { resumeDropsTurn: dropsTurn }),
-      pathToClaudeCodeExecutable: claudeExecutable(),
+      pathToClaudeCodeExecutable: executable,
       settingSources: [],
       tools: [],
       mcpServers: {},

@@ -714,6 +714,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
   const supersededEchoes = new Map<string, Set<string>>();
   const rewritingSessions = new Set<string>();
+  const cuttingSessions = new Set<string>();
 
   function supersedeEcho(sessionId: string, id: string): void {
     const ids = supersededEchoes.get(sessionId) ?? new Set<string>();
@@ -747,6 +748,7 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
   }
 
   function startHarnessRehydrate(sessionId: string): void {
+    if (cuttingSessions.has(sessionId)) return;
     rehydratingSessions.add(sessionId);
     rehydrateTimers.set(
       sessionId,
@@ -1389,7 +1391,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         params.mode === "rewind" &&
         deps.sessionCut !== undefined
       ) {
-        cutInPlace(channel, id, params, cut.batch, deps.sessionCut, fail);
+        cutInPlace(
+          channel,
+          id,
+          params,
+          { ...cut, batch: cut.batch },
+          history,
+          deps.sessionCut,
+          fail,
+        );
         return;
       }
       if (cut.kind === "after" && !sessionForkSupported) {
@@ -1544,18 +1554,31 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     channel: ClientChannel,
     id: unknown,
     params: PlatformRewriteFromParams,
-    batch: string,
+    cut: { kind: "after"; entry: string; batch: string },
+    history: string[] | null,
     sessionCut: SessionCutProvider,
     fail: (message: string, code?: string) => void,
   ): void {
     const sid = params.sessionId;
+    const failRewrite = (message: string, code?: string): void => {
+      rewritingSessions.delete(sid);
+      fail(message, code);
+    };
     const viewers = [...engagedViewersOf(sid)];
     const finish = (error?: string): void => {
       resetSession(sid, viewers, (loaded) => {
-        rewritingSessions.delete(sid);
+        cuttingSessions.delete(sid);
         if (error !== undefined || !loaded) {
-          fail(error ?? "the rewound session could not be loaded");
+          failRewrite(error ?? "the rewound session could not be loaded");
           return;
+        }
+        rewritingSessions.delete(sid);
+        if (params.title !== undefined) {
+          const meta = deps.sessionMetadata?.get(sid)?.meta ?? {};
+          deps.sessionMetadata?.set(sid, {
+            ...meta,
+            customTitle: params.title,
+          });
         }
         sendToChannel(
           channel,
@@ -1567,15 +1590,21 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
     };
     closeInHarness(sid, (closed) => {
       if (!closed) {
-        rewritingSessions.delete(sid);
-        fail("this agent cannot rewrite a conversation", REWRITE_REFUSED_CODE);
+        if (sessionForkSupported)
+          forkForRewrite(channel, id, params, cut, history, failRewrite);
+        else
+          failRewrite(
+            "this agent cannot rewrite a conversation",
+            REWRITE_REFUSED_CODE,
+          );
         return;
       }
+      cuttingSessions.add(sid);
       void sessionCut
         .cut({
           sessionId: sid,
-          before: batch,
-          ...(params.prompt === undefined && { dropsTurn: batch }),
+          before: cut.batch,
+          ...(params.prompt === undefined && { dropsTurn: cut.batch }),
         })
         .then((outcome) => {
           if (outcome.ok) {
@@ -1583,8 +1612,8 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
             return;
           }
           if (outcome.refused) {
-            rewritingSessions.delete(sid);
-            fail(outcome.message, REWRITE_REFUSED_CODE);
+            cuttingSessions.delete(sid);
+            failRewrite(outcome.message, REWRITE_REFUSED_CODE);
             return;
           }
           finish(outcome.message);
