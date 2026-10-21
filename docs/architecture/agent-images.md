@@ -1,6 +1,6 @@
 # Agent images
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 The images an agent runs in: the **default image**, which the default Template boots, and the workloads and the e2e mock, each the default image under its own files.
 Each carries the agent-runtime and every harness.
@@ -74,7 +74,7 @@ Layers are packed as plain tars: a local cluster imports them as they are, and C
 
 - **Container Backend:** the image runs as the agent user, whose account comes from a static extra-users database.
 - **vm Backend:** the machine boots the image as root after platform-init has mounted the home and bound the MITM CA, and platform-init stays the entrypoint's parent, so the image's init is not the first process of its PID namespace ([vm-runner](vm-runner.md)).
-  SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([persistence](persistence.md#per-agent-pvcs)).
+  SSH logins as `agent` land as uid 0, since platform-init lays a copy of the image's `/etc/passwd` with that entry over the image at every boot; extrausers serves no uid 0 entry ([vm storage](vm-storage.md#the-disk)).
   The entrypoint prepares sshd.
   The image's build gives uid 0 the agent's home, so a login's own keys and known hosts are kept there; what admits a connection — sshd's host key, its config and the keys a connection registers — lives outside the home ([cli](cli.md#ssh-access)).
   The agent-runtime keeps Node's compile cache beside its own code here, since the root outlives a boot; a container's root is new on every start, so writing the cache would only cost it time.
@@ -110,7 +110,7 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
   A service gets only `PATH` and the gateway's proxy and CA variables of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
 - aube stands in for pnpm; npm stays for tools that call it.
-  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([persistence](persistence.md)).
+  An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.
   A tool pin in the home applies whenever the home holds it; a pinned tool the home has not installed shows as missing until `mise install`.
 

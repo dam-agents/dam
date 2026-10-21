@@ -76,6 +76,16 @@ describe("unread markers", () => {
     expect(html).toContain("(unread)");
   });
 
+  it("TEST_SCENARIO: the shown, open Agent keeps its blue dot visible, because its unread Session may sit below the five rows it shows", () => {
+    const html = agentRow({ open: true, selected: true });
+    expect(html).toMatch(
+      /<span aria-hidden="true" class="[^"]*"><span class="[^"]*bg-accent/,
+    );
+    expect(html).not.toMatch(
+      /<span aria-hidden="true" class="[^"]*\bhidden\b[^"]*"><span class="[^"]*bg-accent/,
+    );
+  });
+
   it("TEST_SCENARIO: a closed Agent whose Session shows from Activity is not highlighted and keeps its actions hidden until hover", () => {
     expect(agentRow({ open: false, selected: false })).not.toContain(
       "opacity-100 pr-",
