@@ -11,8 +11,6 @@ interface Props {
   side: "left" | "right";
   label: string;
   closing: boolean;
-  showBackdrop?: boolean;
-  animated?: boolean;
   onClose: () => void;
   onClosed: () => void;
   className?: string;
@@ -24,8 +22,6 @@ export function SideDrawer({
   side,
   label,
   closing,
-  showBackdrop = true,
-  animated = true,
   onClose,
   onClosed,
   className,
@@ -47,7 +43,7 @@ export function SideDrawer({
     const timer = setTimeout(() => onClosedRef.current(), TRANSITION_MS);
     return () => clearTimeout(timer);
   }, [closing]);
-  const open = !animated || (shown && !closing);
+  const open = shown && !closing;
   const hidden = side === "left" ? "-translate-x-full" : "translate-x-full";
 
   return createPortal(
@@ -58,17 +54,15 @@ export function SideDrawer({
         containerClassName,
       )}
     >
-      {showBackdrop && (
-        <button
-          type="button"
-          aria-label={`Close ${label.toLowerCase()}`}
-          onClick={onClose}
-          className={cn(
-            "absolute inset-0 bg-black/50 backdrop-blur-[4px] transition-opacity duration-150",
-            open ? "opacity-100" : "opacity-0",
-          )}
-        />
-      )}
+      <button
+        type="button"
+        aria-label={`Close ${label.toLowerCase()}`}
+        onClick={onClose}
+        className={cn(
+          "absolute inset-0 bg-black/50 backdrop-blur-[4px] transition-opacity duration-150",
+          open ? "opacity-100" : "opacity-0",
+        )}
+      />
       <div
         ref={panelRef}
         role="dialog"
@@ -77,12 +71,10 @@ export function SideDrawer({
           if (event.key === "Escape" && !event.defaultPrevented) onClose();
         }}
         className={cn(
-          "relative flex h-full w-full flex-col bg-background shadow-xl",
-          animated &&
-            "transition-transform duration-150 motion-reduce:transition-none",
+          "relative flex h-full w-full flex-col bg-background shadow-xl transition-transform duration-150 motion-reduce:transition-none",
           side === "left" ? "border-r" : "border-l",
           "border-border",
-          animated && (open ? "translate-x-0" : hidden),
+          open ? "translate-x-0" : hidden,
           className,
         )}
       >
