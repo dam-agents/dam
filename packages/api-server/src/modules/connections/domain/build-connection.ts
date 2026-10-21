@@ -345,13 +345,9 @@ async function buildClientCredentials(
   input: Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
   mintSecretRef: (purpose: string) => SecretRef,
 ): Promise<BuildResult> {
-  const rawHost = input.host ?? template.host;
-  if (!rawHost) throw new Error(`template ${template.id}: missing host`);
-  const { host, port } = parseClusterEndpoint(rawHost);
-
-  const subst = (s: string | undefined): string | undefined =>
-    s?.replace(/\{host\}/g, host);
-  const explicitIssuer = subst(input.issuerUrl ?? template.issuerUrl);
+  const { host, port, headerName, valueFormat, contributions } =
+    clientCredentialsTarget(template, input);
+  const explicitIssuer = clientCredentialsIssuer(template, input, host);
 
   let issuerUrl: string;
   let issuerMeta: { tokenEndpoint: string; grantTypesSupported?: string[] };
@@ -388,9 +384,6 @@ async function buildClientCredentials(
   if (!input.clientSecret) {
     throw new Error(`template ${template.id}: missing clientSecret`);
   }
-  const headerName = input.headerName ?? template.headerName ?? "Authorization";
-  const valueFormat =
-    input.valueFormat ?? template.valueFormat ?? "Bearer {value}";
   const scopes =
     input.scopes
       ?.split(/[\s,]+/)
@@ -401,6 +394,48 @@ async function buildClientCredentials(
   const audience = input.audience ?? template.audience;
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
+
+  return {
+    auth: {
+      kind: "client-credentials",
+      clientId,
+      clientSecretRef: { ...secretPath, field: "client_secret" },
+      accessTokenRef: { ...secretPath, field: "access_token" },
+      issuerUrl,
+      tokenUrl: issuerMeta.tokenEndpoint,
+      scopes,
+      ...(audience ? { audience } : {}),
+      ...(template.tokenEndpointAcceptJson
+        ? { tokenEndpointAcceptJson: true }
+        : {}),
+      host,
+    },
+    contributions,
+    secrets: new Map([
+      [secretPath.path, { client_secret: input.clientSecret }],
+    ]),
+  };
+}
+
+export function clientCredentialsTarget(
+  template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
+  input: Pick<
+    Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
+    "host" | "headerName" | "valueFormat" | "envName"
+  >,
+): {
+  host: string;
+  port?: number;
+  headerName: string;
+  valueFormat: string;
+  contributions: Contribution[];
+} {
+  const rawHost = input.host ?? template.host;
+  if (!rawHost) throw new Error(`template ${template.id}: missing host`);
+  const { host, port } = parseClusterEndpoint(rawHost);
+  const headerName = input.headerName ?? template.headerName ?? "Authorization";
+  const valueFormat =
+    input.valueFormat ?? template.valueFormat ?? "Bearer {value}";
   const contributions: Contribution[] = [...template.contributions];
 
   const hasHostContrib = contributions.some(
@@ -427,27 +462,24 @@ async function buildClientCredentials(
       placeholder: CONNECTION_TOKEN_PLACEHOLDER,
     });
   }
-
   return {
-    auth: {
-      kind: "client-credentials",
-      clientId,
-      clientSecretRef: { ...secretPath, field: "client_secret" },
-      accessTokenRef: { ...secretPath, field: "access_token" },
-      issuerUrl,
-      tokenUrl: issuerMeta.tokenEndpoint,
-      scopes,
-      ...(audience ? { audience } : {}),
-      ...(template.tokenEndpointAcceptJson
-        ? { tokenEndpointAcceptJson: true }
-        : {}),
-      host,
-    },
+    host,
+    ...(port ? { port } : {}),
+    headerName,
+    valueFormat,
     contributions,
-    secrets: new Map([
-      [secretPath.path, { client_secret: input.clientSecret }],
-    ]),
   };
+}
+
+export function clientCredentialsIssuer(
+  template: Extract<ConnectionTemplate, { authKind: "client-credentials" }>,
+  input: Pick<
+    Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
+    "issuerUrl"
+  >,
+  host: string,
+): string | undefined {
+  return (input.issuerUrl ?? template.issuerUrl)?.replace(/\{host\}/g, host);
 }
 
 export function normalizePrivateKeyPem(raw: string): string {
@@ -485,6 +517,24 @@ export function gitHubAppApiBase(
   };
 }
 
+export function gitHubAppTarget(
+  template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
+  inputHost: string | undefined,
+): {
+  apiBaseUrl: string;
+  host: string | undefined;
+  contributions: Contribution[];
+} {
+  const { apiBaseUrl, host, needsHost } = gitHubAppApiBase(template, inputHost);
+  const contributions: Contribution[] = template.contributions.map((c) =>
+    needsHost && host ? substituteHostInContribution(c, host) : c,
+  );
+  if (needsHost && host) {
+    contributions.push(...githubEnterpriseHostContributions(host));
+  }
+  return { apiBaseUrl, host, contributions };
+}
+
 function buildGitHubApp(
   template: Extract<ConnectionTemplate, { authKind: "github-app" }>,
   input: Extract<ConnectionCreateInput, { authKind: "github-app" }>,
@@ -499,18 +549,12 @@ function buildGitHubApp(
   }
   const privateKeyPem = normalizePrivateKeyPem(input.privateKey);
 
-  const { apiBaseUrl, host, needsHost } = gitHubAppApiBase(
+  const { apiBaseUrl, host, contributions } = gitHubAppTarget(
     template,
     input.host,
   );
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
-  const contributions: Contribution[] = template.contributions.map((c) =>
-    needsHost && host ? substituteHostInContribution(c, host) : c,
-  );
-  if (needsHost && host) {
-    contributions.push(...githubEnterpriseHostContributions(host));
-  }
 
   const scope = parseGitHubAppScope(input);
 
@@ -564,7 +608,10 @@ function validConfigInput(spec: ConfigInputSpec, value: string): string {
 
 function bedrockRegionOf(
   template: Extract<ConnectionTemplate, { authKind: "header" }>,
-  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
+  input: Pick<
+    Extract<ConnectionCreateInput, { authKind: "header" }>,
+    "configInputs"
+  >,
 ): string {
   const spec = template.configInputs?.find((c) => c.inputName === "region");
   const region = input.configInputs?.region?.trim();
@@ -598,11 +645,15 @@ function bedrockControlContributions(
   ];
 }
 
-function buildHeader(
+export function headerTarget(
   template: Extract<ConnectionTemplate, { authKind: "header" }>,
-  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
-  mintSecretRef: (purpose: string) => SecretRef,
-): BuildResult {
+  input: Omit<Extract<ConnectionCreateInput, { authKind: "header" }>, "value">,
+): {
+  headerName: string;
+  valueFormat: string;
+  caPem: string | undefined;
+  contributions: Contribution[];
+} {
   const bedrockRegion =
     template.id === BEDROCK_TEMPLATE_ID
       ? bedrockRegionOf(template, input)
@@ -620,8 +671,6 @@ function buildHeader(
   const { host, port } = parseClusterEndpoint(rawHost);
   const caPem = input.caData ? decodeCaData(input.caData) : undefined;
 
-  const secretPath = mintSecretRef(`connection:${template.id}`);
-  const valueRef = { ...secretPath, field: "value" };
   const contributions: Contribution[] = [...template.contributions];
 
   if (template.id === KUBERNETES_TEMPLATE_ID) {
@@ -677,6 +726,20 @@ function buildHeader(
       input.configInputs ?? {},
     ),
   );
+  return { headerName, valueFormat, caPem, contributions };
+}
+
+function buildHeader(
+  template: Extract<ConnectionTemplate, { authKind: "header" }>,
+  input: Extract<ConnectionCreateInput, { authKind: "header" }>,
+  mintSecretRef: (purpose: string) => SecretRef,
+): BuildResult {
+  const { headerName, valueFormat, caPem, contributions } = headerTarget(
+    template,
+    input,
+  );
+  const secretPath = mintSecretRef(`connection:${template.id}`);
+  const valueRef = { ...secretPath, field: "value" };
 
   const sdsFields = buildConnectionSdsFields(contributions, input.value);
 
@@ -701,27 +764,40 @@ function buildHeader(
   };
 }
 
+export function sigv4Target(
+  template: Extract<ConnectionTemplate, { authKind: "sigv4" }>,
+  input: Pick<
+    Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
+    "endpoint" | "region" | "bucket"
+  >,
+): { region: string; contributions: Contribution[] } {
+  const endpoint = parseS3Endpoint(input.endpoint);
+  const region =
+    input.region?.trim() || template.region || DEFAULT_S3_SIGNING_REGION;
+  const bucket = input.bucket ? validBucketName(input.bucket) : undefined;
+  return {
+    region,
+    contributions: [
+      ...template.contributions,
+      ...buildS3Contributions({
+        ...endpoint,
+        ...(bucket ? { bucket } : {}),
+        region,
+        service: S3_SERVICE,
+      }),
+    ],
+  };
+}
+
 function buildSigv4(
   template: Extract<ConnectionTemplate, { authKind: "sigv4" }>,
   input: Extract<ConnectionCreateInput, { authKind: "sigv4" }>,
   mintSecretRef: (purpose: string) => SecretRef,
 ): BuildResult {
-  const endpoint = parseS3Endpoint(input.endpoint);
-  const region =
-    input.region?.trim() || template.region || DEFAULT_S3_SIGNING_REGION;
-  const bucket = input.bucket ? validBucketName(input.bucket) : undefined;
+  const { region, contributions } = sigv4Target(template, input);
   const keys = sigv4KeyPair(input);
 
   const secretPath = mintSecretRef(`connection:${template.id}`);
-  const contributions: Contribution[] = [
-    ...template.contributions,
-    ...buildS3Contributions({
-      ...endpoint,
-      ...(bucket ? { bucket } : {}),
-      region,
-      service: S3_SERVICE,
-    }),
-  ];
 
   return {
     auth: {

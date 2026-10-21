@@ -22,6 +22,9 @@ import {
   connectionSetPreferredConnectionInputSchema,
   connectionStartOAuthInputSchema,
   connectionUpdateInputSchema,
+  connectionRequestSecretInputSchema,
+  secretRequestIdInputSchema,
+  secretRequestSubmitInputSchema,
 } from "./schemas.js";
 
 export const connectionsRouter = t.router({
@@ -103,6 +106,26 @@ export const connectionsRouter = t.router({
   delete: manageCredentialsProcedure
     .input(connectionIdInputSchema)
     .mutation(({ ctx, input }) => ctx.connections.deleteConnection(input.id)),
+
+  requestSecret: manageCredentialsProcedure
+    .input(connectionRequestSecretInputSchema)
+    .mutation(({ ctx, input }) => ctx.secretRequests.request(input)),
+
+  secretRequestStatus: manageCredentialsProcedure
+    .input(secretRequestIdInputSchema)
+    .query(({ ctx, input }) => ctx.secretRequests.status(input.requestId)),
+
+  getSecretRequest: manageCredentialsProcedure
+    .input(secretRequestIdInputSchema)
+    .query(({ ctx, input }) => ctx.secretRequests.get(input.requestId)),
+
+  submitSecretRequest: manageCredentialsProcedure
+    .input(secretRequestSubmitInputSchema)
+    .mutation(({ ctx, input }) => ctx.secretRequests.submit(input)),
+
+  cancelSecretRequest: manageCredentialsProcedure
+    .input(secretRequestIdInputSchema)
+    .mutation(({ ctx, input }) => ctx.secretRequests.cancel(input.requestId)),
 
   getAgentConnections: readAgentProcedure
     .input(connectionGetAgentConnectionsInputSchema)

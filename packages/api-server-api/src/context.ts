@@ -11,7 +11,10 @@ import type {
 import type { CaseStudiesService } from "./modules/case-studies/types.js";
 import type { ChannelsService } from "./modules/channels/types.js";
 import type { ChatFormPreferencesService } from "./modules/chat-forms/preferences.js";
-import type { ConnectionsService } from "./modules/connections/types.js";
+import type {
+  ConnectionsService,
+  SecretRequestsService,
+} from "./modules/connections/types.js";
 import type { E2eService } from "./modules/e2e/types.js";
 import type {
   FeatureModes,
@@ -60,6 +63,7 @@ export interface ApiContext {
   schedules: SchedulesService;
   channels: ChannelsService;
   connections: ConnectionsService;
+  secretRequests: SecretRequestsService;
   skills: SkillsService;
   approvals: ApprovalsService;
   attention: AttentionService;

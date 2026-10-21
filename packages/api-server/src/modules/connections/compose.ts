@@ -2,6 +2,7 @@ import type { Db } from "db";
 import {
   PLATFORM_LLM_TEMPLATE_ID,
   type ConnectionsService,
+  type SecretRequestsService,
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
 import { createKbShareResolver } from "../kb-shares/index.js";
@@ -39,6 +40,11 @@ import {
   type FanOutPort,
 } from "./services/contribution-fanout.js";
 import { createOAuthFlowService } from "./services/oauth-flow.js";
+import { createSecretRequestsService } from "./services/secret-requests.js";
+import type {
+  PendingSecretRequest,
+  SecretRequestOutcome,
+} from "./domain/secret-request.js";
 import {
   providerEgressScopes,
   scopeCovers,
@@ -57,8 +63,14 @@ import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import type { AgentsRepository } from "../agents/infrastructure/agents-repository.js";
 import type { ConnectionRulesSync } from "../egress-rules/services/connection-rules-sync.js";
 
+export interface SecretRequestStores {
+  pending: TtlStore<PendingSecretRequest>;
+  outcomes: TtlStore<SecretRequestOutcome>;
+}
+
 export interface ConnectionsBootCompose {
   templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  secretRequestStores: SecretRequestStores;
   oauthEngine: OAuthEngine;
   githubAppEngine: GitHubAppEngine;
   s3CredentialProbe: S3CredentialProbe;
@@ -71,6 +83,7 @@ export interface ComposeConnectionsAtBootOpts {
   db: Db;
   secretStore: SecretStore;
   pendingFlowStore: TtlStore<PendingFlow>;
+  secretRequestStores: SecretRequestStores;
   operatorCredentials?: OperatorCredentials;
   shareBaseUrl?: string;
   platformProvider?: PlatformProviderEndpoint | null;
@@ -114,6 +127,7 @@ export function composeConnectionsAtBoot(
 
   return {
     templates,
+    secretRequestStores: opts.secretRequestStores,
     oauthEngine,
     githubAppEngine,
     s3CredentialProbe,
@@ -256,5 +270,26 @@ export function composeConnectionsForOwner(opts: {
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),
+  });
+}
+
+export function composeSecretRequestsForOwner(opts: {
+  ownerId: string;
+  db: Db;
+  uiBaseUrl: string;
+  stores: SecretRequestStores;
+  templates: ReturnType<typeof createConnectionTemplateRegistry>;
+  connections: Pick<ConnectionsService, "createFromTemplate" | "update">;
+  agentName: (agentId: string) => Promise<string | null>;
+}): SecretRequestsService {
+  return createSecretRequestsService({
+    ownerId: opts.ownerId,
+    uiBaseUrl: opts.uiBaseUrl,
+    pending: opts.stores.pending,
+    outcomes: opts.stores.outcomes,
+    templates: opts.templates,
+    repo: createConnectionsRepository(opts.db),
+    connections: opts.connections,
+    agentName: opts.agentName,
   });
 }
