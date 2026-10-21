@@ -5,3 +5,9 @@ export type {
   EnvironmentsServiceImpl,
   OwningAgentEnvironments,
 } from "./services/environments-service.js";
+export {
+  createEnvironmentGate,
+  noEnvironmentGate,
+  type EnvironmentGate,
+} from "./gate/environment-gate.js";
+export { composeEnvironmentGate } from "./compose.js";

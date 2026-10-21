@@ -71,6 +71,7 @@ import {
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
+import { createEnvironmentForward } from "./modules/environment-forward.js";
 import { composeChanges } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import {
@@ -148,6 +149,12 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
 
 const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
 const environmentOf = process.env.PLATFORM_ENVIRONMENT_OF ?? "";
+const environmentForward =
+  environmentOf === ""
+    ? null
+    : createEnvironmentForward({
+        ownPorts: [config.PORT, config.PLATFORM_MODEL_ROUTER_PORT],
+      });
 const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
   ? {
       [defaultHarness]: loadManifest(
@@ -1067,6 +1074,8 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (environmentForward?.handleRequest(req, res)) return;
+
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
@@ -1241,6 +1250,7 @@ acpWss.on("connection", (ws, req: http.IncomingMessage) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  if (environmentForward?.handleUpgrade(req, socket, head)) return;
   const url = new URL(req.url!, `http://${req.headers.host}`);
   if (
     environmentOf !== "" &&
