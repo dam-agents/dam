@@ -53,6 +53,9 @@ vi.mock("../../modules/agents/api/harness-config.js", () => ({
     },
   }),
 }));
+vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
+  useProviderUsage: () => () => ({ kinds: [], schedules: [] }),
+}));
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     data: {

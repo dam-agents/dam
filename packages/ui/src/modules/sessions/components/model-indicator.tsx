@@ -1,6 +1,7 @@
 import type { HarnessCapability } from "agent-runtime-api";
 import {
   aliasForProviderType,
+  type DefaultKind,
   parseQualifiedModel,
   type ProviderPresetType,
 } from "api-server-api";
@@ -35,6 +36,7 @@ import {
   modelProviderLabel,
 } from "../lib/session-pair-options.js";
 import { settingDefaults, settingsForModel } from "../lib/session-settings.js";
+import { DefaultFollowState } from "./default-follow-state.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SetAsDefault } from "./session-pair-picker.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
@@ -42,6 +44,10 @@ import { SessionSettingsControls } from "./session-settings-controls.js";
 
 interface Props {
   agentId: string;
+  kind: DefaultKind | null;
+  follows?: DefaultKind | null;
+  followsDefaults?: boolean;
+  onFollowDefault: (afterNextDefaults: boolean) => void;
   harness: string;
   provider: string | null;
   model: string | null;
@@ -56,6 +62,10 @@ interface Props {
 
 export function ModelIndicator({
   agentId,
+  kind,
+  follows,
+  followsDefaults = false,
+  onFollowDefault,
   harness,
   provider,
   model,
@@ -69,7 +79,7 @@ export function ModelIndicator({
 }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
-  const { data: remembered } = useRememberedPair(agentId);
+  const { data: remembered } = useRememberedPair(agentId, kind ?? "chat");
   const capability = carried.find((h) => h.name === harness);
   const defaults = settingDefaults(
     capability,
@@ -270,21 +280,35 @@ export function ModelIndicator({
             />
           </div>
         )}
-        <div className="flex justify-end border-t border-border pt-2 text-xs text-muted-foreground empty:hidden">
-          <SetAsDefault
-            agentId={agentId}
-            pair={{
-              harness,
-              provider,
-              model,
-              settings: settingsForModel(capability, groups, model, {
-                ...defaults,
-                ...settings,
-              }),
-            }}
-            defaults={defaults}
-            remembered={remembered}
-          />
+        <div className="flex items-center justify-between gap-3 border-t border-border pt-2 text-xs text-muted-foreground empty:hidden">
+          {kind && routed && followsDefaults && (
+            <DefaultFollowState
+              kind={kind}
+              follows={follows}
+              harness={harness}
+              model={model}
+              target={remembered}
+              onFollow={() => onFollowDefault(false)}
+            />
+          )}
+          {kind && !(followsDefaults && follows === kind) && (
+            <SetAsDefault
+              agentId={agentId}
+              kind={kind}
+              pair={{
+                harness,
+                provider,
+                model,
+                settings: settingsForModel(capability, groups, model, {
+                  ...defaults,
+                  ...settings,
+                }),
+              }}
+              defaults={defaults}
+              remembered={remembered}
+              {...(followsDefaults && { onSet: () => onFollowDefault(true) })}
+            />
+          )}
         </div>
       </PopoverContent>
     </Popover>

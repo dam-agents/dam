@@ -2,6 +2,7 @@ import { skipToken, useMutation, useQuery } from "@tanstack/react-query";
 import { type HarnessCatalogView, routesSessionPairs } from "agent-runtime-api";
 import type {
   ConnectionView,
+  DefaultKind,
   HarnessConfigStatus,
   HarnessView,
   SessionPair,
@@ -22,7 +23,7 @@ import {
 import { useAppConnections } from "../../connections/api/queries.js";
 import { egressRulesKeys } from "../../egress-rules/api/queries.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
-import { catalogSettled } from "../lib/catalog-groups.js";
+import { catalogSettled, sameModel } from "../lib/catalog-groups.js";
 import {
   fittingProviders,
   grantedProviderRefs,
@@ -38,13 +39,54 @@ export function useHarnessCatalog() {
   });
 }
 
-export function useRememberedPair(agentId: string | null) {
+const sessionPairInput = (agentId: string, kind: DefaultKind) =>
+  kind === "chat" ? { agentId } : { agentId, kind };
+
+export function useRememberedPair(
+  agentId: string | null,
+  kind: DefaultKind = "chat",
+) {
   return useQuery({
     ...trpc.harnessConfig.sessionPair.queryOptions(
+      agentId ? sessionPairInput(agentId, kind) : skipToken,
+    ),
+    retry: false,
+  });
+}
+
+export function useSessionDefaults(agentId: string | null) {
+  return useQuery({
+    ...trpc.harnessConfig.sessionDefaults.queryOptions(
       agentId ? { agentId } : skipToken,
     ),
     retry: false,
   });
+}
+
+function invalidateDefaults(): Promise<void> {
+  return Promise.all(
+    [
+      trpc.harnessConfig.sessionPair.pathKey(),
+      trpc.harnessConfig.sessionDefaults.pathKey(),
+      trpc.harnessConfig.defaultFor.pathKey(),
+      trpc.attention.pathKey(),
+    ].map((queryKey) => queryClient.invalidateQueries({ queryKey })),
+  ).then(() => undefined);
+}
+
+export function clearSessionDefault(
+  agentId: string,
+  kind: Exclude<DefaultKind, "chat">,
+): void {
+  void api.harnessConfig.clearSessionDefault
+    .mutate({ agentId, kind })
+    .catch((err: unknown) => {
+      emitToast({
+        kind: "error",
+        message: `Couldn't set the ${kind} default back to the chat default: ${err instanceof Error ? err.message : String(err)}`,
+      });
+    })
+    .finally(() => invalidateDefaults());
 }
 
 export function providerModelsKey(
@@ -154,13 +196,14 @@ export function harnessConfigCurrentKey(agentId: string, harness: string) {
   return ["harness-config-current", agentId, harness] as const;
 }
 
-export function useHarnessConfigured(agentId: string, harness: string) {
+export function useHarnessConfigured(agentId: string, harness: string | null) {
   const operable = useIsAgentOperable(agentId);
   return useQuery({
-    queryKey: harnessConfigCurrentKey(agentId, harness),
-    queryFn: operable
-      ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
-      : skipToken,
+    queryKey: harnessConfigCurrentKey(agentId, harness ?? ""),
+    queryFn:
+      operable && harness
+        ? () => agentTrpc(agentId).harnessConfig.current.query({ harness })
+        : skipToken,
     staleTime: 60_000,
     retry: false,
   }).data;
@@ -226,7 +269,7 @@ export function useGrantProvider(agentId: string | null) {
 
 export function readNextSessionPair(
   agentId: string,
-): { pair: SessionPair } | null {
+): { pair: SessionPair; picked: boolean } | null {
   const status = queryClient.getQueryData<HarnessConfigStatus>(
     trpc.harnessConfig.status.queryKey({ agentId }),
   );
@@ -260,12 +303,31 @@ export function readNextSessionPair(
     fittingProviders(catalog, granted),
     status?.defaultHarness,
   );
-  return pair ? { pair } : null;
+  return pair
+    ? {
+        pair,
+        picked: chosen !== null && !(remembered && samePair(pair, remembered)),
+      }
+    : null;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a pick left in the picker from an earlier
+ * session, or one that lands on the chat default, starts the session on the
+ * default; only a pair that differs from it is the session's own choice.
+ */
+export function samePair(a: SessionPair, b: SessionPair): boolean {
+  const settings = (p: SessionPair) => Object.entries(p.settings ?? {}).sort();
+  return (
+    a.harness === b.harness &&
+    (a.model === b.model || sameModel(a.model, b.model)) &&
+    JSON.stringify(settings(a)) === JSON.stringify(settings(b))
+  );
 }
 
 export async function settledNextSessionPair(
   agentId: string,
-): Promise<{ pair: SessionPair } | null> {
+): Promise<{ pair: SessionPair; picked: boolean } | null> {
   const status = trpc.harnessConfig.status.queryKey({ agentId });
   if (!queryClient.getQueryData<HarnessConfigStatus>(status)?.harnesses)
     await Promise.all(
@@ -276,22 +338,30 @@ export async function settledNextSessionPair(
   return readNextSessionPair(agentId);
 }
 
-export function rememberSessionPair(agentId: string, pair: SessionPair): void {
-  const key = trpc.harnessConfig.sessionPair.queryKey({ agentId });
+export function rememberSessionPair(
+  agentId: string,
+  pair: SessionPair,
+  kind: DefaultKind = "chat",
+  onSaved?: () => void,
+): void {
+  const key = trpc.harnessConfig.sessionPair.queryKey(
+    sessionPairInput(agentId, kind),
+  );
   const previous = queryClient.getQueryData<SessionPair | null>(key);
   const resolved = pair.provider !== null;
   if (resolved) queryClient.setQueryData<SessionPair | null>(key, pair);
   void api.harnessConfig.rememberSessionPair
-    .mutate({ agentId, ...pair })
+    .mutate({ agentId, kind, ...pair })
+    .then(() => onSaved?.())
     .catch((err: unknown) => {
       if (resolved)
         queryClient.setQueryData<SessionPair | null>(key, previous ?? null);
       emitToast({
         kind: "error",
-        message: `Couldn't save the default harness and model: ${err instanceof Error ? err.message : String(err)}`,
+        message: `Couldn't save the ${kind} default: ${err instanceof Error ? err.message : String(err)}`,
       });
     })
-    .finally(() => queryClient.invalidateQueries({ queryKey: key }));
+    .finally(() => invalidateDefaults());
 }
 
 export async function rememberFirstModel(

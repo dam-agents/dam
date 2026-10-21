@@ -7,6 +7,7 @@ import type {
   HarnessConfigService,
   Plugin,
   RuntimeChannelService,
+  SessionDefaultsEventPayload,
   SessionDirectoryEntry,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
@@ -28,6 +29,7 @@ import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js"
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
+import { createSessionDefaultsPlugin } from "./drivers/session-defaults-plugin.js";
 import {
   createInitializationPlugin,
   createSubAgentOutcomePlugin,
@@ -84,6 +86,7 @@ export interface ComposeRuntimeChannelOpts {
   triggerDriver: TriggerSessionDriver;
   invocationWatch: Pick<InvocationWatch, "watch">;
   subAgentSessions: SubAgentSessionStore;
+  onSessionDefaults: (defaults: SessionDefaultsEventPayload) => void;
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
@@ -181,6 +184,9 @@ export async function composeRuntimeChannel(
     createWorkspaceCommandPlugin({ workDir: opts.workDir, spawnEnv, log }),
   );
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
+  registry.register(
+    createSessionDefaultsPlugin({ onDefaults: opts.onSessionDefaults }),
+  );
   registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
   );
@@ -357,6 +363,9 @@ export async function composeRuntimeChannel(
               derivedStartMode: plugin.derivedStartMode,
             }),
             ...(nativeTemplates?.length && { nativeTemplates }),
+            ...(opts.manifests[name]?.sessionMcpEntry === false && {
+              identifiesSession: false,
+            }),
           };
         }),
         kbPublish: 2,

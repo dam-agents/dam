@@ -207,7 +207,7 @@ On disconnect or exit the CLI prints a ready-to-paste resume command and the lea
 `dam run <agent>` is the CI verb: it speaks ACP to the relay like the UI does — open a Session, submit one prompt, stream the assistant's text to stdout — and exits with a code derived from the turn's stop reason, so a pipeline can branch on the outcome.
 The prompt comes from a flag or a file (`-` reads stdin — never implicitly, so a promptless invocation errors instead of hanging a CI job).
 Sessions it creates are typed `cli_run` through the same session metadata every other surface uses — the UI groups them under their own category, and `dam session list` shows the type on each row; every prompt is stamped with a minted prompt identity and the CLI surface marker, so the runtime reports the prompt's fate, frames the turn as a direct one, and records the turn's outcome even when the prompt was sent into a Session another surface created.
-It names no model: the relay fills in the agent's saved default ([harness configuration](harness-config.md)), so a run starts on the model the web chat would start on.
+It names no model: the relay fills in the agent's chat default ([harness configuration](harness-config.md)), so a run starts on the model the web chat would start on.
 
 The headline property is that **the caller may leave**.
 Detaching never cancels a running turn, so `--async` exits once the runtime reports the prompt started, printing the session id to poll with `dam run get`.

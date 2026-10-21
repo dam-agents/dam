@@ -23,6 +23,7 @@ export {
   InvalidSchemaError,
   ModelNameError,
   NoSpawnModelError,
+  NO_SPAWN_MODEL_MESSAGE,
   ProviderMismatchError,
   SpendLimitReachedError,
   UnresolvableDriverError,

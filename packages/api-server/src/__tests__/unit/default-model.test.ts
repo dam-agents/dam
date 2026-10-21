@@ -4,7 +4,7 @@ import type { HarnessCatalogView } from "agent-runtime-api";
 import type { HarnessCatalog, SessionPair } from "api-server-api";
 import { convertedDefault } from "../../modules/harness-config/domain/converted-default.js";
 import { convertedDefaultModel } from "../../modules/harness-config/domain/default-conversion.js";
-import { defaultModelNoticeOf } from "../../modules/harness-config/domain/default-model-notice.js";
+import { defaultModelNoticesOf } from "../../modules/harness-config/domain/default-model-notice.js";
 import { NoDefaultModelError } from "../../modules/harness-config/domain/no-default-model.js";
 import { createDefaultConverter } from "../../modules/harness-config/services/default-conversion.js";
 import { createScheduleModelForFire } from "../../modules/harness-config/services/schedule-model.js";
@@ -65,14 +65,14 @@ describe("a fire on an Agent with no default model", () => {
 
   // TEST_SCENARIO: nothing is saved, so no provider or model is the person's choice; the fire fails with the reason instead of running on one the platform picked.
   it("fails with the missing default instead of guessing one", async () => {
-    await expect(resolveFirePair(deps(null), "a", {})).rejects.toBeInstanceOf(
-      NoDefaultModelError,
-    );
+    await expect(
+      resolveFirePair(deps(null), "a", "scheduled", {}),
+    ).rejects.toBeInstanceOf(NoDefaultModelError);
   });
 
   // TEST_SCENARIO: the person's view of the default shows it as not set rather than failing, so the UI can ask for one.
   it("reads as not set for the person", async () => {
-    expect(await resolveRememberedPair(deps(null), "a")).toEqual({
+    expect(await resolveRememberedPair(deps(null), "a", "chat")).toEqual({
       harness: "claude-code",
       provider: null,
       model: null,
@@ -82,7 +82,7 @@ describe("a fire on an Agent with no default model", () => {
   // TEST_SCENARIO: a schedule that names its own model runs on it, whatever the saved default holds.
   it("runs a schedule on the model it names", async () => {
     expect(
-      await resolveFirePair(deps(null), "a", {
+      await resolveFirePair(deps(null), "a", "scheduled", {
         model: "anthropic/claude-opus-5-5",
       }),
     ).toEqual({
@@ -224,7 +224,13 @@ describe("the one-time default conversion", () => {
     const c = createDefaultConverter({
       pairRepo: {
         read: async () => saved,
+        readSaved: async () => ({
+          chat: saved,
+          channel: null,
+          scheduled: null,
+        }),
         write: async () => {},
+        clear: async () => {},
         writeIfEmpty: async (_id, pair, note) => {
           if (saved) return false;
           saved = pair;
@@ -433,7 +439,7 @@ describe("a schedule model on a runtime that takes none per session", () => {
   });
 });
 
-describe("defaultModelNoticeOf", () => {
+describe("defaultModelNoticesOf", () => {
   const pair = (model: string | null, provider: string | null = "anth") => ({
     harness: "claude-code",
     provider,
@@ -448,14 +454,14 @@ describe("defaultModelNoticeOf", () => {
       runsUnattended?: boolean;
     } = {},
   ) =>
-    defaultModelNoticeOf({
+    defaultModelNoticesOf({
       agentId: "a",
       routed: opts.routed ?? true,
-      pair: p,
+      saved: { chat: p, channel: null, scheduled: null },
       note: opts.note ?? null,
       grantedAliases: new Set(opts.aliases ?? ["anthropic"]),
       runsUnattended: opts.runsUnattended ?? true,
-    })?.state ?? null;
+    })[0]?.state ?? null;
 
   // TEST_SCENARIO: the owner is told about a default with no model, one with no provider to pick from, one whose model names a provider alias the Agent no longer holds, and a converted one that runs another model than its setting named; a pending default and one that runs as saved say nothing.
   it("names the state the owner must know about", () => {
@@ -477,6 +483,29 @@ describe("defaultModelNoticeOf", () => {
   it("judges the provider by the model's alias, not the saved Connection id", () => {
     expect(notice(pair("anthropic/claude-opus-5-5", "old-conn"))).toBeNull();
     expect(notice(pair("ibm/aws/claude-opus-4-8", null))).toBe("provider-gone");
+  });
+
+  // TEST_SCENARIO: a scheduled default of its own runs schedules even while the chat default is not set, so only chat and channel, which run on the chat default, are named as stopped.
+  it("names only the kinds whose default cannot run", () => {
+    const notices = defaultModelNoticesOf({
+      agentId: "a",
+      routed: true,
+      saved: {
+        chat: pair(null, null),
+        channel: null,
+        scheduled: pair("anthropic/claude-opus-5-5"),
+      },
+      note: null,
+      grantedAliases: new Set(["anthropic"]),
+      runsUnattended: true,
+    });
+    expect(notices).toEqual([
+      expect.objectContaining({
+        id: "a:chat+channel:not-set",
+        kinds: ["chat", "channel"],
+        state: "not-set",
+      }),
+    ]);
   });
 
   // TEST_SCENARIO: an Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.

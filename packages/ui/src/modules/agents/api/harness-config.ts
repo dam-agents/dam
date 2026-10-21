@@ -6,7 +6,6 @@ import { useRef } from "react";
 import { queryClient } from "../../../query-client.js";
 import { trpc } from "../../../trpc.js";
 import { askToRestartAfterSave } from "../../processes/lib/ask-restart-after-save.js";
-import { unavailableModel } from "../../sessions/components/model-settings-snapshot.js";
 import { agentTrpc, agentTrpcHttp } from "../agent-trpc.js";
 import { useAgentLacksLiveUpdates, useIsAgentOperable } from "./queries.js";
 
@@ -107,20 +106,6 @@ export function useResolvedHarnessConfig(
     modelsPaired: false,
     pending,
   };
-}
-
-export function useStaleModel(agentId: string | null): {
-  stale: boolean;
-  model: string | null;
-} {
-  const operable = useIsAgentOperable(agentId);
-  const { data } = useHarnessConfigSnapshot(agentId);
-  const snapshot = data?.snapshot;
-  const model = snapshot?.model ?? null;
-  if (operable || !snapshot || snapshot.modelAtDiscovery !== model) {
-    return { stale: false, model };
-  }
-  return { stale: unavailableModel(snapshot) !== null, model };
 }
 
 function withDeclared(

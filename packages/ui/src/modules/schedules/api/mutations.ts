@@ -155,6 +155,16 @@ export function useToggleSchedule() {
   });
 }
 
+export function useClearScheduleChoices() {
+  return useMutation({
+    ...trpc.schedules.clearSessionChoices.mutationOptions(),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Couldn't move the schedules to the scheduled default",
+    },
+  });
+}
+
 export function useDeleteSchedule() {
   return useMutation({
     ...trpc.schedules.delete.mutationOptions(),

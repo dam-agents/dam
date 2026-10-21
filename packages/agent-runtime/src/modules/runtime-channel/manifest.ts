@@ -176,6 +176,8 @@ export const runtimeManifestSchema = z.object({
 
   terminalSessionPins: z.string().min(1).optional(),
 
+  sessionMcpEntry: z.boolean().default(true),
+
   agentProcesses: z.array(z.string().min(1).max(15)).default([]),
 
   extensions: z
@@ -242,6 +244,10 @@ const BUILTIN_DRIVERS: Record<
   },
   "session-message": {
     binding: { impl: "session-message" },
+    defaultOn: true,
+  },
+  "session-defaults": {
+    binding: { impl: "session-defaults" },
     defaultOn: true,
   },
 };

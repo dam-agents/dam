@@ -24,6 +24,7 @@ function setup(
       enqueueAfterCommit: async (agentId) => {
         enqueued.push(agentId);
       },
+      supersede: async () => {},
     },
     readCapabilities: async () => capabilities,
     newId: () => `m${++id}`,

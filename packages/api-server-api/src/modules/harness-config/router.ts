@@ -11,6 +11,9 @@ import {
   harnessConfigSnapshotInputSchema,
   harnessConfigSnapshotResultSchema,
   rememberSessionPairInputSchema,
+  clearSessionDefaultInputSchema,
+  sessionDefaultsSchema,
+  sessionPairInputSchema,
   sessionPairSchema,
   harnessConfigStatusInputSchema,
   harnessConfigStatusSchema,
@@ -42,11 +45,19 @@ export const harnessConfigRouter = t.router({
     }),
 
   sessionPair: readAgentProcedure
-    .input(harnessConfigStatusInputSchema)
+    .input(sessionPairInputSchema)
     .output(sessionPairSchema.nullable())
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
-      return ctx.harnessConfig.sessionPair(input.agentId);
+      return ctx.harnessConfig.sessionPair(input.agentId, input.kind);
+    }),
+
+  sessionDefaults: readAgentProcedure
+    .input(harnessConfigStatusInputSchema)
+    .output(sessionDefaultsSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.harnessConfig.sessionDefaults(input.agentId);
     }),
 
   defaultFor: readAgentProcedure
@@ -54,15 +65,25 @@ export const harnessConfigRouter = t.router({
     .output(sessionPairSchema.nullable())
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
-      return ctx.harnessConfig.defaultFor(input.agentId, input.harness);
+      return ctx.harnessConfig.defaultFor(
+        input.agentId,
+        input.kind,
+        input.harness,
+      );
     }),
 
   rememberSessionPair: manageAgentsProcedure
     .input(rememberSessionPairInputSchema)
     .mutation(({ ctx, input }) => {
-      const { agentId, ...pair } = input;
-      return ctx.harnessConfig.rememberSessionPair(agentId, pair);
+      const { agentId, kind, ...pair } = input;
+      return ctx.harnessConfig.rememberSessionPair(agentId, kind, pair);
     }),
+
+  clearSessionDefault: manageAgentsProcedure
+    .input(clearSessionDefaultInputSchema)
+    .mutation(({ ctx, input }) =>
+      ctx.harnessConfig.clearSessionDefault(input.agentId, input.kind),
+    ),
 
   set: manageAgentsProcedure
     .input(harnessConfigApplyInputSchema)

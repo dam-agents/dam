@@ -41,8 +41,14 @@ In an existing session, the picker keeps its harness and, on a routed runtime, o
 
 A session may also pick the settings its harness manifest lists under `sessionSettings`: mode, effort, thinking level, prompt cache or approvals, each a catalog option.
 The choice belongs to that session alone and starts with its next turn; it is kept in the runtime's session metadata beside the [Session Pair](../ubiquitous-language.md), and `_platform/session/configure` changes it.
-Only **Set as default** on a running session, the default harness, provider and model picker on the agent's Providers page, or the first model picked for a session, new or old, on an agent with no default model saves the pair as the agent's remembered pair, which preselects the next session and is what schedules and channel turns run on; starting a session saves nothing else.
-With none saved, the remembered pair is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
+An agent remembers three default pairs, one per **default kind**: **chat**, which preselects the next session, **channel**, which Slack and Telegram turns run on, and **scheduled**, which schedule fires run on.
+A channel or scheduled default that is not saved is **the same as chat**: those runs take the chat default, whatever it is at the time.
+Only **Set as default** on a running session, the default pickers on the agent's Providers page, or the first model picked for a session, new or old, on an agent with no default model saves a pair as a remembered default; starting a session saves nothing else.
+The first model picked saves the chat default; **Set as default** saves the default of the session's own kind (a Slack thread's sets the channel default, and a sub-agent session offers none), and names it.
+The Providers page shows one section per kind, each with the session picker's harness, model, settings and Subagents block; a channel or scheduled section starts on **Same as chat**, which shows the inherited values, and switching it off saves a default of its own.
+Each section marks a default that is not set or whose provider the agent no longer holds, and so does the Providers entry of the agent's navigation.
+Detaching a provider lists the defaults and schedules that run on it before it goes.
+With none saved, the chat default is the agent's own harness with no provider and no model: the default harness its runtime reports, or, before the agent's first `hello`, the Agent's own harness, and the catalog's default only when the Agent names none.
 A saved pair with no model is a default that is **not set**; the platform never picks a provider or a model in the person's place.
 On a routed runtime a default is saved only with a model: the Providers page shows "Not set" and offers no unset choice, a harness picked there waits for its model, and the picker of a new session or of a session with no model reads "Choose a model" and holds the prompt until one is picked.
 With the new layout on, the Providers page edits the default with the new session's picker instead: each pick saves at once, the session settings included, so schedules and channel turns run on the saved mode and effort too; on a routed runtime a harness picked there waits, unsaved, for its model, and the page says so meanwhile; otherwise it saves with no model until one is picked, and the page shows the no-default-model notice.
@@ -61,11 +67,11 @@ A schedule fire for an agent moved to a new image and still asleep wakes it firs
 Run Now on such an agent refuses with "setting up" and starts that wake in the background.
 **A turn with no model.** On a harness that reaches its models through the Model Router, the runtime refuses a turn whose session has no model, with the `no-model` reason, whether the turn starts a session, prompts one or resends an edited message; the router or the harness never picks a model in its place.
 A harness on a native Connection, or an agent holding no provider whose API the harness speaks, is not refused, and before the pod's env arrives every routed harness needs a model.
-The turns the platform starts on its own carry the agent's saved default: kit setup, and the result of a satellite Job or of a sub-agent when no waiting session takes it.
-A `session/new` that reaches the ACP relay naming no model, as `dam run`, a script or an older client sends it, gets the agent's saved default filled in by the api-server, the same pair the web chat sends: the saved default for the harness the frame names, or for the agent's own harness when it names none.
-With no saved default model, the frame goes on as sent and the runtime refuses it with the `no-model` reason.
+The turns the platform starts on its own carry the agent's chat default: kit setup, and the result of a satellite Job or of a sub-agent when no waiting session takes it.
+A `session/new` that reaches the ACP relay naming no model, as `dam run`, a script or an older client sends it, gets the agent's chat default filled in by the api-server, the same pair the web chat sends: the chat default for the harness the frame names, or for the agent's own harness when it names none, and then the session follows the chat default.
+With no chat default model, the frame goes on as sent and the runtime refuses it with the `no-model` reason.
 The relay holds the frames after it until the default is read, so they reach the runtime in the order the client sent them.
-A session from before the Model Router carries no model, and it ran on the agent's one provider and its default model, so a channel turn or an api-server trigger that continues it pins the agent's saved default on it first, and a one-time task or a sub-agent result that continues it pins the model the event names.
+A session from before the Model Router carries no model, and it ran on the agent's one provider and its default model, so a channel turn or an api-server trigger that continues it pins the agent's default of that kind on it first, and a one-time task or a sub-agent result that continues it pins the model the event names.
 A scheduled run with no model, such a task when it names none, an interrupted turn on such a session, or a chat prompt in it is refused until a model is picked.
 A web terminal is the exception: the person sees its model in the harness's own screen and can switch it there, so a new terminal starts on the agent's default when the default is on its harness, and otherwise with no model, on the harness's own default.
 Each binding says how the harness takes the value.
@@ -73,7 +79,12 @@ A session-scoped one (`mode`, `configOption`) is sent as ACP `session/set_mode` 
 The runtime sends it again whenever the session is loaded or resumed into a harness process.
 Settings are sent one at a time, in the order the runtime lists them, each after the harness answered the one before, because a harness reads a setting against the state an earlier one left: a mode is read against the model the session holds.
 A prompt waits for all of them.
-A setting always holds a value: the picker starts on the agent's configured value for the harness, or, for a mode the runtime derives, on the mode it derives, or else the manifest's `default` for the option, and offers no unset choice, so a change always names a value the harness applies.
+A setting always holds a value: one that neither the session nor its default names runs on the manifest's `default` for the option, which the runtime applies to the session or its process, never on what the harness's own settings file holds.
+Two kinds stay the harness's own: the permission mode, and a setting whose manifest default a person must approve, since such a default would stall every unattended turn; the picker starts those on the agent's configured value, or, for a mode the runtime derives, on the mode it derives, or else the manifest's `default`.
+A default the session's model does not take, such as an effort on Haiku, is not sent.
+The picker offers no unset choice, so a change always names a value the harness applies.
+The Config panel shows only the settings a harness keeps for all its sessions, those two among them; the others are chosen in a session or in its default.
+The platform MCP server tells the agent so, and that editing its settings file does not change its model or effort.
 A session that names no mode starts on the mode the agent's config file names, which the harness reads itself.
 Where that file names none, the runtime derives one from the catalog — the option's `default`, and where the session's model cannot use it, the first choice the model's constraints allow — and only for a harness whose manifest opts in with `deriveStartMode`, one that starts on no mode of its own.
 A harness that keeps its own sources of a start mode does not opt in: Pi's ACP mode is its thinking level, which it takes from the resumed session, then a per-model value, then the global default, and Bob's is the persona a Connection pins.
@@ -155,7 +166,7 @@ Claude Code's view lists it under its alias with Claude Code's own tier names (`
 Beside a routed provider, a turn with no model is refused (see **A turn with no model**), and a web terminal with none starts through the router on the harness's own default; Bedrock's env reaches a process only when no routed provider serves the harness.
 One process reaches either the router or Bedrock, so a session's subagent model is offered from, and must come from, the same side as its model.
 No model counts as the router side, since a session without a Bedrock model reaches the router.
-A schedule's pair is checked at save against the model its fire resolves to (the schedule's own, else the saved default; with no default model the check passes and the fire reports the missing default), and each harness reports the templates it runs natively in its runtime capabilities.
+A schedule's pair is checked at save against the model its fire resolves to (the schedule's own, else the scheduled default; with no default model the check passes and the fire reports the missing default), and each harness reports the templates it runs natively in its runtime capabilities.
 
 Each harness's manifest declares in its `modelRouter` section the dialects it speaks (Claude Code: Messages; Codex: Responses; Bob and Copilot: chat; Pi: all three) and its name spelling (Claude Code's gateway discovery keeps only ids containing `claude`, lowercased, so it sees `claude/<alias>/<id>`); a harness's view of the catalog is the entries whose provider serves one of its dialects.
 The catalog is built when the env rail materialises, rebuilt on every env change and on a timer; a failed listing keeps that Connection's last good list, marked unavailable, and never empties another's.

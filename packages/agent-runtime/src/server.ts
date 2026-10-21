@@ -599,6 +599,7 @@ const reconcileOnState = imageSkillReconciler
 
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
+  onSessionDefaults: (defaults) => acpRuntime.receiveDefaults(defaults),
   onHarnessConfigApplied: (harness) => acpRuntime.recycleHarness(harness),
   manifests: harnessManifests,
   defaultHarness,

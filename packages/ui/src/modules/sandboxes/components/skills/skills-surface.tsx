@@ -7,10 +7,7 @@ import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import type { AgentState } from "../../../../types.js";
-import {
-  useResolvedHarnessConfig,
-  useStaleModel,
-} from "../../../agents/api/harness-config.js";
+import { useResolvedHarnessConfig } from "../../../agents/api/harness-config.js";
 import { useWakeAgent } from "../../../agents/hooks/use-wake-agent.js";
 import { useSkillsConfirms } from "../../hooks/use-skills-confirms.js";
 import { useSkillsDerivations } from "../../hooks/use-skills-derivations.js";
@@ -25,7 +22,6 @@ import { SkillsNeverRunPanel } from "./skills-never-run-panel.js";
 import { SkillsSearchHeader } from "./skills-search-header.js";
 import { SkillSourcesSkeleton } from "./skills-skeleton.js";
 import { SkillsStoppedPanel } from "./skills-stopped-panel.js";
-import { StaleModelNotice } from "./stale-model-notice.js";
 import { StandaloneSkillsGroup } from "./standalone-skills-group.js";
 
 export function SkillsSurface({
@@ -45,7 +41,6 @@ export function SkillsSurface({
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const wakeAgent = useWakeAgent();
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(agentId);
-  const staleModel = useStaleModel(agentId);
   const [openModal, setOpenModal] = useState<SkillsModal | null>(null);
   const [pageDrag, setPageDrag] = useState(false);
   const [query, setQuery] = useState("");
@@ -108,19 +103,6 @@ export function SkillsSurface({
       errorBySource={surface.errorBySource}
       addSourceRow={addSourceRow}
       disabledNotice={disabledNotice}
-      callout={
-        !agentDisabled && staleModel.stale && staleModel.model ? (
-          <StaleModelNotice
-            model={staleModel.model}
-            comingUp={!!comingUp}
-            onStartAndFix={() => {
-              if (!agentId) return;
-              wakeAgent.wake(agentId);
-              navigateToSandboxHome(agentId, "setup");
-            }}
-          />
-        ) : undefined
-      }
       comingUp={!!comingUp}
       onStart={() => agentId && wakeAgent.wake(agentId)}
       onRescan={(src) => void surface.refreshSource(src.id)}
