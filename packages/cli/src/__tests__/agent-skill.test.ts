@@ -13,8 +13,9 @@ import * as exitCodes from "../modules/shared/exit-codes.js";
  * teaches: every `dam …` command it names must
  * resolve to a real command in the program that `compose()` builds, every flag
  * on such a command must belong to that command, every flag it mentions on its
- * own must exist somewhere in the CLI, and its exit-code table must list
- * exactly the codes the CLI defines.
+ * own must exist somewhere in the CLI, its exit-code table must list
+ * exactly the codes the CLI defines, and the CLI version it names must be this
+ * package's version.
  */
 
 const SKILL_PATH = resolve(
@@ -22,6 +23,13 @@ const SKILL_PATH = resolve(
   "../../../../skills/dam/SKILL.md",
 );
 const skill = readFileSync(SKILL_PATH, "utf-8");
+const PACKAGE_PATH = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../../package.json",
+);
+const packageVersion = (
+  JSON.parse(readFileSync(PACKAGE_PATH, "utf-8")) as { version: string }
+).version;
 const program = compose();
 
 function tokenize(line: string): string[] {
@@ -136,6 +144,12 @@ describe("the dam skill", () => {
     expect([...listed].sort((a, b) => a - b)).toEqual(
       [...defined].sort((a, b) => a - b),
     );
+  });
+
+  /** TEST_SCENARIO: an agent compares the skill's CLI version with `dam --version` to tell whether the page describes its CLI, so the skill must name the version of the CLI it ships with. */
+  it("names the CLI version it describes", () => {
+    const named = /^This page describes `dam` CLI (\S+)\.$/m.exec(skill)?.[1];
+    expect(named).toBe(packageVersion);
   });
 
   /** TEST_SCENARIO: a self-check that the drift check can fail at all; a misspelt subcommand and a flag from another command must both be caught. */

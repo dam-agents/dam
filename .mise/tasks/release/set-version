@@ -18,6 +18,7 @@ set -x
 yq -i ".version = \"$usage_version\""    helm/Chart.yaml
 yq -i ".appVersion = \"$usage_version\"" helm/Chart.yaml
 yq -i ".version = \"$usage_version\""    packages/cli/package.json
+sed -i -E "s/^(This page describes \`dam\` CLI )[^ ]+\.$/\1$usage_version./" skills/dam/SKILL.md
 git add .
 git commit --signoff --no-verify -m "bump: v$usage_version"
 set +x

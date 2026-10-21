@@ -1,7 +1,7 @@
 # Release Process
 
 All monorepo packages (Helm chart, CLI, container images) are versioned and published together.
-A single version lives in `helm/Chart.yaml` (version + appVersion) and `packages/cli/package.json`.
+A single version lives in `helm/Chart.yaml` (version + appVersion), `packages/cli/package.json`, and the line of `skills/dam/SKILL.md` that names the CLI version the skill describes.
 The `mise run check:version` task enforces they stay in sync.
 
 ## Lifecycle
