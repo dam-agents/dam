@@ -758,7 +758,7 @@ func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, dep *app
 	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a rolled runner with no pod at all was refused for its owner alone. Admission refusing the create leaves no Pod object and one record, the ReplicaSet condition `ReplicaFailure` of `FailedCreate`; a failed read is not a refusal, so it halts the roll. The condition is read from the ReplicaSet that runs the pod template the Deployment holds now, since an older revision's failure describes a pod shape this roll no longer asks for. That refusal says nothing of the release only when another owner's runner already runs this very pod and is ready: every runner shares one namespace, one ServiceAccount and one security policy, so a refusal a release causes reaches all of them, and a peer that runs the shape proves it is admissible. A peer is not proof of the contrary when the refusal is about this owner's own objects; but then only this owner is stuck, and the stalled bound releases its place.
+// UNIT_BOUNDARY_DESCRIPTION: whether a rolled runner with no pod at all was refused for its owner alone. Admission refusing the create leaves no Pod object and one record, the ReplicaSet condition `ReplicaFailure` of `FailedCreate`; a failed read is not a refusal, so it halts the roll. The condition is read from the ReplicaSet that runs the pod template the Deployment holds now, ignoring the `pod-template-hash` label its controller generates, since an older revision's failure describes a pod shape this roll no longer asks for. That refusal says nothing of the release only when another owner's runner already runs this very pod and is ready: every runner shares one namespace, one ServiceAccount and one security policy, so a refusal a release causes reaches all of them, and a peer that runs the shape proves it is admissible. A peer is not proof of the contrary when the refusal is about this owner's own objects; but then only this owner is stuck, and the stalled bound releases its place.
 func (r *AgentReconciler) runnerPodRefusedForItsOwner(ctx context.Context, dep *appsv1.Deployment) bool {
 	sets, err := r.client.AppsV1().ReplicaSets(dep.Namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(dep.Spec.Selector)})
 	if err != nil {
@@ -767,12 +767,22 @@ func (r *AgentReconciler) runnerPodRefusedForItsOwner(ctx context.Context, dep *
 	}
 	refused := slices.ContainsFunc(sets.Items, func(rs appsv1.ReplicaSet) bool {
 		return metav1.IsControlledBy(&rs, dep) &&
-			equality.Semantic.DeepEqual(rs.Spec.Template, dep.Spec.Template) &&
+			sameRunnerTemplate(rs.Spec.Template, dep.Spec.Template) &&
 			slices.ContainsFunc(rs.Status.Conditions, func(c appsv1.ReplicaSetCondition) bool {
 				return c.Type == appsv1.ReplicaSetReplicaFailure && c.Status == corev1.ConditionTrue && c.Reason == "FailedCreate"
 			})
 	})
 	return refused && r.runnerTemplateRunsElsewhere(ctx, dep)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a ReplicaSet runs the pod template it is given, ignoring the one label the Deployment controller writes into every ReplicaSet's template and never into the Deployment's own: `pod-template-hash`, which it appends to tell a new revision's pods from an old one's. Comparing that label would say no ReplicaSet of a Deployment ever runs its template. Kubernetes' own `FindNewReplicaSet` compares templates the same way, by deleting that label from both copies.
+func sameRunnerTemplate(rs, dep corev1.PodTemplateSpec) bool {
+	strip := func(t corev1.PodTemplateSpec) corev1.PodTemplateSpec {
+		t = *t.DeepCopy()
+		delete(t.Labels, appsv1.DefaultDeploymentUniqueLabelKey)
+		return t
+	}
+	return equality.Semantic.DeepEqual(strip(rs), strip(dep))
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether another owner's runner already runs this Deployment's pod shape and is ready, which is what tells a refusal that names one owner from one the release causes for every runner: the runners share a namespace, a ServiceAccount and a security policy, so a refusal of the pod shape refuses them all, and one ready peer on that shape proves it is admitted. A pod refused for its owner's own objects leaves its peers standing, so a ready peer is what says the refusal names one owner.

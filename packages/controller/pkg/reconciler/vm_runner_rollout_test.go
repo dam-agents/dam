@@ -3,7 +3,10 @@ package reconciler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"hash/fnv"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -21,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -1550,19 +1554,35 @@ func TestARebootHoldKeepsTheTimeItsReleaseWasNamedUntilThePodRolls(t *testing.T)
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "the runner that never answered is rolled onto the release it was named")
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a ReplicaSet of a runner Deployment, as the Deployment controller leaves one: the pod template the Deployment holds now, selected by the runner's own labels, controlled by the Deployment, and reporting the condition admission gave it.
-func runnerReplicaSet(t *testing.T, r *AgentReconciler, owner, reason string) *appsv1.ReplicaSet {
+// UNIT_BOUNDARY_DESCRIPTION: a ReplicaSet of a runner Deployment, as the Deployment controller leaves one: the pod template the Deployment holds now with the `pod-template-hash` label the controller generates written into it and its selector, selected by the runner's own labels, controlled by the Deployment, and reporting the condition admission gave it. The generated label is what a real ReplicaSet carries and its Deployment does not.
+func runnerReplicaSet(t *testing.T, r *AgentReconciler, owner, reason string, mutate ...func(*appsv1.ReplicaSet)) *appsv1.ReplicaSet {
 	t.Helper()
 	dep := runnerDeploymentOf(t, r, owner)
+	raw, err := json.Marshal(dep.Spec.Template)
+	require.NoError(t, err)
+	sum := fnv.New32a()
+	_, err = sum.Write(raw)
+	require.NoError(t, err)
+	hash := rand.SafeEncodeString(fmt.Sprint(sum.Sum32()))
 	controller := true
+	selector := dep.Spec.Selector.DeepCopy()
+	if selector.MatchLabels == nil {
+		selector.MatchLabels = map[string]string{}
+	}
+	selector.MatchLabels[appsv1.DefaultDeploymentUniqueLabelKey] = hash
+	template := *dep.Spec.Template.DeepCopy()
+	template.Labels[appsv1.DefaultDeploymentUniqueLabelKey] = hash
 	rs := &appsv1.ReplicaSet{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:            dep.Name + "-abc",
+			Name:            dep.Name + "-" + hash,
 			Namespace:       dep.Namespace,
 			Labels:          vmRunnerSelector(owner),
 			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: dep.Name, UID: dep.UID, Controller: &controller}},
 		},
-		Spec: appsv1.ReplicaSetSpec{Selector: dep.Spec.Selector, Template: dep.Spec.Template},
+		Spec: appsv1.ReplicaSetSpec{Selector: selector, Template: template},
+	}
+	for _, m := range mutate {
+		m(rs)
 	}
 	if reason != "" {
 		rs.Status.Conditions = []appsv1.ReplicaSetCondition{{
@@ -1662,10 +1682,9 @@ func TestARefusalOfAnOlderPodShapeDoesNotReleaseTheRoll(t *testing.T) {
 	changeRunnerPod(r)
 	readyRunnerOnCandidate(t, r, "owner-peer")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
-	stale := runnerReplicaSet(t, r, "owner-a", "FailedCreate")
-	stale.Spec.Template.Spec.Containers[0].Image = runnerV1
-	_, err := r.client.AppsV1().ReplicaSets("test-agents").Update(ctx, stale, metav1.UpdateOptions{})
-	require.NoError(t, err)
+	runnerReplicaSet(t, r, "owner-a", "FailedCreate", func(rs *appsv1.ReplicaSet) {
+		rs.Spec.Template.Spec.Containers[0].Image = runnerV1
+	})
 	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
 
 	assert.False(t, r.runnerPodRefusedForItsOwner(ctx, runnerDeploymentOf(t, r, "owner-a")), "a refused older revision is not this roll's refusal")
