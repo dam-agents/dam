@@ -10,9 +10,11 @@ import { runtimeMigrationBadge } from "../utils/runtime-migration.js";
 export function RuntimeMigrationBadge({
   agent,
   labelClassName,
+  hideTitle = false,
 }: {
   agent: Pick<AgentView, "runtimeMigration">;
   labelClassName?: string;
+  hideTitle?: boolean;
 }) {
   const badge = runtimeMigrationBadge(agent);
   if (!badge) return null;
@@ -21,7 +23,11 @@ export function RuntimeMigrationBadge({
     .with("failed", () => ({ Icon: WarningAlt, variant: "danger" as const }))
     .exhaustive(() => ({ Icon: Migrate, variant: "info" as const }));
   return (
-    <Badge variant={variant} className="shrink-0 gap-1" title={badge.title}>
+    <Badge
+      variant={variant}
+      className="shrink-0 gap-1"
+      title={hideTitle ? undefined : badge.title}
+    >
       <Icon size={12} aria-hidden />
       <span className={labelClassName}>{badge.label}</span>
     </Badge>
