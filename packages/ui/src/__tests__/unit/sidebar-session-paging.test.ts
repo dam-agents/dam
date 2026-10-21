@@ -51,7 +51,6 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     loading: false,
     failed: false,
     provisional: false,
-    recordRead: true,
     fetchNextPage: vi.fn(),
   }),
 }));
@@ -62,6 +61,9 @@ vi.mock(
       createElement("div", { "data-testid": "session-row" }, session.sessionId),
   }),
 );
+vi.mock("../../modules/agents/hooks/use-auto-wake-on-open.js", () => ({
+  useAutoWakeOnOpen: () => {},
+}));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
 }));

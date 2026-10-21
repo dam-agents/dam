@@ -6,9 +6,11 @@ import { failedLoad } from "../../../lib/failed-load.js";
 import { useStore } from "../../../store.js";
 import type { SessionView } from "../../../types.js";
 import {
+  useAgentRunState,
   useIsAgentAnswerableSoon,
   useIsAgentOperable,
 } from "../../agents/api/queries.js";
+import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
 import { useApprovalsForAgent } from "../../approvals/api/queries.js";
 import { isUnreadSession } from "../../home/lib/unread.js";
 import { useSessionSpend } from "../../spend/api/queries.js";
@@ -49,6 +51,14 @@ export function useAgentSessionList(agentId: string) {
     listed ?? (provisional ? lastKnown : undefined) ?? EMPTY;
   const loading =
     listed === undefined && !provisional && (isFetching || !operable);
+  const runState = useAgentRunState(agentId);
+  const restarting = useStore((s) => s.restartingAgents.has(agentId));
+  const { wake } = useWakeAgent();
+  const notWaking =
+    loading &&
+    lastKnown !== undefined &&
+    runState === "hibernated" &&
+    !restarting;
 
   const visible = useMemo(
     () => sessions.filter((s) => sessionFilter.includes(sessionCategoryOf(s))),
@@ -97,11 +107,11 @@ export function useAgentSessionList(agentId: string) {
     answerable: answerableSoon,
     loading,
     provisional,
-    recordRead: lastKnown !== undefined,
     failed:
-      answerableSoon && !provisional && failedLoad({ data, errorUpdatedAt }),
+      notWaking ||
+      (answerableSoon && !provisional && failedLoad({ data, errorUpdatedAt })),
     retrying: isFetching,
-    retry: refetch,
+    retry: notWaking ? () => wake(agentId) : refetch,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPageFailed: isFetchNextPageError,

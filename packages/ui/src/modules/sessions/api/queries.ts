@@ -377,7 +377,7 @@ export function useProvisionalSessions(
   agentId: string | null,
   enabled: boolean,
 ): SessionView[] | undefined {
-  const { data } = useQuery({
+  const { data, isError } = useQuery({
     ...trpc.attention.sessionsForAgent.queryOptions(
       agentId && enabled ? { agentId } : skipToken,
     ),
@@ -385,7 +385,10 @@ export function useProvisionalSessions(
     retry: false,
   });
   return useMemo(
-    () => (enabled ? data?.map(provisionalSessionView) : undefined),
-    [data, enabled],
+    () =>
+      enabled
+        ? (data?.map(provisionalSessionView) ?? (isError ? [] : undefined))
+        : undefined,
+    [data, isError, enabled],
   );
 }

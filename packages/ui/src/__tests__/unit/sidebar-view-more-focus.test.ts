@@ -16,6 +16,9 @@ vi.mock("../../store.js", () => ({
 vi.mock("../../modules/agents/hooks/use-act-when-awake.js", () => ({
   useActWhenAwake: () => () => {},
 }));
+vi.mock("../../modules/agents/hooks/use-auto-wake-on-open.js", () => ({
+  useAutoWakeOnOpen: () => {},
+}));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
 }));

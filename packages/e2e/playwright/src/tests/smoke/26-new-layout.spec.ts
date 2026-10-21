@@ -77,11 +77,11 @@ test("keeps the current layout while the experiment is off", async ({
   await expect(page.getByTestId("sidebar-tree")).toHaveCount(0);
 });
 
-// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, only the header's plus to create one, not a New agent row, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and the row's New session plus opens the Agent's chat; the New session row, shown only while the Agent has no Sessions, or else that plus, not the Agent row, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent stays asleep with no Sessions, so its open list says its Sessions show when it wakes instead of claiming it has none. The Home row at the top of the tree goes back to the dashboard and leaves the open Agent open, and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
+// TEST_SCENARIO: with the experiment on, the sidebar is the tree with the Agents in it and, since Agents exist, only the header's plus to create one, not a New agent row, Home is the dashboard with no Agent rows, and the right rail has the Documentation tile between Get started and Approvals. Clicking an Agent's row opens its Session list, and the row's New session plus opens the Agent's chat; the New session row, shown only while the Agent has no Sessions, or else that plus, not the Agent row, is then the current page; the chat's empty page offers the Agent's ways in as sections that open from the keyboard. The second Agent is asleep with no Sessions, so opening its list wakes it. The Home row at the top of the tree goes back to the dashboard and leaves that Agent open, and once it answers, with only Home shown, its list shows only its New session row; and the Group by menu, from the keyboard, swaps the Agents for one flat list of Sessions and back.
 test("shows the tree, the dashboard and the tiled rail when on", async ({
   page,
 }) => {
-  test.setTimeout(120_000);
+  test.setTimeout(300_000);
   await setNewLayout(true);
   await openHome(page);
   const tree = page.getByTestId("sidebar-tree");
@@ -117,21 +117,22 @@ test("shows the tree, the dashboard and the tiled rail when on", async ({
   await expect(row).toHaveAttribute("aria-expanded", "false");
   await expect(node.getByTestId("sidebar-new-session-row")).toHaveCount(0);
 
-  const asleep = agentNode(page, AGENTS[1]);
-  await asleep.getByTestId("sidebar-agent-row").click();
-  await expect(asleep.getByTestId("sidebar-agent-asleep")).toHaveText(
-    "Its sessions show when it wakes.",
-  );
-  await expect(asleep.getByTestId("session-row")).toHaveCount(0);
+  const woken = agentNode(page, AGENTS[1]);
+  await woken.getByTestId("sidebar-agent-row").click();
 
   const home = tree.getByTestId("sidebar-home-row");
   await home.click();
   await expect(page.getByRole("region", { name: "Overview" })).toBeVisible();
   await expect(home).toHaveAttribute("aria-current", "page");
-  await expect(asleep.getByTestId("sidebar-agent-row")).toHaveAttribute(
+  await expect(woken.getByTestId("sidebar-agent-row")).toHaveAttribute(
     "aria-expanded",
     "true",
   );
+  await waitForAgentRunning(api, AGENTS[1]);
+  await expect(woken.getByTestId("sidebar-new-session-row")).toBeVisible({
+    timeout: 30_000,
+  });
+  await expect(woken.getByTestId("session-row")).toHaveCount(0);
 
   const groupBy = tree.getByTestId("sidebar-group-by");
   await groupBy.focus();

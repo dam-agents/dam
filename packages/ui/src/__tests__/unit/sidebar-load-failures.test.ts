@@ -32,6 +32,9 @@ vi.mock("../../store.js", async () => {
   };
   return { useStore: (select: (s: unknown) => unknown) => select(state) };
 });
+vi.mock("../../modules/agents/hooks/use-auto-wake-on-open.js", () => ({
+  useAutoWakeOnOpen: () => {},
+}));
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgentRunState: () => "running",
   useIsAgentAnswerableSoon: () => agentState.answerable,
@@ -48,7 +51,6 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
     answerable: agentState.answerable,
     loading: list.loading,
     provisional: false,
-    recordRead: true,
     failed: list.failed,
     retrying: list.retrying,
     retry: vi.fn(),

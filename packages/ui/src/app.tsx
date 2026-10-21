@@ -9,6 +9,7 @@ import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentsList } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
+import { useSyncRestartingAgents } from "./modules/agents/hooks/use-restart-agent.js";
 import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
@@ -143,6 +144,7 @@ function MainApp() {
   }, [newLayout]);
 
   useLiveEvents();
+  useSyncRestartingAgents();
   useDocumentTitle();
   useAgentCrashToasts();
   useApprovalToasts();
