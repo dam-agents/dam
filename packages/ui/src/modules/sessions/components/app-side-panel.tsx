@@ -40,6 +40,7 @@ export function AppSidePanelButtons({
           agent: false,
           artifacts: newLayout || view === "sandbox-home",
           canOpenBrowser: false,
+          changes: false,
           processesEnabled: false,
           gettingStarted,
         }),
@@ -75,6 +76,7 @@ export function AppSidePanelHost({ children }: { children: ReactNode }) {
     agent: false,
     artifacts: newLayout || view === "sandbox-home",
     canOpenBrowser: false,
+    changes: false,
     processesEnabled: false,
     gettingStarted,
   });

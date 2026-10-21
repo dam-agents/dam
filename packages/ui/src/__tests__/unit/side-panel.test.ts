@@ -19,7 +19,8 @@ import type { PlatformStore } from "../../store.js";
 
 /**
  * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
- * icon bar. An Agent's chat offers Files, Changes, Browser and Processes;
+ * icon bar. An Agent's chat offers Files, Browser and Processes, and Changes
+ * when the Agent has a git repository;
  * every page offers Get started and Approvals, and the chat and an Agent's
  * configuration page also offer Artifacts.
  * A list tab shows its list, or the docked item it opened (a file, an
@@ -41,6 +42,7 @@ const ALL_AVAILABLE = hiddenSidePanelTabs({
   agent: true,
   artifacts: true,
   canOpenBrowser: true,
+  changes: true,
   processesEnabled: true,
   gettingStarted: true,
 });
@@ -81,11 +83,35 @@ describe("which tab the side panel shows", () => {
       agent: true,
       artifacts: true,
       canOpenBrowser: false,
+      changes: true,
       processesEnabled: false,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("browser", docked, unavailable)).toBe(null);
     expect(visibleSidePanelTab("processes", docked, unavailable)).toBe(null);
+  });
+
+  it("TEST_SCENARIO: an agent with a git repository has a Changes tab, and one without has none, so a Changes panel left open there closes", () => {
+    const noRepository = hiddenSidePanelTabs({
+      agent: true,
+      artifacts: true,
+      canOpenBrowser: true,
+      changes: false,
+      processesEnabled: true,
+      gettingStarted: true,
+    });
+    expect(ALL_AVAILABLE.has("changes")).toBe(false);
+    expect(noRepository.has("changes")).toBe(true);
+    expect(
+      visibleSidePanelTab(
+        "changes",
+        { ...NOTHING_DOCKED, changes: true },
+        noRepository,
+      ),
+    ).toBe(null);
+    expect(visibleSidePanelTab("files", NOTHING_DOCKED, noRepository)).toBe(
+      "files",
+    );
   });
 });
 
@@ -95,6 +121,7 @@ describe("the panels outside an Agent's chat", () => {
       agent: false,
       artifacts: false,
       canOpenBrowser: true,
+      changes: false,
       processesEnabled: true,
       gettingStarted: true,
     });
@@ -114,6 +141,7 @@ describe("the panels outside an Agent's chat", () => {
       agent: true,
       artifacts: true,
       canOpenBrowser: true,
+      changes: true,
       processesEnabled: true,
       gettingStarted: false,
     });

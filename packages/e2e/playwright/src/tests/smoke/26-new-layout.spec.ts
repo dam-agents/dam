@@ -161,9 +161,6 @@ test("switches the chat between the sections and the side panel", async ({
   );
   await page.goto(`${baseUrl}/chat/${encodeURIComponent(agentId)}`);
   await waitForAgentRunning(api, AGENTS[1]);
-  await expect(
-    page.getByRole("button", { name: "Show changes" }),
-  ).toBeVisible();
   await expect(page.getByTestId("chat-sections")).toBeVisible();
   await expect(page.getByTestId("side-panel-bar")).toHaveCount(0);
 
@@ -194,9 +191,6 @@ test("switches the chat between the sections and the side panel", async ({
   await switchLayout(true);
   const bar = page.getByTestId("side-panel-bar");
   await expect(bar).toBeVisible();
-  await expect(page.getByRole("button", { name: "Show changes" })).toHaveCount(
-    0,
-  );
   await expect(page.getByTestId("chat-sections")).toHaveCount(0);
   await bar.getByTestId("side-panel-tab-files").click();
   await expect(

@@ -86,6 +86,7 @@ import { DockedBrowserPanel } from "../../browser/components/docked-browser-pane
 import { useOpenBrowser } from "../../browser/hooks/use-auto-open-browser.js";
 import { DockedChangesPanel } from "../../changes/components/docked-changes-panel.js";
 import { SessionPullRequests } from "../../changes/components/session-pull-requests.js";
+import { useChangesAvailable } from "../../changes/hooks/use-changes-available.js";
 import { useToggleChanges } from "../../changes/hooks/use-toggle-changes.js";
 import { useFeatures } from "../../features/api/queries.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
@@ -743,10 +744,12 @@ export function ChatView() {
     delegation: openDelegation !== null,
   };
   const { gettingStarted, ...appTabs } = useAppSidePanelTabs();
+  const changesAvailable = useChangesAvailable(selectedAgent, sessionId);
   const hiddenTabs = hiddenSidePanelTabs({
     agent: true,
     artifacts: true,
     canOpenBrowser,
+    changes: changesAvailable,
     processesEnabled,
     gettingStarted,
   });
@@ -1403,6 +1406,7 @@ export function ChatView() {
               name={selectedAgentName}
               display={agentDisplay}
               canOpenBrowser={canOpenBrowser}
+              canShowChanges={changesAvailable}
               browserOpen={browserToggle.pressed}
               changesOpen={changesToggle.pressed}
               onToggleBrowser={() => {
