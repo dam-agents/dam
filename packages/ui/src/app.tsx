@@ -203,7 +203,8 @@ function MainApp() {
             tabIndex={-1}
             className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
           >
-            {!desktop && (
+            {/* UNIT_BOUNDARY_DESCRIPTION: JanUI's rail is the whole of the navigation and its right rail the whole of the panel, so the bar that stands in for both on a phone has nothing left to do there. */}
+            {!desktop && !newLayout && (
               <AppTopBar actions={<AppSidePanelButtons withArtifacts />} />
             )}
             <div
