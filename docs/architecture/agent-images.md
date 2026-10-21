@@ -120,7 +120,8 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
 An agent's instructions live in two files, and every harness reads both, so switching harness keeps them.
 
 - **Platform instructions**: `/etc/AGENTS.md` in the image.
-  Each harness gets them at an image-owned path or flag, never through a file the home holds, so a new image reaches existing agents and an owner's file can never replace them.
+  Each harness gets them at an image-owned path or flag, or through a link the image places in the home at every start, so a new image reaches existing agents.
+  Only Pi reads them through a path an owner can fill: a regular file there is kept and replaces them for that agent.
 - **Agent instructions**: `~/AGENTS.md`, the owner's own file beside the agent's definition.
   The work directory stays data: in a kit like Code Guardian the definition is `$HOME` and `work/` is its git-ignored data.
   An Agent created without a kit gets a short template there, so its owner knows where to write; an Agent from a kit, a home seed or a sub-agent gets none, because its definition brings its own.
@@ -128,7 +129,7 @@ An agent's instructions live in two files, and every harness reads both, so swit
 
 The harnesses look for instruction files in different places, so each image wires `~/AGENTS.md` in where the harness would miss it.
 A harness that walks up from the work directory finds it on its own; one that reads only its own global file gets a link to `~/AGENTS.md` placed there at every start, and a regular file an owner put at that path stays theirs.
-Each harness's README names the files it reads ([Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration)).
+Each harness's README names the files it reads ([Claude Code](../../packages/agents/claude-code/README.md#agent-instructions), [Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration)).
 `work/AGENTS.md` still loads beside them on every harness, for a kit whose work directory is its toolkit.
 A harness reads these files when a session starts, so an edit applies from the next session; Codex reads its global file again each turn, so there an edit applies from the next turn.
 Claude Code skips `AGENTS.md` files while a `CLAUDE.md` sits on the same path, so a definition that keeps a `CLAUDE.md` makes it its entry point.
