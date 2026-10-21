@@ -229,10 +229,7 @@ virtualization:
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0 and DAC_OVERRIDE, so its VMMs can
     # read the image files a guest is served even where the image keeps them
-    # from root, and SYS_RESOURCE, so the runner and its loader can lower
-    # their own OOM score below the 997 the container runtime starts them at
-    # and the kernel picks a machine's VMM over them when the pod's cgroup
-    # runs out. The runner drops every other capability, cannot escalate,
+    # from root. The runner drops every other capability, cannot escalate,
     # and runs under the runtime/default seccomp profile. That SCC refuses
     # the hostPath of the node image cache and the release directory, so on
     # OpenShift this is
@@ -641,8 +638,8 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and DAC_OVERRIDE and SYS_RESOURCE, which only the
-    # VM runner requests. No agent workload can take them: agent containers are
+    # allowedCapabilities, and DAC_OVERRIDE, which only the VM runner requests.
+    # No agent workload can take it: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent
     # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to

@@ -21,13 +21,13 @@ smolvm enforces a machine's egress allowlist in the VMM, the very process an esc
 The runtime idmaps each of the pod's volumes, the node directories included, so the runner reads and writes them as it would as root, and a node whose filesystems cannot be idmapped cannot host a runner.
 A device is the exception: the runtime binds the node's /dev/kvm in with its owner unmapped, so the runner opens it only when its mode admits everyone, as systemd's own rule makes it.
 Every runner holds DAC_OVERRIDE, because its VMMs serve the image tree to their guests with the runner's own credentials and an image keeps some files from root.
-It also holds SYS_RESOURCE, for the pod's two processes to lower their own OOM score ([vm-memory](vm-memory.md)); inside the pod's user namespace that grants nothing on the node, and on the node's own, where the namespace is not in force, it reaches the OOM score and nothing else.
-Those two are every capability a runner adds: the runner unpacks no image, so it holds none of the CHOWN, FOWNER and FSETID that restoring an image's owners and modes costs.
+That one capability is every capability a runner adds, and every one the install's SCC has to allow: the runner unpacks no image, so it holds none of the CHOWN, FOWNER and FSETID that restoring an image's owners and modes costs.
+It holds no capability for its own OOM score either: lowering one below the score the kubelet gives the pod for its request takes `CAP_SYS_RESOURCE` in the kernel's initial user namespace, and the runner pod's own namespace (`hostUsers: false`) never is that one, so the score cannot move and the pod does not ask ([vm-memory](vm-memory.md)).
 The runner drops every other capability, cannot gain one through exec, and runs under the runtime's default seccomp profile.
 Only AppArmor stays unconfined, because the runtime's default profile keeps every guest from booting.
 A change to that shape changes the runner pod, so it rolls across owners like any other.
 The node's image cache service does every unpack, holding DAC_OVERRIDE, CHOWN, FOWNER and FSETID and nothing else, and its runners only read; a staged tree boots in place.
-That, the runner's own DAC_OVERRIDE and SYS_RESOURCE above, and on OpenShift the SELinux type the node cache service and the release stager ([upgrades](vm-runner-upgrades.md)) pick for themselves ([vm-image-cache](vm-image-cache.md)), is the whole of what the install's SCC has to permit beyond the agent's iptables init.
+That, the runner's own DAC_OVERRIDE above, and on OpenShift the SELinux type the node cache service and the release stager ([upgrades](vm-runner-upgrades.md)) pick for themselves ([vm-image-cache](vm-image-cache.md)), is the whole of what the install's SCC has to permit beyond the agent's iptables init.
 An agent's own container takes none of them — it is pinned to dropping all, and the controller refuses a configuration that says otherwise.
 Its own NetworkPolicy admits egress to the proxy and resolver ports of gateway pods carrying its owner's label, and nothing else: the runner dials nothing but its gateways.
 It admits no resolver: the runner fetches no image and reaches its gateways by ClusterIP, so it resolves no name, and port 53 open anywhere would be a two-way channel from an escaped guest to any host.
