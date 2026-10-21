@@ -80,9 +80,7 @@ export function buildDisconnectCommand(deps: DisconnectDeps): Command {
             `${JSON.stringify({ ok: true, id: match.id, name: match.name })}\n`,
           );
         } else {
-          process.stdout.write(
-            `✓ Disconnected ${match.name} (${match.id}).\n`,
-          );
+          process.stdout.write(`✓ Disconnected ${match.name} (${match.id}).\n`);
         }
         process.exit(EXIT_SUCCESS);
       },

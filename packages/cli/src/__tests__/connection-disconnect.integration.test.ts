@@ -245,8 +245,6 @@ describe("dam connection disconnect (integration)", () => {
 
     expect(r.exitCode, `stderr: ${r.stderr}`).toBe(0);
     expect(deleted).toEqual([CONNECTION.id]);
-    expect(r.stdout).toBe(
-      "✓ Disconnected github-scout (conn-12878a3d36d4).\n",
-    );
+    expect(r.stdout).toBe("✓ Disconnected github-scout (conn-12878a3d36d4).\n");
   });
 });
