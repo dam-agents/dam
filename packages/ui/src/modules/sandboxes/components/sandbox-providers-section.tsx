@@ -11,6 +11,7 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
 import { useNewLayout } from "../../features/hooks/use-new-layout.js";
@@ -24,6 +25,7 @@ import {
   useProviderModels,
   useRememberedPair,
 } from "../../sessions/api/session-pair.js";
+import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
 import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
@@ -131,6 +133,7 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
   const newLayout = useNewLayout();
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data: status } = useHarnessConfigStatus(agentId);
+  const operable = useIsAgentOperable(agentId);
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
   const { granted } = useProviderConnections(agentId);
@@ -163,6 +166,13 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     routed ? agentId : null,
     pair?.harness ?? null,
   );
+  if (status && !status.harnesses && !operable)
+    return (
+      <section className="mt-6">
+        <SectionLabel spaced>Default for new sessions</SectionLabel>
+        <AwakeModelsGate agentId={agentId} />
+      </section>
+    );
   if (!pair || !routesSessionPairs(carried)) return null;
   if (newLayout)
     return (
@@ -258,22 +268,24 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
         </OptionField>
       )}
       <OptionField title="Model">
-        <OptionPicker
-          title="Model"
-          choices={modelChoices.map((m) => ({ id: m.value, name: m.name }))}
-          value={
-            routed
-              ? (findModel(groups, pair.model)?.model.name ?? pair.model)
-              : pair.model
-          }
-          clearable={!routed}
-          {...(routed && { placeholder: "Not set" })}
-          onSelect={(model) => {
-            if (routed && model === null) return;
-            save({ ...pair, provider: providerOfModel(model), model });
-            setDraft(null);
-          }}
-        />
+        <AwakeModelsGate agentId={agentId}>
+          <OptionPicker
+            title="Model"
+            choices={modelChoices.map((m) => ({ id: m.value, name: m.name }))}
+            value={
+              routed
+                ? (findModel(groups, pair.model)?.model.name ?? pair.model)
+                : pair.model
+            }
+            clearable={!routed}
+            {...(routed && { placeholder: "Not set" })}
+            onSelect={(model) => {
+              if (routed && model === null) return;
+              save({ ...pair, provider: providerOfModel(model), model });
+              setDraft(null);
+            }}
+          />
+        </AwakeModelsGate>
       </OptionField>
     </section>
   );

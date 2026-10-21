@@ -21,12 +21,14 @@ import { cn } from "@/lib/utils";
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import {
   useHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
 } from "../../sessions/api/session-pair.js";
+import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import {
   type Choice,
   OptionPicker,
@@ -521,6 +523,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
 }) {
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: status } = useHarnessConfigStatus(agentId || null);
+  const agentOperable = useIsAgentOperable(agentId || null);
   const routed = status?.modelRouter ?? false;
   const harnessValue = useWatch({ control: typed, name: "harness" });
   const { field: modelField } = useController({
@@ -556,6 +559,12 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     useHarnessConfigured(agentId, harness),
     storedModel || fallback?.model || null,
   );
+  if (agentId && status && !status.harnesses && !agentOperable)
+    return (
+      <FormField label="Model">
+        <AwakeModelsGate agentId={agentId} />
+      </FormField>
+    );
   if (!routed)
     return (
       <ScheduleModelField
@@ -630,31 +639,33 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
         hint="Each model is named with its provider. Agent default uses the agent's default model for the harness."
         {...(migrationNote ? { error: migrationNote } : {})}
       >
-        <OptionPicker
-          title="Model"
-          choices={modelChoices}
-          value={modelValue || null}
-          clearable
-          clearedLabel="Agent default"
-          clearedDescription={
-            todayModel
-              ? `Today: ${todayModel}`
-              : "Follows the agent's default model for the harness"
-          }
-          onSelect={(id) => {
-            modelField.onChange(id ?? "");
-            if (!id && fallback === undefined) return;
-            const current = settingsValue ?? {};
-            const kept = settingsForModel(
-              capability,
-              groups,
-              id || fallback?.model || null,
-              current,
-            );
-            if (Object.keys(kept).length !== Object.keys(current).length)
-              settingsField.onChange(kept);
-          }}
-        />
+        <AwakeModelsGate agentId={agentId}>
+          <OptionPicker
+            title="Model"
+            choices={modelChoices}
+            value={modelValue || null}
+            clearable
+            clearedLabel="Agent default"
+            clearedDescription={
+              todayModel
+                ? `Today: ${todayModel}`
+                : "Follows the agent's default model for the harness"
+            }
+            onSelect={(id) => {
+              modelField.onChange(id ?? "");
+              if (!id && fallback === undefined) return;
+              const current = settingsValue ?? {};
+              const kept = settingsForModel(
+                capability,
+                groups,
+                id || fallback?.model || null,
+                current,
+              );
+              if (Object.keys(kept).length !== Object.keys(current).length)
+                settingsField.onChange(kept);
+            }}
+          />
+        </AwakeModelsGate>
       </FormField>
       {capability?.sessionSettings && capability.sessionSettings.length > 0 && (
         <FormField label="Session settings">

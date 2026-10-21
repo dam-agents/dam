@@ -1,6 +1,6 @@
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import { SandboxProvidersSection } from "../../modules/sandboxes/components/sandbox-providers-section.js";
@@ -12,6 +12,9 @@ const state = vi.hoisted(() => ({
     model: string | null;
   } | null,
   routed: false,
+  operable: true,
+  comingUp: false,
+  hasRun: true,
   saved: [] as unknown[],
   newLayout: false,
   picker: null as Record<string, unknown> | null,
@@ -40,32 +43,46 @@ vi.mock("../../modules/agents/api/harness-config.js", () => ({
     data: {
       modelRouter: state.routed,
       defaultHarness: "codex",
-      harnesses: [
-        {
-          name: "pi",
-          harnessConfig: true,
-          sessionModel: true,
-          sessionSettings: [],
-        },
-        {
-          name: "codex",
-          harnessConfig: true,
-          sessionModel: true,
-          sessionSettings: [],
-        },
-        {
-          name: "bob",
-          harnessConfig: true,
-          sessionModel: true,
-          sessionSettings: [],
-        },
-      ],
+      harnesses: !state.hasRun
+        ? null
+        : [
+            {
+              name: "pi",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: [],
+            },
+            {
+              name: "codex",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: [],
+            },
+            {
+              name: "bob",
+              harnessConfig: true,
+              sessionModel: true,
+              sessionSettings: [],
+            },
+          ],
     },
   }),
 }));
 
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useAgents: () => ({ data: { list: [] }, isPending: false }),
+  useIsAgentOperable: () => state.operable,
+}));
+
+vi.mock("../../modules/agents/hooks/use-operable-state.js", () => ({
+  useOperableState: () => ({
+    operable: state.operable,
+    comingUp: state.comingUp,
+  }),
+}));
+
+vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
+  useWakeAgent: () => ({ wake: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../modules/spend/components/connection-spend-limit.js", () => ({
@@ -124,6 +141,19 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   rememberSessionPair: (_agent: string, pair: unknown) =>
     state.saved.push(pair),
 }));
+
+function renderSection() {
+  return renderToStaticMarkup(
+    createElement(
+      TooltipProvider,
+      null,
+      createElement(SandboxProvidersSection, {
+        agentId: "agent",
+        header: () => null,
+      }),
+    ),
+  );
+}
 
 describe("agent default session pair", () => {
   // TEST_SCENARIO: With no remembered pair the picker shows the agent's default harness on its first fitting provider, not the first harness listed.
@@ -256,5 +286,57 @@ describe("the new layout's default editor", () => {
     expect(state.saved).toEqual([]);
     state.newLayout = false;
     state.routed = false;
+  });
+});
+
+describe("agent default model on a sleeping agent", () => {
+  beforeEach(() => {
+    state.routed = true;
+    state.remembered = { harness: "codex", provider: "oai", model: null };
+    state.operable = false;
+    state.comingUp = false;
+    state.hasRun = true;
+  });
+
+  afterEach(() => {
+    state.routed = false;
+    state.operable = true;
+    state.comingUp = false;
+    state.hasRun = true;
+  });
+
+  /** TEST_SCENARIO: The model list is read from the running agent, so while
+   * the agent sleeps the Model field shows the start button in place of a
+   * picker with nothing in it, and "Agent is starting…" once it is woken.
+   * The harness stays pickable. */
+  it("offers to start the agent instead of an empty model picker", () => {
+    const asleep = renderSection();
+    expect(asleep).toContain("Default for new sessions");
+    expect(asleep).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Codex</);
+    expect(asleep).toContain("Start agent to edit");
+    expect(asleep).not.toContain('aria-label="Model"');
+    state.comingUp = true;
+    const starting = renderSection();
+    expect(starting).toContain("Agent is starting…");
+    expect(starting).not.toContain("Start agent to edit");
+  });
+
+  /** TEST_SCENARIO: A new agent that never ran has reported no harnesses, so
+   * there is no pair to show; the section still says the agent must be
+   * started rather than disappearing. */
+  it("offers to start an agent that never ran", () => {
+    state.hasRun = false;
+    const html = renderSection();
+    expect(html).toContain("Default for new sessions");
+    expect(html).toContain("Start agent to edit");
+    expect(html).not.toContain('aria-label="Harness"');
+  });
+
+  /** TEST_SCENARIO: Once the agent is up, the picker lists its models. */
+  it("lists the models once the agent is up", () => {
+    state.operable = true;
+    const html = renderSection();
+    expect(html).toContain('aria-label="Model"');
+    expect(html).not.toContain("Start agent to edit");
   });
 });
