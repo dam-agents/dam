@@ -16,6 +16,7 @@ import (
 
 	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
+	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -488,8 +489,9 @@ func (r *AgentReconciler) runnersMidRoll(ctx context.Context) (rolling []string,
 				if dep.Annotations[annRunnerStalled] == "" {
 					r.markRunnerRollStalled(ctx, dep, timeout)
 				} else if runnerRollGivenUp(dep, r.config.VM.Runner) {
-					r.giveUpRunnerRoll(ctx, dep)
-					continue
+					if r.giveUpRunnerRoll(ctx, dep) != nil {
+						continue
+					}
 				}
 			}
 			if !slices.Contains(rolling, dep.Name) {
@@ -549,16 +551,24 @@ func (r *AgentReconciler) runnerEvent(ctx context.Context, dep *appsv1.Deploymen
 	}
 }
 
-func (r *AgentReconciler) markRunnerRollStalled(ctx context.Context, dep *appsv1.Deployment, timeout time.Duration) {
+// UNIT_BOUNDARY_DESCRIPTION: records the stall on the runner Deployment and reports it once, after the write that records it landed: a write the API server refuses leaves no mark, so the next pass reports the same transition again, and a mark the pass reads back from the informer's older copy does too. The write's own response is what the mark and the read-your-writes cache carry, so the give-up that follows writes from the resource version this one landed at. A failed write answers nil and reports nothing.
+func (r *AgentReconciler) markRunnerRollStalled(ctx context.Context, dep *appsv1.Deployment, timeout time.Duration) *appsv1.Deployment {
 	owner := dep.Labels[envoyOwnerLabel]
-	slog.Error("vm runner: the rolled pod is not ready after the settle timeout; the roll is halted until it is ready or the runner pod changes again",
-		"owner", owner, "runner", dep.Name, "rolledAt", dep.Annotations[annRunnerRolledAt], "timeout", timeout)
-	telemetry.RunnerRollStalled(ctx)
-	dep.Annotations[annRunnerStalled] = time.Now().UTC().Format(time.RFC3339)
-	if _, err := r.client.AppsV1().Deployments(dep.Namespace).Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
+	stalled := dep.DeepCopy()
+	stalled.Annotations[annRunnerStalled] = time.Now().UTC().Format(time.RFC3339)
+	updated, err := r.client.AppsV1().Deployments(dep.Namespace).Update(ctx, stalled, metav1.UpdateOptions{})
+	if err != nil {
 		slog.Warn("vm runner: marking a stalled roll", "runner", dep.Name, "error", err)
+		return nil
 	}
-	r.runnerEvent(ctx, dep, corev1.EventTypeWarning, reasonRollStalled, fmt.Sprintf("this runner's new pod is not ready %s after the roll started: the roll is halted here, so the release goes no further until the pod becomes ready or the pod changes again, and its place is given up %s after the roll started if it does not", timeout, runnerStalledTimeout(r.config.VM.Runner)))
+	if r.runnerDeploys != nil {
+		r.runnerDeploys.Mutation(updated)
+	}
+	slog.Error("vm runner: the rolled pod is not ready after the settle timeout; the roll is halted until it is ready or the runner pod changes again",
+		"owner", owner, "runner", dep.Name, "rolledAt", updated.Annotations[annRunnerRolledAt], "timeout", timeout)
+	telemetry.RunnerRollStalled(ctx)
+	r.runnerEvent(ctx, updated, corev1.EventTypeWarning, reasonRollStalled, fmt.Sprintf("this runner's new pod is not ready %s after the roll started: the roll is halted here, so the release goes no further until the pod becomes ready or the pod changes again, and its place is given up %s after the roll started if it does not", timeout, runnerStalledTimeout(r.config.VM.Runner)))
+	return updated
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether a roll whose new pod never became ready has held its place past `rollout.stalledTimeout`. The stalled mark has to be there already: it is what keeps saying, after the place is gone, that this runner's release went no further.
@@ -567,7 +577,7 @@ func runnerRollGivenUp(dep *appsv1.Deployment, spec config.VMRunnerSpec) bool {
 	return err == nil && dep.Annotations[annRunnerStalled] != "" && time.Since(rolledAt) > runnerStalledTimeout(spec)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: gives up a stalled roll's place in the width, so the next runner may roll, and keeps the stalled mark and a Warning Event on the Deployment as the signal that this runner's release went no further. A truly broken release then breaks owners one at a time rather than freezing every owner's upgrade, which is what an admission refusal did before it was bounded. The mark stays until the runner's pod is ready, which is where it is cleared. The caller drops the runner from the roll's list itself, so this writes nothing but the Deployment.
+// UNIT_BOUNDARY_DESCRIPTION: gives up a stalled roll's place in the width, so the next runner may roll, and keeps the stalled mark and a Warning Event on the Deployment as the signal that this runner's release went no further. A truly broken release then breaks owners one at a time rather than freezing every owner's upgrade, which is what an admission refusal did before it was bounded. The mark stays until the runner's pod is ready, which is where it is cleared. It answers nil when the write did not land: the runner still holds its annotations, so its place has to stay taken until a later pass releases it, and only the write that frees the place reports the transition.
 func (r *AgentReconciler) giveUpRunnerRoll(ctx context.Context, dep *appsv1.Deployment) *appsv1.Deployment {
 	given := dep.DeepCopy()
 	delete(given.Annotations, annRunnerRolledAt)
@@ -575,7 +585,7 @@ func (r *AgentReconciler) giveUpRunnerRoll(ctx context.Context, dep *appsv1.Depl
 	updated, err := r.client.AppsV1().Deployments(dep.Namespace).Update(ctx, given, metav1.UpdateOptions{})
 	if err != nil {
 		slog.Warn("vm runner: giving up the place of a roll whose pod never became ready", "runner", dep.Name, "error", err)
-		return dep
+		return nil
 	}
 	if r.runnerDeploys != nil {
 		r.runnerDeploys.Mutation(updated)
@@ -583,7 +593,7 @@ func (r *AgentReconciler) giveUpRunnerRoll(ctx context.Context, dep *appsv1.Depl
 	rolledAt, _ := time.Parse(time.RFC3339, dep.Annotations[annRunnerRolledAt])
 	held := time.Since(rolledAt)
 	slog.Warn("vm runner: the rolled pod is still not ready past the stalled timeout, giving up its place in the roll so the next runner may roll", "owner", dep.Labels[envoyOwnerLabel], "runner", dep.Name, "rolledAt", dep.Annotations[annRunnerRolledAt], "stalledAt", dep.Annotations[annRunnerStalled], "held", held)
-	r.runnerEvent(ctx, updated, corev1.EventTypeWarning, reasonRollStallGivenUp, fmt.Sprintf("this runner's new pod has not become ready in %s, so the roll gives up its place and other runners may roll: this runner keeps the release it ran before, and its stalled mark stays on this Deployment until its pod is ready", held.Truncate(time.Minute)))
+	r.runnerEvent(ctx, updated, corev1.EventTypeWarning, reasonRollStallGivenUp, fmt.Sprintf("this runner's new pod has not become ready in %s, so the roll gives up its place and other runners may roll: this runner still targets the pod that did not start, its Deployment keeps the stalled mark until a pod is ready, and it runs no machine until then", held.Truncate(time.Minute)))
 	return updated
 }
 
@@ -619,9 +629,7 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 		}
 		return dep
 	}
-	if awaiting == "" {
-		return dep
-	}
+	// UNIT_BOUNDARY_DESCRIPTION: the pod's own state is read before the machines, since a roll whose pod never started has no machine to ask about and still has a place to give up. A roll of a runner with no ready machines writes no awaiting list, so a check behind that list would never bound the last such runner of an upgrade, whose owner is the only one that would ever settle it.
 	_, timeout := runnerRolloutLimits(r.config.VM.Runner)
 	timedOut := time.Since(rolledAt) > timeout
 	if !runnerPodRolledOut(dep) {
@@ -635,12 +643,22 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 			return dep
 		}
 		if dep.Annotations[annRunnerStalled] == "" {
-			r.markRunnerRollStalled(ctx, dep, timeout)
+			if marked := r.markRunnerRollStalled(ctx, dep, timeout); marked != nil {
+				return marked
+			}
 			return dep
 		}
 		if runnerRollGivenUp(dep, r.config.VM.Runner) {
-			return r.giveUpRunnerRoll(ctx, dep)
+			if given := r.giveUpRunnerRoll(ctx, dep); given != nil {
+				return given
+			}
 		}
+		return dep
+	}
+	if dep.Annotations[annRunnerStalled] != "" {
+		dep = r.clearRunnerStallMark(ctx, dep)
+	}
+	if awaiting == "" {
 		return dep
 	}
 	if timedOut {
@@ -740,7 +758,7 @@ func (r *AgentReconciler) runnerPodStuckOnItsOwner(ctx context.Context, dep *app
 	return true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a rolled runner with no pod at all was refused for its owner alone. Admission refusing the create leaves no Pod object and one record, the ReplicaSet condition `ReplicaFailure` of `FailedCreate`; a failed read is not a refusal, so it halts the roll. That refusal says nothing of the release only when another owner's runner already runs this very template and is ready: every runner shares one namespace, one ServiceAccount and one security policy, so a refusal a release causes reaches all of them, and a peer that runs it proves the pod shape is admissible. A peer is not proof of the contrary when the refusal is about this owner's own objects; but then only this owner is stuck, and the stalled bound releases its place.
+// UNIT_BOUNDARY_DESCRIPTION: whether a rolled runner with no pod at all was refused for its owner alone. Admission refusing the create leaves no Pod object and one record, the ReplicaSet condition `ReplicaFailure` of `FailedCreate`; a failed read is not a refusal, so it halts the roll. The condition is read from the ReplicaSet that runs the pod template the Deployment holds now, since an older revision's failure describes a pod shape this roll no longer asks for. That refusal says nothing of the release only when another owner's runner already runs this very pod and is ready: every runner shares one namespace, one ServiceAccount and one security policy, so a refusal a release causes reaches all of them, and a peer that runs the shape proves it is admissible. A peer is not proof of the contrary when the refusal is about this owner's own objects; but then only this owner is stuck, and the stalled bound releases its place.
 func (r *AgentReconciler) runnerPodRefusedForItsOwner(ctx context.Context, dep *appsv1.Deployment) bool {
 	sets, err := r.client.AppsV1().ReplicaSets(dep.Namespace).List(ctx, metav1.ListOptions{LabelSelector: metav1.FormatLabelSelector(dep.Spec.Selector)})
 	if err != nil {
@@ -748,9 +766,11 @@ func (r *AgentReconciler) runnerPodRefusedForItsOwner(ctx context.Context, dep *
 		return false
 	}
 	refused := slices.ContainsFunc(sets.Items, func(rs appsv1.ReplicaSet) bool {
-		return metav1.IsControlledBy(&rs, dep) && slices.ContainsFunc(rs.Status.Conditions, func(c appsv1.ReplicaSetCondition) bool {
-			return c.Type == appsv1.ReplicaSetReplicaFailure && c.Status == corev1.ConditionTrue && c.Reason == "FailedCreate"
-		})
+		return metav1.IsControlledBy(&rs, dep) &&
+			equality.Semantic.DeepEqual(rs.Spec.Template, dep.Spec.Template) &&
+			slices.ContainsFunc(rs.Status.Conditions, func(c appsv1.ReplicaSetCondition) bool {
+				return c.Type == appsv1.ReplicaSetReplicaFailure && c.Status == corev1.ConditionTrue && c.Reason == "FailedCreate"
+			})
 	})
 	return refused && r.runnerTemplateRunsElsewhere(ctx, dep)
 }
@@ -775,9 +795,9 @@ func (r *AgentReconciler) runnerTemplateRunsElsewhere(ctx context.Context, dep *
 	})
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the hash of a pod template with the owner's name and the runner's own name replaced by placeholders, which is the part of a runner's shape every owner shares: one install's runners differ in the owner label and in the claim, Secret and volume names built from the runner's name, and in nothing else. Two runners of one shape are therefore admitted the same way. The replacement is textual on the marshalled spec rather than field by field, since those names appear in it many ways.
+// UNIT_BOUNDARY_DESCRIPTION: the hash of a pod template with the owner's name and the runner's own name replaced by placeholders, which is the part of a runner's shape every owner shares: one install's runners differ in the owner label and in the claim, Secret and volume names built from the runner's name, and in nothing else. Every field admission reads is kept — the image and its pull policy, the resource limits and requests, the priority class, the security context, the capability list — since a peer on an image or a limit that is not the candidate's says nothing about whether the candidate is admitted. So the whole stored template is hashed, not the rollout's equivalence form, which drops the image, the resources and the priority class. The replacement is textual on the marshalled spec rather than field by field, since those names appear in it many ways.
 func runnerShapeHash(dep *appsv1.Deployment, name string) (string, error) {
-	raw, err := json.Marshal(runnerRollSpec(dep.Spec))
+	raw, err := json.Marshal(dep.Spec.Template)
 	if err != nil {
 		return "", err
 	}

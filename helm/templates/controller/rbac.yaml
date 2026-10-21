@@ -126,7 +126,7 @@ rules:
   # refuses every runner and must halt the roll.
   - apiGroups: ["apps"]
     resources: ["replicasets"]
-    verbs: ["get", "list"]
+    verbs: ["list"]
 {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]
