@@ -1,6 +1,7 @@
 import {
   ArrowDown,
   ArrowLeft,
+  Notification,
   OverflowMenuVertical,
   Renew,
   TrashCan,
@@ -225,9 +226,11 @@ export function ChatView() {
   const setMobileScreen = useStore((s) => s.setMobileScreen);
   const terminalPaused = useStore((s) => s.terminalPaused);
   const setTerminalPaused = useStore((s) => s.setTerminalPaused);
+  const toggleNotifications = useStore((s) => s.toggleNotifications);
 
   const [configureSection, setConfigureSection] =
     useState<SandboxSection | null>(null);
+  const [autoOpenProvider, setAutoOpenProvider] = useState(false);
 
   const isMock = import.meta.env.VITE_MOCK === "true";
 
@@ -622,8 +625,25 @@ export function ChatView() {
           <PointerMarkerOverlay />
         </Suspense>
       )}
-      {isMock && (openPanels.size > 0 || rightDockOpen) && (
-        <div className="flex shrink-0 items-center justify-end border-b border-border px-6 h-10" />
+      {isMock && (
+        <div
+          className={cn(
+            "flex shrink-0 items-center justify-end border-b px-6 h-10 transition-colors duration-200",
+            openPanels.size > 0 || rightDockOpen
+              ? "border-border"
+              : "border-transparent",
+          )}
+        >
+          <button
+            type="button"
+            onClick={toggleNotifications}
+            className="flex h-8 w-8 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            aria-label="Activity"
+            title="Activity"
+          >
+            <Notification size={16} />
+          </button>
+        </div>
       )}
       <div className="flex flex-1 min-h-0">
         {isMock && !browserFullscreen && (
@@ -815,7 +835,7 @@ export function ChatView() {
                 {instantStart && (
                   <div className="mb-3">
                     <ChatColumn className="px-4 md:px-8">
-                      <FreeBudgetBanner onConfigureProvider={() => setConfigureSection("setup")} />
+                      <FreeBudgetBanner onConfigureProvider={() => { setConfigureSection("setup"); setAutoOpenProvider(true); }} />
                     </ChatColumn>
                   </div>
                 )}
@@ -970,7 +990,8 @@ export function ChatView() {
           <ConfigureAgentModal
             agentId={selectedAgent}
             initialSection={configureSection}
-            onClose={() => setConfigureSection(null)}
+            autoOpenProvider={autoOpenProvider}
+            onClose={() => { setConfigureSection(null); setAutoOpenProvider(false); }}
           />
         </Suspense>
       )}

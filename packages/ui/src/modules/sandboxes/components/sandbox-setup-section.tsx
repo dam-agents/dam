@@ -20,9 +20,10 @@ type SandboxSettingsForm = ReturnType<typeof useSandboxSettingsForm>;
 
 interface Props {
   f: SandboxSettingsForm;
+  defaultOpenProvider?: boolean;
 }
 
-export function SandboxSetupSection({ f }: Props) {
+export function SandboxSetupSection({ f, defaultOpenProvider }: Props) {
   const showConfirm = useStore((s) => s.showConfirm);
   const { agent } = f;
   if (!agent) return null;
@@ -87,6 +88,7 @@ export function SandboxSetupSection({ f }: Props) {
             confirmSwitch={confirmSwitch}
             disabled={f.saving}
             required={f.formReady}
+            defaultOpen={defaultOpenProvider}
           />
         </Inset>
         <p className="mt-3 text-xs text-muted-foreground">

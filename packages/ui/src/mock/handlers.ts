@@ -32,7 +32,7 @@ import { termsCurrent, termsLatestAcceptance } from "./data/terms.js";
 
 /** Toggleable mock state — controlled by the floating MockToggle component. */
 export let mockEmpty = false;
-export let mockFirstRun = true;
+export let mockFirstRun = false;
 
 const resolvedApprovalIds = new Set<string>();
 
@@ -68,7 +68,9 @@ function getFixtures(): Record<string, unknown> {
     "terms.latestAcceptance": termsLatestAcceptance,
     "features.flags": featureFlags,
     "connections.listTemplates": connectionTemplates,
-    "connections.list": fresh ? [] : connections,
+    "connections.list": fresh
+      ? []
+      : connections.filter((c) => c.templateId !== "anthropic"),
     "connections.getAgentConnections": fresh
       ? { connections: [] }
       : { connections: agentConnections },
@@ -616,6 +618,32 @@ export const handlers = [
         }
         if (proc === "skills.applyBatch") {
           return { result: { data: null } };
+        }
+        if (proc === "connections.create") {
+          const entry = body?.[String(idx)];
+          const input = entry?.json ?? entry ?? body?.json ?? body;
+          return {
+            result: {
+              data: {
+                id: `conn-${Date.now()}`,
+                ownerId: "mock-user-id",
+                templateId: input?.templateId ?? "unknown",
+                name: input?.name ?? "New Connection",
+                category: "provider",
+                status: "active",
+                authKind: "header",
+                contributions: [],
+                hosts: [],
+                connectedAt: new Date().toISOString(),
+              },
+            },
+          };
+        }
+        if (proc === "connections.update") {
+          return { result: { data: { ok: true } } };
+        }
+        if (proc === "connections.testAnthropic") {
+          return { result: { data: { ok: true } } };
         }
         if (proc === "skills.sources.create") {
           return {

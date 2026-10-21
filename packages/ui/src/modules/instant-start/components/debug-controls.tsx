@@ -1,5 +1,3 @@
-import { Button } from "@/components/ui/button";
-
 import { useInstantStart } from "../context.js";
 
 export function InstantStartDebugControls() {
@@ -7,21 +5,21 @@ export function InstantStartDebugControls() {
   if (!ctx) return null;
 
   return (
-    <div className="fixed bottom-4 right-4 z-50 flex flex-col gap-2 rounded-lg border border-border bg-card p-3 shadow-lg">
-      <Button
-        variant={ctx.budgetExhausted ? "destructive" : "outline"}
-        size="sm"
+    <div className="fixed top-3 right-3 z-50 flex items-center gap-1.5 opacity-40 transition-opacity hover:opacity-100">
+      <button
+        type="button"
         onClick={() => ctx.setBudgetExhausted(!ctx.budgetExhausted)}
+        className="rounded-md border border-border/50 bg-card/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur-sm transition-colors hover:bg-muted"
       >
-        {ctx.budgetExhausted ? "Budget: exhausted" : "Budget: active"}
-      </Button>
-      <Button
-        variant={ctx.firstLanding ? "default" : "outline"}
-        size="sm"
+        {ctx.budgetExhausted ? "Budget: off" : "Budget: on"}
+      </button>
+      <button
+        type="button"
         onClick={() => ctx.setFirstLanding(!ctx.firstLanding)}
+        className="rounded-md border border-border/50 bg-card/80 px-2 py-1 text-[11px] text-muted-foreground backdrop-blur-sm transition-colors hover:bg-muted"
       >
-        {ctx.firstLanding ? "First landing: on" : "First landing: off"}
-      </Button>
+        {ctx.firstLanding ? "Landing: on" : "Landing: off"}
+      </button>
     </div>
   );
 }

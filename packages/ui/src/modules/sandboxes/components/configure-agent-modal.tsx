@@ -32,12 +32,14 @@ const SECTIONS: { section: SandboxSection; title: string }[] = [
 interface Props {
   agentId: string;
   initialSection?: SandboxSection;
+  autoOpenProvider?: boolean;
   onClose: () => void;
 }
 
 export function ConfigureAgentModal({
   agentId,
   initialSection = "schedules",
+  autoOpenProvider,
   onClose,
 }: Props) {
   const [section, setSection] = useState<SandboxSection>(initialSection);
@@ -149,7 +151,7 @@ export function ConfigureAgentModal({
             }
           `}</style>
           {section === "setup" && f.status === "ready" && (
-            <SandboxSetupSection f={f} />
+            <SandboxSetupSection f={f} defaultOpenProvider={autoOpenProvider} />
           )}
           {section === "connections" && (
             <ConnectionsSection
