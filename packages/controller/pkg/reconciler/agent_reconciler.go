@@ -77,6 +77,7 @@ type AgentReconciler struct {
 	holdHeld              sync.Map
 	grantProbes           sync.Map
 	noNodeResize          sync.Map
+	steppedSince          sync.Map
 	vmDiskGrows           sync.Map
 	vmPools               sync.Map
 	usageSecrets          sync.Map
@@ -544,8 +545,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if r.requeue != nil {
 				r.requeue(name, vmReadinessPoll)
 			}
-			// UNIT_BOUNDARY_DESCRIPTION: a resize the node has deferred or refused does not land on its own, so the room it did grant is freed the way a refused start frees it, and the start is retried at the parked tick too.
-			if !bootInFlight && r.runnerResizePending(ctx, owner) {
+			// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
+			if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner) {
 				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
 					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 				}

@@ -76,6 +76,12 @@ type fakeNode struct {
 	// UNIT_BOUNDARY_DESCRIPTION: the release read answers a 500, as a loader that hangs answers none, and how many reads arrived, so a test tells a refused read from one that never happened.
 	releaseFails bool
 	releaseReads int
+	// UNIT_BOUNDARY_DESCRIPTION: what the fake runner admits against, standing in for the real runner's own arithmetic: a start is admitted only while what the machines hold, plus the start itself, plus the reserve fits under the pod's limit and under the `AdmitMiB` ceiling the controller sent. A machine's count is its size, or the warm-up floor when it is smaller. Every ensure beyond that is refused as `MachineAwaitingAllocation`, which is what a node that has not granted the memory answers.
+	admit       bool
+	reserveMiB  int
+	bootMiB     int
+	machineSize map[string]int
+	admitCalls  []string
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: how long the fake holds a waiting status read before answering with no change. It is far below the real runner's wait, so a test's server closes promptly under a watch that is still reading.
@@ -83,9 +89,10 @@ const fakeNodeWait = 20 * time.Millisecond
 
 func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 	n := &fakeNode{
-		specs:      map[string]vmrunner.MachineSpec{},
-		statuses:   map[string]vmrunner.MachineStatus{},
-		imageCache: vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock"},
+		specs:       map[string]vmrunner.MachineSpec{},
+		statuses:    map[string]vmrunner.MachineStatus{},
+		machineSize: map[string]int{},
+		imageCache:  vmrunner.RunnerImageCache{Socket: "/var/lib/platform/images/.cache.sock"},
 	}
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer node-token" {
@@ -173,6 +180,21 @@ func newFakeNode(t *testing.T) (*fakeNode, *httptest.Server) {
 			}
 			var spec vmrunner.MachineSpec
 			require.NoError(t, json.NewDecoder(r.Body).Decode(&spec))
+			// UNIT_BOUNDARY_DESCRIPTION: a start is admitted only while it fits, as the real runner decides it; a start the node has not granted the memory for is answered as waiting for the node, and is not stored, so the controller reads the machine as absent until the grant arrives.
+			if n.admit && spec.Running && !fakeHoldsMemory(n.statuses[id]) {
+				n.admitCalls = append(n.admitCalls, id)
+				if n.fits(id, spec) {
+					// UNIT_BOUNDARY_DESCRIPTION: an admitted start replaces the refusal an attempt before left, as the real runner's does once it takes the machine.
+					n.version++
+					n.statuses[id] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Port: 31000, Version: n.version}
+				} else {
+					n.version++
+					st := vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation, Version: n.version}
+					n.statuses[id] = st
+					require.NoError(t, json.NewEncoder(w).Encode(st))
+					return
+				}
+			}
 			n.specs[id] = spec
 			n.puts = append(n.puts, spec)
 			if n.onPut != nil {
@@ -245,6 +267,37 @@ func (n *fakeNode) usageMachines() []vmrunner.MachineUsage {
 	}
 	sort.Slice(out, func(i, j int) bool { return out[i].ID < out[j].ID })
 	return out
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a machine the fake runner holds is one a boot replaces rather than one asking for new room.
+func fakeHoldsMemory(st vmrunner.MachineStatus) bool {
+	switch st.State {
+	case vmrunner.StateCreating, vmrunner.StateStarting, vmrunner.StateRunning, vmrunner.StateRestarting, vmrunner.StateStopping:
+		return true
+	}
+	return false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the real runner's own admission, cut down to the figures a test sets: what every other machine holds, counted at its size or the warm-up floor when that is smaller, plus this start at the same figure, plus the reserve, under the `AdmitMiB` ceiling the controller sent when it sent one.
+func (n *fakeNode) fits(id string, spec vmrunner.MachineSpec) bool {
+	ceiling := spec.AdmitMiB
+	if ceiling <= 0 {
+		return true
+	}
+	count := func(size int) int {
+		if n.bootMiB > 0 {
+			return min(size, n.bootMiB)
+		}
+		return size
+	}
+	held := 0
+	for other, size := range n.machineSize {
+		if other != id && fakeHoldsMemory(n.statuses[other]) {
+			held += count(size)
+		}
+	}
+	n.machineSize[id] = spec.MemoryMiB
+	return held+count(spec.MemoryMiB)+n.reserveMiB <= ceiling
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: forgets the reads so far, so a test measures one pass.

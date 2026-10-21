@@ -28,10 +28,12 @@ const (
 	resizeUnsupported
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner's memory and CPU, as the controller intends it rather than as the runner last saw it. It counts only the machines that should be running, because that is what the runner admits against its limits.
+// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner's memory and CPU, as the controller intends it rather than as the runner last saw it. It counts only the machines that should be running, because that is what the runner admits against its limits. `heldMiB` is the part of that count that machines already hold or are about to, and `nextStartMiB` is the smallest count of a start waiting for the node, or zero when none waits: the two together are what one more start costs, which is what a request the node has deferred may be cut down to.
 type runnerDemand struct {
-	memoryMiB int
-	vCPUs     int
+	memoryMiB    int
+	vCPUs        int
+	heldMiB      int
+	nextStartMiB int
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
@@ -46,6 +48,15 @@ func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, sp
 	}
 	_, mem := r.limitsOf(spec)
 	return max(int(mem.Value()>>20), 1), err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner has an answer about the agent's machine, so it holds what it was answered or holds memory while it boots, as the runner's own counting does. A start nothing has answered for yet holds nothing.
+func (r *AgentReconciler) holdsOrIsAboutTo(a *apiv1.Agent) bool {
+	if holdsMemory(r.liveMachine(a.Name).State) {
+		return true
+	}
+	_, recorded := r.startAnswer(a)
+	return recorded
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the demand that sizes a start: the machine being started counts whatever a refusal from an attempt before says, since the room it needs is what its count is for.
@@ -86,9 +97,22 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 			}
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: the held variant leaves out the starts waiting for the node as well as the refused ones, since neither holds memory; the request counts them, because their room is what it has to grow by.
-		holds := !r.refusedWithoutMachine(a) && (ownStart || !r.waitingForRoom(a))
-		if running && (ownStart && a.Name == self.Name || holds) {
-			d.memoryMiB += r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
+		refused, waiting := r.refusedWithoutMachine(a), r.waitingForRoom(a)
+		holds := !refused && (ownStart || !waiting)
+		if !running {
+			continue
+		}
+		counted := r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
+		// UNIT_BOUNDARY_DESCRIPTION: a start waiting for the node holds nothing, so it is what one more machine costs and never part of what the machines hold. The smallest one is the figure, since a request cut down to admit one start should ask for the cheapest one that can go.
+		if waiting && (d.nextStartMiB == 0 || counted < d.nextStartMiB) {
+			d.nextStartMiB = counted
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: only a start this pass is making holds nothing of its own: it has no answer yet, and its room is what the request has to grow by. A machine the runner has already answered for is a holder, the one this reconcile is about included, since a reconcile runs for a running machine as well as for a cold start — leaving that one out would size the same owner's pod differently for each of its agents.
+		if !refused && !waiting && (!(ownStart && a.Name == self.Name) || r.holdsOrIsAboutTo(a)) {
+			d.heldMiB += counted
+		}
+		if ownStart && a.Name == self.Name || holds {
+			d.memoryMiB += counted
 			d.vCPUs += max(r.config.VM.Runner.MachineCPUs, r.liveMachine(a.Name).CPUs, 1)
 		}
 	}
@@ -209,6 +233,89 @@ func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resour
 	return want
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the node grants a resize whole or not at all, so a request covering every start waiting for it is one the node defers while it has room for only some of them: every start then waits although one of them fits. So while the request the demand calls for is above what the node granted, the ask is the runner's own admission arithmetic for one more machine — what the machines hold, plus the cheapest waiting start's count, plus the reserve — which is the least a request can be and still admit a start. It is rounded up to the request step like every other ask, and bounded by the install's request and by the demand's own ask, which it can never exceed.
+func deferredRunnerRequest(demand runnerDemand, reserveMiB int, want, floor, limit resource.Quantity) resource.Quantity {
+	forOne := roundedMiB(demand.heldMiB + demand.nextStartMiB + reserveMiB)
+	stepped := *resource.NewQuantity(int64(forOne)<<20, resource.BinarySI)
+	if stepped.Cmp(want) > 0 {
+		return want
+	}
+	if stepped.Cmp(floor) < 0 {
+		return floor
+	}
+	if stepped.Cmp(limit) > 0 {
+		return limit
+	}
+	return stepped
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the owner's runner pod should be asked for less than the demand calls for: the node holds the pod below what its machines need, and a start is waiting for the difference. A grant that already covers what one more machine costs is a grant the runner admits against, so nothing is held back there and the whole demand is asked for at once. The reading is the node's grant rather than the pod's resize condition, which clears the moment a wave is granted and would put the whole demand back on the very next pass: the ask stays stepped until the grant itself reaches it.
+func (d runnerDemand) grantHoldsBackStart(grantMiB, reserveMiB int) bool {
+	return d.nextStartMiB > 0 && grantMiB < d.heldMiB+d.nextStartMiB+reserveMiB
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a grant too small for one more machine is answered by asking the node for less, not by freeing anything: an idle agent hibernated at once is taken away while the reduced ask is still on its way, and it would have fitted. So the reclaim waits one grace period after the controller first stepped the ask down to this size, on this pod. The grace is held against the pod's identity and the ask's own figure rather than the owner alone: a granted wave, a pod replaced by a roll and a further step down are each a new question to the node, and none of them may inherit a grace another ask has already spent. A kubelet answers a resize it cannot grant within a pass or two, so a grace that outlasts a few machine-watch retries is long enough to tell a stepped ask still being evaluated from one the node has refused — the pod carries no figure that says which, since the spec holds the controller's own ask rather than the node's answer. After the grace the grant is exhausted and the idle agents are the only room left. A demand that no longer steps down, and a pod that reports no grant to step down from, end the wait at once.
+const steppedGrantGrace = time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: one stepped ask as the reclaim's grace remembers it: the pod that carries it and the request it was cut down to. Two passes with the same pair are the same ask still being evaluated; anything else is a different question.
+type steppedAsk struct {
+	uid     types.UID
+	request string
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the owner's ask for the runner pod is stepped down below what the demand calls for, and to what, which is the state the reclaim's grace is kept for. The demand is the very one the caller is sizing the pod from, not a second reading of it: a reconcile runs for a stopped agent as well as a starting one, and a demand read with a different answer about that agent would key the grace to a request the node was never sent. A pod that reports no grant is not this state either: with no figure to measure the demand against, the whole demand stands, so there is nothing a reclaim would wait out.
+func (r *AgentReconciler) runnerAskIsStepped(ctx context.Context, owner string, demand runnerDemand) (steppedAsk, bool) {
+	if demand.nextStartMiB == 0 {
+		return steppedAsk{}, false
+	}
+	pods, err := r.runnerPods(ctx, owner, true)
+	if err != nil {
+		return steppedAsk{}, false
+	}
+	reserveMiB := r.config.VM.Runner.ReserveMiB
+	for i := range pods {
+		pod := &pods[i]
+		if pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		grantMiB, reported := runnerPodGrantMiB(pod)
+		if !reported || !demand.grantHoldsBackStart(grantMiB, reserveMiB) {
+			return steppedAsk{}, false
+		}
+		want, ok := r.runnerPodWants(ctx, owner, pod, demand)
+		if !ok {
+			return steppedAsk{}, false
+		}
+		return steppedAsk{uid: pod.UID, request: want.memoryRequest.String()}, true
+	}
+	return steppedAsk{}, false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the grace is recorded where every reconcile can see it, not only where a reclaim would read it: a pass that finds the ask stepped records when this ask began, and a pass that finds nothing stepped clears the record. Reading it only inside the reclaim would leave a spent grace behind a wave the node granted, and a later start of the same size on the same pod would then inherit it and free an idle machine at once. A different ask — a further step down, a replacement pod — starts its own grace, and one already recorded keeps its time unchanged, so an ask still being evaluated is not prolonged pass after pass.
+func (r *AgentReconciler) noteSteppedAsk(ctx context.Context, owner string, demand runnerDemand) {
+	ask, stepped := r.runnerAskIsStepped(ctx, owner, demand)
+	if !stepped {
+		r.steppedSince.Delete(owner)
+		return
+	}
+	if since, ok := r.steppedSince.Load(owner); ok && since.(steppedAskTimestamp).ask == ask {
+		return
+	}
+	r.steppedSince.Store(owner, steppedAskTimestamp{ask: ask, at: time.Now()})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the reclaim should wait before freeing room for a start the node has not granted: the ask is stepped down, and this very ask became so less than a grace ago. An ask no pass has recorded yet is waited for too, since the pass that would have recorded it is the one this reclaim runs after.
+func (r *AgentReconciler) reclaimWaitsForTheReducedAsk(owner string) bool {
+	since, ok := r.steppedSince.Load(owner)
+	return !ok || time.Since(since.(steppedAskTimestamp).at) < steppedGrantGrace
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the grace a stepped ask was first seen under.
+type steppedAskTimestamp struct {
+	ask steppedAsk
+	at  time.Time
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: every machine of an owner is a VMM process inside the runner pod, so with no CPU limit one runaway VMM can take every core of the node and slow every pod there. The limit is the vCPUs of the machines that should be running, each counted at the larger of its live and its next size, plus one machine's worth for the runner itself and the VMMs' own I/O threads. Unless the install caps it lower, the limit it decides covers the vCPUs of every machine that should be running. With no machine running the runner keeps that one machine's worth, so the first start is not throttled before the next resize lands. It is never below the CPU request, which the API refuses, and never above a CPU limit the install set.
 func runnerCPULimit(vCPUs, machineCPUs int, request resource.Quantity, ceiling *resource.Quantity) resource.Quantity {
 	want := *resource.NewQuantity(int64(vCPUs+max(machineCPUs, 1)), resource.DecimalSI)
@@ -276,10 +383,14 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 	cpuRequest, hasCPURequest := res.Requests[corev1.ResourceCPU]
 	currentCPU, hasCPULimit := res.Limits[corev1.ResourceCPU]
 	currentRequest := res.Requests[corev1.ResourceMemory]
+	memoryRequest := runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit)
+	if grantMiB, reported := runnerPodGrantMiB(pod); reported && demand.grantHoldsBackStart(grantMiB, r.config.VM.Runner.ReserveMiB) {
+		memoryRequest = deferredRunnerRequest(demand, r.config.VM.Runner.ReserveMiB, memoryRequest, floor, limit)
+	}
 	return runnerPodWant{
 		res:            res,
 		memoryLimit:    limit,
-		memoryRequest:  runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit),
+		memoryRequest:  memoryRequest,
 		cpu:            runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, ceiling),
 		hasCPURequest:  hasCPURequest,
 		currentLimit:   current,

@@ -237,12 +237,17 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			if held, heldErr := r.heldRunnerDemand(ctx, owner, agent, running); heldErr == nil {
 				demand = held
 			}
+		} else if sized, sizedErr := r.ownerRunnerDemand(ctx, owner, agent, running); sizedErr == nil {
+			// UNIT_BOUNDARY_DESCRIPTION: a start the runner admitted changes what the owner holds, and the request it is sized from has to be the answer after that: sized from the read taken before the ensure, the next pass would ask for the whole demand again and the wave after it would step back down, resizing the pod on every admission.
+			demand = sized
 		}
 	}
 	if err == nil && st.DiskGiB > 0 {
 		r.vmDiskGrows.Store(name, true)
 	}
 	if r.config.VM.Runner.HostAddress == "" {
+		// UNIT_BOUNDARY_DESCRIPTION: the step down's grace is recorded here, from the same demand the pod is sized from, so every reconcile maintains it: the reclaim below reads it only while a resize is pending, and a wave the node granted reaches that read never.
+		r.noteSteppedAsk(ctx, owner, demand)
 		r.resizeRunnerPod(ctx, owner, demand)
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's Service is headless, so its name resolves only once the ready pod's endpoint is published and the cluster DNS has read it, which trails the Deployment's ready count by a few seconds. A fresh runner, an owner's first vm agent, is dialled inside that gap; it is still starting, not failing, so the agent waits on it rather than going into error.
