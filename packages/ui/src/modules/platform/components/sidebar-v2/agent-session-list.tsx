@@ -8,6 +8,7 @@ import { isFiltered } from "../../../home/lib/activity-filter.js";
 import { matchesActivityFilters } from "../../../home/lib/activity-sessions.js";
 import { SessionListSkeleton } from "../../../sessions/components/session-list-skeleton.js";
 import { useAgentSessionList } from "../../../sessions/hooks/use-agent-session-list.js";
+import { useAgentSessionFilter } from "../../../sessions/lib/agent-session-filters.js";
 import {
   pinKey,
   usePinnedSessions,
@@ -19,7 +20,8 @@ import { TreeSessionRow } from "./tree-session-row.js";
 
 function useAgentTreeRows(agentId: string) {
   const list = useAgentSessionList(agentId);
-  const filters = useStore((s) => s.sidebarActivityFilters);
+  const globalFilters = useStore((s) => s.sidebarActivityFilters);
+  const filters = useAgentSessionFilter(agentId) ?? globalFilters;
   const pins = usePinnedSessions();
   const rows = newestFirst(
     list.sessions
@@ -45,7 +47,7 @@ function useAgentTreeRows(agentId: string) {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in the new layout's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the session filter is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. A hibernated Agent whose record holds no Session says its Sessions show when it wakes.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in the new layout's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the filter it applies (its own, else the header's) is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. A hibernated Agent whose record holds no Session says its Sessions show when it wakes.
  */
 export function AgentSessionList({
   agentId,

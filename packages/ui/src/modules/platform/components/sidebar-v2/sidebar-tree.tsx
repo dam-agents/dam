@@ -41,8 +41,13 @@ import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { ActivityFilterMenu } from "../../../home/components/activity-filter-menu.js";
 import { useActivityConversations } from "../../../home/hooks/use-activity-conversations.js";
 import { useActivitySessions } from "../../../home/hooks/use-activity-sessions.js";
+import { defaultActivityFilters } from "../../../home/lib/activity-filter.js";
 import { filterActivitySessions } from "../../../home/lib/activity-sessions.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
+import {
+  setAgentSessionFilter,
+  useAgentSessionFilter,
+} from "../../../sessions/lib/agent-session-filters.js";
 import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { newestFirst } from "../../../sessions/lib/sidebar-session-window.js";
 import {
@@ -268,6 +273,7 @@ function AgentNode({
     onNavigate?.();
   };
   const listId = useId();
+  const agentFilter = useAgentSessionFilter(agent.id);
   return (
     <li
       className={cn(expanded && "pb-3")}
@@ -292,7 +298,7 @@ function AgentNode({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-16 pl-2 text-left select-none",
+            "flex h-9 min-w-0 flex-1 items-center gap-2.5 rounded-lg pr-[88px] pl-2 text-left select-none",
             FOCUS_RING,
             mood !== "awake" && !expanded
               ? "text-muted-foreground hover:text-foreground"
@@ -324,47 +330,56 @@ function AgentNode({
           </span>
           {cue && !expanded && <AgentCue tone={cue} />}
         </button>
-        <div
-          className={cn("absolute right-1 flex items-center gap-0.5", REVEAL)}
-        >
-          <Tooltip content="New session" side="bottom">
-            <button
-              type="button"
-              aria-label={`New session with ${agent.name}`}
-              data-testid="sidebar-agent-new-session"
-              onClick={go(() => startSession(agent.id))}
-              className={cn(
-                "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground",
-                FOCUS_RING,
-              )}
+        <div className="absolute right-1 flex items-center gap-0.5">
+          <div className={cn("flex items-center", !agentFilter && REVEAL)}>
+            <ActivityFilterMenu
+              filters={agentFilter ?? defaultActivityFilters()}
+              onChange={(next) => setAgentSessionFilter(agent.id, next)}
+              name={`Filter sessions of ${agent.name}`}
+              testId="sidebar-agent-session-filter"
+              className={cn("hover:bg-background", FOCUS_RING)}
+            />
+          </div>
+          <div className={cn("flex items-center gap-0.5", REVEAL)}>
+            <Tooltip content="New session" side="bottom">
+              <button
+                type="button"
+                aria-label={`New session with ${agent.name}`}
+                data-testid="sidebar-agent-new-session"
+                onClick={go(() => startSession(agent.id))}
+                className={cn(
+                  "flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-background hover:text-foreground",
+                  FOCUS_RING,
+                )}
+              >
+                <AddComment size={16} />
+              </button>
+            </Tooltip>
+            <RowActionsMenu
+              label={`${agent.name} actions`}
+              testId="sidebar-agent-menu"
+              dense
             >
-              <AddComment size={16} />
-            </button>
-          </Tooltip>
-          <RowActionsMenu
-            label={`${agent.name} actions`}
-            testId="sidebar-agent-menu"
-            dense
-          >
-            <DropdownMenuItem
-              onSelect={go(() => navigateToSandboxHome(agent.id))}
-            >
-              <Tools size={14} /> Configure
-            </DropdownMenuItem>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem
-              tone="danger"
-              onSelect={() =>
-                void confirmDelete(agent).then((ok) => {
-                  if (!ok) return;
-                  deleteAgent.mutate({ id: agent.id });
-                  if (current) setView("home");
-                })
-              }
-            >
-              <TrashCan size={14} /> Remove
-            </DropdownMenuItem>
-          </RowActionsMenu>
+              <DropdownMenuItem
+                onSelect={go(() => navigateToSandboxHome(agent.id))}
+              >
+                <Tools size={14} /> Configure
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                tone="danger"
+                onSelect={() =>
+                  void confirmDelete(agent).then((ok) => {
+                    if (!ok) return;
+                    deleteAgent.mutate({ id: agent.id });
+                    if (current) setView("home");
+                  })
+                }
+              >
+                <TrashCan size={14} /> Remove
+              </DropdownMenuItem>
+            </RowActionsMenu>
+          </div>
         </div>
         <OrderDropIndicator at={drag.indicator} />
       </div>
