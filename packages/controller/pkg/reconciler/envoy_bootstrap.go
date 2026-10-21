@@ -657,12 +657,29 @@ func buildChainForwardRoutes(c envoyHostChain) []any {
 	return append(routes, buildUnaddressedRoutes(c)...)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: a credential's path scope is whole path segments, so the route that grants it matches on a segment boundary: /v1/messages keys /v1/messages/count_tokens but not /v1/messagesX. The host-wide scope keeps its plain prefix.
+func scopeMatch(scope, match string) ev {
+	if scope == "/" {
+		return ev{"prefix": match}
+	}
+	return ev{"path_separated_prefix": match}
+}
+
 func scopedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
+	return routeEntry(c, connectionID, scope, scopeMatch(scope, match), rewrite)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a rewrite a host-wide chain applies before its catch-all adds only the rewrite, so its match stays a plain prefix, unlike a path-scoped route, which matches whole segments.
+func rewriteRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
+	return routeEntry(c, connectionID, scope, ev{"prefix": match}, rewrite)
+}
+
+func routeEntry(c envoyHostChain, connectionID, scope string, match ev, rewrite string) ev {
 	route := buildChainRouteAction(c)
 	if rewrite != "" {
 		route["prefix_rewrite"] = rewrite
 	}
-	entry := ev{"match": ev{"prefix": match}, "route": route}
+	entry := ev{"match": match, "route": route}
 	if disabled := disabledPerRoute(c, connectionID, scope); len(disabled) > 0 {
 		entry["typed_per_filter_config"] = disabled
 	}
@@ -708,7 +725,7 @@ func buildUnaddressedRoutes(c envoyHostChain) []any {
 				continue
 			}
 			emitted[r.Prefix] = true
-			routes = append(routes, scopedRoute(c, "", r.Prefix, r.Prefix, r.Replacement))
+			routes = append(routes, rewriteRoute(c, "", r.Prefix, r.Prefix, r.Replacement))
 		}
 		if emitted[scope] {
 			continue

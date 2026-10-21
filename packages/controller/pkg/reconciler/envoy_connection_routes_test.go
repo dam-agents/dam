@@ -46,11 +46,20 @@ func addressHeaderOf(route ev) string {
 	return headers[0].(ev)["string_match"].(ev)["exact"].(string)
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: matchPrefix reads a route's path specifier, whether it is a plain prefix or a segment-safe one.
+func matchPrefix(match ev) string {
+	if prefix, ok := match["prefix"].(string); ok {
+		return prefix
+	}
+	prefix, _ := match["path_separated_prefix"].(string)
+	return prefix
+}
+
 func routeNamed(t *testing.T, routes []any, prefix string) ev {
 	t.Helper()
 	for _, r := range routes {
 		route := r.(ev)
-		if route["match"].(ev)["prefix"] == prefix && addressHeaderOf(route) == "" {
+		if matchPrefix(route["match"].(ev)) == prefix && addressHeaderOf(route) == "" {
 			return route
 		}
 	}
@@ -62,7 +71,7 @@ func routeAddressedTo(t *testing.T, routes []any, prefix, connectionID string) e
 	t.Helper()
 	for _, r := range routes {
 		route := r.(ev)
-		if route["match"].(ev)["prefix"] == prefix && addressHeaderOf(route) == connectionID {
+		if matchPrefix(route["match"].(ev)) == prefix && addressHeaderOf(route) == connectionID {
 			return route
 		}
 	}
@@ -87,7 +96,7 @@ func routeMatchPrefixes(routes []any) []string {
 	out := make([]string, 0, len(routes))
 	for _, r := range routes {
 		route := r.(ev)
-		match := route["match"].(ev)["prefix"].(string)
+		match := matchPrefix(route["match"].(ev))
 		if id := addressHeaderOf(route); id != "" {
 			match += "@" + id
 		}
@@ -726,6 +735,9 @@ func routeForPath(t *testing.T, routes []any, path string) ev {
 		if prefix, ok := route["match"].(ev)["prefix"].(string); ok && strings.HasPrefix(path, prefix) {
 			return route
 		}
+		if prefix, ok := route["match"].(ev)["path_separated_prefix"].(string); ok && matchesSegments(path, prefix) {
+			return route
+		}
 	}
 	require.FailNow(t, "no route matching "+path)
 	return nil
@@ -753,6 +765,15 @@ func normalizeRequestPath(raw string) (string, bool) {
 		}
 	}
 	return "/" + strings.Join(out, "/"), true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: matchesSegments models Envoy's path_separated_prefix: the prefix must end at a segment boundary, so /v1/messages admits /v1/messages and /v1/messages/x but not /v1/messagesX.
+func matchesSegments(path, prefix string) bool {
+	if !strings.HasPrefix(path, prefix) {
+		return false
+	}
+	rest := path[len(prefix):]
+	return rest == "" || rest[0] == '/'
 }
 
 func TestBuildChainForwardRoutes_DeploymentKeyCoversItsOwnPathsOnly(t *testing.T) {
@@ -797,6 +818,11 @@ func TestBuildChainForwardRoutes_DeploymentKeyCoversItsOwnPathsOnly(t *testing.T
 		"/",
 	} {
 		assert.False(t, keyed(path), "%s must never carry the deployment key", path)
+	}
+
+	// TEST_SCENARIO: the scopes match whole path segments, so a path that only starts with one — no LiteLLM route serves either today — carries no key.
+	for _, path := range []string{"/v1/messagesX", "/v1/models-foo"} {
+		assert.False(t, keyed(path), "%s only begins with a scoped path, not a segment", path)
 	}
 }
 

@@ -74,11 +74,9 @@ func skippedForRivals(filter ev, innerName string, rivals []string) ev {
 
 func addressedRoute(c envoyHostChain, connectionID, scope, match, rewrite string) ev {
 	entry := scopedRoute(c, connectionID, scope, match, rewrite)
-	entry["match"] = ev{
-		"prefix": match,
-		"headers": []any{
-			ev{"name": connectionAddressHeader, "string_match": ev{"exact": connectionID}},
-		},
+	entry["match"] = scopeMatch(scope, match)
+	entry["match"].(ev)["headers"] = []any{
+		ev{"name": connectionAddressHeader, "string_match": ev{"exact": connectionID}},
 	}
 	return entry
 }
