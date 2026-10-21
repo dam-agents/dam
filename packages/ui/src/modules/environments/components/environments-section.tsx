@@ -30,7 +30,7 @@ export function EnvironmentsSection({
   return (
     <>
       {header()}
-      <AccessListEditor agentId={agentId} />
+      <AccessListEditor key={agentId} agentId={agentId} />
       <ListSection
         label="Environments"
         loading={environments.isPending}
@@ -52,7 +52,8 @@ export function EnvironmentsSection({
  * agent's Environments, by the email they sign in with. The owner always may;
  * the agent may narrow the list for one Environment, never add to it. The
  * list is edited only once it loaded, so a Save never replaces a list the
- * page could not read.
+ * page could not read, and its edits belong to one agent: moving to another
+ * agent starts the editor afresh.
  */
 function AccessListEditor({ agentId }: { agentId: string }) {
   const saved = useEnvironmentAccessList(agentId);
