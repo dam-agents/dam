@@ -37,14 +37,7 @@ function markupPieces(text: string): TextLike[] {
   return pieces;
 }
 
-/**
- * Splits a reply's text where the agent wrote markup into it: a
- * `<thinking>` passage becomes a thought, and a framing tag the agent echoed
- * is dropped. Markup counts only when it opens a line outside a code fence,
- * so a reply that quotes a tag inline or in code shows it as written. A tag
- * still open at the end runs to the end, as it does while it streams.
- */
-export function splitAgentText(text: string): TextLike[] {
+function splitAgentText(text: string): TextLike[] {
   const pieces = fencedChunks(text).flatMap((chunk) =>
     chunk.code
       ? [{ kind: "text" as const, text: chunk.text }]
@@ -61,6 +54,14 @@ export function splitAgentText(text: string): TextLike[] {
     .filter((p) => p.text !== "");
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: Splits a reply's text parts where the agent wrote
+ * markup into them: a `<thinking>` passage becomes a thought, and a framing
+ * tag the agent echoed is dropped. Markup counts only when it opens a line
+ * outside a code fence, so a reply that quotes a tag inline or in code shows
+ * it as written. A tag still open at the end runs to the end, as it does
+ * while the reply streams.
+ */
 export function withoutAgentMarkup(
   parts: readonly MessagePart[],
 ): MessagePart[] {

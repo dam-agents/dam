@@ -1,11 +1,11 @@
 // TEST_OVERVIEW: An agent's reply text can carry markup the agent wrote itself: reasoning in `<thinking>` tags, learned from replayed history, and framing tags such as `<how-to-respond>` it echoes from its prompt. The session view shows the reasoning as a thought and drops the framing, and leaves markup that is quoted inline or inside a code fence as written.
 import { expect, it } from "vitest";
 
-import {
-  splitAgentText,
-  withoutAgentMarkup,
-} from "../../modules/sessions/lib/agent-markup.js";
+import { withoutAgentMarkup } from "../../modules/sessions/lib/agent-markup.js";
 import type { MessagePart } from "../../types.js";
+
+const splitAgentText = (text: string) =>
+  withoutAgentMarkup([{ kind: "text", text }]);
 
 // TEST_SCENARIO: a `<thinking>` passage between two paragraphs becomes a thought between two text parts.
 it("turns a thinking passage into a thought", () => {
