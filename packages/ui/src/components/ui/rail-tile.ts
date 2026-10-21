@@ -5,6 +5,12 @@ export const RAIL_GLYPH = 22;
 export const RAIL_AVATAR = 36;
 export const SIDEBAR_GLYPH = 14;
 
+// UNIT_BOUNDARY_DESCRIPTION: both rails lay their tiles out through these, so an item, the space between items, the padding above them and the rule between groups are the same on either side of the page.
+export const RAIL_GAP = "gap-1.5";
+export const RAIL_COLUMN = `flex flex-col items-center ${RAIL_GAP} py-2`;
+export const RAIL_GROUP_GAP = "mt-1.5";
+export const RAIL_SEPARATOR = "my-1 h-px w-6 shrink-0 bg-border";
+
 export function railTile(active: boolean): string {
   return cn(
     "group relative flex size-12 shrink-0 items-center justify-center rounded-xl text-muted-foreground transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",

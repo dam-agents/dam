@@ -14,6 +14,8 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   RAIL_BADGE,
+  RAIL_COLUMN,
+  RAIL_GAP,
   RAIL_GLYPH,
   railIndicator,
   railTile,
@@ -177,7 +179,7 @@ export function SidePanelBar({
       data-testid="side-panel-bar"
       className={cn(
         tiles
-          ? "flex w-14 shrink-0 flex-col items-center gap-2 border-l border-border bg-chrome py-3"
+          ? cn("w-14 shrink-0 border-l border-border bg-chrome", RAIL_COLUMN)
           : "box-content flex w-12 shrink-0 flex-col border-l border-border bg-background py-1",
         className,
       )}
@@ -190,7 +192,10 @@ export function SidePanelBar({
         {...props}
       />
       <div
-        className={cn("mt-auto flex flex-col", tiles && "items-center gap-2")}
+        className={cn(
+          "mt-auto flex flex-col",
+          tiles && cn("items-center", RAIL_GAP),
+        )}
       >
         {tiles ? (
           <>

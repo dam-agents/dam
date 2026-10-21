@@ -8,7 +8,15 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover.js";
-import { RAIL_AVATAR, RAIL_GLYPH, railTile } from "@/components/ui/rail-tile";
+import {
+  RAIL_AVATAR,
+  RAIL_COLUMN,
+  RAIL_GAP,
+  RAIL_GLYPH,
+  RAIL_GROUP_GAP,
+  RAIL_SEPARATOR,
+  railTile,
+} from "@/components/ui/rail-tile";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
@@ -54,7 +62,10 @@ export function SidebarRail({
 
   return (
     <div
-      className="flex min-h-0 flex-1 flex-col items-center gap-0.5 overflow-x-visible overflow-y-auto py-2"
+      className={cn(
+        "min-h-0 flex-1 overflow-x-visible overflow-y-auto",
+        RAIL_COLUMN,
+      )}
       data-testid="sidebar-rail"
     >
       <Tooltip content="Expand navigation" side="right">
@@ -63,7 +74,7 @@ export function SidebarRail({
           onClick={onExpand}
           aria-label="Expand navigation"
           data-testid="sidebar-rail-expand"
-          className={cn(railTile(false), "mb-1.5", FOCUS_RING)}
+          className={cn(railTile(false), FOCUS_RING)}
         >
           <ChevronRight size={RAIL_GLYPH} />
         </button>
@@ -78,7 +89,7 @@ export function SidebarRail({
           aria-label="Home"
           aria-current={homeOpen ? "page" : undefined}
           data-testid="sidebar-home-row"
-          className={cn(railTile(homeOpen), FOCUS_RING)}
+          className={cn(railTile(homeOpen), RAIL_GROUP_GAP, FOCUS_RING)}
         >
           <Home size={RAIL_GLYPH} />
         </button>
@@ -97,7 +108,7 @@ export function SidebarRail({
                 data-testid="sidebar-rail-pinned"
                 className={cn(
                   railTile(open === "pinned"),
-                  "mt-1.5",
+                  RAIL_GROUP_GAP,
                   FOCUS_RING,
                 )}
               >
@@ -119,9 +130,9 @@ export function SidebarRail({
           </PopoverContent>
         </Popover>
       )}
-      <div aria-hidden className="my-1 h-px w-6 shrink-0 bg-border" />
+      <div aria-hidden className={RAIL_SEPARATOR} />
       <div
-        className="flex min-h-0 flex-col items-center gap-0.5"
+        className={cn("flex min-h-0 flex-col items-center", RAIL_GAP)}
         data-testid="sidebar-rail-agents"
       >
         {agents.map((agent) => (
