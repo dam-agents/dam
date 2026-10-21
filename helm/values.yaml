@@ -402,6 +402,14 @@ virtualization:
       # of the install's runners; `maxConcurrent` is then ignored.
       maxConcurrentPercent: 0
       settleTimeout: 10m
+      # A roll whose new pod never becomes ready is a broken release, and it
+      # keeps its place so the release goes no further. `stalledTimeout`
+      # bounds that hold: past it the place is released and the next runner
+      # may roll, so one owner's admission refusal breaks owners one at a
+      # time instead of freezing every owner's upgrade. The stalled runner
+      # keeps its `agent-platform.ai/runner-roll-stalled` mark and a Warning
+      # Event.
+      stalledTimeout: 30m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
     # release this chart's runner image carries: the runner and the two guest

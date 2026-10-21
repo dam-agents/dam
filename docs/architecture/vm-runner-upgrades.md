@@ -1,6 +1,6 @@
 # VM runner upgrades
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 How a change to the [runner](vm-runner.md) reaches owners whose machines are running: as a **roll** of the runner pod, which reboots the owner's machines, or, for a new runner release only, as a **hand-off** inside the pod, which reboots none unless the release declares that its machines must reboot onto it, which rolls the pod instead.
 
@@ -17,9 +17,14 @@ The list is written when the roll starts and cleared in the write that settles i
 That release happens on the owner's own turn whether or not any other runner asks for a place: a runner already on the pod it should run asks for none, so the last roll of an upgrade would otherwise keep its wait — and the pin on its machines — standing for good.
 A pod that never became ready is the other half of it: past the settle timeout that roll is marked stalled and keeps its place, so the release goes no further, and the mark is what ends its pin.
 A runner already mid-roll holds one of the width's places, so rolling it again replaces a target that failed in the place it holds rather than taking another: a fleet that shrinks under a stalled roll — owners removed, the share falling below the runners stuck on it — still takes a corrective roll, where counting its peers alone would leave every one of them blocked.
-A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled and reported as an error until its pod becomes ready or the pod changes again.
-The exception is a pod stuck in a state no release can cause: one still creating its containers, none ever started, whose claim the attach controller refuses as Multi-Attach, or an old pod that never finishes terminating because its node is gone or not ready.
-That says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
+A new pod that is still not ready at the timeout is a broken runner release, not a slow machine: that roll keeps its place, so the release goes no further, and is marked stalled, reported as an error and written as a Warning Event on its Deployment, until its pod becomes ready or the pod changes again.
+That hold is bounded by `rollout.stalledTimeout`, half an hour by default, counted from the moment the roll started: past it the stalled runner gives up its place and the next owner rolls, keeping the stalled mark until its pod is ready.
+A truly broken release therefore breaks owners one at a time instead of freezing every owner's upgrade.
+The exceptions are states no release can cause: a pod still creating its containers, none ever started, whose claim the attach controller refuses as Multi-Attach, an old pod that never finishes terminating because its node is gone or not ready, and a runner whose pod admission refused to create at all.
+That last one is skipped only while another owner's runner already runs the same pod template and is ready, and the refused runner's own ReplicaSet reports a failed create of that same template: the runners share one namespace, one ServiceAccount and one security policy, so a refusal the release causes refuses them all, and a ready peer proves the template is admitted.
+Both halves compare the whole pod template, less the `pod-template-hash` label the Deployment controller generates on every ReplicaSet and never on the Deployment, so a peer on another image, another resource request or another priority class proves nothing about the template that was refused, and a refusal of an older revision of the runner is not this roll's refusal.
+Without both, the refusal halts the roll, which is what a broken release looks like.
+Each says nothing about the release, so the roll is reported as an error, counted and skipped, and other owners keep rolling; the runner comes up on the new pod once its fault clears.
 Every other state still halts the roll: a pod the scheduler cannot place, since a release that adds a node selector or raises a request makes every runner unplaceable, a container that started, an image that does not pull.
 The node is read through the node read grant the chart adds with virtualization; an install without it cannot tell a lost node, so a pod stuck terminating halts the roll there.
 A runner whose pod is unchanged is not rolled — unless its runner holds the configured release as one whose machines must reboot onto it, which rolls the pod with a revised template ([below](#hand-offs)) — but labels or owner references that drifted on it are put back without touching the pod.
@@ -124,7 +129,7 @@ A runner with ready machines stays mid-hand-off for at least two minutes, and na
 The wait outlasts those ensures so a release that runs but refuses them is seen before the next owner is named it.
 A hand-off is in trouble when the runner holds the release as failed, when the runner refuses an ensure, or when it has not settled within the settle timeout; a runner that cannot be reached, or answers that it is shutting down, is the hand-off itself and does not count.
 Time the runner reports the release not staged on its node does not count either: the hand-off's start moves up while it waits, so the settle timeout runs from about when the stager reached the node, and a stager that never does keeps the hand-off waiting in its place rather than stalled.
-A hand-off in trouble is marked stalled on the runner's Deployment, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready.
+A hand-off in trouble is marked stalled on the runner's Deployment, reported as an error and counted, and keeps its place, so the release goes no further, as with a pod that is never ready — except that the stalled bound releases a roll's place alone, and a stalled hand-off keeps its own until the release changes.
 A newer configured image resumes the release, starting with the runner that stalled, and so does an operator removing the stall annotation.
 A runner that needs a pod for the release ends its hand-off, and the pod roll that follows takes its own place.
 The pod's image is left out of what the roll compares, so a runner pod rolls for a change to its shape, and a release that must reboot its machines rolls it with the image change that carries the release.
