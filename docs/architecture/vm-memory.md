@@ -130,6 +130,7 @@ A kubelet answers a resize it cannot grant within a few passes of the machine wa
 Once the grace is over and the node has still not granted enough for one more machine, the grant is exhausted and the owner's idle agents are the only room left.
 That is a bounded retry policy rather than a proof that the node refused this ask: expiry says the wait has gone on long enough, not that the node answered.
 An owner's only waiter is the agent being reconciled, so the wait is counted from the agent's own reconcile rather than from its peers.
+The grace is keyed from the same demand the pod is sized from, so a reconcile of an agent that is stopping, and holds nothing, leaves the request another start waits under alone instead of keying a figure the node was never sent.
 A node that reports no grant is not a stepped ask at all: with no figure to measure the demand against, the whole demand stands, so no grace applies.
 Such a start is held under the unreadable-grant rule above rather than reclaimed against a grant the controller never read, so the reclaim there is the pool-bound one, not this one.
 The grace is recorded on every reconcile, from the sizing read taken after the ensure, and a reconcile that finds the ask no longer stepped clears it.

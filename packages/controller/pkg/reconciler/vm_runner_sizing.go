@@ -263,11 +263,9 @@ type steppedAsk struct {
 	request string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether the owner's ask for the runner pod is stepped down below what the demand calls for, and to what, which is the state the reclaim's grace is kept for. A pod that reports no grant is not that state: with no figure to measure the demand against, the whole demand stands, so there is nothing the node is being asked for that a reclaim would wait out.
-func (r *AgentReconciler) runnerAskIsStepped(ctx context.Context, owner string, agent *apiv1.Agent) (steppedAsk, bool) {
-	// UNIT_BOUNDARY_DESCRIPTION: the demand is read with this agent counted as running, since a reconcile runs only for an agent that should be up. An owner whose only waiter is the agent being reconciled is exactly the case the grace is kept for: read as one that is not running, its wait would not be counted and the reclaim would go ahead at once.
-	demand, err := r.ownerRunnerDemand(ctx, owner, agent, true)
-	if err != nil || demand.nextStartMiB == 0 {
+// UNIT_BOUNDARY_DESCRIPTION: whether the owner's ask for the runner pod is stepped down below what the demand calls for, and to what, which is the state the reclaim's grace is kept for. The demand is the very one the caller is sizing the pod from, not a second reading of it: a reconcile runs for a stopped agent as well as a starting one, and a demand read with a different answer about that agent would key the grace to a request the node was never sent. A pod that reports no grant is not this state either: with no figure to measure the demand against, the whole demand stands, so there is nothing a reclaim would wait out.
+func (r *AgentReconciler) runnerAskIsStepped(ctx context.Context, owner string, demand runnerDemand) (steppedAsk, bool) {
+	if demand.nextStartMiB == 0 {
 		return steppedAsk{}, false
 	}
 	pods, err := r.runnerPods(ctx, owner, true)
@@ -294,8 +292,8 @@ func (r *AgentReconciler) runnerAskIsStepped(ctx context.Context, owner string, 
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the grace is recorded where every reconcile can see it, not only where a reclaim would read it: a pass that finds the ask stepped records when this ask began, and a pass that finds nothing stepped clears the record. Reading it only inside the reclaim would leave a spent grace behind a wave the node granted, and a later start of the same size on the same pod would then inherit it and free an idle machine at once. A different ask — a further step down, a replacement pod — starts its own grace, and one already recorded keeps its time unchanged, so an ask still being evaluated is not prolonged pass after pass.
-func (r *AgentReconciler) noteSteppedAsk(ctx context.Context, owner string, agent *apiv1.Agent) {
-	ask, stepped := r.runnerAskIsStepped(ctx, owner, agent)
+func (r *AgentReconciler) noteSteppedAsk(ctx context.Context, owner string, demand runnerDemand) {
+	ask, stepped := r.runnerAskIsStepped(ctx, owner, demand)
 	if !stepped {
 		r.steppedSince.Delete(owner)
 		return

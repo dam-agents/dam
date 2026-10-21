@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -477,7 +478,7 @@ func TestTheGraceBelongsToTheAskItWasMadeFor(t *testing.T) {
 	ctx, r, agent := theGraceFixture(t, "1536Mi")
 
 	// TEST_SCENARIO: the first ask records its grace, and that grace runs out without the node granting it.
-	r.noteSteppedAsk(ctx, testOwner, agent)
+	r.noteSteppedAsk(ctx, testOwner, theSizingDemand(t, r, agent))
 	firstAsk := theRecordedAsk(t, r)
 	assert.True(t, r.reclaimWaitsForTheReducedAsk(testOwner), "the grace is fresh, so the reclaim waits")
 	r.steppedSince.Store(testOwner, steppedAskTimestamp{ask: firstAsk, at: time.Now().Add(-2 * steppedGrantGrace)})
@@ -491,7 +492,7 @@ func TestTheGraceBelongsToTheAskItWasMadeFor(t *testing.T) {
 	peerVMAgent(t, r, "waiter-c", "4Gi", "20Gi", true)
 	r.vmAnswers.Store("waiter-c", vmrunner.ReasonAwaitingAllocation)
 	runnerPodReportsItsGrant(t, r, "3072Mi")
-	r.noteSteppedAsk(ctx, testOwner, agent)
+	r.noteSteppedAsk(ctx, testOwner, theSizingDemand(t, r, agent))
 	nextAsk := theRecordedAsk(t, r)
 	require.NotEqual(t, firstAsk, nextAsk, "progress the node made is a new question, not the one the spent grace belongs to")
 	assert.True(t, r.reclaimWaitsForTheReducedAsk(testOwner),
@@ -500,7 +501,7 @@ func TestTheGraceBelongsToTheAskItWasMadeFor(t *testing.T) {
 	// TEST_SCENARIO: a pod replaced by a roll carries an ask on a new identity, which is also a new question.
 	replacedRunnerPod(t, r, "4Gi", "16Gi")
 	deferredPodCondition(t, r, "2560Mi")
-	r.noteSteppedAsk(ctx, testOwner, agent)
+	r.noteSteppedAsk(ctx, testOwner, theSizingDemand(t, r, agent))
 	replacement := theRecordedAsk(t, r)
 	assert.NotEqual(t, nextAsk.uid, replacement.uid, "the replacement pod is a new identity")
 	assert.True(t, r.reclaimWaitsForTheReducedAsk(testOwner),
@@ -516,7 +517,7 @@ func TestASpentGraceIsNotInheritedByALaterAskOfTheSameSize(t *testing.T) {
 	ctx, r, agent := theGraceFixture(t, "1536Mi")
 
 	// TEST_SCENARIO: the first episode: the ask is stepped, its grace is recorded, and it runs out with the node never answering it.
-	r.noteSteppedAsk(ctx, testOwner, agent)
+	r.noteSteppedAsk(ctx, testOwner, theSizingDemand(t, r, agent))
 	firstAsk := theRecordedAsk(t, r)
 	r.steppedSince.Store(testOwner, steppedAskTimestamp{ask: firstAsk, at: time.Now().Add(-2 * steppedGrantGrace)})
 	require.False(t, r.reclaimWaitsForTheReducedAsk(testOwner), "precondition: that ask's grace is spent")
@@ -525,9 +526,9 @@ func TestASpentGraceIsNotInheritedByALaterAskOfTheSameSize(t *testing.T) {
 	runnerPodReportsItsGrant(t, r, "2560Mi")
 	r.noteMachineUse("waiter-b", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 1, MemoryMiB: 1024})
 	r.vmAnswers.Delete("waiter-b")
-	_, stepped := r.runnerAskIsStepped(ctx, testOwner, agent)
+	_, stepped := r.runnerAskIsStepped(ctx, testOwner, theSizingDemand(t, r, agent))
 	require.False(t, stepped, "precondition: no start is waiting, so nothing is stepped")
-	r.noteSteppedAsk(ctx, testOwner, agent)
+	r.noteSteppedAsk(ctx, testOwner, theSizingDemand(t, r, agent))
 	_, recorded := r.steppedSince.Load(testOwner)
 	assert.False(t, recorded, "the completed grace is cleared, so no later ask inherits it")
 
@@ -535,7 +536,7 @@ func TestASpentGraceIsNotInheritedByALaterAskOfTheSameSize(t *testing.T) {
 	runnerPodReportsItsGrant(t, r, "1536Mi")
 	r.noteMachineUse("waiter-b", vmrunner.MachineStatus{State: vmrunner.StateStopped})
 	r.vmAnswers.Store("waiter-b", vmrunner.ReasonAwaitingAllocation)
-	r.noteSteppedAsk(ctx, testOwner, agent)
+	r.noteSteppedAsk(ctx, testOwner, theSizingDemand(t, r, agent))
 	laterAsk := theRecordedAsk(t, r)
 	require.Equal(t, firstAsk, laterAsk, "the same request on the same pod, which the key alone cannot tell from the spent episode")
 	assert.True(t, r.reclaimWaitsForTheReducedAsk(testOwner),
@@ -587,6 +588,55 @@ func clearDeferredCondition(t *testing.T, r *AgentReconciler) {
 	}
 }
 
+// TEST_SCENARIO: a stopped agent reconciles too, and its reconcile must not move the grace another start is waiting under. The grace is recorded from the very demand the pod is sized from, so a stopped agent that holds nothing of its own is left out of that demand exactly as it is left out of the resize: a demand read with that agent counted as running would key the grace to a request the node was never sent, and the next waiter's retry would put the real request back and restart its minute. Nothing has progressed, yet the reclaim is postponed twice.
+func TestAStoppedAgentsReconcileDoesNotRestartAnotherStartsGrace(t *testing.T) {
+	ctx, r, agent := theGraceFixture(t, "1536Mi")
+
+	// TEST_SCENARIO: a third agent of the owner was admitted before and has been idle past its hibernation timeout, so it is stopped and holds nothing.
+	peerVMAgent(t, r, "sleeping", "4Gi", "20Gi", false)
+	r.vmAnswers.Store("sleeping", "")
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "sleeping", "application/merge-patch+json",
+		[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Hour).Format(time.RFC3339)+`"}}}`),
+		metav1.PatchOptions{})
+	require.NoError(t, err)
+
+	// TEST_SCENARIO: the waiting start's own reconcile records the real minimal ask.
+	require.NoError(t, r.Reconcile(ctx, agent))
+	waitingAsk := theRecordedAsk(t, r)
+	assert.Equal(t, "2560Mi", waitingAsk.request, "one machine held plus the start waiting for it, plus the reserve")
+	startedAt := steppedGraceStartedAt(t, r)
+
+	// TEST_SCENARIO: the stopped agent reconciles, and the request the node is sent does not change.
+	sleeping, err := loadAgent(t, r, "sleeping")
+	require.NoError(t, err)
+	leaf := leafSecret()
+	leaf.Name = EnvoyLeafSecretName("sleeping")
+	_, err = r.client.CoreV1().Secrets("test-agents").Create(ctx, leaf, metav1.CreateOptions{})
+	require.NoError(t, err)
+	before := runnerPodRequest(t, r)
+	require.NoError(t, r.Reconcile(ctx, sleeping))
+	assert.Equal(t, before, runnerPodRequest(t, r), "a stopped agent asks the node for nothing new")
+	assert.Equal(t, waitingAsk, theRecordedAsk(t, r),
+		"a stopped agent holds nothing, so its reconcile keys the grace to the same request the node was sent")
+	assert.Equal(t, startedAt, steppedGraceStartedAt(t, r),
+		"and it does not restart that request's grace")
+
+	// TEST_SCENARIO: once that request's grace runs out, the reclaim is eligible, so the stopped agent's pass postponed nothing.
+	r.steppedSince.Store(testOwner, steppedAskTimestamp{ask: waitingAsk, at: time.Now().Add(-2 * steppedGrantGrace)})
+	assert.False(t, r.reclaimWaitsForTheReducedAsk(testOwner),
+		"the real ask's grace is spent, so the reclaim is no longer held off")
+}
+
+// TEST_SCENARIO: one of the owner's agents as it is stored, which is what a reconcile is handed.
+func loadAgent(t *testing.T, r *AgentReconciler, name string) (*apiv1.Agent, error) {
+	t.Helper()
+	u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+	if err != nil {
+		return nil, err
+	}
+	return FromCacheObject[apiv1.Agent](u)
+}
+
 // TEST_SCENARIO: the ask the owner's grace is recorded against.
 func theRecordedAsk(t *testing.T, r *AgentReconciler) steppedAsk {
 	t.Helper()
@@ -610,6 +660,13 @@ func theGraceFixture(t *testing.T, grant string) (context.Context, *AgentReconci
 	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
 	peerVMAgent(t, r, "waiter-b", "4Gi", "20Gi", true)
 	r.vmAnswers.Store("waiter-b", vmrunner.ReasonAwaitingAllocation)
+	// TEST_SCENARIO: the fixture's own agent is one of the owner's running machines, with its gateway up as a running agent's is.
+	up := int32(1)
+	_, err := r.client.AppsV1().StatefulSets("test-agents").Create(context.Background(), &appsv1.StatefulSet{
+		ObjectMeta: metav1.ObjectMeta{Name: GatewayName("my-agent"), Namespace: "test-agents"},
+		Spec:       appsv1.StatefulSetSpec{Replicas: &up},
+	}, metav1.CreateOptions{})
+	require.NoError(t, err)
 	r.noteMachineUse("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 1, MemoryMiB: 1024})
 	runnerPod(t, r, "1Gi", "16Gi")
 	deferredPodCondition(t, r, grant)
@@ -651,6 +708,14 @@ func TestTheReclaimRunsOnceTheReducedAskIsExhausted(t *testing.T) {
 		"the reduced ask is exhausted and an idle machine is the only room left")
 }
 
+// TEST_SCENARIO: the demand a reconcile of this agent sizes the pod from: the agent counts as running, since a fixture's agent is one that should be up.
+func theSizingDemand(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) runnerDemand {
+	t.Helper()
+	demand, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
+	require.NoError(t, err)
+	return demand
+}
+
 // TEST_SCENARIO: when the grace on the owner's current step down began.
 func steppedGraceStartedAt(t *testing.T, r *AgentReconciler) time.Time {
 	t.Helper()
@@ -662,7 +727,7 @@ func steppedGraceStartedAt(t *testing.T, r *AgentReconciler) time.Time {
 // TEST_SCENARIO: the owner's current step down has been with the node for longer than a grace, as a kubelet that will not grant it leaves it: the grace is recorded against the very ask this pass finds, so it is the ask the reclaim is told to stop waiting for.
 func expireTheStepDownGrace(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
 	t.Helper()
-	ask, stepped := r.runnerAskIsStepped(context.Background(), testOwner, agent)
+	ask, stepped := r.runnerAskIsStepped(context.Background(), testOwner, theSizingDemand(t, r, agent))
 	require.True(t, stepped, "the fixture's pod is not a stepped ask, so there is no grace to expire")
 	r.steppedSince.Store(testOwner, steppedAskTimestamp{ask: ask, at: time.Now().Add(-2 * steppedGrantGrace)})
 }
