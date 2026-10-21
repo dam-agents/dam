@@ -11,6 +11,8 @@ export interface ComposeChangesOptions {
   roots: readonly string[];
   stateBackend: DocumentStoreBackend;
   githubToken: () => string;
+  sessionOf: (harnessSessionId: string) => string | undefined;
+  runningSessions: () => readonly string[];
   log: (msg: string) => void;
 }
 
@@ -23,6 +25,8 @@ export function composeChanges(opts: ComposeChangesOptions): ChangesRuntime {
       token: opts.githubToken,
       log: opts.log,
     }),
+    sessionOf: opts.sessionOf,
+    runningSessions: opts.runningSessions,
     log: opts.log,
   });
 }

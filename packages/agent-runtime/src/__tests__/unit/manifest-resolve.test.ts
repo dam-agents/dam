@@ -198,4 +198,37 @@ describe("shipped agent manifests resolve", () => {
       expect("env" in r && "trigger" in r, agent).toBe(true);
     }
   });
+
+  /**
+   * TEST_SCENARIO: Each shipped harness names the variable it sets on its
+   * shell commands, so git's trace can name the Session behind a commit; a
+   * harness that sets none, Bob, declares none.
+   */
+  it("every shipped manifest names its Session variable", () => {
+    const expected: Record<string, string | undefined> = {
+      bob: undefined,
+      "claude-code": "CLAUDE_CODE_SESSION_ID",
+      codex: "CODEX_THREAD_ID",
+      "pi-agent": "PI_SESSION_ID",
+    };
+    for (const [agent, name] of Object.entries(expected)) {
+      const manifest = loadManifest(
+        join(agentsDir, agent, "rootfs/app/runtime-manifest.yaml"),
+      );
+      expect(manifest.sessionEnvVar, agent).toBe(name);
+    }
+  });
+
+  /**
+   * TEST_SCENARIO: A Session variable that is not an environment variable's
+   * name is refused when the manifest loads.
+   */
+  it("refuses a Session variable that is not a variable name", () => {
+    expect(() =>
+      runtimeManifestSchema.parse({
+        manifestVersion: 1,
+        sessionEnvVar: "not a name",
+      }),
+    ).toThrow();
+  });
 });

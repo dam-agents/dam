@@ -22,6 +22,11 @@ modelRouter:
     templates: [bedrock]
     models: [fable, opus, sonnet, haiku]
 
+# Claude Code sets the session's id on every shell command it runs, the same
+# id the platform knows the session by; git records it in its trace, so a
+# commit or push links the session that ran it.
+sessionEnvVar: CLAUDE_CODE_SESSION_ID
+
 # Declared so the runtime answers initialize before any harness process runs.
 # Re-captured from the image pin by test:harness-initialize-capabilities.
 initializeCapabilities:

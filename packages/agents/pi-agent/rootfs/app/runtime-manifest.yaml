@@ -14,6 +14,11 @@ modelRouter:
   dialects: [openai-responses, openai-chat, anthropic-messages]
   sessionModel: { configOption: model, valuePrefix: "platform/" }
 
+# Pi's bash tool sets the session's id on every command it runs, and pi-acp
+# uses Pi's own id as the session's, so git's trace names the session that
+# ran a commit or push.
+sessionEnvVar: PI_SESSION_ID
+
 # Declared so the runtime answers initialize before any harness process runs.
 # Re-captured from the image pin by test:harness-initialize-capabilities.
 initializeCapabilities:
