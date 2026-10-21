@@ -26,6 +26,7 @@ export function useStarterKit(catalog: string | null, id: string | null) {
   const linkedKit = useQuery({
     ...trpc.starterKits.inspect.queryOptions({ url: kitLinkUrl(id ?? "") }),
     enabled: linked && id !== null,
+    staleTime: Infinity,
     retry: (failures, error) =>
       error.data?.code === "BAD_GATEWAY" && failures < 2,
   });
