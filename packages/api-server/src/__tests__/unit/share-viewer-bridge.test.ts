@@ -1,0 +1,593 @@
+/**
+ * TEST_OVERVIEW: People an owner shares an interactive artifact with use its
+ * page as the owner does. The share page relays the page's requests and
+ * prompts to the share host, which checks on every call that the visitor is
+ * signed in and on the viewer list, that the call comes from the share page
+ * itself, and that the artifact is still interactive, restricted,
+ * agent-published and has its feature on. A request reaches the publishing
+ * Agent's Artifact API server; a prompt starts or continues the viewer's own
+ * Session on that Agent. Every call is in the security log under the viewer.
+ */
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+import type { AcpClient, SendPromptOpts } from "../../core/acp-client.js";
+import { AcpSessionLoadError } from "../../core/acp-client.js";
+import type { ShareSession } from "../../modules/artifact-library/domain/share-session.js";
+import { shareSessionCookie } from "../../modules/artifact-library/domain/share-session.js";
+import {
+  viewerSessionKey,
+  viewerSessionTitle,
+} from "../../modules/artifact-library/domain/viewer-bridge.js";
+import type { ArtifactRow } from "../../modules/artifact-library/infrastructure/artifact-library-repository.js";
+import { createViewerPromptDelivery } from "../../modules/artifact-library/infrastructure/viewer-prompt-delivery.js";
+import { createRenderTokenService } from "../../modules/artifact-library/services/render-token-service.js";
+import {
+  createShareBridgeService,
+  type ViewerPromptDelivery,
+} from "../../modules/artifact-library/services/share-bridge-service.js";
+import type {
+  ShareViewerService,
+  SharedResolution,
+} from "../../modules/artifact-library/services/share-viewer-service.js";
+import { renderWrapper } from "../../modules/artifact-library/viewer/renderer.js";
+import { createShareViewerApp } from "../../modules/artifact-library/viewer/viewer-app.js";
+import { createMemoryTtlStore } from "../../core/ttl-store.js";
+
+const securityLog = vi.hoisted(() => vi.fn());
+vi.mock("../../core/security-log.js", () => ({ securityLog }));
+
+const SHARE = "https://share.example.com";
+
+function artifactRow(overrides: Partial<ArtifactRow> = {}): ArtifactRow {
+  return {
+    id: "a1",
+    owner: "owner-1",
+    agentId: "agent-1",
+    folderId: null,
+    sourcePath: null,
+    title: "Team dashboard",
+    slug: "slug-a",
+    kind: "html",
+    contentType: "text/html",
+    fileName: "dashboard.html",
+    storageRef: "library/owner-1/a1/v1/dashboard.html",
+    sizeBytes: 64,
+    version: 1,
+    visibility: "restricted",
+    interactive: true,
+    expiresAt: null,
+    viewCount: 0,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    ...overrides,
+  };
+}
+
+const alice: ShareSession = {
+  sub: "alice-sub",
+  email: "alice@example.com",
+  emailVerified: true,
+  createdAt: 0,
+};
+const bob: ShareSession = { ...alice, sub: "bob-sub", email: "bob@example.com" };
+
+interface World {
+  artifact: ArtifactRow;
+  viewers: string[];
+  featureOn: boolean;
+  agentAwake: boolean;
+  wakeFails: boolean;
+  appRequests: { agentId: string; method: string; path: string }[];
+  delivered: Parameters<ViewerPromptDelivery["deliver"]>[0][];
+  deliverOutcome: "accepted" | "spend-limit" | "agent-unreachable";
+}
+
+function world(overrides: Partial<World> = {}) {
+  const w: World = {
+    artifact: artifactRow(),
+    viewers: ["alice@example.com"],
+    featureOn: true,
+    agentAwake: false,
+    wakeFails: false,
+    appRequests: [],
+    delivered: [],
+    deliverOutcome: "accepted",
+    ...overrides,
+  };
+  const viewer: ShareViewerService = {
+    resolveArtifact: () =>
+      Promise.resolve(
+        w.artifact.visibility === "private"
+          ? { state: "not-found" }
+          : w.artifact.visibility === "public"
+            ? ({ state: "ok", artifact: w.artifact } satisfies SharedResolution)
+            : ({
+                state: "restricted",
+                artifact: w.artifact,
+              } satisfies SharedResolution),
+      ),
+    resolveFolder: () => Promise.resolve({ state: "not-found" }),
+    canView: (artifact, session) =>
+      Promise.resolve(
+        session.sub === artifact.owner ||
+          (session.email !== null && w.viewers.includes(session.email))
+          ? "allow"
+          : "deny",
+      ),
+    content: () => Promise.resolve(null),
+    contentStream: () => Promise.resolve(null),
+    recordView: () => {},
+  };
+  const sessions = new Map([
+    ["sid-alice", alice],
+    ["sid-bob", bob],
+  ]);
+  const bridge = createShareBridgeService({
+    featureOn: () => Promise.resolve(w.featureOn),
+    ensureReady: () => {
+      if (w.wakeFails) return Promise.reject(new Error("did not wake"));
+      w.agentAwake = true;
+      return Promise.resolve();
+    },
+    agentApi: {
+      request: (agentId, input) => {
+        w.appRequests.push({ agentId, method: input.method, path: input.path });
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          contentType: "application/json",
+          body: '{"live":true}',
+        });
+      },
+    },
+    prompts: {
+      deliver: (input) => {
+        w.delivered.push(input);
+        return Promise.resolve(w.deliverOutcome);
+      },
+    },
+  });
+  const app = createShareViewerApp({
+    viewer,
+    auth: { getSession: (id) => Promise.resolve(sessions.get(id) ?? null) },
+    sessionCookie: shareSessionCookie(SHARE),
+    renderTokens: createRenderTokenService({
+      grants: createMemoryTtlStore(60_000, () => 0),
+    }),
+    brandName: "Platform",
+    uiBaseUrl: "http://app.localhost",
+    contentBaseUrl: "https://content.example.com",
+    shareBaseUrl: SHARE,
+    bridge,
+  });
+  return { w, app };
+}
+
+function call(
+  app: ReturnType<typeof world>["app"],
+  path: string,
+  body: unknown,
+  opts: { sid?: string | null; origin?: string | null } = {},
+) {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+  };
+  const sid = opts.sid === undefined ? "sid-alice" : opts.sid;
+  if (sid !== null) headers.cookie = `__Host-share_session=${sid}`;
+  const origin = opts.origin === undefined ? SHARE : opts.origin;
+  if (origin !== null) headers.origin = origin;
+  return app.request(path, {
+    method: "POST",
+    headers,
+    body: typeof body === "string" ? body : JSON.stringify(body),
+  });
+}
+
+const getState = { method: "GET", path: "/state" };
+
+function loggedEvents() {
+  return securityLog.mock.calls.map((args: unknown[]) => {
+    const [level, event, fields] = args as [string, string, object];
+    return { level, event, ...fields };
+  });
+}
+
+beforeEach(() => securityLog.mockClear());
+
+describe("a viewer's request on a shared interactive page", () => {
+  /**
+   * TEST_SCENARIO: A teammate opens the live dashboard the owner shared with
+   * them. The page reads its data from the owner's Agent; the hibernated
+   * Agent wakes, and its app's answer reaches the viewer as it would the
+   * owner.
+   */
+  it("wakes the agent and returns its app's answer", async () => {
+    const { w, app } = world();
+    const res = await call(app, "/a/slug-a/request", getState);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      ok: true,
+      status: 200,
+      contentType: "application/json",
+      body: '{"live":true}',
+    });
+    expect(w.agentAwake).toBe(true);
+    expect(w.appRequests).toEqual([
+      { agentId: "agent-1", method: "GET", path: "/state" },
+    ]);
+    expect(res.headers.get("Cache-Control")).toBe("private, no-store");
+  });
+
+  it("passes every method through", async () => {
+    const { w, app } = world();
+    for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+      const res = await call(app, "/a/slug-a/request", {
+        method,
+        path: "/state",
+        body: "{}",
+      });
+      expect(await res.json()).toMatchObject({ ok: true });
+    }
+    expect(w.appRequests.map((r) => r.method)).toEqual([
+      "POST",
+      "PUT",
+      "PATCH",
+      "DELETE",
+    ]);
+  });
+
+  /**
+   * TEST_SCENARIO: The viewer-list check is the boundary, and it is asked on
+   * every call. Someone without a share session, someone signed in but not
+   * on the list, and a viewer the owner just removed are all refused before
+   * any Agent wakes.
+   */
+  it("refuses anyone not signed in and on the viewer list, every call", async () => {
+    const { w, app } = world();
+    expect((await call(app, "/a/slug-a/request", getState, { sid: null })).status).toBe(401);
+    expect((await call(app, "/a/slug-a/request", getState, { sid: "sid-bob" })).status).toBe(403);
+    expect((await call(app, "/a/slug-a/request", getState)).status).toBe(200);
+    w.viewers.length = 0;
+    const removed = await call(app, "/a/slug-a/request", getState);
+    expect(removed.status).toBe(403);
+    expect(await removed.json()).toEqual({ ok: false, reason: "not-allowed" });
+    expect(w.appRequests).toHaveLength(1);
+  });
+
+  /**
+   * TEST_SCENARIO: The share session cookie rides every request a browser
+   * sends to the share host, including one that code on the content host or
+   * another site starts. Only a call from the share page's own origin is
+   * relayed, so artifact code cannot use the viewer's session behind the
+   * share page's back.
+   */
+  it("refuses a call that does not come from the share page's origin", async () => {
+    const { w, app } = world();
+    for (const origin of ["https://content.example.com", "https://evil.example", null]) {
+      const res = await call(app, "/a/slug-a/request", getState, { origin });
+      expect(res.status).toBe(403);
+    }
+    expect(w.appRequests).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: The owner can take the page's reach away at any time: by
+   * making it private, by publishing it as a plain page, or by turning
+   * Interactive artifacts off. Each one stops the next call, and a page with
+   * no publishing Agent never had one to reach.
+   */
+  it.each([
+    ["private", { visibility: "private" as const }, {}, 404],
+    ["not interactive", { interactive: false }, {}, 200],
+    ["uploaded by a person", { agentId: null }, {}, 200],
+    ["feature off", {}, { featureOn: false }, 200],
+  ])(
+    "refuses when the artifact is %s",
+    async (_name, row, settings, status) => {
+      const { w, app } = world({ artifact: artifactRow(row), ...settings });
+      const res = await call(app, "/a/slug-a/request", getState);
+      expect(res.status).toBe(status);
+      expect(await res.json()).toEqual({ ok: false, reason: "not-allowed" });
+      expect(w.agentAwake).toBe(false);
+      expect(w.appRequests).toEqual([]);
+    },
+  );
+
+  it("never relays for a public page", async () => {
+    const { w, app } = world({
+      artifact: artifactRow({ visibility: "public" }),
+    });
+    const res = await call(app, "/a/slug-a/request", getState);
+    expect(res.status).toBe(404);
+    expect(w.appRequests).toEqual([]);
+  });
+
+  it("answers invalid-request for a malformed request", async () => {
+    const { w, app } = world();
+    for (const body of [
+      "not json",
+      { method: "TRACE", path: "/" },
+      { method: "GET", path: "no-slash" },
+      { method: "GET", path: "/", body: "x" },
+    ]) {
+      const res = await call(app, "/a/slug-a/request", body);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ ok: false, reason: "invalid-request" });
+    }
+    expect(w.appRequests).toEqual([]);
+  });
+
+  it("reports an agent that does not wake as unreachable", async () => {
+    const { app } = world({ wakeFails: true });
+    const res = await call(app, "/a/slug-a/request", getState);
+    expect(await res.json()).toEqual({ ok: false, reason: "agent-unreachable" });
+  });
+
+  /**
+   * TEST_SCENARIO: Whoever made the owner's Agent act must be on record. An
+   * allowed call and a refused one are both logged with the viewer as the
+   * actor, the artifact and the owner, and never with what the page sent.
+   */
+  it("records every call under the viewer in the security log", async () => {
+    const { w, app } = world();
+    await call(app, "/a/slug-a/request", { method: "GET", path: "/secret-path" });
+    await call(app, "/a/slug-a/request", getState, { sid: "sid-bob" });
+    w.featureOn = false;
+    await call(app, "/a/slug-a/request", getState);
+    expect(loggedEvents()).toEqual([
+      expect.objectContaining({
+        level: "info",
+        event: "artifact.viewer_request",
+        actor: "alice-sub",
+        actorKind: "external",
+        surface: "share",
+        decision: "allow",
+        target: "a1",
+        agentId: "agent-1",
+        detail: { viewerEmail: "alice@example.com", owner: "owner-1" },
+      }),
+      expect.objectContaining({
+        event: "artifact.viewer_request",
+        actor: "bob-sub",
+        decision: "deny",
+        reason: "not-a-viewer",
+      }),
+      expect.objectContaining({
+        actor: "alice-sub",
+        decision: "deny",
+        reason: "feature-off",
+      }),
+    ]);
+    expect(JSON.stringify(securityLog.mock.calls)).not.toContain("secret-path");
+  });
+});
+
+describe("a viewer's prompt on a shared interactive page", () => {
+  /**
+   * TEST_SCENARIO: A viewer clicks a button that asks the Agent to do
+   * something. The prompt goes to that viewer's own Session on the owner's
+   * Agent, named after the viewer and the page, so the owner sees who asked
+   * for what. The Agent is told who sent it and that the viewer sees only the
+   * page.
+   */
+  it("hands the prompt to the viewer's own session on the agent", async () => {
+    const { w, app } = world();
+    const res = await call(app, "/a/slug-a/prompt", {
+      prompt: "Refresh the numbers.",
+    });
+    expect(await res.json()).toEqual({ ok: true });
+    expect(w.delivered).toHaveLength(1);
+    const [turn] = w.delivered;
+    expect(turn).toMatchObject({
+      agentId: "agent-1",
+      sessionKey: viewerSessionKey("a1", "alice-sub"),
+      sessionTitle: "alice@example.com · Team dashboard",
+    });
+    expect(turn!.prompt).toContain("alice@example.com");
+    expect(turn!.prompt).toContain('"Team dashboard"');
+    expect(turn!.prompt).toContain("Message: Refresh the numbers.");
+    expect(JSON.stringify(securityLog.mock.calls)).not.toContain("Refresh");
+  });
+
+  it("refuses a prompt from someone not on the viewer list", async () => {
+    const { w, app } = world();
+    const res = await call(app, "/a/slug-a/prompt", { prompt: "Hi" }, { sid: "sid-bob" });
+    expect(res.status).toBe(403);
+    expect(w.delivered).toEqual([]);
+    expect(loggedEvents()).toEqual([
+      expect.objectContaining({
+        event: "artifact.viewer_prompt",
+        actor: "bob-sub",
+        decision: "deny",
+        reason: "not-a-viewer",
+      }),
+    ]);
+  });
+
+  it.each(["", "   ", "x".repeat(16_385)])(
+    "refuses an invalid prompt %#",
+    async (prompt) => {
+      const { w, app } = world();
+      const res = await call(app, "/a/slug-a/prompt", { prompt });
+      expect(await res.json()).toEqual({ ok: false, reason: "invalid-request" });
+      expect(w.delivered).toEqual([]);
+    },
+  );
+
+  it("tells the viewer when the agent is at its spend limit", async () => {
+    const { app } = world({ deliverOutcome: "spend-limit" });
+    const res = await call(app, "/a/slug-a/prompt", { prompt: "Go" });
+    expect(await res.json()).toEqual({ ok: false, reason: "spend-limit" });
+  });
+});
+
+describe("the share page relay", () => {
+  const page = (relay: boolean) =>
+    renderWrapper({
+      title: "Team dashboard",
+      brandName: "Platform",
+      contentUrl: "https://content.example.com/a/slug-a?v=1&t=tok",
+      slug: "slug-a",
+      version: 1,
+      downloadName: "dashboard.html",
+      relay,
+    });
+
+  it("relays only for a page that has one, to its own routes", () => {
+    expect(page(false)).not.toContain("/request");
+    const html = page(true);
+    expect(html).toContain('"/a/slug-a"');
+    expect(html).toContain("event.origin !== contentOrigin");
+    expect(html).toContain('credentials: "same-origin"');
+  });
+});
+
+describe("viewer session titles", () => {
+  it("names the viewer first and stays within the title limit", () => {
+    expect(viewerSessionTitle("a@b.c", "Dash")).toBe("a@b.c · Dash");
+    const long = viewerSessionTitle("a@b.c", "x".repeat(400));
+    expect(long).toHaveLength(200);
+    expect(long.startsWith("a@b.c · ")).toBe(true);
+    expect(long.endsWith("…")).toBe(true);
+  });
+});
+
+describe("delivering a viewer's prompt", () => {
+  type Sent = { prompt: string; opts: SendPromptOpts };
+
+  function fakeAcp(listed: { sessionId: string; threadTs: string }[]) {
+    const sent: Sent[] = [];
+    const turns: (() => void)[] = [];
+    const acp: AcpClient = {
+      listSessions: () =>
+        Promise.resolve(
+          listed.map((s) => ({
+            sessionId: s.sessionId,
+            platform: { threadTs: s.threadTs },
+          })),
+        ),
+      sendPrompt: (prompt, opts) => {
+        sent.push({ prompt: prompt as string, opts });
+        if (!("resumeSessionId" in opts)) {
+          listed.push({
+            sessionId: `s-${listed.length + 1}`,
+            threadTs: opts.platformMeta?.threadTs ?? "",
+          });
+          opts.onSession?.(`s-${listed.length}`);
+        }
+        return new Promise<string>((resolve) => turns.push(() => resolve("")));
+      },
+      steer: () => Promise.resolve("unsupported"),
+      triggerSession: () => Promise.reject(new Error("unused")),
+      turnStatus: () => Promise.resolve("unknown"),
+    };
+    return { acp, sent, finishTurns: () => turns.splice(0).forEach((f) => f()) };
+  }
+
+  function delivery(
+    acp: AcpClient,
+    opts: { hold?: "limit" | null; wakeFails?: boolean } = {},
+  ) {
+    const open: string[] = [];
+    let woke = 0;
+    const d = createViewerPromptDelivery({
+      makeAcpClient: () => acp,
+      ensureReady: () => {
+        woke += 1;
+        return opts.wakeFails
+          ? Promise.reject(new Error("no"))
+          : Promise.resolve();
+      },
+      spendHold: () => Promise.resolve(opts.hold ?? null),
+      attendance: {
+        openChannelTurn: (agentId) => {
+          open.push(agentId);
+          return () => open.splice(open.indexOf(agentId), 1);
+        },
+      },
+    });
+    return { d, open, woke: () => woke };
+  }
+
+  const turn = {
+    agentId: "agent-1",
+    sessionKey: "artifact:a1:alice-sub",
+    sessionTitle: "alice@example.com · Team dashboard",
+    prompt: "framed prompt",
+  };
+
+  afterEach(() => vi.useRealTimers());
+
+  /**
+   * TEST_SCENARIO: The first prompt opens the viewer's Session, named for the
+   * owner to read and keyed so it can be found again. The turn runs as an
+   * unattended channel turn, and the viewer gets their answer as soon as the
+   * Agent is awake, not when the turn ends.
+   */
+  it("opens a named session, unattended, and answers before the turn ends", async () => {
+    const { acp, sent, finishTurns } = fakeAcp([]);
+    const { d, open } = delivery(acp);
+    await expect(d.deliver(turn)).resolves.toBe("accepted");
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.opts).toMatchObject({
+      platformMeta: {
+        threadTs: "artifact:a1:alice-sub",
+        customTitle: "alice@example.com · Team dashboard",
+      },
+    });
+    expect(open).toEqual(["agent-1"]);
+    finishTurns();
+    await vi.waitFor(() => expect(open).toEqual([]));
+  });
+
+  /**
+   * TEST_SCENARIO: A viewer clicks twice in quick succession. The second
+   * prompt waits until the first has named its Session, then continues it,
+   * so one viewer never ends up with two Sessions for one page.
+   */
+  it("continues the viewer's session, even after a quick double click", async () => {
+    const { acp, sent, finishTurns } = fakeAcp([]);
+    const { d } = delivery(acp);
+    await d.deliver(turn);
+    await d.deliver({ ...turn, prompt: "second" });
+    await vi.waitFor(() => expect(sent).toHaveLength(2));
+    expect(sent[1]!.opts).toMatchObject({ resumeSessionId: "s-1" });
+    finishTurns();
+  });
+
+  it("starts fresh when the stored session cannot be loaded", async () => {
+    const { acp, sent } = fakeAcp([
+      { sessionId: "gone", threadTs: "artifact:a1:alice-sub" },
+    ]);
+    const original = acp.sendPrompt;
+    acp.sendPrompt = (prompt, opts) =>
+      "resumeSessionId" in opts
+        ? Promise.reject(new AcpSessionLoadError("gone"))
+        : original(prompt, opts);
+    const { d } = delivery(acp);
+    await d.deliver(turn);
+    await vi.waitFor(() => expect(sent).toHaveLength(1));
+    expect(sent[0]!.opts).toMatchObject({
+      platformMeta: { threadTs: "artifact:a1:alice-sub" },
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: An Agent at a spend limit would only have its model calls
+   * refused, so a viewer's prompt does not wake it; the viewer is told why.
+   */
+  it("neither wakes nor prompts an agent at a spend limit", async () => {
+    const { acp, sent } = fakeAcp([]);
+    const { d, woke } = delivery(acp, { hold: "limit" });
+    await expect(d.deliver(turn)).resolves.toBe("spend-limit");
+    expect(woke()).toBe(0);
+    expect(sent).toEqual([]);
+  });
+
+  it("reports an agent that does not wake", async () => {
+    const { acp, sent } = fakeAcp([]);
+    const { d } = delivery(acp, { wakeFails: true });
+    await expect(d.deliver(turn)).resolves.toBe("agent-unreachable");
+    expect(sent).toEqual([]);
+  });
+});

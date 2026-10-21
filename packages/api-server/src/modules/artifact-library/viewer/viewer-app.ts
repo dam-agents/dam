@@ -1,8 +1,19 @@
 import { Hono, type Context } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { match } from "ts-pattern";
 
+import { artifactApiRequestInputSchema } from "agent-runtime-api";
 import type { ArtifactKind } from "api-server-api";
-import type { ShareSessionCookie } from "../domain/share-session.js";
+import type {
+  ShareSession,
+  ShareSessionCookie,
+} from "../domain/share-session.js";
+import { viewerPromptInputSchema } from "../domain/viewer-bridge.js";
+import type {
+  ShareBridgeService,
+  ViewerCallKind,
+} from "../services/share-bridge-service.js";
+import type { ArtifactRow } from "../infrastructure/artifact-library-repository.js";
 import type { RenderTokenService } from "../services/render-token-service.js";
 import type { ShareAuthService } from "../services/share-auth-service.js";
 import type {
@@ -34,13 +45,19 @@ export interface ShareViewerAppDeps {
   brandName: string;
   uiBaseUrl: string;
   contentBaseUrl: string;
+  shareBaseUrl: string;
+  bridge: ShareBridgeService;
 }
 
 type Surface = "page" | "raw";
 
+const BRIDGE_BODY_MAX_BYTES = 2 * 1024 * 1024;
+const NOT_ALLOWED = { ok: false, reason: "not-allowed" } as const;
+
 export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
   const { viewer, auth, renderTokens } = deps;
   const contentBase = deps.contentBaseUrl.replace(/\/+$/, "");
+  const shareOrigin = new URL(deps.shareBaseUrl).origin;
   const app = new Hono();
 
   app.use("*", async (c, next) => {
@@ -112,6 +129,64 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
 
   const authorizePage = authorize("page");
 
+  async function bridgeCaller(
+    c: Context,
+    kind: ViewerCallKind,
+  ): Promise<
+    | { ok: true; artifact: ArtifactRow; session: ShareSession }
+    | { ok: false; response: Response }
+  > {
+    c.header("Cache-Control", PRIVATE_NO_STORE);
+    if (c.req.header("origin") !== shareOrigin)
+      return { ok: false, response: c.json(NOT_ALLOWED, 403) };
+    const resolution = await viewer.resolveArtifact(c.req.param("slug") ?? "");
+    if (resolution.state !== "restricted")
+      return { ok: false, response: c.json(NOT_ALLOWED, 404) };
+    const session = await readShareSession(c, auth, deps.sessionCookie);
+    if (!session)
+      return { ok: false, response: c.json(NOT_ALLOWED, 401) };
+    if ((await viewer.canView(resolution.artifact, session)) === "deny") {
+      deps.bridge.refuse(resolution.artifact, session, kind, "not-a-viewer");
+      return { ok: false, response: c.json(NOT_ALLOWED, 403) };
+    }
+    return { ok: true, artifact: resolution.artifact, session };
+  }
+
+  async function bridgeBody(c: Context): Promise<unknown> {
+    return c.req.json().catch(() => null);
+  }
+
+  const bridgeBodyLimit = bodyLimit({
+    maxSize: BRIDGE_BODY_MAX_BYTES,
+    onError: (c) => c.json({ ok: false, reason: "invalid-request" }, 413),
+  });
+
+  app.post("/a/:slug/request", bridgeBodyLimit, async (c) => {
+    const caller = await bridgeCaller(c, "request");
+    if (!caller.ok) return caller.response;
+    const input = artifactApiRequestInputSchema.safeParse(await bridgeBody(c));
+    if (!input.success)
+      return c.json({ ok: false, reason: "invalid-request" }, 400);
+    return c.json(
+      await deps.bridge.request(caller.artifact, caller.session, input.data),
+    );
+  });
+
+  app.post("/a/:slug/prompt", bridgeBodyLimit, async (c) => {
+    const caller = await bridgeCaller(c, "prompt");
+    if (!caller.ok) return caller.response;
+    const input = viewerPromptInputSchema.safeParse(await bridgeBody(c));
+    if (!input.success)
+      return c.json({ ok: false, reason: "invalid-request" }, 400);
+    return c.json(
+      await deps.bridge.prompt(
+        caller.artifact,
+        caller.session,
+        input.data.prompt,
+      ),
+    );
+  });
+
   app.get("/a/:slug", async (c) => {
     const slug = c.req.param("slug");
     const authorized = await authorizePage(
@@ -141,6 +216,7 @@ export function createShareViewerApp(deps: ShareViewerAppDeps): Hono {
         slug,
         version,
         downloadName: artifact.fileName,
+        relay: artifact.interactive && isRestricted(artifact),
       }),
     );
   });

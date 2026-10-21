@@ -22,7 +22,8 @@ export type SecuritySurface =
   | "scheduler"
   | "ext-authz"
   | "mcp"
-  | "ws";
+  | "ws"
+  | "share";
 
 export interface SecurityFields {
   category: SecurityCategory;

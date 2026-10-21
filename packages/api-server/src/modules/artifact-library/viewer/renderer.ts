@@ -1,4 +1,10 @@
-import type { ArtifactKind } from "api-server-api";
+import {
+  ARTIFACT_PROMPT_TYPE,
+  ARTIFACT_REQUEST_MAX_IN_FLIGHT,
+  ARTIFACT_REQUEST_TYPE,
+  ARTIFACT_RESPONSE_TYPE,
+  type ArtifactKind,
+} from "api-server-api";
 import { extensionOf } from "../domain/artifact-kind.js";
 import {
   ARTIFACT_BRIDGE_SHIM,
@@ -52,6 +58,69 @@ export interface WrapperInput {
   slug: string;
   version: number;
   downloadName: string;
+  relay?: boolean;
+}
+
+export const VIEWER_PROMPT_NOTICES = {
+  sent: "Sent to the agent. It answers on the page, not here.",
+  "spend-limit":
+    "The agent reached its spend limit for today, so it did not get this.",
+  "agent-unreachable": "The agent could not be reached. Try again in a moment.",
+  "not-allowed": "This page can no longer ask the agent.",
+  "invalid-request": "The page sent a prompt the agent cannot take.",
+} as const;
+
+function renderViewerRelay(slug: string, contentUrl: string): string {
+  const base = `/a/${encodeURIComponent(slug)}`;
+  return `<script>
+(() => {
+  const frame = document.querySelector("iframe");
+  const contentOrigin = new URL(${jsStringLiteral(contentUrl)}).origin;
+  const notices = ${JSON.stringify(VIEWER_PROMPT_NOTICES).replaceAll("<", "\\u003c")};
+  const status = document.getElementById("relay-status");
+  let inFlight = 0;
+  let hideTimer;
+  const show = (text) => {
+    status.textContent = text;
+    status.hidden = false;
+    clearTimeout(hideTimer);
+    hideTimer = setTimeout(() => { status.hidden = true; }, 6000);
+  };
+  const post = (path, body) =>
+    fetch(${jsStringLiteral(base)} + path, {
+      method: "POST",
+      credentials: "same-origin",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    }).then((res) => res.json()).catch(() => ({ ok: false, reason: "agent-unreachable" }));
+  window.addEventListener("message", (event) => {
+    const page = frame && frame.contentWindow;
+    if (!page || event.source !== page || event.origin !== contentOrigin) return;
+    const data = event.data;
+    if (!data || typeof data !== "object") return;
+    if (data.type === ${JSON.stringify(ARTIFACT_PROMPT_TYPE)}) {
+      void post("/prompt", { prompt: data.prompt }).then((result) => {
+        show(result && result.ok ? notices.sent : notices[result && result.reason] || notices["agent-unreachable"]);
+      });
+      return;
+    }
+    if (data.type !== ${JSON.stringify(ARTIFACT_REQUEST_TYPE)} || typeof data.id !== "string") return;
+    const reply = (result) => {
+      if (frame.contentWindow !== page) return;
+      page.postMessage(Object.assign({ type: ${JSON.stringify(ARTIFACT_RESPONSE_TYPE)}, id: data.id }, result), contentOrigin);
+    };
+    if (inFlight >= ${ARTIFACT_REQUEST_MAX_IN_FLIGHT}) {
+      reply({ ok: false, reason: "too-many-requests" });
+      return;
+    }
+    inFlight += 1;
+    const { method, path, body, contentType } = data;
+    void post("/request", { method, path, body, contentType })
+      .then((result) => reply(result && typeof result.ok === "boolean" ? result : { ok: false, reason: "agent-unreachable" }))
+      .finally(() => { inFlight -= 1; });
+  });
+})();
+</script>`;
 }
 
 export function renderWrapper(input: WrapperInput): string {
@@ -74,6 +143,7 @@ export function renderWrapper(input: WrapperInput): string {
   .banner a { color: inherit; text-decoration: none; border: 1px solid light-dark(#dde1e6, #393939); border-radius: 6px; padding: 3px 10px; }
   .banner a:hover { background: light-dark(#f2f4f8, #262626); }
   iframe { flex: 1; width: 100%; border: 0; background: #fff; }
+  .relay-status { position: fixed; left: 50%; bottom: 16px; transform: translateX(-50%); max-width: calc(100% - 32px); padding: 8px 14px; border-radius: 6px; background: #161616; color: #fafaf9; font: 13px/1.4 system-ui, sans-serif; box-shadow: 0 2px 8px rgba(0,0,0,.3); }
 </style>
 </head>
 <body>
@@ -84,6 +154,7 @@ export function renderWrapper(input: WrapperInput): string {
   <a href="/a/${escapeHtml(slug)}/raw?v=${version}&download=1" download="${escapeHtml(input.downloadName)}">Source</a>
 </div>
 <iframe sandbox="allow-scripts allow-same-origin allow-popups allow-popups-to-escape-sandbox" src="${escapeHtml(input.contentUrl)}" title="${escapeHtml(input.title)}"></iframe>
+${input.relay ? `<div id="relay-status" class="relay-status" role="status" hidden></div>\n${renderViewerRelay(slug, input.contentUrl)}` : ""}
 </body>
 </html>`;
 }
