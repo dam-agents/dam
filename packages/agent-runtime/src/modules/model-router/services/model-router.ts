@@ -95,9 +95,19 @@ export interface ModelRouterDeps {
   ) => Record<string, unknown>;
   extensions?: readonly RouterExtension[];
   onCall?: (record: ModelCallRecord) => void;
+  onCallStarted?: (session: string | null) => void;
+  onCallEnded?: (session: string | null, answered: boolean) => void;
+  onRefused?: (refusal: ModelRefusal) => void;
   fetchImpl?: typeof globalThis.fetch;
   port?: number;
   log: (msg: string) => void;
+}
+
+export interface ModelRefusal {
+  session: string | null;
+  status: number;
+  text: string;
+  permanent: boolean;
 }
 
 export interface ModelRouter {
@@ -259,19 +269,25 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       providers: deps.catalog.providers(),
       sessionModel: session ? (choiceOf(session)?.model ?? null) : null,
     });
-    if (!target.ok) return reply(res, target.status, dialect, target.reason);
+    if (!target.ok) {
+      deps.onRefused?.({
+        session,
+        status: target.status,
+        text: target.reason,
+        permanent: true,
+      });
+      return reply(res, target.status, dialect, target.reason);
+    }
     const { entry, publicName } = target;
     const layer = deps
       .envState()
       .providers.find((l) => l.id === entry.connectionId);
     const wire = layer ? upstreamWireOf(entry.template, layer.env) : null;
-    if (!wire)
-      return reply(
-        res,
-        503,
-        dialect,
-        `provider '${entry.alias}' has no endpoint in this pod's env`,
-      );
+    if (!wire) {
+      const text = `provider '${entry.alias}' has no endpoint in this pod's env`;
+      deps.onRefused?.({ session, status: 503, text, permanent: false });
+      return reply(res, 503, dialect, text);
+    }
     const stream = body.stream === true;
     const subagentEffort = handle?.parentSessionId
       ? choiceOf(handle.parentSessionId)?.subagentEffort
@@ -307,6 +323,7 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
     const record = (status: number, usage: ModelUsage | null): void => {
       if (recorded) return;
       recorded = true;
+      deps.onCallEnded?.(session, status < 400);
       if (!billed) return;
       const uncounted: UncountedReason | null =
         usage === null
@@ -357,6 +374,8 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       res.on("close", fn);
     };
 
+    deps.onCallStarted?.(session);
+    if (res.destroyed) return record(499, null);
     let upstream: Response;
     try {
       upstream = await doFetch(upstreamUrl(wire, dialect, path, search), {
@@ -384,6 +403,12 @@ export function createModelRouter(deps: ModelRouterDeps): ModelRouter {
       deps.log(
         `[model-router] ${harness} ${entry.alias}/${entry.upstreamId} (${dialect}) → ${upstream.status}: ${text.replace(/\s+/g, " ").slice(0, 400)}`,
       );
+      deps.onRefused?.({
+        session,
+        status: upstream.status,
+        text,
+        permanent: PERMANENT_STATUSES.has(upstream.status),
+      });
       if (upstream.headers.has(PLATFORM_REFUSAL_HEADER)) {
         res.writeHead(upstream.status, resHeaders);
         onceSent(() => record(upstream.status, null));

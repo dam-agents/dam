@@ -1840,6 +1840,18 @@ export async function bootstrap() {
       );
     },
   );
+  runtimeDelivery.registerEventOutcomeHandler(
+    "trigger",
+    async (event, input) => {
+      const { invocation } = event.payload as Partial<TriggerEventPayload>;
+      if (input.outcome !== "failed" || !invocation) return;
+      await invocationSetupFailure(
+        event.agentId,
+        "run",
+        input.detail ?? input.outcome,
+      );
+    },
+  );
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
   );

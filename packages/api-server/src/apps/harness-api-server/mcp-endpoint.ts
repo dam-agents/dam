@@ -7,6 +7,7 @@ import { createTRPCClient, httpBatchLink, TRPCClientError } from "@trpc/client";
 import {
   AGENT_HOME_DIR,
   AGENT_WORK_DIR,
+  RESULT_ACCEPTED_FIELD,
   SESSION_REF_HEADER,
   sessionTitleSchema,
   type AppRouter,
@@ -1340,6 +1341,7 @@ export function createMcpSession(
       return textResult(
         JSON.stringify({
           accepted: true,
+          [RESULT_ACCEPTED_FIELD]: true,
           next: "Your task is done. End your turn now, with no more text and no more tool calls.",
         }),
       );

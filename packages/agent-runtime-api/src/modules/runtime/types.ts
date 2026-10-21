@@ -144,6 +144,12 @@ export const contribution = z.discriminatedUnion("kind", [
 export type Contribution = z.infer<typeof contribution>;
 
 export const SESSION_REF_HEADER = "x-platform-session-ref";
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the field the api-server sets in the answer to
+ * an accepted report_result, which the target's runtime reads in the tool
+ * output to learn its run has a result.
+ */
+export const RESULT_ACCEPTED_FIELD = "invocationResultAccepted";
 export const PLATFORM_MCP_ENTRY_NAME = "platform-outbound";
 
 export const onceOriginMode = z.enum(["continue", "report"]);

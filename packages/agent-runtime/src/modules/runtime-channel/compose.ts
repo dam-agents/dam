@@ -41,6 +41,7 @@ import {
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
+import type { InvocationWatch } from "./services/invocation-watch.js";
 import { createRuntimeChannelService } from "./service.js";
 import {
   createHarnessConfigPlugin,
@@ -80,6 +81,7 @@ export interface ComposeRuntimeChannelOpts {
   stateBackend: DocumentStoreBackend;
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
+  invocationWatch: Pick<InvocationWatch, "watch">;
   subAgentSessions: SubAgentSessionStore;
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
@@ -167,6 +169,7 @@ export async function composeRuntimeChannel(
         ? { findSessionByRef: opts.findSessionByRef }
         : {}),
       ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
+      invocationWatch: opts.invocationWatch,
     }),
   );
   const spawnEnv = () => mergedSpawnEnv(opts.envReader);

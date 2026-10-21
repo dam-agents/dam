@@ -227,6 +227,7 @@ export {
   mergeMode,
   eventReportInput,
   SESSION_REF_HEADER,
+  RESULT_ACCEPTED_FIELD,
   PLATFORM_MCP_ENTRY_NAME,
   onceOrigin,
   onceOriginMode,

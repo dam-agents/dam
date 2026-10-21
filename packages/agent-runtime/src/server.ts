@@ -88,6 +88,8 @@ import {
   createModelDiscovery,
   createFilePlugin,
   createHarnessClient,
+  createInvocationWatch,
+  createSubAgentsRunning,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
   loadManifest,
@@ -258,6 +260,27 @@ if (envStore.ready()) void modelCatalog.refresh();
 modelCatalog.start();
 
 const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
+const subAgentsRunning = createSubAgentsRunning({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: platformAgentId,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+let sessionState: {
+  turnRunning: (sessionId: string) => boolean;
+  localWork: (sessionId: string) => boolean;
+  spawnedBy: (sessionId: string) => string[];
+} = { turnRunning: () => false, localWork: () => false, spawnedBy: () => [] };
+const invocationWatch = createInvocationWatch({
+  reporter: {
+    report: (input) =>
+      harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
+  },
+  turnRunning: (sessionId) => sessionState.turnRunning(sessionId),
+  localWork: (sessionId) => sessionState.localWork(sessionId),
+  subAgentsRunning: (sessionId) =>
+    subAgentsRunning(sessionState.spawnedBy(sessionId)),
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
 const modelCallExporter = createModelCallExporter({
   envState: () => envStore.state(),
   log: modelRouterLog,
@@ -295,6 +318,11 @@ const modelRouter = composeModelRouter({
   defaultHarness,
   port: config.PLATFORM_MODEL_ROUTER_PORT,
   onCall: (record) => modelCallExporter.record(record),
+  onCallStarted: (session) => invocationWatch.modelCallStarted(session),
+  onCallEnded: (session, answered) =>
+    invocationWatch.modelCallEnded(session, answered),
+  onRefused: ({ session, ...error }) =>
+    invocationWatch.modelError(session, error),
   log: modelRouterLog,
 });
 await modelRouter.listen();
@@ -498,6 +526,9 @@ const {
   onArtifactTouch: artifactTouchReporter.report,
   agentRequests: toolApprovalReporter,
   onToolActivity: changes.onToolActivity,
+  onTurnOutcome: (sessionId, end) =>
+    invocationWatch.turnOutcome(sessionId, end),
+  onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
   beforeSpawn: () =>
@@ -528,6 +559,13 @@ runningSessionsOf = (harness) =>
         acpRuntime.isSessionRunning(sessionId),
     )
     .map(([sessionId]) => sessionId);
+sessionState = {
+  turnRunning: (sessionId) =>
+    acpRuntime.isSessionRunning(sessionId) || acpRuntime.harnessBusy(sessionId),
+  localWork: (sessionId) =>
+    acpRuntime.toolCallsOpen(sessionId) || backgroundWork.hasWork(sessionId),
+  spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
+};
 
 const { service: processesService, keepMarks } = processes.start({
   runtimePid: process.pid,
@@ -569,6 +607,7 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
+  invocationWatch,
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
