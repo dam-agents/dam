@@ -63,6 +63,8 @@ const request = (extra: Partial<SpawnRequest> = {}): SpawnRequest => ({
   prompt: "run one cell",
   schema: { type: "object" },
   harness: "claude-code",
+  env: [],
+  skills: [],
   ...extra,
 });
 
@@ -120,7 +122,7 @@ describe("a driver script's spawn with no model", () => {
   test("of an image alone takes no default", async () => {
     const { ops, spawned, asked } = makeOps();
 
-    await ops.spawn({ prompt: "go", schema: {}, image: "acme/tool:1" });
+    await ops.spawn(request({ harness: undefined, image: "acme/tool:1" }));
 
     expect(asked).toEqual([]);
     expect(spawned[0]?.harnessConfig).toBeUndefined();
