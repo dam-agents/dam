@@ -1,8 +1,13 @@
-// TEST_OVERVIEW: In JanUI's sidebar a failed read is never shown as an answer. An Agent's list whose first page failed offers a retry instead of saying it has no Sessions, and an old pin whose first lookup failed offers a retry instead of vanishing; the pin stays stored either way. An Agent's list ends with its New session row whenever it lists no Session, whether it has none, all are pinned or the filter hides them.
+// TEST_OVERVIEW: In JanUI's sidebar a failed read is never shown as an answer. An Agent's list whose first page failed offers a retry instead of saying it has no Sessions, and an old pin whose first lookup failed offers a retry instead of vanishing; the pin stays stored either way. An Agent's list ends with its New session row once every page is read and it lists no Session, whether it has none, all are pinned or the filter hides them, and a filter that hid an unpinned one says so.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
+
+import {
+  defaultActivityFilters,
+  onlyChannelType,
+} from "../../modules/home/lib/activity-filter.js";
 
 vi.stubGlobal("window", new EventTarget());
 
@@ -16,7 +21,7 @@ const agentState = vi.hoisted(() => ({ answerable: true }));
 const rows = vi.hoisted(() => ({
   sessions: [] as unknown[],
   pinned: new Set<string>(),
-  channelTypes: new Set(["chat", "slack", "telegram", "schedule", "terminal"]),
+  filters: undefined as unknown,
 }));
 const pin = vi.hoisted(() => ({
   result: {
@@ -33,7 +38,7 @@ vi.mock("../../store.js", () => {
     drafts: {},
     pendingPermissions: [],
     get sidebarActivityFilters() {
-      return { channelTypes: rows.channelTypes, state: "any" };
+      return rows.filters;
     },
   };
   return { useStore: (select: (s: unknown) => unknown) => select(state) };
@@ -107,13 +112,7 @@ beforeEach(() => {
   agentState.answerable = true;
   rows.sessions = [];
   rows.pinned = new Set();
-  rows.channelTypes = new Set([
-    "chat",
-    "slack",
-    "telegram",
-    "schedule",
-    "terminal",
-  ]);
+  rows.filters = defaultActivityFilters();
   pin.result = {
     data: undefined,
     errorUpdatedAt: 1,
@@ -290,7 +289,7 @@ it("offers the New session row only for a list known to be empty", () => {
   expect(render()).not.toContain("data-new-session");
 });
 
-// TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, so it ends with the New session row an Agent with no Sessions at all gets, and the filter case says it hid them above that row.
+// TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, so it ends with the New session row an Agent with no Sessions at all gets. A filter that hid an unpinned Session says so above that row, also when the Sessions it left are all pinned.
 it("offers the New session row for a list whose Sessions are all pinned or filtered out", () => {
   const render = () =>
     renderToStaticMarkup(
@@ -317,8 +316,20 @@ it("offers the New session row for a list whose Sessions are all pinned or filte
   expect(pinned).not.toContain("No sessions match the filter.");
 
   rows.pinned = new Set();
-  rows.channelTypes = new Set(["slack"]);
+  rows.filters = onlyChannelType(defaultActivityFilters(), "slack");
   const filtered = render();
   expect(filtered).toContain("No sessions match the filter.");
   expect(filtered).toContain("data-new-session");
+
+  rows.pinned = new Set(["a:s1"]);
+  rows.sessions = [
+    { ...chat("s1"), type: SessionType.ChannelSlack },
+    chat("s2"),
+  ];
+  const pinnedAndFiltered = render();
+  expect(pinnedAndFiltered).toContain("No sessions match the filter.");
+  expect(pinnedAndFiltered).toContain("data-new-session");
+
+  rows.filters = defaultActivityFilters();
+  expect(render()).not.toContain("No sessions match the filter.");
 });
