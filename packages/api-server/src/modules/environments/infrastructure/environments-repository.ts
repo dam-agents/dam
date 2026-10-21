@@ -1,4 +1,4 @@
-import { and, eq, lt, sql, type Db, environments as table } from "db";
+import { and, eq, lt, type Db, environments as table } from "db";
 import type { EnvironmentRecord } from "../domain/environment.js";
 
 export interface EnvironmentsRepository {
@@ -20,8 +20,6 @@ export interface EnvironmentsRepository {
     >,
   ): Promise<void>;
   delete(agentId: string): Promise<void>;
-  // UNIT_BOUNDARY_DESCRIPTION: runs fn holding a lock of this owning agent's across every api-server replica, so two creates never both pass the cap: a Postgres advisory lock for one transaction.
-  forOwningAgent<T>(owningAgentId: string, fn: () => Promise<T>): Promise<T>;
 }
 
 type Row = typeof table.$inferSelect;
@@ -104,15 +102,6 @@ export function createEnvironmentsRepository(db: Db): EnvironmentsRepository {
 
     async delete(agentId) {
       await db.delete(table).where(eq(table.agentId, agentId));
-    },
-
-    forOwningAgent(owningAgentId, fn) {
-      return db.transaction(async (tx) => {
-        await tx.execute(
-          sql`SELECT pg_advisory_xact_lock(pg_catalog.hashtext(${`environments:${owningAgentId}`}))`,
-        );
-        return fn();
-      });
     },
   };
 }

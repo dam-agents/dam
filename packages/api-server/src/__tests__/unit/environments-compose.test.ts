@@ -58,7 +58,6 @@ function world(
       const i = rows.findIndex((r) => r.agentId === id);
       if (i >= 0) rows.splice(i, 1);
     },
-    forOwningAgent: async (_id, fn) => fn(),
   };
   const agentsFor = (owner: string) =>
     ({

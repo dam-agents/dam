@@ -23,7 +23,6 @@ const NOW = new Date("2026-10-19T12:00:00Z");
 
 function memoryRepo(): EnvironmentsRepository & { rows: EnvironmentRecord[] } {
   const rows: EnvironmentRecord[] = [];
-  let queue: Promise<unknown> = Promise.resolve();
   return {
     rows,
     insert: async (r) => void rows.push({ ...r }),
@@ -44,12 +43,6 @@ function memoryRepo(): EnvironmentsRepository & { rows: EnvironmentRecord[] } {
     delete: async (id) => {
       const i = rows.findIndex((r) => r.agentId === id);
       if (i >= 0) rows.splice(i, 1);
-    },
-    // UNIT_BOUNDARY_DESCRIPTION: a lock that runs one fn at a time, as the advisory lock does across replicas.
-    forOwningAgent: (_id, fn) => {
-      const run = queue.then(fn, fn);
-      queue = run.catch(() => undefined);
-      return run;
     },
   };
 }
@@ -189,7 +182,7 @@ describe("creating an Environment", () => {
     );
   });
 
-  // TEST_SCENARIO: two creates at once cannot both pass the cap: creates of one owning Agent run one at a time, so the second reads the first's row and is refused.
+  // TEST_SCENARIO: two creates at once cannot both pass the cap: each counts again once its row is written, and one that finds the agent over the cap deletes its Environment and is refused.
   it("holds the cap against creates that run at once", async () => {
     const { service } = setup({ max: 1 });
     const mine = service.forOwningAgent(vmOwning.id!);
@@ -200,8 +193,10 @@ describe("creating an Environment", () => {
       mine.create({ name: "b", endpoints }),
     ]);
 
-    expect(results.filter((r) => r.status === "fulfilled")).toHaveLength(1);
-    expect(results.filter((r) => r.status === "rejected")).toHaveLength(1);
+    expect(
+      results.filter((r) => r.status === "fulfilled").length,
+    ).toBeLessThanOrEqual(1);
+    expect((await mine.list()).length).toBeLessThanOrEqual(1);
   });
 
   // TEST_SCENARIO: a record that cannot be written leaves no Environment Agent behind.

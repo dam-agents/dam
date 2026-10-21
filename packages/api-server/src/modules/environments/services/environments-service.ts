@@ -193,6 +193,12 @@ export function createEnvironmentsService(
       };
       try {
         await deps.repo.insert(record);
+        const after = await deps.repo.listByOwningAgent(owningAgentId);
+        if (after.length > deps.config.maxPerAgent)
+          refuse(
+            `this agent already holds ${after.length - 1} Environments, the most it may; delete one first`,
+            "PRECONDITION_FAILED",
+          );
         if (input.start) await deps.startCommand(agent.id, input.start);
       } catch (err) {
         await deps.agents.delete(agent.id).catch(() => undefined);
@@ -217,11 +223,7 @@ export function createEnvironmentsService(
     }
 
     return {
-      create(input) {
-        return deps.repo.forOwningAgent(owningAgentId, () =>
-          createUnder(input),
-        );
-      },
+      create: createUnder,
 
       async list() {
         return views(await deps.repo.listByOwningAgent(owningAgentId));
