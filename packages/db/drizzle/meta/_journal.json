@@ -687,6 +687,13 @@
       "when": 1792499052930,
       "tag": "0097_harness_config_resets",
       "breakpoints": true
+    },
+    {
+      "idx": 98,
+      "version": "7",
+      "when": 1792568627019,
+      "tag": "0098_spend_agent_names",
+      "breakpoints": true
     }
   ]
 }

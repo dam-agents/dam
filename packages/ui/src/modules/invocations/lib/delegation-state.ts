@@ -13,15 +13,6 @@ export function delegationState(
   return agentState === "over_budget" ? "waiting" : "working";
 }
 
-export function firstLine(prompt: string): string {
-  return (
-    prompt
-      .split("\n")
-      .find((line) => line.trim() !== "")
-      ?.trim() ?? ""
-  );
-}
-
 export function flattenIds(nodes: readonly DelegationNode[]): string[] {
   return nodes.flatMap((node) => [node.id, ...flattenIds(node.children)]);
 }

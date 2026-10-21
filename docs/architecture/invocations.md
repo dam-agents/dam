@@ -58,6 +58,7 @@ Mode and settings are checked when the target applies them.
 The delegation view shows its user the same: each target's card names the model its recorded calls ran and, when the spawn named one, the requested model beside it, marked when the two differ, so a silent substitution is visible without opening the conversation.
 
 **A spawn carries a label.** It names the target, so the Driver's own vocabulary for the work — not an opaque identifier — is what shows up wherever agents are listed.
+The delegation card and the root Driver's spend rows show the label, else the first line of the prompt.
 The minted name keeps the target's prefix and its entropy either way, because that shape is how a target is still recognised as one after it is deleted and only spend rows remain ([observability](observability.md)).
 
 **The order is the workspace-event order.** The seed is queued with the create; the install is queued ahead of the task in the same delivery, so the harness opens its session on a workspace that is already seeded and bootstrapped ([runtime-delivery](runtime-delivery.md)).
@@ -115,6 +116,7 @@ It goes with the root Driver's other agent-scoped rows ([persistence](persistenc
 No age limit and no knob.
 Spend is not on the record; it stays in telemetry, keyed by the invocation id the target's gateway stamps ([observability](observability.md)).
 The root Driver reads it per sub-agent through its own cost read, which the delegation view's figures match ([metrics — agent-facing read](metrics.md#agent-facing-read)).
+The record also names each sub-agent row in the root Driver's spend by agent, by its label, else the first line of its prompt, after the target is gone ([spend limits](spend-limits.md#grouped-read)).
 
 **The target's conversation is kept on the root Driver's volume.** Before a reap, the platform reads the target's one session out of its pod and hands the frames to the root Driver's runtime, which keeps them with the root's own sessions, one file per target, and the record notes that it was captured.
 Copies are byte-capped per target, keeping the newest frames, and in total per root, evicting the oldest.

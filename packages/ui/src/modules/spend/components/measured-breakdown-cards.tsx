@@ -4,11 +4,11 @@ import type { ReactNode } from "react";
 import { Card } from "@/components/ui/card";
 import { SectionLabel } from "@/components/ui/section-label";
 
-import { useAgentsList } from "../../agents/api/queries.js";
-import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import { useAppConnections } from "../../connections/api/queries.js";
 import { SESSION_CATEGORY_LABELS } from "../../sessions/lib/session-category.js";
 import {
+  agentLabel,
+  agentNameOf,
   agentSources,
   connectionSources,
   modelSources,
@@ -16,7 +16,6 @@ import {
   sessionTypeSources,
 } from "../lib/breakdown-sources.js";
 import {
-  DELETED_AGENT_NAME,
   NO_SESSION,
   noSessionHelp,
   SPEND_BY_AGENT,
@@ -25,9 +24,10 @@ import {
   SPEND_BY_SESSION_TYPE,
   SUB_AGENTS,
   SUB_AGENTS_HELP,
-  thisAgent,
 } from "../lib/copy.js";
-import { type SpendRow, spendRows } from "../lib/spend-rows.js";
+import { spendRows } from "../lib/spend-rows.js";
+import { DriverSpendByAgent } from "./driver-spend-by-agent.js";
+import { SpendAgentAvatar } from "./spend-agent-avatar.js";
 import { SpendRowList } from "./spend-row-list.js";
 
 function BreakdownCard({
@@ -55,13 +55,6 @@ function describeSessionType(category: SessionType): {
   return { label: SESSION_CATEGORY_LABELS[category] };
 }
 
-function firstRow(rows: SpendRow[], key: string): SpendRow[] {
-  return [
-    ...rows.filter((row) => row.key === key),
-    ...rows.filter((row) => row.key !== key),
-  ];
-}
-
 interface Props {
   agentId?: string;
   breakdown: SpendBreakdown;
@@ -73,20 +66,8 @@ export function MeasuredBreakdownCards({
   breakdown,
   showPlanUse,
 }: Props) {
-  const agents = useAgentsList();
   const { data: connections = [] } = useAppConnections();
-  const agentOf = (agentId: string) => agents.find((a) => a.id === agentId);
-  const agentIcon = (agentId: string) => {
-    const agent = agentOf(agentId);
-    return (
-      <AgentAvatar
-        name={agent?.name ?? DELETED_AGENT_NAME}
-        avatar={agent?.avatar}
-        mood={agent ? "awake" : "disabled"}
-        size={16}
-      />
-    );
-  };
+  const payerNameOf = agentNameOf(breakdown.byAgent);
   const subAgentSpend = breakdown.byCallingAgent.some(
     (row) => row.agentId !== agentId && row.costMicros > 0,
   );
@@ -95,28 +76,23 @@ export function MeasuredBreakdownCards({
       {agentId === undefined && (
         <BreakdownCard title={SPEND_BY_AGENT}>
           <SpendRowList
-            rows={spendRows(
-              agentSources(breakdown.byAgent, (id) => agentOf(id)?.name),
-              showPlanUse,
+            rows={spendRows(agentSources(breakdown.byAgent), showPlanUse)}
+            iconOf={(id) => (
+              <SpendAgentAvatar
+                agentId={id}
+                name={agentLabel(payerNameOf(id))}
+              />
             )}
-            iconOf={agentIcon}
           />
         </BreakdownCard>
       )}
       {agentId !== undefined && subAgentSpend && (
         <BreakdownCard title={SPEND_BY_AGENT}>
-          <SpendRowList
-            rows={firstRow(
-              spendRows(
-                agentSources(breakdown.byCallingAgent, (id) => {
-                  const name = agentOf(id)?.name;
-                  return id === agentId ? thisAgent(name ?? id) : name;
-                }),
-                showPlanUse,
-              ),
-              agentId,
-            )}
-            iconOf={agentIcon}
+          <DriverSpendByAgent
+            key={`${agentId}:${breakdown.from}:${breakdown.to}`}
+            agentId={agentId}
+            breakdown={breakdown}
+            showPlanUse={showPlanUse}
           />
         </BreakdownCard>
       )}

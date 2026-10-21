@@ -1,10 +1,9 @@
 import {
   CONTINUED_FROM_LABEL_MAX,
   type DelegationNode,
+  delegationTitle,
   type PlatformContinuedFrom,
 } from "api-server-api";
-
-import { firstLine } from "./delegation-state.js";
 
 function resultText(node: DelegationNode): string {
   const { result, errorReason } = node;
@@ -15,7 +14,7 @@ function resultText(node: DelegationNode): string {
 }
 
 export function continuedFromOf(node: DelegationNode): PlatformContinuedFrom {
-  const label = (node.label?.trim() || firstLine(node.prompt) || node.id).slice(
+  const label = (delegationTitle(node) || node.id).slice(
     0,
     CONTINUED_FROM_LABEL_MAX,
   );

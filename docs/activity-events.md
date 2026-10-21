@@ -71,6 +71,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `StarterKitOnboarded` | `starter_kit_onboarded` | starter-kits |
 | `IdentityLinked` | _elsewhere_ | channels |
 | `AgentOutOfMemory` | `agent_oom` | agents |
+| `AgentResourceRemoved` | _elsewhere_ | agents |
 | `AvatarUnlocked` | _elsewhere_ | getting-started |
 | `GettingStartedReset` | _elsewhere_ | getting-started |
 

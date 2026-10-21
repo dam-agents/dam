@@ -10,6 +10,7 @@ import {
   spendSessionsInputSchema,
   spendSetLimitInputSchema,
   spendStatusInputSchema,
+  spendSubAgentsInputSchema,
   spendTurnsInputSchema,
 } from "./schemas.js";
 
@@ -33,6 +34,13 @@ export const spendRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.agentId);
       return ctx.spend.sessions(input);
+    }),
+
+  subAgents: readAgentProcedure
+    .input(spendSubAgentsInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.agentId);
+      return ctx.spend.subAgents(input);
     }),
 
   turns: readAgentProcedure
