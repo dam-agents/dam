@@ -17,6 +17,7 @@ const PROCESS_KIND_ORDER: readonly ProcessKind[] = [
   "turn",
   "harness-task",
   "detached",
+  "startup-item",
 ];
 
 const CONTAINER_ROLE_ORDER: readonly (ContainerRole | null)[] = [
@@ -41,7 +42,9 @@ export function groupProcesses(
   running: readonly ProcessRow[],
   alwaysOn: boolean,
 ): ProcessGroup[] {
-  const sorted = [...running].sort(byKindThenStart);
+  const sorted = running
+    .filter((row) => row.kind !== "startup-item")
+    .sort(byKindThenStart);
   const turn = sorted.filter((row) => row.kind === "turn");
   const background = sorted.filter((row) => row.kind !== "turn");
   const groups: ProcessGroup[] = alwaysOn

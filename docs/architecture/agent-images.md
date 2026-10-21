@@ -12,7 +12,7 @@ Sources live in [`packages/agents/`](../../packages/agents/): one directory per 
 ## One base, one image over it
 
 Every image is a Debian system-package base and directory trees packed onto it as layers, with no Dockerfile.
-The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, and `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake.
+The shared base ([`packages/agents/base/`](../../packages/agents/base/)) declares the common tools, system packages, entrypoint and environment as mise config, and holds what every image ships: the shared skills and their [Shipped-Skill Manifest](agent-skills.md), the working-dir seed, the default runtime manifest, dam-run, `platform-keep`, which [keeps](agent-processes.md#keeping-work) a long job running and the agent awake, and `platform-env` with its openrc service, the [Environment Link](environments.md#the-environment-link)'s helper.
 
 - **A harness** is mise config over the base — its tools and env — and a `rootfs/` of its files at their image paths.
   The default image carries all five.
@@ -108,7 +108,8 @@ Platform code a harness loads at runtime, such as Pi's provider extension, ships
   Selkies is installed into the base image from hash-pinned wheels, and streams only royalty-free codecs ([browser-panel](browser-panel.md)).
 - docker and k3s are baked in but not started.
   On a machine each is an openrc service in no runlevel: the agent starts it with `rc-service`, or adds it to the `default` runlevel to start it at every boot, and both keep their data under the home, the one path on a machine's disk that either can use.
-  A service gets only `PATH` and the gateway's proxy and CA variables of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
+  A service gets only `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF` of the environment openrc starts in, which the image's openrc config names, so no credential reaches a daemon.
+- The agent's own services, its [Startup Items](agent-processes.md#startup-items), are openrc user services of root in `~/.config/rc`, started at every boot, a new image included, by openrc's stock `user` service as `user.root`, one of the image's two services in the `default` runlevel, beside `platform-env`, which serves the Environment Link only on an Environment; OpenRC comes from Debian testing through an apt pin for them.
 - aube stands in for pnpm; npm stays for tools that call it.
   An agent's own `mise use -g`, `aube add -g` and `pip install --user` land in the home and last; `npm i -g` and a plain `pip install` install into the image: in a container they last until the agent restarts, on a machine until its image's root generation key changes ([vm storage](vm-storage.md#the-disk)).
   A plain `mise use -g <tool>` names `latest`, which an image's tool of that name already satisfies, so it installs nothing; `mise use -g <tool>@latest` or a version installs into the home, and a login shell then puts it ahead of the image's.
@@ -147,7 +148,7 @@ A hibernated, stopped or over-budget Agent moves at once and takes the image on 
 That wake costs nothing extra for the default image on the `vm` Backend: the [image cache](vm-image-cache.md) preloads and pins the harness images the install ships, which an older image no longer is.
 A Template on an image the cache does not preload is fetched on its first wake, as its old image would be on a node that lacks it.
 A running Agent waits for the [idle checker](agent-lifecycle.md#hibernate) to hibernate it.
-An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, a live terminal and kept background work ([what counts as activity](agent-lifecycle.md#hibernate)).
+An always-on Agent never hibernates, so it is restarted onto the new image once the idle checker's own signals agree it is idle: no open connection, no Invocation pin, no activity for an hour, and its pod reporting idle, which covers a running turn, a live terminal, kept background work and an open Environment Link ([what counts as activity](agent-lifecycle.md#hibernate)).
 The job re-reads each Agent before deciding, probes the pod after that read, and writes against that read's version, so a connection, a wake or an activity stamp in between makes the write conflict, and the Agent is decided again later.
 A prompt arriving in the seconds between the write and the pod's restart is the one window it cannot close.
 

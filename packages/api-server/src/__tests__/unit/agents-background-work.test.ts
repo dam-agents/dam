@@ -11,9 +11,10 @@ const HELD = {
     },
   ],
   keptProcesses: 1,
+  openLinks: 0,
 };
 
-const NOTHING_HELD = { sessions: [], keptProcesses: 0 };
+const NOTHING_HELD = { sessions: [], keptProcesses: 0, openLinks: 0 };
 
 describe("agents.backgroundWork read", () => {
   it("returns the pod-reported sets and kept process count for a running agent", async () => {

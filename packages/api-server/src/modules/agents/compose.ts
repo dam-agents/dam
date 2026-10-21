@@ -253,19 +253,24 @@ export function connectionGrantProvisioner(
  * owner's agents that holds none, when it is the only provider that agent's
  * default would grant: the agent predates every provider its harness runs
  * on. An agent whose default holds an older provider was detached on purpose
- * and is left without one. One agent failing does not keep the provider from the
- * rest.
+ * and is left without one, and an Environment never gets one: only its owner
+ * grants it a connection, in the app. One agent failing does not keep the
+ * provider from the rest.
  */
 export async function attachProviderToBareAgents(
   connections: Parameters<typeof connectionGrantProvisioner>[0] &
     Pick<ConnectionsService, "getAgentConnections" | "updateAgentConnections">,
   catalog: Pick<HarnessCatalog, "harnesses">,
-  agents: readonly { id: string; spec: Pick<InfraAgent["spec"], "harness"> }[],
+  agents: readonly {
+    id: string;
+    spec: Pick<InfraAgent["spec"], "harness" | "environmentOf">;
+  }[],
   connectionId: string,
 ): Promise<void> {
   const provisioner = connectionGrantProvisioner(connections, catalog);
   const failed: unknown[] = [];
   for (const agent of agents) {
+    if (agent.spec.environmentOf) continue;
     try {
       const { connections: grants } = await connections.getAgentConnections(
         agent.id,

@@ -99,7 +99,19 @@ spec:
           annotations:
             summary: A VM runner's cgroup kills every machine in its pod for one machine's memory.
             description: >-
-              The runner at {{ "{{ $labels.instance }}" }} runs in a cgroup whose memory.oom.group is 1, so the kernel takes the runner and every machine of that user down together when one of them runs out of memory; the machines come back one boot at a time instead of one machine restarting alone; the node's kubelet writes that setting, not the install.
+              The runner at {{ "{{ $labels.instance }}" }} runs in a cgroup whose memory.oom.group is 1, so the kernel takes the runner and every machine of that user down together when one of them runs out of memory; the machines come back one boot at a time instead of one machine restarting alone; the node's kubelet writes that setting and groups unless its singleProcessOOMKill is on, so that node's kubelet configuration needs singleProcessOOMKill: true for these runners.
+        # `== 1` drops an unread sample, so a runner that cannot say whether it
+        # groups would pass the alert above. This one keeps every series left
+        # out by both comparisons, and an unread sample is the only one.
+        - alert: VMRunnerOOMGroupUnknown
+          expr: platform_vm_runner_memory_oom_group unless (platform_vm_runner_memory_oom_group == 0 or platform_vm_runner_memory_oom_group == 1)
+          for: 10m
+          labels:
+            severity: warning
+          annotations:
+            summary: A VM runner cannot say whether its cgroup groups OOM kills.
+            description: >-
+              The runner at {{ "{{ $labels.instance }}" }} reports no reading of memory.oom.group, so nothing says whether one machine's memory would take every machine of its owner down; an unknown is not a pass for VMRunnerOOMGroupKills, which leaves it out. A runner has no reading while it has no cgroup to read, before its first sample, or while its cgroup holds no memory.oom.group to read.
         - alert: VMRunnerNodeLost
           expr: sum by (namespace) (platform_vm_runner_node_lost{namespace="{{ .Release.Namespace }}"}) > 0
           for: 5m

@@ -1,0 +1,10 @@
+# root's user services, the agent's own (~/.config/rc), started at every boot by
+# openrc's stock user service, as a login would start them; nobody logs in to a
+# machine. Their state lives in the image's XDG_RUNTIME_DIR (base.toml), so
+# `rc-service --user` from the agent's shell or the runtime finds them. After
+# docker and k3s, which one of them may use. A stop waits up to a minute for the
+# whole session, where openrc's default would cut it at five seconds; each
+# service still stops within its own `retry`.
+export XDG_RUNTIME_DIR=/tmp/platform-display
+rc_after="docker k3s"
+retry="TERM/60"

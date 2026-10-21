@@ -1,4 +1,4 @@
-import type { ProcessKind } from "agent-runtime-api";
+import { startupItemIdSchema, type ProcessKind } from "agent-runtime-api";
 import type { ReportedTask, RunningHarness } from "../../acp/index.js";
 import { procKey, type ProcSnapshot, type ScannedProcess } from "./snapshot.js";
 
@@ -17,6 +17,11 @@ export interface ProcessTree {
   shown: ScannedProcess | null;
   members: ScannedProcess[];
   task: ReportedTask | null;
+  startupItem?: string;
+}
+
+export function startupItemIdentity(id: string): string {
+  return `startup:${id}`;
 }
 
 export function taskIdentity(
@@ -73,8 +78,8 @@ export function platformOwnPids(
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: Sorts the pod's process table into the three
- * kinds the Processes panel lists, one tree per root. The platform's own
+ * UNIT_BOUNDARY_DESCRIPTION: Sorts the pod's process table into the kinds
+ * the Processes panel lists, one tree per root. The platform's own
  * processes are never listed: PID 1, agent-runtime and its ancestors, and
  * agent-runtime's direct children (the chat harnesses, the pod service, PTYs,
  * sshd). There is one chat harness per lease, and each is read the same way.
@@ -89,8 +94,11 @@ export function platformOwnPids(
  * Process is a child of the reaper an orphan is re-parented to: PID 1, or an ancestor of
  * agent-runtime acting as subreaper (catatonit when it is not PID 1). When
  * its root is only a forked copy of a tool shell, the row shows the command
- * below it. Work under an attached PTY or SSH shell is not listed until it
- * detaches.
+ * below it. Such a tree whose root is the supervise-daemon of one of the
+ * agent's own openrc services is a Startup Item instead, one row per service:
+ * the supervisor is the root, and the row shows the service's own command
+ * below it. Work under an attached PTY or SSH
+ * shell is not listed until it detaches.
  */
 export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
   const { processes } = input.snapshot;
@@ -195,6 +203,23 @@ export function classifyProcesses(input: ClassifyInput): ProcessTree[] {
     if (!ancestors.has(root.ppid)) continue;
     if (ancestors.has(root.pid) || root.pid === input.runtimePid) continue;
     const members = [root, ...descendantsOf(root)];
+    const startupItem = startupItemIdSchema.safeParse(root.startupItem).success
+      ? root.startupItem
+      : null;
+    if (startupItem) {
+      const item = members.find((m) => m.ppid === root.pid);
+      trees.push({
+        identity: startupItemIdentity(startupItem),
+        key: procKey(root),
+        kind: "startup-item",
+        root,
+        shown: item ?? root,
+        members,
+        task: null,
+        startupItem,
+      });
+      continue;
+    }
     let shown = root;
     for (
       let only = children.get(shown.pid);

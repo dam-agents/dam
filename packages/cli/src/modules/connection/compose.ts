@@ -9,6 +9,7 @@ import { buildGrantCommand } from "./commands/grant.js";
 import { buildListCommand } from "./commands/list.js";
 import { buildReauthCommand } from "./commands/reauth.js";
 import { buildRevokeCommand } from "./commands/revoke.js";
+import { buildScopeCommand } from "./commands/scope.js";
 import { buildTemplatesCommand } from "./commands/templates.js";
 import { buildUpdateCommand } from "./commands/update.js";
 import {
@@ -61,15 +62,16 @@ export function composeConnectionModule(
       browserOpener: opts.browserOpener,
     }),
   );
+  parent.addCommand(buildDisconnectCommand(agentScoped));
   parent.addCommand(
-    buildDisconnectCommand({
+    buildUpdateCommand({
       compatService: opts.compatService,
       configService: opts.configService,
       createConnectionService: createService,
     }),
   );
   parent.addCommand(
-    buildUpdateCommand({
+    buildScopeCommand({
       compatService: opts.compatService,
       configService: opts.configService,
       createConnectionService: createService,

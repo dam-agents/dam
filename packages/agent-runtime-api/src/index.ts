@@ -162,6 +162,7 @@ export type {
   ProcessNotice,
   ProcessOutput,
   ProcessRow,
+  StartupItem,
 } from "./modules/processes/types.js";
 export {
   finishedRowSchema,
@@ -173,6 +174,8 @@ export {
   processOutputSchema,
   processRowSchema,
   setKeepInputSchema,
+  startupItemIdSchema,
+  startupItemSchema,
 } from "./modules/processes/schemas.js";
 
 export type {

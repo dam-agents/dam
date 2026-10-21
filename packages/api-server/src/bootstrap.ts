@@ -24,6 +24,7 @@ import {
   ANN_STARTER_KIT,
   ANN_STARTER_KIT_ONBOARDED,
   INVOCATIONS_ACTIVE_KEY,
+  LAST_ACTIVITY_KEY,
   LABEL_OWNER,
 } from "./modules/agents/infrastructure/labels.js";
 import {
@@ -254,6 +255,12 @@ import {
   composeInvocationPinReconciler,
   listInvocationAgentIds,
 } from "./modules/invocations/index.js";
+import {
+  composeEnvironmentGate,
+  composeEnvironments,
+  createEgressIdentityResolver,
+  environmentNameLookup,
+} from "./modules/environments/index.js";
 import {
   composeApprovalsSystem,
   composeSpendLimitQuestions,
@@ -526,6 +533,26 @@ export async function bootstrap() {
       clientId: config.keycloakShareClientId,
     },
     shareBaseUrl: config.shareBaseUrl,
+  });
+  const environmentGate = composeEnvironmentGate({
+    db,
+    redis: sharedRedis,
+    urlTemplate: config.environmentsUrl,
+    keycloak: {
+      externalUrl: config.keycloakExternalUrl,
+      internalUrl: config.keycloakUrl,
+      realm: config.keycloakRealm,
+      clientId: config.keycloakEnvironmentsClientId,
+    },
+    ensureReady: (agentId) => agentsRepo.ensureReady(agentId),
+    stampActivity: (agentId) =>
+      agentsRepo.patchAnnotation(
+        agentId,
+        LAST_ACTIVITY_KEY,
+        new Date().toISOString(),
+      ),
+    namespace: config.namespace,
+    brandName: config.brand.name,
   });
   const shareCookie = shareSessionCookie(config.shareBaseUrl);
   const shareHostGate = createByLinkHostGate({
@@ -1468,14 +1495,11 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
-    identityResolver: {
-      resolve: async (agentId) => {
-        const rootId = await invocationDriverResolution.resolveRoot(agentId);
-        if (!rootId) return null;
-        const r = await agentsRepo.resolveIdentity(rootId);
-        return r ? { ownerSub: r.owner, agentId: r.agentId } : null;
-      },
-    },
+    identityResolver: createEgressIdentityResolver({
+      resolveRoot: (agentId) => invocationDriverResolution.resolveRoot(agentId),
+      identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
+      environmentName: environmentNameLookup(db),
+    }),
     ruleMatcher: createEgressRuleMatchAdapter(db),
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,
@@ -1599,7 +1623,32 @@ export async function bootstrap() {
   const artifactLibraryForSystem = (owner: string) =>
     artifactLibraryFor(owner, "system");
 
+  const environments = composeEnvironments({
+    db,
+    agentsFor: (owner) => harnessAgentsServiceFor(owner),
+    listAgents: async () =>
+      (await agentsRepo.list()).flatMap((a) =>
+        a.owner
+          ? [
+              {
+                id: a.id,
+                owner: a.owner,
+                environmentOf: a.spec.environmentOf,
+                createdAt: new Date(a.createdAt ?? 0),
+              },
+            ]
+          : [],
+      ),
+    runtimeMutator: runtimeDelivery.runtimeMutator,
+    config: {
+      urlTemplate: config.environmentsUrl,
+      maxPerAgent: config.environmentsMaxPerAgent,
+      expiryMaxDays: config.environmentExpiryMaxDays,
+    },
+  });
+
   const agentCleanupSources: AgentCleanupSource[] = [
+    environments.cleanupSource,
     {
       name: "egress-rules",
       listAgentIds: () => listEgressRuleAgentIds(db),
@@ -1905,6 +1954,9 @@ export async function bootstrap() {
     agentsFor: harnessAgentsServiceFor,
   });
   await periodicJobs.register("agent-sweep", 60_000, () => agentSweep.tick());
+  await periodicJobs.register("environment-expiry", 5 * 60_000, () =>
+    environments.sweepExpired(),
+  );
 
   const runtimeMigrationSwitch = createRuntimeMigrationSwitch({
     listAgents: () => agentsRepo.list(),
@@ -1995,6 +2047,7 @@ export async function bootstrap() {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    environmentsFor: environments.environmentsFor,
     secretStore,
     runtimeMutator: runtimeDelivery.runtimeMutator,
     contributionsProgress: contributionsProgressPort,
@@ -2039,6 +2092,7 @@ export async function bootstrap() {
     surfaceAttribution,
     slackOauthCallbackUrl,
     shareHostGate,
+    environmentGate,
     publicAgentPageService,
     gettingStarted,
     sidebarOrder,
@@ -2085,6 +2139,7 @@ export async function bootstrap() {
     harnessCatalog,
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
+    environmentsFor: environments.environmentsFor,
     connectionsServiceFor,
     caseStudySubmissions: caseStudies.submissions,
     caseStudyInspection: caseStudies.inspection,

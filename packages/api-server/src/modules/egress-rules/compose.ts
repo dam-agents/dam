@@ -109,8 +109,17 @@ export function createL7PromotionReconcile(
     return agents.flatMap((a) => {
       const id = a.metadata?.name;
       if (!id) return [];
-      const spec = (a.spec ?? {}) as { l7Hosts?: string[] };
-      return [{ agentId: id, current: spec.l7Hosts ?? [] }];
+      const spec = (a.spec ?? {}) as {
+        l7Hosts?: string[];
+        environmentOf?: string;
+      };
+      return [
+        {
+          agentId: id,
+          current: spec.l7Hosts ?? [],
+          ...(spec.environmentOf ? { environmentOf: spec.environmentOf } : {}),
+        },
+      ];
     });
   };
   return () => reconcileL7Promotions({ repo, listAgentL7State, l7Hosts, log });

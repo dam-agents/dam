@@ -4,6 +4,8 @@ import type {
   ConnectionCredentialUpdate,
   ConnectionTemplateView,
   ConnectionView,
+  GitHubAppInstallationProbe,
+  GitHubUserTokenProbe,
 } from "api-server-api";
 import type { Result } from "../../../result.js";
 import { trpcCall } from "../../shared/trpc/classify.js";
@@ -36,6 +38,20 @@ export interface ConnectionService {
     remove: readonly string[],
   ): Promise<ConnResult<readonly string[]>>;
   disconnect(id: string): Promise<ConnResult<void>>;
+  probeGitHubUserToken(id: string): Promise<ConnResult<GitHubUserTokenProbe>>;
+  probeGitHubApp(id: string): Promise<ConnResult<GitHubAppInstallationProbe>>;
+  updateGitHubUserTokenScope(input: {
+    id: string;
+    targetId?: number;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<ConnResult<void>>;
+  updateGitHubAppScope(input: {
+    id: string;
+    repositories?: string;
+    repositoryIds?: string;
+    permissions?: string;
+  }): Promise<ConnResult<void>>;
 }
 
 export function createConnectionService(deps: {
@@ -108,6 +124,30 @@ export function createConnectionService(deps: {
     async disconnect(id) {
       return trpcCall(async () => {
         await deps.trpc.connections.delete.mutate({ id });
+      });
+    },
+    async probeGitHubUserToken(id) {
+      return trpcCall(() =>
+        deps.trpc.connections.probeGitHubUserTokenForConnection.mutate({
+          connectionId: id,
+        }),
+      );
+    },
+    async probeGitHubApp(id) {
+      return trpcCall(() =>
+        deps.trpc.connections.probeGitHubAppInstallationForConnection.mutate({
+          connectionId: id,
+        }),
+      );
+    },
+    async updateGitHubUserTokenScope(input) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.updateGitHubUserTokenScope.mutate(input);
+      });
+    },
+    async updateGitHubAppScope(input) {
+      return trpcCall(async () => {
+        await deps.trpc.connections.updateGitHubAppScope.mutate(input);
       });
     },
   };

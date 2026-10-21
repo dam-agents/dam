@@ -61,6 +61,13 @@ export interface AgentSpecCR {
     value: string;
   }[];
   /**
+   * EnvironmentOf names the Agent that owns this one as an Environment: a
+   * sandbox that runs software for others to open, with no harness, on its
+   * owner's VM runner beside the owning Agent. Set at create, never changed;
+   * the guest reads it as PLATFORM_ENVIRONMENT_OF.
+   */
+  environmentOf?: string;
+  /**
    * GrantedConnectionIDs are the connection IDs granted to this agent.
    */
   grantedConnectionIds?: string[];

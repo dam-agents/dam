@@ -2,6 +2,7 @@
 {{- $appName := include "platform.keycloak.fullname" . }}
 {{- $uiUrl := include "platform.url.ui" . }}
 {{- $shareUrl := include "platform.url.share" . }}
+{{- $envSignIn := include "platform.url.environments" . | replace "{host}" "signin" }}
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -124,6 +125,27 @@ data:
             "post.logout.redirect.uris": {{ printf "%s/auth/login*" $shareUrl | quote }}
           }
         }
+        {{- if $envSignIn }},
+        {
+          "clientId": {{ .Values.keycloak.environmentsClientId | quote }},
+          "enabled": true,
+          "publicClient": true,
+          "standardFlowEnabled": true,
+          "directAccessGrantsEnabled": false,
+          "serviceAccountsEnabled": false,
+          "redirectUris": [
+            {{ printf "%s/.platform/callback" $envSignIn | quote }}
+          ],
+          "webOrigins": [
+            {{ $envSignIn | quote }}
+          ],
+          "protocol": "openid-connect",
+          "attributes": {
+            "pkce.code.challenge.method": "S256",
+            "post.logout.redirect.uris": {{ printf "%s/.platform/signed-out" $envSignIn | quote }}
+          }
+        }
+        {{- end }}
       ],
       {{- if or .Values.keycloak.requiredRole .Values.keycloak.inspectorRole .Values.keycloak.slackInstallerRole }}
       "roles": {

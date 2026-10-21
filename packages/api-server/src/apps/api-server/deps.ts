@@ -1,4 +1,6 @@
 import type { CoreV1Api } from "@kubernetes/client-node";
+import type { EnvironmentGate } from "../../modules/environments/index.js";
+import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 import type { Hono, MiddlewareHandler } from "hono";
 import type { Db } from "db";
 import type { SatellitesComposition } from "../../modules/satellites/index.js";
@@ -99,6 +101,7 @@ export interface ApiServerDeps {
   presetSeeder: PresetSeeder;
   trustedHosts: readonly string[];
   agentCleanupHooks: readonly AgentCleanupHook[];
+  environmentsFor: (owner: string) => EnvironmentsServiceImpl;
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
   outboxRepo: OutboxRepo;
@@ -137,6 +140,7 @@ export interface ApiServerDeps {
   surfaceAttribution: SurfaceAttribution;
   slackOauthCallbackUrl: string;
   shareHostGate: MiddlewareHandler;
+  environmentGate: EnvironmentGate;
   publicAgentPageService: PublicAgentPageService;
   gettingStarted: GettingStartedModule;
   sidebarOrder: SidebarOrderModule;

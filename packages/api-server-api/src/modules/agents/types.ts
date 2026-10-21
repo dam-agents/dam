@@ -180,6 +180,7 @@ export type AgentCreateInput = z.infer<typeof agentCreateInputSchema> & {
   id?: string;
   telemetryAttributionId?: string;
   noDefaultProvider?: boolean;
+  environmentOf?: string;
 };
 export type AgentUpdateInput = z.infer<typeof agentUpdateInputSchema>;
 
@@ -197,6 +198,8 @@ export interface SessionBackgroundWork {
 export interface AgentBackgroundWork {
   sessions: SessionBackgroundWork[];
   keptProcesses: number;
+  // UNIT_BOUNDARY_DESCRIPTION: Environment Links open on this machine, which hold it awake as kept work does.
+  openLinks: number;
 }
 
 export type UpgradeAgentError =
