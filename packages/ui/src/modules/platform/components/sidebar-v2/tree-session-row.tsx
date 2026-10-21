@@ -32,7 +32,7 @@ import { sessionTitleLabel } from "../../../sessions/lib/session-title.js";
 import { downloadTelemetryExport } from "../../../telemetry/api/download-export.js";
 import { activityTone, sessionContext } from "../../lib/sidebar-tree.js";
 import { ActivityDot } from "./activity-dot.js";
-import { TREE_AVATAR, TREE_LEADING } from "./add-row.js";
+import { TREE_LEADING } from "./add-row.js";
 
 type RowState = Omit<
   ComponentProps<typeof SessionRow>,
@@ -180,14 +180,18 @@ export function TreeSessionRow({
         }
         leading={
           withAgent ? (
-            <span className={cn(TREE_LEADING, "relative mt-0.5 self-start")}>
-              <AgentAvatar
-                name={withAgent.name}
-                avatar={withAgent.avatar}
-                size={TREE_AVATAR}
-                mood={avatarMood(withAgent.state, withAgent)}
-              />
-              <span className="absolute right-0 -bottom-1">{dot}</span>
+            <span
+              className={cn(TREE_LEADING, "relative items-start justify-start")}
+            >
+              <span className="relative -mt-0.5">
+                <AgentAvatar
+                  name={withAgent.name}
+                  avatar={withAgent.avatar}
+                  size={28}
+                  mood={avatarMood(withAgent.state, withAgent)}
+                />
+                <span className="absolute -right-0.5 -bottom-0.5">{dot}</span>
+              </span>
             </span>
           ) : (
             <span className={cn(TREE_LEADING, "h-5 items-center self-start")}>
