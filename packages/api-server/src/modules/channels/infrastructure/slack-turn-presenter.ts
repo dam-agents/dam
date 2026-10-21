@@ -57,6 +57,7 @@ export function createTurnPresenter(
 
   let finished = false;
   let statusDisabled = false;
+  let statusSent = false;
   let currentStatus = "";
   let lastSentAt = 0;
   let statusTimer: ReturnType<typeof setTimeout> | null = null;
@@ -64,6 +65,7 @@ export function createTurnPresenter(
 
   function sendStatus(status: string) {
     if (statusDisabled) return;
+    statusSent = true;
     gw.setStatus({ channel, threadTs, teamId, status }).catch((err) => {
       statusDisabled = true;
       getLogger().debug(
@@ -139,7 +141,7 @@ export function createTurnPresenter(
     async clearStatus() {
       finished = true;
       stopTimers();
-      if (statusDisabled || currentStatus === "") return;
+      if (!statusSent || currentStatus === "") return;
       currentStatus = "";
       try {
         await gw.setStatus({ channel, threadTs, teamId, status: "" });

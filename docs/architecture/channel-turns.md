@@ -84,6 +84,7 @@ A few observations the diagram glosses over:
   The status is the thread's agent session: `processing` while the turn works, `active` once it ends — after a Stop too, or Slack keeps the session working for up to an hour.
   A session status carries no text, so Slack shows its own working indicator in place of the presenter's words.
   When Slack refuses the session call, as an app without agent messaging can, the status falls back to the older assistant API, which shows the text but no Stop button.
+  A failed status write stops the status updates for the rest of the turn, but the turn still sends `active` when it ends.
   The status degrades to nothing where the workspace can't show it.
   Ambient turns present no status — nobody summoned the agent.
 - **The status carries Slack's Stop button, and it stops the turn.** Slack shows the button to apps subscribed to `agent_session_stopped`, and sends that event for the thread when someone presses it.
