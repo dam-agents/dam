@@ -51,6 +51,7 @@ const CLI_ENV = [
   "http_proxy",
   "https_proxy",
   "no_proxy",
+  "npm_config_registry",
 ];
 
 class Exited extends Error {}

@@ -40,6 +40,7 @@ function makeService(
   const secrets = new Map<string, Record<string, string>>();
   const probed: string[] = [];
   const svc = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
     platformProviderEnabled: async () => false,
     platformProviderKey: null,
     isOwnedAgent: async () => true,
@@ -49,6 +50,7 @@ function makeService(
       insert: async (c) => void rows.set(c.id, c),
       get: async (id) => rows.get(id) ?? null,
       listByOwner: async () => [...rows.values()],
+      listByOwnerOldestFirst: async () => [...rows.values()],
       mergeInputs: async (id, patch) => {
         const row = rows.get(id);
         if (row) rows.set(id, { ...row, inputs: { ...row.inputs, ...patch } });

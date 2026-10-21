@@ -557,6 +557,7 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
+  ConnectionProviderView,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,

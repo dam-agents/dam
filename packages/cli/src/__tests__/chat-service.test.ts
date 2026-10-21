@@ -24,6 +24,7 @@ function service(resolveTerminal: SessionsPort["resolveTerminal"]) {
           localCli: "1.0.0",
           serverVersion: "1.0.0",
           serverMinClient: undefined,
+          serverRecommendedClient: undefined,
         },
       }),
     },

@@ -84,9 +84,9 @@ If `dam auth login` still answers "already logged in" while other commands say t
 
 ### Check the version
 
-`dam version` shows this CLI's version and the server's.
-When the CLI is older than the server it warns and carries on; when it is older than the oldest version the server accepts, commands exit with code 3.
-Either way, update the CLI.
+`dam version --json` shows this CLI's version, the server's, the CLI version the server recommends, and the latest CLI on npm.
+When `upToDate` is `false`, update the CLI.
+When the CLI is older than the server recommends, commands warn and carry on; when it is older than the oldest version the server accepts, commands exit with code 3.
 
 ### Terms of Use
 
@@ -152,7 +152,8 @@ dam agent create my-agent --wait --json
 
 - `--template <id>` picks a template from `dam template list`; without it the deployment's default is used.
 - `--provider <connection>` picks the model provider connection; without it the user's preferred one is used.
-  If `dam connection list` shows no model provider, the user connects one first ([Secrets](#secrets)).
+  `dam connection list --providers` lists the model providers: the PROVIDER column names each one's alias and the harnesses that run on it, and marks the preferred one (`provider.preferred` in `--json`).
+  If it lists none, the user connects one first ([Secrets](#secrets)); `dam connection templates --providers` lists the kinds there are.
 - `--wait` returns once the agent is running, and stops early on an error or when there is no room to start it.
 
 ### Give an agent work

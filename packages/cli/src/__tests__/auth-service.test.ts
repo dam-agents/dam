@@ -81,6 +81,7 @@ function compatVerdict(
         localCli: "0.0.1",
         serverVersion: "1.0.0",
         serverMinClient,
+        serverRecommendedClient: "1.0.0",
       } as never);
     },
   };
