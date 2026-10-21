@@ -3,8 +3,9 @@
 # with the connection on stdin and stdout: the owning agent's public key on
 # the first line, then SSH, which sshd -i serves. Only the owning agent
 # reaches the link, so its key is trusted for this boot (a tmpfs file).
-# PLATFORM_LINK marks this process while sshd runs, so the agent-runtime
-# counts the link as busy: sshd-session writes its title over its own env.
+# socat starts this script with PLATFORM_LINK, which marks it while sshd runs
+# so the agent-runtime counts the link as busy; sshd-session writes its title
+# over its own environment, so the mark must be on this process.
 set -eu
 dir=/run/platform-env
 IFS= read -r key
@@ -13,4 +14,4 @@ case "$key" in
 	*) echo "platform-env: a link connection sent no key" >&2; exit 1 ;;
 esac
 grep -qxF "$key" "$dir/authorized_keys" 2>/dev/null || printf '%s\n' "$key" >> "$dir/authorized_keys"
-PLATFORM_LINK=1 /usr/sbin/sshd -i -e -f "$dir/sshd_config"
+/usr/sbin/sshd -i -e -f "$dir/sshd_config"

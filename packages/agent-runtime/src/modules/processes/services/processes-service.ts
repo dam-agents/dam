@@ -151,6 +151,16 @@ function withDescendants(
  * when a row appears, goes, or changes whether it keeps the agent awake, and
  * when a waiting restart appears or goes; CPU and memory changes are polled.
  */
+// UNIT_BOUNDARY_DESCRIPTION: how many Environment Links are open: a link is a tree of processes that inherit its mark (the proxy's shell, its subshells and socat), so only a marked process whose parent is not marked counts.
+export function countLinks(
+  processes: readonly Pick<ScannedProcess, "pid" | "ppid" | "link">[],
+): number {
+  const marked = new Set(
+    processes.filter((p) => p.link !== null).map((p) => p.pid),
+  );
+  return processes.filter((p) => p.link !== null && !marked.has(p.ppid)).length;
+}
+
 export function createProcessesService(
   deps: ProcessesServiceDeps,
 ): ProcessesService & KeepMarkSink {
@@ -293,7 +303,7 @@ export function createProcessesService(
     const keptDetached = inventory.running.filter(
       (row) => row.kind === "detached" && row.keepsAwake,
     ).length;
-    const openLinks = snapshot.processes.filter((p) => p.link !== null).length;
+    const openLinks = countLinks(snapshot.processes);
     keepAlive = marks.length > 0 || keptDetached > 0 || openLinks > 0;
     deps.keep.setKeptProcesses(keptDetached);
     deps.keep.setOpenLinks(openLinks);

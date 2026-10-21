@@ -223,8 +223,8 @@ describe("the process scan", () => {
 });
 
 describe("an open Environment Link", () => {
-  // TEST_SCENARIO: every process of an open Environment Link carries PLATFORM_LINK — the agent's SSH proxy and the Environment's sshd — and the scan publishes how many run, which makes the runtime busy whatever the keep decisions say, so neither machine hibernates during a long image import.
-  it("publishes how many link processes run", async () => {
+  // TEST_SCENARIO: an open Environment Link is a tree of processes that inherit PLATFORM_LINK — the agent's SSH proxy, its shell, subshells and socat — and the scan publishes one link for the tree, which makes the runtime busy whatever the keep decisions say, so neither machine hibernates during a long image import.
+  it("publishes one open link per marked tree", async () => {
     const links: number[] = [];
     let scanned: ScannedProcess[] = [
       { ...proc(500, 1, "ssh env-pr-42"), link: null },
@@ -232,6 +232,9 @@ describe("an open Environment Link", () => {
         ...proc(501, 500, "python3 platform-env proxy env-pr-42"),
         link: "env-pr-42",
       },
+      { ...proc(502, 501, "sh -c socat …"), link: "env-pr-42" },
+      { ...proc(503, 502, "sh -c socat …"), link: "env-pr-42" },
+      { ...proc(504, 503, "socat - VSOCK-CONNECT:2:6100"), link: "env-pr-42" },
     ];
     let now = 0;
     const processes = createProcessesService({

@@ -48,7 +48,7 @@ The link is one-way: only the Owning Agent's machine can open it, the runner joi
 - **No key to copy.** The proxy sends the agent's link key over the link before SSH starts, and the Environment trusts it until it next boots; only the Owning Agent reaches the link, so the link itself is the authorization.
 - **On the Environment**, an openrc service of the image, `platform-env`, runs `socat` on the vsock port, which hands each connection to a short script that trusts the key and runs `sshd -i`; it starts only on a machine that is an Environment.
   A shell gets the gateway and CA settings an openrc service gets, so `docker` and `k3s` pull as they do at boot.
-- **An open link keeps both machines awake.** Every process of a link, the proxy on the agent and `sshd` on the Environment, carries `PLATFORM_LINK`, and the runtime reads as busy while one runs.
+- **An open link keeps both machines awake.** The proxy on the agent and the script `socat` starts for the connection on the Environment carry `PLATFORM_LINK` from their start, and the runtime reads as busy while one runs; it reports one link per marked tree, not per process.
 
 The agent's side is a small Python helper, since Node has no vsock, and both sides carry the bytes with `socat`.
 

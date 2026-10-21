@@ -6,7 +6,7 @@
 description="Environment Link sshd"
 supervisor=supervise-daemon
 command=/usr/bin/socat
-command_args="VSOCK-LISTEN:6100,fork,reuseaddr EXEC:/usr/local/lib/platform-env/accept"
+command_args="VSOCK-LISTEN:6100,fork,reuseaddr EXEC:\"/usr/bin/env PLATFORM_LINK=1 /usr/local/lib/platform-env/accept\""
 output_log=/var/log/platform-env.log
 error_log=/var/log/platform-env.log
 
