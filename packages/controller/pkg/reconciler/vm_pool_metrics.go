@@ -6,7 +6,9 @@ import (
 	"log/slog"
 	"slices"
 	"strings"
+	"time"
 
+	appsv1 "k8s.io/api/apps/v1"
 	corev1 "k8s.io/api/core/v1"
 	apimeta "k8s.io/apimachinery/pkg/api/meta"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -22,6 +24,9 @@ const (
 	poolWarningPercent  = 75
 	poolCriticalPercent = 90
 )
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a runner must have had no available pod before its owner is named by an Event. It sits below the alert's fifteen minutes, so a stuck runner is announced by the time the alert fires, and above a normal Recreate roll — the old pod's termination grace plus the new pod's boot — so a roll announces nobody. The instant comes from the Deployment's Available condition, so a new leader counts the same outage the old one did.
+const runnerUnavailableGrace = 10 * time.Minute
 
 func poolLevel(used, limit int64) string {
 	switch {
@@ -40,12 +45,12 @@ type runnerCapacityState struct {
 	reason, message string
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the leader's half-minute look at every user's VM pool for operators. It sums what the runners' limits and claims promise, what their requests reserve and what the nodes that can run a runner hold; counts each user's runner at the level of its pool as the runner's own usage read says; records each runner pod whose resize the node deferred or refused, and each one sitting on a node the cluster has lost. No user is named in a metric: a user whose pool goes critical, or whose runner the node cannot fit or has lost, is named by a Warning Event on their vm Agents, and the second also by a condition on them. It returns the agents whose condition changed, for the caller to reconcile.
+// UNIT_BOUNDARY_DESCRIPTION: the leader's half-minute look at every user's VM pool for operators. It sums what the runners' limits and claims promise, what their requests reserve and what the nodes that can run a runner hold; counts each user's runner at the level of its pool as the runner's own usage read says; records each runner pod whose resize the node deferred or refused, each one sitting on a node the cluster has lost, and each runner Deployment that wants a pod and has none available. No user is named in a metric: a user whose pool goes critical, or whose runner the node cannot fit, has lost, or cannot start is named by a Warning Event on their vm Agents, and the second also by a condition on them. It returns the agents whose condition changed, for the caller to reconcile.
 func (r *AgentReconciler) PoolPass(ctx context.Context) []string {
 	if !r.config.VM.Enabled || r.config.VM.Runner.HostAddress != "" {
 		return nil
 	}
-	pool, pending, agents, lost, ok := r.vmPool(ctx)
+	pool, pending, agents, lost, unavailable, ok := r.vmPool(ctx)
 	if !ok {
 		return nil
 	}
@@ -53,16 +58,17 @@ func (r *AgentReconciler) PoolPass(ctx context.Context) []string {
 	if lost != nil {
 		r.noteNodeLost(ctx, lost, agents)
 	}
+	r.noteRunnerUnavailable(ctx, unavailable, agents)
 	return r.noteRunnerCapacity(ctx, pending, agents)
 }
 
-func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[string]runnerCapacityState, map[string][]*apiv1.Agent, map[string]string, bool) {
+func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[string]runnerCapacityState, map[string][]*apiv1.Agent, map[string]string, map[string]time.Time, bool) {
 	ns := r.config.Namespace
 	component := labels.SelectorFromSet(map[string]string{"app.kubernetes.io/component": vmRunnerComponent})
 	pods, err := r.client.CoreV1().Pods(ns).List(ctx, metav1.ListOptions{LabelSelector: component.String()})
 	if err != nil {
 		slog.WarnContext(ctx, "vm pool: listing runner pods", "error", err)
-		return telemetry.VMPool{}, nil, nil, nil, false
+		return telemetry.VMPool{}, nil, nil, nil, nil, false
 	}
 	pool := telemetry.VMPool{
 		Committed: map[string]int64{}, Reserved: map[string]int64{}, Capacity: map[string]int64{},
@@ -106,6 +112,28 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 	}
 	classes := r.poolClaims(ctx, component, &pool)
 	r.poolCapacity(ctx, classes, &pool)
+	// UNIT_BOUNDARY_DESCRIPTION: a runner Deployment is counted, not its pods: a pod admission refuses is never created, which is exactly the failure this signal exists for. A Deployment scaled to zero or going away is not a runner that should be up. A failed list says nothing about any runner, so this keeps the last count rather than reporting zero and clearing the alert, and leaves the notices alone: nil tells the caller it learned nothing.
+	var unavailable map[string]time.Time
+	deps, err := r.client.AppsV1().Deployments(ns).List(ctx, metav1.ListOptions{LabelSelector: component.String()})
+	if err != nil {
+		slog.WarnContext(ctx, "vm pool: listing runner deployments", "error", err)
+		pool.Unavailable = r.unavailableLast.Load()
+	} else {
+		unavailable = map[string]time.Time{}
+		for i := range deps.Items {
+			dep := &deps.Items[i]
+			if dep.DeletionTimestamp != nil || (dep.Spec.Replicas != nil && *dep.Spec.Replicas == 0) || dep.Status.AvailableReplicas > 0 {
+				continue
+			}
+			pool.Unavailable++
+			if since, ok := runnerUnavailableSince(dep); ok {
+				if owner := dep.Labels[envoyOwnerLabel]; owner != "" {
+					unavailable[owner] = since
+				}
+			}
+		}
+		r.unavailableLast.Store(pool.Unavailable)
+	}
 	agents := r.vmAgentsByOwner(ctx)
 	r.poolLevels.Range(func(key, _ any) bool {
 		if owner, _, _ := strings.Cut(key.(string), "/"); !owners[owner] {
@@ -119,11 +147,21 @@ func (r *AgentReconciler) vmPool(ctx context.Context) (telemetry.VMPool, map[str
 	if nodesKnown {
 		r.nodeLostLast.Store(lostPods)
 		pool.NodeLost = lostPods
-		return pool, pending, agents, lost, true
+		return pool, pending, agents, lost, unavailable, true
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: a node that cannot be read — a watch not yet synced, or a read that failed — says nothing about any runner, so this pass keeps the last count rather than clearing the alert, and leaves the notices alone rather than announcing the same loss again once the nodes are readable: nil tells the caller it learned nothing about any node.
 	pool.NodeLost = r.nodeLostLast.Load()
-	return pool, pending, agents, nil, true
+	return pool, pending, agents, nil, unavailable, true
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: when the Deployment last became unavailable, from its Available condition so the grace is judged across passes and a leader change. A Deployment whose status carries no such condition has no instant to measure, so its owner is counted but not yet named.
+func runnerUnavailableSince(dep *appsv1.Deployment) (time.Time, bool) {
+	for _, c := range dep.Status.Conditions {
+		if c.Type == appsv1.DeploymentAvailable && c.Status == corev1.ConditionFalse {
+			return c.LastTransitionTime.Time, true
+		}
+	}
+	return time.Time{}, false
 }
 
 func resizePending(pod *corev1.Pod) (runnerCapacityState, bool) {
@@ -288,6 +326,32 @@ func (r *AgentReconciler) noteRunnerCapacity(ctx context.Context, pending map[st
 		}
 	}
 	return changed
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: names the owner of each runner Deployment that has wanted a pod and had none available for the grace, by one Warning Event on each of their vm Agents when the state appears, which is how the shipped alert's events line finds them without an exported series naming a person. A runner that just lost its pod is not named, so a normal roll and a first boot announce nobody. A runner that heals is forgotten, so it is announced again if it fails again.
+func (r *AgentReconciler) noteRunnerUnavailable(ctx context.Context, unavailable map[string]time.Time, agents map[string][]*apiv1.Agent) {
+	if unavailable == nil {
+		return
+	}
+	r.runnerUnavailable.Range(func(key, _ any) bool {
+		if _, still := unavailable[key.(string)]; !still {
+			r.runnerUnavailable.Delete(key)
+		}
+		return true
+	})
+	now := time.Now()
+	for owner, since := range unavailable {
+		if now.Sub(since) < runnerUnavailableGrace {
+			continue
+		}
+		if _, had := r.runnerUnavailable.LoadOrStore(owner, true); had {
+			continue
+		}
+		msg := "this user's VM runner has had no available pod for ten minutes: their agents cannot start or reach their machines until it has one"
+		for _, a := range agents[owner] {
+			r.agentEvent(ctx, a, corev1.EventTypeWarning, "RunnerUnavailable", msg)
+		}
+	}
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: keeps each user's lost node for the next pass, and writes one Warning Event on each of their vm Agents when it appears or changes. Nothing deletes the runner pod: two VMMs on one claim cannot be recovered, so an operator brings the node back or fences it out of service. A node that stays lost is announced once, not on every pass.

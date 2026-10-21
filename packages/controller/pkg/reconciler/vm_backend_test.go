@@ -426,7 +426,7 @@ func readyRunnerDeployment() *appsv1.Deployment {
 			Namespace: "test-agents",
 			Labels:    map[string]string{"app.kubernetes.io/component": vmRunnerComponent, envoyOwnerLabel: testOwner},
 		},
-		Status: appsv1.DeploymentStatus{ReadyReplicas: 1},
+		Status: appsv1.DeploymentStatus{ReadyReplicas: 1, AvailableReplicas: 1},
 	}
 }
 

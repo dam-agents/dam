@@ -388,6 +388,19 @@ for ns in platform-a platform-b; do
 done
 [ "$(node_lost_expr platform-a)" != "$(node_lost_expr platform-b)" ] \
   || { echo "the node-loss alert reads the same in two installations, so one fires on the other's runners" >&2; exit 1; }
+# A runner that never starts exports nothing, so the runner-unavailable alert
+# reads the controller's count instead. It must outlast a normal roll — a
+# fifteen-minute wait over a five-minute window, so a brief recovery cannot
+# reset it — count one installation only, be critical, and end with the Event
+# that finds the owner.
+runner_unavailable=$(helm template platform . "${COMMON[@]}" "${MONITORING[@]}" --namespace platform-a \
+  --api-versions monitoring.coreos.com/v1/PrometheusRule \
+  --show-only templates/monitoring/prometheusrule.yaml |
+  yq -o=json '.spec.groups[].rules[] | select(.alert == "VMRunnerUnavailable")')
+{
+  jq -e '.for == "15m" and .labels.severity == "critical" and (.annotations.description | test("reason=RunnerUnavailable"))' <<<"$runner_unavailable" >/dev/null &&
+    jq -r '.expr' <<<"$runner_unavailable" | grep -Fq 'sum by (namespace) (max_over_time(platform_vm_runner_unavailable{namespace="platform-a"}[5m])) > 0'
+} || { echo "VMRunnerUnavailable does not outlast a roll, count one installation, stay critical, or name the Event that finds the owner: $runner_unavailable" >&2; exit 1; }
 # The controller watches nodes for readiness, so its read-only node role must
 # let it watch as well as list: with list alone the watch fails, and the cache
 # is then refreshed only when the reflector relists after a failed watch.
