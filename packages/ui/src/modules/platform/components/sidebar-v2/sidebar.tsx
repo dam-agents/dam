@@ -1,3 +1,5 @@
+import { useState } from "react";
+
 import { ResizeHandle } from "@/components/resize-handle";
 import { cn } from "@/lib/utils";
 
@@ -18,12 +20,15 @@ export function SidebarV2() {
     key: "platform-sidebar-v2-w",
     fallback: 325,
   });
+  const [resizing, setResizing] = useState(false);
 
   return (
     <>
       <nav
         className={cn(
           "relative hidden h-full shrink-0 flex-col border-r border-border bg-chrome md:flex",
+          "transition-[width] duration-200 ease-out motion-reduce:transition-none",
+          resizing && "transition-none",
           !expanded && "w-14 overflow-visible",
         )}
         style={expanded ? { width } : undefined}
@@ -45,7 +50,17 @@ export function SidebarV2() {
       </nav>
       {expanded && (
         <div className="hidden md:flex" data-testid="app-sidebar-resize">
-          <ResizeHandle side="left" onResize={resize} onDragEnd={endResize} />
+          <ResizeHandle
+            side="left"
+            onResize={(next) => {
+              setResizing(true);
+              resize(next);
+            }}
+            onDragEnd={() => {
+              setResizing(false);
+              endResize();
+            }}
+          />
         </div>
       )}
     </>

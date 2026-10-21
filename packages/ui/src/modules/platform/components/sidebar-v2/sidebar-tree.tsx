@@ -393,7 +393,7 @@ function AgentNode({
             aria-describedby={sublineId}
             data-testid="sidebar-agent-row"
             className={cn(
-              "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-2 text-left select-none",
+              "flex h-12 min-w-0 flex-1 items-center gap-2.5 rounded-lg pl-0 text-left select-none",
               agentFilter ? "pr-14" : "pr-16",
               "group-hover/agent:pr-[88px] group-has-[:focus-visible]/agent:pr-[88px] group-has-[[data-state=open]]/agent:pr-[88px] [@media(hover:none)]:pr-[88px]",
               FOCUS_RING,
@@ -476,7 +476,7 @@ function SettingsFooter({ onNavigate }: { onNavigate?: () => void }) {
   const settingsOpen = useStore((s) => s.view === "settings");
   const navigateToSettings = useStore((s) => s.navigateToSettings);
   return (
-    <div className="shrink-0 border-t border-border p-2">
+    <div className="shrink-0 px-2 pb-2">
       <NavRow
         icon={Settings}
         label="Settings"
