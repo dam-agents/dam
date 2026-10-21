@@ -161,14 +161,18 @@ describe("provider key recheck", () => {
 
   // TEST_SCENARIO: a provider with no stored check, such as Bedrock whose template has no model-list check, says its key is not checked.
   it("says a key with no check is not checked", () => {
-    state.items = new Map([["bedrock", { id: "c3", conn: { templateId: "bedrock" } }]]);
+    state.items = new Map([
+      ["bedrock", { id: "c3", conn: { templateId: "bedrock" } }],
+    ]);
     const row = rowOf(render(), "Edit AWS Bedrock");
     expect(row).toContain("Key not checked");
   });
 
   // TEST_SCENARIO: a provider whose template has no key check, such as Bedrock, gets no Recheck button of its own, since a recheck could never change its row.
   it("offers no recheck when no connected provider has a key check", () => {
-    state.items = new Map([["bedrock", { id: "c3", conn: { templateId: "bedrock" } }]]);
+    state.items = new Map([
+      ["bedrock", { id: "c3", conn: { templateId: "bedrock" } }],
+    ]);
     expect(render()).not.toContain("Recheck");
   });
 
