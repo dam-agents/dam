@@ -258,6 +258,7 @@ import {
 import {
   composeEnvironmentGate,
   composeEnvironments,
+  createEgressIdentityResolver,
   environmentNameLookup,
 } from "./modules/environments/index.js";
 import {
@@ -1482,7 +1483,6 @@ export async function bootstrap() {
       `ws://${podBaseUrl(agentId, config.namespace)}/api/acp`,
   });
 
-  const environmentNameOf = environmentNameLookup(db);
   const objectStoreAgentUrl = config.objectStorageAgentEndpoint
     ? new URL(config.objectStorageAgentEndpoint)
     : null;
@@ -1494,22 +1494,11 @@ export async function bootstrap() {
   } = composeApprovalsSystem({
     db,
     bus: redisBus,
-    identityResolver: {
-      resolve: async (agentId) => {
-        const rootId = await invocationDriverResolution.resolveRoot(agentId);
-        if (!rootId) return null;
-        const r = await agentsRepo.resolveIdentity(rootId);
-        if (!r) return null;
-        if (!r.environmentOf) return { ownerSub: r.owner, agentId: r.agentId };
-        const owning = await agentsRepo.resolveIdentity(r.environmentOf);
-        if (!owning || owning.owner !== r.owner) return null;
-        return {
-          ownerSub: owning.owner,
-          agentId: owning.agentId,
-          environment: (await environmentNameOf(r.agentId)) ?? r.agentId,
-        };
-      },
-    },
+    identityResolver: createEgressIdentityResolver({
+      resolveRoot: (agentId) => invocationDriverResolution.resolveRoot(agentId),
+      identityOf: (agentId) => agentsRepo.resolveIdentity(agentId),
+      environmentName: environmentNameLookup(db),
+    }),
     ruleMatcher: createEgressRuleMatchAdapter(db),
     providerScopes: createProviderEgressScopes(db),
     attendance: turnAttendance,

@@ -11,3 +11,4 @@ export {
   type EnvironmentGate,
 } from "./gate/environment-gate.js";
 export { composeEnvironmentGate, environmentNameLookup } from "./compose.js";
+export { createEgressIdentityResolver } from "./services/egress-identity.js";

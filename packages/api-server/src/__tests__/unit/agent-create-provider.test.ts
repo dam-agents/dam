@@ -434,7 +434,11 @@ describe("the default provider's fit", () => {
 describe("attachProviderToBareAgents", () => {
   const attach = async (owned: Connection[], connectionId: string) => {
     const { connections } = setup(owned);
-    const grants: Record<string, string[]> = { bare: [], held: [owned[0]!.id] };
+    const grants: Record<string, string[]> = {
+      bare: [],
+      held: [owned[0]!.id],
+      environment: [],
+    };
     const granted: string[] = [];
     const deps = {
       ...connections,
@@ -451,7 +455,11 @@ describe("attachProviderToBareAgents", () => {
         granted.push(agentId);
       },
     } as unknown as Parameters<typeof attachProviderToBareAgents>[0];
-    const agents = ["bare", "held"].map((id) => ({ id, spec: {} }));
+    const agents = [
+      { id: "bare", spec: {} },
+      { id: "held", spec: {} },
+      { id: "environment", spec: { environmentOf: "bare" } },
+    ];
     await attachProviderToBareAgents(
       deps,
       { harnesses: [] },
@@ -465,7 +473,8 @@ describe("attachProviderToBareAgents", () => {
   /** TEST_SCENARIO: A user's first agent is created before they connect a
    * provider, so it holds none. Connecting one gives it to that agent, so its
    * first message has a model key; an agent that already holds a provider is
-   * left as it is. */
+   * left as it is, and an Environment, which holds none either, never gets
+   * the owner's provider. */
   it("gives the owner's first provider to agents that hold none", async () => {
     expect(await attach([old], "old")).toEqual(["bare"]);
   });

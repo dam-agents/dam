@@ -1,6 +1,6 @@
 # Credential gateway
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -29,10 +29,11 @@ On the wire:
 Whatever chain forwards it, the gateway pod's own egress NetworkPolicy bounds where the dial may land — public addresses plus the platform pods and private ranges it names — so no approved name can resolve into the cluster or the metadata endpoint ([security-and-credentials](security-and-credentials.md#hitl-ext_authz)).
 
 **L7 promotion.** An egress rule that narrows a host by path, method, or port is invisible to the L4 catch-all (it sees only SNI), so the rule's host must be *promoted* onto a TLS-terminating chain to be enforceable over HTTPS.
-The promotion signal is the Agent resource's `l7Hosts` spec list — per-agent intent, exactly like connection grants: promoting a host on one agent rolls only that agent's gateway, never a sibling's.
+The promotion signal is the Agent resource's `l7Hosts` spec list — per-agent intent, exactly like connection grants: promoting a host on one agent rolls only that agent's gateway, never a sibling's; an [Environment](environments.md#network-access) is the one exception, and carries its Owning Agent's list.
 Promoted hosts get an uncredentialed L7 chain (gate sees method/path; nothing is injected) and extend the leaf certificate's SAN list.
 
 `l7Hosts` is a pure projection of the agent's active rules: the api-server recomputes it from the rule set after every create, edit, and revoke and writes it wholesale, so a host is demoted (dropped from interception) as soon as its last narrowing rule is gone.
+An Environment's list is projected from its Owning Agent's rules by the five-minute reconcile only, so a new Environment, or a rule its Owning Agent just narrowed, is inspected there within five minutes.
 A roll follows any change to that set and nothing else, so the projection ships in the contract package: clients predict an interruption with the server's own rule, not the rule's shape.
 Connection-derived rules are excluded — their host is already TLS-terminated by the connection's own credential chain.
 Because each entry is interpolated into the gateway's Envoy bootstrap and cert SANs, the CRD constrains list items to DNS hostnames, so a rule host cannot inject config into the owner's gateway.

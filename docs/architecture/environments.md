@@ -57,10 +57,10 @@ The agent's side is a small Python helper, since Node has no vsock, and both sid
 An Environment runs the app its agent built, which reaches registries, mirrors and models, and it runs untrusted code for visitors, so it never carries the Owning Agent's credentials.
 
 - **Egress follows the Owning Agent's rules.** The egress gate resolves an Environment to its Owning Agent, of the same owner, and decides by the Owning Agent's rules: a host the agent may reach, the Environment may reach; a host denied stays denied.
-  The hosts the Owning Agent's path-scoped rules promote to inspection are inspected on the Environment's gateway too, so those rules hold there.
+  The hosts the Owning Agent's path-scoped rules promote to inspection are inspected on the Environment's gateway too, within five minutes of a new Environment or a newly narrowed rule, so those rules hold there.
 - **A new host** files one approval as the Owning Agent's, which names the Environment it came from, on the owner's Home; the verdict becomes the Owning Agent's rule, for the agent and all its Environments.
-- **Connections.** Only the owner, signed in to the app, grants or removes a connection on one Environment, for example one model connection for a nested platform; an API key is refused, so the Owning Agent cannot pass its own connections on.
-  Inside, the app sees only the placeholder, as an agent does, and spend on it counts against the owner's limits under the Environment, which pays for its own calls.
+- **Connections.** An Environment holds none: granting the owner's connections on one (for example a model for a nested platform) is not built yet, because a granted connection's rules would be written under the Environment while its egress is decided under the Owning Agent.
+  An API key is refused for a grant on an Environment, so the Owning Agent cannot pass its own connections on, and a newly connected provider is never given to one.
 
 ## Addresses
 
