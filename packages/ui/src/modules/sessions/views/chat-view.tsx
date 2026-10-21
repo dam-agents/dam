@@ -108,6 +108,7 @@ import { ProcessesPanel } from "../../processes/components/processes-panel.js";
 import { useProcessesEnabled } from "../../processes/hooks/use-processes-enabled.js";
 import { useProcessesLiveUpdates } from "../../processes/hooks/use-processes-live-updates.js";
 import { useRunningProcesses } from "../../processes/hooks/use-running-processes.js";
+import { processesBadgeTone } from "../../processes/lib/process-summary.js";
 import { ProviderSettingsModal } from "../../providers/components/provider-settings-modal.js";
 import { useTurnSpend } from "../../spend/api/queries.js";
 import { KitUpdateBar } from "../../starter-kits/components/kit-update-bar.js";
@@ -1274,6 +1275,7 @@ export function ChatView() {
               processes: {
                 count: runningProcesses.running,
                 label: `Processes, ${String(runningProcesses.running)} running`,
+                tone: processesBadgeTone(runningProcesses),
               },
             }),
           }}

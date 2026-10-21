@@ -49,7 +49,7 @@ const APP_TABS: ReadonlySet<SidePanelTab> = new Set([
 export interface SidePanelBadge {
   count: number;
   label: string;
-  tone?: "warning";
+  tone?: "warning" | "neutral";
 }
 
 export interface SidePanelTabProps {
@@ -101,7 +101,11 @@ export function SidePanelTabButtons({
                 data-testid={`side-panel-badge-${tab}`}
                 className={cn(
                   RAIL_BADGE,
-                  shown.tone === "warning" ? "bg-warning" : "bg-accent",
+                  shown.tone === "warning"
+                    ? "bg-warning"
+                    : shown.tone === "neutral"
+                      ? "bg-muted-foreground"
+                      : "bg-accent",
                 )}
               >
                 {shown.count > 9 ? "9+" : shown.count}
@@ -134,11 +138,13 @@ export function SidePanelTabButtons({
                 className={cn(
                   "absolute flex items-center justify-center rounded-full border-0 font-bold text-white",
                   rail
-                    ? "top-2 right-1.5 h-[18px] min-w-[18px] px-1 text-[11px]"
+                    ? "top-2 right-[3px] h-[18px] min-w-[18px] px-1 text-[11px]"
                     : "-top-1 -right-1 h-4 min-w-4 px-1 text-[10px]",
                   shown.tone === "warning"
                     ? "bg-warning hover:bg-warning"
-                    : "bg-accent hover:bg-accent",
+                    : shown.tone === "neutral"
+                      ? "bg-muted-foreground hover:bg-muted-foreground"
+                      : "bg-accent hover:bg-accent",
                 )}
               >
                 {shown.count > 9 ? "9+" : shown.count}
