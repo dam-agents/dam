@@ -2158,6 +2158,7 @@ export async function bootstrap() {
     agentsRepo,
     templatesRepo,
     harnessCatalog,
+    firePair,
     artifactLibraryFor,
     agentsServiceFor: harnessAgentsServiceFor,
     environmentsFor: environments.environmentsFor,
