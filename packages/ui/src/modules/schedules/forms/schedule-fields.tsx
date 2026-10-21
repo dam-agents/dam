@@ -554,6 +554,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
+    storedModel || fallback?.model || null,
   );
   if (!routed)
     return (
@@ -661,7 +662,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
             agentId={agentId}
             carried={carried}
             capability={capability}
-            model={modelValue || null}
+            model={modelValue || fallback?.model || null}
             settings={settingsValue ?? {}}
             defaults={defaults}
             modelChoices={sameSideGroups(

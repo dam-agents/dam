@@ -20,8 +20,14 @@ interface Props {
   onStep: (agentId: string, step: -1 | 1) => void;
   onSelect: () => void;
   actions: ReactNode;
+  actionCount: 2 | 3;
   children?: ReactNode;
 }
+
+const ACTIONS_PADDING = {
+  2: { shown: "pr-[60px]", hover: "group-hover/agent:pr-[60px]" },
+  3: { shown: "pr-[86px]", hover: "group-hover/agent:pr-[86px]" },
+} as const;
 
 export function SidebarAgentRow({
   agent,
@@ -34,6 +40,7 @@ export function SidebarAgentRow({
   onStep,
   onSelect,
   actions,
+  actionCount,
   children,
 }: Props) {
   const mood = avatarMood(agent.state, agent);
@@ -60,8 +67,10 @@ export function SidebarAgentRow({
           aria-keyshortcuts="Alt+ArrowUp Alt+ArrowDown"
           data-testid="sidebar-agent-row"
           className={cn(
-            "flex h-[34px] min-w-0 flex-1 cursor-pointer items-center gap-2.5 rounded-lg pr-2 pl-2.5 text-left select-none",
-            selected ? "pr-[60px]" : "group-hover/agent:pr-[60px]",
+            "flex h-9 min-w-0 flex-1 cursor-pointer items-center gap-3 rounded-lg pr-2 pl-3 text-left select-none",
+            selected
+              ? ACTIONS_PADDING[actionCount].shown
+              : ACTIONS_PADDING[actionCount].hover,
             open
               ? "text-foreground"
               : mood !== "awake"
@@ -72,7 +81,7 @@ export function SidebarAgentRow({
           <AgentAvatar
             name={agent.name}
             avatar={agent.avatar}
-            size={20}
+            size={24}
             mood={mood}
             className="shrink-0"
           />
@@ -87,8 +96,8 @@ export function SidebarAgentRow({
               <span
                 aria-hidden
                 className={cn(
-                  "flex size-4 shrink-0 items-center justify-center group-hover/agent:hidden",
-                  selected && "hidden",
+                  "flex size-4 shrink-0 items-center justify-center",
+                  !selected && "group-hover/agent:hidden",
                 )}
               >
                 <span className="size-2 rounded-full bg-accent" />

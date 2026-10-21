@@ -1,6 +1,6 @@
 # Connections
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -83,7 +83,9 @@ A provider Connection's env lands in a per-provider layer the Model Router reads
 Credentials carry their own lifecycle.
 A stored one can be **updated in place** — the injected value, the client secret, the GitHub App private key, or the storage key pair, whichever the auth mode holds.
 The minting modes validate by using the secret, at create and on every rotation alike, so an unusable one fails before anything is persisted; a storage key pair is proven the same way, by a request to its endpoint, and a rotation the endpoint refuses leaves the working pair in place.
-A model provider's key is proven where the provider offers a check, but a provider that does not answer leaves the key unchecked.
+A model provider's key is proven where the provider offers a check.
+A provider that cannot say leaves the key unverified; a provider with no check (Bob, Bedrock) leaves it unchecked.
+The result of that check and its time are kept on the Connection, since a key that worked when it was saved can be revoked or expire later; the owner can recheck the keys of all their provider Connections at once, server-side, the built-in platform provider excepted, which replaces each result, and a key the provider refuses then reads as refused until it is replaced.
 A rotation rewrites the credential and its SDS — or, for a key pair, the credentials file the gateway signs with — onto the same per-Connection Secret; nothing else moves — identity, contributions and every agent grant are preserved, and since the live value is read gateway-side, no Agent-spec patch or pod roll is needed.
 A static key pair has no expiry and no horizon: it reads active until it is rotated or the Connection is removed.
 An **OAuth** credential is re-acquired, not pasted: re-running login and consent on the same Connection lands fresh tokens on the same Secret and asks for the template's current scopes, so a scope list that grew since create takes effect then.
@@ -178,6 +180,7 @@ When an Agent holds two or more, the platform stops contributing `GH_TOKEN` for 
 The Agent switches with `gh auth switch`, and `git` follows the active account through gh's credential helper, so both identities work from one shell.
 The account active on delivery is the grant the user marked **preferred** on the Agent — chosen from the Agent's connections panel, at most one per group: a GitHub host is one group, and an Agent's storage Connections form another (below) — or, absent a choice, the earliest grant, which is the account the Agent already acted as.
 Every state push re-asserts that default, so a switch the Agent made itself lasts until the next push.
+Ordering, the default and the account names are one rule for every kind of Connection with a default account; a kind says only how its Connections group and how a name is spelled for its tool, and the connections panel offers every group's choice in one callout.
 The commit identity git uses follows that default too: the active account's name and email when it has one — an account that signed in with a token or as an App has none — and switching with gh changes which account authenticates, not whom the commits name.
 Because the env is gone, the platform states gh's availability explicitly in that case, and the runtime's own GitHub client reads the active token from the same file.
 The Agent learns all of this from a skill every agent image ships, `platform-github`: how to list its accounts, how to switch or act as one for a single command, and what the gateway's refusal means.

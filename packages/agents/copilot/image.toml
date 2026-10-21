@@ -1,0 +1,16 @@
+# The npm package is a loader that runs the native binary of its
+# platform-specific optional dependency. That binary unpacks its app into
+# $XDG_CACHE_HOME/copilot on its first start, about 200 MB, which would land
+# in every agent's home; the postinstall unpacks it once into the tools layer,
+# and the launch scripts name it with COPILOT_CLI_DIST_DIR.
+[tools]
+"npm:@github/copilot" = { version = "1.0.96", postinstall = "d=\"$MISE_TOOL_INSTALL_PATH/node_modules/@github/copilot\" && XDG_CACHE_HOME=\"$d/.unpack\" COPILOT_OFFLINE=true COPILOT_AUTO_UPDATE=false \"$MISE_TOOL_INSTALL_PATH/node_modules/.bin/copilot\" --version >/dev/null && mv \"$d\"/.unpack/copilot/pkg/*/* \"$d/dist\" && rm -rf \"$d/.unpack\"" }
+
+[oci.env]
+PLATFORM_HARNESS = "copilot"
+# No GitHub login, telemetry, web tools, GitHub MCP server or update check:
+# every model call goes to the Model Router, and the image pins the CLI.
+COPILOT_OFFLINE = "true"
+COPILOT_AUTO_UPDATE = "false"
+# The platform instructions, as a symlink to /etc/AGENTS.md.
+COPILOT_CUSTOM_INSTRUCTIONS_DIRS = "/etc/copilot"

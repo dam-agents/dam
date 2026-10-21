@@ -7,6 +7,8 @@ import { MobileMenuButton } from "./mobile-menu-button.js";
 
 const TITLES: Partial<Record<View, string>> = {
   settings: "Settings",
+  artifacts: "Artifacts",
+  "starter-kits": "Starter kits",
   "starter-kit": "Starter kits",
   "sandbox-home": "Configure agent",
 };

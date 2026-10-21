@@ -68,12 +68,15 @@ type TelegramPendingMessage = {
   text: string;
   author: TelegramInboundMessage["author"];
   thread: ThreadLike;
+  ambient: boolean;
 };
 
 export interface TelegramConversationsPort {
-  findAgentByConversation(
-    conversationId: string,
-  ): Promise<{ agentId: string; authorizedBy: string } | null>;
+  findAgentByConversation(conversationId: string): Promise<{
+    agentId: string;
+    authorizedBy: string;
+    ambient: boolean;
+  } | null>;
   bind(
     conversationId: string,
     agentId: string,
@@ -81,6 +84,7 @@ export interface TelegramConversationsPort {
   ): Promise<"bound" | "conflict">;
   listByAgent(agentId: string): Promise<string[]>;
   unbind(conversationId: string): Promise<void>;
+  setAmbient(conversationId: string, ambient: boolean): Promise<void>;
 }
 
 export interface ChannelConversation {
@@ -153,17 +157,32 @@ async function fetchTelegramChatTitle(
   }
 }
 
-async function fetchTelegramBotUsername(
+interface TelegramBotIdentity {
+  id: string;
+  username: string | null;
+  readsAllGroupMessages: boolean;
+}
+
+async function fetchTelegramBotIdentity(
   botToken: string,
-): Promise<string | null> {
+): Promise<TelegramBotIdentity | null> {
   try {
     const res = await fetch(`https://api.telegram.org/bot${botToken}/getMe`);
     if (!res.ok) return null;
     const data = (await res.json()) as {
       ok: boolean;
-      result?: { username?: string };
+      result?: {
+        id: number;
+        username?: string;
+        can_read_all_group_messages?: boolean;
+      };
     };
-    return data.ok ? (data.result?.username ?? null) : null;
+    if (!data.ok || !data.result) return null;
+    return {
+      id: String(data.result.id),
+      username: data.result.username ?? null,
+      readsAllGroupMessages: data.result.can_read_all_group_messages ?? false,
+    };
   } catch {
     return null;
   }
@@ -172,6 +191,10 @@ async function fetchTelegramBotUsername(
 export const TELEGRAM_COMMANDS = [
   { command: "bind", description: "Connect this chat to one of your agents" },
   { command: "unbind", description: "Disconnect this chat from its agent" },
+  {
+    command: "ambient",
+    description: "Show or switch whether the agent reads every message",
+  },
 ];
 
 async function publishTelegramCommands(botToken: string): Promise<void> {
@@ -202,7 +225,6 @@ export interface ThreadLike {
   id: string;
   isDM: boolean;
   post(message: string | CardElement | { markdown: string }): Promise<unknown>;
-  subscribe(): Promise<unknown>;
 }
 
 export interface TelegramInboundMessage {
@@ -229,16 +251,19 @@ function isCommand(
   );
 }
 
-export const COMMAND_PATTERN = /^\/(?:bind|unbind|start)(?:@\S+)?(?:\s|$)/;
+const EVERY_MESSAGE = /^/;
 
 export function createTelegramMessageHandler(deps: {
   conversations: TelegramConversationsPort;
   isChatAdmin: (chatId: string, userId: string) => Promise<boolean>;
+  canReadGroupMessages: (chatId: string) => Promise<boolean>;
   decodeChatId: (threadId: string) => string;
   fetchChatTitle: (chatId: string) => Promise<string>;
   oauthConfig: KeycloakOAuthConfig;
   pendingOAuthFlows: TtlStore<TelegramOAuthPending>;
   isTermsAccepted: (sub: string) => Promise<boolean>;
+  ownerOf: (agentId: string) => Promise<string | null>;
+  emit: (event: DomainEvent) => void;
   spendHold?: ChannelSpendHold;
   uiBaseUrl: string;
   brandName: string;
@@ -248,12 +273,13 @@ export function createTelegramMessageHandler(deps: {
     thread: ThreadLike,
     text: string,
     author: TelegramInboundMessage["author"],
+    ambient: boolean,
   ) => void;
 }) {
   async function denyNonAdmin(
     thread: ThreadLike,
     telegramUserId: string,
-    action: "bind" | "unbind",
+    action: "bind" | "unbind" | "ambient",
   ): Promise<boolean> {
     if (thread.isDM) return false;
     const isAdmin = await deps.isChatAdmin(
@@ -321,6 +347,7 @@ export function createTelegramMessageHandler(deps: {
       await thread.post("This chat isn't connected to an agent.");
       return;
     }
+    const ownerSub = await deps.ownerOf(binding.agentId);
     await deps.conversations.unbind(chat);
     securityLog("info", "channel.chat_unbound", {
       category: "authz-list",
@@ -331,13 +358,82 @@ export function createTelegramMessageHandler(deps: {
       result: "success",
       detail: { conversationId: chat, byTelegramUserId: telegramUserId },
     });
+    if (ownerSub)
+      deps.emit({
+        type: EventType.TelegramChatUnbound,
+        ownerSub,
+        agentId: binding.agentId,
+      });
     await thread.post("Chat disconnected. Send `/bind` to connect it again.");
+  }
+
+  async function handleAmbient(
+    thread: ThreadLike,
+    telegramUserId: string,
+    argument: string | undefined,
+  ) {
+    if (thread.isDM) {
+      await thread.post(
+        "In a direct chat every message reaches the agent, so there is no ambient mode to switch.",
+      );
+      return;
+    }
+    const chat = telegramChatOf(thread.id);
+    const binding = await deps.conversations.findAgentByConversation(chat);
+    if (!binding) {
+      await thread.post("This chat isn't connected to an agent.");
+      return;
+    }
+    if (argument !== "on" && argument !== "off") {
+      await thread.post(
+        `Ambient mode is ${
+          binding.ambient
+            ? "on — the agent reads every message here and may chime in without being mentioned"
+            : "off — the agent only answers messages that mention it or reply to it"
+        }. Send \`/ambient on\` or \`/ambient off\` to change it.`,
+      );
+      return;
+    }
+    if (await denyNonAdmin(thread, telegramUserId, "ambient")) return;
+
+    const enable = argument === "on";
+    if (enable === binding.ambient) {
+      await thread.post(`Ambient mode is already ${argument}.`);
+      return;
+    }
+    await deps.conversations.setAmbient(chat, enable);
+    securityLog("info", "channel.ambient_toggled", {
+      category: "authz-list",
+      actor: null,
+      actorKind: "external",
+      surface: "telegram",
+      agentId: binding.agentId,
+      result: "success",
+      detail: { conversationId: chat, telegramUserId, ambient: enable },
+    });
+    if (!enable) {
+      await thread.post(
+        "Ambient mode turned off — the agent now only answers messages that mention it or reply to it.",
+      );
+      return;
+    }
+    const privacyNote = (await deps.canReadGroupMessages(
+      deps.decodeChatId(thread.id),
+    ))
+      ? ""
+      : " Heads-up: this bot has Group Privacy on, so Telegram only shows it commands and replies to its own messages. Turn Group Privacy off in @BotFather and add the bot to this group again, or make the bot an admin here.";
+    const termsNote = (await deps.isTermsAccepted(binding.authorizedBy))
+      ? ""
+      : ` Heads-up: the person who connected this chat hasn't accepted the Terms of Use at ${deps.uiBaseUrl} yet, so the agent stays silent until they do.`;
+    await thread.post(
+      `Ambient mode turned on — the agent now reads every message in this chat and may chime in without being mentioned when it can clearly help. It still answers mentions and replies as usual; send \`/ambient off\` to make it answer only those again.${privacyNote}${termsNote}`,
+    );
   }
 
   return async function handleMessage(
     thread: ThreadLike,
     message: TelegramInboundMessage,
-    subscribe: boolean,
+    addressed: boolean,
   ) {
     if (message.author.isMe) return;
     const text = message.text.trim();
@@ -353,10 +449,23 @@ export function createTelegramMessageHandler(deps: {
       return;
     }
 
+    if (isCommand(text, "/ambient", self)) {
+      await handleAmbient(
+        thread,
+        message.author.userId,
+        text.split(/\s+/)[1]?.toLowerCase(),
+      );
+      return;
+    }
+
+    const ambient = !addressed && !thread.isDM;
+    if (text === "") return;
+
     const binding = await deps.conversations.findAgentByConversation(
       telegramChatOf(thread.id),
     );
     if (!binding) {
+      if (ambient) return;
       securityLog("warn", "channel.inbound.unauthorized", {
         category: "channel",
         actor: null,
@@ -377,6 +486,7 @@ export function createTelegramMessageHandler(deps: {
       }
       return;
     }
+    if (ambient && !binding.ambient) return;
 
     if (!(await deps.isTermsAccepted(binding.authorizedBy))) {
       if (thread.isDM) {
@@ -388,6 +498,7 @@ export function createTelegramMessageHandler(deps: {
     }
     const held = await deps.spendHold?.(binding.agentId);
     if (held) {
+      if (ambient) return;
       await thread.post({
         markdown: spendHoldUserCopy(
           held,
@@ -398,8 +509,7 @@ export function createTelegramMessageHandler(deps: {
       });
       return;
     }
-    if (subscribe) await thread.subscribe();
-    deps.relay(binding.agentId, thread, message.text, message.author);
+    deps.relay(binding.agentId, thread, message.text, message.author, ambient);
   };
 }
 
@@ -410,23 +520,24 @@ export function createTelegramChat(deps: {
   handleMessage: (
     thread: ThreadLike,
     message: TelegramInboundMessage,
-    subscribe: boolean,
+    addressed: boolean,
   ) => Promise<void>;
 }): Chat {
   const chat = new Chat({
     userName: "platform",
     adapters: { telegram: deps.adapter },
     state: deps.state,
+    concurrency: { strategy: "concurrent", maxConcurrent: 1 },
     ...(deps.logLevel ? { logger: deps.logLevel } : {}),
   });
 
   const dispatch = async (
     thread: ThreadLike,
     message: TelegramInboundMessage,
-    subscribe: boolean,
+    addressed: boolean,
   ) => {
     try {
-      await deps.handleMessage(thread, message, subscribe);
+      await deps.handleMessage(thread, message, addressed);
     } catch (err) {
       getLogger().warn(
         { threadId: thread.id, error: String(err) },
@@ -438,10 +549,10 @@ export function createTelegramChat(deps: {
   chat.onDirectMessage((thread, message) => dispatch(thread, message, true));
   chat.onNewMention((thread, message) => dispatch(thread, message, true));
   chat.onSubscribedMessage((thread, message) =>
-    dispatch(thread, message, false),
+    dispatch(thread, message, message.isMention === true),
   );
-  chat.onNewMessage(COMMAND_PATTERN, (thread, message) =>
-    dispatch(thread, message, true),
+  chat.onNewMessage(EVERY_MESSAGE, (thread, message) =>
+    dispatch(thread, message, false),
   );
   chat.onSlashCommand(async (event) => {
     const channel = event.channel;
@@ -449,7 +560,6 @@ export function createTelegramChat(deps: {
       id: channel.id,
       isDM: event.adapter.isDM?.(channel.id) ?? channel.isDM,
       post: (message) => channel.post(message),
-      subscribe: () => deps.state.subscribe(channel.id),
     };
     await dispatch(
       thread,
@@ -486,6 +596,7 @@ export function createTelegramWorker(deps: {
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
+  ownerOf: (agentId: string) => Promise<string | null>;
   settleMs?: number;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
@@ -514,9 +625,30 @@ export function createTelegramWorker(deps: {
   ): ReturnType<typeof runTelegramTurn> {
     return inBackgroundSpan(
       "channel.turn",
-      { "platform.channel": "telegram", "platform.channel.ambient": false },
+      {
+        "platform.channel": "telegram",
+        "platform.channel.ambient": args[2].every((m) => m.ambient),
+      },
       () => runTelegramTurn(...args),
     );
+  }
+
+  function groupContext(
+    author: TelegramInboundMessage["author"],
+    messages: TelegramPendingMessage[],
+  ): string {
+    const from = `${author.fullName} (@${author.userName}, id=${author.userId})`;
+    if (messages.every((m) => m.ambient)) {
+      return [
+        `This is a group conversation, and you are reading along: ${messages.length > 1 ? "these messages were" : `this message from ${from} was`} not addressed to you — nobody mentioned you or replied to you.`,
+        "A message that calls you by your name is addressed to you: answer it as you would a mention.",
+        "Otherwise chime in only when you can clearly help — answer a question you know the answer to, pick up a task someone described, or flag a clear mistake.",
+        `If in doubt, stay silent by calling \`${OUTBOUND_TOOL_PREFIX}no_reply_needed\`.`,
+      ].join(" ");
+    }
+    return messages.length > 1
+      ? 'This is a group conversation. The lines tagged "to you" mention you or reply to you: answer those. The others are context from the group.'
+      : `This is a group conversation. The message is from ${from}, and it mentions you or replies to you: answer it.`;
   }
 
   async function runTelegramTurn(
@@ -528,18 +660,24 @@ export function createTelegramWorker(deps: {
     lastThread.set(agentId, thread as Thread);
 
     const author = messages.at(-1)!.author;
+    const ambientTurn = messages.every((m) => m.ambient);
     const batched = messages.length > 1;
     const text = batched
-      ? messages.map((m) => `[@${m.author.userName}] ${m.text}`).join("\n")
+      ? messages
+          .map(
+            (m) =>
+              `[@${m.author.userName}${thread.isDM || m.ambient ? "" : ", to you"}] ${m.text}`,
+          )
+          .join("\n")
       : messages[0]!.text;
 
     const who = batched
-      ? `${messages.length} messages arrived together; each line is tagged with who sent it. Answer them as one — reply once, covering all of them.`
+      ? `${messages.length} messages arrived together; each line is tagged with who sent it.${ambientTurn ? "" : " Answer them as one — reply once, covering all of them."}`
       : "";
     const context = (
       thread.isDM
         ? `This is a 1:1 direct message from ${author.fullName} (@${author.userName}, id=${author.userId}). Every message here is directed at you — always reply.`
-        : `This is a group conversation. The message is from ${author.fullName} (@${author.userName}, id=${author.userId}). Other participants may follow up; stay quiet when the conversation isn't for you.`
+        : groupContext(author, messages)
     ).concat(who ? ` ${who}` : "");
 
     const prompt = [
@@ -593,9 +731,10 @@ export function createTelegramWorker(deps: {
             ? "no-default-model"
             : "acp-error";
       getLogger().warn(
-        { agentId, reason: failureReason, error: String(err) },
+        { agentId, reason: failureReason, error: String(err), ambientTurn },
         "telegram.turn.failed",
       );
+      if (ambientTurn) return;
       if (isAgentWakeTimeoutError(err)) {
         await thread.post(wakeFailureUserCopy(err.failure)).catch(() => {});
       } else if (err instanceof AcpTurnAbandonedError) {
@@ -617,7 +756,7 @@ export function createTelegramWorker(deps: {
           "platform.channel.failure_reason": failureReason,
         }),
       });
-      emitTurn(agentId, outcome, author.userId, failureReason);
+      emitTurn(agentId, outcome, author.userId, ambientTurn, failureReason);
     }
   }
 
@@ -641,11 +780,25 @@ export function createTelegramWorker(deps: {
     agentId: string,
     threadId: string,
   ): ConversationQueue<TelegramPendingMessage> {
+    let ambientTurnRunning = false;
     return createConversationQueue<TelegramPendingMessage>({
       settleMs: deps.settleMs ?? 0,
-      runTurn: (batch, onSession) =>
-        relayToInstance(agentId, batch.at(-1)!.thread, batch, onSession),
+      canSteer: (message) => !message.ambient,
+      runTurn: async (batch, onSession) => {
+        ambientTurnRunning = batch.every((m) => m.ambient);
+        try {
+          await relayToInstance(
+            agentId,
+            batch.at(-1)!.thread,
+            batch,
+            onSession,
+          );
+        } finally {
+          ambientTurnRunning = false;
+        }
+      },
       steer: async (sessionId, batch) => {
+        if (ambientTurnRunning) return "refused";
         const outcome = await makeAcpClient(agentId).steer(
           sessionId,
           steerFrame(batch),
@@ -674,6 +827,7 @@ export function createTelegramWorker(deps: {
     thread: ThreadLike,
     text: string,
     author: TelegramInboundMessage["author"],
+    ambient: boolean,
   ): void {
     const key = `${agentId}|${thread.id}`;
     let queue = telegramQueues.get(key);
@@ -681,13 +835,14 @@ export function createTelegramWorker(deps: {
       queue = createChatQueue(key, agentId, thread.id);
       telegramQueues.set(key, queue);
     }
-    void queue.submit({ text, author, thread });
+    void queue.submit({ text, author, thread, ambient });
   }
 
   function emitTurn(
     agentId: string,
     outcome: TurnOutcome,
     telegramUserId: string,
+    ambient: boolean,
     reason?: string,
   ) {
     emit({
@@ -697,6 +852,7 @@ export function createTelegramWorker(deps: {
       actorSub: null,
       externalActorId: telegramUserId,
       outcome,
+      ...(ambient ? { ambient: true as const } : {}),
       ...(reason !== undefined ? { reason } : {}),
     });
   }
@@ -710,28 +866,62 @@ export function createTelegramWorker(deps: {
 
     async resolveIdentity() {
       if (username) return;
-      username = await fetchTelegramBotUsername(botToken).catch(() => null);
+      const identity = await fetchTelegramBotIdentity(botToken);
+      username = identity?.username ?? null;
     },
 
     async start() {
       if (bot) return;
       let adapter: TelegramConversationAdapter | null = null;
       try {
+        const identity = await fetchTelegramBotIdentity(botToken);
+        if (identity?.username) {
+          if (
+            username &&
+            username.toLowerCase() !== identity.username.toLowerCase()
+          ) {
+            getLogger().warn(
+              { configured: username, actual: identity.username },
+              "telegram.bot_name_mismatch",
+            );
+          }
+          username = identity.username;
+        }
+        if (identity && !identity.readsAllGroupMessages) {
+          getLogger().warn(
+            { bot: identity.username },
+            "telegram.group_privacy_on",
+          );
+        }
+        const isChatAdmin =
+          deps.isChatAdmin ??
+          ((chatId: string, userId: string) =>
+            isTelegramChatAdmin(botToken, chatId, userId));
         const polling = new TelegramConversationAdapter({
           botToken,
           mode: "polling",
+          mentionOnReply: true,
+          ...(username ? { userName: username } : {}),
         });
         adapter = polling;
         const handleMessage = createTelegramMessageHandler({
           conversations: deps.conversations,
-          isChatAdmin:
-            deps.isChatAdmin ??
-            ((chatId, userId) => isTelegramChatAdmin(botToken, chatId, userId)),
+          isChatAdmin,
+          canReadGroupMessages: async (chatId) => {
+            const current = await fetchTelegramBotIdentity(botToken);
+            return (
+              !current ||
+              current.readsAllGroupMessages ||
+              (await isChatAdmin(chatId, current.id))
+            );
+          },
           decodeChatId: (threadId) => polling.decodeThreadId(threadId).chatId,
           fetchChatTitle: (chatId) => fetchTelegramChatTitle(botToken, chatId),
           oauthConfig: deps.oauthConfig,
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
+          ownerOf: deps.ownerOf,
+          emit,
           ...(deps.spendHold ? { spendHold: deps.spendHold } : {}),
           uiBaseUrl: deps.uiBaseUrl,
           brandName,
@@ -750,8 +940,6 @@ export function createTelegramWorker(deps: {
         await polling.startPolling();
         bot = { chat, adapter: polling };
         await publishTelegramCommands(botToken);
-        if (!username)
-          username = await fetchTelegramBotUsername(botToken).catch(() => null);
         process.stderr.write(
           `[telegram] platform bot started${username ? ` (@${username})` : ""}\n`,
         );

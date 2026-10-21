@@ -23,7 +23,7 @@ import {
   sessionSettingsSchema,
   type SessionSettings,
 } from "agent-runtime-api";
-import { parseQualifiedModel } from "api-server-api";
+import { parseQualifiedModel, RUN_ENDED_CAPABILITY } from "api-server-api";
 import type { EnvChange } from "../../runtime-channel/drivers/env-plugin.js";
 import type { KeepPolicy } from "../../processes/index.js";
 
@@ -141,7 +141,9 @@ export function canonicalModel(model: string): string {
  * Router routes on, not a fact of a process. There is no default lease: a
  * process starts on the first frame naming a session on its harness and goes
  * away once idle, so frames naming no session (`initialize`, `session/list`)
- * are answered here from the manifest and the session metadata. Each lease
+ * are answered here from the manifest and the session metadata; a
+ * `session/list` naming a harness in `_meta.platform` reaches that harness,
+ * which alone knows a terminal session's title. Each lease
  * is an unchanged ACP runtime behind a virtual channel per real client, with
  * agent-request ids kept apart across leases: a client sees each request
  * under an id that names this boot and the harness process that asked it, so
@@ -508,6 +510,7 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
             agentCapabilities: {},
             authMethods: [],
           }),
+          _meta: { platform: { [RUN_ENDED_CAPABILITY]: true } },
         });
       return;
     }
@@ -571,7 +574,17 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
         : null;
     if (sessionId === null) {
       if (method === "session/list" && isRequest(frame)) {
-        reply(real, frame.id, deps.listSessions(isSessionRunning));
+        const harness = platformChoice(params).harness;
+        if (harness === undefined || !deps.harnessKnown(harness)) {
+          reply(real, frame.id, deps.listSessions(isSessionRunning));
+          return;
+        }
+        const v = channelOn(
+          real,
+          leaseFor(leasePairOf({ harness, model: null })),
+        );
+        v.used = true;
+        v.deliver(data);
         return;
       }
       /**

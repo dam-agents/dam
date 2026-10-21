@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -60,14 +60,16 @@ Members use every granted Connection and Satellite; the UI warns, never blocks, 
 #### Ambient mode
 
 A Slack binding can additionally run in **ambient mode**: the agent reads along with the whole channel conversation and decides for itself when to chime in.
+A Telegram binding has the same switch, with its own command and gate (see the Telegram adapter under Adapters).
 It is a property of the **binding**, not the conversation, so one Agent can read along where another only answers mentions — answering a question it can answer, picking up a task someone described, flagging a clear mistake — staying silent otherwise.
 Mentions keep the addressed-turn treatment unchanged; ambient only adds a second, quieter inbound path.
 
-Ambient is **mutable** and **off by default** on every connect path — the in-chat `/platform bind`, the UI form, and the CLI flag all leave it off, and the binding owner opts a channel in explicitly.
+On Slack, ambient is **mutable** and **off by default** on every connect path — the in-chat `/platform bind`, the UI form, and the CLI flag all leave it off, and the binding owner opts a channel in explicitly.
 Ambient has the agent read every message in the channel, so keeping that broader exposure a deliberate opt-in is the safe default.
 It can be flipped later — a re-connect updates it in place, and an in-chat ambient command (allowed for the binder or the agent's owner, the unbind authorization) is the in-channel dial.
 Every enable/disable is recorded in the security log, and that audit record is authoritative.
-The change is deliberately **not** announced in the channel — not on a connect, a re-connect, or the in-chat dial: whoever made it sees it confirmed on their own surface (the UI, the CLI, or the ephemeral slash-command reply for the in-chat command), and the channel's members get no ambient status post.
+On Slack the change is deliberately **not** announced in the channel — not on a connect, a re-connect, or the in-chat dial: whoever made it sees it confirmed on their own surface (the UI, the CLI, or the ephemeral slash-command reply for the in-chat command), and the channel's members get no ambient status post.
+On Telegram every `/bind` leaves it off, and `/ambient on|off` from a chat admin is the only dial; Telegram has no private reply, so that confirmation posts in the chat.
 
 Where several Agents read along in one channel, they take each message **one at a time**, each starting only once the one before it finished.
 Running them concurrently would have them talk over each other; in sequence, a later Agent is handed what the ones before it said — it has no other way to know — so it builds on that or stays silent rather than repeating it.
@@ -333,6 +335,7 @@ The agent persona above is the one exception and fails closed: the cost of guess
 - **Transport.** Long-poll `getUpdates` — one client for the install, started by the lease-holding replica at boot (the Bot API admits no second consumer) so `/bind` works in chats that have no binding yet.
   The same boot step advertises the command list to the Bot API, which is what makes the commands offered when someone types `/`.
   The client fetches nothing new until every update it handed over is handled, so an inbound message is only queued there; waiting on its turn would stop the bot reading every chat.
+  One conversation's messages are handed over one at a time, in order, inside the process rather than under a shared lock: the client retries a message that meets a held lock only after a backoff, which held back every burst.
 - **Token provenance.** The operator creates one bot via `@BotFather` and sets the token in Helm values; it reaches the api-server as env.
   No per-Agent Secrets, no token at rest in Postgres.
 - **Identity model — there is none per user.** Telegram has no workspace to anchor a user-to-Keycloak link against, so consent covers the whole *chat*, all its forum topics included: someone sends `/bind` anywhere in it (in groups, only chat admins; `/start` counts as bind intent too, so deep links and the Start button work), the bot replies with a Keycloak OAuth link, and after authenticating the user lands on the UI's agent picker listing *their own* Agents.
@@ -340,7 +343,11 @@ The agent persona above is the one exception and fails closed: the cost of guess
   The chat's members never authenticate.
   `/unbind` releases the binding, and the owner can also disconnect a bound chat from the web UI — the bot posts a farewell note in the chat before the binding is released.
   Unbound groups stay silent so the bot does not spam every chat it has been added to.
-  The command surface is bare — `/bind`, `/unbind`, `/start` — not Slack's brand-prefixed form: a Telegram command is already scoped to the bot it reaches.
+  The command surface is bare — `/bind`, `/unbind`, `/start`, `/ambient` — not Slack's brand-prefixed form: a Telegram command is already scoped to the bot it reaches.
+- **Addressed and ambient.** In a group, a message is addressed to the Agent when it mentions the bot by its handle — the one the Bot API reports, whatever Helm names — or replies to one of the bot's messages; a direct chat is always addressed.
+  Ambient mode works as on Slack: off by default, it adds every other message of the chat as a read-along turn, which posts nothing on failure and is never steered into a running turn.
+  Bare `/ambient` reports the mode to anyone, and `/ambient on|off` switches it for chat admins only, the same gate as `/bind`; Telegram has no private reply, so the chat sees the answer.
+  Telegram hides ordinary group messages from a bot with **Group Privacy** on, its default, unless the bot is an admin there: such a bot gets only commands and replies to its messages, so the api-server warns at boot and `/ambient on` says so in the chat.
 - **Lifecycle.** There is none per Agent — bindings are rows, not runtime state.
   Agent deletion clears the Agent's rows, on any deletion path.
 

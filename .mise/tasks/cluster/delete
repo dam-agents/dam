@@ -33,7 +33,7 @@ else
   . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
   if [ "$(cat "$HOST_RUNNER_DIR/instance" 2>/dev/null)" = "$LIMA_INSTANCE" ]; then
     host_runner_stop
-    rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_DIR/Library" "$HOST_RUNNER_DIR/instance"
+    rm -rf "$HOST_RUNNER_DIR/machines" "$HOST_RUNNER_DIR/Library" "$HOST_RUNNER_VM_HOME/Library" "$HOST_RUNNER_DIR/instance"
   fi
   echo "k3s cluster ($LIMA_INSTANCE) deleted."
 fi

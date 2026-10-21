@@ -1,4 +1,4 @@
-import { Checkmark, ChevronDown } from "@carbon/icons-react";
+import { ChevronDown } from "@carbon/icons-react";
 import type { TabState } from "agent-runtime-api";
 import {
   type KeyboardEvent,
@@ -13,7 +13,8 @@ import { Button } from "@/components/ui/button";
 import {
   DropdownMenu,
   DropdownMenuContent,
-  DropdownMenuItem,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Tooltip } from "@/components/ui/tooltip";
@@ -144,23 +145,18 @@ export function BrowserTabBar({ tabs, activeTab, onSelect, onClose }: Props) {
             </DropdownMenuTrigger>
           </Tooltip>
           <DropdownMenuContent className="max-w-80">
-            {tabs.map((tab) => (
-              <DropdownMenuItem
-                key={tab.id}
-                onSelect={() => onSelect(tab.id)}
-                aria-current={tab.id === activeTab || undefined}
-                className="gap-2"
-              >
-                <Checkmark
-                  size={14}
-                  aria-hidden
-                  className={
-                    tab.id === activeTab ? "shrink-0" : "invisible shrink-0"
-                  }
-                />
-                <span className="truncate">{tabLabel(tab)}</span>
-              </DropdownMenuItem>
-            ))}
+            <DropdownMenuRadioGroup value={activeTab ?? ""}>
+              {tabs.map((tab) => (
+                <DropdownMenuRadioItem
+                  key={tab.id}
+                  value={tab.id}
+                  onSelect={() => onSelect(tab.id)}
+                  aria-current={tab.id === activeTab || undefined}
+                >
+                  <span className="truncate">{tabLabel(tab)}</span>
+                </DropdownMenuRadioItem>
+              ))}
+            </DropdownMenuRadioGroup>
           </DropdownMenuContent>
         </DropdownMenu>
       </div>

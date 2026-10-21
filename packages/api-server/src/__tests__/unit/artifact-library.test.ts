@@ -830,7 +830,7 @@ describe("library service — interactive is settled at create", () => {
         interactive: true,
         visibility: "public",
       }),
-    ).rejects.toThrow(/cannot be shared/);
+    ).rejects.toThrow(/cannot be public/);
   });
 
   it("keeps the flag across a new version", async () => {
@@ -842,13 +842,16 @@ describe("library service — interactive is settled at create", () => {
   });
 });
 
-describe("library service — an interactive artifact cannot be shared", () => {
-  async function serviceOver(rows: ArtifactRow[]) {
+describe("library service — an interactive artifact is never public", () => {
+  async function serviceOver(
+    rows: ArtifactRow[],
+    surface: import("../../modules/artifact-library/services/artifact-library-service.js").ArtifactSurface = "ui",
+  ) {
     const { createArtifactLibraryService } =
       await import("../../modules/artifact-library/services/artifact-library-service.js");
     return createArtifactLibraryService({
       ...idleAgentApiDeps(),
-      surface: "ui",
+      surface,
       repo: fakeRepo(rows),
       owner: "o1",
       shareBaseUrl: "http://share.localhost",
@@ -856,17 +859,42 @@ describe("library service — an interactive artifact cannot be shared", () => {
     });
   }
 
-  it.each(["public", "restricted"] as const)(
-    "refuses the %s transition and leaves the artifact private",
+  it.each(["private", "restricted"] as const)(
+    "refuses the public transition from %s and leaves the visibility as it was",
     async (visibility) => {
-      const rows = [artifactRow({ interactive: true, visibility: "private" })];
+      const rows = [artifactRow({ interactive: true, visibility })];
       const service = await serviceOver(rows);
-      await expect(service.setSharing("a1", { visibility })).rejects.toThrow(
-        /cannot be shared/,
-      );
-      expect(rows[0]!.visibility).toBe("private");
+      await expect(
+        service.setSharing("a1", { visibility: "public" }),
+      ).rejects.toThrow(/cannot be public/);
+      expect(rows[0]!.visibility).toBe(visibility);
     },
   );
+
+  it("lets the owner share it with named viewers in the app", async () => {
+    const rows = [artifactRow({ interactive: true, visibility: "private" })];
+    const service = await serviceOver(rows);
+    await expect(
+      service.setSharing("a1", {
+        visibility: "restricted",
+        viewers: ["Viewer@Example.com"],
+      }),
+    ).resolves.toMatchObject({
+      visibility: "restricted",
+      interactive: true,
+      viewers: ["viewer@example.com"],
+      shareUrl: "http://share.localhost/a/slug-a",
+    });
+  });
+
+  it("keeps restricted sharing out of an agent's reach", async () => {
+    const rows = [artifactRow({ interactive: true, visibility: "private" })];
+    const service = await serviceOver(rows, "mcp");
+    await expect(
+      service.setSharing("a1", { visibility: "restricted" }),
+    ).rejects.toThrow(/set by the owner in the app/);
+    expect(rows[0]!.visibility).toBe("private");
+  });
 
   it("still lets the owner set a deletion date", async () => {
     const rows = [artifactRow({ interactive: true, visibility: "private" })];

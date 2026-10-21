@@ -1,6 +1,6 @@
 # Provider status
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -110,6 +110,7 @@ The line also shows before a turn fails, so a user who waits on a turn that the 
 The session's provider is the one the session names, else the agent's default pair, else the template that all of the agent's provider Connections use.
 
 **The Providers badge.** In Settings › Providers, the row of a connected provider says "Degraded" instead of "Connected" while that Connection's template has an outage, or while the fault is on the platform's side.
+A key that the provider refused at its last check still reads as refused, because a new key is the fix for it whether or not the provider is down.
 
 **The banner.** At the top of the main area, on every page but the chat, a banner tells a user about outages of the providers that the user has a Connection to.
 The chat leaves it out, because the status line there covers the session's provider.

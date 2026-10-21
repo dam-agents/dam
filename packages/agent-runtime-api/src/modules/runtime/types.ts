@@ -381,6 +381,7 @@ export const harnessCapability = z.object({
   harnessConfigCatalog: harnessConfigCatalog.optional(),
   sessionModel: z.boolean(),
   sessionSettings: z.array(z.string().min(1)).optional(),
+  derivedStartMode: z.array(z.string().min(1)).optional(),
   nativeTemplates: z.array(z.string().min(1)).optional(),
   platformSubagentSettings: z.boolean().optional(),
 });

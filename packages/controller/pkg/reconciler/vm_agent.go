@@ -48,6 +48,8 @@ const (
 	grantUnreadableBound = 60 * time.Second
 	// UNIT_BOUNDARY_DESCRIPTION: how often an unreadable grant is asked about with a resize, since the API server validates one against what the node supports and the answer cannot change between two asks a few seconds apart.
 	grantProbeInterval = 30 * time.Second
+	// UNIT_BOUNDARY_DESCRIPTION: the ceiling sent on an ensure for a machine that already holds memory: enough to authorize nothing, so a runner that is told to boot the machine refuses, and small enough that no boot is ever under it.
+	grantHeldMiB = 1
 
 	vmGuestLocalCIDRs = "100.64.0.0/10,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16,169.254.0.0/16"
 
@@ -193,7 +195,7 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			// UNIT_BOUNDARY_DESCRIPTION: a failed read is no evidence either way, and acting on it is how a restart in flight becomes a stop: the answer returns without parking, so the Agent keeps its gateway and the restart the runner already performs, and the reconcile is retried.
 			return vmrunner.MachineStatus{}, false, fmt.Errorf("reading the state of %s to admit it against a node that has not reported its grant: %w", name, statusErr)
 		case holdsMemory(live.State):
-			admitMiB = 0
+			admitMiB = r.holdInFlight(owner, name)
 			r.grantHolds.Delete(name)
 		case live.State == vmrunner.StateUnknown:
 			// UNIT_BOUNDARY_DESCRIPTION: the runner says it cannot read the machine's own record, which is a machine that may still hold its memory: absence of an active state is not proof of a stop, so this is retried rather than held, parked or admitted.
@@ -235,12 +237,17 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			if held, heldErr := r.heldRunnerDemand(ctx, owner, agent, running); heldErr == nil {
 				demand = held
 			}
+		} else if sized, sizedErr := r.ownerRunnerDemand(ctx, owner, agent, running); sizedErr == nil {
+			// UNIT_BOUNDARY_DESCRIPTION: a start the runner admitted changes what the owner holds, and the request it is sized from has to be the answer after that: sized from the read taken before the ensure, the next pass would ask for the whole demand again and the wave after it would step back down, resizing the pod on every admission.
+			demand = sized
 		}
 	}
 	if err == nil && st.DiskGiB > 0 {
 		r.vmDiskGrows.Store(name, true)
 	}
 	if r.config.VM.Runner.HostAddress == "" {
+		// UNIT_BOUNDARY_DESCRIPTION: the step down's grace is recorded here, from the same demand the pod is sized from, so every reconcile maintains it: the reclaim below reads it only while a resize is pending, and a wave the node granted reaches that read never.
+		r.noteSteppedAsk(ctx, owner, demand)
 		r.resizeRunnerPod(ctx, owner, demand)
 	}
 	// UNIT_BOUNDARY_DESCRIPTION: the runner's Service is headless, so its name resolves only once the ready pod's endpoint is published and the cluster DNS has read it, which trails the Deployment's ready count by a few seconds. A fresh runner, an owner's first vm agent, is dialled inside that gap; it is still starting, not failing, so the agent waits on it rather than going into error.
@@ -688,6 +695,12 @@ func (r *AgentReconciler) HaltMachine(ctx context.Context, owner, name string) e
 	return nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the ceiling a machine the runner is already bringing up is re-sent with, while the node reports no grant. It authorizes no footprint at all — admission needs strictly more than this — so a runner that finds the machine stopped refuses the start instead of booting it, while an operation already admitted is let through by the same runner, and a runner from before that exemption keeps such an operation because this controller no longer parks a boot in flight. Zero would be the whole pool in exactly that stopped case, so the figure is one MiB: the tightest ceiling the wire can carry, and one no boot of a machine that holds memory can be confused with.
+func (r *AgentReconciler) holdInFlight(owner, name string) int {
+	r.holdHeld.Store(name, true)
+	return grantHeldMiB
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: what a start held on an unreadable grant reads as once the wait outlasts grantUnreadableBound: the problem named, and the cadence it is retried at, since nothing the owner does frees memory the node has not reported.
 const vmAllocationUnreadableMessage = "The node has not reported how much memory it granted this owner's VM runner, so this start can't be admitted yet. The platform keeps retrying every 30 seconds; if this lasts, an admin should check that the cluster can resize pods in place."
 
@@ -808,9 +821,11 @@ func runnerOOMTookDown(prev *metav1.Condition, running, ready bool, startedAt, r
 		return false
 	}
 	at := killedAt()
-	// UNIT_BOUNDARY_DESCRIPTION: a guest that answered after the kill has ended the taking down it caused, and whatever comes after that — a seccomp kill, a boot that failed — is its own: the kill is not read again for an agent that has been up since, though the runner pod still carries it in its last termination for the rest of the episode.
-	if recovered := recoveredAt(); !recovered.IsZero() && recovered.After(at) {
-		return false
+	// UNIT_BOUNDARY_DESCRIPTION: a guest that answered after the kill has ended the taking down it caused, and whatever comes after that — a seccomp kill, a boot that failed — is its own: the kill is not read again for an agent that has been up since, though the runner pod still carries it in its last termination for the rest of the episode. Read only against a kill the runner still carries: a pod keeps one termination, so a restart after the kill replaces it and says nothing about when the kill was, and an answer from before it would then read as one after it and end an episode that still explains the agent.
+	if !at.IsZero() {
+		if recovered := recoveredAt(); !recovered.IsZero() && recovered.After(at) {
+			return false
+		}
 	}
 	if prev.Reason == apiv1.ReasonRunnerOutOfMemory {
 		return time.Since(prev.LastTransitionTime.Time) <= runnerOOMEpisode

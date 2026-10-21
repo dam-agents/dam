@@ -368,6 +368,16 @@ export function createBoltSlackGateway(
         });
       });
 
+      bolt.event("agent_session_stopped", async ({ event, context }) => {
+        await handlers.onSessionStopped({
+          channel: event.channel,
+          threadTs: event.thread_ts,
+          user: event.user,
+          streamingMessageTs: event.streaming_message_ts ?? [],
+          teamId: context.teamId ?? NO_WORKSPACE,
+        });
+      });
+
       bolt.command(deps.commandName, async ({ command, ack }) => {
         await handlers.onCommand(
           {

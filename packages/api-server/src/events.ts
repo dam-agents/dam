@@ -22,6 +22,8 @@ export enum EventType {
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
+  TelegramChatBound = "TelegramChatBound",
+  TelegramChatUnbound = "TelegramChatUnbound",
   ChannelTurnRelayed = "ChannelTurnRelayed",
   ChannelMessageSent = "ChannelMessageSent",
   SessionTurnRelayed = "SessionTurnRelayed",
@@ -119,6 +121,19 @@ export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
   agentId: string;
   slackChannelId?: string;
+  ownerSub?: string | null;
+};
+
+export type TelegramChatBound = {
+  type: EventType.TelegramChatBound;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type TelegramChatUnbound = {
+  type: EventType.TelegramChatUnbound;
+  agentId: string;
+  ownerSub: string;
 };
 
 export type ChannelTurnRelayed = {
@@ -497,6 +512,8 @@ export type DomainEvent =
   | AgentWoken
   | SlackConnected
   | SlackDisconnected
+  | TelegramChatBound
+  | TelegramChatUnbound
   | ChannelTurnRelayed
   | ChannelMessageSent
   | ScheduleFired

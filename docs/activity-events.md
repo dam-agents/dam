@@ -24,6 +24,8 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `AgentWoken` | _elsewhere_ | agents |
 | `SlackConnected` | `slack_channel_bound` | agents |
 | `SlackDisconnected` | _elsewhere_ | agents, channels |
+| `TelegramChatBound` | _elsewhere_ | agents |
+| `TelegramChatUnbound` | _elsewhere_ | agents, channels |
 | `ChannelTurnRelayed` | `channel_turn` | channels |
 | `ChannelMessageSent` | `channel_message_sent` | mcp-endpoint |
 | `SessionTurnRelayed` | `session_turn` | agent-proxies/acp-relay |

@@ -1,4 +1,4 @@
-import type { HarnessFamily } from "api-server-api";
+import type { HarnessFamily, ProviderKeyCheck } from "api-server-api";
 import type { ReactNode } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
@@ -10,12 +10,15 @@ import { cn } from "@/lib/utils";
 import type { ProviderPresetType } from "../../../types.js";
 import { providerName } from "../lib/provider-rows.js";
 import { CardIcon } from "./card-icon.js";
+import { ProviderKeyStatus } from "./provider-key-status.js";
 
 interface Props {
   type: ProviderPresetType;
   harnesses?: readonly HarnessFamily[];
   connected: boolean;
   degraded?: boolean;
+  keyCheck?: ProviderKeyCheck | null;
+  checking?: boolean;
   balance?: ReactNode;
   onOpen?: () => void;
   connectedAction?: string;
@@ -26,11 +29,14 @@ export function ProviderRow({
   harnesses,
   connected,
   degraded = false,
+  keyCheck,
+  checking,
   balance,
   onOpen,
   connectedAction = "Edit",
 }: Props) {
   const name = providerName(type);
+  const refused = connected && keyCheck?.result === "refused";
   const body = (
     <>
       <CardIcon provider={type} />
@@ -42,7 +48,11 @@ export function ProviderRow({
           >
             {name}
           </p>
-          <ConnectionBadge connected={connected} degraded={degraded} />
+          <ConnectionBadge
+            connected={connected}
+            degraded={degraded}
+            refused={refused}
+          />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="flex shrink-0 items-center gap-2">
@@ -62,6 +72,11 @@ export function ProviderRow({
           </div>
           <div className="min-w-0 text-right">{balance}</div>
         </div>
+        {connected && keyCheck !== undefined && (
+          <div className="mt-2">
+            <ProviderKeyStatus check={keyCheck} checking={checking} />
+          </div>
+        )}
       </div>
     </>
   );
@@ -70,7 +85,11 @@ export function ProviderRow({
   return onOpen ? (
     <CardButton
       onClick={onOpen}
-      aria-label={connected ? `${connectedAction} ${name}` : `Connect ${name}`}
+      aria-label={
+        connected
+          ? `${connectedAction} ${name}${refused ? ", key refused" : ""}`
+          : `Connect ${name}`
+      }
       className={layout}
     >
       {body}
@@ -83,14 +102,22 @@ export function ProviderRow({
 function ConnectionBadge({
   connected,
   degraded,
+  refused,
 }: {
   connected: boolean;
   degraded: boolean;
+  refused: boolean;
 }) {
   if (!connected)
     return (
       <Badge variant="muted" className="ml-auto shrink-0">
         Not connected
+      </Badge>
+    );
+  if (refused)
+    return (
+      <Badge variant="danger" className="ml-auto shrink-0">
+        Key refused
       </Badge>
     );
   return degraded ? (

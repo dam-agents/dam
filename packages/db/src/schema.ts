@@ -121,6 +121,7 @@ export const telegramConversations = pgTable(
     conversationId: text("conversation_id").primaryKey(),
     agentId: text("agent_id").notNull(),
     authorizedBy: text("authorized_by").notNull(),
+    ambient: boolean("ambient").notNull().default(false),
     createdAt: timestamp("created_at", { withTimezone: true })
       .defaultNow()
       .notNull(),
@@ -386,6 +387,19 @@ export const agents = pgTable(
   (table) => [index("agents_owner_idx").on(table.ownerSub)],
 );
 
+export const harnessConfigResets = pgTable(
+  "harness_config_resets",
+  {
+    reset: text("reset").notNull(),
+    agentId: text("agent_id").notNull(),
+    appliedAt: timestamp("applied_at", { withTimezone: true })
+      .defaultNow()
+      .notNull(),
+    settledAt: timestamp("settled_at", { withTimezone: true }),
+  },
+  (table) => [primaryKey({ columns: [table.reset, table.agentId] })],
+);
+
 export const agentSessions = pgTable(
   "agent_sessions",
   {
@@ -649,6 +663,11 @@ export const runtimeEvents = pgTable(
     index("runtime_events_expiry_idx")
       .on(table.expiresAt)
       .where(sql`${table.dispatchedAt} IS NULL`),
+    /* UNIT_BOUNDARY_DESCRIPTION: the harness-config dedupe timestamp is read
+     * from this Agent's retained events, dispatched ones included. */
+    index("runtime_events_harness_config_idx")
+      .on(table.agentId)
+      .where(sql`${table.kind} = 'harness-config'`),
   ],
 );
 

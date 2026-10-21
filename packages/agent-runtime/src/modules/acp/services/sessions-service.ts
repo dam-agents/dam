@@ -45,7 +45,9 @@ const HARNESS_ONLY_META: PlatformSessionMeta = { mode: "terminal" };
 const MAX_HARNESS_PAGES = 200;
 
 interface HarnessListPage {
-  sessions?: ListedHarnessSession[];
+  sessions?: (ListedHarnessSession & {
+    _meta?: { platform?: { autoTitle?: string | null } };
+  })[];
   nextCursor?: string | null;
 }
 
@@ -71,11 +73,13 @@ async function readHarnessListing(
       cwd: ".",
       ...(cursor !== undefined && { cursor }),
     });
-    for (const { sessionId, title, updatedAt } of result.sessions ?? []) {
+    for (const { sessionId, title, updatedAt, _meta } of result.sessions ??
+      []) {
+      const autoTitle = _meta?.platform?.autoTitle;
       if (!byId.has(sessionId))
         byId.set(sessionId, {
           sessionId,
-          title: title ?? null,
+          title: (autoTitle !== undefined ? autoTitle : title) ?? null,
           updatedAt: updatedAt ?? null,
         });
     }
@@ -85,7 +89,15 @@ async function readHarnessListing(
   return [...byId.values()];
 }
 
+export interface RuntimeSessionsService extends SessionsService {
+  adoptHarnessTitle(sessionId: string): Promise<void>;
+}
+
+const firstLine = (title: string | null | undefined): string =>
+  (title ?? "").trim().split("\n")[0]!.trim();
+
 export function createSessionsService(deps: {
+  defaultHarness?: string;
   subAgentContextOf: (
     meta: PlatformSessionMeta,
   ) => Omit<SessionSubAgentContext, "settings">;
@@ -100,8 +112,9 @@ export function createSessionsService(deps: {
   sessionRepositories?: (sessionId: string) => SessionRepository[];
   log: (msg: string) => void;
   now?: () => number;
-}): SessionsService {
+}): RuntimeSessionsService {
   const now = deps.now ?? Date.now;
+  const adopting = new Set<string>();
   let listing:
     | {
         readAt: number;
@@ -208,6 +221,61 @@ export function createSessionsService(deps: {
       return stored
         ? newestTail({ frames: stored, truncated: false }, opts?.tail)
         : EMPTY_HISTORY;
+    },
+
+    /**
+     * UNIT_BOUNDARY_DESCRIPTION: a terminal Session sends no prompt over ACP,
+     * so the platform never derives its title; only its harness knows one.
+     * The list read never starts a harness, so the title is asked for once
+     * the terminal detaches or exits, from that harness's own listing, and
+     * kept as the Session's title. A title already kept or set by a person
+     * stays.
+     */
+    async adoptHarnessTitle(sessionId) {
+      const entry = deps.sessionMetadata.get(sessionId);
+      if (
+        !entry ||
+        entry.meta.mode !== "terminal" ||
+        entry.meta.title ||
+        entry.meta.customTitle ||
+        adopting.has(sessionId)
+      )
+        return;
+      adopting.add(sessionId);
+      const caller = deps.openCaller();
+      try {
+        await caller.request("initialize", {
+          protocolVersion: 1,
+          clientCapabilities: { fs: {} },
+          clientInfo: { name: "platform-sessions", version: "1.0.0" },
+        });
+        const harness = entry.meta.harness ?? deps.defaultHarness;
+        if (harness === undefined) return;
+        let cursor: string | undefined;
+        let title = "";
+        for (let page = 0; page < MAX_HARNESS_PAGES && !title; page++) {
+          const result = await caller.request<HarnessListPage>("session/list", {
+            cwd: ".",
+            _meta: { platform: { harness } },
+            ...(cursor !== undefined && { cursor }),
+          });
+          title = firstLine(
+            result.sessions?.find((s) => s.sessionId === sessionId)?.title,
+          );
+          cursor = result.nextCursor ?? undefined;
+          if (cursor === undefined) break;
+        }
+        const fresh = deps.sessionMetadata.get(sessionId);
+        if (title && fresh && !fresh.meta.title && !fresh.meta.customTitle)
+          deps.sessionMetadata.set(sessionId, { ...fresh.meta, title });
+      } catch (error) {
+        deps.log(
+          `session ${sessionId}: the harness title could not be read: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      } finally {
+        caller.close();
+        adopting.delete(sessionId);
+      }
     },
 
     async setTitle(input) {

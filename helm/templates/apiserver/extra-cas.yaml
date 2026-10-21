@@ -1,0 +1,17 @@
+{{- with .Values.controller.gatewayUpstreamExtraCAs }}
+{{- /* The extra CAs of a TLS-intercepting egress path
+       (controller.gatewayUpstreamExtraCAs), for the api-server's own outbound
+       calls — Slack, GitHub, OAuth token exchanges — which leave the cluster
+       on that same path. NODE_EXTRA_CA_CERTS points Node at it, on top of the
+       public roots. */ -}}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "platform.fullname" $ }}-apiserver-extra-cas
+  namespace: {{ $.Release.Namespace }}
+  labels:
+    {{- include "platform.labels" $ | nindent 4 }}
+data:
+  extra-cas.crt: |
+    {{- . | nindent 4 }}
+{{- end }}

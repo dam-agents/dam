@@ -36,6 +36,7 @@ const runnerUsageSchema = z.object({
       diskGiB: z.number().nonnegative().default(0),
       diskUsedBytes: z.number().nonnegative().default(0),
       cpuMilli: z.number().nonnegative().default(0),
+      homeFull: z.boolean().default(false),
     }),
   ),
 });

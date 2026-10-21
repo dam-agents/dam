@@ -98,7 +98,8 @@ func (r *AgentReconciler) applyOwnerGatewayFiles(ctx context.Context, desired *c
 	if err != nil {
 		return err
 	}
-	if equality.Semantic.DeepEqual(existing.Data, desired.Data) && maps.Equal(existing.Labels, desired.Labels) {
+	// UNIT_BOUNDARY_DESCRIPTION: the annotations are part of what this object means: the repair state lives in one of them, so a write that changes only that must still reach the cluster, or the state adopted in memory would be a state the Secret never carried.
+	if equality.Semantic.DeepEqual(existing.Data, desired.Data) && maps.Equal(existing.Labels, desired.Labels) && maps.Equal(existing.Annotations, desired.Annotations) {
 		return nil
 	}
 	desired.ResourceVersion = existing.ResourceVersion

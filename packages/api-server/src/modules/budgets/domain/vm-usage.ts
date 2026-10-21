@@ -21,6 +21,7 @@ export interface RunnerUsage {
     diskGiB: number;
     diskUsedBytes: number;
     cpuMilli: number;
+    homeFull: boolean;
   }[];
   observedAt: string;
 }
@@ -89,6 +90,7 @@ export function vmUsageView(
         memoryUsedBytes: m.usedMiB * MIB,
         storageUsedBytes: m.diskUsedBytes,
         cpuMilli: m.cpuMilli,
+        homeFull: m.homeFull,
       })),
     observedAt: usage.observedAt,
   };

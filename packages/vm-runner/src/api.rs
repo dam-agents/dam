@@ -153,6 +153,9 @@ pub struct MachineUsage {
     pub disk_used_bytes: u64,
     #[serde(rename = "cpuMilli", skip_serializing_if = "is_zero")]
     pub cpu_milli: u64,
+    // UNIT_BOUNDARY_DESCRIPTION: whether the running machine's guest has no room left to write, as platform-init marks it (guest::GUEST_FULL): the agent's own storage is full while the agent keeps running, so the app can say so beside the machine's files rather than only through the pool's level. False for a machine that is not running, and from a runtime that keeps no console.
+    #[serde(rename = "homeFull", skip_serializing_if = "is_zero")]
+    pub home_full: bool,
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the answer to a seed upload: how many bytes the runner stored and their SHA-256, in lowercase hex. The uploader counts and hashes what it sent the same way, so a seed cut short or changed on the way is caught before the machine boots from it.
@@ -408,6 +411,7 @@ mod tests {
                     disk_gib: 100,
                     disk_used_bytes: 8589934592,
                     cpu_milli: 350,
+                    home_full: true,
                 }],
                 cpu: Some(CpuUsage {
                     limit_milli: 9000,

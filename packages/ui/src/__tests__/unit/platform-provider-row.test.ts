@@ -21,6 +21,9 @@ vi.mock("../../modules/features/api/queries.js", () => ({
 vi.mock("../../modules/connections/api/mutations.js", () => ({
   useDeleteConnection: () => ({ mutate: vi.fn() }),
 }));
+vi.mock("../../modules/providers/api/mutations.js", () => ({
+  useRecheckProviderKeys: () => ({ mutate: vi.fn(), isPending: false }),
+}));
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({ data: { harnesses: [] }, isPending: false }),
 }));

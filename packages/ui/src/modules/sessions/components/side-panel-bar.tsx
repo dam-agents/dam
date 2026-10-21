@@ -144,9 +144,14 @@ export function SidePanelTabButtons({
   });
 }
 
-export function appSidePanelTabs(hidden: ReadonlySet<SidePanelTab>) {
+export function appSidePanelTabs(
+  hidden: ReadonlySet<SidePanelTab>,
+  withArtifacts = false,
+) {
   return SIDE_PANEL_TABS.filter(
-    ({ tab }) => APP_TABS.has(tab) && !hidden.has(tab),
+    ({ tab }) =>
+      (APP_TABS.has(tab) || (withArtifacts && tab === "artifacts")) &&
+      !hidden.has(tab),
   );
 }
 
