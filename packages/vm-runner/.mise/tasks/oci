@@ -1,10 +1,15 @@
 #!/usr/bin/env bash
 #MISE description="Build the VM runner image to dist/oci/vm-runner.tar"
+#MISE sources=["**", "!tests/**", "!dist/**", "!target/**", "!.smolvm/**", "!target.built-with", ".mise/tasks/oci", ".mise/fetch-smolvm", ".mise/config.toml", "{{config_root}}/../../.mise/lib/lima-build.sh", "{{config_root}}/../../.mise/tasks/image/name-layout", "{{config_root}}/../../.mise/config.toml", "{{config_root}}/../../mise.lock"]
+#MISE outputs=["dist/oci/vm-runner.tar"]
 # With mise oci: the runner, the image cache service, the seed uploader,
 # platform-init and platform-runc, compiled from this crate, on Debian with
 # the smolvm release smolvm.pin names. Off Linux it builds in the dev
 # cluster's Lima VM.
 # By path too: the Lima VM runs it with only the tools it names.
+# mise skips this task while its tar is newer than every source, so the tar
+# carries the time the build read its sources, not the time it ended: a source
+# edited during the build leaves it out of date.
 set -euo pipefail
 pkg="$(cd "$(dirname "$0")/../.." && pwd)"
 repo="$(cd "$pkg/../.." && pwd)"
@@ -13,6 +18,8 @@ out=dist/oci/vm-runner.tar
 
 if [ "$(uname -s)" != Linux ]; then
   . "$repo/.mise/lib/lima-build.sh"
+  started="$(mktemp)"
+  trap 'rm -f "$started" "$out.part"' EXIT
   # build-essential: the linker cargo needs, and glibc's static archive for
   # platform-init; git clones smolvm, and usage runs image:name-layout. The
   # VM's copy of the tree is made afresh every build, so cargo's target lives
@@ -20,13 +27,18 @@ if [ "$(uname -s)" != Linux ]; then
   lima_build "build-essential git" "rust crane jq usage" \
     sh -c 'CARGO_TARGET_DIR="$HOME/.cache/platform-vm-runner/target" exec packages/vm-runner/.mise/tasks/oci'
   mkdir -p "$(dirname "$out")"
-  lima_cat "packages/vm-runner/$out" > "$out"
+  # Through a part file: a copy cut short would leave a tar that passes for
+  # current.
+  lima_cat "packages/vm-runner/$out" > "$out.part"
+  touch -r "$started" "$out.part"
+  mv "$out.part" "$out"
   exit
 fi
 
 sudo=(); [ "$(id -u)" = 0 ] || sudo=(sudo --preserve-env env "PATH=$PATH")
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
+: > "$work/started"
 b="$work/build"
 rel="$b/usr/local/libexec/vm-runner"
 install -d "$b/usr/local/bin" "$rel" "$b/opt/smolvm"
@@ -162,7 +174,13 @@ install -m 755 "$lk_so" "$b/opt/smolvm/lib/libkrun.so"
 fw_commit="$(sed -n 's/^libkrunfw-commit=//p' smolvm.pin)"
 [ -n "$fw_commit" ] || { echo "smolvm.pin names no libkrunfw-commit" >&2; exit 1; }
 fw_so="$cache/libkrunfw-$fw_commit-$(git hash-object libkrunfw.patch).so"
-if [ ! -f "$fw_so" ]; then
+# The same arm64 kernel, wrapped for macOS, is what the Mac host runner
+# compiles as its libkrunfw (cluster:host-runner), read from this cache. CI has
+# no Mac to use it. A cache with the library but not the wrap builds again:
+# the wrap is made from the kernel the build leaves behind.
+fw_c=""
+[ "$(uname -m)" != aarch64 ] || [ -n "${CI:-}" ] || fw_c="${fw_so%.so}-darwin.c"
+if [ ! -f "$fw_so" ] || { [ -n "$fw_c" ] && [ ! -f "$fw_c" ]; }; then
   fw="$cache/libkrunfw"
   if [ "$(git -C "$fw" rev-parse HEAD 2>/dev/null)" != "$fw_commit" ]; then
     rm -rf "$fw"
@@ -188,10 +206,7 @@ if [ ! -f "$fw_so" ]; then
   # The Makefile and the kernel's take ARCH as the guest's architecture, and
   # cd.yml's build-images exports ARCH=amd64, which neither knows.
   env -u ARCH make -C "$fw" --no-print-directory -j"$(nproc)" >/dev/null
-  # The same arm64 kernel, wrapped for macOS, is what the Mac host runner
-  # compiles as its libkrunfw (cluster:host-runner). CI has no Mac to use it.
-  [ "$(uname -m)" != aarch64 ] || [ -n "${CI:-}" ] ||
-    python3 "$fw/bin2cbundle.py" --os Darwin -t Image "$fw"/linux-*/arch/arm64/boot/Image "${fw_so%.so}-darwin.c"
+  [ -z "$fw_c" ] || python3 "$fw/bin2cbundle.py" --os Darwin -t Image "$fw"/linux-*/arch/arm64/boot/Image "$fw_c"
   mv "$fw/libkrunfw.so.5.5.0" "$fw_so"
 fi
 fw_version() { LC_ALL=C grep -aom1 'Linux version [0-9.]*' "$1"; }
@@ -291,5 +306,6 @@ for bin in /usr/local/libexec/vm-runner/vm-runner /usr/local/bin/vm-runner-loade
 done
 
 mkdir -p "$(dirname "$out")"
+touch -r "$work/started" "$work/image.tar"
 mv "$work/image.tar" "$out"
 echo "$out"

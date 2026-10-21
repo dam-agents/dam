@@ -91,7 +91,7 @@ Rules that keep hits honest:
 - **Declare every input.** Cross-package reads are covered by depending on the upstream package's task (`^check:tsc` = the same task in every pnpm workspace dependency); `pnpm-lock.yaml` is in every TypeScript key.
 - **Never depend on an install step.** Installs are `[deps]` providers, not tasks; a dependency that runs without a cache key makes every dependent uncacheable.
 - **Never cache what talks to the outside**: image builds, cluster ops, anything reading a registry or a live cluster.
-  The image:pack images' `:oci` tasks do declare `sources` and `outputs`, without the cache: mise then skips one only while its tar is newer than every source, so a repeated `cluster:install` does not rebuild an unchanged image.
+  The image:pack images' and the VM runner's `:oci` tasks do declare `sources` and `outputs`, without the cache: mise then skips one only while its tar is newer than every source, so a repeated `cluster:install` does not rebuild an unchanged image.
   A pulled tar is dated to 1980, so it never passes for a build of the checkout.
 
 Inspect with `mise run --task-cache-explain <task>`; bypass with `mise run --task-cache off <task>`.

@@ -31,10 +31,27 @@ if [ ! -x "$release/smolvm-bin" ]; then
 fi
 # platform-init and platform-runc run inside the guest, so they are the static
 # Linux binaries from the runner image, not anything built for this Mac, as is
-# the btrfs disk template. The image is rebuilt unless the caller just did
-# (SKIP_IMAGE_BUILD), so they match the runner built above.
+# the btrfs disk template. The image is rebuilt when its sources changed, unless
+# the caller just ran that build (SKIP_IMAGE_BUILD), so they match the runner
+# built above.
+# The guest kernel is the runner image's too: libkrunfw rebuilt with
+# libkrunfw.patch, which adds btrfs and zram. The image build leaves that arm64
+# kernel, wrapped for macOS, in the build VM's cache (see oci), which the
+# task's skip cannot see: a recreated VM has none, and the caller's build was
+# a skip. So when this Mac needs the kernel and the VM lacks it, the build is
+# forced, whatever the caller did.
+. "$MISE_CONFIG_ROOT/.mise/lib/lima-build.sh"
 image="$pkg/dist/oci/vm-runner.tar"
-[ -n "${SKIP_IMAGE_BUILD:-}" ] && [ -f "$image" ] || mise run //packages/vm-runner:oci
+fw_id="$(sed -n 's/^libkrunfw-commit=//p' "$pkg/smolvm.pin")-$(git -C "$pkg" hash-object libkrunfw.patch)"
+fw_c=".cache/platform-vm-runner/libkrunfw-$fw_id-darwin.c"
+vm_sh() { limactl shell --workdir / "$LIMA_BUILD_VM" sh -c "$@"; }
+need_kernel=false
+[ "$(cat "$release/lib/libkrunfw.id" 2>/dev/null)" = "$fw_id" ] || need_kernel=true
+force=()
+if $need_kernel && ! vm_sh 'test -f ~/"$1"' _ "$fw_c"; then force=(--force); fi
+if [ ${#force[@]} -gt 0 ] || [ -z "${SKIP_IMAGE_BUILD:-}" ] || [ ! -f "$image" ]; then
+  mise run ${force[@]+"${force[@]}"} //packages/vm-runner:oci
+fi
 for path in usr/local/libexec/vm-runner/platform-init usr/local/libexec/vm-runner/platform-runc opt/smolvm/storage-template.btrfs.zst; do
   bin="${path##*/}"
   for blob in $(tar -tf "$image" | grep '^blobs/sha256/.'); do
@@ -45,14 +62,9 @@ for path in usr/local/libexec/vm-runner/platform-init usr/local/libexec/vm-runne
   chmod 755 "$R/$bin.new"
 done
 
-# The guest kernel is the runner image's: libkrunfw rebuilt with
-# libkrunfw.patch, which adds btrfs and zram. The image build leaves that arm64 kernel,
-# wrapped for macOS, in the build VM's cache (see oci); it is compiled here in
-# place of the release's libkrunfw.
-. "$MISE_CONFIG_ROOT/.mise/lib/lima-build.sh"
-fw_id="$(sed -n 's/^libkrunfw-commit=//p' "$pkg/smolvm.pin")-$(git -C "$pkg" hash-object libkrunfw.patch)"
-if [ "$(cat "$release/lib/libkrunfw.id" 2>/dev/null)" != "$fw_id" ]; then
-  limactl shell --workdir / "$LIMA_BUILD_VM" sh -c 'cat ~/.cache/platform-vm-runner/libkrunfw-"$1"-darwin.c' _ "$fw_id" > "$R/kernel.c"
+# The guest kernel is compiled here in place of the release's libkrunfw.
+if $need_kernel; then
+  vm_sh 'cat ~/"$1"' _ "$fw_c" > "$R/kernel.c"
   cc -fPIC -DABI_VERSION=5 -shared -O2 -install_name libkrunfw.5.dylib -o "$R/libkrunfw.5.dylib" "$R/kernel.c" 2>/dev/null
   codesign -f -s - "$R/libkrunfw.5.dylib"
   mv "$R/libkrunfw.5.dylib" "$release/lib/libkrunfw.5.dylib"
