@@ -405,19 +405,6 @@ func runnerPodReportsItsGrant(t *testing.T, r *AgentReconciler, allocated string
 	require.NoError(t, err)
 }
 
-// TEST_SCENARIO: the node answered the last resize with Deferred: it has no room for what the controller asked, and it grants a resize whole or not at all.
-func runnerPodResizeDeferred(t *testing.T, r *AgentReconciler) {
-	t.Helper()
-	ctx := context.Background()
-	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
-	require.NoError(t, err)
-	pod.Status.Conditions = []corev1.PodCondition{{
-		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
-	}}
-	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
-	require.NoError(t, err)
-}
-
 // TEST_SCENARIO: the pod's spec is set to exactly what the owner's demand asks, as an earlier resize leaves it on a node that never reports the result, so a further resize would ask for nothing new.
 func runnerPodCarriesTheDemand(t *testing.T, r *AgentReconciler, demand runnerDemand) {
 	t.Helper()
@@ -588,7 +575,8 @@ func TestPeersCountByWhetherTheyShouldRun(t *testing.T) {
 
 	d, err := r.ownerRunnerDemand(context.Background(), testOwner, agent, true)
 	require.NoError(t, err)
-	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1)}, d)
+	assert.Equal(t, runnerDemand{memoryMiB: 3072 + 2048, vCPUs: 2 * max(r.config.VM.Runner.MachineCPUs, 1), heldMiB: 2048}, d,
+		"the peer holds its machine; the start being sized holds nothing yet")
 
 	d, err = r.ownerRunnerDemand(context.Background(), testOwner, agent, false)
 	require.NoError(t, err)
@@ -618,10 +606,55 @@ func TestTheRunnerRequestFallsOnlyClearlyBelowTheCurrentStep(t *testing.T) {
 	assert.Equal(t, "2Gi", down.String())
 }
 
-// TEST_SCENARIO: the node grants a resize whole or not at all, so a request covering every start waiting for it is one the node defers while it has room for only some of them, and every start waits although one of them fits. While the node defers, the ask steps down to what the pod already holds plus one machine's warm-up: that is one more machine than the runner can admit, the waiting starts retry against it, and the ones that fit go in waves instead of none of them ever starting.
-func TestADeferredResizeAsksForWhatTheNodeHoldsPlusOneWarmUp(t *testing.T) {
+// TEST_SCENARIO: the node grants a resize whole or not at all, so an ask covering every waiting start is one it defers while it has room for only some: every start waits although one of them fits. The ask falls to what the runner itself needs to admit one more machine — what the machines hold, plus the cheapest waiting start, plus the reserve — so it is the least a request can be and still start one. The configuration is the advisor's counterexample: a 1 GiB grant, a 512 MiB reserve, a 1024 MiB warm-up, a 3 GiB pool and three starts waiting, where the node has room to grant 1536 MiB and no more. A full-boot step of grant plus warm-up would ask for 2048 and stay deferred; the admission figure is 1536, which the node grants.
+func TestADeferredResizeAsksForOneMoreMachineAndTheNodeGrantsIt(t *testing.T) {
 	agent := vmAgentCR()
-	r, _, _ := setupVMReconciler(t, agent)
+	r, node, requeued := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.MachineCPUs = 1
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("3Gi")},
+	}
+	clusterResizesPods(r, true)
+	node.admit, node.reserveMiB, node.bootMiB = true, 512, 1024
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Memory: new(resource.MustParse("3Gi"))})
+	r.refreshVMPool(context.Background(), testOwner)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	runnerPod(t, r, "1Gi", "3Gi")
+	for _, peer := range []string{"peer-a", "peer-b", "peer-c"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+	}
+	ctx := context.Background()
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+
+	for _, name := range []string{"peer-a", "peer-b", "peer-c"} {
+		node.set(name, vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+		r.vmAnswers.Store(name, vmrunner.ReasonAwaitingAllocation)
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.Equal(t, "1536Mi", runnerPodRequest(t, r),
+		"the grant is 1Gi and the node has 1.5Gi of room, so the ask is what one more machine costs, not the 2Gi a whole boot above the grant would ask for")
+	assert.False(t, node.spec("my-agent").Running, "the node has not granted the memory, so no start went ahead")
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonAwaitingAllocation, cond.Reason)
+	assert.NotEmpty(t, requeued.all(), "the start is retried at the machine watch's cadence")
+
+	// TEST_SCENARIO: the node grants the stepped ask, and the start that fits goes ahead while the others keep waiting.
+	runnerPodReportsItsGrant(t, r, "1536Mi")
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.True(t, node.spec("my-agent").Running, "the grant the node made is what the start needed, so it started")
+	cond = readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, cond.Reason, "a start that went ahead is no longer waiting for the node")
+}
+
+// TEST_SCENARIO: the ask is only worth stepping down to once the node reports what it granted; with no figure there is nothing to compare the demand against, so the whole demand stands, and an install with no waiting start asks for the whole demand too, since nothing is held back by the node.
+func TestTheWholeDemandIsAskedForWhenNothingIsHeldBack(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
 	r.config.VM.Runner.BootMiB = 1024
 	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
 		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
@@ -629,32 +662,40 @@ func TestADeferredResizeAsksForWhatTheNodeHoldsPlusOneWarmUp(t *testing.T) {
 	}
 	clusterResizesPods(r, true)
 	runnerPod(t, r, "1Gi", "8Gi")
-	for _, peer := range []string{"peer-a", "peer-b", "peer-c"} {
-		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
-	}
-
+	peerVMAgent(t, r, "peer-up", "4Gi", "20Gi", true)
 	require.NoError(t, r.Reconcile(context.Background(), agent))
-	assert.Equal(t, "4608Mi", runnerPodRequest(t, r), "every waiting start is asked for while the node has not answered")
+	whole := runnerPodRequest(t, r)
 
-	runnerPodResizeDeferred(t, r)
+	runnerPodForgetsItsGrant(t, r)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
 	require.NoError(t, r.Reconcile(context.Background(), agent))
-	assert.Equal(t, "2Gi", runnerPodRequest(t, r),
-		"what the pod holds plus one warm-up of 1Gi: the node defers the whole ask, so a smaller one is the only one it can grant")
+	assert.Equal(t, whole, runnerPodRequest(t, r), "a node that reports no grant has no figure to step the ask down to")
 }
 
-// TEST_SCENARIO: the ask a deferred resize steps down to is one more machine than the pod holds, and never what the demand does not ask for: a request above the demand reserves memory the machines will not use. It is never below what the install asked for, and never above the limit, which the API refuses.
-func TestTheAskADeferredResizeStepsDownToStaysWithinItsBounds(t *testing.T) {
+// TEST_SCENARIO: the stepped ask is bounded by what the demand calls for and by the install's request, and it is rounded up to the request step like every other ask, so a step change does not resize the pod at every pass.
+func TestTheStepDownIsBoundedAndRounded(t *testing.T) {
 	floor, limit := resource.MustParse("1Gi"), resource.MustParse("8Gi")
-	stepped := runnerRequestWithinGrant(4096, 1024, 1024, floor, limit)
-	assert.Equal(t, "2Gi", stepped.String())
-	asking := runnerRequestWithinGrant(1024, 1024, 1024, floor, limit)
-	assert.Equal(t, "1Gi", asking.String(), "never more than the demand asks for")
-	fallen := runnerRequestWithinGrant(512, 2048, 1024, floor, limit)
-	assert.Equal(t, "1Gi", fallen.String(), "a demand under the grant is asked for as it is, raised only to the install's request")
-	floored := runnerRequestWithinGrant(4096, 0, 0, floor, limit)
+	low := deferredRunnerRequest(runnerDemand{memoryMiB: 4096, heldMiB: 1024, nextStartMiB: 1024, vCPUs: 4}, 512, resource.MustParse("4608Mi"), floor, limit)
+	assert.Equal(t, "2560Mi", low.String(), "1Gi held plus a 1Gi start plus the 512Mi reserve, rounded up to the step")
+
+	atDemand := deferredRunnerRequest(runnerDemand{memoryMiB: 2048, heldMiB: 1024, nextStartMiB: 512, vCPUs: 4}, 512, resource.MustParse("2Gi"), floor, limit)
+	assert.Equal(t, "2Gi", atDemand.String(), "the demand's own ask when the step would exceed it")
+
+	floored := deferredRunnerRequest(runnerDemand{memoryMiB: 4096, vCPUs: 4}, 512, resource.MustParse("4608Mi"), floor, limit)
 	assert.Equal(t, "1Gi", floored.String(), "never below the request the install set")
-	capped := runnerRequestWithinGrant(16384, 16384, 1024, floor, limit)
+
+	capped := deferredRunnerRequest(runnerDemand{memoryMiB: 16384, heldMiB: 16384, nextStartMiB: 1024, vCPUs: 4}, 512, resource.MustParse("32Gi"), floor, limit)
 	assert.Equal(t, "8Gi", capped.String(), "never above the limit, which the API refuses")
+}
+
+// TEST_SCENARIO: the ask stays stepped until the node's grant reaches what the demand calls for, so a wave that is granted does not put the whole demand back on the next pass and resize the pod twice for nothing. The reading is the grant itself, not the pod's resize condition, which clears the moment a wave lands.
+func TestTheAskStaysSteppedUntilTheGrantReachesTheDemand(t *testing.T) {
+	demand := runnerDemand{memoryMiB: 4096, heldMiB: 1024, nextStartMiB: 1024, vCPUs: 4}
+	assert.True(t, demand.grantHoldsBackStart(1024, 512), "the grant cannot hold one more machine")
+	assert.True(t, demand.grantHoldsBackStart(2048, 512), "the grant holds one more machine but not the next")
+	assert.False(t, demand.grantHoldsBackStart(2560, 512), "the grant now holds what one more machine costs, so the whole demand is asked for again")
+	assert.False(t, runnerDemand{memoryMiB: 4096, heldMiB: 4096, vCPUs: 4}.grantHoldsBackStart(1024, 512),
+		"with no start waiting for the node nothing is held back")
 }
 
 // TEST_SCENARIO: an install that sets only the limit gets a pod whose request Kubernetes defaulted to the limit. That is already the safest request there is, so nothing is lowered.

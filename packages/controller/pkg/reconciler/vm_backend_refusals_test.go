@@ -4,6 +4,7 @@ package reconciler
 import (
 	"context"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -195,6 +196,8 @@ func TestReclaimForAWaitingStartDoesNotCountTheOtherWaiter(t *testing.T) {
 	require.NoError(t, err)
 	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
 
+	// TEST_SCENARIO: the step-down has been with the node for longer than a grace, so this pass is about what the reclaim counts rather than about when it runs.
+	r.steppedSince.Store(testOwner, time.Now().Add(-2*steppedGrantGrace))
 	require.NoError(t, r.Reconcile(ctx, agent))
 
 	hibernated := map[string]bool{}
@@ -396,4 +399,94 @@ func TestAnUnreachableRunnerKeepsThePublishedRestarts(t *testing.T) {
 	restarts, reason := agentRestartStatus(t, r, agent.Name)
 	assert.Equal(t, int64(2), restarts)
 	assert.Equal(t, "GuestStoppedAnswering", reason)
+}
+
+// TEST_SCENARIO: a grant too small for one more machine is answered by asking the node for less, not by freeing anything. While that smaller ask is still on its way — the pod still carries the larger ask the whole demand called for — an idle agent must not be hibernated: the node may grant the smaller ask, and the machine the owner already had would have fitted beside the new one. The reclaim waits for the pod to carry the reduced ask, which is how the two cases are told apart without a timer.
+func TestAWaitingStartDoesNotFreeRoomWhileTheReducedAskIsInFlight(t *testing.T) {
+	ctx, r, agent := deferredResizeWithWaits(t, false)
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	for _, peer := range []string{"idle-peer", "peer-b"} {
+		untouched, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})
+		require.NoError(t, err)
+		assert.Empty(t, untouched.GetAnnotations()[annReclaimedAt],
+			"%s was hibernated for room the node is being asked for with the smaller request", peer)
+	}
+	assert.WithinDuration(t, time.Now(), mustLoad(t, &r.steppedSince, testOwner), time.Minute,
+		"the step-down is recorded from the pass that made it, so the grace runs from there")
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonAwaitingAllocation, cond.Reason)
+}
+
+// TEST_SCENARIO: once the pod carries the reduced ask and the node has still not granted it, the grant is exhausted and the owner's own idle agents are the only room left: the reclaim runs again, as it does for a start the pool refused. Without that, a grant that can never hold one more machine would leave every start of that owner waiting for ever.
+func TestTheReclaimRunsOnceTheReducedAskIsExhausted(t *testing.T) {
+	ctx, r, agent := deferredResizeWithWaits(t, true)
+	// TEST_SCENARIO: the step-down began more than a grace ago, and the node has still not granted it.
+	r.steppedSince.Store(testOwner, time.Now().Add(-2*steppedGrantGrace))
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	reclaimed, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, reclaimed.GetAnnotations()[annReclaimedAt],
+		"the reduced ask is exhausted and an idle machine is the only room left")
+}
+
+func mustLoad(t *testing.T, m *sync.Map, key string) time.Time {
+	t.Helper()
+	v, ok := m.Load(key)
+	require.True(t, ok, "the step-down was never recorded")
+	return v.(time.Time)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: one idle machine up and holding memory, two starts waiting for the node, and a runner pod the node has granted 2560 MiB of, which holds the two machines that wait but not the one more a start needs. `stepped` puts the reduced ask in the pod, as a step-down the node has already been given and refused; without it the pod carries the whole demand, as a step-down the node has not been given yet. Both figures come from the production sizing, so the fixture cannot drift from it.
+func deferredResizeWithWaits(t *testing.T, stepped bool) (context.Context, *AgentReconciler, *apiv1.Agent) {
+	t.Helper()
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	for _, peer := range []string{"idle-peer", "peer-b"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+	}
+	r.noteMachineUse("idle-peer", measured(2304))
+	r.vmAnswers.Store("peer-b", vmrunner.ReasonAwaitingAllocation)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+
+	runnerPod(t, r, "1Gi", "16Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	demand, err := r.ownerRunnerDemand(ctx, testOwner, agent, false)
+	require.NoError(t, err)
+	wants, ok := r.runnerPodWants(ctx, testOwner, pod, demand)
+	require.True(t, ok)
+	carried := wants.memoryRequest
+	if !stepped {
+		carried = runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, carried, resource.MustParse("1Gi"), resource.MustParse("16Gi"))
+	}
+	pod.Spec.Containers[0].Resources.Requests[corev1.ResourceMemory] = carried
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:               vmRunnerComponent,
+		AllocatedResources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2560Mi")},
+	}}
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+	}}
+	pod, err = r.client.CoreV1().Pods("test-agents").Update(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	return ctx, r, agent
 }
