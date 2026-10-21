@@ -123,6 +123,7 @@ import type {
   SlackPostMessage,
   SlackReservedFile,
   SlackFileInfo,
+  SlackSessionStoppedEvent,
   SlackImageFile,
   SlackMentionEvent,
   SlackMessage,
@@ -1067,15 +1068,18 @@ function workspaceOf(
   );
 }
 
+type RefuseOutsideReach = (
+  conversationId: string,
+  teamId: SlackWorkspace,
+  directMessage?: { user: string | null },
+) => Promise<{ error: string } | null>;
+
 async function resolveOutboundTarget(
   gateway: SlackGateway,
   bound: SlackBoundConversation[],
   conversationId: string | undefined,
   turnWorkspace: TurnWorkspace,
-  refuseOutsideOwnerReach: (
-    conversationId: string,
-    teamId: SlackWorkspace,
-  ) => Promise<{ error: string } | null>,
+  refuseOutsideOwnerReach: RefuseOutsideReach,
 ): Promise<{ id: string; teamId: SlackWorkspace } | { error: string }> {
   if (!conversationId) {
     if (bound.length === 1)
@@ -1103,6 +1107,10 @@ async function resolveOutboundTarget(
   }
 
   if (/^[UW][A-Z0-9]+$/.test(conversationId)) {
+    const refused = await refuseOutsideOwnerReach(conversationId, teamId, {
+      user: conversationId,
+    });
+    if (refused) return refused;
     try {
       return {
         id: await gateway.openDirectMessage(conversationId, teamId),
@@ -1113,9 +1121,6 @@ async function resolveOutboundTarget(
         error: `could not open a direct message with ${conversationId}: ${formatError(err)}`,
       };
     }
-  }
-  if (conversationId.startsWith("D")) {
-    return { id: conversationId, teamId };
   }
   let lookup: SlackConversationLookup;
   try {
@@ -1139,8 +1144,12 @@ async function resolveOutboundTarget(
       error: `the bot is not a member of ${conversationId} — invite it to the channel first (/invite), or pick a chat from describe_channel`,
     };
   }
-  if (!info.isDirectMessage) {
-    const refused = await refuseOutsideOwnerReach(conversationId, teamId);
+  if (!info.isGroupDirectMessage) {
+    const refused = await refuseOutsideOwnerReach(
+      conversationId,
+      teamId,
+      info.isDirectMessage ? { user: info.directMessageUser } : undefined,
+    );
     if (refused) return refused;
   }
   return { id: conversationId, teamId };
@@ -1402,12 +1411,62 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     return reach;
   }
 
+  async function mayMessageDirectly(
+    gw: SlackGateway,
+    instanceName: string,
+    userId: string,
+    teamId: SlackWorkspace,
+  ): Promise<boolean> {
+    const owner = await getInstanceOwner(instanceName);
+    if (owner) {
+      const ownerUsers = await identityLinks.externalUsersOf("slack", owner);
+      if (ownerUsers.includes(userId)) return true;
+    }
+    const bound = (
+      await channelRegistry.resolveSlackChannelsByInstance(instanceName)
+    ).filter((c) => c.teamId === teamId);
+    for (const { id } of bound.filter((c) => isDirectMessageId(c.id))) {
+      const lookup = await gw.getConversationInfo(id, teamId);
+      if (lookup.kind === "found" && lookup.directMessageUser === userId)
+        return true;
+    }
+    const boundIds = new Set(bound.map((c) => c.id));
+    const shared = await gw.listSharedChannels(userId, teamId);
+    return shared.some((id) => boundIds.has(id));
+  }
+
   async function refuseOutsideOwnerReach(
     gw: SlackGateway,
     instanceName: string,
     conversationId: string,
     teamId: SlackWorkspace,
+    directMessage?: { user: string | null },
   ): Promise<{ error: string } | null> {
+    if (directMessage) {
+      const { user } = directMessage;
+      if (!user) {
+        return {
+          error: `could not tell who ${conversationId} is a direct message with, so it is not one you may post into`,
+        };
+      }
+      let allowed: boolean;
+      try {
+        allowed = await mayMessageDirectly(gw, instanceName, user, teamId);
+      } catch (err) {
+        return {
+          error: `could not check whether you may message ${user} directly: ${formatError(err)}`,
+        };
+      }
+      return allowed
+        ? null
+        : {
+            error:
+              `${user} is not your owner, nor in a conversation you are ` +
+              `connected to. You may message directly only your owner, the ` +
+              `person in a 1:1 DM you are connected to, and the members of ` +
+              `channels you are connected to`,
+          };
+    }
     let reach: Set<string> | "unlinked";
     try {
       reach = await ownerReach(gw, instanceName, teamId);
@@ -1584,6 +1643,35 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       }
       lingering.set(ref, Date.now() + TURN_LINGER_MS);
     }
+  }
+
+  type StoppableTurn = {
+    instanceName: string;
+    startedBy: (slackUserId: string) => boolean;
+    sessionIds: Set<string>;
+    stop: () => Promise<void>;
+  };
+
+  const stoppableTurns = new Map<string, Set<StoppableTurn>>();
+
+  function holdStoppableTurn(
+    channel: string,
+    threadTs: string,
+    turn: StoppableTurn,
+  ): () => void {
+    const key = `${channel} ${threadTs}`;
+    let held = stoppableTurns.get(key);
+    if (!held) {
+      held = new Set();
+      stoppableTurns.set(key, held);
+    }
+    held.add(turn);
+    return () => {
+      const live = stoppableTurns.get(key);
+      if (!live) return;
+      live.delete(turn);
+      if (live.size === 0) stoppableTurns.delete(key);
+    };
   }
 
   const watchedTurnRefs = new Map<string, Set<TurnRef>>();
@@ -2724,6 +2812,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     onSession?: (sessionId: string) => void;
     onGhostTurn?: () => void;
     legacyThreadKey?: string;
+    signal?: AbortSignal;
   }): Promise<string> {
     const platformMeta = {
       type: SessionType.ChannelSlack,
@@ -2744,11 +2833,13 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onImagesDropped: args.onImagesDropped,
         onUpdate: args.onUpdate,
         onSession: args.onSession,
+        signal: args.signal,
       };
       const send = async (
         built: BuiltPrompt,
         opts: Parameters<typeof acp.sendPrompt>[1],
       ) => {
+        args.signal?.throwIfAborted();
         const answer = await acp.sendPrompt(built.prompt, opts);
         built.commit();
         return answer;
@@ -2965,6 +3056,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
 
     let ghostTurn = false;
     let restartsAtStart: Promise<PodRestartState | null> | undefined;
+    const stopper = new AbortController();
+    const stopped = () => stopper.signal.aborted;
     const runTurn = async () => {
       await runSessionTurn({
         instanceName,
@@ -3026,6 +3119,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onGhostTurn: () => {
           ghostTurn = true;
         },
+        signal: stopper.signal,
       });
     };
 
@@ -3065,6 +3159,16 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       failurePosted = true;
     };
 
+    const releaseStoppable = holdStoppableTurn(ctx.channel, replyThreadTs, {
+      instanceName,
+      startedBy: (slackUserId) =>
+        verdictRefs().some((ref) => ref.slackUserId === slackUserId),
+      sessionIds: seenSessionIds,
+      stop: async () => {
+        stopper.abort();
+        await presenter.clearStatus();
+      },
+    });
     try {
       for (const ref of turnRefs) beginTurn(instanceName, ref);
       await runWhileAgentStarts(runTurn, {
@@ -3078,6 +3182,14 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       });
       outcome = "success";
     } catch (err) {
+      if (stopped()) {
+        outcome = "success";
+        getLogger().info(
+          { agentId: instanceName, error: formatError(err) },
+          "slack.turn.stopped_with_error",
+        );
+        return;
+      }
       await postFailure(err);
       const sessionId = turnSessionId();
       if (err instanceof AcpTurnAbandonedError && sessionId !== undefined) {
@@ -3086,6 +3198,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         });
       }
     } finally {
+      releaseStoppable();
       for (const ref of turnRefs) {
         endTurn(instanceName, ref, {
           harnessMayStillRun: mayLeaveHarnessRunning(ghostTurn, failureReason),
@@ -3100,6 +3213,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
       if (
         failureReason === undefined &&
         !ghostTurn &&
+        !stopped() &&
         !deliveredBy(settledRefs, "clean")
       ) {
         getLogger().warn(
@@ -3131,7 +3245,11 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           ? { externalActorId: ctx.externalActorId }
           : {}),
         outcome,
-        ...(failureReason !== undefined ? { reason: failureReason } : {}),
+        ...(failureReason !== undefined
+          ? { reason: failureReason }
+          : stopped()
+            ? { reason: "stopped" }
+            : {}),
       });
     }
   }
@@ -3438,6 +3556,93 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
     );
   }
 
+  async function handleSessionStopped(event: SlackSessionStoppedEvent) {
+    const gw = gateway;
+    if (!gw) return;
+    const { channel, threadTs, teamId, user } = event;
+    for (const ts of event.streamingMessageTs) {
+      await gw
+        .stopStream({ channel, ts, teamId })
+        .catch((err) =>
+          getLogger().debug(
+            { channelId: channel, ts, err: formatError(err) },
+            "slack.stop.stream_stop_failed",
+          ),
+        );
+    }
+    const running = [...(stoppableTurns.get(`${channel} ${threadTs}`) ?? [])];
+    if (running.length === 0) {
+      await gw
+        .setStatus({ channel, threadTs, teamId, status: "" })
+        .catch((err) =>
+          getLogger().debug(
+            { channelId: channel, threadTs, err: formatError(err) },
+            "slack.stop.status_clear_failed",
+          ),
+        );
+      return;
+    }
+    const invoker = await identityLinks
+      .resolve("slack", user)
+      .catch(() => null);
+    const mayStop = async (turn: StoppableTurn) =>
+      turn.startedBy(user) ||
+      (invoker !== null &&
+        invoker ===
+          (await getInstanceOwner(turn.instanceName).catch(() => null)));
+    const allowed: StoppableTurn[] = [];
+    for (const turn of running) if (await mayStop(turn)) allowed.push(turn);
+    const agentName = await resolveAgentName(
+      (allowed[0] ?? running[0]!).instanceName,
+    );
+    if (allowed.length === 0) {
+      securityLog("warn", "channel.authz_deny", {
+        category: "channel",
+        actor: invoker,
+        actorKind: invoker ? "user" : "external",
+        surface: "slack",
+        agentId: running[0]!.instanceName,
+        decision: "deny",
+        reason: "not-starter-or-owner",
+        detail: { slackUserId: user, channelId: channel, trigger: "stop" },
+      });
+      await ephemeral(
+        channel,
+        user,
+        threadTs,
+        `Only the person who asked, or \`${agentName}\`'s owner, can stop it.`,
+        teamId,
+      );
+      return;
+    }
+    for (const turn of allowed) {
+      securityLog("info", "channel.authz", {
+        category: "channel",
+        actor: invoker,
+        actorKind: invoker ? "user" : "external",
+        surface: "slack",
+        agentId: turn.instanceName,
+        decision: "allow",
+        detail: {
+          basis: turn.startedBy(user) ? "starter" : "owner",
+          trigger: "stop",
+          slackUserId: user,
+          channelId: channel,
+        },
+      });
+      await turn.stop();
+      for (const sid of turn.sessionIds)
+        turnRecovery.dismiss(turn.instanceName, sid);
+    }
+    await ephemeral(
+      channel,
+      user,
+      threadTs,
+      `Stopped \`${agentName}\`.`,
+      teamId,
+    );
+  }
+
   async function handleBotJoinedChannel(event: SlackBotJoinedChannelEvent) {
     if (!gateway || !event.inviter) return;
     await gateway.postEphemeral({
@@ -3624,6 +3829,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           type: EventType.SlackDisconnected,
           agentId: binding.instanceName,
           slackChannelId: command.channelId,
+          ownerSub: agentOwner ?? binding.owner,
         });
         const remaining = picked.roster.filter(
           (entry) => entry.instanceName !== binding.instanceName,
@@ -5718,6 +5924,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         onDirectMessage: handleDirectMessage,
         onBotJoinedChannel: handleBotJoinedChannel,
         onViewSubmission: handleViewSubmission,
+        onSessionStopped: handleSessionStopped,
       });
       if (!connected) {
         gatewayFailed = true;
@@ -5872,7 +6079,8 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         conversationId,
         turnWorkspace(instanceName),
-        (id, teamId) => refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+        (id, teamId, dm) =>
+          refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) {
         return target;
@@ -6184,10 +6392,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
               boundChannelIds,
               args.conversationId ?? turn?.channel,
               turnWorkspace(instanceName),
-              async (id, teamId) =>
+              async (id, teamId, dm) =>
                 id === turn?.channel
                   ? null
-                  : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+                  : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
             );
       if ("error" in target) return target;
 
@@ -6292,10 +6500,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         args.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId) =>
+        async (id, teamId, dm) =>
           id === turnChannel
             ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) return target;
 
@@ -6452,10 +6660,10 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
         boundChannelIds,
         query.conversationId ?? turnChannel,
         turnWorkspace(instanceName),
-        async (id, teamId) =>
+        async (id, teamId, dm) =>
           id === turnChannel
             ? null
-            : refuseOutsideOwnerReach(gw, instanceName, id, teamId),
+            : refuseOutsideOwnerReach(gw, instanceName, id, teamId, dm),
       );
       if ("error" in target) return target;
 

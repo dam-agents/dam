@@ -1,6 +1,6 @@
 # Channel turns
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
 What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
@@ -49,6 +49,7 @@ A few observations the diagram glosses over:
   Slack only: Telegram drops one at its gateway.
   A picture becomes prompt content only in a format the harness decodes, the sniffed type outranking the messenger's label.
   Everything else is written into the agent's workspace and linked by absolute path, as a web-UI upload is, whatever its format.
+  Both land under `~/.uploads/`, which the Claude Code image's managed settings allow reads from, so reading a handed file raises no permission prompt.
   Anything withheld — a refusing messenger, a failed write, a size ceiling — is named to the agent, and on an addressed turn to the sender too.
 - **A relayed turn answers its own permission prompts, and it answers them no.** A harness that stops to ask before a sensitive tool call is asking somebody who is not there: the relay holds no verdict of its own, and the conversation's other members are not the binding owner.
   So the relay refuses and the turn carries on with that one call denied, rather than waiting on an answer that cannot come — the same rule the credentialed-egress gate applies to an unattended turn ([security-and-credentials](security-and-credentials.md)).
@@ -69,8 +70,8 @@ A few observations the diagram glosses over:
 - **Wake failures are surfaced in human terms.** A cold start announces itself to the Slack sender (requester-only notice); a wake that misses its budget while the pods are still progressing posts a still-starting note once and keeps waiting while the cause stays transient, bounded by elapsed time, so a healthy-but-slow start never loses the turn.
   A hard failure (pod crash, bad image, a wedged gateway, reconcile error) replies with copy derived from the classified wake-failure cause — never the internal error string.
   The one message passed through verbatim is a refusal to start: the controller's text names what is full and what to stop, which no copy written here could reproduce; a cause the platform is itself repairing still invites a retry.
-  An Agent a [runtime migration](vm-runtime-migration.md) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that it waits on its owner.
-  Telegram replies with the same copy on wake failures (no early notice, no extended wait).
+  An Agent a [runtime migration](vm-runtime-migration.md) holds down is refused a wake at once: the sender is told it is moving to the new runtime and to try again in a few minutes, or, when the move failed after stopping it, that an operator has to finish or undo the move.
+  Telegram replies with the same copy on wake failures (no early notice, no extended wait), on addressed turns only: an ambient turn fails silently, as on Slack.
 - **The agent posts by calling a tool — plain assistant text is never delivered.** A Slack turn's reply reaches the channel only when the agent calls one of its outbound tools (see [Outbound](#outbound--agent-to-channel)), mirroring how Telegram already works.
   The relay hands the message to the pod and waits for the turn to finish, but the assistant's generated text is discarded — nothing is auto-posted, and an addressed turn that ends having posted nothing is nudged to deliver it (see [the turn watch](#the-turn-watch--liveness-not-duration)).
   The prompt carries a per-turn contract stating this and naming the thread and triggering message the tools target by default, so the agent replies into the right thread without tracking ids.
@@ -82,6 +83,11 @@ A few observations the diagram glosses over:
   Thought and tool notifications feed it; assistant text is ignored.
   The status degrades to nothing where the workspace can't show it.
   Ambient turns present no status — nobody summoned the agent.
+- **The status carries Slack's Stop button, and it stops the turn.** Slack shows the button to apps subscribed to `agent_session_stopped`, and sends that event for the thread when someone presses it.
+  The worker cancels the turn running in that thread with ACP `session/cancel`, the same notification the web UI sends, on the connection that carries the prompt.
+  Only a person whose message the turn carries — the one who started it, or one whose message joined it — or someone whose linked platform user owns the Agent may stop it; anyone else is told so in an ephemeral notice and the turn runs on.
+  A stopped turn clears its status, finishes every stream Slack names in the event, and is recorded with the reason `stopped`; it is not handed to the delivery nudge, so the agent is not asked again to answer what the person withdrew.
+  A Stop that arrives after the turn ended only clears the status.
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
@@ -112,7 +118,8 @@ A few observations the diagram glosses over:
   A reply in a supergroup is not a conversation of its own: Telegram marks it with a thread id too, which the worker drops on arrival, so the reply lands in its chat's session and is answered in the chat.
   Slack's pairing is what isolates an Agent's bindings from each other — a thread id is unique only inside its conversation, so a bare one would cross channels.
   Nothing in a store guards the key: Slack serializes turns per (Agent, session key) across the session match and the prompt, so concurrent first messages cannot mint duplicate sessions.
-  Outside a 1:1 DM the addressed queue is keyed the same way, so an addressed turn and a read-along one landing in the same thread arrive through separate queues: the per-key serialization still runs them one at a time, but nothing fixes which goes first.
+  On Slack, outside a 1:1 DM the addressed queue is keyed the same way, so an addressed turn and a read-along one landing in the same thread arrive through separate queues: the per-key serialization still runs them one at a time, but nothing fixes which goes first.
+  On Telegram one queue per conversation carries both, in arrival order, and a message addressed to the Agent is never steered into a running read-along turn: such a turn stays silent when it fails, so the message waits for an addressed turn of its own.
 - **Injected history says what it is, and it does not say the same thing twice.** Every message the turn itself carries is left out of it, the whole batch where a burst is answered at once, so nothing the Agent is being asked to answer is also quoted back as background.
   A thread's history and a direct message's are one conversation, framed as the context for the answer.
   **A thread's history is its end**, read the way `read_thread` reads it, in one read: the message that opened the thread, then the newest replies that fit.
@@ -132,11 +139,12 @@ A few observations the diagram glosses over:
 - **An app's post is read from where the app put it (Slack).** Apps and webhooks often leave a post's `text` empty or a short fallback, and put the content in legacy `attachments[]` or in `blocks`.
   The gateway joins that content to `text`, drops what only repeats it, and caps what it adds, the same for history lines, `read_thread` and the live turn.
   `rich_text` and `markdown` blocks count only when `text` is empty, because they are the copy of `text` that a person's post and an Agent's post carry; Slack's link previews and the Agent Footer never count.
-- **Ambient routing: one session per thread, plus one per channel.** On an ambient binding, a thread reply relays into that thread's own session — the same key a mention there would resume.
+- **Ambient routing on Slack: one session per thread, plus one per channel.** On an ambient binding, a thread reply relays into that thread's own session — the same key a mention there would resume.
   Top-level messages share a single rolling **ambient session** per channel, so the agent follows the channel rather than starting cold per message.
   **All** ambient traffic is serialized per session and coalesced under the same rule as addressed traffic (above).
   A coalesced prompt tags each message with its own ts: a thread batch still answers into its one thread, but a top-level batch has no single triggering message — each batched message registers as its own reply target, and a reply naming none is refused rather than threaded under the newest.
   When the agent chimes in, the reply threads under the message it answers; the follow-up conversation runs as an ordinary thread session, with history injection carrying context across.
+  On Telegram a conversation has no threads, so a read-along turn resumes the conversation's one session, the one its addressed turns use.
 - **Every turn relay is evented.** Both workers announce the finished turn on the in-process bus, naming the messenger, the Agent, and whether it succeeded.
   It carries no platform identity — channel turns resolve none — so attribution rides the messenger-native id of the sender instead.
   A failure also carries a low-cardinality failure reason (a wake-failure cause, a turn-watch verdict, `no-default-model`, or a relay error), which the audit trail and usage records project — so failed turns are diagnosable from the log store after the fact.
@@ -160,7 +168,7 @@ A failed status read is unknown and simply polled again; only a session that nev
 Once the work is over, delivery is judged by **how it ended, never by timing**: a turn that ended in-process made its full disposition and is nudged only when it posted and declined nothing — the same verdict a never-abandoned turn gets — while an interrupted turn never completed, so any interim post was a partial and it is nudged unless its silence was deliberate.
 The nudge resumes the session with an undelivered-turn notice and the agent posts its own late answer, or declines — which keeps the invariant that the platform never authors assistant text; the nudge, boot recovery's interruption resume ([agent-lifecycle](agent-lifecycle.md)), the notice that an owner deleted one of the agent's posts ([the Agent Footer](#the-agent-footer)) and a one-time schedule's continuation or reported result ([schedules](schedules.md#one-time-schedules)) are the only platform-authored prompts an agent ever sees — each carries the agent's own words or task, never the platform's.
 A later turn answering on the same session dismisses the watch, so a person who re-asked never gets two answers.
-The watch runs on Slack's addressed turns only: an ambient turn is never nudged — nobody summoned the agent — and Telegram gets the failure copy alone.
+The watch runs on Slack's addressed turns only: an ambient turn is never nudged — nobody summoned the agent — and a Telegram addressed turn gets the failure copy alone.
 
 What counts as answered spans everything the turn gathered, not the batch it opened with: a message steered into a running turn takes its own place in that turn, and the agent's one reply may land against it rather than the message that started things.
 Judging on the opening batch alone reads an answered turn as silent — and then repairs it, which is how a person ends up sent the same answer twice.
@@ -248,7 +256,7 @@ What the agent sees:
   An unnamed call while any Slack turn is live, and one naming a turn the Agent is not running, are both refused: answering them as though a turn had been declined would record nothing, and the turn would then be repaired as undelivered — posting the very answer the Agent chose to withhold.
 - **Slack reach is where the owner is a member.** A bound Agent may post beyond its bound conversations, into a channel that both the bot and the Agent's owner are members of (known from the owner's linked Slack identity), public or private alike: reaching a channel means being able to post there, and Slack lets a person post only where they have joined, so seeing a public channel is not reaching it.
   Other channels are left out of `describe_channel` and refused as a target, and an owner with no linked identity reaches none.
-  A Slack user id opens a DM.
+  A Slack user id opens a DM, but only with the owner, the person in a bound 1:1 DM, or a member of a bound channel, and a DM id is held to the same rule: the shared bot can open a DM with anyone in the workspace, so without it an Agent could message people who never met it or its owner.
   Membership is verified at send time; a bound conversation short-circuits every check, since the binding is the channel's consent.
   Every outbound post is made by the bot and footed with an [Agent Footer](#the-agent-footer).
   The binding governs who may drive the Agent inbound; the owner's membership governs where it may go outbound.
@@ -298,6 +306,6 @@ The two messengers diverge slightly on what a top-level post means:
 
 - **Slack:** the worker posts outside any thread, producing a new top-level message.
   A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
-  An Agent-initiated DM lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
+  An Agent-initiated DM goes only to someone within the Agent's reach (above); it lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
   The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

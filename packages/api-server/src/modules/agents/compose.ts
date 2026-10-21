@@ -11,7 +11,6 @@ import type { AgentStateCache } from "./infrastructure/agent-state-cache.js";
 import { createAgentRegistrySecretPort } from "./infrastructure/agent-registry-secret-port.js";
 import { createAgentSecretRefPort } from "./infrastructure/agent-secret-ref-port.js";
 import { createPodStatusClient } from "./infrastructure/pod-status-client.js";
-import { createAgentRuntimeClient } from "../runtime-delivery/infrastructure/agent-runtime-client.js";
 import { createUnitOfWork } from "../../core/unit-of-work.js";
 import {
   createAgentsRepository,
@@ -70,9 +69,6 @@ export interface AgentsInstallSettings {
   virtualizationEnabled: boolean;
   defaultHarness: string;
   telemetry: boolean;
-  agentDefaultStorageSize: string;
-  agentDefaultMounts: AgentsServiceDeps["agentDefaultMounts"];
-  runtimeMigrationRetentionMs: number | null;
 }
 
 export function composeAgentsModule(deps: {
@@ -113,12 +109,9 @@ export function composeAgentsModule(deps: {
       agentEnvRepo,
       agentIdleTimeoutMinutes: deps.agentIdleTimeoutMinutes,
       agentDefaultLimits: deps.agentDefaultLimits,
-      agentDefaultStorageSize: deps.install.agentDefaultStorageSize,
-      agentDefaultMounts: deps.install.agentDefaultMounts,
       virtualizationEnabled: deps.install.virtualizationEnabled,
       defaultHarness: deps.install.defaultHarness,
       telemetry: deps.install.telemetry,
-      runtimeMigrationRetentionMs: deps.install.runtimeMigrationRetentionMs,
       resizeGate: deps.resizeGate,
       storageGate: deps.storageGate,
       resizeLock: createXactLock(deps.db),
@@ -134,17 +127,6 @@ export function composeAgentsModule(deps: {
       contributionsProgress: deps.contributionsProgress,
       onboardingChecklists: deps.onboardingChecklists,
       podStatus: createPodStatusClient(deps.namespace),
-      // UNIT_BOUNDARY_DESCRIPTION: an Agent's home is measured by its own runtime, which has the volume mounted: what it holds is the volume's size less what is free on it. An Agent that is asleep or stopped has no runtime to ask, and one that does not answer in time is left unmeasured rather than guessed at.
-      homeUsage: {
-        read: async (agentId) => {
-          const volume = await createAgentRuntimeClient(agentId, deps.namespace)
-            .homeVolume()
-            .catch(() => null);
-          return volume
-            ? Math.max(0, volume.totalBytes - volume.freeBytes)
-            : null;
-        },
-      },
       grantProvisioner: deps.grantProvisioner,
       listChannelsByOwner: listChannelsByOwner(deps.db, owner),
       listChannelsByAgent: listChannelsByAgent(deps.db, owner),

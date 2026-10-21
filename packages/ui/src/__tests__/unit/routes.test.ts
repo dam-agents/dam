@@ -32,11 +32,17 @@ describe("route round-trip", () => {
     "/experiments",
     "/experiments/new",
     "/agents/new",
-    "/starter-kits",
     "/starter-kits/software",
-    "/artifacts",
   ])("sends the retired %s to Home", (path) => {
     expect(parseRoute(path).view).toBe("home");
+  });
+
+  // TEST_SCENARIO: the sidebar's Artifacts and Starter kits each open their own page, and a link to either page lands there.
+  it("opens the Artifacts and Starter kits pages", () => {
+    expect(parseRoute("/artifacts")).toEqual({ view: "artifacts" });
+    expect(parseRoute("/starter-kits")).toEqual({ view: "starter-kits" });
+    expect(routeToPath({ view: "artifacts" })).toBe("/artifacts");
+    expect(routeToPath({ view: "starter-kits" })).toBe("/starter-kits");
   });
 
   it("opens the kit modal for a retired kit setup link", () => {

@@ -30,11 +30,10 @@ import {
   ContributionFailuresBadge,
 } from "./contribution-failures-badge.js";
 import { GatewayFailureBadge } from "./gateway-failure-badge.js";
-import { MigrateRuntimeAction } from "./migrate-runtime-action.js";
+import { RuntimeMigrationBadge } from "./runtime-migration-badge.js";
 import { UnsupportedContributionsBadge } from "./unsupported-contributions-badge.js";
 import { UpdateAvailableAction } from "./update-available-action.js";
 import { UsagePairs } from "./usage-pairs.js";
-import { VmRuntimeBadge } from "./vm-runtime-badge.js";
 
 const SECOND_LINE_ITEM =
   "rounded-none border-0 bg-transparent p-0 text-sm tracking-normal text-muted-foreground dark:text-muted-foreground";
@@ -53,11 +52,6 @@ interface Props {
   updateBusy: boolean;
   onSelect: () => void;
   onUpdate: () => void;
-  migratePending: boolean;
-  onMigrate: () => void;
-  migrationControlsBusy: boolean;
-  onAbortMigration: () => void;
-  onRetryMigration: () => void;
   onConfigure: () => void;
   configureLabel: string;
 }
@@ -73,11 +67,6 @@ export function AgentRow({
   updateBusy,
   onSelect,
   onUpdate,
-  migratePending,
-  onMigrate,
-  migrationControlsBusy,
-  onAbortMigration,
-  onRetryMigration,
   onConfigure,
   configureLabel,
 }: Props) {
@@ -116,7 +105,7 @@ export function AgentRow({
               {kindBadge.label}
             </Badge>
           )}
-          <VmRuntimeBadge agent={agent} />
+          <RuntimeMigrationBadge agent={agent} />
           <KitUpdateTag agentId={agent.id} />
           <ContributionFailuresBadge failures={agentFailures(agent)} />
           <GatewayFailureBadge agent={agent} />
@@ -186,14 +175,6 @@ export function AgentRow({
           pending={updatePending}
           busy={updateBusy}
           onUpdate={onUpdate}
-        />
-        <MigrateRuntimeAction
-          agent={agent}
-          pending={migratePending}
-          onMigrate={onMigrate}
-          controlsBusy={migrationControlsBusy}
-          onAbort={onAbortMigration}
-          onRetry={onRetryMigration}
         />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
         <Button

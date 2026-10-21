@@ -18,7 +18,6 @@ export interface KeepOverride {
 export interface KeepDecisions {
   marks: KeepMark[];
   overrides: KeepOverride[];
-  holds: boolean;
 }
 
 export interface KeepResolution {
@@ -53,9 +52,7 @@ function carriesMark(
  * no decision. A Detached Process carries the agent's mark when any process in
  * its tree carries one: the PLATFORM_KEEP value a `platform-keep` launch passed
  * down, which every descendant inherits even through nohup or setsid, or the
- * pid and start time a `platform-keep --pid` named. With background holds
- * switched off for the install, nothing keeps the agent awake, but the row
- * still says who decided.
+ * pid and start time a `platform-keep --pid` named.
  */
 export function createKeepResolver(
   decisions: KeepDecisions,
@@ -64,7 +61,7 @@ export function createKeepResolver(
   const markedKeys = new Set(decisions.marks.map(markedProcessKey));
   const overrides = new Map(decisions.overrides.map((o) => [o.key, o]));
 
-  const decide = (tree: ProcessTree): KeepResolution => {
+  return (tree: ProcessTree): KeepResolution => {
     if (tree.kind === "turn")
       return { keepsAwake: false, keepSource: "default" };
     const override = overrides.get(tree.identity);
@@ -75,11 +72,6 @@ export function createKeepResolver(
     if (tree.members.some((m) => carriesMark(m, markIds, markedKeys)))
       return { keepsAwake: true, keepSource: "agent" };
     return { keepsAwake: false, keepSource: "default" };
-  };
-
-  return (tree) => {
-    const resolved = decide(tree);
-    return decisions.holds ? resolved : { ...resolved, keepsAwake: false };
   };
 }
 

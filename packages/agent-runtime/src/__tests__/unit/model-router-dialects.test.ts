@@ -30,6 +30,7 @@ import {
   floorOutputBudget,
   HARNESS_HEADER,
   sessionOf,
+  sessionOfRunningTurn,
   type ModelRouter,
 } from "../../modules/model-router/index.js";
 
@@ -469,6 +470,19 @@ describe("the Anthropic subscription", () => {
 });
 
 describe("session handles", () => {
+  /** TEST_SCENARIO: Copilot stamps no session on its calls, so while one of its sessions runs a turn the call is that session's; with two turns at once, or for a harness that does not ask for it, the call names no session. */
+  it("books an unmarked Copilot call to its one running turn", () => {
+    const copilot: ModelRouterBinding = {
+      dialects: ["openai-chat"],
+      sessionFromRunningTurn: true,
+    };
+    expect(sessionOfRunningTurn(copilot, ["s1"])).toEqual({ sessionId: "s1" });
+    expect(sessionOfRunningTurn(copilot, ["s1", "s2"])).toBeNull();
+    expect(
+      sessionOfRunningTurn({ dialects: ["openai-chat"] }, ["s1"]),
+    ).toBeNull();
+  });
+
   /** TEST_SCENARIO: Each harness names its session differently: Bob by
    * X-Task-Id (and X-Parent-Task-Id on a subagent's call), Codex by its
    * session-id header (session_id before 0.159) with a subagent's own

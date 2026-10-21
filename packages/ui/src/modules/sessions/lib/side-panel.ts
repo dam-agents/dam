@@ -28,6 +28,7 @@ export const NOTHING_DOCKED: DockedItems = {
 
 export type SidePanelAvailability = {
   agent: boolean;
+  artifacts: boolean;
   canOpenBrowser: boolean;
   processesEnabled: boolean;
   gettingStarted: boolean;
@@ -37,7 +38,7 @@ export function hiddenSidePanelTabs(
   available: SidePanelAvailability,
 ): ReadonlySet<SidePanelTab> {
   const shown: Record<SidePanelTab, boolean> = {
-    artifacts: true,
+    artifacts: available.artifacts,
     files: available.agent,
     changes: available.agent,
     delegation: available.agent,

@@ -2,13 +2,13 @@ import { createInspectableTtlStore } from "../helpers/ttl-store.js";
 import { describe, it, expect, vi } from "vitest";
 import { configureLogger } from "../../core/logger.js";
 import {
-  COMMAND_PATTERN,
   TELEGRAM_COMMANDS,
   createTelegramMessageHandler,
   type ThreadLike,
 } from "../../modules/channels/infrastructure/telegram.js";
 import type { TelegramOAuthPending } from "../../modules/channels/infrastructure/telegram-flows.js";
 import type { KeycloakOAuthConfig } from "../../modules/channels/infrastructure/identity-oauth.js";
+import { EventType, type DomainEvent } from "../../events.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -22,18 +22,14 @@ const oauthConfig: KeycloakOAuthConfig = {
 
 function makeThread(opts?: { isDM?: boolean; id?: string }) {
   const posts: string[] = [];
-  const thread: ThreadLike & { posts: string[]; subscribed: boolean } = {
+  const thread: ThreadLike & { posts: string[] } = {
     id: opts?.id ?? "chat-42",
     isDM: opts?.isDM ?? false,
     posts,
-    subscribed: false,
     async post(message) {
       posts.push(
         typeof message === "string" ? message : JSON.stringify(message),
       );
-    },
-    async subscribe() {
-      thread.subscribed = true;
     },
   };
   return thread;
@@ -42,33 +38,51 @@ function makeThread(opts?: { isDM?: boolean; id?: string }) {
 function harness(opts?: {
   boundTo?: string | null;
   bindings?: Record<string, string>;
+  ambient?: boolean;
   isAdmin?: boolean;
   termsAccepted?: boolean;
+  readsGroupMessages?: boolean;
+  ownerOf?: (agentId: string) => Promise<string | null>;
 }) {
   const { store: pendingOAuthFlows, map: pendingOAuthFlowsMap } =
     createInspectableTtlStore<TelegramOAuthPending>();
-  const unbind = vi.fn(async () => {});
+  const bindings = opts?.bindings;
+  const unbind = vi.fn(async (conversationId: string) => {
+    if (bindings) delete bindings[conversationId];
+  });
   const bind = vi.fn(async () => "bound" as const);
-  const relay = vi.fn(async () => {});
+  const setAmbient = vi.fn(async () => {});
+  const relay = vi.fn();
+  const emitted: DomainEvent[] = [];
   const agentFor = (conversationId: string) =>
-    opts?.bindings ? opts.bindings[conversationId] : opts?.boundTo;
+    bindings ? bindings[conversationId] : opts?.boundTo;
 
   const handle = createTelegramMessageHandler({
     conversations: {
       findAgentByConversation: async (conversationId) => {
         const agentId = agentFor(conversationId);
-        return agentId ? { agentId, authorizedBy: "kc|owner-1" } : null;
+        return agentId
+          ? {
+              agentId,
+              authorizedBy: "kc|owner-1",
+              ambient: opts?.ambient ?? false,
+            }
+          : null;
       },
       bind,
       listByAgent: async () => [],
       unbind,
+      setAmbient,
     },
     isChatAdmin: async () => opts?.isAdmin ?? true,
+    canReadGroupMessages: async () => opts?.readsGroupMessages ?? true,
     decodeChatId: (threadId) => threadId,
     fetchChatTitle: async () => "Team chat",
     oauthConfig,
     pendingOAuthFlows,
     isTermsAccepted: async () => opts?.termsAccepted ?? true,
+    ownerOf: opts?.ownerOf ?? (async () => "kc|owner-1"),
+    emit: (event) => emitted.push(event),
     uiBaseUrl: "https://app.example",
     brandName: "Platform",
     botUsername: () => "krodo_bot",
@@ -81,7 +95,9 @@ function harness(opts?: {
     pendingOAuthFlowsMap,
     unbind,
     bind,
+    setAmbient,
     relay,
+    emitted,
   };
 }
 
@@ -125,6 +141,49 @@ describe("telegram message handler", () => {
     expect(posted).toContain("Connect this chat to one of your agents");
     expect(posted).toContain("link-button");
     expect(posted).toContain("https://kc.example");
+  });
+
+  // TEST_SCENARIO: an in-chat unbind removes the Agent's last Telegram run, so its owner's attention query must re-read; the handler therefore sends the owner an unbind event naming the Agent.
+  it("tells the owner a chat was unbound", async () => {
+    const h = harness({ boundTo: "agent-1" });
+    await h.handle(makeThread(), { text: "/unbind", author: author() }, true);
+    expect(h.emitted).toContainEqual({
+      type: EventType.TelegramChatUnbound,
+      ownerSub: "kc|owner-1",
+      agentId: "agent-1",
+    });
+  });
+
+  // TEST_SCENARIO: the owner lookup can fail while the Agent cache is not synced, and its live Kubernetes fallback is transient. The binding must survive such a failure, so the retry still finds the chat bound, unbinds it, and sends the owner the hint the failed attempt could not.
+  it("keeps the binding when the owner lookup fails, so a retry still hints", async () => {
+    const bindings: Record<string, string> = { "chat-42": "agent-1" };
+    let failLookup = true;
+    const h = harness({
+      bindings,
+      ownerOf: async () => {
+        if (failLookup) throw new Error("kubernetes read failed");
+        return "kc|owner-1";
+      },
+    });
+
+    await expect(
+      h.handle(makeThread(), { text: "/unbind", author: author() }, true),
+    ).rejects.toThrow("kubernetes read failed");
+    expect(h.unbind).not.toHaveBeenCalled();
+    expect(bindings["chat-42"]).toBe("agent-1");
+    expect(h.emitted).toEqual([]);
+
+    failLookup = false;
+    const thread = makeThread();
+    await h.handle(thread, { text: "/unbind", author: author() }, true);
+    expect(h.unbind).toHaveBeenCalledWith("chat-42");
+    expect(bindings["chat-42"]).toBeUndefined();
+    expect(h.emitted).toContainEqual({
+      type: EventType.TelegramChatUnbound,
+      ownerSub: "kc|owner-1",
+      agentId: "agent-1",
+    });
+    expect(thread.posts.join("\n")).toContain("Chat disconnected");
   });
 
   it("unbinds on `/unbind` from a bound chat", async () => {
@@ -187,16 +246,16 @@ describe("telegram message handler", () => {
     expect(h.relay).not.toHaveBeenCalled();
   });
 
-  it("relays a bound chat's message to the bound agent and subscribes", async () => {
+  it("relays an addressed message in a bound group to its agent", async () => {
     const h = harness({ boundTo: "agent-1" });
     const thread = makeThread();
     await h.handle(thread, { text: "hello agent", author: author() }, true);
-    expect(thread.subscribed).toBe(true);
     expect(h.relay).toHaveBeenCalledWith(
       "agent-1",
       thread,
       "hello agent",
       expect.objectContaining({ userId: "tg-7" }),
+      false,
     );
   });
 
@@ -216,7 +275,6 @@ describe("telegram message handler", () => {
       const h = harness({ boundTo: "agent-1" });
       const thread = makeThread({ isDM: true });
       await h.handle(thread, { text: `/${command}`, author: author() }, true);
-      expect(COMMAND_PATTERN.test(`/${command}`)).toBe(true);
       expect(h.relay).not.toHaveBeenCalled();
       expect(thread.posts.length).toBeGreaterThan(0);
     }
@@ -255,6 +313,7 @@ describe("telegram binding covers the whole chat", () => {
       thread,
       "hi",
       expect.objectContaining({ userId: "tg-7" }),
+      false,
     );
   });
 
@@ -280,5 +339,103 @@ describe("telegram binding covers the whole chat", () => {
     await h.handle(thread, { text: "/unbind", author: author() }, true);
     expect(h.unbind).toHaveBeenCalledWith(CHAT);
     expect(thread.posts.join("\n")).toContain("Chat disconnected");
+  });
+});
+
+describe("telegram ambient mode", () => {
+  const CHAT = "telegram:-100777";
+
+  /**
+   * TEST_SCENARIO: Ambient is off by default, as on Slack: a group message
+   * that neither mentions the bot nor replies to it does not reach the
+   * agent, and the bot says nothing about it.
+   */
+  it("drops a group message nobody addressed while ambient is off", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" } });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "lunch at noon?", author: author() }, false);
+    expect(h.relay).not.toHaveBeenCalled();
+    expect(thread.posts).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: With ambient on, the same message reaches the agent as a
+   * read-along message, so the turn tells the agent it may stay silent.
+   */
+  it("relays a group message nobody addressed as ambient when ambient is on", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" }, ambient: true });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "lunch at noon?", author: author() }, false);
+    expect(h.relay).toHaveBeenCalledWith(
+      "agent-1",
+      thread,
+      "lunch at noon?",
+      expect.objectContaining({ userId: "tg-7" }),
+      true,
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: In a group no agent is bound to, ordinary chatter reaches
+   * the handler too, and the bot must stay silent there.
+   */
+  it("stays silent on chatter in a group with no binding", async () => {
+    const h = harness({ bindings: {} });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "lunch at noon?", author: author() }, false);
+    expect(h.relay).not.toHaveBeenCalled();
+    expect(thread.posts).toEqual([]);
+  });
+
+  it("reports the mode to anyone on a bare `/ambient`", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" }, isAdmin: false });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "/ambient", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain("Ambient mode is off");
+    expect(h.setAmbient).not.toHaveBeenCalled();
+  });
+
+  it("lets only a group admin switch ambient mode", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" }, isAdmin: false });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "/ambient on", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain(
+      "Only group admins can `/ambient`.",
+    );
+    expect(h.setAmbient).not.toHaveBeenCalled();
+  });
+
+  /**
+   * TEST_SCENARIO: An admin turns ambient on for the chat. When Telegram's
+   * Group Privacy hides ordinary messages from the bot here, the reply says
+   * so, because ambient mode cannot work until that changes.
+   */
+  it("turns ambient on for the chat and warns when Group Privacy hides messages", async () => {
+    const h = harness({
+      bindings: { [CHAT]: "agent-1" },
+      readsGroupMessages: false,
+    });
+    const thread = makeThread({ id: `${CHAT}:99` });
+    await h.handle(thread, { text: "/ambient on", author: author() }, true);
+    expect(h.setAmbient).toHaveBeenCalledWith(CHAT, true);
+    const posted = thread.posts.join("\n");
+    expect(posted).toContain("Ambient mode turned on");
+    expect(posted).toContain("Group Privacy");
+  });
+
+  it("does nothing when ambient mode is already in the asked state", async () => {
+    const h = harness({ bindings: { [CHAT]: "agent-1" } });
+    const thread = makeThread({ id: CHAT });
+    await h.handle(thread, { text: "/ambient off", author: author() }, true);
+    expect(thread.posts.join("\n")).toContain("Ambient mode is already off.");
+    expect(h.setAmbient).not.toHaveBeenCalled();
+  });
+
+  it("explains that a direct chat has no ambient mode", async () => {
+    const h = harness({ boundTo: "agent-1" });
+    const dm = makeThread({ isDM: true });
+    await h.handle(dm, { text: "/ambient on", author: author() }, true);
+    expect(dm.posts.join("\n")).toContain("every message reaches the agent");
+    expect(h.setAmbient).not.toHaveBeenCalled();
   });
 });

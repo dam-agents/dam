@@ -1,5 +1,9 @@
 import { formatSpendAmount } from "../spend/format.js";
-import type { AcpPermissionOption, ApprovalPayload } from "./types.js";
+import type {
+  AcpPermissionOption,
+  AcpPermissionOptionKind,
+  ApprovalPayload,
+} from "./types.js";
 
 export function describeApprovalPayload(payload: ApprovalPayload): {
   title: string;
@@ -64,24 +68,42 @@ const OPTION_KINDS = [
   "reject_always",
 ] as const;
 
-/**
- * UNIT_BOUNDARY_DESCRIPTION: What a permission request's options become in a
- * recorded row. An unrecordable option is dropped, never sent: the recording
- * route rejects the whole list over one empty id.
- */
-export function permissionOptionsOf(raw: unknown): AcpPermissionOption[] {
+function optionsWithGivenIds(raw: unknown): AcpPermissionOption[] {
   return (Array.isArray(raw) ? raw : []).flatMap((option) => {
     if (typeof option !== "object" || option === null) return [];
     const { optionId, kind } = option as Record<string, unknown>;
     if (typeof optionId !== "string" || optionId === "") return [];
     const kept = OPTION_KINDS.find((candidate) => candidate === kind);
-    return [
-      {
-        optionId: optionId.slice(0, TOOL_CALL_ID_MAX),
-        ...(kept !== undefined && { kind: kept }),
-      },
-    ];
+    return [{ optionId, ...(kept !== undefined && { kind: kept }) }];
   });
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The kind of every option a permission request
+ * offered, under the id the harness gave it. The runtime holds the whole
+ * request, so this is how an answer's kind is known even for an option the
+ * recorded catalog could not keep.
+ */
+export function permissionOptionKindsOf(
+  raw: unknown,
+): Map<string, AcpPermissionOptionKind> {
+  return new Map(
+    optionsWithGivenIds(raw).flatMap(({ optionId, kind }) =>
+      kind === undefined ? [] : [[optionId, kind] as const],
+    ),
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a permission request's options become in a
+ * recorded row. An option the route cannot hold is left out, never shortened:
+ * a shortened id is another option's id, and a denial that sent it would
+ * answer the request with an allow.
+ */
+function permissionOptionsOf(raw: unknown): AcpPermissionOption[] {
+  return optionsWithGivenIds(raw).filter(
+    ({ optionId }) => optionId.length <= TOOL_CALL_ID_MAX,
+  );
 }
 
 /**

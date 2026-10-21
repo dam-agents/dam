@@ -4,7 +4,13 @@ import type { ComponentType, SVGProps } from "react";
 import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
-import { BobFilledIcon, ClaudeIcon, CodexIcon, PiIcon } from "./brand-icons.js";
+import {
+  BobFilledIcon,
+  ClaudeIcon,
+  CodexIcon,
+  CopilotIcon,
+  PiIcon,
+} from "./brand-icons.js";
 
 export const HARNESS_ICONS: Record<
   HarnessFamily,
@@ -37,10 +43,15 @@ export const HARNESS_ICONS: Record<
     Icon: PiIcon,
     bg: "bg-icon-blue",
   },
+  copilot: {
+    label: "Copilot",
+    Icon: CopilotIcon,
+    bg: "bg-icon-teal",
+  },
 };
 
 export function HarnessIcons({
-  harnesses = ["bob", "claude-code", "codex", "pi"],
+  harnesses = ["bob", "claude-code", "codex", "copilot", "pi"],
   size = "md",
   focusable = size !== "xs",
   className,

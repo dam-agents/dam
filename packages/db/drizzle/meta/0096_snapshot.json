@@ -1,5 +1,5 @@
 {
-  "id": "162877a3-a6c6-4106-ab7d-6f0d588b508a",
+  "id": "38a54a95-52db-46c6-80ce-63ebec46c12a",
   "prevId": "e6ddac34-37b4-43e2-a5b8-723bdd526472",
   "version": "7",
   "dialect": "postgresql",
@@ -4285,43 +4285,6 @@
       "checkConstraints": {},
       "isRLSEnabled": false
     },
-    "public.spend_agent_names": {
-      "name": "spend_agent_names",
-      "schema": "",
-      "columns": {
-        "agent_id": {
-          "name": "agent_id",
-          "type": "text",
-          "primaryKey": true,
-          "notNull": true
-        },
-        "owner_sub": {
-          "name": "owner_sub",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "name": {
-          "name": "name",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": true
-        },
-        "removed_at": {
-          "name": "removed_at",
-          "type": "timestamp with time zone",
-          "primaryKey": false,
-          "notNull": true
-        }
-      },
-      "indexes": {},
-      "foreignKeys": {},
-      "compositePrimaryKeys": {},
-      "uniqueConstraints": {},
-      "policies": {},
-      "checkConstraints": {},
-      "isRLSEnabled": false
-    },
     "public.spend_calls": {
       "name": "spend_calls",
       "schema": "",
@@ -4915,6 +4878,13 @@
           "type": "text",
           "primaryKey": false,
           "notNull": true
+        },
+        "ambient": {
+          "name": "ambient",
+          "type": "boolean",
+          "primaryKey": false,
+          "notNull": true,
+          "default": false
         },
         "created_at": {
           "name": "created_at",

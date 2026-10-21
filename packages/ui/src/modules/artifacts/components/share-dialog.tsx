@@ -22,21 +22,11 @@ interface Props {
   onClose: () => void;
 }
 
-export function ShareDialog({ artifact, onClose }: Props) {
-  if (!artifact.interactive)
-    return <SharingControls artifact={artifact} onClose={onClose} />;
-  return (
-    <Modal onClose={onClose}>
-      <DialogHeader title={`Share “${artifact.title}”`} onClose={onClose} />
-      <DialogBody>
-        Interactive pages stay private because their buttons can send prompts to
-        your agent. Ask the agent for a static copy to share.
-      </DialogBody>
-    </Modal>
-  );
-}
+const INTERACTIVE_UNAVAILABLE = {
+  public: "Not for interactive pages: their buttons can ask your agent",
+};
 
-function SharingControls({ artifact, onClose }: Props) {
+export function ShareDialog({ artifact, onClose }: Props) {
   const { form, shareUrl, needsPublicConfirm, submit, isPending } =
     useShareForm(artifact, onClose);
   const [draftEmail, setDraftEmail] = useState("");
@@ -121,10 +111,19 @@ function SharingControls({ artifact, onClose }: Props) {
                     value={field.value}
                     onChange={field.onChange}
                     disabled={isPending}
+                    unavailable={
+                      artifact.interactive ? INTERACTIVE_UNAVAILABLE : undefined
+                    }
                   />
                 )}
               />
               {visibility === "restricted" && viewerEditor}
+              {artifact.interactive && visibility === "restricted" && (
+                <p className="text-xs text-muted-foreground">
+                  People you invite see the page, but its buttons do nothing for
+                  them: only you can ask your agent from it.
+                </p>
+              )}
               {hasPendingViewer && (
                 <p role="status" className="text-xs text-muted-foreground">
                   Add the email address to the list or clear it before saving.

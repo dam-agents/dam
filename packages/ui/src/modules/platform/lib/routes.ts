@@ -31,6 +31,8 @@ export type SandboxSection = z.infer<typeof sandboxSectionSchema>;
 
 export type Route =
   | { view: "home" }
+  | { view: "artifacts" }
+  | { view: "starter-kits" }
   | { view: "chat"; agent: string; session?: string }
   | { view: "settings"; settingsTab: SettingsTab; period?: string }
   | { view: "terms" }
@@ -71,8 +73,6 @@ export const RETIRED_PATHS = new Set([
   "/experiments/",
   "/experiments/new",
   "/agents/new",
-  "/starter-kits",
-  "/artifacts",
 ]);
 
 const sandboxSectionPattern = sandboxSectionSchema.options.join("|");
@@ -98,6 +98,8 @@ export function parseRoute(path: string, search = ""): Route {
     };
   }
   if (path === "/settings") return { view: "settings", settingsTab: "account" };
+  if (path === "/artifacts") return { view: "artifacts" };
+  if (path === "/starter-kits") return { view: "starter-kits" };
   const settingsMatch = path.match(/^\/settings\/([^/]+)$/);
   if (settingsMatch) {
     const tab = settingsTabSchema.safeParse(settingsMatch[1]);
@@ -140,6 +142,10 @@ export function routeToPath(route: Route): string {
   switch (route.view) {
     case "home":
       return "/";
+    case "artifacts":
+      return "/artifacts";
+    case "starter-kits":
+      return "/starter-kits";
     case "chat": {
       const base = `/chat/${encodeURIComponent(route.agent)}`;
       return route.session

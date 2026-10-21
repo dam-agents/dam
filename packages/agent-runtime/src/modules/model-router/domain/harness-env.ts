@@ -47,7 +47,9 @@ export function tierModels(
  * Model Router. CLAUDE_CODE_MAX_CONTEXT_TOKENS is the smallest window among
  * the models Claude Code may run on, since it reads the window per process,
  * not per model. A credential variable the manifest names gets the router's
- * placeholder because the client will not start without one. Provider env
+ * placeholder because the client will not start without one, and a model
+ * variable it names gets the default provider's first model for the same
+ * reason. Provider env
  * never reaches a harness process, so PLATFORM_MODEL_ROUTER_SERVES is what
  * an image script keys on to point its harness at the router.
  */
@@ -80,6 +82,10 @@ export function routerEnvFor(input: {
         aliasOrder(a.alias, input.harness) - aliasOrder(b.alias, input.harness),
     );
   const defaultProvider = serving[0];
+  const defaultEntry = defaultProvider?.entries[0];
+  if (defaultEntry)
+    for (const name of binding.defaultModelEnv ?? [])
+      env[name] = renderName(defaultEntry, binding);
   if (binding.bobGateway) {
     env.BOB_GATEWAY_URL = env.PLATFORM_MODEL_ROUTER_URL;
     env.BOBSHELL_API_KEY = ROUTER_PLACEHOLDER;

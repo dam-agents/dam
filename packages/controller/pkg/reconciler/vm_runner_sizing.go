@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -15,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/types"
 
 	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
 	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
@@ -26,10 +28,12 @@ const (
 	resizeUnsupported
 )
 
-// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner's memory and CPU, as the controller intends it rather than as the runner last saw it. It counts only the machines that should be running, because that is what the runner admits against its limits.
+// UNIT_BOUNDARY_DESCRIPTION: what an owner's vm agents ask of their runner's memory and CPU, as the controller intends it rather than as the runner last saw it. It counts only the machines that should be running, because that is what the runner admits against its limits. `heldMiB` is the part of that count that machines already hold or are about to, and `nextStartMiB` is the smallest count of a start waiting for the node, or zero when none waits: the two together are what one more start costs, which is what a request the node has deferred may be cut down to.
 type runnerDemand struct {
-	memoryMiB int
-	vCPUs     int
+	memoryMiB    int
+	vCPUs        int
+	heldMiB      int
+	nextStartMiB int
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a vm agent has no size of its own: every machine may grow to half of what its owner's runner hands out — their pool, from their UserBudget's `memory`, else the install's runner limit — so one agent can use most of the pool while a runaway guest meets its own OOM killer before the machine's growth has the kernel kill a machine of the pool. The host runner admits against a share of the Mac's memory that the controller never learns, not against the chart's pod limit, so there the agent's spec still sets its machine's memory.
@@ -44,6 +48,15 @@ func (r *AgentReconciler) machineMemoryMiB(ctx context.Context, owner string, sp
 	}
 	_, mem := r.limitsOf(spec)
 	return max(int(mem.Value()>>20), 1), err
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the runner has an answer about the agent's machine, so it holds what it was answered or holds memory while it boots, as the runner's own counting does. A start nothing has answered for yet holds nothing.
+func (r *AgentReconciler) holdsOrIsAboutTo(a *apiv1.Agent) bool {
+	if holdsMemory(r.liveMachine(a.Name).State) {
+		return true
+	}
+	_, recorded := r.startAnswer(a)
+	return recorded
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: the demand that sizes a start: the machine being started counts whatever a refusal from an attempt before says, since the room it needs is what its count is for.
@@ -84,19 +97,35 @@ func (r *AgentReconciler) runnerDemand(ctx context.Context, owner string, self *
 			}
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: the held variant leaves out the starts waiting for the node as well as the refused ones, since neither holds memory; the request counts them, because their room is what it has to grow by.
-		holds := !r.refusedWithoutMachine(a) && (ownStart || !r.waitingForRoom(a))
-		if running && (ownStart && a.Name == self.Name || holds) {
-			d.memoryMiB += r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
+		refused, waiting := r.refusedWithoutMachine(a), r.waitingForRoom(a)
+		holds := !refused && (ownStart || !waiting)
+		if !running {
+			continue
+		}
+		counted := r.accountedMemoryMiB(ctx, owner, a.Name, &a.Spec)
+		// UNIT_BOUNDARY_DESCRIPTION: a start waiting for the node holds nothing, so it is what one more machine costs and never part of what the machines hold. The smallest one is the figure, since a request cut down to admit one start should ask for the cheapest one that can go.
+		if waiting && (d.nextStartMiB == 0 || counted < d.nextStartMiB) {
+			d.nextStartMiB = counted
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: only a start this pass is making holds nothing of its own: it has no answer yet, and its room is what the request has to grow by. A machine the runner has already answered for is a holder, the one this reconcile is about included, since a reconcile runs for a running machine as well as for a cold start — leaving that one out would size the same owner's pod differently for each of its agents.
+		if !refused && !waiting && (!(ownStart && a.Name == self.Name) || r.holdsOrIsAboutTo(a)) {
+			d.heldMiB += counted
+		}
+		if ownStart && a.Name == self.Name || holds {
+			d.memoryMiB += counted
 			d.vCPUs += max(r.config.VM.Runner.MachineCPUs, r.liveMachine(a.Name).CPUs, 1)
 		}
 	}
 	return d, nil
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: demand is read on every reconcile of every vm agent, and a starting machine is reconciled every half second, so the owner's agents come from the informer cache the controller already keeps rather than from a live List. A reconciler built without that cache — the tests — lists them live.
+// UNIT_BOUNDARY_DESCRIPTION: demand is read on every reconcile of every vm agent, and a starting machine is reconciled every half second, so the owner's agents come from the informer cache the controller already keeps rather than from a live List. A reconciler built without that cache — the tests — lists them live. A cache that has not synced is not an empty owner: it is no answer at all, and it says so, so a caller that would render or tear down on an empty list waits instead.
 func (r *AgentReconciler) ownerAgents(ctx context.Context, owner string) ([]runtime.Object, error) {
 	selector := labels.SelectorFromSet(labels.Set{envoyOwnerLabel: owner})
 	if r.agentCache != nil {
+		if !r.agentCacheReady() {
+			return nil, errAgentCacheUnsynced
+		}
 		items, err := r.agentCache.ByNamespace(r.config.Namespace).List(selector)
 		if err != nil {
 			return nil, fmt.Errorf("listing the owner's agents: %w", err)
@@ -204,7 +233,90 @@ func runnerMemoryRequest(demandMiB, reserveMiB int, current, floor, limit resour
 	return want
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: every machine of an owner is a VMM process inside the runner pod, so with no CPU limit one runaway VMM can take every core of the node and slow every pod there. The limit is the vCPUs of the machines that should be running, each counted at the larger of its live and its next size, plus one machine's worth for the runner itself and the VMMs' own I/O threads. Unless the install caps it lower, a guest is never throttled below the vCPUs it was given. With no machine running the runner keeps that one machine's worth, so the first start is not throttled before the next resize lands. It is never below the CPU request, which the API refuses, and never above a CPU limit the install set.
+// UNIT_BOUNDARY_DESCRIPTION: the node grants a resize whole or not at all, so a request covering every start waiting for it is one the node defers while it has room for only some of them: every start then waits although one of them fits. So while the request the demand calls for is above what the node granted, the ask is the runner's own admission arithmetic for one more machine — what the machines hold, plus the cheapest waiting start's count, plus the reserve — which is the least a request can be and still admit a start. It is rounded up to the request step like every other ask, and bounded by the install's request and by the demand's own ask, which it can never exceed.
+func deferredRunnerRequest(demand runnerDemand, reserveMiB int, want, floor, limit resource.Quantity) resource.Quantity {
+	forOne := roundedMiB(demand.heldMiB + demand.nextStartMiB + reserveMiB)
+	stepped := *resource.NewQuantity(int64(forOne)<<20, resource.BinarySI)
+	if stepped.Cmp(want) > 0 {
+		return want
+	}
+	if stepped.Cmp(floor) < 0 {
+		return floor
+	}
+	if stepped.Cmp(limit) > 0 {
+		return limit
+	}
+	return stepped
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the owner's runner pod should be asked for less than the demand calls for: the node holds the pod below what its machines need, and a start is waiting for the difference. A grant that already covers what one more machine costs is a grant the runner admits against, so nothing is held back there and the whole demand is asked for at once. The reading is the node's grant rather than the pod's resize condition, which clears the moment a wave is granted and would put the whole demand back on the very next pass: the ask stays stepped until the grant itself reaches it.
+func (d runnerDemand) grantHoldsBackStart(grantMiB, reserveMiB int) bool {
+	return d.nextStartMiB > 0 && grantMiB < d.heldMiB+d.nextStartMiB+reserveMiB
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a grant too small for one more machine is answered by asking the node for less, not by freeing anything: an idle agent hibernated at once is taken away while the reduced ask is still on its way, and it would have fitted. So the reclaim waits one grace period after the controller first stepped the ask down to this size, on this pod. The grace is held against the pod's identity and the ask's own figure rather than the owner alone: a granted wave, a pod replaced by a roll and a further step down are each a new question to the node, and none of them may inherit a grace another ask has already spent. A kubelet answers a resize it cannot grant within a pass or two, so a grace that outlasts a few machine-watch retries is long enough to tell a stepped ask still being evaluated from one the node has refused — the pod carries no figure that says which, since the spec holds the controller's own ask rather than the node's answer. After the grace the grant is exhausted and the idle agents are the only room left. A demand that no longer steps down, and a pod that reports no grant to step down from, end the wait at once.
+const steppedGrantGrace = time.Minute
+
+// UNIT_BOUNDARY_DESCRIPTION: one stepped ask as the reclaim's grace remembers it: the pod that carries it and the request it was cut down to. Two passes with the same pair are the same ask still being evaluated; anything else is a different question.
+type steppedAsk struct {
+	uid     types.UID
+	request string
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the owner's ask for the runner pod is stepped down below what the demand calls for, and to what, which is the state the reclaim's grace is kept for. The demand is the very one the caller is sizing the pod from, not a second reading of it: a reconcile runs for a stopped agent as well as a starting one, and a demand read with a different answer about that agent would key the grace to a request the node was never sent. A pod that reports no grant is not this state either: with no figure to measure the demand against, the whole demand stands, so there is nothing a reclaim would wait out.
+func (r *AgentReconciler) runnerAskIsStepped(ctx context.Context, owner string, demand runnerDemand) (steppedAsk, bool) {
+	if demand.nextStartMiB == 0 {
+		return steppedAsk{}, false
+	}
+	pods, err := r.runnerPods(ctx, owner, true)
+	if err != nil {
+		return steppedAsk{}, false
+	}
+	reserveMiB := r.config.VM.Runner.ReserveMiB
+	for i := range pods {
+		pod := &pods[i]
+		if pod.DeletionTimestamp != nil || pod.Status.Phase != corev1.PodRunning {
+			continue
+		}
+		grantMiB, reported := runnerPodGrantMiB(pod)
+		if !reported || !demand.grantHoldsBackStart(grantMiB, reserveMiB) {
+			return steppedAsk{}, false
+		}
+		want, ok := r.runnerPodWants(ctx, owner, pod, demand)
+		if !ok {
+			return steppedAsk{}, false
+		}
+		return steppedAsk{uid: pod.UID, request: want.memoryRequest.String()}, true
+	}
+	return steppedAsk{}, false
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the grace is recorded where every reconcile can see it, not only where a reclaim would read it: a pass that finds the ask stepped records when this ask began, and a pass that finds nothing stepped clears the record. Reading it only inside the reclaim would leave a spent grace behind a wave the node granted, and a later start of the same size on the same pod would then inherit it and free an idle machine at once. A different ask — a further step down, a replacement pod — starts its own grace, and one already recorded keeps its time unchanged, so an ask still being evaluated is not prolonged pass after pass.
+func (r *AgentReconciler) noteSteppedAsk(ctx context.Context, owner string, demand runnerDemand) {
+	ask, stepped := r.runnerAskIsStepped(ctx, owner, demand)
+	if !stepped {
+		r.steppedSince.Delete(owner)
+		return
+	}
+	if since, ok := r.steppedSince.Load(owner); ok && since.(steppedAskTimestamp).ask == ask {
+		return
+	}
+	r.steppedSince.Store(owner, steppedAskTimestamp{ask: ask, at: time.Now()})
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the reclaim should wait before freeing room for a start the node has not granted: the ask is stepped down, and this very ask became so less than a grace ago. An ask no pass has recorded yet is waited for too, since the pass that would have recorded it is the one this reclaim runs after.
+func (r *AgentReconciler) reclaimWaitsForTheReducedAsk(owner string) bool {
+	since, ok := r.steppedSince.Load(owner)
+	return !ok || time.Since(since.(steppedAskTimestamp).at) < steppedGrantGrace
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the grace a stepped ask was first seen under.
+type steppedAskTimestamp struct {
+	ask steppedAsk
+	at  time.Time
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: every machine of an owner is a VMM process inside the runner pod, so with no CPU limit one runaway VMM can take every core of the node and slow every pod there. The limit is the vCPUs of the machines that should be running, each counted at the larger of its live and its next size, plus one machine's worth for the runner itself and the VMMs' own I/O threads. Unless the install caps it lower, the limit it decides covers the vCPUs of every machine that should be running. With no machine running the runner keeps that one machine's worth, so the first start is not throttled before the next resize lands. It is never below the CPU request, which the API refuses, and never above a CPU limit the install set.
 func runnerCPULimit(vCPUs, machineCPUs int, request resource.Quantity, ceiling *resource.Quantity) resource.Quantity {
 	want := *resource.NewQuantity(int64(vCPUs+max(machineCPUs, 1)), resource.DecimalSI)
 	if ceiling != nil && want.Cmp(*ceiling) > 0 {
@@ -271,10 +383,14 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 	cpuRequest, hasCPURequest := res.Requests[corev1.ResourceCPU]
 	currentCPU, hasCPULimit := res.Limits[corev1.ResourceCPU]
 	currentRequest := res.Requests[corev1.ResourceMemory]
+	memoryRequest := runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit)
+	if grantMiB, reported := runnerPodGrantMiB(pod); reported && demand.grantHoldsBackStart(grantMiB, r.config.VM.Runner.ReserveMiB) {
+		memoryRequest = deferredRunnerRequest(demand, r.config.VM.Runner.ReserveMiB, memoryRequest, floor, limit)
+	}
 	return runnerPodWant{
 		res:            res,
 		memoryLimit:    limit,
-		memoryRequest:  runnerMemoryRequest(demand.memoryMiB, r.config.VM.Runner.ReserveMiB, currentRequest, floor, limit),
+		memoryRequest:  memoryRequest,
 		cpu:            runnerCPULimit(demand.vCPUs, r.config.VM.Runner.MachineCPUs, cpuRequest, ceiling),
 		hasCPURequest:  hasCPURequest,
 		currentLimit:   current,
@@ -287,7 +403,7 @@ func (r *AgentReconciler) runnerPodWants(ctx context.Context, owner string, pod 
 // UNIT_BOUNDARY_DESCRIPTION: the memory limit, the memory request and the CPU limit are changed on the running pod through its resize subresource and never on the Deployment, whose Recreate strategy would stop every machine to apply them. The limit is the owner's pool, so a UserBudget that raises or lowers it reaches the runner without restarting a machine. CPU and memory resize without a container restart by default. The kubelet applies a resize whole, so a memory request the node defers holds the new CPU limit back with it until there is room, and a limit the kubelet will not lower yet holds the request with it. A replacement pod therefore starts at the limit and the CPU bound the Deployment rendered — the owner's pool, or the one derived from the memory pool where they have none — and the install's request, and the next reconcile sets all three again. A pod with no CPU request gets an explicit zero one, because the API defaults a missing request to the limit, which would reserve every vCPU and could change the pod's QoS class, which a resize may not do. A cluster without in-place resize, or one that refuses the controller the subresource, keeps the old behaviour — machines admitted against the limit the pod started with, which the scheduler does not see, under the CPU bound it was created with — and says so once.
 // UNIT_BOUNDARY_DESCRIPTION: the pods come from the runner pod cache, as a live List after every machine PUT cost 57 ms at p90 on dev. The resize carries the resourceVersion it was read at, so the API server refuses it against any later pod, and a refused resize is decided again from a live List.
 func (r *AgentReconciler) resizeRunnerPod(ctx context.Context, owner string, demand runnerDemand) {
-	if !r.runnerResizesInPlace(ctx, owner) {
+	if !r.podResizeAvailable(ctx) {
 		return
 	}
 	if r.resizeRunnerPodFrom(ctx, owner, demand, true, false) && r.runnerPodCache != nil {
@@ -312,8 +428,16 @@ func (r *AgentReconciler) runnerPods(ctx context.Context, owner string, fromCach
 	return list.Items, nil
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: the pod one node answered it cannot resize, kept with the pod's identity so the answer lapses with that pod: a replacement pod is a new question to its own node, and a mark that outlived its pod would exempt the owner from the admission ceiling for good.
+type nodeResizeMark struct {
+	uid types.UID
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: a runner pod that is running and reports neither what the node allocated its container nor the requests its status holds has no figure to admit against, and zero is not that figure: zero admits against the whole pool, which is the reading this ceiling exists to prevent. The resize the start needs is still asked for in the same reconcile, so the next retry reads what the node enacted.
 var errGrantUnknown = errors.New("the node has not reported what it holds for the owner's runner pod")
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent cache that has not listed yet is not an owner with no agents. A caller that would render or tear down on that answer waits instead.
+var errAgentCacheUnsynced = errors.New("the agent cache has not synced, so the owner's agents are unknown")
 
 // UNIT_BOUNDARY_DESCRIPTION: the memory the node has actually granted the owner's runner pod, which is what its machines may be admitted against. The figure is the one the node reports: what it allocated the container, else the container status' own requests on a kubelet that reports the resize result, and a deferred or refused resize leaves both at what the pod holds. The request in the pod's spec is never it: that is the controller's ask from the moment it makes one, which the node may not have enacted. Zero is a pod not yet placed and a cluster that cannot resize the pod — each admits against the limit as every start did before this ceiling — where a running pod whose node reports nothing is unknown, and a start held on it rather than let the runner admit against the whole pool this exists to bound. A failed read is none of those, so it stops the decision.
 func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int, error) {
@@ -322,10 +446,6 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 		return 0, fmt.Errorf("this cluster's resize support cannot be read, so what the node granted the owner's runner pod is unknown")
 	}
 	if !available {
-		return 0, nil
-	}
-	// UNIT_BOUNDARY_DESCRIPTION: one node's answer says nothing about another's: a runner whose node cannot carry a resize is admitted against its limit, as every start is on a cluster without the subresource, and every other owner keeps the ceiling their own node reports.
-	if _, noResize := r.noNodeResize.Load(owner); noResize {
 		return 0, nil
 	}
 	pods, err := r.runnerPods(ctx, owner, true)
@@ -341,6 +461,10 @@ func (r *AgentReconciler) runnerAdmitMiB(ctx context.Context, owner string) (int
 			// UNIT_BOUNDARY_DESCRIPTION: a node that reports again is not the node that refused the resize, so the mark lapses rather than outliving the fault.
 			r.noNodeResize.Delete(owner)
 			return grant, nil
+		}
+		// UNIT_BOUNDARY_DESCRIPTION: one node's answer says nothing about another's, and says nothing about a pod that replaced the one it described: a runner whose node cannot carry a resize is admitted against its limit, as every start is on a cluster without the subresource, where every other owner — and every replacement pod of this one — is read again and keeps the ceiling a node that does report grants gives it.
+		if marked, ok := r.noNodeResize.Load(owner); ok && marked.(nodeResizeMark).uid == pod.UID {
+			return 0, nil
 		}
 		return 0, fmt.Errorf("%w: %s", errGrantUnknown, pod.Name)
 	}
@@ -367,7 +491,7 @@ func runnerPodGrantMiB(pod *corev1.Pod) (int, bool) {
 
 // UNIT_BOUNDARY_DESCRIPTION: a resize the node cannot carry is how a hold on an unreadable grant learns that the node will never report one: the API server validates a resize against what the running node supports, and a node without in-place resize answers invalid. Asking with the pod unchanged is therefore the probe, and the answer cannot change between two asks a few seconds apart, so it is throttled per owner.
 func (r *AgentReconciler) probeRunnerResize(ctx context.Context, owner string, demand runnerDemand) {
-	if !r.runnerResizesInPlace(ctx, owner) {
+	if !r.podResizeAvailable(ctx) {
 		return
 	}
 	if last, ok := r.grantProbes.Load(owner); ok && time.Since(last.(time.Time)) < grantProbeInterval {
@@ -402,6 +526,10 @@ func (r *AgentReconciler) resizeRunnerPodFrom(ctx context.Context, owner string,
 	}
 	for i := range pods {
 		pod := &pods[i]
+		// UNIT_BOUNDARY_DESCRIPTION: a node that answered it cannot carry a resize is asked no more about that pod, and asked about the next one, which may sit on another node: the answer is about one pod, so it never becomes this owner's permanent exemption from the ceiling.
+		if marked, ok := r.noNodeResize.Load(owner); ok && marked.(nodeResizeMark).uid == pod.UID {
+			continue
+		}
 		want, ok := r.runnerPodWants(ctx, owner, pod, demand)
 		if !ok {
 			continue
@@ -421,10 +549,10 @@ func (r *AgentReconciler) resizeRunnerPodFrom(ctx context.Context, owner string,
 		res.Limits[corev1.ResourceMemory] = want.memoryLimit
 		res.Limits[corev1.ResourceCPU] = want.cpu
 		if _, err := r.client.CoreV1().Pods(pod.Namespace).UpdateResize(ctx, pod.Name, pod, metav1.UpdateOptions{}); err != nil {
-			// UNIT_BOUNDARY_DESCRIPTION: a node that cannot carry a resize answers the resize with an invalid carrying a forbidden cause on the resize field, which is how the API server reports that the running container never reported the resources the resize would change. Only that cause counts, and only for the owner whose pod was refused: the answer is about one pod's node, where an absent subresource is about the cluster.
+			// UNIT_BOUNDARY_DESCRIPTION: a node that cannot carry a resize answers the resize with an invalid carrying a forbidden cause about its own support for resizing, which is how the API server reports that the running container never reported the resources the resize would change. Only that answer counts, and only for the pod it was given about: the answer is about one pod's node, where an absent subresource is about the cluster.
 			if _, reports := runnerPodGrantMiB(pod); !reports && resizeNodeUnsupported(err) {
-				r.noNodeResize.Store(owner, true)
-				slog.Warn("vm runner: this runner's node cannot resize the pod in place, its memory request and limit stay where the pod started and its CPU limit stays at the bound it was created with", "owner", owner, "pod", pod.Name, "error", err)
+				r.noNodeResize.Store(owner, nodeResizeMark{uid: pod.UID})
+				slog.Warn("vm runner: this runner's node cannot resize the pod in place, its memory request and limit stay where the pod started and its CPU limit stays at the bound it was created with", "owner", owner, "pod", pod.Name, "node", pod.Spec.NodeName, "error", err)
 				return false
 			}
 			if k8serrors.IsForbidden(err) || k8serrors.IsMethodNotSupported(err) {
@@ -502,16 +630,7 @@ func (r *AgentReconciler) podResizeSupport(ctx context.Context) (available, know
 	return false, true
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether an owner's runner pod can be resized in place: the cluster advertises the subresource, and this owner's node has not answered that it cannot carry one. Both are per-runner facts kept apart, since a node's answer must never cost another owner the ceiling their own node grants.
-func (r *AgentReconciler) runnerResizesInPlace(ctx context.Context, owner string) bool {
-	if !r.podResizeAvailable(ctx) {
-		return false
-	}
-	_, noResize := r.noNodeResize.Load(owner)
-	return !noResize
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: whether a resize was refused because the node cannot carry one, which Kubernetes reports as an invalid carrying a forbidden cause on the field the resize changes. Any other invalid answer is a validation or admission failure of the ask itself, and is no evidence about the node, so it keeps the hold.
+// UNIT_BOUNDARY_DESCRIPTION: whether a resize was refused because the node cannot carry one, which Kubernetes answers with a forbidden cause on the spec that says the pod runs on a node without support for resizing. The field alone is no evidence — the API files its own immutable-field refusals against the same spec, and a webhook's quota is a forbidden cause on the resize field — so the cause counts only when both name that answer: the spec for its field, and the node's support for resizing for its message. Everything else is a refusal of the ask, and an ask the platform can correct is not a node that never reports, so it keeps the hold.
 func resizeNodeUnsupported(err error) bool {
 	if !k8serrors.IsInvalid(err) {
 		return false
@@ -521,7 +640,11 @@ func resizeNodeUnsupported(err error) bool {
 		return false
 	}
 	return slices.ContainsFunc(status.Status().Details.Causes, func(c metav1.StatusCause) bool {
-		return c.Type == metav1.CauseTypeForbidden
+		if c.Type != metav1.CauseTypeForbidden || c.Field != "spec" {
+			return false
+		}
+		message := strings.ToLower(c.Message)
+		return strings.Contains(message, "without support for resize") || strings.Contains(message, "not supported by the node")
 	})
 }
 

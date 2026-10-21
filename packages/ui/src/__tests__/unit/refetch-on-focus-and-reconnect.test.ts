@@ -161,9 +161,6 @@ it("refreshes the account preference, key and access families", async () => {
     }),
     "sidebar order": trpc.sidebarOrder.get.queryKey(),
     "agent access": trpc.agents.get.queryKey({ id: "a" }),
-    "runtime migration": trpc.agents.planRuntimeMigration.queryKey({
-      agentId: "a",
-    } as never),
   });
 });
 

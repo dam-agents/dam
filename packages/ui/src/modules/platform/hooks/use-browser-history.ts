@@ -35,13 +35,8 @@ export function installBrowserHistory(): () => void {
   });
 
   const applyRoute = () => {
-    if (RETIRED_PATHS.has(window.location.pathname)) {
-      if (window.location.pathname === "/artifacts") {
-        useStore.getState().setSidePanelTab("artifacts");
-        useStore.getState().setMobileScreen("files");
-      }
+    if (RETIRED_PATHS.has(window.location.pathname))
       window.history.replaceState({}, "", "/");
-    }
     const route = parseRoute(window.location.pathname, window.location.search);
     const wasChat = isChatView(useStore.getState().view);
 

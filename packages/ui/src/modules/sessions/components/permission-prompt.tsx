@@ -9,6 +9,7 @@ import { cn } from "@/lib/utils";
 import { useStore } from "../../../store.js";
 import type { VerdictPart } from "../../../types.js";
 import { denyAllPrompt } from "../../approvals/lib/deny-all.js";
+import { withAttachmentNames } from "../../files/lib/upload-path.js";
 import { denyOnceOption } from "../lib/permission-deny-all.js";
 import type {
   PendingPermission,
@@ -18,7 +19,7 @@ import { ChatColumn } from "./chat-column.js";
 
 export type PermissionVerdict = Omit<VerdictPart, "kind">;
 
-function toolTitle(toolCall: unknown): string {
+function rawToolTitle(toolCall: unknown): string {
   if (toolCall && typeof toolCall === "object") {
     const tc = toolCall as {
       title?: string;
@@ -28,6 +29,15 @@ function toolTitle(toolCall: unknown): string {
     return tc.title ?? tc.kind ?? "this tool call";
   }
   return "this tool call";
+}
+
+function toolTitle(toolCall: unknown): string {
+  return withAttachmentNames(rawToolTitle(toolCall));
+}
+
+function rewrittenFrom(toolCall: unknown): string | undefined {
+  const raw = rawToolTitle(toolCall);
+  return withAttachmentNames(raw) === raw ? undefined : raw;
 }
 
 function toolLocation(toolCall: unknown): string | null {
@@ -81,7 +91,10 @@ export function PermissionStatusLine() {
       <span className="text-muted-foreground shrink-0">
         Awaiting approval —
       </span>
-      <span className="font-semibold text-foreground truncate">
+      <span
+        className="font-semibold text-foreground truncate"
+        title={rewrittenFrom(current.toolCall)}
+      >
         Allow {toolTitle(current.toolCall)}
       </span>
     </div>
@@ -227,6 +240,7 @@ export function PermissionPrompt({
             <span
               ref={titleRef}
               className={cn("break-all min-w-0", !expanded && "line-clamp-3")}
+              title={rewrittenFrom(current.toolCall)}
             >
               Allow {title}?
             </span>

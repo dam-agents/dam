@@ -24,7 +24,8 @@
       "warming": true,
       "diskGiB": 100,
       "diskUsedBytes": 8589934592,
-      "cpuMilli": 350
+      "cpuMilli": 350,
+      "homeFull": true
     }
   ],
   "machineFigures": true

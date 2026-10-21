@@ -147,6 +147,7 @@ export function createAcpRelay(
             toolName,
             ...(toolCallId !== undefined && { toolCallId }),
             args: tc.rawInput,
+            idsWhole: true,
             options,
           })
           .then((recorded) => {
@@ -173,6 +174,7 @@ export function createAcpRelay(
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
+        if (typeof msg.id !== "string" && typeof msg.id !== "number") return;
         const key = String(msg.id);
         const rowId = mirroredRows.get(key);
         const result = msg.result as

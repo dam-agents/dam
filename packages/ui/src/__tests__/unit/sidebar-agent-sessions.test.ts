@@ -13,15 +13,14 @@ import {
   toActivitySessions,
 } from "../../modules/home/lib/activity-sessions.js";
 import {
-  moreClick,
   newestFirst,
   nextSessionCursor,
-  sessionListControls,
-  SIDEBAR_PREVIEW_SESSIONS,
+  SIDEBAR_SESSION_STEP,
   sidebarSessionWindow,
+  viewMore,
 } from "../../modules/sessions/lib/sidebar-session-window.js";
 
-// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, newest activity first, and no Session twice. An Agent shows its first three Sessions until the user clicks More, which lists the rest it has loaded; each further click on More loads one more page, and Less collapses the list. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
+// TEST_OVERVIEW: The sidebar lists each Agent's Sessions under the Agent, newest activity first, and no Session twice. An Agent shows its first five Sessions, and each click on View more shows five more, loading one more page only when the loaded rows run out. Paging stops when the Agent's cursor does not move or a page brings no new Session. The session filter in the Agents header applies to the attention record and to an Agent's own session list alike.
 
 function attention(
   agentId: string,
@@ -84,7 +83,7 @@ describe("the order of an agent's sessions", () => {
     ).toEqual(["now", "hour", "week"]);
   });
 
-  // TEST_SCENARIO: MORE appends an older page to the Sessions already shown. The rows on screen keep their places, and the older Sessions go below them, whatever order the pages came in.
+  // TEST_SCENARIO: View more appends an older page to the Sessions already shown. The rows on screen keep their places, and the older Sessions go below them, whatever order the pages came in.
   it("keeps the rows already shown in place when an older page arrives", () => {
     const first = [
       session("s1", "2026-10-17T08:00:00Z"),
@@ -114,99 +113,68 @@ describe("the order of an agent's sessions", () => {
 });
 
 describe("an agent's session window", () => {
-  const sessions = ["s1", "s2", "s3", "s4", "s5"];
+  const n = SIDEBAR_SESSION_STEP;
+  const sessions = Array.from({ length: 12 }, (_, i) => `s${i + 1}`);
   const none = () => false;
 
-  it("TEST_SCENARIO: a collapsed list shows the newest three, and More lists all", () => {
-    expect(sidebarSessionWindow(sessions, false, none)).toEqual([
-      "s1",
-      "s2",
-      "s3",
-    ]);
-    expect(sidebarSessionWindow(sessions, true, none)).toEqual(sessions);
-  });
-
-  it("TEST_SCENARIO: the open Session stays visible in a collapsed list, after the newest three", () => {
-    expect(sidebarSessionWindow(sessions, false, (s) => s === "s5")).toEqual([
-      "s1",
-      "s2",
-      "s3",
-      "s5",
-    ]);
-    expect(sidebarSessionWindow(sessions, false, (s) => s === "s2")).toEqual([
-      "s1",
-      "s2",
-      "s3",
-    ]);
-  });
-
-  it("TEST_SCENARIO: More shows while there is more to list, and Less once expanded", () => {
-    const n = SIDEBAR_PREVIEW_SESSIONS;
-    const controls = (
-      total: number,
-      expanded: boolean,
-      hasNextPage: boolean,
-      collapsed = n,
-    ) => sessionListControls({ total, collapsed, expanded, hasNextPage });
-    expect(controls(n, false, false)).toEqual({ more: false, less: false });
-    expect(controls(n, false, true)).toEqual({ more: true, less: false });
-    expect(controls(n + 1, false, false)).toEqual({ more: true, less: false });
-    expect(controls(n + 1, true, false)).toEqual({ more: false, less: true });
-    expect(controls(n + 1, true, true)).toEqual({ more: true, less: true });
-  });
-
-  it("TEST_SCENARIO: an active Session past the first three joins the window without a More that reveals nothing", () => {
-    const n = SIDEBAR_PREVIEW_SESSIONS;
-    const rows = Array.from({ length: n + 1 }, (_, i) => `s${i + 1}`);
-    const collapsed = sidebarSessionWindow(
-      rows,
-      false,
-      (s) => s === `s${n + 1}`,
+  it("TEST_SCENARIO: a list shows the newest five, and each View more five more", () => {
+    expect(sidebarSessionWindow(sessions, n, none)).toEqual(
+      sessions.slice(0, 5),
     );
-    expect(collapsed).toEqual(rows);
-    const args = { total: rows.length, collapsed: collapsed.length };
-    expect(
-      sessionListControls({ ...args, expanded: false, hasNextPage: false }),
-    ).toEqual({ more: false, less: false });
-    expect(
-      moreClick({
-        ...args,
-        expanded: false,
-        hasNextPage: true,
-        isFetchingNextPage: false,
-      }),
-    ).toEqual({ expand: true, fetchNextPage: true });
+    expect(sidebarSessionWindow(sessions, 2 * n, none)).toEqual(
+      sessions.slice(0, 10),
+    );
+    expect(sidebarSessionWindow(sessions, 3 * n, none)).toEqual(sessions);
   });
 
-  it("TEST_SCENARIO: one click on More fetches at most one page", () => {
-    const n = SIDEBAR_PREVIEW_SESSIONS;
+  it("TEST_SCENARIO: the open Session stays visible, after the newest five", () => {
+    expect(sidebarSessionWindow(sessions, n, (s) => s === "s9")).toEqual([
+      ...sessions.slice(0, 5),
+      "s9",
+    ]);
+    expect(sidebarSessionWindow(sessions, n, (s) => s === "s2")).toEqual(
+      sessions.slice(0, 5),
+    );
+  });
+
+  it("TEST_SCENARIO: View more shows while rows are hidden or another page waits, and an active Session past the window does not count as hidden", () => {
+    const more = (total: number, shown: number, hasNextPage: boolean) =>
+      viewMore({
+        total,
+        shown,
+        limit: n,
+        hasNextPage,
+        isFetchingNextPage: false,
+      }).more;
+    expect(more(n, n, false)).toBe(false);
+    expect(more(n, n, true)).toBe(true);
+    expect(more(n + 1, n, false)).toBe(true);
+    expect(more(n + 1, n + 1, false)).toBe(false);
+  });
+
+  it("TEST_SCENARIO: one click on View more adds five rows and fetches one page only when the loaded rows run out", () => {
     const click = (
       total: number,
-      expanded: boolean,
       hasNextPage: boolean,
       isFetchingNextPage = false,
     ) =>
-      moreClick({
+      viewMore({
         total,
-        collapsed: n,
-        expanded,
+        shown: n,
+        limit: n,
         hasNextPage,
         isFetchingNextPage,
       });
-    expect(click(n + 1, false, true)).toEqual({
-      expand: true,
+    expect(click(2 * n, true)).toMatchObject({
+      limit: 2 * n,
       fetchNextPage: false,
     });
-    expect(click(n, false, true)).toEqual({
-      expand: true,
+    expect(click(2 * n - 1, true)).toMatchObject({
+      limit: 2 * n,
       fetchNextPage: true,
     });
-    expect(click(n + 1, true, true)).toEqual({
-      expand: false,
-      fetchNextPage: true,
-    });
-    expect(click(n + 1, true, false).fetchNextPage).toBe(false);
-    expect(click(n + 1, true, true, true).fetchNextPage).toBe(false);
+    expect(click(n + 1, false).fetchNextPage).toBe(false);
+    expect(click(n + 1, true, true).fetchNextPage).toBe(false);
   });
 
   it("TEST_SCENARIO: paging stops when the cursor does not move or a page brings no new Session", () => {
@@ -275,6 +243,23 @@ describe("an agent's sessions open and close in the sidebar", () => {
     expect(sidebarAgentOpen({ "a-1": false }, "a-1", "a-1")).toBe(false);
     expect(sidebarAgentOpen({ "a-2": true }, "a-2", "a-1")).toBe(true);
     expect(sidebarAgentOpen({ "a-2": true }, "a-2", null)).toBe(true);
+  });
+
+  it("TEST_SCENARIO: opening a Session from Activity keeps its Agent's row as it was, closed or open", () => {
+    const fromActivity = (
+      overrides: Record<string, boolean>,
+      agentId: string,
+      shownAgentId: string | null,
+    ) => ({
+      ...overrides,
+      [agentId]: sidebarAgentOpen(overrides, agentId, shownAgentId),
+    });
+    const closed = fromActivity({}, "a-2", "a-1");
+    expect(sidebarAgentOpen(closed, "a-2", "a-2")).toBe(false);
+    const open = fromActivity({}, "a-1", "a-1");
+    expect(sidebarAgentOpen(open, "a-1", "a-1")).toBe(true);
+    const opened = fromActivity({ "a-2": true }, "a-2", null);
+    expect(sidebarAgentOpen(opened, "a-2", "a-2")).toBe(true);
   });
 });
 

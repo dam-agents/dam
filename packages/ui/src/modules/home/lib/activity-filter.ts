@@ -50,6 +50,27 @@ export function isFiltered(filters: ActivityFilters): boolean {
   );
 }
 
+export function toggleChannelType(
+  filters: ActivityFilters,
+  type: ChannelType,
+): ActivityFilters {
+  const next = new Set(filters.channelTypes);
+  if (next.has(type)) next.delete(type);
+  else next.add(type);
+  return { ...filters, channelTypes: next };
+}
+
+export function onlyChannelType(
+  filters: ActivityFilters,
+  type: ChannelType,
+): ActivityFilters {
+  return { ...filters, channelTypes: new Set([type]) };
+}
+
+export function showAllChannelTypes(filters: ActivityFilters): ActivityFilters {
+  return { ...filters, channelTypes: new Set(CHANNEL_TYPES) };
+}
+
 export function channelTypeOfSession(
   session: Pick<AttentionItem, "type" | "mode"> & {
     scheduleId?: string | null;

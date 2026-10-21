@@ -119,6 +119,14 @@ rules:
   - apiGroups: ["apps"]
     resources: ["deployments/finalizers"]
     verbs: ["update"]
+  # A runner pod refused at admission leaves no Pod object, only its
+  # ReplicaSet's FailedCreate condition. Reading it lets the roll skip a
+  # refusal that names one owner, which is only counted while another
+  # runner already runs the same pod shape: a refusal of the shape itself
+  # refuses every runner and must halt the roll.
+  - apiGroups: ["apps"]
+    resources: ["replicasets"]
+    verbs: ["list"]
 {{- end }}
   - apiGroups: ["batch"]
     resources: ["jobs"]

@@ -11,6 +11,7 @@ import type {
   SlackMessage,
   SlackMessageReaction,
   SlackFileInfo,
+  SlackSessionStoppedEvent,
   SlackSlashCommand,
   SlackUserInfo,
   SlackWorkspace,
@@ -48,6 +49,14 @@ export type FiredSlackBotJoin = Omit<SlackBotJoinedChannelEvent, "teamId"> & {
   teamId?: string;
 };
 
+export type FiredSlackSessionStop = Omit<
+  SlackSessionStoppedEvent,
+  "teamId" | "streamingMessageTs"
+> & {
+  teamId?: string;
+  streamingMessageTs?: string[];
+};
+
 export interface FakeSlackGateway extends SlackGateway {
   fireMention(event: FiredSlackEvent): Promise<void>;
   fireMessage(event: FiredSlackEvent): Promise<void>;
@@ -55,6 +64,7 @@ export interface FakeSlackGateway extends SlackGateway {
   fireCommand(command: FiredSlackCommand): Promise<string>;
   fireBotJoinedChannel(event: FiredSlackBotJoin): Promise<void>;
   fireViewSubmission(event: SlackViewSubmission): Promise<void>;
+  fireSessionStopped(event: FiredSlackSessionStop): Promise<void>;
   readOutbound(): SlackOutboundRecord[];
   resetOutbound(): void;
   setChannels(channels: FakeSlackChannel[], teamId?: string): void;
@@ -406,7 +416,16 @@ export function createFakeSlackGateway(): FakeSlackGateway {
             name: channel.name,
             directMessageUser: null,
           }
-        : { kind: "not-found" };
+        : channelId.startsWith("D-")
+          ? {
+              kind: "found",
+              isMember: true,
+              isDirectMessage: true,
+              isGroupDirectMessage: false,
+              name: null,
+              directMessageUser: channelId.slice("D-".length),
+            }
+          : { kind: "not-found" };
     },
 
     async listSharedChannels(userId, teamId) {
@@ -444,6 +463,14 @@ export function createFakeSlackGateway(): FakeSlackGateway {
 
     async fireViewSubmission(event) {
       await requireHandlers().onViewSubmission(event);
+    },
+
+    async fireSessionStopped(input) {
+      await requireHandlers().onSessionStopped({
+        ...input,
+        streamingMessageTs: input.streamingMessageTs ?? [],
+        teamId: input.teamId ?? FAKE_WORKSPACE,
+      });
     },
 
     async fireBotJoinedChannel(input) {

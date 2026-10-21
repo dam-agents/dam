@@ -8,7 +8,7 @@ set -euo pipefail
 . "$MISE_CONFIG_ROOT/.mise/lib/host-runner.sh"
 R="$HOST_RUNNER_DIR"
 pkg="$MISE_CONFIG_ROOT/packages/vm-runner"
-mkdir -p "$R"
+mkdir -p "$R" "$HOST_RUNNER_VM_HOME"
 
 mise run //packages/vm-runner:host
 install -m 755 "$pkg/dist/host/vm-runner" "$R/vm-runner.new"
@@ -75,6 +75,11 @@ for _ in $(seq 1 60); do kubectl -n platform-agents get secret "$secret-tls" >/d
 images="$(host_runner_images)"
 
 host_runner_stop
+# Machines from before they moved out of HOST_RUNNER_DIR (see host-runner.sh)
+# are carried over once, with their records, so no agent's home is lost.
+if [ -d "$R/Library" ] && [ ! -e "$HOST_RUNNER_VM_HOME/Library" ]; then
+  mv "$R/Library" "$HOST_RUNNER_VM_HOME/Library"
+fi
 mv "$R/vm-runner.new" "$R/vm-runner"
 mv "$R/platform-init.new" "$R/platform-init"
 mv "$R/platform-runc.new" "$R/platform-runc"
@@ -85,7 +90,7 @@ install -m 755 "$R/platform-init" "$release/agent-rootfs/sbin/platform-init"
 mem_mib="${PLATFORM_VM_RUNNER_MEMORY_MIB:-$(( $(sysctl -n hw.memsize) / 1048576 / 3 ))}"
 (
   cd "$R"
-  HOME="$R" SMOLVM_VM_UID_DROP=off RUST_LOG=info nohup "$R/vm-runner" \
+  HOME="$HOST_RUNNER_VM_HOME" SMOLVM_VM_UID_DROP=off RUST_LOG=info nohup "$R/vm-runner" \
     --listen=127.0.0.1:4600 --publish-address=127.0.0.1 \
     --port-min="$HOST_RUNNER_PORT_MIN" --port-max="$HOST_RUNNER_PORT_MAX" \
     --token-file="$R/token" --tls-cert="$R/tls.crt" --tls-key="$R/tls.key" \

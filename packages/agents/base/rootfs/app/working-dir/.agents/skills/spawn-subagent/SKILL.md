@@ -75,7 +75,7 @@ The same SDK ships in two languages, both dependency-free and self-configuring f
 Examples below are Python; the JS names are the camelCase equivalents (`listImages`, `ttlMs`, …) and take one options object.
 
 - **Look first** — run `d.list_images()` and `d.list_connections()` and show the human what is available, as with the tools.
-- **What it runs on** — `harness=` one of `claude-code`, `codex`, `pi`, `bob`, on that harness's default image and size.
+- **What it runs on** — `harness=` one of `claude-code`, `codex`, `pi`, `bob`, `copilot`, on that harness's default image and size.
   `image="<full ref>"` runs a custom image instead, with `harness` saying which harness is inside it; prefer `seed` and `install` below over building an image.
 - **Model** — one of your model providers that the harness runs on, and a model you pick (see "Choose the model per spawn"); a spawn with no model is refused.
 - **Connections** — only your own grants, for what the task needs beyond the model; its network access follows your egress rules, so what you can reach, it can reach.
@@ -157,6 +157,7 @@ strong = d.spawn(prompt, schema, harness="codex", model="ibm/azure/gpt-5.5", con
 | `codex`       | `<provider>/<model id>` from the agent's model list                             | `effort`: `minimal` … `xhigh`                     |
 | `pi`          | `<provider>/<model id>` from the agent's model list                             | — (`mode` is its thinking level: `off` … `xhigh`) |
 | `bob`         | `<provider>/<model id>` from the agent's model list                             | `approvals`: keep `auto`                          |
+| `copilot`     | `<provider>/<model id>` from the agent's model list                             | —                                                 |
 
 "The agent's model list" is what the session picker shows for the harness: every model named with its provider (`ibm/aws/claude-opus-4-8`, `anthropic/claude-sonnet-5-5`).
 Tier names such as `haiku` or `sonnet` are not models and are refused.

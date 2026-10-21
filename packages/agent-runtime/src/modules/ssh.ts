@@ -15,10 +15,37 @@ const SFTP_SERVER_CANDIDATES = [
   "/usr/lib/ssh/sftp-server",
 ].filter((p): p is string => Boolean(p));
 
+// UNIT_BOUNDARY_DESCRIPTION: where a VM guest keeps sshd's own files — its host key, its config and the keys the CLI registers — rather than in the agent's home. They are the platform's and they are tiny, and they are needed exactly when the agent's storage is full, which is the one time its home refuses a write: the guest runs as root and its /run is a tmpfs that no pool guard covers, so registering a key costs no room on the disk whose filling shut the door. Nothing here outlives the machine, and neither does a key registered for one session. A container keeps them in its home instead (server.ts): its runtime is not root and /run is not writable, and no guard fills its volume. The environment file is in the home on both, sshd reading it there and nowhere else, so a session into a full home gets a shell without the replayed environment until its owner frees room.
+export const SSH_RUNTIME_DIR = "/run/dam/ssh";
+
+// UNIT_BOUNDARY_DESCRIPTION: the directory sshd's files go in, chosen once at start: the runtime's own where the machine boots a VM, which is the one whose guest mounts the platform share at VM_SHARE_DIR and runs as root over a tmpfs /run, and the home's where it does not, since a container's /run is root's and its uid cannot write there. It is the choice the whole ssh fix turns on: made the other way, a full home refuses the directory and its owner cannot get in to free it.
+export const sshDirFor = (vmShare: boolean, homeDir: string): string =>
+  vmShare ? SSH_RUNTIME_DIR : join(homeDir, ".ssh");
+
 export interface PreparedSshd {
   sshdPath: string;
   configPath: string;
   homeDir: string;
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the one place the ssh directory is chosen, handing it to both halves of sshd in one value: the keys a connection registers and the host key and config a connection prepares go in the same directory, so a full home can refuse neither. The preparation is a parameter so a test sees the directory it is handed without a machine's sshd.
+export function composeSsh(
+  vmShare: boolean,
+  homeDir: string,
+  prepare: (
+    sshDir: string,
+    homeDir: string,
+    log: (msg: string) => void,
+  ) => Promise<PreparedSshd | null> = prepareSshd,
+): {
+  service: SshService;
+  prepare: (log: (msg: string) => void) => Promise<PreparedSshd | null>;
+} {
+  const sshDir = sshDirFor(vmShare, homeDir);
+  return {
+    service: createSshService(sshDir),
+    prepare: (log) => prepare(sshDir, homeDir, log),
+  };
 }
 
 const ENV_EXCLUDE_EXACT = new Set([
@@ -68,6 +95,7 @@ export function buildSshEnvironmentFile(
 }
 
 export async function prepareSshd(
+  sshDir: string,
   homeDir: string,
   log: (msg: string) => void,
 ): Promise<PreparedSshd | null> {
@@ -76,7 +104,6 @@ export async function prepareSshd(
     return null;
   }
 
-  const sshDir = join(homeDir, ".ssh");
   await mkdir(sshDir, { recursive: true, mode: 0o700 });
   await chmod(sshDir, 0o700).catch(() => {});
 
@@ -186,8 +213,7 @@ const PUBKEY_RE = /^(ssh-(rsa|ed25519|dss)|ecdsa-sha2-\S+|sk-\S+)\s+\S+/;
 const keyBody = (line: string) =>
   line.trim().split(/\s+/).slice(0, 2).join(" ");
 
-export function createSshService(homeDir: string): SshService {
-  const sshDir = join(homeDir, ".ssh");
+export function createSshService(sshDir: string): SshService {
   const authorizedKeys = join(sshDir, "authorized_keys");
   return {
     async authorizeKey(publicKey) {
@@ -195,24 +221,31 @@ export function createSshService(homeDir: string): SshService {
       if (/[\r\n]/.test(key) || !PUBKEY_RE.test(key))
         return err({ kind: "Invalid", reason: "not an OpenSSH public key" });
 
-      await mkdir(sshDir, { recursive: true, mode: 0o700 });
-      await chmod(sshDir, 0o700).catch(() => {});
-
-      let existing = "";
       try {
-        existing = await readFile(authorizedKeys, "utf8");
-      } catch {}
-      const body = keyBody(key);
-      const present = existing
-        .split("\n")
-        .some((l) => l.trim() && keyBody(l) === body);
-      if (!present) {
-        const sep = existing && !existing.endsWith("\n") ? "\n" : "";
-        await writeFile(authorizedKeys, existing + sep + key + "\n", {
-          mode: 0o600,
+        await mkdir(sshDir, { recursive: true, mode: 0o700 });
+        await chmod(sshDir, 0o700).catch(() => {});
+
+        let existing = "";
+        try {
+          existing = await readFile(authorizedKeys, "utf8");
+        } catch {}
+        const body = keyBody(key);
+        const present = existing
+          .split("\n")
+          .some((l) => l.trim() && keyBody(l) === body);
+        if (!present) {
+          const sep = existing && !existing.endsWith("\n") ? "\n" : "";
+          await writeFile(authorizedKeys, existing + sep + key + "\n", {
+            mode: 0o600,
+          });
+        }
+        await chmod(authorizedKeys, 0o600).catch(() => {});
+      } catch (e) {
+        return err({
+          kind: "Unavailable",
+          reason: `could not write ${authorizedKeys}: ${(e as Error).message}`,
         });
       }
-      await chmod(authorizedKeys, 0o600).catch(() => {});
       return ok({ ok: true });
     },
   };

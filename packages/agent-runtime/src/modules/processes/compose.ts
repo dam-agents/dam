@@ -12,7 +12,6 @@ import {
 } from "./services/processes-service.js";
 
 export interface StartProcessesOptions {
-  backgroundWorkHolds: boolean;
   runtimePid: number;
   harnessWork: HarnessWork;
   log: (msg: string) => void;

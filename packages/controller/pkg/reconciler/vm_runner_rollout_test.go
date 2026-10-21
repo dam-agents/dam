@@ -3,7 +3,10 @@ package reconciler
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"fmt"
+	"hash/fnv"
 	"net/http"
 	"net/http/httptest"
 	"sort"
@@ -21,6 +24,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/rand"
 	"k8s.io/client-go/kubernetes/fake"
 	k8stesting "k8s.io/client-go/testing"
 
@@ -696,7 +700,7 @@ func TestTheRunnerTemplateHashIsPinned(t *testing.T) {
 
 	dep, err := r.client.AppsV1().Deployments("test-agents").Get(ctx, r.runnerName(testOwner), metav1.GetOptions{})
 	require.NoError(t, err)
-	assert.Equal(t, "d8a60be9a6efa104", dep.Annotations[annRunnerTemplate])
+	assert.Equal(t, "58aebcc11cdfde48", dep.Annotations[annRunnerTemplate])
 }
 
 // TEST_SCENARIO: the chart gives every runner pod a PriorityClass, and a roll hash that covered it would reboot every machine of every owner on the install that first set one. The class is left out of what the roll compares, so an existing runner keeps its pod and takes the class at its next replacement, while a change to the pod itself still rolls.
@@ -1548,4 +1552,322 @@ func TestARebootHoldKeepsTheTimeItsReleaseWasNamedUntilThePodRolls(t *testing.T)
 	setRunnerAnnotation(t, r, "owner-a", annRunnerReleaseNamedAt, time.Now().Add(-runnerReleaseUnreachableRoll-time.Minute).UTC().Format(time.RFC3339))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-a"), "the runner that never answered is rolled onto the release it was named")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a ReplicaSet of a runner Deployment, as the Deployment controller leaves one: the pod template the Deployment holds now with the `pod-template-hash` label the controller generates written into it and its selector, selected by the runner's own labels, controlled by the Deployment, and reporting the condition admission gave it. The generated label is what a real ReplicaSet carries and its Deployment does not.
+func runnerReplicaSet(t *testing.T, r *AgentReconciler, owner, reason string, mutate ...func(*appsv1.ReplicaSet)) *appsv1.ReplicaSet {
+	t.Helper()
+	dep := runnerDeploymentOf(t, r, owner)
+	raw, err := json.Marshal(dep.Spec.Template)
+	require.NoError(t, err)
+	sum := fnv.New32a()
+	_, err = sum.Write(raw)
+	require.NoError(t, err)
+	hash := rand.SafeEncodeString(fmt.Sprint(sum.Sum32()))
+	controller := true
+	selector := dep.Spec.Selector.DeepCopy()
+	if selector.MatchLabels == nil {
+		selector.MatchLabels = map[string]string{}
+	}
+	selector.MatchLabels[appsv1.DefaultDeploymentUniqueLabelKey] = hash
+	template := *dep.Spec.Template.DeepCopy()
+	template.Labels[appsv1.DefaultDeploymentUniqueLabelKey] = hash
+	rs := &appsv1.ReplicaSet{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            dep.Name + "-" + hash,
+			Namespace:       dep.Namespace,
+			Labels:          vmRunnerSelector(owner),
+			OwnerReferences: []metav1.OwnerReference{{APIVersion: "apps/v1", Kind: "Deployment", Name: dep.Name, UID: dep.UID, Controller: &controller}},
+		},
+		Spec: appsv1.ReplicaSetSpec{Selector: selector, Template: template},
+	}
+	for _, m := range mutate {
+		m(rs)
+	}
+	if reason != "" {
+		rs.Status.Conditions = []appsv1.ReplicaSetCondition{{
+			Type:    appsv1.ReplicaSetReplicaFailure,
+			Status:  corev1.ConditionTrue,
+			Reason:  reason,
+			Message: `.containers[0].capabilities.add: Invalid value: "SYS_RESOURCE": capability may not be added`,
+		}}
+	}
+	created, err := r.client.AppsV1().ReplicaSets(dep.Namespace).Create(context.Background(), rs, metav1.CreateOptions{})
+	require.NoError(t, err)
+	return created
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the container image a runner's Deployment carries, written without going through the roll, which is what a test needs to place a peer on an image other than the install's.
+func setRunnerImage(t *testing.T, r *AgentReconciler, owner, image string) {
+	t.Helper()
+	dep := runnerDeploymentOf(t, r, owner)
+	dep.Spec.Template.Spec.Containers[0].Image = image
+	_, err := r.client.AppsV1().Deployments("test-agents").Update(context.Background(), dep, metav1.UpdateOptions{})
+	require.NoError(t, err)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a runner peer that already runs the candidate pod template and reports its pod ready, which is what proves that template is admitted. It is settled on the new template, so a peer built before the change describes the old one and proves nothing about the new.
+func readyRunnerOnCandidate(t *testing.T, r *AgentReconciler, owner string) {
+	t.Helper()
+	ctx := context.Background()
+	require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, owner)
+	require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+	settleRunnerPod(t, r, owner)
+}
+
+// TEST_SCENARIO: one owner's rolled pod is refused at admission while another owner's runner already runs the very template that was refused and is ready. The refusal therefore names an object of that owner's own and not the release, so past the settle timeout the roll moves on and the next owner's runner rolls.
+func TestARunnerRefusedBesideAReadyPeerOnTheSameTemplateDoesNotStallTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
+	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	runnerReplicaSet(t, r, "owner-a", "FailedCreate")
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"))
+}
+
+// TEST_SCENARIO: a rolled owner has no pod at all and its ReplicaSet records no admission refusal, which is a release whose pod never got created rather than one owner's refusal. The roll keeps its place, so the next owner does not roll onto it.
+func TestARunnerWithNoPodAndNoRefusalHaltsTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
+	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	runnerReplicaSet(t, r, "owner-a", "")
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"))
+}
+
+// TEST_SCENARIO: a release breaks the runner pod shape, so admission refuses every owner's create and the first rolled runner has no pod and a FailedCreate. No peer runs that template, so the refusal is the release's and not one owner's: the roll keeps its place, the next owner does not roll, and the stalled runner is marked. That is the halt the design intends, kept for a truly broken release.
+func TestARefusalThatBreaksEveryRunnerHaltsTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	changeRunnerPod(r)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	runnerReplicaSet(t, r, "owner-a", "FailedCreate")
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "no peer runs the template, so the refusal halts the roll")
+	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+}
+
+// TEST_SCENARIO: the release changes the runner image, which admission can refuse for a registry or a digest it does not allow, and every peer runs the same pod on a different image. A ready peer that never admitted this image proves nothing about it, so the refused runner keeps its place: a peer's image is part of what a peer proves.
+func TestAReadyPeerOnAnotherImageDoesNotReleaseTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer")
+	r.config.VM.Runner.Image = runnerV2
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-peer", r.runnerOwnerRef(ctx), true))
+	setRunnerImage(t, r, "owner-peer", "quay.io/dam-agents/vm-runner:peer")
+	settleRunnerPod(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRunnerImage(t, r, "owner-a", runnerV2)
+	runnerReplicaSet(t, r, "owner-a", "FailedCreate")
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	assert.False(t, r.runnerPodRefusedForItsOwner(ctx, runnerDeploymentOf(t, r, "owner-a")), "a peer on another image says nothing of the refused one")
+	assert.Contains(t, midRoll(t, r), r.runnerName("owner-a"), "so the refused runner keeps its place")
+}
+
+// TEST_SCENARIO: an older ReplicaSet of the same runner Deployment was refused for a pod the Deployment no longer asks for — an older image. That failure describes another pod, so it is not this roll's refusal: the roll keeps its place.
+func TestARefusalOfAnOlderPodShapeDoesNotReleaseTheRoll(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer")
+	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	runnerReplicaSet(t, r, "owner-a", "FailedCreate", func(rs *appsv1.ReplicaSet) {
+		rs.Spec.Template.Spec.Containers[0].Image = runnerV1
+	})
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	assert.False(t, r.runnerPodRefusedForItsOwner(ctx, runnerDeploymentOf(t, r, "owner-a")), "a refused older revision is not this roll's refusal")
+	assert.Contains(t, midRoll(t, r), r.runnerName("owner-a"), "so the roll keeps its place")
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the runners the controller reads as mid-roll right now, which is the list its width is counted against.
+func midRoll(t *testing.T, r *AgentReconciler) []string {
+	t.Helper()
+	rolling, _, err := r.runnersMidRoll(context.Background())
+	require.NoError(t, err)
+	return rolling
+}
+
+// TEST_SCENARIO: a release whose new pod never becomes ready on one owner, while another owner's runner is already ready on that pod, halts the roll at that runner — but only for `rollout.stalledTimeout`. Past it the stalled runner gives up its place, keeps its stalled mark and gains a Warning Event, and the next owner's runner rolls, so one owner's stall does not freeze every owner's upgrade.
+func TestAStalledRollGivesUpItsPlaceAtTheStalledTimeout(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
+	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "the roll halts at the first runner while the stall is fresh")
+	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "past the stalled timeout the place is released")
+	annotations := runnerAnnotations(t, r, "owner-a")
+	assert.NotEmpty(t, annotations[annRunnerStalled], "the stalled mark stays, as the signal that this runner's release went no further")
+	assert.Empty(t, annotations[annRunnerRolledAt], "the roll that gave up its place is no longer mid-roll")
+	events := eventsOn(t, r, r.runnerName("owner-a"))
+	require.NotEmpty(t, events, "a stalled roll is legible in `kubectl get events`")
+	assert.Equal(t, string(corev1.EventTypeWarning), events[len(events)-1].Type)
+	assert.Equal(t, reasonRollStallGivenUp, events[len(events)-1].Reason)
+}
+
+// TEST_SCENARIO: a runner that gave up its stalled place beside a ready peer on its pod is still on the release it ran before, and its pod rolling ready again is what clears the mark: the next pass that sees the pod ready settles the roll and removes the sign that anything was ever wrong.
+func TestARunnerThatGaveUpItsPlaceClearsItsMarkWhenItsPodIsReady(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
+	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
+	setRunnerAnnotation(t, r, "owner-a", annRunnerStalled, time.Now().UTC().Format(time.RFC3339))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	given := runnerAnnotations(t, r, "owner-a")
+	require.Empty(t, given[annRunnerRolledAt], "beside a ready peer the stalled roll gives up its place")
+	require.NotEmpty(t, given[annRunnerStalled])
+
+	settleRunnerPod(t, r, "owner-a")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+}
+
+// TEST_SCENARIO: the dev incident itself. A release adds a capability the security policy does not allow, so admission refuses every owner's new pod: the first rolled runner has no pod, an owned FailedCreate, and no peer that runs its pod shape. No runner on the new pod has ever become ready, so the refusal is the release's: the roll halts at the first runner, which is marked once with a Warning Event, and it keeps its place far past `rollout.stalledTimeout`, so no second owner loses its runner to the same release.
+func TestARefusalOfEveryNewPodNeverRollsASecondOwner(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b", "owner-c")
+	changeRunnerPod(r)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	runnerReplicaSet(t, r, "owner-a", "FailedCreate")
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	require.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+
+	setRolledAt(t, r, "owner-a", time.Now().Add(-10*defaultRunnerStalledTimeout))
+	for range 3 {
+		for _, owner := range []string{"owner-a", "owner-b", "owner-c"} {
+			require.NoError(t, r.applyRunnerDeployment(ctx, owner, r.runnerOwnerRef(ctx), true))
+		}
+	}
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "no runner on the new pod is ready, so the release goes no further")
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-c"))
+	assert.Contains(t, midRoll(t, r), r.runnerName("owner-a"), "the stalled runner keeps its place")
+	var stalled, givenUp int
+	for _, event := range eventsOn(t, r, r.runnerName("owner-a")) {
+		switch event.Reason {
+		case reasonRollStalled:
+			stalled++
+		case reasonRollStallGivenUp:
+			givenUp++
+		}
+	}
+	assert.Equal(t, 1, stalled, "a stall is reported once")
+	assert.Zero(t, givenUp, "a place that is kept is not reported as given up")
+}
+
+// TEST_SCENARIO: the write that releases a stalled place is refused, beside a ready peer on the same pod, so the runner still holds its annotations. A place that is still taken must stay taken: the next owner does not roll, no give-up Event is written for a transition that did not land, and a later pass that lands the write releases the place with one Event.
+func TestAFailedGiveUpWriteKeepsThePlace(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
+	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	require.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
+
+	cs := r.client.(*fake.Clientset)
+	refused := true
+	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
+		if !refused || dep.Annotations[annRunnerRolledAt] != "" {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewConflict(appsv1.Resource("deployments"), dep.Name, errors.New("the informer's copy is older"))
+	})
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV1, runnerImageOf(t, r, "owner-b"), "a place whose release did not land is still taken")
+	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerRolledAt], "the annotations the release would have cleared are still there")
+	for _, event := range eventsOn(t, r, r.runnerName("owner-a")) {
+		assert.NotEqual(t, reasonRollStallGivenUp, event.Reason, "a release that did not land is not reported")
+	}
+
+	refused = false
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Equal(t, runnerV2, runnerImageOf(t, r, "owner-b"), "the pass that lands the release frees the place")
+	givenUp := 0
+	for _, event := range eventsOn(t, r, r.runnerName("owner-a")) {
+		if event.Reason == reasonRollStallGivenUp {
+			givenUp++
+		}
+	}
+	assert.Equal(t, 1, givenUp)
+}
+
+// TEST_SCENARIO: the write that records a stall is refused, so nothing on the runner says it is stalled. That attempt reports nothing: a transition that did not land is not announced, and the next pass that lands it writes one Event, never the same one twice.
+func TestAStallThatCannotBeRecordedSaysNothing(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	changeRunnerPod(r)
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	cs := r.client.(*fake.Clientset)
+	refused := true
+	cs.PrependReactor("update", "deployments", func(action k8stesting.Action) (bool, runtime.Object, error) {
+		dep := action.(k8stesting.UpdateAction).GetObject().(*appsv1.Deployment)
+		if !refused || dep.Annotations[annRunnerStalled] == "" {
+			return false, nil, nil
+		}
+		return true, nil, k8serrors.NewConflict(appsv1.Resource("deployments"), dep.Name, errors.New("the informer's copy is older"))
+	})
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	assert.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled], "the mark did not land")
+	assert.Empty(t, eventsOn(t, r, r.runnerName("owner-a")), "a stall that was not recorded is not announced")
+
+	refused = false
+	for range 2 {
+		require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
+	}
+	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+	stalled := 0
+	for _, event := range eventsOn(t, r, r.runnerName("owner-a")) {
+		if event.Reason == reasonRollStalled {
+			stalled++
+		}
+	}
+	assert.Equal(t, 1, stalled, "the transition is announced once, on the pass that records it")
+}
+
+// TEST_SCENARIO: the last changed runner of an upgrade has no ready machine, so its roll writes no awaiting list and no other owner asks for a roll place; a peer is already ready on its pod. Its own turn must still bound the stall: past the settle timeout it is marked and gets its Event, and past the stalled timeout it gives up the place, so a place cannot outlive its bound just because no one else asked.
+func TestTheLastRunnerWithNoMachinesIsStillBounded(t *testing.T) {
+	ctx := context.Background()
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer")
+	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	require.Empty(t, runnerAnnotations(t, r, "owner-a")[annRunnerAwaiting], "a runner with no ready machine waits on no machine")
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerSettleTimeout-time.Minute))
+
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	assert.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled], "its own turn marks the stall")
+
+	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
+	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
+	annotations := runnerAnnotations(t, r, "owner-a")
+	assert.Empty(t, annotations[annRunnerRolledAt], "its own turn gives up the place past the bound")
+	assert.NotEmpty(t, annotations[annRunnerStalled], "the stalled mark stays")
 }

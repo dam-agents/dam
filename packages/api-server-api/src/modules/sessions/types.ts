@@ -56,6 +56,8 @@ export interface SessionView {
   scheduleId?: string | null;
   initialization?: boolean | null;
   title?: string | null;
+  customTitle?: string | null;
+  autoTitle?: string | null;
   updatedAt?: string | null;
   threadTs?: string | null;
   running?: boolean;

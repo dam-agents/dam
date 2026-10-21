@@ -1,4 +1,10 @@
 import type { Contribution } from "agent-runtime-api";
+import {
+  defaultAccountGroups,
+  type DefaultAccountGroup,
+  type DefaultAccountKind,
+  type DefaultAccountSource,
+} from "./default-accounts.js";
 import { connectionEgressPlaceholder } from "./egress-addressing.js";
 import {
   GH_ENTERPRISE_TOKEN_ENV,
@@ -17,25 +23,8 @@ export const GH_HOSTS_FILE_PATH = "$HOME/.config/gh/hosts.yml";
 export const GITCONFIG_FILE_PATH = "$HOME/.gitconfig";
 export const GH_TOKEN_AVAILABLE_ENV = "PLATFORM_GH_TOKEN_AVAILABLE";
 
-export interface GitHubAccountSource {
-  id: string;
-  name: string;
-  preferred: boolean;
-  grantedAt?: string;
-  contributions: Contribution[];
-}
-
-export interface GitHubAccount {
-  connectionId: string;
-  connectionName: string;
-  account: string;
-  active: boolean;
-}
-
-export interface GitHubAccountGroup {
-  host: string;
-  accounts: GitHubAccount[];
-}
+export type GitHubAccountSource = DefaultAccountSource;
+export type GitHubAccountGroup = DefaultAccountGroup<"github">;
 
 function accountSlug(text: string): string {
   return text
@@ -45,61 +34,24 @@ function accountSlug(text: string): string {
     .join("-");
 }
 
-function accountNames(members: readonly GitHubAccountSource[]): string[] {
-  const taken = new Set<string>();
-  return members.map((member) => {
-    const base = accountSlug(member.name) || "account";
-    const name = taken.has(base) ? `${base}-${accountSlug(member.id)}` : base;
-    taken.add(name);
-    return name;
-  });
-}
-
-function byGrantTime(a: GitHubAccountSource, b: GitHubAccountSource): number {
-  if (a.grantedAt !== b.grantedAt) {
-    if (a.grantedAt === undefined) return 1;
-    if (b.grantedAt === undefined) return -1;
-    return a.grantedAt < b.grantedAt ? -1 : 1;
-  }
-  return a.id < b.id ? -1 : a.id > b.id ? 1 : 0;
-}
+export const githubAccountKind: DefaultAccountKind<"github"> = {
+  id: "github",
+  scopeOf: githubHostOf,
+  naming: { slug: accountSlug, fallback: "account" },
+  minAccounts: 2,
+};
 
 export function githubAccountGroups(
   granted: readonly GitHubAccountSource[],
 ): GitHubAccountGroup[] {
-  const byHost = new Map<string, GitHubAccountSource[]>();
-  for (const source of granted) {
-    const host = githubHostOf(source.contributions);
-    if (!host) continue;
-    byHost.set(host, [...(byHost.get(host) ?? []), source]);
-  }
-  const groups: GitHubAccountGroup[] = [];
-  for (const [host, unordered] of byHost) {
-    if (unordered.length < 2) continue;
-    const members = [...unordered].sort(byGrantTime);
-    const activeIndex = Math.max(
-      0,
-      members.findIndex((member) => member.preferred),
-    );
-    const names = accountNames(members);
-    groups.push({
-      host,
-      accounts: members.map((member, index) => ({
-        connectionId: member.id,
-        connectionName: member.name,
-        account: names[index] ?? member.id,
-        active: index === activeIndex,
-      })),
-    });
-  }
-  return groups;
+  return defaultAccountGroups(githubAccountKind, granted);
 }
 
 function ghHostsFile(group: GitHubAccountGroup): Contribution {
   const active = group.accounts.find((a) => a.active) ?? group.accounts[0]!;
   const users = Object.fromEntries(
     group.accounts.map((a) => [
-      a.account,
+      a.name,
       { oauth_token: connectionEgressPlaceholder(a.connectionId) },
     ]),
   );
@@ -109,9 +61,9 @@ function ghHostsFile(group: GitHubAccountGroup): Contribution {
     format: "yaml",
     mergeMode: "key-targeted",
     content: {
-      [group.host]: {
+      [group.scope]: {
         git_protocol: "https",
-        user: active.account,
+        user: active.name,
         oauth_token: connectionEgressPlaceholder(active.connectionId),
         users,
       },

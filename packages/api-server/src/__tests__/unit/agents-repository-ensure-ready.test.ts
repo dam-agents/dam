@@ -537,7 +537,7 @@ describe("ensureReady", () => {
     ).toBeUndefined();
   });
 
-  // TEST_SCENARIO: a migration that failed after it stopped the container keeps it stopped until the owner retries or aborts, so the wake is refused at once with a cause that says the move failed.
+  // TEST_SCENARIO: a migration that failed after it stopped the container keeps it stopped until an operator finishes or undoes the move, so the wake is refused at once with a cause that says the move failed.
   it("refuses at once while a failed migration keeps the agent stopped", async () => {
     const obj = agentObj("a1", [
       ...HIBERNATED,

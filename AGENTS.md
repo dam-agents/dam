@@ -44,6 +44,12 @@ If you spot a contradiction between the skill and a Platform architecture doc, *
 Language-level coding rules are indexed in [`docs/guidelines/code/index.md`](docs/guidelines/code/index.md), one page per rule with its trigger.
 Scan the index when writing or reviewing code; open a rule page when its trigger matches the code in front of you.
 
+## Where new code goes
+
+Files most pull requests change are split by subject, so unrelated changes stop conflicting.
+Add a test to the topic file whose subject it covers, not to the end of an existing one, and a doc paragraph to the page whose subject it covers.
+Put a helper that more than one topic file uses in that suite's support module.
+
 ## Code comments
 
 - Before writing any code comment, follow [`docs/guidelines/comment-guidelines.md`](docs/guidelines/comment-guidelines.md).
