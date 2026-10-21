@@ -125,17 +125,11 @@ An agent's instructions live in two files, and every harness reads both, so swit
   An Agent created without a kit gets a short template there, so its owner knows where to write; an Agent from a kit, a home seed or a sub-agent gets none, because its definition brings its own.
   The template rides an `agent-instructions` runtime event that writes the file only when the home has none.
 
-The harnesses look for instruction files in different places, so each image wires `~/AGENTS.md` in where the harness would miss it:
-
-| Harness     | Platform instructions                       | `~/AGENTS.md`                                     |
-| ----------- | ------------------------------------------- | ------------------------------------------------- |
-| Claude Code | managed `/etc/claude-code/CLAUDE.md`        | read natively, walking up from the work directory |
-| Codex       | `-c developer_instructions`                 | linked as `~/.codex/AGENTS.md`, its global file   |
-| Pi          | `~/.pi/agent/AGENTS.md`, linked at start    | read natively, walking up from the work directory |
-| Bob         | `~/.bob/rules/platform.md`, linked at start | `~/.bob/rules/agent.md`, linked at start          |
-
+The harnesses look for instruction files in different places, so each image wires `~/AGENTS.md` in where the harness would miss it.
+A harness that walks up from the work directory finds it on its own; one that reads only its own global file gets a link to `~/AGENTS.md` placed there at every start, and a regular file an owner put at that path stays theirs.
+Each harness's README names the files it reads ([Codex](../../packages/agents/codex/README.md#platform-instructions), [Pi](../../packages/agents/pi-agent/README.md#platform-instructions), [Bob](../../packages/agents/bob/README.md#configuration)).
 `work/AGENTS.md` still loads beside them on every harness, for a kit whose work directory is its toolkit.
-A harness reads these files when a session starts, so an edit applies from the next session.
+A harness reads these files when a session starts, so an edit applies from the next session; Codex reads its global file again each turn, so there an edit applies from the next turn.
 Claude Code skips `AGENTS.md` files while a `CLAUDE.md` sits on the same path, so a definition that keeps a `CLAUDE.md` makes it its entry point.
 
 ## Image updates
