@@ -88,16 +88,24 @@ function world(
     supersede: async () => {},
     enqueueAfterCommit: async () => {},
   };
-  const composition = composeEnvironmentsOver(repo, {
-    agentsFor,
-    runtimeMutator,
-    config: {
-      urlTemplate: null,
-      maxPerAgent: 5,
-      expiryMaxDays: 30,
+  const composition = composeEnvironmentsOver(
+    repo,
+    {
+      agentsFor,
+      runtimeMutator,
+      config: {
+        urlTemplate: null,
+        maxPerAgent: 5,
+        expiryMaxDays: 30,
+      },
+      listAgents: async () => cluster,
     },
-    listAgents: async () => cluster,
-  });
+    {
+      get: async () => [],
+      set: async () => {},
+      delete: async () => {},
+    },
+  );
   return { rows, deletedAgents, events, composition };
 }
 

@@ -80,15 +80,6 @@ export function startItemCommand(command: string): string {
   ].join(" && ");
 }
 
-function memoryAccessLists(): AccessListsRepository {
-  const lists = new Map<string, string[]>();
-  return {
-    get: async (id) => lists.get(id) ?? [],
-    set: async (id, _owner, emails) => void lists.set(id, emails),
-    delete: async (id) => void lists.delete(id),
-  };
-}
-
 /**
  * UNIT_BOUNDARY_DESCRIPTION: Wires the environments module once per install.
  * The service is built per owner; the cleanup source, run when any Agent is
@@ -112,7 +103,7 @@ export function composeEnvironments(
 export function composeEnvironmentsOver(
   repo: EnvironmentsRepository,
   deps: Omit<ComposeEnvironmentsDeps, "db">,
-  accessLists: AccessListsRepository = memoryAccessLists(),
+  accessLists: AccessListsRepository,
 ): EnvironmentsComposition {
   const environmentsFor = (owner: string) =>
     createEnvironmentsService({
