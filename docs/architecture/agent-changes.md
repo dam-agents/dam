@@ -48,6 +48,7 @@ Work not committed yet links no Session until it is; the panel still lists its r
 Every git process in the agent writes its trace — git's own event log, `trace2` — as one file in a directory agent-runtime owns, which the runtime gives each harness and terminal process.
 A file, not a socket: a reader that stalls blocks every git command writing to its socket, while files only pile up, and git skips its trace rather than wait once the directory holds two thousand.
 The runtime reads a file once its process has exited, keeps the command's name, the worktree it ran in, whether it succeeded and the Session it ran in, then deletes it.
+Its watch sees a trace created, at the start of a git process, not finished, so while one is unfinished it looks again every second: a commit that waits on an editor or a slow hook links when it exits.
 The trace also carries the command line, which can hold a commit message or a credential passed on it; the runtime never logs or keeps any of it.
 A command that only reads (`status`, `log`) or switches branches records nothing, and neither does one that failed.
 
@@ -57,7 +58,7 @@ A harness that sets none, Bob today, has a command linked to the only Session ru
 A pushed branch is looked up on the remote it tracks.
 
 That record is per Session and survives the panel being closed and the pod restarting; it is bounded per Session and in total.
-The open pull request of a recorded branch is attached to the record when the panel finds it, when the Session's tool calls settle, and right after a push; a pushed branch is looked up on the remote it was pushed to, whatever its worktree has checked out since.
+The open pull request of a recorded branch is attached to the record when the panel finds it, when the Session's tool calls settle, and right after a push; a pushed branch is looked up on the remote it tracks, whatever its worktree has checked out since.
 A link once found is kept, so a Session still links its pull request after it is merged.
 
 The sessions list carries this record as badges of the repositories a Session touched, each with its pull request.

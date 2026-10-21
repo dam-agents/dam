@@ -11,6 +11,15 @@ import { gitCommandOf, type GitCommand } from "../domain/git-trace.js";
  */
 export const STALE_TRACE_MS = 10 * 60_000;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the directory watch fires when git creates a
+ * trace, at the start of its process, and not when git appends the event
+ * that ends it. While a trace is still unfinished the reader sweeps again on
+ * this interval, so a command that runs a while (an editor, a slow hook)
+ * links once it exits rather than when the next git process starts.
+ */
+export const UNFINISHED_SWEEP_MS = 1_000;
+
 const COMPLETE = /"event":"atexit"/;
 
 /**
@@ -40,12 +49,15 @@ export function createGitTraceReader(deps: {
   onCommand: (command: GitCommand) => void;
   log: (msg: string) => void;
   now?: () => number;
+  unfinishedSweepMs?: number;
 }): GitTraceReader {
   const now = deps.now ?? Date.now;
   let watch: WatchHandle | undefined;
   let queue = Promise.resolve();
+  let retry: ReturnType<typeof setTimeout> | undefined;
 
-  async function sweep(): Promise<void> {
+  async function sweep(): Promise<boolean> {
+    let unfinished = false;
     const names = await readdir(deps.dir).catch(() => [] as string[]);
     for (const name of names) {
       const path = join(deps.dir, name);
@@ -61,17 +73,33 @@ export function createGitTraceReader(deps: {
           (info) => info.mtimeMs,
           () => null,
         );
-        if (modified !== null && now() - modified < STALE_TRACE_MS) continue;
+        if (modified !== null && now() - modified < STALE_TRACE_MS) {
+          unfinished = true;
+          continue;
+        }
       }
       await rm(path, { force: true }).catch(() => undefined);
       const command = gitCommandOf(text);
       if (command) deps.onCommand(command);
     }
+    return unfinished;
+  }
+
+  function sweepLater(): void {
+    if (retry || !watch) return;
+    retry = setTimeout(() => {
+      retry = undefined;
+      void drain();
+    }, deps.unfinishedSweepMs ?? UNFINISHED_SWEEP_MS);
+    retry.unref?.();
   }
 
   function drain(): Promise<void> {
     queue = queue
       .then(sweep)
+      .then((unfinished) => {
+        if (unfinished) sweepLater();
+      })
       .catch((error: unknown) =>
         deps.log(
           `reading git traces failed: ${error instanceof Error ? error.message : String(error)}`,
@@ -92,6 +120,8 @@ export function createGitTraceReader(deps: {
     close() {
       watch?.close();
       watch = undefined;
+      if (retry) clearTimeout(retry);
+      retry = undefined;
     },
   };
 }

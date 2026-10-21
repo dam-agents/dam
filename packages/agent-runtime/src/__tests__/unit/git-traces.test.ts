@@ -141,4 +141,35 @@ describe("git trace reader", () => {
 
     expect(await fs.readdir(dir)).toEqual([]);
   });
+
+  /**
+   * TEST_SCENARIO: A git process runs a while: its trace is created at the
+   * start, which the watch sees, and finished later, which it does not. The
+   * reader sweeps again while the trace is unfinished, so the command links
+   * once its process exits, with no other git process running.
+   */
+  it("should read a trace that finishes after the watch fired", async () => {
+    const traces = createGitTraceReader({
+      dir,
+      onCommand: (command) => commands.push(command),
+      log: () => undefined,
+      unfinishedSweepMs: 100,
+    });
+    await traces.start();
+    await fs.writeFile(path.join(dir, "slow"), unfinished);
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await traces.drain();
+    expect(commands).toEqual([]);
+
+    await fs.appendFile(
+      path.join(dir, "slow"),
+      "\n" + finished.split("\n").slice(3).join("\n"),
+    );
+
+    await new Promise((resolve) => setTimeout(resolve, 500));
+    traces.close();
+
+    expect(commands).toHaveLength(1);
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
 });
