@@ -1,7 +1,9 @@
 import { useQuery } from "@tanstack/react-query";
+import { LINKED_KIT_CATALOG } from "api-server-api";
 
 import { api } from "../../../api.js";
 import { trpc } from "../../../trpc.js";
+import { kitLinkUrl } from "../lib/kit-link.js";
 
 export function useStarterKits(enabled = true) {
   return useQuery({
@@ -11,15 +13,23 @@ export function useStarterKits(enabled = true) {
 }
 
 export function useStarterKit(catalog: string | null, id: string | null) {
-  return useQuery({
+  const linked = catalog === LINKED_KIT_CATALOG;
+  const catalogKit = useQuery({
     ...trpc.starterKits.get.queryOptions({
       catalog: catalog ?? "",
       id: id ?? "",
     }),
-    enabled: catalog !== null && id !== null,
+    enabled: !linked && catalog !== null && id !== null,
     retry: (failures, error) =>
       error.data?.code !== "NOT_FOUND" && failures < 3,
   });
+  const linkedKit = useQuery({
+    ...trpc.starterKits.inspect.queryOptions({ url: kitLinkUrl(id ?? "") }),
+    enabled: linked && id !== null,
+    retry: (failures, error) =>
+      error.data?.code === "BAD_GATEWAY" && failures < 2,
+  });
+  return linked ? linkedKit : catalogKit;
 }
 
 export function useKitUpdates() {

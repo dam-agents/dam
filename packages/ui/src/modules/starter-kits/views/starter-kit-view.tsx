@@ -4,10 +4,12 @@ import {
   Launch,
   Meter,
   PlayFilledAlt,
+  WarningAlt,
 } from "@carbon/icons-react";
 import {
   type ConnectionTemplateView,
   formatEgressRuleInline,
+  LINKED_KIT_CATALOG,
   requirementAccepts,
   type StarterKitView,
 } from "api-server-api";
@@ -188,6 +190,9 @@ export function StarterKitDetailView() {
   if (!kit.isPending && (kit.isError || kit.data === undefined)) {
     return (
       <KitLoadErrorModal
+        linkReason={
+          catalog === LINKED_KIT_CATALOG ? (kit.error?.message ?? null) : null
+        }
         onRetry={() => void kit.refetch()}
         onClose={close}
         onBack={back}
@@ -197,20 +202,27 @@ export function StarterKitDetailView() {
 
   return (
     <Modal size="xl" heightClass={KIT_MODAL_HEIGHT} onClose={close}>
-      {kit.data === undefined ? (
+      {kit.data === undefined || kitId === null ? (
         <KitDetailSkeleton onClose={close} onBack={back} />
       ) : (
-        <KitDetail kit={kit.data} onClose={close} onBack={back} />
+        <KitDetail
+          kit={kit.data}
+          routeKit={kitId}
+          onClose={close}
+          onBack={back}
+        />
       )}
     </Modal>
   );
 }
 
 function KitLoadErrorModal({
+  linkReason,
   onRetry,
   onClose,
   onBack,
 }: {
+  linkReason: string | null;
   onRetry: () => void;
   onClose: () => void;
   onBack: () => void;
@@ -221,8 +233,9 @@ function KitLoadErrorModal({
       <DialogBody>
         <Callout tone="danger">
           <p className="text-sm text-foreground">
-            Couldn&apos;t load this starter kit. It may have been removed from
-            the catalog, or the catalog is unreachable.
+            {linkReason !== null
+              ? `Couldn't use the kit at this link: ${linkReason}`
+              : "Couldn't load this starter kit. It may have been removed from the catalog, or the catalog is unreachable."}
           </p>
           <div className="mt-2 flex gap-2">
             <Button variant="outline" size="sm" onClick={onRetry}>
@@ -274,6 +287,51 @@ function KitDetailSkeleton({
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: A kit from a link is in no catalog, so nobody on
+ * this platform reviewed it; the notice says so above everything the kit sets
+ * up, and names the repository and the commit the agent is created from. For
+ * such a kit the modal also lists its install command and environment, which
+ * a catalog kit's review already covered.
+ */
+function LinkedKitNotice({
+  kit,
+  link,
+}: {
+  kit: StarterKitView;
+  link: { url: string };
+}) {
+  return (
+    <Callout
+      tone="warning"
+      size="sm"
+      className="mb-6 flex gap-2.5"
+      data-testid="linked-kit-notice"
+    >
+      <WarningAlt size={16} className="mt-px shrink-0 text-warning-fg" />
+      <div className="min-w-0 text-sm leading-snug">
+        <p className="font-semibold text-warning-fg">
+          This kit is not in a catalog
+        </p>
+        <p className="mt-0.5 text-muted-foreground">
+          Nobody on this platform reviewed it. Check what it sets up below
+          before you create the agent: it is created from{" "}
+          <a
+            href={`${link.url}/tree/${kit.version}`}
+            target="_blank"
+            rel="noreferrer"
+            className="font-mono text-foreground underline underline-offset-2"
+          >
+            {link.url.replace("https://github.com/", "")}@
+            {shortKitVersion(kit.version)}
+          </a>
+          .
+        </p>
+      </div>
+    </Callout>
+  );
+}
+
 function KitVideoPanel({ video }: { video: string | undefined }) {
   return (
     <aside className="hidden w-[380px] shrink-0 flex-col items-center justify-center gap-1 border-l border-kit-line bg-gradient-to-b from-kit-tint to-kit-surface px-8 text-center md:flex">
@@ -299,10 +357,12 @@ function KitVideoPanel({ video }: { video: string | undefined }) {
 
 function KitDetail({
   kit,
+  routeKit,
   onClose,
   onBack,
 }: {
   kit: StarterKitView;
+  routeKit: string;
   onClose: () => void;
   onBack: () => void;
 }) {
@@ -317,14 +377,14 @@ function KitDetail({
   const returnPath = routeToPath({
     view: "starter-kit",
     catalog: kit.catalog,
-    kit: kit.id,
+    kit: routeKit,
   });
   const { form, update, toggleConnection, reset } = useSetupForm(
     "starter-kit",
     {
       namePrefix: kit.id,
       returnPath,
-      scope: `${kit.catalog}/${kit.id}`,
+      scope: `${kit.catalog}/${routeKit}`,
     },
   );
   const [invalidSchedules, setInvalidSchedules] = useState<readonly string[]>(
@@ -453,6 +513,7 @@ function KitDetail({
         </DialogHeader>
 
         <DialogBody>
+          {kit.link && <LinkedKitNotice kit={kit} link={kit.link} />}
           {form.name && (
             <div
               className="mb-8 flex min-w-0 items-center gap-3"
@@ -577,6 +638,27 @@ function KitDetail({
               />
             ))}
           </Section>
+
+          {kit.link && kit.install && (
+            <Section label="Install command">
+              <Row
+                title="Runs in the agent's workspace when it is created"
+                detail={kit.install.command}
+              />
+            </Section>
+          )}
+
+          {kit.link && kit.env.length > 0 && (
+            <Section label="Environment">
+              {kit.env.map((variable) => (
+                <Row
+                  key={variable.name}
+                  title={variable.name}
+                  detail={variable.value}
+                />
+              ))}
+            </Section>
+          )}
 
           {size && (
             <Section label="Compute">
