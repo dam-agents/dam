@@ -1723,16 +1723,19 @@ func TestAStalledRollGivesUpItsPlaceAtTheStalledTimeout(t *testing.T) {
 	assert.Equal(t, reasonRollStallGivenUp, events[len(events)-1].Reason)
 }
 
-// TEST_SCENARIO: a runner that gave up its stalled place is still on the release it ran before, and its pod rolling ready again is what clears the mark: the next pass that sees the pod ready settles the roll and removes the sign that anything was ever wrong.
+// TEST_SCENARIO: a runner that gave up its stalled place beside a ready peer on its pod is still on the release it ran before, and its pod rolling ready again is what clears the mark: the next pass that sees the pod ready settles the roll and removes the sign that anything was ever wrong.
 func TestARunnerThatGaveUpItsPlaceClearsItsMarkWhenItsPodIsReady(t *testing.T) {
 	ctx := context.Background()
-	r, _ := setupRolloutReconciler(t, "owner-a", "owner-b")
+	r, _ := setupRolloutReconciler(t, "owner-a", "owner-peer", "owner-b")
 	changeRunnerPod(r)
+	readyRunnerOnCandidate(t, r, "owner-peer")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
 	setRolledAt(t, r, "owner-a", time.Now().Add(-defaultRunnerStalledTimeout-time.Minute))
 	setRunnerAnnotation(t, r, "owner-a", annRunnerStalled, time.Now().UTC().Format(time.RFC3339))
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-b", r.runnerOwnerRef(ctx), true))
-	require.NotEmpty(t, runnerAnnotations(t, r, "owner-a")[annRunnerStalled])
+	given := runnerAnnotations(t, r, "owner-a")
+	require.Empty(t, given[annRunnerRolledAt], "beside a ready peer the stalled roll gives up its place")
+	require.NotEmpty(t, given[annRunnerStalled])
 
 	settleRunnerPod(t, r, "owner-a")
 	require.NoError(t, r.applyRunnerDeployment(ctx, "owner-a", r.runnerOwnerRef(ctx), true))
