@@ -71,6 +71,7 @@ import {
 import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
+import { createEnvironmentForward } from "./modules/environment-forward.js";
 import { composeChanges } from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import {
@@ -147,6 +148,13 @@ function skillRefPaths(manifest: RuntimeManifest, home: string): string[] {
 }
 
 const defaultHarness = process.env.PLATFORM_HARNESS ?? "";
+const environmentOf = process.env.PLATFORM_ENVIRONMENT_OF ?? "";
+const environmentForward =
+  environmentOf === ""
+    ? null
+    : createEnvironmentForward({
+        ownPorts: [config.PORT, config.PLATFORM_MODEL_ROUTER_PORT],
+      });
 const harnessManifests: Record<string, RuntimeManifest> = config.PLATFORM_DEV
   ? {
       [defaultHarness]: loadManifest(
@@ -568,6 +576,7 @@ sessionState = {
 };
 
 const { service: processesService, keepMarks } = processes.start({
+  agentHome: homeDir,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
@@ -1065,12 +1074,15 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  if (environmentForward?.handleRequest(req, res)) return;
+
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
       idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
+      openLinks: acp.openLinks,
     };
     res
       .writeHead(200, { "Content-Type": "application/json", ...CORS })
@@ -1238,8 +1250,14 @@ acpWss.on("connection", (ws, req: http.IncomingMessage) => {
 });
 
 server.on("upgrade", (req, socket, head) => {
+  if (environmentForward?.handleUpgrade(req, socket, head)) return;
   const url = new URL(req.url!, `http://${req.headers.host}`);
-  if (url.pathname === "/api/acp") {
+  if (
+    environmentOf !== "" &&
+    (url.pathname === "/api/acp" || url.pathname === "/api/terminal")
+  ) {
+    socket.destroy();
+  } else if (url.pathname === "/api/acp") {
     acpWss.handleUpgrade(req, socket, head, (ws) =>
       acpWss.emit("connection", ws, req),
     );
@@ -1310,7 +1328,7 @@ server.listen(config.PORT, () => {
       })),
     }),
   );
-  acpRuntime.prestart();
+  if (environmentOf === "") acpRuntime.prestart();
 
   if (imageSkillReconciler) {
     const bootState = readSkillInstallBootState(pluginStateRoot(homeDir));
@@ -1327,7 +1345,7 @@ server.listen(config.PORT, () => {
 
   setTimeout(startDisplay, DISPLAY_IDLE_START_MS).unref();
 
-  warmHistory();
+  if (environmentOf === "") warmHistory();
 
   void sweepStaging(homeDir, (msg) =>
     process.stderr.write(`[import] ${msg}\n`),

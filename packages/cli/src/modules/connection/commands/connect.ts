@@ -21,6 +21,14 @@ import {
   type ConfigFlagError,
   resolveConfigInputFlags,
 } from "../domain/config-inputs.js";
+import {
+  type ConnectionScope,
+  formatScope,
+  hasScopeFlags,
+  isGitHubUserTokenTemplate,
+  resolveUserTokenScope,
+  scopeOf,
+} from "../domain/github-scope.js";
 import type { ConnectionService } from "../services/connection-service.js";
 import { enterSecretOnPage, PAGE_SECRET_FIELDS } from "./secret-page.js";
 
@@ -41,6 +49,7 @@ interface ConnectOpts {
   appId?: string;
   installationId?: string;
   privateKey?: string;
+  account?: string;
   repositories?: string;
   repositoryIds?: string;
   permissions?: string;
@@ -109,16 +118,20 @@ export function buildConnectCommand(deps: {
       'input: GitHub App private key — PEM or base64; use --private-key "$(cat app.pem)" (GitHub App installation)',
     )
     .option(
+      "--account <login>",
+      "narrow a GitHub sign-in to the app's installation on this user or organization, after consent (GitHub)",
+    )
+    .option(
       "--repositories <names>",
-      "input: limit the minted token to these repository names, space- or comma-separated (GitHub App installation)",
+      "limit the token to these repository names, space- or comma-separated (GitHub, GitHub App installation)",
     )
     .option(
       "--repository-ids <ids>",
-      "input: limit the minted token to these numeric repository ids; takes precedence over --repositories (GitHub App installation)",
+      "limit the token to these numeric repository ids; takes precedence over --repositories (GitHub, GitHub App installation)",
     )
     .option(
       "--permissions <pairs>",
-      "input: limit the minted token to these name:level permissions, e.g. contents:read (GitHub App installation)",
+      "limit the token to these name:level permissions, e.g. contents:read (GitHub, GitHub App installation)",
     )
     .option("--header-name <name>", "input: header name")
     .option("--value-format <format>", "input: header value format")
@@ -163,7 +176,7 @@ export function buildConnectCommand(deps: {
     )
     .option(
       "--json",
-      "emit { ok, id, status, authKind, presetsApplied? } as JSON",
+      "emit { ok, id, status, authKind, presetsApplied?, scope? } as JSON",
     )
     .option(
       "--no-browser",
@@ -184,6 +197,8 @@ export function buildConnectCommand(deps: {
         "  dam connection connect github\n" +
         "  dam connection connect github --client-id Iv1.… --client-secret …  # use your own OAuth app\n" +
         "  dam connection connect github --no-browser\n" +
+        "  dam connection connect github --account acme --repositories api,web \\\n" +
+        "      --permissions contents:read,pull_requests:write\n" +
         "  dam connection connect github-pat   # the user enters the token on a web page\n" +
         "  dam connection connect my-api --header-name X-API-Key --value sk-…\n" +
         "  dam connection connect custom-client-credentials --host api.example.com \\\n" +
@@ -355,6 +370,11 @@ export function buildConnectCommand(deps: {
         process.exit(EXIT_RUNTIME_FAILURE);
       }
 
+      const scope =
+        isGitHubUserTokenTemplate(template.id) && hasScopeFlags(opts)
+          ? await narrowUserToken(svc, id, name, opts)
+          : undefined;
+
       emitSuccess({
         json,
         verb: "Connected",
@@ -363,6 +383,7 @@ export function buildConnectCommand(deps: {
         authKind: "oauth",
         presetsApplied: presetNames,
         ...(noBrowser ? { authUrl } : {}),
+        ...(scope ? { scope } : {}),
       });
       process.exit(EXIT_SUCCESS);
     });
@@ -404,13 +425,24 @@ async function resolveSlugTemplate(args: {
     "repositoryIds",
     "permissions",
   ] as const) {
-    if (opts[flag] && !template.inputs.some((i) => i.name === flag)) {
+    if (
+      opts[flag] &&
+      !isGitHubUserTokenTemplate(template.id) &&
+      !template.inputs.some((i) => i.name === flag)
+    ) {
       process.stderr.write(
         `error: this server does not support --${camelToKebab(flag)} for '${template.id}' — ` +
           "the token would carry the installation's full authority\n",
       );
       process.exit(EXIT_INVALID_INPUT);
     }
+  }
+
+  if (opts.account !== undefined && !isGitHubUserTokenTemplate(template.id)) {
+    process.stderr.write(
+      `error: --account applies only to a GitHub sign-in (github, github-enterprise), not '${template.id}'\n`,
+    );
+    process.exit(EXIT_INVALID_INPUT);
   }
 
   const name = (opts.name ?? slugifyTemplateName(template.name)).trim();
@@ -737,6 +769,34 @@ function buildPayload(
   }
 }
 
+async function narrowUserToken(
+  svc: ConnectionService,
+  id: string,
+  name: string,
+  opts: ConnectOpts,
+): Promise<ConnectionScope | undefined> {
+  const fail = (message: string): never => {
+    process.stderr.write(
+      `error: connected ${name} (${id}), but couldn't limit it: ${message}\n` +
+        "  It reaches everything this sign-in can. Limit it with `dam connection scope " +
+        `${name} …\` before you grant it, or remove it with \`dam connection disconnect ${name}\`.\n`,
+    );
+    process.exit(EXIT_RUNTIME_FAILURE);
+  };
+  const probe = await svc.probeGitHubUserToken(id);
+  if (!probe.ok) return fail(probe.error.reason);
+  const resolved = resolveUserTokenScope(probe.value, undefined, opts);
+  if (!resolved.ok) return fail(resolved.error);
+  const res = await svc.updateGitHubUserTokenScope({ id, ...resolved.value });
+  if (!res.ok) return fail(res.error.reason);
+  const after = await svc.getConnection(id);
+  const scope = after.ok && after.value ? scopeOf(after.value) : undefined;
+  if (!opts.json) {
+    process.stderr.write(`Limited ${name} to ${formatScope(scope)}.\n`);
+  }
+  return scope;
+}
+
 function checkClusterTrust(
   probeRes: Awaited<ReturnType<ConnectionService["probeClusterCa"]>>,
   host: string,
@@ -782,6 +842,7 @@ function emitSuccess(args: {
   authKind: ConnectionTemplateView["authKind"];
   authUrl?: string;
   presetsApplied?: string[];
+  scope?: ConnectionScope;
 }): void {
   if (args.json) {
     process.stdout.write(
@@ -794,6 +855,7 @@ function emitSuccess(args: {
         ...(args.presetsApplied && args.presetsApplied.length > 0
           ? { presetsApplied: args.presetsApplied }
           : {}),
+        ...(args.scope ? { scope: args.scope } : {}),
       })}\n`,
     );
   } else {

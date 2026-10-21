@@ -14,7 +14,7 @@ type ScanRule = ReturnType<typeof rule>;
 
 function harness(opts: {
   rules: ScanRule[];
-  agents: Array<{ agentId: string; current: string[] }>;
+  agents: Array<{ agentId: string; current: string[]; environmentOf?: string }>;
 }) {
   const sets: Array<{ agentId: string; hosts: readonly string[] }> = [];
   return {
@@ -117,5 +117,19 @@ describe("reconcileL7Promotions", () => {
     });
     expect(res).toEqual({ scanned: 0, drifted: 0, failed: 1 });
     expect(sets).toEqual([]);
+  });
+
+  // TEST_SCENARIO: an Environment has no rules of its own; its gateway inspects the hosts its Owning Agent's path-scoped rules promote, so those rules apply to it too.
+  it("projects the Owning Agent's promoted hosts onto its Environments", async () => {
+    const h = harness({
+      rules: [rule("owning", "api.example.com")],
+      agents: [
+        { agentId: "owning", current: ["api.example.com"] },
+        { agentId: "env", current: [], environmentOf: "owning" },
+      ],
+    });
+
+    await h.run();
+    expect(h.sets).toEqual([{ agentId: "env", hosts: ["api.example.com"] }]);
   });
 });

@@ -1,0 +1,45 @@
+#!/sbin/openrc-run
+# The Environment Link's end on an Environment: socat accepts each connection
+# the owning agent opens on vsock port 6100 and hands it to sshd. In the
+# default runlevel of every vm machine; it serves only on an Environment,
+# which the controller marks with PLATFORM_ENVIRONMENT_OF.
+description="Environment Link sshd"
+supervisor=supervise-daemon
+command=/usr/bin/socat
+command_args="VSOCK-LISTEN:6100,fork,reuseaddr EXEC:\"/usr/bin/env PLATFORM_LINK=1 /usr/local/lib/platform-env/accept\""
+output_log=/var/log/platform-env.log
+error_log=/var/log/platform-env.log
+
+dir=/run/platform-env
+key=/etc/ssh/platform_env_host_ed25519_key
+
+start_pre() {
+	[ -n "${PLATFORM_ENVIRONMENT_OF:-}" ] || return 0
+	checkpath -d -m 0700 "$dir" && checkpath -d -m 0755 /run/sshd || return 1
+	[ -f "$key" ] || ssh-keygen -t ed25519 -N "" -q -f "$key" -C platform-env-host || return 1
+	touch "$dir/authorized_keys" && chmod 600 "$dir/authorized_keys"
+	# A shell over the link gets what this service gets of the environment:
+	# the gateway and CA, so docker and k3s pull as they do at boot.
+	{
+		printf '%s\n' "HostKey $key" "AuthorizedKeysFile $dir/authorized_keys" \
+			"PubkeyAuthentication yes" "PasswordAuthentication no" \
+			"KbdInteractiveAuthentication no" "PermitRootLogin prohibit-password" \
+			"StrictModes no" "PrintMotd no" "X11Forwarding no" "AllowTcpForwarding yes" \
+			"Subsystem sftp internal-sftp"
+		env | grep -E '^(PATH|HTTPS?_PROXY|https?_proxy|NO_PROXY|no_proxy|SSL_CERT_(FILE|DIR))=' |
+			sed 's/^\([^=]*\)=\(.*\)$/SetEnv \1="\2"/'
+	} > "$dir/sshd_config"
+}
+
+start() {
+	if [ -z "${PLATFORM_ENVIRONMENT_OF:-}" ]; then
+		einfo "Not an Environment: no Environment Link to serve"
+		return 0
+	fi
+	default_start
+}
+
+stop() {
+	[ -n "${PLATFORM_ENVIRONMENT_OF:-}" ] || return 0
+	default_stop
+}

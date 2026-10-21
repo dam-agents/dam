@@ -73,6 +73,7 @@ import type {
 import type { AgentTelemetryService } from "../../modules/metrics/index.js";
 import { composeFeaturesForOwner } from "../../modules/features/index.js";
 import { createChatFormPreferencesReader } from "../../modules/chat-forms/index.js";
+import type { EnvironmentsServiceImpl } from "../../modules/environments/index.js";
 
 export interface HarnessApiServerAppDeps {
   agentStateCache: AgentStateCache;
@@ -93,6 +94,7 @@ export interface HarnessApiServerAppDeps {
   harnessCatalog: HarnessCatalog;
   artifactLibraryFor: ArtifactLibraryFor;
   agentsServiceFor: (owner: string) => AgentsService;
+  environmentsFor: (owner: string) => EnvironmentsServiceImpl;
   connectionsServiceFor: (owner: string) => ConnectionsService;
   caseStudySubmissions: CaseStudySubmissionsService;
   caseStudyInspection: CaseStudyInspectionService;
@@ -296,6 +298,19 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
           )["chat-forms"],
       ),
     agentImage: createAgentImageReader(k8sClient),
+    environments: async (owner, agentId) => {
+      const flags = await composeFeaturesForOwner({
+        db,
+        owner,
+        surface: "mcp",
+        modes: config.featureModes,
+      }).features.flags();
+      if (!flags.environments) return null;
+      const agent = await agentsRepo.get(agentId, owner);
+      if (agent?.spec.backend?.type !== "vm" || agent.spec.environmentOf)
+        return null;
+      return deps.environmentsFor(owner).forOwningAgent(agentId);
+    },
     agentTelemetry,
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,

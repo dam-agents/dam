@@ -35,13 +35,19 @@ export function ActivityFilterMenu({
   filters,
   onChange,
   className,
+  name = "Filter sessions",
+  testId = "sidebar-session-filter",
+  stopPropagation = false,
 }: {
   filters: ActivityFilters;
   onChange: (filters: ActivityFilters) => void;
   className?: string;
+  name?: string;
+  testId?: string;
+  stopPropagation?: boolean;
 }) {
   const filtered = isFiltered(filters);
-  const label = filtered ? "Filter sessions (filtered)" : "Filter sessions";
+  const label = filtered ? `${name} (filtered)` : name;
   const allTypes = filters.channelTypes.size === CHANNEL_TYPES.length;
 
   return (
@@ -51,7 +57,11 @@ export function ActivityFilterMenu({
           <button
             type="button"
             aria-label={label}
-            data-testid="sidebar-session-filter"
+            data-testid={testId}
+            {...(stopPropagation && {
+              onClick: (e) => e.stopPropagation(),
+              onMouseDown: (e) => e.stopPropagation(),
+            })}
             className={cn(
               "relative flex size-6 items-center justify-center rounded-md transition-colors hover:bg-muted hover:text-foreground",
               filtered ? "text-primary" : "text-muted-foreground",

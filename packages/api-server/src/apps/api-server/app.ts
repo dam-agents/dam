@@ -1,3 +1,4 @@
+import type { Duplex } from "node:stream";
 import { serve } from "@hono/node-server";
 import { Hono, type MiddlewareHandler } from "hono";
 import { except } from "hono/combine";
@@ -71,6 +72,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
 
   const app = new Hono<{ Variables: ApiVariables }>();
 
+  app.use("*", deps.environmentGate.middleware);
   app.use("*", deps.shareHostGate);
   app.use("*", securityHeaders);
   app.use(
@@ -163,30 +165,31 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
   );
 
-  server.on(
-    "upgrade",
-    createUpgradeHandler({
-      "/api/trpc-ws": selfAuthenticated(trpcWs),
-      "/api/agents/:id/acp": relayRoute(relayAdmission, acpRelay, "acp"),
-      "/api/agents/:id/terminal": relayRoute(
-        relayAdmission,
-        terminalRelay,
-        "terminal",
-      ),
-      "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
-      "/api/public/browser-stream/:id/api/websockets": relayRoute(
-        relayAdmission,
-        browserStreamRelay,
-        "browser",
-        (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
-      ),
-      "/api/agents/:id/trpc-ws": relayRoute(
-        relayAdmission,
-        agentTrpcRelay,
-        "trpc",
-      ),
-    }),
-  );
+  const pathUpgrades = createUpgradeHandler({
+    "/api/trpc-ws": selfAuthenticated(trpcWs),
+    "/api/agents/:id/acp": relayRoute(relayAdmission, acpRelay, "acp"),
+    "/api/agents/:id/terminal": relayRoute(
+      relayAdmission,
+      terminalRelay,
+      "terminal",
+    ),
+    "/api/agents/:id/ssh": relayRoute(relayAdmission, sshRelay, "ssh"),
+    "/api/public/browser-stream/:id/api/websockets": relayRoute(
+      relayAdmission,
+      browserStreamRelay,
+      "browser",
+      (agentId) => requiresConnectionAddress(deps.agentsRepo, agentId),
+    ),
+    "/api/agents/:id/trpc-ws": relayRoute(
+      relayAdmission,
+      agentTrpcRelay,
+      "trpc",
+    ),
+  });
+  server.on("upgrade", (req, socket, head) => {
+    if (deps.environmentGate.handleUpgrade(req, socket as Duplex, head)) return;
+    void pathUpgrades(req, socket as Duplex, head);
+  });
 
   return {
     server,

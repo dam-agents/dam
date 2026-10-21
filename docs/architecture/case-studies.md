@@ -1,6 +1,6 @@
 # Case studies
 
-Last verified: 2026-09-25
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -23,7 +23,7 @@ The schedule task text is frozen into each schedule row at opt-in, so it stays a
 The skill's evidence sources are harness-aware:
 
 - **The platform session index** ([agent-lifecycle](agent-lifecycle.md)) is the harness-agnostic session inventory — ids, timestamps, and the scheduled / channel-driven classification that transcript paths cannot provide.
-- **A per-harness locator** the skill directory carries probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, codex by runtime probe — and a companion reference alongside it says how to read each.
+- **A per-harness locator** the skill directory carries probes the filesystem for the harness's own transcript store — claude-code-family JSONL, bob's SQLite, pi's session files and memory dir, copilot's per-session directories under `~/.copilot/session-state`, codex by runtime probe — and a companion reference alongside it says how to read each.
   No env var identifies the harness in-pod; probing is the only signal.
 
 ## Editions and their states

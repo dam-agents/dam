@@ -104,6 +104,24 @@ describe("approvalDetail", () => {
     ).toBe("pi.dev (any path)");
     expect(approvalDetail(egress())).toBe("GET s3.example.com/bucket");
   });
+
+  // TEST_SCENARIO: a request from one of the agent's Environments shows on the agent's card and names the Environment it came from, so the owner knows what asked.
+  it("names the Environment a request came from", () => {
+    expect(
+      approvalDetail(
+        egress({
+          payload: {
+            kind: "ext_authz",
+            host: "registry.npmjs.org",
+            method: "*",
+            path: "*",
+            viaAgentId: "agent-env",
+            viaEnvironment: "pr-42",
+          },
+        }),
+      ),
+    ).toBe("registry.npmjs.org (any path), from its Environment pr-42");
+  });
 });
 
 describe("approvalGroupKey", () => {

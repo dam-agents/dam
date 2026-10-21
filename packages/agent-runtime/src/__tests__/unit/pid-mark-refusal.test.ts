@@ -25,6 +25,8 @@ function proc(
     cmdline,
     outputPath,
     keepMark: null,
+    startupItem: null,
+    link: null,
   };
 }
 

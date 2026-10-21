@@ -4,43 +4,45 @@ export type CompatVerdict =
       localCli: string;
       serverVersion: string;
       serverMinClient: string | undefined;
+      serverRecommendedClient: string | undefined;
     }
   | {
       kind: "behind-current";
       localCli: string;
       serverVersion: string;
       serverMinClient: string | undefined;
+      serverRecommendedClient: string;
     }
   | {
       kind: "below-floor";
       localCli: string;
       serverVersion: string;
       serverMinClient: string;
+      serverRecommendedClient: string | undefined;
     };
 
 export interface VerdictInputs {
   localCli: string;
   serverVersion: string;
   serverMinClient: string | undefined;
+  serverRecommendedClient: string | undefined;
 }
 
 export function verdictFor(inputs: VerdictInputs): CompatVerdict {
-  const { localCli, serverVersion, serverMinClient } = inputs;
+  const { localCli, serverMinClient, serverRecommendedClient } = inputs;
   if (
     serverMinClient !== undefined &&
     compareVersions(localCli, serverMinClient) < 0
   ) {
-    return { kind: "below-floor", localCli, serverVersion, serverMinClient };
+    return { ...inputs, kind: "below-floor", serverMinClient };
   }
-  if (compareVersions(localCli, serverVersion) < 0) {
-    return {
-      kind: "behind-current",
-      localCli,
-      serverVersion,
-      serverMinClient,
-    };
+  if (
+    serverRecommendedClient !== undefined &&
+    compareVersions(localCli, serverRecommendedClient) < 0
+  ) {
+    return { ...inputs, kind: "behind-current", serverRecommendedClient };
   }
-  return { kind: "ok", localCli, serverVersion, serverMinClient };
+  return { ...inputs, kind: "ok" };
 }
 
 export function compareVersions(a: string, b: string): -1 | 0 | 1 {
@@ -54,6 +56,15 @@ export function compareVersions(a: string, b: string): -1 | 0 | 1 {
   if (coreCmp !== 0) return coreCmp;
 
   return comparePreRelease(pa.preRelease, pb.preRelease);
+}
+
+export function isVersion(v: string): boolean {
+  try {
+    parseSemver(v);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 interface ParsedSemver {

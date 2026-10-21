@@ -14,6 +14,8 @@ import (
 // RuntimeClassName/NodeSelector, which are per-template for GPU workloads.
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.runtimeClassName)",message="runtimeClassName selects a container runtime and is invalid on the vm backend"
 // +kubebuilder:validation:XValidation:rule="!has(self.backend) || self.backend.type != 'vm' || !has(self.nodeSelector)",message="nodeSelector places a pod and is invalid on the vm backend, whose machine is placed with its owner's VM runner"
+// +kubebuilder:validation:XValidation:rule="!has(self.environmentOf) || (has(self.backend) && self.backend.type == 'vm')",message="an Environment runs on the vm backend"
+// +kubebuilder:validation:XValidation:rule="has(self.environmentOf) == has(oldSelf.environmentOf)",message="environmentOf is set at create and never added or removed"
 type AgentSpec struct {
 	// Image is the agent container image.
 	Image string `json:"image"`
@@ -88,10 +90,18 @@ type AgentSpec struct {
 	Backend *Backend `json:"backend,omitempty"`
 
 	// Harness names the harness the agent image runs (claude-code, codex,
-	// pi, bob, mock). One image serves every harness, and the agent reads
+	// pi, bob, copilot, mock). One image serves every harness, and the agent reads
 	// this as PLATFORM_HARNESS; empty leaves the image's own default.
 	// +optional
 	Harness string `json:"harness,omitempty"`
+
+	// EnvironmentOf names the Agent that owns this one as an Environment: a
+	// sandbox that runs software for others to open, with no harness, on its
+	// owner's VM runner beside the owning Agent. Set at create, never changed;
+	// the guest reads it as PLATFORM_ENVIRONMENT_OF.
+	// +optional
+	// +kubebuilder:validation:XValidation:rule="self == oldSelf",message="environmentOf cannot change"
+	EnvironmentOf string `json:"environmentOf,omitempty"`
 
 	// SecretRef names a K8s Secret whose keys are envFrom-projected into the
 	// agent container (operator-supplied envs).
@@ -423,7 +433,7 @@ type ResourceSpec struct {
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:scope=Namespaced,shortName=agt
 // +kubebuilder:metadata:annotations=helm.sh/resource-policy=keep
-// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=19
+// +kubebuilder:metadata:annotations=agent-platform.ai/crd-schema-generation=20
 // +kubebuilder:printcolumn:name="Ready",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].status`
 // +kubebuilder:printcolumn:name="Reason",type=string,JSONPath=`.status.conditions[?(@.type=="Ready")].reason`
 // +kubebuilder:printcolumn:name="Image",type=string,JSONPath=`.spec.image`,priority=1

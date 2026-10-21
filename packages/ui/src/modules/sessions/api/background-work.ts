@@ -55,5 +55,5 @@ export function useKeptWorkCount(agentId: string | null): number {
     (sum, session) => sum + session.items.length,
     0,
   );
-  return keptTasks + work.keptProcesses;
+  return keptTasks + work.keptProcesses + work.openLinks;
 }

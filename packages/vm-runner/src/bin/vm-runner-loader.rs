@@ -69,20 +69,9 @@ fn env(name: &str) -> String {
     std::env::var(name).unwrap_or_default()
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the loader holds every machine of its owner as their parent, and the kernel weighs a victim by memory plus its own adjustment: one it inherits from the container runtime ties with a VMM at the maximum as soon as it holds a few pages. It asks for the lowest score there is, as the runner does, and a kernel that refuses leaves the inherited one in place, which is said on the console.
-fn lower_own_oom_score_adj() {
-    const PATH: &str = "/proc/self/oom_score_adj";
-    if let Err(e) = std::fs::write(PATH, "-1000") {
-        tracing::warn!(path = PATH, error = %e, "could not lower the loader's own OOM score; the kernel may weigh it above the machines it holds");
-    }
-}
-
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt().json().init();
-    if cfg!(target_os = "linux") {
-        lower_own_oom_score_adj();
-    }
     match Args::parse().command {
         Mode::Stage {
             builtin,

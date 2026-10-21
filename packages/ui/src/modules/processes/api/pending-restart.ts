@@ -1,7 +1,7 @@
 import type { PendingRestart } from "agent-runtime-api";
 
 import { queryClient } from "../../../query-client.js";
-import { processesClientFor } from "./client.js";
+import { fetchProcessList, processesClientFor } from "./client.js";
 import { processKeys } from "./keys.js";
 
 export async function readPendingRestart(
@@ -9,7 +9,7 @@ export async function readPendingRestart(
 ): Promise<PendingRestart | null> {
   const list = await queryClient.fetchQuery({
     queryKey: processKeys.list(agentId),
-    queryFn: () => processesClientFor(agentId).processes.list.query(),
+    queryFn: () => fetchProcessList(agentId),
     staleTime: 0,
     retry: false,
   });

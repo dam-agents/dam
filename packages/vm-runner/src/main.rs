@@ -103,6 +103,29 @@ fn gateway_host_port(boot_config: &Path) -> anyhow::Result<Option<u16>> {
     }
 }
 
+// UNIT_BOUNDARY_DESCRIPTION: adds this machine's half of the Environment Link to the boot config before the VMM reads it: one published socket, which smolvm maps to the first published vsock port, with its host end in the machine's own smolvm directory, the one directory Landlock leaves the VMM. smolvm's embedded start does not carry published sockets from the record, so the VMM adds its own here. A machine with no role file, made by an earlier runner, boots with no link.
+fn add_link_socket(boot_config: &Path) -> anyhow::Result<()> {
+    let Some(dir) = boot_config.parent() else {
+        return Ok(());
+    };
+    let Some(role) = vm_runner::link::read_role(dir) else {
+        return Ok(());
+    };
+    let read = |e: &dyn std::fmt::Display| anyhow::anyhow!("{}: {e}", boot_config.display());
+    let text = std::fs::read_to_string(boot_config).map_err(|e| read(&e))?;
+    let mut config: smolvm::agent::boot_config::BootConfig =
+        serde_json::from_str(&text).map_err(|e| read(&e))?;
+    config
+        .published_sockets
+        .retain(|s| s.guest_path != vm_runner::link::GUEST_PATH);
+    config
+        .published_sockets
+        .insert(0, vm_runner::link::published_socket(&role, dir));
+    let text = serde_json::to_vec(&config).map_err(|e| read(&e))?;
+    std::fs::write(boot_config, text).map_err(|e| read(&e))?;
+    Ok(())
+}
+
 // UNIT_BOUNDARY_DESCRIPTION: points the embedded runtime at the smolvm release the image installed, as the release's launcher script does for its own binary: libkrun and libkrunfw from its lib directory, the guest agent from its agent-rootfs. The environment is read by this process and inherited by every VMM it spawns, so it is set before any thread starts. SMOLVM_MOUNT_DAX gives every mount a machine boots with a 2 GiB DAX window, so the guest maps the host's page cache instead of copying each read through FUSE into its own: the share, its one mount. The share is read-only, and the runner replaces a share file by a rename and never writes one in place, so a mapped file is never truncated under the guest. The window costs the guest 32 MiB of RAM per mount for its page structs. smolvm ignores the variable on arm64, whose guest kernel has no FUSE DAX. DAX needs a guest kernel with smol-machines/libkrunfw#31, which smolvm 1.27.4 and later ship: before it, from Linux 6.15 on, a process that runs a large binary from a DAX mount dies of SIGBUS once another process opens it (smol-machines/smolvm#1741), and the vm e2e lane checks the kernel for that. Setting it to 0 turns DAX off to compare.
 fn configure_smolvm(launcher: &Path) {
     let install = launcher.parent().unwrap_or(Path::new("/"));
@@ -212,7 +235,7 @@ fn guest_exec(id: &str, command: Vec<String>) -> anyhow::Result<()> {
     std::process::exit(code)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the OOM score a VMM asks for: the highest the kernel lets a process set for itself, which needs no capability, so that a machine that grows past the runner's memory is killed by itself rather than the runner or the loader beside it, which each hold every machine of the owner. It decides the victim only where the node's kubelet leaves the pod's memory.oom.group at 0, which is its default: with the group set, one process's memory kills the whole pod whatever the scores say, and the runner reports that on a gauge of its own.
+// UNIT_BOUNDARY_DESCRIPTION: the OOM score a VMM asks for: the highest the kernel lets a process set for itself, which needs no capability, so that a machine that grows past the runner's memory is killed by itself rather than the runner or the loader beside it, which each hold every machine of the owner. It decides the victim only where the node's kubelet leaves the pod's memory.oom.group at 0, which it does only where its singleProcessOOMKill is on, off by default: with the group set, one process's memory kills the whole pod whatever the scores say, and the runner reports that on a gauge of its own.
 const OOM_SCORE_ADJ: &str = "1000";
 
 // UNIT_BOUNDARY_DESCRIPTION: outranks the runner and the loader in the kernel's choice of victim, for this process alone. A failure is said on the console rather than fatal: a machine that cannot raise its score still boots.
@@ -222,14 +245,6 @@ fn raise_oom_score_adj(path: &Path) {
             "vm-runner: could not raise this VMM's OOM score at {}: {e}; the kernel may kill the runner instead of a machine",
             path.display()
         );
-    }
-}
-
-// UNIT_BOUNDARY_DESCRIPTION: the kernel weighs a process by the memory it holds plus its own adjustment, clamped at 1000 — so a runner that keeps the adjustment its container runtime gave it (997 on the nodes this runs on) ties with a VMM holding a few pages, and the tie is the kernel's to break. The pod's two small processes ask for the lowest score there is. Only this process writes it, since a score is raised for another process but lowered for one's own, and the loader does the same for itself. A kernel refuses any score below the one the container started with unless the process holds CAP_SYS_RESOURCE in the kernel's own user namespace, which this pod adds for the case the node runs it without a user namespace of its own: a pod that has one holds the capability in that namespace, the write is refused anyway, and the line on the console says which score the runner keeps.
-fn lower_own_oom_score_adj() {
-    const PATH: &str = "/proc/self/oom_score_adj";
-    if let Err(e) = std::fs::write(PATH, "-1000") {
-        tracing::warn!(path = PATH, error = %e, "could not lower this runner's own OOM score; the kernel may weigh it above the machines it hosts");
     }
 }
 
@@ -248,13 +263,11 @@ fn main() -> anyhow::Result<()> {
             smolvm::network::launch::configure_guest_host_service(port, port)
                 .map_err(|e| anyhow::anyhow!("mapping the gateway host port: {e}"))?;
         }
+        add_link_socket(&config)?;
         smolvm::internal_boot::run(config)?;
         return Ok(());
     }
     tracing_subscriber::fmt().json().init();
-    if cfg!(target_os = "linux") {
-        lower_own_oom_score_adj();
-    }
     let args = Args::parse();
     anyhow::ensure!(
         args.memory_mib > 0,
@@ -495,6 +508,46 @@ async fn serve(args: Args, token: Arc<http::Token>) -> anyhow::Result<()> {
 mod tests {
     use super::*;
 
+    // TEST_SCENARIO: the VMM adds its link socket to the boot config smolvm wrote, first among the published sockets so it takes the first published vsock port, and replaces one an earlier start added; a machine with no role file boots with its config untouched.
+    #[test]
+    fn a_vmm_adds_its_link_socket_to_the_boot_config() {
+        let dir = std::env::temp_dir().join(format!("vmr-boot-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let config = dir.join("boot-config.json");
+        let minimal = serde_json::json!({
+            "rootfs_path": "/r", "storage_disk_path": "/s", "overlay_disk_path": "/o",
+            "vsock_socket": "/v", "console_log": null, "startup_error_log": "/e",
+            "storage_size_gb": 1, "overlay_size_gb": 1, "mounts": [], "ports": [],
+            "resources": serde_json::to_value(smolvm::data::resources::VmResources::default()).unwrap(),
+            "published_sockets": [{"direction": "expose", "guest_path": "/app.sock"}]
+        });
+        std::fs::write(&config, minimal.to_string()).unwrap();
+
+        add_link_socket(&config).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&config).unwrap(),
+            minimal.to_string()
+        );
+
+        vm_runner::link::write_role(&dir, &vm_runner::link::Role::Agent).unwrap();
+        add_link_socket(&config).unwrap();
+        add_link_socket(&config).unwrap();
+        let written: smolvm::agent::boot_config::BootConfig =
+            serde_json::from_str(&std::fs::read_to_string(&config).unwrap()).unwrap();
+        let paths: Vec<&str> = written
+            .published_sockets
+            .iter()
+            .map(|s| s.guest_path.as_str())
+            .collect();
+        assert_eq!(paths, vec![vm_runner::link::GUEST_PATH, "/app.sock"]);
+        assert_eq!(
+            written.published_sockets[0].host_path.as_deref(),
+            Some(dir.join("env-link.sock").to_str().unwrap())
+        );
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     // TEST_SCENARIO: `exec` names a machine and the command to run in it, with an optional `--` before the command; anything else is the runner's own invocation and is left to flag parsing.
     #[test]
     fn an_exec_names_the_machine_and_the_command() {
@@ -570,26 +623,6 @@ mod tests {
             .unwrap()
             .unwrap();
         std::fs::remove_dir_all(&dir).unwrap();
-    }
-    // TEST_SCENARIO: the kernel weighs a process by its memory plus its own adjustment, and the pod's small processes inherit one the container runtime set — a VMM at the maximum ties with a runner at 997 as soon as the runner holds a few pages. The runner asks for the lowest score there is, and a kernel that refuses it without CAP_SYS_RESOURCE in its own user namespace leaves the runner with the score it was handed rather than a worse one.
-    #[test]
-    #[cfg(target_os = "linux")]
-    fn the_runner_asks_for_the_lowest_score_the_kernel_allows_it() {
-        let before: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        lower_own_oom_score_adj();
-        let after: i32 = std::fs::read_to_string("/proc/self/oom_score_adj")
-            .unwrap()
-            .trim()
-            .parse()
-            .unwrap();
-        assert!(
-            after == -1000 || after == before,
-            "the runner's own score is {after}, which is neither the lowest there is nor the one it was handed ({before})"
-        );
     }
 
     // TEST_SCENARIO: the OOM killer picks the process with the highest score in the cgroup, and the runner and the loader hold every machine of the owner between them. A VMM asks for the kernel's maximum, and a VMM that cannot write its score — a host runner with no /proc — still boots.

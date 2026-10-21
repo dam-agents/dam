@@ -1,6 +1,6 @@
 import { useMemo } from "react";
 
-import { HARNESS_ICONS } from "@/components/harness-icons";
+import { HARNESS_ICONS, HARNESS_ORDER } from "@/components/harness-icons";
 import { DialogBody, DialogHeader, Modal } from "@/components/modal";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -18,14 +18,6 @@ const DEFAULT_KIT = {
   name: "Generalist",
   text: "The vanilla option: only a harness without any preset. Use it directly, or as a foundation for a specialized agent.",
 };
-
-const HARNESS_PILLS = [
-  ["bob", "text-icon-violet"],
-  ["claude-code", "text-icon-clay"],
-  ["codex", "text-icon-green"],
-  ["copilot", "text-icon-teal"],
-  ["pi", "text-icon-blue"],
-] as const;
 
 export function BrowseKitsModal() {
   const setKitBrowserOpen = useStore((s) => s.setKitBrowserOpen);
@@ -129,8 +121,8 @@ export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
                     {DEFAULT_KIT.text}
                   </p>
                   <div className="flex flex-wrap items-center gap-2">
-                    {HARNESS_PILLS.map(([harness, color]) => {
-                      const { Icon, label } = HARNESS_ICONS[harness];
+                    {HARNESS_ORDER.map((harness) => {
+                      const { Icon, label, fg } = HARNESS_ICONS[harness];
                       return (
                         <Badge
                           key={harness}
@@ -140,7 +132,7 @@ export function StarterKitCatalog({ onOpenKit }: { onOpenKit?: () => void }) {
                         >
                           <Icon
                             aria-hidden="true"
-                            className={`size-3.5 ${color}`}
+                            className={`size-3.5 ${fg}`}
                           />
                           {label}
                         </Badge>

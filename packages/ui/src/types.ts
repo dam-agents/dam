@@ -195,6 +195,7 @@ export interface AgentView {
   starterKitOnboarded: string | null;
   onboardingSteps?: OnboardingStep[];
   spawnedBy: string | null;
+  environmentOf: string | null;
   vm: boolean;
   runtimeMigration: RuntimeMigrationView | null;
   kind?: AgentKind;

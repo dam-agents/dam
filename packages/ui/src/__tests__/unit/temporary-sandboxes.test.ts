@@ -33,6 +33,7 @@ const agent = (id: string, overrides: Partial<AgentView> = {}): AgentView => ({
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  environmentOf: null,
   vm: false,
   runtimeMigration: null,
   ...overrides,

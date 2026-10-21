@@ -196,6 +196,34 @@ istio:
 # memory limit against `reserveMiB`, egress that reaches the cluster's own
 # ranges — logs what it finds, and names any problem on a vm agent whose
 # runner is not ready.
+# -- Environments: sandboxes a vm agent creates for others to open, one per
+# pull request for example. They need `virtualization.enabled`.
+environments:
+  # -- Domain under which each Environment endpoint gets an address of its
+  # own, `<endpoint>-<environment>.<domain>`: one wildcard DNS name and one
+  # wildcard certificate cover them all. Empty: Environments get no addresses.
+  domain: ""
+  # -- Most Environments one agent may hold at once.
+  maxPerAgent: 5
+  # -- Furthest ahead an Environment's expiry may be set, in days.
+  expiryMaxDays: 30
+  # -- The one wildcard Ingress for `*.<domain>`, which sends every
+  # Environment address and the sign-in host `signin.<domain>` to the
+  # api-server. Rendered only with a domain. On OpenShift it becomes a
+  # wildcard Route, which the cluster must allow once:
+  # `oc patch ingresscontroller/default -n openshift-ingress-operator --type=merge -p '{"spec":{"routeAdmission":{"wildcardPolicy":"WildcardsAllowed"}}}'`.
+  ingress:
+    # -- Annotations for the wildcard Ingress, e.g.
+    # `cert-manager.io/cluster-issuer: <issuer>` to have cert-manager issue
+    # the wildcard certificate into `tls.secretName`; a wildcard certificate
+    # needs an issuer with a DNS-01 solver.
+    annotations: {}
+    # -- TLS for `*.<domain>`: one wildcard certificate, never one per
+    # address. Empty `secretName` serves the addresses without TLS (the local
+    # cluster).
+    tls:
+      secretName: ""
+
 virtualization:
   enabled: false
   # The shape of every runner pod the controller creates (one per owner).
@@ -229,10 +257,7 @@ virtualization:
     # is on, the chart binds its own SCC, which grants exactly what the
     # runner needs and nothing else: uid 0 and DAC_OVERRIDE, so its VMMs can
     # read the image files a guest is served even where the image keeps them
-    # from root, and SYS_RESOURCE, so the runner and its loader can lower
-    # their own OOM score below the 997 the container runtime starts them at
-    # and the kernel picks a machine's VMM over them when the pod's cgroup
-    # runs out. The runner drops every other capability, cannot escalate,
+    # from root. The runner drops every other capability, cannot escalate,
     # and runs under the runtime/default seccomp profile. That SCC refuses
     # the hostPath of the node image cache and the release directory, so on
     # OpenShift this is
@@ -641,8 +666,8 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and DAC_OVERRIDE and SYS_RESOURCE, which only the
-    # VM runner requests. No agent workload can take them: agent containers are
+    # allowedCapabilities, and DAC_OVERRIDE, which only the VM runner requests.
+    # No agent workload can take it: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent
     # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to
@@ -979,6 +1004,10 @@ keycloak:
   # `{urls.share}/auth/login`. No api audience mapper: its tokens are
   # rejected by the api-server on purpose.
   shareClientId: platform-share
+  # -- Public client for Environment sign-in (authorization code + PKCE) on
+  # the fixed sign-in host `signin.<environments.domain>`. No api audience
+  # mapper: its tokens are rejected by the api-server on purpose.
+  environmentsClientId: platform-environments
 
   # -- Additional redirect URIs and web origins to register on the public
   # `clientId` client. The chart always allows `{urls.ui}/*` and the Vite
@@ -1418,8 +1447,8 @@ apiServer:
 
   # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
   # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
-  # if the CLI is behind the current server version). Set this to retire a
-  # known-broken older client.
+  # if the CLI is behind the CLI this release recommends, its own version).
+  # Set this to retire a known-broken older client.
   minClientCliVersion: ""
 
   # -- Ingress NetworkPolicy for the api-server pod.

@@ -34,6 +34,7 @@ const agent = (id: string, state: AgentView["state"]): AgentView => ({
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  environmentOf: null,
   vm: false,
   runtimeMigration: null,
 });

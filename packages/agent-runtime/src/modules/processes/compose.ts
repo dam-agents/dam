@@ -5,6 +5,7 @@ import { createOutputReader } from "./infrastructure/output-file.js";
 import { createProcessTable } from "./infrastructure/proc-scan.js";
 import { openProcessesDocument } from "./infrastructure/processes-document.js";
 import { createProcessSignals } from "./infrastructure/signals.js";
+import { createStartupItemStore } from "./infrastructure/startup-items.js";
 import { createKeepState, type KeepPolicy } from "./services/keep-state.js";
 import {
   createProcessesService,
@@ -12,6 +13,7 @@ import {
 } from "./services/processes-service.js";
 
 export interface StartProcessesOptions {
+  agentHome: string;
   runtimePid: number;
   harnessWork: HarnessWork;
   log: (msg: string) => void;
@@ -32,9 +34,10 @@ export function prepareProcesses(
   const keep = createKeepState(document);
   return {
     keepPolicy: keep,
-    start(opts) {
+    start({ agentHome, ...opts }) {
       const service = createProcessesService({
         ...opts,
+        startupItems: createStartupItemStore(agentHome),
         table: createProcessTable(),
         document,
         outputs: createOutputReader(),

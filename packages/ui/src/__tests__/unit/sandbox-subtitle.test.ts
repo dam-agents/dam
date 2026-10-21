@@ -43,6 +43,7 @@ const agent: AgentView = {
   workspaceFailures: [],
   channels: [],
   spawnedBy: null,
+  environmentOf: null,
   vm: false,
   runtimeMigration: null,
 };

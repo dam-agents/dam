@@ -21,6 +21,7 @@ import type {
   FeaturesService,
 } from "./modules/features/types.js";
 import type { EgressRulesService } from "./modules/egress-rules/types.js";
+import type { EnvironmentsService } from "./modules/environments/types.js";
 import type { LiveEventsService } from "./modules/events/types.js";
 import type { ProviderStatusService } from "./modules/provider-status/types.js";
 import type {
@@ -70,6 +71,7 @@ export interface ApiContext {
   egressRules: EgressRulesService;
   invocationsQuery: InvocationsQueryService;
   invocationsControl: InvocationsControlService;
+  environments: EnvironmentsService;
   starterKits: StarterKitsService;
   kbShares: KbSharesService;
   artifactLibrary: ArtifactLibraryService;

@@ -5,7 +5,7 @@ Last verified: 2026-10-20
 ## Overview
 
 Besides the platform's own processes, a running agent holds the work its agent started: commands a turn waits on, jobs its harness supervises in the background, and jobs it detached from the harness.
-agent-runtime is the only component that sees the pod's process table, so it owns everything on this page: the background work a harness reports, and the **process inventory** that lists all three kinds for the user.
+agent-runtime is the only component that sees the pod's process table, so it owns everything on this page: the background work a harness reports, and the **process inventory** that lists every kind for the user.
 Nothing here changes when an agent hibernates — that rule, and the signals behind it, belong to [agent-lifecycle](agent-lifecycle.md#hibernate).
 
 ## Reported background work
@@ -43,7 +43,7 @@ Nothing times a hold out, so an agent with reported work does not scale to zero 
 
 ## Process inventory
 
-The runtime sorts what runs in the pod into three kinds, one row per process tree, with its command, start time, and the CPU and memory of the whole tree:
+The runtime sorts what runs in the pod into four kinds, one row per process tree, with its command, start time, and the CPU and memory of the whole tree; the fourth, [Startup Items](#startup-items), has a section of its own:
 
 - **Turn Process** — a descendant of a chat harness that a running turn started.
   It is listed only while a turn runs on that harness, and only if it started after the earliest turn running there began, so helpers the harness keeps (MCP servers and the like) never show.
@@ -59,9 +59,9 @@ A pod runs one chat harness per [Harness Lease](sessions.md#session-inside-the-p
 **Never listed:** PID 1, agent-runtime and its ancestors, and agent-runtime's direct children — the chat harnesses, the pod service, terminals, SSH servers.
 
 A row carries the **output file** behind the process's stdout or stderr when that is a regular file, and the user can read its tail.
-The runtime reads only a file a scan recorded, never a path a caller names.
+The runtime reads only a file a scan recorded, never a path a caller names, with one exception: a Startup Item's log, which it builds from an item id that passed the same id rule as the list, and only for an item the list or a running row names.
 Claude Code writes every tool call's output, foreground or `run_in_background`, to a file of its own, so its Turn Processes and Harness Tasks always have output; a process writing to a pipe or a terminal has none.
-The scan reads each process's environment for one variable, the keep mark, and drops the rest unread, because agents hold credentials there.
+The scan reads each process's environment for the keep mark, the openrc user-service name and the [Environment Link](environments.md#the-environment-link) mark, and drops the rest unread, because agents hold credentials there.
 
 A row also says when it is a **container** or a **container runtime**, read from its command line alone, without asking the runtime.
 Docker and k3s run each container under a containerd shim that is re-parented to the reaper, so it lists as a Detached Process; its command names the containerd namespace (`moby` for Docker) and the container id, and a k3s shim runs from k3s's own paths.
@@ -93,7 +93,7 @@ The list and the indicator show the same list: while the agent runs but the UI h
 
 ## Keeping work
 
-Only **kept** work keeps the agent awake; everything else survives the user leaving and dies at hibernation.
+Only **kept** work, and an open [Environment Link](environments.md#the-environment-link), keep the agent awake; everything else survives the user leaving and dies at hibernation.
 Each row resolves who decided, in this order:
 
 1. **The user**, through the keep switch in the panel, in either direction.
@@ -113,6 +113,27 @@ This, like the reported contract, is not a security boundary — the agent could
 Kept Detached Processes keep the agent awake next to kept Harness Tasks, but never hold back a harness recycle.
 
 Marks and user choices live in the processes document, keyed so a reused pid never inherits one, and go on a new boot with everything else boot-scoped.
+
+## Startup Items
+
+A **Startup Item** is a command a vm agent's machine starts at every boot, so it comes back after a hibernation, a restart and a new image, like a Mac's login items; the UI calls them **Login items**.
+It is an openrc **user service** of root, the agent's account: a script in `~/.config/rc/init.d/<name>` with a `command`, started at boot when `~/.config/rc/runlevels/default` links it, and controlled with `rc-service --user`.
+The agent writes them as plain openrc scripts, and they live in the home, the one place every boot and every image keep.
+
+OpenRC itself does the work.
+platform-init already boots openrc on a machine ([vm-runner](vm-runner.md)), and openrc's own `user` service, linked as `user.root` in the image's `default` runlevel beside `platform-env`, starts root's user services at boot and stops them on a stop, as a login would for a person; nobody logs in to a machine.
+Its `/etc/conf.d/user.root` keeps their state in the image's `XDG_RUNTIME_DIR`, which the agent's shell and the runtime share, starts them after docker and k3s, and waits up to a minute for them all to stop, each within its own stop timeout.
+The image's `/etc/rc/user/rc.conf` makes every such service supervised by `supervise-daemon`, which restarts it two seconds after it exits, run in `~/work`, logged to `~/.local/state/rc/<name>.log`, and stopped with its whole process group; a script overrides any of it.
+A service gets what the image's own services get of the environment, `PATH`, the gateway's proxy and CA variables and `PLATFORM_ENVIRONMENT_OF`, and no credential placeholder.
+User services need OpenRC 0.60 or later; the image takes OpenRC alone from Debian testing through an apt pin, until its stable release ships one.
+
+The supervisor of a user service carries its name (`RC_USER_SERVICES`, `RC_SVCNAME`), which the process scan reads beside the keep mark, so its tree under the reaper is one **Startup Item** row rather than a Detached Process; a process below another root that only inherited those variables is not.
+The panel lists every service in a section of its own, running, exited or off, with its log as output and history, and keeps a running service's row out of the background groups, the header count and the finished history.
+A service that runs with no script any more is listed there too, as no longer in the list, so nothing that runs is hidden; the user can still stop it.
+**A service never keeps the agent awake**: it starts again at every wake, and work that must hold the agent awake still uses a Keep Mark; the panel refuses a keep choice for one.
+The user restarts, stops, turns off or removes a service there: turning it off removes its boot link, so the next boot skips it, and removing it deletes its script and link once it stopped; one that will not stop stays listed, and the user is told so.
+A choice the user made is kept when openrc then fails, and the service's status says so.
+Only a machine openrc booted lists Startup Items: a container agent runs the same image without openrc.
 
 **Stop.** The user can stop any listed process that has one: the runtime signals its whole tree — every descendant, and the process group its root leads — to terminate, and after a short grace kills what is left, matching each process by its start time so a reused pid is never hit.
 The row moves to the finished history as stopped by the user; a Turn Process just ends, and its tool call fails in front of the agent.

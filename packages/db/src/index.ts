@@ -13,6 +13,8 @@ export {
   agentSkillPublishes,
   agentHiddenSkillSources,
   agentEnv,
+  environments,
+  environmentAccessLists,
   agentChatFormPreferences,
   agentSessions,
   agentPublicProfiles,

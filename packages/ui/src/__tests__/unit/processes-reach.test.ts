@@ -44,6 +44,7 @@ const lastList: ProcessList = {
     },
   ],
   finished: [],
+  startupItems: [],
   pendingRestart: null,
 };
 

@@ -18,6 +18,7 @@ const statusSchema = z.object({
     )
     .catch([]),
   keptProcesses: z.number().int().nonnegative().catch(0),
+  openLinks: z.number().int().nonnegative().catch(0),
   idle: z.boolean().catch(false),
 });
 
@@ -53,6 +54,7 @@ export function createPodStatusClient(namespace: string): PodStatusClient {
       return {
         sessions: status.backgroundWork,
         keptProcesses: status.keptProcesses,
+        openLinks: status.openLinks,
       };
     },
   };

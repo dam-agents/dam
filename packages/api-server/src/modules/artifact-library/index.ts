@@ -12,4 +12,8 @@ export { createByLinkHostGate } from "./viewer/by-link-host-gate.js";
 export { createArtifactLibraryRoutes } from "./library-routes.js";
 export { composeShareAuth, composeShareRenderTokens } from "./compose.js";
 export { createShareAuthRoutes } from "./viewer/share-auth-routes.js";
+export {
+  createKeycloakShareIdentity,
+  keycloakShareJwksUrl,
+} from "./infrastructure/keycloak-share-identity.js";
 export { shareSessionCookie } from "./domain/share-session.js";

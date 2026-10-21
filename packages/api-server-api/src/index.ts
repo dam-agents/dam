@@ -125,7 +125,7 @@ export {
   isStartRefusal,
   TerminationCode,
 } from "./modules/agents/types.js";
-export { toAgentView } from "./modules/agents/view.js";
+export { listedAgents, toAgentView } from "./modules/agents/view.js";
 export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
   ProviderOutage,
@@ -557,6 +557,7 @@ export type {
   Connection,
   ConnectionStatus,
   ConnectionView,
+  ConnectionProviderView,
   ConnectionTemplateView,
   ProviderBalance,
   ProviderKeyCheck,
@@ -951,3 +952,18 @@ export {
   type RendererTag,
   separateRendererBlocks,
 } from "./modules/chat-forms/renderer-blocks.js";
+export type {
+  EnvironmentEndpoint,
+  EnvironmentView,
+  EnvironmentsService,
+} from "./modules/environments/types.js";
+export {
+  ENVIRONMENT_EXPIRY_DEFAULT_DAYS,
+  ENVIRONMENT_EXPIRY_MAX_DAYS,
+  environmentAccessSchema,
+  environmentEndpointNameSchema,
+  environmentEndpointSchema,
+  environmentEndpointsSchema,
+  environmentNameSchema,
+  environmentViewSchema,
+} from "./modules/environments/schemas.js";

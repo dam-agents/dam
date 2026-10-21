@@ -146,6 +146,10 @@ impl Runtime for Smolvm {
         })
     }
 
+    fn vm_dir(&self, id: &str) -> Option<PathBuf> {
+        Some(vm_data_dir(id))
+    }
+
     fn create(&self, id: &str, machine: &Machine<'_>) -> anyhow::Result<()> {
         let secrets: Vec<&str> = machine.spec.env.values().map(String::as_str).collect();
         timed("create", id, &secrets, || {

@@ -17,6 +17,11 @@ import {
   useInstallCapabilities,
 } from "../../features/api/queries.js";
 import type { AgentActivitySession } from "../../home/hooks/use-activity-sessions.js";
+import {
+  type ActivityFilters,
+  isFiltered,
+} from "../../home/lib/activity-filter.js";
+import { matchesActivityFilters } from "../../home/lib/activity-sessions.js";
 import { downloadTelemetryExport } from "../../telemetry/api/download-export.js";
 import {
   prefetchSessionHistory,
@@ -24,6 +29,7 @@ import {
 } from "../api/queries.js";
 import { useAgentSessionList } from "../hooks/use-agent-session-list.js";
 import { useOpenSession } from "../hooks/use-open-session.js";
+import { useAgentSessionFilter } from "../lib/agent-session-filters.js";
 import { sessionTitleLabel } from "../lib/session-title.js";
 import {
   newestFirst,
@@ -77,6 +83,8 @@ export function SidebarAgentSessions({
   const deleteSession = useStore((s) => s.deleteSession);
   const showConfirm = useStore((s) => s.showConfirm);
   const actWhenAwake = useActWhenAwake(agentId);
+  const filter = useAgentSessionFilter(agentId);
+  const filtered = !!filter && isFiltered(filter);
 
   const sessionActions: SessionActions = {
     rename: (s) => actWhenAwake(`rename:${s.sessionId}`, () => setRenaming(s)),
@@ -103,6 +111,7 @@ export function SidebarAgentSessions({
         <AgentSessionList
           agentId={agentId}
           sessionActions={sessionActions}
+          filter={filtered ? filter : undefined}
           limit={limit}
           onLimitChange={setLimit}
           focusAfter={focusAfter}
@@ -112,7 +121,12 @@ export function SidebarAgentSessions({
       ) : (
         <SessionPreview
           agentId={agentId}
-          sessions={preview}
+          sessions={
+            filtered
+              ? preview.filter((item) => matchesActivityFilters(item, filter))
+              : preview
+          }
+          filtered={filtered}
           complete={previewComplete}
           sessionActions={sessionActions}
           conversationOf={conversationOf}
@@ -137,6 +151,7 @@ export function SidebarAgentSessions({
 function SessionPreview({
   agentId,
   sessions,
+  filtered,
   complete,
   sessionActions,
   conversationOf,
@@ -145,6 +160,7 @@ function SessionPreview({
 }: {
   agentId: string;
   sessions: readonly AgentActivitySession[];
+  filtered: boolean;
   complete: boolean;
   sessionActions: SessionActions;
   conversationOf: Props["conversationOf"];
@@ -152,7 +168,8 @@ function SessionPreview({
   onNavigate?: () => void;
 }) {
   const openSession = useOpenSession();
-  if (sessions.length === 0) return <ListNote>No sessions yet.</ListNote>;
+  if (sessions.length === 0 && (complete || !filtered))
+    return <ListNote>{emptyText(filtered, false)}</ListNote>;
   const visible = sidebarSessionWindow(
     sessions,
     SIDEBAR_SESSION_STEP,
@@ -168,6 +185,7 @@ function SessionPreview({
 
   return (
     <div className={LIST_CLASS} data-testid="sidebar-agent-sessions">
+      {sessions.length === 0 && <ListNote>{emptyText(true, true)}</ListNote>}
       {visible.map((item) => {
         const session = provisionalSessionView(item.session);
         return (
@@ -203,6 +221,7 @@ function SessionPreview({
 function AgentSessionList({
   agentId,
   sessionActions,
+  filter,
   limit,
   onLimitChange,
   focusAfter,
@@ -211,6 +230,7 @@ function AgentSessionList({
 }: {
   agentId: string;
   sessionActions: SessionActions;
+  filter: ActivityFilters | undefined;
   limit: number;
   onLimitChange: (limit: number) => void;
   focusAfter: ReadonlySet<string> | null;
@@ -235,11 +255,24 @@ function AgentSessionList({
     fetchNextPage,
   } = list;
 
+  const filtered = filter !== undefined;
   const rows = newestFirst(
-    list.sessions.map((session) => ({
-      session,
-      state: list.rowState(session),
-    })),
+    list.sessions
+      .map((session) => ({ session, state: list.rowState(session) }))
+      .filter(
+        ({ session, state }) =>
+          filter === undefined ||
+          state.active ||
+          matchesActivityFilters(
+            {
+              session,
+              working: state.working,
+              unread: state.unread,
+              needsApproval: state.needsApproval,
+            },
+            filter,
+          ),
+      ),
     (row) => row.session.updatedAt ?? row.session.createdAt,
     (row) => row.session.sessionId,
   );
@@ -299,9 +332,12 @@ function AgentSessionList({
           {list.retrying && <Spinner />}
         </button>
       )}
-      {!list.loading && !list.failed && rows.length === 0 && !hasNextPage && (
-        <ListNote>No sessions yet.</ListNote>
-      )}
+      {!list.loading &&
+        !list.failed &&
+        rows.length === 0 &&
+        (!hasNextPage || filtered) && (
+          <ListNote>{emptyText(filtered, hasNextPage)}</ListNote>
+        )}
       {visible.map(({ session: s, state }) => (
         <SessionRow
           key={s.sessionId}
@@ -352,6 +388,13 @@ function AgentSessionList({
       )}
     </div>
   );
+}
+
+function emptyText(filtered: boolean, more: boolean): string {
+  if (!filtered) return "No sessions yet.";
+  return more
+    ? "No loaded sessions match the filter."
+    : "No sessions match the filter.";
 }
 
 function ListNote({

@@ -178,6 +178,7 @@ flowchart LR
   With the `new-layout` experiment on, every page offers the tab, with the whole library, and Home's Artifacts card opens it.
   In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
+  While the library holds no artifact and no folder, the page shows an introduction instead of the list, with Create agent and Upload artifact; a list that fails to load still shows the list's retry.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.
 - Opening an artifact docks a **preview** in the same tab, or, in a chat with `new-layout` off, in the panel docked beside the conversation; it reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.

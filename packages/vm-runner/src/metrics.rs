@@ -333,7 +333,7 @@ impl Metrics {
         gauge(
             &mut out,
             "memory_oom_group",
-            "1 while the runner's cgroup kills the whole pod for one machine's memory: memory.oom.group, which the node's kubelet writes, not the install. NaN where there is no cgroup to read.",
+            "1 while the runner's cgroup kills the whole pod for one machine's memory: memory.oom.group, which the node's kubelet writes and sets unless its singleProcessOOMKill is on. NaN before the runner's first sample, and where there is no cgroup to read.",
             gauges.oom_group.map_or(f64::NAN, |g| f64::from(u8::from(g))),
         );
         gauge(

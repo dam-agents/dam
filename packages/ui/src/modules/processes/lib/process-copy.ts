@@ -5,6 +5,7 @@ import type {
   ProcessContainer,
   ProcessKind,
   ProcessRow,
+  StartupItem,
 } from "agent-runtime-api";
 import { match } from "ts-pattern";
 
@@ -16,6 +17,7 @@ export const BACKGROUND_KIND_LABEL: Record<
 > = {
   "harness-task": "Background task",
   detached: "Detached",
+  "startup-item": "Login item",
 };
 
 const CONTAINER_ENGINE_LABEL: Record<ContainerEngine, string> = {
@@ -76,6 +78,26 @@ export const ALWAYS_ON_KEEP_HINT =
   "This agent is Always on. Nothing here stops for sleep.";
 
 export const NO_PID_STOP_HINT = "Can't find this task's process";
+
+export function loginItemStatus(
+  item: Pick<StartupItem, "disabled" | "running" | "listed">,
+): string {
+  if (!item.listed) return "Running, no longer in the list";
+  if (item.disabled)
+    return item.running ? "Off from the next wake, still running" : "Off";
+  return item.running ? "Running" : "Not running";
+}
+
+export function loginItemBootCaption(
+  item: Pick<StartupItem, "disabled" | "listed">,
+) {
+  if (!item.listed) return "Not in the list, so it won't start again";
+  return item.disabled ? "Won't start at the next wake" : "Set up by the agent";
+}
+
+export function loginItemOutputKey(id: string): string {
+  return `startup:${id}`;
+}
 
 export function countTasks(count: number): string {
   return count === 1 ? "1 task" : `${count} tasks`;

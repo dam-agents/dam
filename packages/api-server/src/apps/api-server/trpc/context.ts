@@ -78,6 +78,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
+    environmentsFor,
     secretStore,
     runtimeMutator,
     outboxRepo,
@@ -135,6 +136,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
       platformProviderCa: config.platformProvider?.ca ?? null,
+      harnesses,
       platformProviderEnabled: async () =>
         (await features.flags())["platform-provider"],
     });
@@ -427,6 +429,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       attention,
       egressRules,
       invocationsQuery,
+      environments: environmentsFor(user.sub),
       invocationsControl,
       starterKits,
       kbShares,

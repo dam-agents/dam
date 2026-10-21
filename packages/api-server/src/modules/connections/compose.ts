@@ -2,6 +2,7 @@ import type { Db } from "db";
 import {
   PLATFORM_LLM_TEMPLATE_ID,
   type ConnectionsService,
+  type HarnessCatalog,
   type SecretRequestsService,
 } from "api-server-api";
 import { createXactLock } from "../../core/xact-lock.js";
@@ -215,6 +216,7 @@ export function composeConnectionsForOwner(opts: {
   platformProviderEnabled: () => Promise<boolean>;
   platformProviderKey: string | null;
   platformProviderCa: string | null;
+  harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
 }): ConnectionsService & PlatformLlmConnections {
   const repo = createConnectionsRepository(opts.db);
   const connectionLock = createXactLock(opts.db);
@@ -267,6 +269,7 @@ export function composeConnectionsForOwner(opts: {
     platformProviderEnabled: opts.platformProviderEnabled,
     platformProviderKey: opts.platformProviderKey,
     platformProviderCa: opts.platformProviderCa,
+    harnesses: opts.harnesses,
     ...(opts.maxSharedKbConnections !== undefined
       ? { maxSharedKbConnections: opts.maxSharedKbConnections }
       : {}),
