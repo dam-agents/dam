@@ -545,8 +545,9 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			if r.requeue != nil {
 				r.requeue(name, vmReadinessPoll)
 			}
-			// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once the pod carries the reduced ask and the node still has not granted it, where the owner's idle agents are the only room left.
-			if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner, r.runnerAskIsStepped(ctx, owner, agent)) {
+			// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
+			ask, stepped := r.runnerAskIsStepped(ctx, owner, agent)
+			if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner, ask, stepped) {
 				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
 					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 				}

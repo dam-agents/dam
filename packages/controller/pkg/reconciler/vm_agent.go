@@ -237,6 +237,9 @@ func (r *AgentReconciler) reconcileVMAgent(ctx context.Context, agent *apiv1.Age
 			if held, heldErr := r.heldRunnerDemand(ctx, owner, agent, running); heldErr == nil {
 				demand = held
 			}
+		} else if sized, sizedErr := r.ownerRunnerDemand(ctx, owner, agent, running); sizedErr == nil {
+			// UNIT_BOUNDARY_DESCRIPTION: a start the runner admitted changes what the owner holds, and the request it is sized from has to be the answer after that: sized from the read taken before the ensure, the next pass would ask for the whole demand again and the wave after it would step back down, resizing the pod on every admission.
+			demand = sized
 		}
 	}
 	if err == nil && st.DiskGiB > 0 {

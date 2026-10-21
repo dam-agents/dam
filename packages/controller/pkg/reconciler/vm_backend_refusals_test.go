@@ -4,7 +4,6 @@ package reconciler
 import (
 	"context"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -141,6 +140,10 @@ func TestAStartWaitingOnADeferredResizeFreesWhatTheNodeDidGrant(t *testing.T) {
 	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
 	require.NoError(t, err)
 	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
+	// TEST_SCENARIO: the runner already answered this start as one waiting for the node, as the pass before this one recorded.
+	r.vmAnswers.Store("my-agent", vmrunner.ReasonAwaitingAllocation)
+	// TEST_SCENARIO: this same ask has been with the node for longer than a grace and the node has still not granted it, so this pass is about what the reclaim counts rather than about when it runs.
+	expireTheStepDownGrace(t, r, agent)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
@@ -197,7 +200,7 @@ func TestReclaimForAWaitingStartDoesNotCountTheOtherWaiter(t *testing.T) {
 	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
 
 	// TEST_SCENARIO: the step-down has been with the node for longer than a grace, so this pass is about what the reclaim counts rather than about when it runs.
-	r.steppedSince.Store(testOwner, time.Now().Add(-2*steppedGrantGrace))
+	expireTheStepDownGrace(t, r, agent)
 	require.NoError(t, r.Reconcile(ctx, agent))
 
 	hibernated := map[string]bool{}
@@ -401,7 +404,7 @@ func TestAnUnreachableRunnerKeepsThePublishedRestarts(t *testing.T) {
 	assert.Equal(t, "GuestStoppedAnswering", reason)
 }
 
-// TEST_SCENARIO: a grant too small for one more machine is answered by asking the node for less, not by freeing anything. While that smaller ask is still on its way — the pod still carries the larger ask the whole demand called for — an idle agent must not be hibernated: the node may grant the smaller ask, and the machine the owner already had would have fitted beside the new one. The reclaim waits for the pod to carry the reduced ask, which is how the two cases are told apart without a timer.
+// TEST_SCENARIO: a grant too small for one more machine is answered by asking the node for less, not by freeing anything. While that smaller ask is still on its way an idle agent must not be hibernated: the node may grant the smaller ask, and the machine the owner already had would have fitted beside the new one. The reclaim waits out a grace on that very ask first; once the grace is spent the ask is treated as exhausted and the reclaim runs.
 func TestAWaitingStartDoesNotFreeRoomWhileTheReducedAskIsInFlight(t *testing.T) {
 	ctx, r, agent := deferredResizeWithWaits(t, false)
 
@@ -413,18 +416,144 @@ func TestAWaitingStartDoesNotFreeRoomWhileTheReducedAskIsInFlight(t *testing.T) 
 		assert.Empty(t, untouched.GetAnnotations()[annReclaimedAt],
 			"%s was hibernated for room the node is being asked for with the smaller request", peer)
 	}
-	assert.WithinDuration(t, time.Now(), mustLoad(t, &r.steppedSince, testOwner), time.Minute,
+	assert.WithinDuration(t, time.Now(), steppedGraceStartedAt(t, r), time.Minute,
 		"the step-down is recorded from the pass that made it, so the grace runs from there")
 	cond := readyCondition(t, r, "my-agent")
 	require.NotNil(t, cond)
 	assert.Equal(t, apiv1.ReasonAwaitingAllocation, cond.Reason)
 }
 
+// TEST_SCENARIO: the owner's only waiter is the very agent being reconciled. It is still a start waiting for the node, so the grace applies to it as it does to any other: an idle machine hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. A demand read that counts only the *other* waiters finds none here and lets the reclaim through at once.
+func TestASoleWaiterWaitsOutTheGraceLikeAnyOther(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	peerVMAgent(t, r, "idle-peer", "4Gi", "20Gi", true)
+	_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, "idle-peer", "application/merge-patch+json",
+		[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+		metav1.PatchOptions{})
+	require.NoError(t, err)
+	r.noteMachineUse("idle-peer", measured(2304))
+	// TEST_SCENARIO: the agent being reconciled is the owner's only start waiting for the node, and the pod carries the whole demand the node has deferred at a grant of 2560 MiB.
+	runnerPod(t, r, "1Gi", "16Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name:               vmRunnerComponent,
+		AllocatedResources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2560Mi")},
+	}}
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	untouched, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.Empty(t, untouched.GetAnnotations()[annReclaimedAt],
+		"the owner's only waiter is still a waiter, so the idle machine is not hibernated while the smaller ask is on its way")
+
+	// TEST_SCENARIO: the same ask has now been with the node for longer than a grace and it has still not granted it, so the idle machine is the only room left.
+	expireTheStepDownGrace(t, r, agent)
+	require.NoError(t, r.Reconcile(ctx, agent))
+	reclaimed, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "idle-peer", metav1.GetOptions{})
+	require.NoError(t, err)
+	assert.NotEmpty(t, reclaimed.GetAnnotations()[annReclaimedAt],
+		"once this ask has had its grace, the grant is exhausted and the idle machine frees it")
+}
+
+// TEST_SCENARIO: a grace belongs to one ask, not to the owner for ever. A wave the node granted, a further step down, or a pod replaced by a roll is a new question to the node, and none of them may inherit a grace an earlier ask has already spent: the reclaim would run before the node had ever seen the new ask, which is exactly what the grace exists to prevent.
+func TestTheGraceBelongsToTheAskItWasMadeFor(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	for _, peer := range []string{"idle-peer", "waiter-b"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+	}
+	r.noteMachineUse("idle-peer", measured(2304))
+	r.vmAnswers.Store("waiter-b", vmrunner.ReasonAwaitingAllocation)
+	runnerPod(t, r, "1Gi", "16Gi")
+	deferredPodCondition(t, r, "2560Mi")
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+
+	// TEST_SCENARIO: the first ask records its grace, and that grace runs out without the node granting it.
+	require.NoError(t, r.Reconcile(ctx, agent))
+	firstAsk, stepped := r.runnerAskIsStepped(ctx, testOwner, agent)
+	require.True(t, stepped)
+	assert.True(t, r.reclaimWaitsForTheReducedAsk(testOwner, firstAsk, stepped), "the grace is fresh, so the reclaim waits")
+	r.steppedSince.Store(testOwner, steppedAskTimestamp{ask: firstAsk, at: time.Now().Add(-2 * steppedGrantGrace)})
+	require.False(t, r.reclaimWaitsForTheReducedAsk(testOwner, firstAsk, stepped), "precondition: that same ask's grace has run out")
+
+	// TEST_SCENARIO: the wave the node granted takes the start up, so the owner now holds more and the next ask is a different figure.
+	runnerPodReportsItsGrant(t, r, "4096Mi")
+	r.noteMachineUse("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 1, MemoryMiB: 1024})
+	nextAsk, stepped := r.runnerAskIsStepped(ctx, testOwner, agent)
+	require.True(t, stepped, "the grant still cannot hold the next machine")
+	require.NotEqual(t, firstAsk, nextAsk, "progress the node made is a new question, not the one the spent grace belongs to")
+	assert.True(t, r.reclaimWaitsForTheReducedAsk(testOwner, nextAsk, stepped),
+		"the new ask gets its own grace rather than inheriting the spent one")
+
+	// TEST_SCENARIO: a pod replaced by a roll carries an ask on a new identity, which is also a new question.
+	replacedRunnerPod(t, r, "4Gi", "16Gi")
+	deferredPodCondition(t, r, "4096Mi")
+	r.noteMachineUse("my-agent", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 1, MemoryMiB: 1024})
+	replacement, stepped := r.runnerAskIsStepped(ctx, testOwner, agent)
+	require.True(t, stepped)
+	assert.NotEqual(t, nextAsk.uid, replacement.uid, "the replacement pod is a new identity")
+	assert.True(t, r.reclaimWaitsForTheReducedAsk(testOwner, replacement, stepped),
+		"the replacement pod's ask gets its own grace rather than the one the pod before it left")
+	// TEST_SCENARIO: and once that grace runs out in its turn, the reclaim runs, so a persistent deferral still has its way out.
+	r.steppedSince.Store(testOwner, steppedAskTimestamp{ask: replacement, at: time.Now().Add(-2 * steppedGrantGrace)})
+	assert.False(t, r.reclaimWaitsForTheReducedAsk(testOwner, replacement, stepped),
+		"the grace is bounded: a step down the node never grants does not hold the reclaim off for ever")
+}
+
+// TEST_SCENARIO: the pod's status as a node that has deferred the resize leaves it: what it holds, and the condition that says the resize is pending.
+func deferredPodCondition(t *testing.T, r *AgentReconciler, allocated string) {
+	t.Helper()
+	ctx := context.Background()
+	pods, err := r.client.CoreV1().Pods("test-agents").List(ctx, metav1.ListOptions{})
+	require.NoError(t, err)
+	for i := range pods.Items {
+		pod := &pods.Items[i]
+		pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+			Name:               vmRunnerComponent,
+			AllocatedResources: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse(allocated)},
+		}}
+		pod.Status.Conditions = []corev1.PodCondition{{
+			Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+		}}
+		_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+		require.NoError(t, err)
+	}
+}
+
 // TEST_SCENARIO: once the pod carries the reduced ask and the node has still not granted it, the grant is exhausted and the owner's own idle agents are the only room left: the reclaim runs again, as it does for a start the pool refused. Without that, a grant that can never hold one more machine would leave every start of that owner waiting for ever.
 func TestTheReclaimRunsOnceTheReducedAskIsExhausted(t *testing.T) {
 	ctx, r, agent := deferredResizeWithWaits(t, true)
 	// TEST_SCENARIO: the step-down began more than a grace ago, and the node has still not granted it.
-	r.steppedSince.Store(testOwner, time.Now().Add(-2*steppedGrantGrace))
+	expireTheStepDownGrace(t, r, agent)
 
 	require.NoError(t, r.Reconcile(ctx, agent))
 
@@ -434,11 +563,20 @@ func TestTheReclaimRunsOnceTheReducedAskIsExhausted(t *testing.T) {
 		"the reduced ask is exhausted and an idle machine is the only room left")
 }
 
-func mustLoad(t *testing.T, m *sync.Map, key string) time.Time {
+// TEST_SCENARIO: when the grace on the owner's current step down began.
+func steppedGraceStartedAt(t *testing.T, r *AgentReconciler) time.Time {
 	t.Helper()
-	v, ok := m.Load(key)
+	v, ok := r.steppedSince.Load(testOwner)
 	require.True(t, ok, "the step-down was never recorded")
-	return v.(time.Time)
+	return v.(steppedAskTimestamp).at
+}
+
+// TEST_SCENARIO: the owner's current step down has been with the node for longer than a grace, as a kubelet that will not grant it leaves it: the grace is recorded against the very ask this pass finds, so it is the ask the reclaim is told to stop waiting for.
+func expireTheStepDownGrace(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
+	t.Helper()
+	ask, stepped := r.runnerAskIsStepped(context.Background(), testOwner, agent)
+	require.True(t, stepped, "the fixture's pod is not a stepped ask, so there is no grace to expire")
+	r.steppedSince.Store(testOwner, steppedAskTimestamp{ask: ask, at: time.Now().Add(-2 * steppedGrantGrace)})
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: one idle machine up and holding memory, two starts waiting for the node, and a runner pod the node has granted 2560 MiB of, which holds the two machines that wait but not the one more a start needs. `stepped` puts the reduced ask in the pod, as a step-down the node has already been given and refused; without it the pod carries the whole demand, as a step-down the node has not been given yet. Both figures come from the production sizing, so the fixture cannot drift from it.

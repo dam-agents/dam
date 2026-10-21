@@ -651,6 +651,77 @@ func TestADeferredResizeAsksForOneMoreMachineAndTheNodeGrantsIt(t *testing.T) {
 	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, cond.Reason, "a start that went ahead is no longer waiting for the node")
 }
 
+// TEST_SCENARIO: an owner's pod is asked for one figure, whichever of its agents reconciles. A machine the owner already has admitted is a holder even when its own reconcile is the one sizing the pod, so a cold start and a running agent of the same owner on the same node with the same grant must not ask for different requests — that would resize the pod back and forth on every pass. The advisor's case: one machine admitted, two starts waiting, and the node holding the pod at 1536 MiB.
+func TestTheSteppedAskDoesNotDependOnWhichAgentReconciles(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	}
+	clusterResizesPods(r, true)
+	runnerPod(t, r, "1Gi", "8Gi")
+	runnerPodReportsItsGrant(t, r, "1536Mi")
+	for _, name := range []string{"anchor", "waiter-a", "waiter-b"} {
+		peerVMAgent(t, r, name, "4Gi", "20Gi", true)
+	}
+	// TEST_SCENARIO: the admitted machine runs; both waits are waiting for the node.
+	r.noteMachineUse("anchor", vmrunner.MachineStatus{State: vmrunner.StateRunning, CPUs: 1, MemoryMiB: 1024})
+	for _, name := range []string{"waiter-a", "waiter-b"} {
+		r.vmAnswers.Store(name, vmrunner.ReasonAwaitingAllocation)
+	}
+	ctx := context.Background()
+
+	for _, reconciled := range []string{"anchor", "waiter-a", "waiter-b"} {
+		t.Run(reconciled, func(t *testing.T) {
+			self := vmAgentCR()
+			self.Name, self.Spec.Resources.Limits["memory"], self.Spec.StorageSize = reconciled, "4Gi", "20Gi"
+			demand, err := r.ownerRunnerDemand(ctx, testOwner, self, true)
+			require.NoError(t, err)
+			assert.Equal(t, 1024, demand.heldMiB, "the admitted machine holds its memory whichever agent is being sized")
+			assert.Equal(t, 1024, demand.nextStartMiB, "a waiting start is what the step down asks for")
+			assert.True(t, demand.grantHoldsBackStart(1536, 512),
+				"the same grant holds the same step down whichever agent is being sized")
+		})
+	}
+}
+
+// TEST_SCENARIO: a start the runner admitted changes what its owner holds, so the request the same reconcile sends must be sized from the answer after that. Sized from the read taken before the ensure, the next pass would ask for the whole demand again and the wave after it would step back down — a resize per admission. The advisor's case: one machine admitted, two still waiting, and the node holding the pod at 1536 MiB.
+func TestTheAskAfterAnAdmissionIsSizedFromTheAdmission(t *testing.T) {
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.BootMiB = 1024
+	r.config.VM.Runner.MachineCPUs = 1
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("1Gi")},
+		Limits:   corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("4Gi")},
+	}
+	clusterResizesPods(r, true)
+	node.admit, node.reserveMiB, node.bootMiB = true, 512, 1024
+	applyUserBudget(t, r, testOwner, apiv1.UserBudgetSpec{Memory: new(resource.MustParse("4Gi"))})
+	r.refreshVMPool(context.Background(), testOwner)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	runnerPod(t, r, "1Gi", "4Gi")
+	runnerPodReportsItsGrant(t, r, "1536Mi")
+	peerVMAgent(t, r, "waiter-a", "4Gi", "20Gi", true)
+	peerVMAgent(t, r, "waiter-b", "4Gi", "20Gi", true)
+	for _, name := range []string{"waiter-a", "waiter-b"} {
+		node.set(name, vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+		r.vmAnswers.Store(name, vmrunner.ReasonAwaitingAllocation)
+	}
+	node.set("my-agent", vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation})
+	ctx := context.Background()
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	assert.True(t, node.spec("my-agent").Running, "the 1536 MiB the node granted is what one more machine costs, so the start went")
+	assert.Equal(t, "2560Mi", runnerPodRequest(t, r),
+		"the admitted machine holds 1Gi and the next start costs 1Gi, so the next wave is asked for — not the whole 4Gi demand a pre-ensure read would ask for")
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.NotEqual(t, apiv1.ReasonAwaitingAllocation, cond.Reason, "the start that went is no longer waiting")
+}
+
 // TEST_SCENARIO: the ask is only worth stepping down to once the node reports what it granted; with no figure there is nothing to compare the demand against, so the whole demand stands, and an install with no waiting start asks for the whole demand too, since nothing is held back by the node.
 func TestTheWholeDemandIsAskedForWhenNothingIsHeldBack(t *testing.T) {
 	agent := vmAgentCR()
