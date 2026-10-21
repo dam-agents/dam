@@ -29,6 +29,10 @@ pub trait Runtime: Send + Sync {
     fn console_tail(&self, _id: &str) -> String {
         String::new()
     }
+    // UNIT_BOUNDARY_DESCRIPTION: the file the machine's kernel log is written to, or nothing when the runtime keeps none. platform-init's own lines reach the console as kernel records (console::VMM_LOG), and a running guest's marks are read from it as it grows rather than as a tail, because the VMM logs a line for every connection it relays.
+    fn kernel_log(&self, _id: &str) -> Option<std::path::PathBuf> {
+        None
+    }
     // UNIT_BOUNDARY_DESCRIPTION: how much host memory the machine's VMM holds now, or nothing when no VMM runs or the runtime cannot tell. Guests hand freed memory back to the host, so this is what the machine uses, well below its size, and what admission and the runner's memory request count it at.
     fn resident_mib(&self, _id: &str) -> Option<i32> {
         None

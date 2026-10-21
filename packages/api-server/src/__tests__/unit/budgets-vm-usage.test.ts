@@ -82,6 +82,7 @@ describe("the budgets read's vm figures", () => {
             diskGiB: 100,
             diskUsedBytes: 7,
             cpuMilli: 300,
+            homeFull: true,
           },
           {
             id: "theirs",
@@ -90,6 +91,7 @@ describe("the budgets read's vm figures", () => {
             diskGiB: 100,
             diskUsedBytes: 1,
             cpuMilli: 1,
+            homeFull: false,
           },
         ],
       }),
@@ -101,6 +103,7 @@ describe("the budgets read's vm figures", () => {
         memoryUsedBytes: 2 * 1024 ** 2,
         storageUsedBytes: 7,
         cpuMilli: 300,
+        homeFull: true,
       },
     ]);
     expect(view.cpu).toEqual({

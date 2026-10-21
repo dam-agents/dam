@@ -51,6 +51,18 @@ it("refreshes the list and only the named agent's harnessConfig", async () => {
   expect([list.calls(), statusA.calls(), statusB.calls()]).toEqual([2, 2, 1]);
 });
 
+// TEST_SCENARIO: binding presence decides whether an Agent has a default-model notice, and a binding can change in another tab or in Slack or Telegram itself. A schedules hint (a Schedule created or switched on) and an attention hint (a Slack or Telegram binding added or removed) must both refetch the owner's attention query, which carries those notices.
+it("refetches the owner's notices on a schedules and an attention hint", async () => {
+  const notices = counter();
+  await watch(trpc.attention.listForOwner.queryKey(), notices.fn);
+
+  await invalidateForLiveEvent({ topic: "schedules", agentId: "A" });
+  expect(notices.calls()).toBe(2);
+
+  await invalidateForLiveEvent({ topic: "attention", agentId: "A" });
+  expect(notices.calls()).toBe(3);
+});
+
 // TEST_SCENARIO: the live-event stream drops and re-subscribes, and the server answers a new subscription with a sync hint. That hint must refresh every family the stream carries — the agent list, harness config, approvals, egress rules, schedules, budgets, starter-kit updates, knowledge-base shares, artifacts, attention and getting started — because that is how the screen catches up on the events it missed while the connection was down, and no other trigger covers a family the hint forgets.
 it("refreshes every live family on a sync hint", async () => {
   const families: Record<string, QueryKey> = {

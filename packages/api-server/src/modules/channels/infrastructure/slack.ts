@@ -3829,6 +3829,7 @@ export function createSlackWorker(deps: SlackWorkerDeps): SlackWorker {
           type: EventType.SlackDisconnected,
           agentId: binding.instanceName,
           slackChannelId: command.channelId,
+          ownerSub: agentOwner ?? binding.owner,
         });
         const remaining = picked.roster.filter(
           (entry) => entry.instanceName !== binding.instanceName,

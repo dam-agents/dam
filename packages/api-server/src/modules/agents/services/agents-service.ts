@@ -199,6 +199,12 @@ export function executeTelegramBind(deps: {
       },
     });
 
+    emit({
+      type: EventType.TelegramChatBound,
+      ownerSub: flow.keycloakSub,
+      agentId,
+    });
+
     const post = await deps.binding.postMessage(
       agentId,
       chat,
@@ -286,6 +292,12 @@ export function executeTelegramUnbind(deps: {
       result: "success",
       detail: { conversationId, viaUi: true },
     });
+    if (deps.owner)
+      emit({
+        type: EventType.TelegramChatUnbound,
+        ownerSub: deps.owner,
+        agentId,
+      });
     return ok(null);
   };
 }
@@ -1552,7 +1564,11 @@ export function createAgentsService(deps: {
 
       if (slackChannelId === undefined) {
         await deps.deleteChannelByType(id, ChannelType.Slack);
-        emit({ type: EventType.SlackDisconnected, agentId: id });
+        emit({
+          type: EventType.SlackDisconnected,
+          agentId: id,
+          ownerSub: infra.owner ?? deps.owner ?? null,
+        });
         return project(infra);
       }
 
@@ -1562,6 +1578,7 @@ export function createAgentsService(deps: {
           type: EventType.SlackDisconnected,
           agentId: id,
           slackChannelId,
+          ownerSub: infra.owner ?? deps.owner ?? null,
         });
       }
       return project(infra);
