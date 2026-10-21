@@ -87,6 +87,13 @@ function injectionScopes(contributions: readonly Contribution[]) {
     .sort();
 }
 
+const ALLOWED_PATHS = [
+  "/v1/chat/completions",
+  "/v1/messages",
+  "/v1/models",
+  "/v1/responses",
+];
+
 function noKeyIn(answer: readonly (ConnectionView | ConnectionTemplateView)[]) {
   return !JSON.stringify(answer).includes(DEPLOYMENT_KEY);
 }
@@ -119,17 +126,22 @@ describe("deployment CurveBender connection", () => {
     expect(Object.values(secret!.fields)).toContainEqual(
       expect.stringContaining(`"Bearer ${DEPLOYMENT_KEY}"`),
     );
-    expect(injectionHosts(secret)).toEqual([
+    expect(
+      injectionHosts(secret)
+        .map((h: { host: string; pathPattern: string }) => h.pathPattern)
+        .sort(),
+    ).toEqual(ALLOWED_PATHS);
+    expect(injectionHosts(secret)).toContainEqual(
       expect.objectContaining({
         host: CURVE_BENDER_HOST,
-        pathPattern: "/v1/*",
+        pathPattern: "/v1/messages",
       }),
-      expect.objectContaining({
-        host: CURVE_BENDER_HOST,
-        pathPattern: "/inference/v1/*",
-        pathRewrites: [{ prefix: "/inference/v1/", replacement: "/v1/" }],
-      }),
-    ]);
+    );
+    expect(
+      injectionHosts(secret).some(
+        (h: { pathRewrites?: unknown }) => h.pathRewrites !== undefined,
+      ),
+    ).toBe(false);
 
     const personalAfter = rows.get(personalId)!;
     expect(personalAfter.templateId).toBe("curve-bender");
@@ -148,10 +160,7 @@ describe("deployment CurveBender connection", () => {
     expect(sharedView.name).toBe(
       displayNameForTemplate(CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID),
     );
-    expect(injectionScopes(sharedView.contributions)).toEqual([
-      "/inference/v1/*",
-      "/v1/*",
-    ]);
+    expect(injectionScopes(sharedView.contributions)).toEqual(ALLOWED_PATHS);
     expect(sharedView.contributions).toContainEqual({
       kind: "env",
       name: "OPENAI_BASE_URL",
@@ -159,27 +168,28 @@ describe("deployment CurveBender connection", () => {
     });
   });
 
-  // TEST_SCENARIO: the deployment's key is one key for every user, so the gateway injects it on the model listing and the inference paths alone, Bob's rewritten prefix included: the proxy's management routes must never receive it, while the personal preset keeps injecting on every path of the same host.
-  it("injects the key on the inference paths only", () => {
+  // TEST_SCENARIO: the deployment's key is one key for every user, so the gateway injects it on the model listing and the three dialect paths alone, and on nothing else: not the proxy's management routes, and not its shared-state routes, which one identity would share between users. The personal preset keeps injecting on every path of the same host.
+  it("injects the key on the paths the runtime calls and no others", () => {
     const catalog = buildCatalog({}, { curveBenderDeployment: true });
     const deployment = catalog.find(
       (t) => t.id === CURVE_BENDER_DEPLOYMENT_TEMPLATE_ID,
     )!;
-    expect(injectionScopes(deployment.contributions)).toEqual([
-      "/inference/v1/*",
-      "/v1/*",
-    ]);
-    expect(
-      deployment.contributions.filter(
-        (c) => c.kind === "egress-inject" && c.host === CURVE_BENDER_HOST,
-      ),
-    ).toEqual([
-      expect.objectContaining({
-        pathPattern: "/v1/*",
-        pathRewrites: [{ prefix: "/inference/v1/", replacement: "/v1/" }],
-      }),
-      expect.objectContaining({ pathPattern: "/inference/v1/*" }),
-    ]);
+    expect(injectionScopes(deployment.contributions)).toEqual(ALLOWED_PATHS);
+    for (const shared of [
+      "/v1/files",
+      "/v1/batches",
+      "/v1/vector_stores",
+      "/v1/assistants",
+      "/v1/threads",
+      "/v1/memory",
+      "/v1/mcp/servers",
+      "/v1/traces",
+    ])
+      expect(
+        deployment.contributions.some(
+          (c) => c.kind === "egress-inject" && c.pathPattern === shared,
+        ),
+      ).toBe(false);
 
     const personal = catalog.find((t) => t.id === "curve-bender")!;
     expect(injectionScopes(personal.contributions)).toEqual(["(every path)"]);

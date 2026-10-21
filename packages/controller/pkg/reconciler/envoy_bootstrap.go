@@ -410,6 +410,11 @@ func buildTerminatingChain(p bootstrapParams, c envoyHostChain) ev {
 	if c.Upgrades {
 		hcm["upgrade_configs"] = []any{ev{"upgrade_type": "websocket"}, ev{"upgrade_type": "spdy/3.1"}}
 	}
+	if c.PathScopedCredentials() {
+		for k, v := range pathNormalizationHCM() {
+			hcm[k] = v
+		}
+	}
 	if p.OTel.Traces && !slices.ContainsFunc(c.Credentials, func(cred envoyCredential) bool { return cred.QueryParamName != "" }) {
 		hcm["tracing"] = otelTracing(p, 1)
 	}

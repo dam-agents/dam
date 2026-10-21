@@ -197,35 +197,31 @@ func ownerSharedClusters(p bootstrapParams) []any {
 // UNIT_BOUNDARY_DESCRIPTION: the harness guard of one agent. A CONNECT to the harness authority, and a plain request for it, both end here as HTTP, so the guard reads the path. Only the agent's own `/api/agents/<id>/` prefix reaches the harness, WebSocket upgrades included for the runtime's tRPC, and the request leaves stamped with the agent; anything else is refused here. Paths are normalized and merged, and escaped slashes refused, before the match, so `..` or `%2F` cannot step into a sibling's prefix.
 func harnessGuardListener(p bootstrapParams) ev {
 	prefix := fmt.Sprintf("/api/agents/%s/", p.HarnessGuardAgent)
-	hcm := ev{
-		"@type":                            "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager",
-		"stat_prefix":                      p.named("harness_guard"),
-		"normalize_path":                   true,
-		"merge_slashes":                    true,
-		"path_with_escaped_slashes_action": "REJECT_REQUEST",
-		"upgrade_configs":                  []any{ev{"upgrade_type": "websocket"}},
-		"http_filters":                     []any{routerHTTPFilter()},
-		"route_config": ev{
-			"name": p.named("harness_guard"),
-			"virtual_hosts": []any{ev{
-				"name":    "harness",
-				"domains": []any{"*"},
-				"routes": []any{
-					ev{
-						"match": ev{"prefix": prefix},
-						"route": ev{"cluster": "harness_passthrough", "timeout": "0s"},
-						"request_headers_to_add": []any{ev{
-							"header":        ev{"key": harnessGuardHeader, "value": p.HarnessGuardAgent},
-							"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
-						}},
-					},
-					ev{
-						"match":           ev{"prefix": "/"},
-						"direct_response": ev{"status": 403, "body": ev{"inline_string": "This gateway serves the harness only under " + prefix + "\n"}},
-					},
+	hcm := pathNormalizationHCM()
+	hcm["@type"] = "type.googleapis.com/envoy.extensions.filters.network.http_connection_manager.v3.HttpConnectionManager"
+	hcm["stat_prefix"] = p.named("harness_guard")
+	hcm["upgrade_configs"] = []any{ev{"upgrade_type": "websocket"}}
+	hcm["http_filters"] = []any{routerHTTPFilter()}
+	hcm["route_config"] = ev{
+		"name": p.named("harness_guard"),
+		"virtual_hosts": []any{ev{
+			"name":    "harness",
+			"domains": []any{"*"},
+			"routes": []any{
+				ev{
+					"match": ev{"prefix": prefix},
+					"route": ev{"cluster": "harness_passthrough", "timeout": "0s"},
+					"request_headers_to_add": []any{ev{
+						"header":        ev{"key": harnessGuardHeader, "value": p.HarnessGuardAgent},
+						"append_action": "OVERWRITE_IF_EXISTS_OR_ADD",
+					}},
 				},
-			}},
-		},
+				ev{
+					"match":           ev{"prefix": "/"},
+					"direct_response": ev{"status": 403, "body": ev{"inline_string": "This gateway serves the harness only under " + prefix + "\n"}},
+				},
+			},
+		}},
 	}
 	return ev{
 		"name":              p.named("harness_guard"),

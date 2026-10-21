@@ -1,7 +1,10 @@
 package reconciler
 
 import (
+	"net/url"
+	"slices"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -695,26 +698,177 @@ func TestBuildChainForwardRoutes_SignerBesideAHeaderInjectorLeavesTheInjectorPla
 	assert.Equal(t, []string{"conn-key", "conn-cos"}, c.ConnectionIDs())
 }
 
-func TestBuildChainForwardRoutes_ScopedInjectionCoversInferenceOnly(t *testing.T) {
-	const host = "litellm.cb.ete.res.ibm.com"
-	inference := scopedCredential("conn-cb", "platform-conn-cb", "Authorization", host, "/v1/*")
-	bob := scopedCredential("conn-cb", "platform-conn-cb", "Authorization", host, "/inference/v1/*")
-	c := connectionChain(host, inference, bob)
-	c.PathRewrites = []envoyPathRewrite{{Prefix: "/inference/v1/", Replacement: "/v1/"}}
+const curveBenderHost = "litellm.cb.ete.res.ibm.com"
 
+var curveBenderDeploymentPaths = []string{
+	"/v1/models",
+	"/v1/messages",
+	"/v1/chat/completions",
+	"/v1/responses",
+}
+
+func curveBenderDeploymentChain() envoyHostChain {
+	creds := make([]envoyCredential, 0, len(curveBenderDeploymentPaths))
+	for _, p := range curveBenderDeploymentPaths {
+		creds = append(creds, scopedCredential("conn-cbd", "platform-conn-cbd", "Authorization", curveBenderHost, p))
+	}
+	return connectionChain(curveBenderHost, creds...)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: routeForPath picks the first unaddressed route a request path matches, as Envoy does on the path it has normalized.
+func routeForPath(t *testing.T, routes []any, path string) ev {
+	t.Helper()
+	for _, r := range routes {
+		route := r.(ev)
+		if _, addressed := route["match"].(ev)["headers"]; addressed {
+			continue
+		}
+		if prefix, ok := route["match"].(ev)["prefix"].(string); ok && strings.HasPrefix(path, prefix) {
+			return route
+		}
+	}
+	require.FailNow(t, "no route matching "+path)
+	return nil
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: normalizeRequestPath models the HCM of a path-scoped chain — an escaped slash is refused outright, and dot segments and doubled slashes are resolved before routing, as normalize_path and merge_slashes make Envoy do.
+func normalizeRequestPath(raw string) (string, bool) {
+	if strings.Contains(strings.ToLower(raw), "%2f") {
+		return "", false
+	}
+	unescaped, err := url.PathUnescape(raw)
+	if err != nil {
+		return "", false
+	}
+	out := []string{}
+	for _, seg := range strings.Split(unescaped, "/") {
+		switch seg {
+		case "":
+		case ".", "..":
+			if seg == ".." && len(out) > 0 {
+				out = out[:len(out)-1]
+			}
+		default:
+			out = append(out, seg)
+		}
+	}
+	return "/" + strings.Join(out, "/"), true
+}
+
+func TestBuildChainForwardRoutes_DeploymentKeyCoversItsOwnPathsOnly(t *testing.T) {
+	c := curveBenderDeploymentChain()
 	routes := buildChainForwardRoutes(c)
+	creds := c.Credentials
+	keyed := func(path string) bool {
+		disabled := perFilterKeys(routeForPath(t, routes, path))
+		for _, cred := range creds {
+			if !slices.Contains(disabled, cred.FilterName()) {
+				return true
+			}
+		}
+		return false
+	}
 
-	// TEST_SCENARIO: a model-listing or inference call carries the key, so the injector scoped to /v1/ is not disabled on that route.
-	assert.NotContains(t, perFilterKeys(routeNamed(t, routes, "/v1/")), inference.FilterName(),
-		"/v1/models and inference paths must keep the credential injector")
+	// TEST_SCENARIO: the listing, both dialect routes and the token count under /v1/messages carry the deployment key.
+	for _, path := range []string{
+		"/v1/models",
+		"/v1/messages",
+		"/v1/messages/count_tokens",
+		"/v1/chat/completions",
+		"/v1/responses",
+	} {
+		assert.True(t, keyed(path), "%s is called by the runtime and must carry the deployment key", path)
+	}
 
-	// TEST_SCENARIO: Bob's prefix reaches the same inference paths, rewritten, still keyed.
-	rewritten := routeNamed(t, routes, "/inference/v1/")
-	assert.NotContains(t, perFilterKeys(rewritten), bob.FilterName(),
-		"the rewritten prefix must keep the credential injector")
-	assert.Equal(t, "/v1/", rewritten["route"].(ev)["prefix_rewrite"])
+	// TEST_SCENARIO: the proxy's management routes, its shared-identity routes (one identity for every user), Bob's prefix and the root carry no deployment key.
+	for _, path := range []string{
+		"/key/generate",
+		"/user/info",
+		"/spend/logs",
+		"/v1/files",
+		"/v1/batches",
+		"/v1/vector_stores",
+		"/v1/assistants",
+		"/v1/threads",
+		"/v1/memory",
+		"/v1/mcp/servers",
+		"/v1/traces",
+		"/inference/v1/chat/completions",
+		"/",
+	} {
+		assert.False(t, keyed(path), "%s must never carry the deployment key", path)
+	}
+}
 
-	// TEST_SCENARIO: everything else on the host, the proxy's management routes among them, falls to the host-wide route with both injectors disabled, so a request can never mint, read or delete the shared key.
-	management := perFilterKeys(routeNamed(t, routes, "/"))
-	assert.ElementsMatch(t, []string{inference.FilterName(), bob.FilterName()}, management)
+func TestRenderEnvoyBootstrap_PathScopedChainNormalizesPaths(t *testing.T) {
+	unscoped := connectionChain("api.example.com",
+		connectionCredential("conn-api", "platform-conn-api", "Authorization", "api.example.com"))
+	scoped := curveBenderDeploymentChain()
+
+	for _, tc := range []struct {
+		name   string
+		chain  envoyHostChain
+		fields bool
+	}{
+		{name: "the deployment CurveBender's scoped chain", chain: scoped, fields: true},
+		{name: "a host-wide chain", chain: unscoped, fields: false},
+	} {
+		got, err := renderEnvoyBootstrap("inst-1", "", bootstrapTestCfg, []envoyHostChain{tc.chain}, false)
+		require.NoError(t, err)
+		chain := filterChainNamed(t, mustParseBootstrap(t, got), "terminate_"+tc.chain.ChainID)
+		require.NotNil(t, chain)
+		hcm := chain["filters"].([]any)[0].(map[string]any)["typed_config"].(map[string]any)
+
+		if !tc.fields {
+			// TEST_SCENARIO: a chain whose credentials are host-wide keeps the raw path, since an API can address an object with an encoded slash at any path.
+			assert.NotContains(t, hcm, "normalize_path", tc.name)
+			assert.NotContains(t, hcm, "merge_slashes", tc.name)
+			assert.NotContains(t, hcm, "path_with_escaped_slashes_action", tc.name)
+			continue
+		}
+		// TEST_SCENARIO: a chain that routes on a path scope normalizes the path, merges slashes and refuses an escaped slash before the match, as the harness guard does.
+		assert.Equal(t, true, hcm["normalize_path"], tc.name)
+		assert.Equal(t, true, hcm["merge_slashes"], tc.name)
+		assert.Equal(t, "REJECT_REQUEST", hcm["path_with_escaped_slashes_action"], tc.name)
+	}
+}
+
+func TestBuildChainForwardRoutes_DotSegmentsCannotReachAManagementRouteKeyed(t *testing.T) {
+	c := curveBenderDeploymentChain()
+	routes := buildChainForwardRoutes(c)
+	keyed := func(path string) bool {
+		disabled := perFilterKeys(routeForPath(t, routes, path))
+		for _, cred := range c.Credentials {
+			if !slices.Contains(disabled, cred.FilterName()) {
+				return true
+			}
+		}
+		return false
+	}
+
+	// TEST_SCENARIO: a path that steps out of a scoped prefix lands on the host-wide route once the chain's HCM has normalized it, and carries no key; a dot segment that rides inside a scoped prefix still selects the scoped route on the raw path, so normalization is what keeps the key off it.
+	for _, tc := range []struct {
+		raw        string
+		keyedOnRaw bool
+	}{
+		{raw: "/v1/messages/../../../key/generate", keyedOnRaw: true},
+		{raw: "/v1/chat/completions/../../../spend/logs", keyedOnRaw: true},
+		{raw: "/v1/models/../../key/delete", keyedOnRaw: true},
+		{raw: "/v1/responses/%2e%2e/%2e%2e/key/generate", keyedOnRaw: true},
+		{raw: "/v1/../key/generate"},
+		{raw: "/v1/%2e%2e/key/generate"},
+		{raw: "/inference/v1/../../key/delete"},
+		{raw: "/v1//../../spend/logs"},
+	} {
+		norm, accepted := normalizeRequestPath(tc.raw)
+		require.True(t, accepted, "%s carries no escaped slash", tc.raw)
+		assert.NotEqual(t, tc.raw, norm, "%s has a dot segment to resolve", tc.raw)
+		assert.False(t, keyed(norm), "%s resolves to %s and must carry no key", tc.raw, norm)
+		assert.Equal(t, tc.keyedOnRaw, keyed(tc.raw),
+			"%s: whether the raw path already selects a scoped route", tc.raw)
+	}
+
+	// TEST_SCENARIO: a path with an escaped slash is refused before it is routed, so it never reaches the proxy keyed.
+	_, accepted := normalizeRequestPath("/v1/..%2Fkey%2Fgenerate")
+	assert.False(t, accepted)
 }

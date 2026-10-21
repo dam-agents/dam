@@ -192,10 +192,11 @@ function curveBenderContributions(
     ...(pathPatterns ?? [undefined]).map((pathPattern): Contribution => ({
       kind: "egress-inject",
       host: CURVE_BENDER_HOST,
-      ...(pathPattern ? { pathPattern } : {}),
+      ...(pathPattern
+        ? { pathPattern }
+        : { pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE] }),
       headerName: "Authorization",
       valueFormat: "Bearer {value}",
-      pathRewrites: [BOB_INFERENCE_PREFIX_REWRITE],
     })),
   ];
 }
@@ -215,13 +216,25 @@ const CURVE_BENDER: HeaderConnectionTemplate = {
 };
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: the only paths a harness calls on CurveBender,
- * the model listing and inference, plus the prefix Bob's rewrite turns into
- * them. The deployment's key is one key for everyone, so it stays off the
- * proxy's management routes (`/key/*`, `/user/*`, `/spend/*`), which would
- * let any agent mint, read or delete it.
+ * UNIT_BOUNDARY_DESCRIPTION: exactly the paths the platform's code calls on
+ * CurveBender, with no wider prefix. One key serves every user, so the
+ * proxy's management routes (`/key/*`, `/user/*`, `/spend/*`) would let any
+ * agent mint, read or delete it, and its shared-identity routes (`/v1/files`,
+ * `/v1/batches`, `/v1/vector_stores`, `/v1/assistants`, `/v1/threads`,
+ * `/v1/memory`, `/v1/mcp/*`, `/v1/traces`, …) would let one user's agent read
+ * what another stored under that one identity. The listing and the dialect
+ * paths are all a harness asks for: the runtime's discovery reads
+ * `/v1/models`, and the router forwards `/v1/messages` — whose
+ * `/messages/count_tokens` sits under the same prefix —,
+ * `/v1/chat/completions` and `/v1/responses`. Bob's prefix never reaches the
+ * gateway, because the router folds it in the pod before the call leaves.
  */
-const CURVE_BENDER_DEPLOYMENT_PATHS = ["/v1/*", "/inference/v1/*"] as const;
+const CURVE_BENDER_DEPLOYMENT_PATHS = [
+  "/v1/models",
+  "/v1/messages",
+  "/v1/chat/completions",
+  "/v1/responses",
+] as const;
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: CurveBender reached with the deployment's key,
