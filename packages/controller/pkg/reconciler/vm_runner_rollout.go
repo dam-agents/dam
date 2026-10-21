@@ -19,6 +19,7 @@ import (
 	"k8s.io/apimachinery/pkg/api/equality"
 	k8serrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/types"
 
 	"github.com/dam-agents/dam/packages/controller/pkg/config"
 	"github.com/dam-agents/dam/packages/controller/pkg/telemetry"
@@ -499,11 +500,12 @@ func (r *AgentReconciler) runnersMidRoll(ctx context.Context) (rolling []string,
 			}
 			continue
 		}
-		delete(dep.Annotations, annRunnerRolledAt)
-		delete(dep.Annotations, annRunnerAwaiting)
-		delete(dep.Annotations, annRunnerStalled)
-		if _, err := cli.Update(ctx, dep, metav1.UpdateOptions{}); err != nil {
+		// UNIT_BOUNDARY_DESCRIPTION: the clear removes the three annotations that record a roll and touches nothing else of the runner, as one merge patch of three removed keys. It needs no resourceVersion from the list it read, since those three keys are written only where a roll starts — which every turn does under runnerRollMu, this one included — and where one settles, which removes the same keys; so it cannot undo another turn's write. A whole-object write of the object read here could: the fake the tests run against checks no resource version, so there a write puts back whatever another turn wrote after that read, and a hand-off place so put back holds a slot no turn is settling, which leaves the next owner's turn without a place in the width. A real API server refuses such a write as a conflict instead, and clears nothing.
+		patch := []byte(fmt.Sprintf(`{"metadata":{"annotations":{%q:null,%q:null,%q:null}}}`, annRunnerRolledAt, annRunnerAwaiting, annRunnerStalled))
+		if updated, err := cli.Patch(ctx, dep.Name, types.MergePatchType, patch, metav1.PatchOptions{}); err != nil {
 			slog.Warn("vm runner: clearing a settled roll", "runner", dep.Name, "error", err)
+		} else if r.runnerDeploys != nil {
+			r.runnerDeploys.Mutation(updated)
 		}
 	}
 	sort.Strings(rolling)
