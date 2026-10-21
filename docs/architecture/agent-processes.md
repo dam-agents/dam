@@ -85,10 +85,10 @@ With the `new-layout` experiment off it is a Processes section beside Files and 
 With `new-layout` on it is a Processes tab of the side panel, beside Artifacts, Files, Changes and Browser, and a row's output opens in that tab, the way a file opens in the Files tab.
 Either way the output follows the file while the process runs.
 Running rows are grouped by their effect on the agent: active turns, the work keeping the agent awake, and the work that stops at hibernation (on an Always on agent the last two are one group, since nothing stops there).
-Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which names who decided and is disabled on an Always on agent, and changing it moves the row to the other group.
+Each row's menu has a Stop that asks first; for a Harness Task or Detached Process it also has the keep choice, which says in one line what the row does, and is disabled on an Always on agent, and changing it moves the row to the other group.
 A change [waiting for kept tasks](#reported-background-work) shows above the rows with its Apply now.
 An indicator counts the running Harness Tasks and Detached Processes and those keeping the agent awake, and opens the section or the tab — so a user who wonders why the agent stays awake finds the answer one click away.
-It sits in the chat's top bar, and with `new-layout` on the side panel's icon bar also carries the running count on the Processes icon.
+It sits in the chat's top bar while the layout has one; with `new-layout` on, the side panel's icon bar carries it on the Processes icon instead, the count turning from grey to accent blue while a process keeps the agent awake.
 The list and the indicator show the same list: while the agent runs but the UI has lost its connection to it, both keep the last list and the list says the agent can't be reached; while the agent does not run, neither shows it.
 
 ## Keeping work
