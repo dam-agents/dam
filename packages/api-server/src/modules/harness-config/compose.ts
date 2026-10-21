@@ -33,6 +33,7 @@ import type { OutboxRepo } from "../runtime-delivery/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { emit, EventType } from "../../events.js";
 import { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
+import { createInitializationPairResolver } from "./services/initialization-pair.js";
 
 export const ETE_BYPASS_RESET = {
   reset: "ibm-litellm-bypass-mode",
@@ -127,6 +128,13 @@ export function composeFirePair(deps: {
   return (agentId, preferred) => resolveFirePair(resolver, agentId, preferred);
 }
 
+export function composeInitializationPairResolver(deps: {
+  firePair: FirePair;
+  log: (msg: string) => void;
+}): ReturnType<typeof createInitializationPairResolver> {
+  return createInitializationPairResolver(deps);
+}
+
 export function composeDefaultConverter(deps: {
   db: Db;
   namespace: string;
@@ -139,12 +147,18 @@ export function composeDefaultConverter(deps: {
   wake: (agentId: string) => Promise<WakeStamp | null>;
   lastHelloAt: (agentId: string) => Promise<number | null>;
   ownerOf: (agentId: string) => Promise<string | undefined>;
+  redeliver: (agentId: string) => Promise<void>;
   log: (msg: string) => void;
 }): { converter: DefaultConverter; helloSaga: Subscription } {
-  const { db, namespace, ownerOf, ...rest } = deps;
+  const { db, namespace, ownerOf, redeliver, ...rest } = deps;
   const converter = createDefaultConverter({
     ...rest,
     onSaved: (agentId) => {
+      void redeliver(agentId).catch((err: Error) =>
+        deps.log(
+          `[default-conversion] ${agentId}: redelivery failed, the outbox sweep will carry it: ${err.message}`,
+        ),
+      );
       void ownerOf(agentId)
         .then((ownerSub) => {
           if (!ownerSub) return;

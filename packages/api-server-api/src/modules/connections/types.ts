@@ -276,6 +276,7 @@ export interface ConnectionsService {
 
   defaultProviderConnections(
     fits: (type: ProviderPresetType, templateId: string) => boolean,
+    harness?: string,
   ): Promise<string[]>;
   getProviderBalance(id: string): Promise<ProviderBalance | null>;
 

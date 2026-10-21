@@ -6,6 +6,7 @@ export {
   composeScheduleModelForFire,
   composeHarnessConfigModule,
   composeHarnessConfigReset,
+  composeInitializationPairResolver,
   composeSessionChoicesValidator,
   type FirePair,
 } from "./compose.js";

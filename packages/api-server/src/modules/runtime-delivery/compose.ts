@@ -30,7 +30,10 @@ import {
   type RunningWorker,
   type StateQueue,
 } from "./infrastructure/state-queue.js";
-import { createStateBuilder } from "./services/state-builder.js";
+import {
+  createStateBuilder,
+  type PendingEventResolver,
+} from "./services/state-builder.js";
 import { createBuiltinContributions } from "./services/builtin-contributions.js";
 import {
   createWorkerHandler,
@@ -127,6 +130,7 @@ export interface ComposeRuntimeDeliveryOpts {
   telemetryEnv: (harness: string) => readonly EnvVar[];
   resolveOwner: (agentId: string) => Promise<string | null>;
   resolveAgentName: (agentId: string) => Promise<string | null>;
+  resolveEvent?: PendingEventResolver;
   deliveryConcurrency: number;
 }
 
@@ -150,6 +154,7 @@ export function composeRuntimeDelivery(
     egressDenies: (agentId) => async (host, method, path) =>
       (await egressRules.match(agentId, host, 443, true, method, path))
         ?.verdict === "deny",
+    ...(opts.resolveEvent && { resolveEvent: opts.resolveEvent }),
   });
   const queue = createStateQueue(opts.bullConnection);
 

@@ -145,6 +145,7 @@ import {
   composeFirePair,
   composeScheduleModelForFire,
   composeHarnessConfigReset,
+  composeInitializationPairResolver,
   composeSessionChoicesValidator,
   isNoDefaultModelError,
 } from "./modules/harness-config/index.js";
@@ -613,6 +614,7 @@ export async function bootstrap() {
     telemetryEnv: harnessCatalog.telemetryEnv,
     resolveOwner: resolveAgentOwner,
     resolveAgentName,
+    resolveEvent: (agentId, event) => resolveInitializationPair(agentId, event),
     deliveryConcurrency: config.runtimeDeliveryConcurrency,
   });
   deliverOnReady = async (agentId) => {
@@ -627,6 +629,10 @@ export async function bootstrap() {
         ?.runtimeCapabilities ?? null,
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
+  });
+  const resolveInitializationPair = composeInitializationPairResolver({
+    firePair,
+    log: (msg) => getLogger().warn(msg),
   });
   const outcomePairFields = async (
     agentId: string,
@@ -1015,6 +1021,7 @@ export async function bootstrap() {
           await runtimeDelivery.agentsRuntimeRepo.get(agentId)
         )?.runtimeLastHelloAt?.getTime() ?? null,
       ownerOf: async (agentId) => (await agentsRepo.get(agentId))?.owner,
+      redeliver: (agentId) => runtimeDelivery.queue.enqueue(agentId),
       log: (msg) => getLogger().info(msg),
     });
 

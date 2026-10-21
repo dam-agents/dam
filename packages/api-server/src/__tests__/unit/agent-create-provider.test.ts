@@ -352,17 +352,47 @@ describe("the harness and default provider a new agent gets", () => {
     ).toEqual([]);
   });
 
-  /** TEST_SCENARIO: A new agent gets every provider its harness fits, in
-   * alias order, but at most one per alias, since an alias names one
-   * provider in every qualified model name; of two, the older wins. */
-  it("grants every fitting provider, the oldest of each alias", async () => {
-    const openai = { ...provider, id: "conn-openai", templateId: "openai" };
+  /** TEST_SCENARIO: The fitting providers come at most one per alias, since
+   * an alias names one provider in every qualified model name; of two, the
+   * older wins. They come in alias order, the harness's home provider first. */
+  it("lists the oldest fitting provider of each alias, in alias order", async () => {
+    const ibm = { ...provider, id: "conn-ibm", templateId: "ibm-litellm" };
     const second = { ...provider, id: "conn-anthropic-2" };
-    const { connections } = setup([provider, openai, second]);
+    const { connections } = setup([provider, ibm, second]);
     expect(await connections.defaultProviderConnections(() => true)).toEqual([
+      "conn-ibm",
       "conn-provider",
-      "conn-openai",
     ]);
+    expect(
+      await connections.defaultProviderConnections(() => true, "claude-code"),
+    ).toEqual(["conn-provider", "conn-ibm"]);
+  });
+
+  /** TEST_SCENARIO: An owner holding an IBM and an Anthropic provider creates
+   * an agent. It gets one provider, the one its default resolves to (Claude
+   * Code's home provider), not both: with two, the default its runtime saves
+   * at its first hello would have no model, and the agent's onboarding turn
+   * would never run (#5578). */
+  it("grants a new agent one provider, the one its default runs on", async () => {
+    const ibm = { ...provider, id: "conn-ibm", templateId: "ibm-litellm" };
+    const { connections } = setup([ibm, provider]);
+    const provisioner = connectionGrantProvisioner(
+      { ...connections, listConnections: async () => [] },
+      {
+        harnesses: [
+          {
+            name: "claude-code",
+            displayName: "Claude",
+            providers: ["ibm-litellm", "anthropic"],
+            tags: [],
+            experimental: false,
+          },
+        ],
+      },
+    );
+    expect(
+      await provisioner.defaultProviders([], { harness: "claude-code" }),
+    ).toEqual(["conn-provider"]);
   });
 });
 
@@ -417,11 +447,12 @@ describe("the default provider's fit", () => {
   });
 
   /** TEST_SCENARIO: A custom template's own harness, such as the e2e mock, is
-   * not in the catalog; it takes the providers the template lists, or any. */
+   * not in the catalog; it takes the first provider the template lists, or
+   * the first of any. */
   it("follows the template for a harness the catalog does not list", async () => {
     expect(
       await provisioner().defaultProviders([], { harness: "mock" }),
-    ).toEqual(["conn-provider", "conn-openai"]);
+    ).toEqual(["conn-provider"]);
     expect(
       await provisioner().defaultProviders([], {
         harness: "mock",
