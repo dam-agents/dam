@@ -121,8 +121,10 @@ purple boxes are design notes. Decisions taken there:
 - **A shared bar is one colour**, split by a 2 px gap where this agent's part ends.
 - **Settings › Providers** is where the all-agents limit is set. **Settings › Usage** shows only a
   small read-only summary inside the existing "Daily spend limit" card.
-- **Agent › Providers** (variant A): a headline with what this agent may still spend on the
-  provider and which limit stops it, then one meter per limit, "stops first" on the binding one.
+- **Agent › Providers**: one summary line with what this agent may still spend on the provider and
+  the state inline ("$0.50 left today · Close to the limit"), then one compact row per limit, the
+  binding one in full weight. Bar parts carry tooltips instead of text; the reset time is in the
+  help tip.
   "Your spend limit (all agents)" and the ceiling show only as a tinted message when close or
   reached, on dollar Connections.
 - **Home's memory/CPU pool bars** take the same black fill and height.

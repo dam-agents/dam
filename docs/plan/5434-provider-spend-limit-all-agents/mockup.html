@@ -91,12 +91,33 @@
   .controls button { font: inherit; font-size: 12px; padding: 3px 10px; border-radius: 999px; border: 1px solid var(--note-border); background: #fff; color: var(--note-fg); cursor: pointer; }
   .controls button[aria-pressed="true"] { background: var(--note-fg); color: #fff; border-color: var(--note-fg); }
   .controls label { font-size: 12px; color: var(--note-fg); display: flex; gap: 4px; align-items: center; margin-left: 6px; }
+  .sum { display: flex; align-items: baseline; gap: 8px; flex-wrap: wrap; }
+  .sum .fig { font-size: 15px; font-weight: 600; }
+  .sum .sep { color: var(--muted-fg); }
+  .sum .end { margin-left: auto; font-size: 12px; }
+  .rows { display: grid; grid-template-columns: auto 1fr auto; gap: 10px 12px; align-items: center; }
+  .rows .who { font-size: 12px; color: var(--muted-fg); white-space: nowrap; }
+  .rows .who.bind { color: var(--foreground); font-weight: 600; }
+  .rows .who a { color: inherit; text-decoration: none; border-bottom: 1px dotted currentColor; }
+  .rows .amt { font-size: 12px; color: var(--muted-fg); font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .rows .meter { gap: 0; }
+  .rows .bar { height: 8px; border-radius: 2px; overflow: visible; gap: 2px; }
+  .rows .bar > .part { position: relative; height: 100%; border-radius: 2px; border: 0; padding: 0; cursor: default; flex: none; }
+  .rows .bar > .part.track { flex: 1; background: transparent; }
+  .ok .bar > .part.fill { background: var(--accent); } .warn .bar > .part.fill { background: var(--warning); } .reached .bar > .part.fill { background: var(--danger); }
+  .part[data-tt]:hover::after, .part[data-tt]:focus-visible::after {
+    content: attr(data-tt); position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+    background: #121619; color: #fff; font-size: 12px; padding: 4px 8px; border-radius: 4px; white-space: nowrap; z-index: 6; }
+  .part[data-tt]:hover, .part[data-tt]:focus-visible { outline: 2px solid var(--foreground); outline-offset: 1px; }
+  .notice { font-size: 12px; padding: 6px 10px; border-radius: 6px; }
+  .notice.warn { background: var(--warning-light); color: var(--warning-fg); }
+  .notice.reached { background: var(--danger-light); color: var(--danger); }
   [hidden] { display: none !important; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <h1>Provider limits for all agents (v4)</h1>
+  <h1>Provider limits for all agents (v5)</h1>
   <p class="lede">Third round. All limit bars are thin (6 px, 4 px in the summary), one colour per state: black when fine (switch at the bottom right to compare with brand blue), orange when close, red when reached. The track is a light tint of the same colour, so there's no grey. Figures sit in the text line above the bar. The agent's Providers page uses variant A. Purple boxes are design notes. Dark mode toggles at the bottom right.</p>
 
   <!-- 1. SETTINGS › USAGE -->
@@ -226,8 +247,8 @@
 
   <!-- 3. AGENT › PROVIDERS -->
   <section class="screen">
-    <h2>3 · Agent › Providers: variant A</h2>
-    <p class="why">The headline says what this agent may still spend on the provider. A thin meter for each limit follows. Choose how the shared bar marks this agent's part.</p>
+    <h2>3 · Agent › Providers</h2>
+    <p class="why">One line says what's left and why; one short meter per limit shows how. Details are on hover or focus: point at a bar part for whose spend it is.</p>
     <div class="controls" id="ctl-st" role="group" aria-label="State">
       <span class="cap">State</span>
       <button data-st="both-prov" aria-pressed="true">All-agents stops first</button>
@@ -237,23 +258,23 @@
       <button data-st="prov-reached" aria-pressed="false">All-agents reached</button>
       <button data-st="none" aria-pressed="false">No limits</button>
     </div>
-    <div class="controls" id="ctl-sh" role="group" aria-label="Share style">
-      <span class="cap">Agent's part</span>
-      <button data-sh="tint" aria-pressed="true">Lighter tint for others</button>
-      <button data-sh="notch" aria-pressed="false">One colour, gap after this agent</button>
-      <button data-sh="none" aria-pressed="false">One colour, part in text only</button>
+    <div class="controls" role="group" aria-label="Owner-wide">
+      <span class="cap">Paid, all providers</span>
       <label><input type="checkbox" id="own"> Your spend limit (all agents) close</label>
       <label><input type="checkbox" id="ownr"> … reached</label>
     </div>
     <div class="grid">
       <div class="frame themed"><div class="card" style="padding:16px" id="vA"></div></div>
       <div class="notes">
-        <h4>Choices</h4>
+        <h4>What was cut, and where it went</h4>
         <ul>
-          <li>The headline in a heavier weight is the answer: "$0.50 left today", with the limit that stops it in the line below. The meters show why.</li>
-          <li>Each meter is a label line ("This agent", "All agents", with "stops first" on the binding one), the thin bar, and the figures. No separate state line per meter; the state shows once, below.</li>
-          <li><b>Agent's part:</b> "lighter tint" keeps one colour family with two shades. "Gap" colours the whole bar and splits it at this agent's share with a 2 px cut. "Text only" is the calmest; the split shows only in the figures.</li>
-          <li>"All agents" and the ceiling aren't drawn; a tinted message shows when close or reached (dollar providers only).</li>
+          <li><b>One summary line</b>: "$0.50 left today · Close to the limit". The state sits next to the figure it qualifies, in the state's colour.</li>
+          <li><b>"Stops first" is not a sentence any more.</b> The binding limit's label is in full weight, the other one muted. With only one limit there's nothing to compare, so no marker.</li>
+          <li><b>Meter rows</b>: one line each, "This agent" or "All agents" on the left and "$1.10 / $5.00" on the right. "Left" shows only in the summary, where it matters.</li>
+          <li><b>Bar parts are interactive</b>. On hover or keyboard focus, each part of the shared bar shows a tooltip: "This agent: $1.10", "Other agents: $18.40", and on the track "Left: $0.50". The split line is gone.</li>
+          <li><b>The link</b> is the "All agents" label itself, with a tooltip saying where it's set. Without a shared limit, "Set for all agents" is a quiet link at the end of the summary row.</li>
+          <li><b>The reset time</b> moves into the help tip on "Daily limit". When a limit is reached, the summary says the time instead: "Stopped until 02:00".</li>
+          <li>The paid-spend notice for all providers stays, as one short line: "Your spend limit (all agents): $0.30 left".</li>
         </ul>
       </div>
     </div>
@@ -278,47 +299,47 @@ const STATES = {
   'none':        { mine: 1.10, others: 0,     agent: null, prov: null },
 };
 const stateOf = (spent, limit) => spent >= limit ? 'reached' : spent >= 0.8 * limit ? 'warn' : 'ok';
-let cur = 'both-prov', share = 'tint';
+let cur = 'both-prov';
 
 function render() {
   const s = STATES[cur], total = s.mine + s.others;
-  const a = s.agent != null ? { who: 'agent', left: Math.max(0, s.agent - s.mine) } : null;
-  const p = s.prov != null ? { who: 'prov', left: Math.max(0, s.prov - total) } : null;
+  const a = s.agent != null ? { who: 'agent', left: Math.max(0, s.agent - s.mine), st: stateOf(s.mine, s.agent) } : null;
+  const p = s.prov != null ? { who: 'prov', left: Math.max(0, s.prov - total), st: stateOf(total, s.prov) } : null;
   const both = a && p;
   const bind = [a, p].filter(Boolean).sort((x, y) => x.left - y.left)[0] || null;
-  const tag = (who) => both && bind.who === who ? ` <span class="small strong">· stops first</span>` : '';
 
-  let head;
-  if (!bind) head = `<p class="num" style="font-size:15px">${fmt(s.mine)} spent today · No limit</p>`;
+  let sum;
+  if (!bind) sum = `<div class="sum"><span class="fig num">${fmt(s.mine)} today</span><span class="sep">·</span><span class="muted">No limit</span><a class="link end" href="#prov">Set for all agents</a></div>`;
   else {
-    const st = bind.left === 0 ? 't-reached' : '';
-    const why = bind.who === 'agent' ? "This agent's limit stops it first." : (a ? 'Your Anthropic limit for all agents stops it first.' : 'Your Anthropic limit for all agents applies.');
-    head = `<div><p class="num ${st}" style="font-size:15px;font-weight:600">${bind.left === 0 ? 'Nothing left today' : fmt(bind.left) + ' left today'}</p><p class="small muted">${why}</p></div>`;
+    const stTxt = bind.st === 'reached' ? '<span class="sep">·</span><span class="t-reached">Stopped until 02:00</span>'
+                : bind.st === 'warn' ? '<span class="sep">·</span><span class="t-warn">Close to the limit</span>' : '';
+    const fig = bind.left === 0 ? `<span class="fig num t-reached">Nothing left today</span>` : `<span class="fig num">${fmt(bind.left)} left today</span>`;
+    const tip = `<span class="tip" tabindex="0" data-tip="What this agent can still spend on this provider today: the smaller of what its limits have left. Resets at 02:00 your time.">?</span>`;
+    const end = p ? '' : `<a class="link end" href="#prov">Set for all agents</a>`;
+    sum = `<div class="sum">${fig}${stTxt}${end}</div>`;
   }
 
-  let meters = '';
+  let rows = '';
   if (a) {
-    const st = stateOf(s.mine, s.agent);
-    meters += `<div class="meter ${st}">
-      <div class="line"><span class="small">This agent${tag('agent')}</span><span class="small num muted">${fmt(s.mine)} of ${fmt(s.agent)} · ${fmt(a.left)} left</span></div>
-      <div class="bar"><i style="width:${Math.min(100, s.mine / s.agent * 100)}%"></i></div></div>`;
+    const pct = Math.min(100, s.mine / s.agent * 100);
+    rows += `<span class="who ${both && bind.who === 'agent' ? 'bind' : ''}">This agent</span>
+      <div class="meter ${a.st}"><div class="bar" style="background:none">
+        <button class="part fill" style="width:${pct}%" data-tt="This agent: ${fmt(s.mine)}" aria-label="This agent spent ${fmt(s.mine)}"></button>
+        <button class="part track" data-tt="Left: ${fmt(a.left)}" aria-label="${fmt(a.left)} left"></button></div></div>
+      <span class="amt">${fmt(s.mine)} / ${fmt(s.agent)}</span>`;
   }
   if (p) {
-    const st = stateOf(total, s.prov);
     const pm = Math.min(100, s.mine / s.prov * 100), po = Math.min(100 - pm, s.others / s.prov * 100);
-    meters += `<div class="meter ${st} sh-${share}">
-      <div class="line"><span class="small">All agents${tag('prov')}</span><span class="small num muted">${fmt(total)} of ${fmt(s.prov)} · ${fmt(p.left)} left</span></div>
-      <div class="bar"><i class="mine" style="width:${pm}%"></i><i class="rest" style="width:${po}%"></i></div>
-      <p class="small muted">This agent ${fmt(s.mine)}, other agents ${fmt(s.others)}</p></div>`;
+    rows += `<span class="who ${both && bind.who === 'prov' ? 'bind' : ''}"><a href="#prov" title="Set in Settings › Providers">All agents</a></span>
+      <div class="meter ${p.st}"><div class="bar" style="background:none">
+        <button class="part fill" style="width:calc(${pm}% - 1px)" data-tt="This agent: ${fmt(s.mine)}" aria-label="This agent spent ${fmt(s.mine)}"></button>
+        <button class="part fill" style="width:calc(${po}% - 1px)" data-tt="Other agents: ${fmt(s.others)}" aria-label="Other agents spent ${fmt(s.others)}"></button>
+        ${p.left > 0 ? `<button class="part track" data-tt="Left: ${fmt(p.left)}" aria-label="${fmt(p.left)} left"></button>` : ''}</div></div>
+      <span class="amt">${fmt(total)} / ${fmt(s.prov)}</span>`;
   }
-  let state = '';
-  if (bind && bind.left === 0) state = `<p class="help t-reached">Limit reached. This agent's calls on Anthropic stop until 02:00 your time.</p>`;
-  else if (bind && ((bind.who === 'agent' && stateOf(s.mine, s.agent) === 'warn') || (bind.who === 'prov' && stateOf(total, s.prov) === 'warn'))) state = `<p class="help t-warn">Close to the limit.</p>`;
   const r = document.getElementById('ownr').checked, w = document.getElementById('own').checked;
-  const own = r ? `<div class="info reached">Your spend limit (all agents) is reached. Paid calls of all your agents stop until 02:00 your time.</div>`
-            : w ? `<div class="info warn">Your spend limit (all agents) has $0.30 left today, less than this provider's limits.</div>` : '';
-  const link = p ? `<p class="small muted">Your limit for all agents is set in <a class="link" href="#prov">Settings › Providers</a>.</p>`
-                 : `<p class="small muted"><a class="link" href="#prov">Set a limit for all agents</a> in Settings › Providers.</p>`;
+  const own = r ? `<p class="notice reached">Your spend limit (all agents) is reached until 02:00.</p>`
+            : w ? `<p class="notice warn">Your spend limit (all agents): $0.30 left</p>` : '';
 
   document.getElementById('vA').innerHTML = `
     <div style="display:flex;gap:12px;align-items:center;margin-bottom:12px">
@@ -326,13 +347,16 @@ function render() {
       <div style="flex:1"><div class="strong">Anthropic</div><div class="small muted">supports: Claude Code · Pi</div></div>
       <div class="switch" aria-hidden="true"></div></div>
     <div class="divider stack">
-      <div class="row-head"><p class="title">Daily limit <span class="tip" tabindex="0" data-tip="What this agent may still spend on this provider today: the smaller of what its own limit and your limit for all agents have left.">?</span></p>
-        <button class="btn">${a ? 'Change' : 'Set a limit'}</button></div>
-      ${head}
-      ${meters ? `<div class="stack" style="gap:14px">${meters}</div>` : ''}
-      ${state}${own}${link}
-      <p class="small muted">Resets at 02:00 your time.</p>
+      <div class="row-head"><p class="title">Daily limit <span class="tip" tabindex="0" data-tip="What this agent can still spend on this provider today: the smaller of what its limits have left. Resets at 02:00 your time.">?</span></p><button class="btn">${a ? 'Change' : 'Set a limit'}</button></div>
+      ${sum}
+      ${rows ? `<div class="rows">${rows}</div>` : ''}
+      ${own}
     </div>`;
+  // track tint per meter
+  document.querySelectorAll('#vA .meter .bar').forEach((bar) => {
+    const st = bar.parentElement.classList.contains('reached') ? 'var(--danger-light)' : bar.parentElement.classList.contains('warn') ? 'var(--warning-light)' : 'var(--accent-light)';
+    bar.querySelectorAll('.part.track').forEach((t) => t.style.background = st);
+  });
 }
 function wire(id, key, set) {
   document.querySelectorAll(`#${id} button`).forEach((b) => b.addEventListener('click', () => {
@@ -342,7 +366,6 @@ function wire(id, key, set) {
   }));
 }
 wire('ctl-st', 'st', (v) => cur = v);
-wire('ctl-sh', 'sh', (v) => share = v);
 ['own', 'ownr'].forEach((id) => document.getElementById(id).addEventListener('change', render));
 document.getElementById('dark').addEventListener('change', (e) => document.querySelectorAll('.themed').forEach((f) => f.classList.toggle('dark', e.target.checked)));
 document.getElementById('ink').addEventListener('change', (e) => document.querySelectorAll('.themed').forEach((f) => f.classList.toggle('ink', e.target.checked)));

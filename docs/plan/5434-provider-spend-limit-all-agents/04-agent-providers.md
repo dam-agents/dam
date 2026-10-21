@@ -6,7 +6,7 @@
 ## Context
 
 On the agent's Providers page, each provider shows what this agent may still spend on it today and
-every limit behind that figure ([`mockup.html`](./mockup.html), section 3, variant A, "gap" style).
+every limit behind that figure ([`mockup.html`](./mockup.html), section 3, trimmed).
 The limit dialog says which limit stops first before saving, and the agent's Usage card reads the
 same server answer instead of computing it in the browser.
 
@@ -17,31 +17,32 @@ Apply **/react-ui-engineering**.
 1. **Provider limit block** — rework `packages/ui/src/modules/spend/components/connection-spend-limit.tsx`.
    Read the agent's `binding` row for this Connection from `useAgentSpendStatus(agentId)`, the
    agent's `connection` limit and the owner's `owner-connection` limit from `status.limits`.
-   - Title "Daily limit" + help tip ("What this agent may still spend on this provider today: the
-     smaller of what its own limit and your limit for all agents have left."), the existing
-     `SpendLimitButton` for the agent's own limit.
-   - **Headline** (`text-[15px] font-semibold`): "‹left› left today", "Nothing left today" in danger
-     when 0, or "‹spent› spent today · No limit" when no row. Under it, muted: "This agent's limit
-     stops it first." / "Your ‹name› limit for all agents stops it first." (both set) / "…applies."
-     (one set).
-   - **One meter per limit**, stacked (`gap-3.5`): label line "This agent" / "All agents", with
-     " · stops first" (`font-medium`) on the binding one when both exist; right side
-     "‹spent› of ‹limit› · ‹left› left". Bar: the 03 meter track.
-   - **"All agents" bar with the gap**: two segments in the state's fill, this agent's spend then
-     the other agents', separated by a 2 px gap (`gap-0.5` on the flex track). Under it, muted
-     small: "This agent ‹x›, other agents ‹y›". This agent's spend is
-     `status.spentByConnection`; all agents' is `status.ownerSpentByConnection`.
-   - **State line once**, below the meters: "Close to the limit." / "Limit reached. This agent's
-     calls on ‹name› stop until ‹time› your time.", from the binding limit's state.
+   The card is trimmed to the minimum text; details live in tooltips.
+   - Title "Daily limit" + help tip ("What this agent can still spend on this provider today: the
+     smaller of what its limits have left. Resets at ‹time› your time."). The reset time lives only
+     here — no reset line. The existing `SpendLimitButton` for the agent's own limit.
+   - **Summary, one line** (`flex items-baseline gap-2`): the figure in `text-[15px] font-semibold`
+     — "‹left› left today", or "Nothing left today" in danger — then, only when not ok, `·` and the
+     state inline in its colour: "Close to the limit" / "Stopped until ‹time›". With no limit:
+     "‹spent› today · No limit". When the owner has no all-agents limit on this Connection, a
+     right-aligned small `text-accent` link "Set for all agents" (`navigateToSettings("providers")`).
+     No "stops it first" sentence, no separate state line.
+   - **One row per limit**, a 3-column grid (label · bar · amount, `gap-x-3 gap-y-2.5`): label
+     "This agent" / "All agents" in small muted text; when both limits exist the binding one is
+     `text-foreground font-semibold`. Amount "‹spent› / ‹limit›" small, muted, tabular. "Left"
+     shows only in the summary. "All agents" is itself the link to Settings › Providers, with a
+     tooltip "Set in Settings › Providers" — no link line.
+   - **Interactive bar parts**: every part of a bar is a focusable element with a tooltip (the
+     existing `Tooltip` component, as `budgets/components/pool-bar.tsx` does per segment): "This
+     agent: ‹x›", "Other agents: ‹y›", and the empty track "Left: ‹z›". The shared bar is two
+     segments in the state's fill split by a 2 px gap. No "This agent ‹x›, other agents ‹y›" text.
+     This agent's spend is `status.spentByConnection`; all agents' is `status.ownerSpentByConnection`.
    - **Owner-wide dollars** (dollar Connections only): when the binding row of `connectionId: null`
-     names `owner` or the ceiling and its state is warn/reached, a tinted message (`bg-warning/10
-     text-warning-fg` or `bg-danger/10 text-danger`, `rounded-md px-2.5 py-2`): "Your spend limit
-     (all agents) has ‹x› left today, less than this provider's limits." / "…is reached. Paid calls
-     of all your agents stop until ‹time› your time." Same for the ceiling with its name. Never a bar.
-   - Link line: "Your limit for all agents is set in Settings › Providers." or, without one,
-     "Set a limit for all agents in Settings › Providers." (`Button variant="link"`,
-     `navigateToSettings("providers")`). Reset line last.
-   Split it into small components in `spend/components/` (headline, `LimitRowMeter`,
+     names `owner` or the ceiling and its state is warn/reached, one short tinted line
+     (`bg-warning/10 text-warning-fg` or `bg-danger/10 text-danger`, `rounded-md px-2.5 py-1.5
+     text-xs`): "Your spend limit (all agents): ‹x› left" / "Your spend limit (all agents) is reached
+     until ‹time›." Same for the ceiling with its name. Never a bar.
+   Split it into small components in `spend/components/` (`LimitSummary`, `LimitRowMeter`,
    `SharedLimitBar`, `OwnerWideNotice`) per **/react-ui-engineering**; keep copy in `lib/copy.ts`.
 2. **Dialog line** — `components/spend-limit-dialog.tsx`: take an optional `compare` prop
    `{ spentMicros, otherLeftMicros, otherName } | null`. Under the field, show "‹spent› spent
@@ -61,8 +62,11 @@ Apply **/react-ui-engineering**.
 
 - [ ] Each of the six mockup states renders as in the mockup: both limits with either one binding,
       only the all-agents one, only the agent's, all-agents reached, no limits.
-- [ ] The "All agents" bar is one colour with a 2 px gap at this agent's part, and its figures
-      match `ownerSpentByConnection` and `spentByConnection`.
+- [ ] The "All agents" bar is one colour with a 2 px gap at this agent's part; each part and the
+      empty track show a tooltip on hover and keyboard focus, with figures matching
+      `spentByConnection` and `ownerSpentByConnection`.
+- [ ] The card has no reset line, no "stops first" sentence and no split line; the state sits
+      inline in the summary.
 - [ ] The owner-wide notice shows only on dollar Connections, only when close or reached.
 - [ ] The dialog's line updates while typing and never blocks Save.
 - [ ] The agent's Usage card names the same stopping limit as `dam spend status <agent>`.
