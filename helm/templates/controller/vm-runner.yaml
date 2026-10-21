@@ -64,31 +64,4 @@ description: "The VM runner of one owner: every machine that owner has runs as a
 ---
 {{ include "platform.sccRoleBinding" (dict "root" $ "namespace" $.Values.agentNamespace "name" $name "component" "vm-runner" "scc" .) }}
 {{- end }}
-{{- if .Values.openshift.scc.anyuidCapNet.enabled }}
----
-{{- /*
-The chart's own SCC grants what a runner adds: run as uid 0 and add
-DAC_OVERRIDE, with no privileged container. Custom SCCs get no auto-generated
-ClusterRole, so this binds the one agent-scc.yaml renders. It refuses the
-hostPath of the node image cache mounts, so every runner also needs
-`runner.scc`, which the chart requires on OpenShift; admission picks the SCC
-that admits the pod, preferring the narrower.
-*/}}
-apiVersion: rbac.authorization.k8s.io/v1
-kind: RoleBinding
-metadata:
-  name: {{ $name }}-anyuid-cap-net
-  namespace: {{ .Values.agentNamespace }}
-  labels:
-    {{- include "platform.labels" . | nindent 4 }}
-    app.kubernetes.io/component: vm-runner
-roleRef:
-  apiGroup: rbac.authorization.k8s.io
-  kind: ClusterRole
-  name: {{ include "platform.fullname" . }}-anyuid-cap-net-use
-subjects:
-  - kind: ServiceAccount
-    name: {{ $name }}
-    namespace: {{ .Values.agentNamespace }}
-{{- end }}
 {{- end }}

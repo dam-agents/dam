@@ -253,17 +253,15 @@ virtualization:
     # startup when no schedulable node matching `nodeSelector` advertises it.
     devices: {}
     # OpenShift: name of a *built-in* SCC to bind to the runner's
-    # ServiceAccount. Usually unnecessary — when `openshift.scc.anyuidCapNet`
-    # is on, the chart binds its own SCC, which grants exactly what the
-    # runner needs and nothing else: uid 0 and DAC_OVERRIDE, so its VMMs can
-    # read the image files a guest is served even where the image keeps them
-    # from root. The runner drops every other capability, cannot escalate,
-    # and runs under the runtime/default seccomp profile. That SCC refuses
-    # the hostPath of the node image cache and the release directory, so on
-    # OpenShift this is
-    # required. The same SCC also admits the node image cache, which sets its
-    # own SELinux type (see `imageCache`), so it must have
-    # `seLinuxContext.type: RunAsAny`. Empty = no extra binding rendered.
+    # ServiceAccount — the SCC that admits a runner, since the chart's own
+    # agent SCC refuses the hostPath of the node image cache and of the
+    # release directory, which every runner mounts. Required whenever
+    # `openshift.scc.anyuidCapNet` is on.
+    # It must allow DAC_OVERRIDE, the one capability a runner adds (so its
+    # VMMs read image files the image keeps from root), and it also admits
+    # the node image cache, which sets its own SELinux type (see `imageCache`),
+    # so it must have `seLinuxContext.type: RunAsAny`. Empty = no extra binding
+    # rendered.
     scc: ""
     # One claim, two directories with two lifetimes: `disks/` holds the
     # machine disks — every vm agent's storage — and `machines/` the
@@ -666,8 +664,10 @@ openshift:
     # the built-in `anyuid` SCC (runAsUser: RunAsAny so the iptablesInit
     # init container can run as root; the agent container itself stays at
     # image USER 65532), with NET_ADMIN + NET_RAW added to
-    # allowedCapabilities, and DAC_OVERRIDE, which only the VM runner requests.
-    # No agent workload can take it: agent containers are
+    # allowedCapabilities. No VM workload runs under it — a runner refuses
+    # it, since it mounts a hostPath this SCC does not admit, and runs under
+    # the one `virtualization.runner.scc` names. No agent workload can take
+    # the two capabilities either: agent containers are
     # pinned to `capabilities.drop: [ALL]` with runAsNonRoot, the
     # controller refuses a configuration without that block, and an agent
     # ConfigMap cannot set a security context. Renders a cluster-scoped SCC + RoleBinding to
