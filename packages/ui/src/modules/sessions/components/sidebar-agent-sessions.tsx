@@ -55,7 +55,8 @@ interface Props {
 /**
  * UNIT_BOUNDARY_DESCRIPTION: An Agent's Sessions under its row in the sidebar,
  * five at first and five more per View more, which then moves focus to the
- * first newly shown Session. An Agent that is not open in the page previews
+ * first newly shown Session, also once a provisional list gives way to the
+ * Agent's own list or a Retry loads the page that failed. An Agent that is not open in the page previews
  * its Sessions from the attention record and reads its own list only after
  * View more; its own list loads a further page only when the loaded rows run
  * out.
@@ -256,13 +257,19 @@ function AgentSessionList({
   useEffect(() => {
     if (!focusAfter || list.loading || isFetchingNextPage) return;
     const id = visibleIds.find((sessionId) => !focusAfter.has(sessionId));
-    if (id)
+    const focused = document.activeElement;
+    const unclaimed =
+      !focused ||
+      focused === document.body ||
+      !!rootRef.current?.contains(focused);
+    if (id && unclaimed)
       rootRef.current
         ?.querySelector<HTMLElement>(
           `[data-session-id="${CSS.escape(id)}"] [data-row-main]`,
         )
         ?.focus();
-    onFocusAfterChange(null);
+    const pending = list.provisional || list.failed || fetchNextPageFailed;
+    if (id || !unclaimed || !pending) onFocusAfterChange(null);
   });
 
   return (

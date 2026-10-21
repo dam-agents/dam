@@ -18,7 +18,9 @@ use crate::api::{
 use crate::cache::{self, pinned_digest};
 use crate::capability::Verified;
 use crate::capacity::Capacity;
-use crate::console::{home_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER};
+use crate::console::{
+    home_full, kernel_since, room_full, with_console, SLOW_BOOT, SLOW_BOOT_AFTER,
+};
 use crate::fetch::{failure_reason, seed_missing, unusable};
 use crate::forward::{healthy, Forwarder, Listen, LOOPBACK_OFFSET};
 use crate::imagecache::{Images, Resolved, ROOTFS_DIR};
@@ -141,6 +143,10 @@ struct MachineEntry {
     acting_mib: i32,
     resident_mib: Option<i32>,
     resident_stale: bool,
+    // UNIT_BOUNDARY_DESCRIPTION: whether the guest's last mark says its agent has no room to write (guest::GUEST_FULL) rather than room it may still write into or room back (guest::GUEST_NEARLY_FULL, guest::GUEST_ROOM), how much of the guest's kernel log the prober has read looking for those marks, and how often that log has been cut under it. A boot starts the first two again, the log holding one boot; the count of cuts is what tells a probe that started before one that the offset it read to is the previous log's.
+    guest_full: bool,
+    kernel_read: u64,
+    kernel_cuts: u64,
     warming_since: Option<Instant>,
     cpu: Option<(Instant, u64)>,
     cpu_milli: u64,
@@ -1840,6 +1846,8 @@ impl Server {
     ) -> anyhow::Result<()> {
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             entry.warming_since = Some(Instant::now());
+            entry.guest_full = false;
+            entry.kernel_read = 0;
             entry.boot = Some(Boot {
                 at: Instant::now(),
                 action,
@@ -2045,11 +2053,18 @@ impl Server {
             .into_iter()
             .map(|id| {
                 let status = self.status(&id);
-                let cpu_milli = locked(&self.machines)
-                    .entries
-                    .get(&id)
-                    .filter(|e| e.resident_mib.is_some() && status.state == STATE_RUNNING)
-                    .map_or(0, |e| e.cpu_milli);
+                // UNIT_BOUNDARY_DESCRIPTION: only a machine that runs carries a full home, since it means the agent's writes are failing now, and the app shows it beside that machine's own files.
+                let (cpu_milli, home_full) = {
+                    let machines = locked(&self.machines);
+                    let entry = machines.entries.get(&id);
+                    let cpu_milli = entry
+                        .filter(|e| e.resident_mib.is_some() && status.state == STATE_RUNNING)
+                        .map_or(0, |e| e.cpu_milli);
+                    (
+                        cpu_milli,
+                        status.state == STATE_RUNNING && entry.is_some_and(|e| e.guest_full),
+                    )
+                };
                 MachineUsage {
                     disk_used_bytes: self.runtime.disk_used_bytes(&id).unwrap_or(0),
                     cpu_milli,
@@ -2060,6 +2075,7 @@ impl Server {
                     state: status.state,
                     used_mib: status.used_mib,
                     disk_gib: status.disk_gib,
+                    home_full,
                 }
             })
             .collect();
@@ -2569,6 +2585,9 @@ impl Server {
             .flatten()
             .map(|usec| (Instant::now(), usec));
         self.record(id, seen, Some(looked));
+        if running {
+            self.note_guest_room(id);
+        }
         if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
             if !running && !unread {
                 entry.resident_mib = None;
@@ -2603,6 +2622,50 @@ impl Server {
             .and_then(|e| e.desired.clone());
         if let Some(spec) = desired {
             let _ = self.put(id, spec);
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether a running guest's agent has room to write, from the marks platform-init prints on the console (guest::GUEST_FULL, guest::GUEST_NEARLY_FULL, guest::GUEST_ROOM): the room its storage grant leaves it, so a guest whose agent filled its disk says so while it keeps running, which neither a boot that failed nor an entrypoint that exited can. The kernel log is read from where the last probe stopped, since the VMM logs a line for every connection it relays and a mark from a minute ago is not at its end; a boot starts the read again. The file is read outside the lock, so a boot that starts, or a cut that rewrites the log, while this probe runs would make its offset and its mark the previous log's: the write is dropped unless the machine is still the boot and the log still the cut the read began on (read_current).
+    fn note_guest_room(&self, id: &str) {
+        let Some(path) = self.runtime.kernel_log(id) else {
+            return;
+        };
+        let (from, boot, cuts) =
+            locked(&self.machines)
+                .entries
+                .get(id)
+                .map_or((0, None, 0), |entry| {
+                    (
+                        entry.kernel_read,
+                        entry.boot.as_ref().map(|b| b.at),
+                        entry.kernel_cuts,
+                    )
+                });
+        let (read, text) = kernel_since(&path, from);
+        let mark = room_full(&text);
+        let mut machines = locked(&self.machines);
+        let Some(entry) = machines.entries.get_mut(id) else {
+            return;
+        };
+        if !Self::read_current(entry, boot, cuts) {
+            return;
+        }
+        entry.kernel_read = read;
+        if let Some(full) = mark {
+            entry.guest_full = full;
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: whether a probe's read of the kernel log still describes the log the machine has: a boot that started meanwhile, or a cut (forget_kernel_read) that rewrote the file, moves where its lines begin, so an offset read under one and stored under another begins in the middle of them, and the mark it carries is the one the guest had before the newest lines the cut kept.
+    fn read_current(entry: &MachineEntry, boot: Option<Instant>, cuts: u64) -> bool {
+        entry.boot.as_ref().map(|b| b.at) == boot && entry.kernel_cuts == cuts
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: sends the next probe back to the start of the machine's kernel log, for a trim that rewrote it: the retained tail begins at no offset the last read counted from, so reading on from there would begin in the middle of the lines the trim kept. A log that got shorter is read whole anyway, which leaves only a cut of a log the probe had read less of than the tail it keeps. The cut is counted as well, so a probe that began before it drops what it read and writes neither the offset nor the mark: those describe the log as it was, and the next probe reads the log the cut left from its start.
+    pub fn forget_kernel_read(&self, id: &str) {
+        if let Some(entry) = locked(&self.machines).entries.get_mut(id) {
+            entry.kernel_read = 0;
+            entry.kernel_cuts = entry.kernel_cuts.wrapping_add(1);
         }
     }
 
@@ -3104,5 +3167,5 @@ impl Drop for Settle<'_> {
 }
 
 #[cfg(test)]
-#[path = "server_tests.rs"]
+#[path = "server_tests/mod.rs"]
 mod tests;

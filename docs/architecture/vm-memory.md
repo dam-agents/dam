@@ -1,6 +1,6 @@
 # VM memory
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 An owner's machines share the memory of their [runner](vm-runner.md), and it is counted by what they use rather than by their sizes.
 That memory is the owner's whole pool for vm agents, which have no size of their own and stand outside the [budget](budgets.md)'s Ceiling.
@@ -154,10 +154,13 @@ The machine it picked restarts with a reason of its own, `MachineOOMKilled` ([vm
 The pressure signal makes that rarer; it cannot rule it out.
 A cgroup whose `memory.oom.group` is 1 kills every process in the pod for one process's memory, and no score of a VMM's own prevents that.
 The node's kubelet writes it: it stays 0 while the kubelet's `singleProcessOOMKill` is on, which is its default, so a cluster that turns that off groups the kills of every pod it admits, and a runner that reads it set warns on its console, reports it as a gauge of its own, and raises a critical alert.
-When the killed process is the runner's own container, the owner is told which agents it took down: every agent that was already running names the kill in its status for the ten minutes that follow it, whatever reason the restarted runner reports about its machine meanwhile — a refused start for room, a reclaim, or a boot the restart broke — since all of them describe that one taking down; the owner sees one notice naming them, which asks them to disable agents it is not using.
+When the killed process is the runner's own container, the owner is told which agents it took down: every agent that was running when the kill landed names it, whatever reason the restarted runner reports about its machine meanwhile — a refused start for room, a reclaim, or a boot the restart broke — since all of them describe that one taking down.
+The kill and its time are the runner pod's own record of its container, the kernel's finished time of that termination, and never a reconcile, so the ten minutes it explains are read from the kill: a repeated reconcile writes the same time and the update is dropped as unchanged, which is what keeps one kill to one notice.
+Whether an agent was running then is read from its own persisted `AgentPodReady`: one published at or after the kill was still up through it, and one published before it counts only while it reads `True`.
+An agent already asleep, or already refused room, before the kill held no memory when it landed, so it carries nothing.
 That reason goes on `AgentPodReady`, the condition the notice, the alert and the history read, while `Ready` keeps the consequence the agent wears now: a parked agent still reads `OverBudget`, which the budget surfaces and the parked retry read, and an agent a reclaim put to sleep still reads `Hibernated`.
-An agent that is up again, one asleep when the kill happened, one woken after the kill, and one that has published no readiness yet carry nothing, and nothing on the agents records the kill once the ten minutes are over.
-An agent that a reclaim put to sleep after the kill was running when the kill landed — the reclaim is a consequence of it — so it names the kill for the same ten minutes as a refused start does.
-An agent that answers during those ten minutes ends the episode for itself, as long as the runner pod still carries that kill in its last termination, which is what dates the answer against it: a seccomp kill or a boot that fails after that answer is its own, not the kill's again.
-A restart after the kill replaces that termination, so an answer no longer dates against anything, and the episode runs out its ten minutes.
+A reason the runner gives for one machine alone — `MachineOOMKilled`, `MachineSeccompKilled`, a boot that failed, a full disk — is finer than the pod's kill and outranks it, since the pod says the whole runner died at once and is no account of what that machine did afterwards.
+An agent a reclaim put to sleep after the kill was running when the kill landed — the reclaim is a consequence of it — so it names the kill for those ten minutes.
+The episode is the ten minutes after the kill, and the condition the kill wrote dates it, so an agent nothing else reconciles releases the reason when the episode ends, and a controller restart neither loses the episode nor announces it again.
+A second kill of the runner opens its own episode, since the pod's record of it is a different termination.
 The owner also gets one Slack direct message naming those agents, the [resource alert](budgets.md#resource-alerts) for the kill.

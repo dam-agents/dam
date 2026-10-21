@@ -43,7 +43,7 @@ const env = vi.hoisted(() => {
 import { installBrowserHistory } from "../../modules/platform/hooks/use-browser-history.js";
 import { useStore } from "../../store.js";
 
-// TEST_OVERVIEW: Browser Back or Forward out of a chat closes the docked artifact. With an unsaved edit it asks first: "Keep editing" puts the left URL and its history state back, "Discard" follows the browser. The retired /artifacts path opens the Artifacts tab.
+// TEST_OVERVIEW: Browser Back or Forward out of a chat closes the docked artifact. With an unsaved edit it asks first: "Keep editing" puts the left URL and its history state back, "Discard" follows the browser. The /artifacts path opens the Artifacts page.
 
 const settle = () => new Promise((resolve) => setTimeout(resolve));
 

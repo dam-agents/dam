@@ -397,13 +397,16 @@ func hibernateAgentPair(ctx context.Context, kube kubernetes.Interface, dyn dyna
 }
 
 func publishHibernated(ctx context.Context, dyn dynamic.Interface, namespace, name string) error {
-	return updateAgentStatus(ctx, dyn, namespace, name, func(s *apiv1.AgentStatus) {
-		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
-		setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
-		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
-		s.AgentPodRestarts = 0
-		s.AgentPodRestartReason = ""
-	})
+	return updateAgentStatus(ctx, dyn, namespace, name, hibernatedStatus)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the conditions a hibernated agent carries, for the reconcile that writes them beside the kill in one status update.
+func hibernatedStatus(s *apiv1.AgentStatus) {
+	setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
+	setStatusCondition(s, apiv1.ConditionGatewayPodReady, false, "PodReady", apiv1.ReasonHibernated, "", 0)
+	setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", apiv1.ReasonHibernated, "", 0)
+	s.AgentPodRestarts = 0
+	s.AgentPodRestartReason = ""
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a machine that cannot be stopped now — its runner is restarting or unreachable — does not keep the rest of the pair up. The gateway is scaled down anyway, and the agent's own next reconcile, which asks for the machine stopped because the agent should not run, stops it once the runner answers.

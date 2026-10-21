@@ -1,6 +1,7 @@
 import type { Result } from "../../result.js";
 
-export type SshDomainError = { kind: "Invalid"; reason: string };
+export type SshDomainError =
+  { kind: "Invalid"; reason: string } | { kind: "Unavailable"; reason: string };
 
 export interface SshService {
   authorizeKey: (

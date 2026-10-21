@@ -96,8 +96,8 @@ export function SidebarAgentRow({
               <span
                 aria-hidden
                 className={cn(
-                  "flex size-4 shrink-0 items-center justify-center group-hover/agent:hidden",
-                  selected && "hidden",
+                  "flex size-4 shrink-0 items-center justify-center",
+                  !selected && "group-hover/agent:hidden",
                 )}
               >
                 <span className="size-2 rounded-full bg-accent" />
