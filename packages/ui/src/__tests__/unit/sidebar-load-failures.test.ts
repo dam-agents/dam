@@ -108,7 +108,7 @@ beforeEach(() => {
   };
 });
 
-// TEST_SCENARIO: the first page of an awake Agent's list failed after its retries, with nothing cached; the list must offer a retry and must not claim the Agent has no Sessions.
+// TEST_SCENARIO: the first page of an awake Agent's list failed after its retries, with nothing cached; the list must offer a retry and must not claim the Agent has no Sessions. Once it loads empty, it shows no empty-state text at all.
 it("offers a retry for a failed list, not an empty one", () => {
   const html = renderToStaticMarkup(
     createElement(AgentSessionList, { agentId: "a" }),
@@ -120,7 +120,7 @@ it("offers a retry for a failed list, not an empty one", () => {
   list.failed = false;
   expect(
     renderToStaticMarkup(createElement(AgentSessionList, { agentId: "a" })),
-  ).toContain("No sessions yet.");
+  ).not.toContain("<p");
 });
 
 // TEST_SCENARIO: an Agent that is starting is not operable yet, so its list still counts as loading, but its first page already failed; the list must show the retry alone, not a loading skeleton above it, and must not report itself busy.
@@ -255,4 +255,23 @@ it("offers no later-page retry while the Agent cannot answer", () => {
   expect(
     renderToStaticMarkup(createElement(AgentSessionList, { agentId: "a" })),
   ).toContain('data-testid="sidebar-agent-sessions-more-failed"');
+});
+
+// TEST_SCENARIO: an Agent's list offers its New session row only once it is known to hold no Session: not while its first page failed or is loading, and not while a further page may still hold one; otherwise only the Agent row's plus starts a session.
+it("offers the New session row only for a list known to be empty", () => {
+  const render = () =>
+    renderToStaticMarkup(
+      createElement(AgentSessionList, {
+        agentId: "a",
+        newSessionRow: createElement("i", { "data-new-session": true }),
+      }),
+    );
+  expect(render()).not.toContain("data-new-session");
+  list.failed = false;
+  expect(render()).toContain("data-new-session");
+  list.loading = true;
+  expect(render()).not.toContain("data-new-session");
+  list.loading = false;
+  list.nextFailed = true;
+  expect(render()).not.toContain("data-new-session");
 });

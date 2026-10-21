@@ -20,11 +20,13 @@ features:
     home_tab_enabled: false
     messages_tab_enabled: true
     messages_tab_read_only_enabled: false
-  # The Agents & AI Apps feature. The working status on a turn
-  # (assistant.threads.setStatus) needs this feature and the assistant:write
-  # scope requested below — declaring one without the other leaves it dark.
-  assistant_view:
-    assistant_description: >
+  # Slack's agent messaging. The working status on a turn
+  # (agents.sessions.setStatus) and its Stop button need this feature, and it
+  # grants the assistant:write scope requested below. It replaces the older
+  # assistant_view, which Slack refuses beside it; the switch on an existing
+  # app is one-way (docs/configuration.md).
+  agent_view:
+    agent_description: >
       Chat with your agents, start runs, and follow their progress without
       leaving Slack.
   bot_user:
@@ -53,9 +55,10 @@ oauth_config:
       # can need (chat.postEphemeral), and deleting an agent's post when its
       # owner runs the delete command (chat.delete).
       - chat:write
-      # The working status on a turn (assistant.threads.setStatus). Listed here
-      # as well as implied by the assistant_view feature above — Slack's own
-      # assistant templates request it explicitly beside that feature.
+      # The working status on a turn (agents.sessions.setStatus, and the
+      # assistant.threads.setStatus it falls back to on an app not yet moved to
+      # agent_view). Listed here as well as implied by the agent_view feature
+      # above — Slack's own templates request it explicitly beside that feature.
       - assistant:write
       # The agent-driven `react` tool (reactions.add) — the agent's own emoji
       # reactions, including the contextual ack it opens ambient turns with.

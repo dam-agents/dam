@@ -34,6 +34,7 @@ export {
   MIN_INVOCATION_TTL_MS,
   MAX_INVOCATION_TTL_MS,
 } from "./modules/invocations/schemas.js";
+export { delegationTitle } from "./modules/invocations/delegation-title.js";
 export type {
   SpawnInvocationRequest,
   SpawnInvocationResponse,
@@ -124,6 +125,12 @@ export {
 export { toAgentView } from "./modules/agents/view.js";
 export { storageFullSchema } from "./modules/budgets/schemas.js";
 export type {
+  ProviderOutage,
+  ProviderOutageReason,
+  ProviderStatusService,
+  ProviderStatusView,
+} from "./modules/provider-status/types.js";
+export type {
   BudgetReserved,
   BudgetStorageFull,
   BudgetVmUsage,
@@ -138,6 +145,8 @@ export {
   SPEND_LIMIT_MAX_MICROS,
   SPEND_SESSIONS_DEFAULT_LIMIT,
   SPEND_SESSIONS_MAX,
+  SPEND_SUB_AGENTS_MAX,
+  SPEND_SUB_AGENTS_PAGE,
   SPEND_TURNS_MAX_SPAN_DAYS,
   SPEND_TURNS_MAX_WINDOWS,
   spendBreakdownInputSchema,
@@ -151,6 +160,7 @@ export {
   spendSessionsInputSchema,
   spendSetLimitInputSchema,
   spendStatusInputSchema,
+  spendSubAgentsInputSchema,
   spendTurnsInputSchema,
   spendUnitSchema,
 } from "./modules/spend/schemas.js";
@@ -190,6 +200,8 @@ export type {
   SpendSessions,
   SpendSessionsInput,
   SpendSetLimitInput,
+  SpendSubAgents,
+  SpendSubAgentsInput,
   SubAgentSpendRow,
   SpendStatus,
   SpendStatusInput,

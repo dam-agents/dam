@@ -820,6 +820,12 @@ export function createLeaseRouter(deps: LeaseRouterDeps): LeaseRouter {
 
     isSessionRunning,
 
+    toolCallsOpen: (sessionId) =>
+      leaseOfSession(sessionId)?.runtime.toolCallsOpen(sessionId) ?? false,
+
+    harnessBusy: (sessionId) =>
+      leaseOfSession(sessionId)?.runtime.harnessBusy(sessionId) ?? false,
+
     sessionChoice: (sessionId) => sessionChoice(sessionId, false),
     modelMissing: (sessionId) => missesModel(sessionChoice(sessionId, false)),
 

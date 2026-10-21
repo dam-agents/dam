@@ -137,8 +137,9 @@ import {
   ContinuedFromUnavailable,
 } from "../components/continued-from-prelude.js";
 import { ModelIndicator } from "../components/model-indicator.js";
-import { NewSessionLauncher } from "../components/new-session-launcher.js";
+import { NewSessionOptions } from "../components/new-session-launcher.js";
 import { PermissionStatusLine } from "../components/permission-prompt.js";
+import { ProviderStatusLine } from "../components/provider-status-line.js";
 import { QueuedPrompts } from "../components/queued-prompts.js";
 import {
   RewritableMessage,
@@ -166,6 +167,7 @@ import { useHasModelChoices } from "../hooks/use-has-model-choices.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
 import { useOpenInitializationSession } from "../hooks/use-open-initialization-session.js";
 import { useHasPendingPermission } from "../hooks/use-pending-permissions.js";
+import { useSessionTemplateId } from "../hooks/use-session-template-id.js";
 import {
   pushSessionPath,
   useSessionUrlSync,
@@ -330,6 +332,7 @@ export function ChatView() {
   const harnessStatusQuery = useHarnessConfigStatus(selectedAgent);
   const harnessStatus = harnessStatusQuery.data;
   const { data: currentSession } = useAgentSession(selectedAgent, sessionId);
+  const sessionTemplateId = useSessionTemplateId(selectedAgent, sessionId);
   const carried = (selectedAgent && harnessStatus?.harnesses) || [];
   const sessionHarness =
     currentSession?.harness ??
@@ -924,10 +927,19 @@ export function ChatView() {
                             avatar={agentView.avatar}
                             size={96}
                             mood={avatarMood(agentDisplay?.state, agentView)}
-                            className="transition-opacity group-hover:opacity-80"
+                            className={cn(
+                              !newLayout &&
+                                "transition-opacity group-hover:opacity-80",
+                            )}
                           />
                         )}
-                        <span className="mt-3 text-xl font-bold text-foreground underline-offset-4 group-hover:underline">
+                        <span
+                          className={cn(
+                            "mt-3 text-xl font-bold text-foreground",
+                            !newLayout &&
+                              "underline-offset-4 group-hover:underline",
+                          )}
+                        >
                           {selectedAgentName}
                         </span>
                       </button>
@@ -936,8 +948,9 @@ export function ChatView() {
                       Send a message to begin or open a new session in:
                     </p>
                     {agentView && (
-                      <NewSessionLauncher
+                      <NewSessionOptions
                         agent={agentView}
+                        newLayout={newLayout}
                         onNewTerminal={handleNewTerminal}
                       />
                     )}
@@ -1100,6 +1113,7 @@ export function ChatView() {
                 </p>
               )}
               {!statusLineInThread && <PermissionStatusLine />}
+              <ProviderStatusLine templateId={sessionTemplateId} busy={busy} />
             </ChatColumn>
           </div>
 
@@ -1147,6 +1161,7 @@ export function ChatView() {
                   open={pairPickerOpen}
                   onOpenChange={setPairPickerOpen}
                   onConnectProviders={() => setProvidersModal(true)}
+                  newLayout={newLayout}
                 />
               </ChatColumn>
             </div>

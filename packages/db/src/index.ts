@@ -49,6 +49,7 @@ export {
   resourceAlerts,
   avatarImages,
   spendCalls,
+  spendAgentNames,
   spendDaily,
   spendMetering,
   spendLimits,

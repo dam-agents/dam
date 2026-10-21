@@ -13,6 +13,7 @@ import { useStore } from "../../../store.js";
 import type { ProviderPresetType } from "../../../types.js";
 import { useDeleteConnection } from "../../connections/api/mutations.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { useProviderStatus } from "../../provider-status/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
@@ -36,6 +37,11 @@ export function ProviderSection({
       (flags?.["platform-provider"] &&
         (!onConnected || itemByType.has("platform"))),
   );
+  const { data: status } = useProviderStatus();
+  const degradedTemplate = (templateId: string | undefined) =>
+    !!status &&
+    (status.damSide !== null ||
+      status.outages.some((o) => o.templateId === templateId));
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteConnection = useDeleteConnection();
   const recheck = useRecheckProviderKeys();
@@ -88,6 +94,7 @@ export function ProviderSection({
                   key={row.type}
                   type={row.type}
                   connected={!!item}
+                  degraded={!!item && degradedTemplate(item.conn.templateId)}
                   keyCheck={
                     item && !builtIn ? (item.conn.keyCheck ?? null) : undefined
                   }

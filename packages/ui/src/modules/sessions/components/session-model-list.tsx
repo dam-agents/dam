@@ -13,15 +13,15 @@ import {
   modelLabel,
   sameModel,
 } from "../lib/catalog-groups.js";
+import { AwakeModelsGate } from "./awake-models-gate.js";
 
 interface Props {
+  agentId: string;
   groups: readonly ModelGroup[];
   current: string | null;
   loading: boolean;
   waiting?: boolean;
   failed: boolean;
-  operable: boolean;
-  starting?: boolean;
   onRetry: () => void;
   onChoose: (model: string, group: ModelGroup) => void;
   onDisconnect?: (group: ModelGroup) => void;
@@ -41,33 +41,26 @@ const firstListing = (group: ModelGroup, waiting: boolean) =>
  * UNIT_BOUNDARY_DESCRIPTION: every provider the harness accepts, with its
  * listing state said in place rather than a provider silently missing.
  */
-export function SessionModelList({
+export function SessionModelList({ agentId, ...listed }: Props) {
+  return (
+    <AwakeModelsGate agentId={agentId} className="px-1 py-1">
+      <ListedModels {...listed} />
+    </AwakeModelsGate>
+  );
+}
+
+function ListedModels({
   groups,
   current,
   loading,
   waiting = false,
   failed,
-  operable,
-  starting = false,
   onRetry,
   onChoose,
   onDisconnect,
   disconnecting = false,
   harnessName,
-}: Props) {
-  if (!operable)
-    return (
-      <p className="px-1 py-1 text-muted-foreground">
-        {starting ? (
-          <span className="inline-flex items-center gap-1.5">
-            <Spinner size={12} className="text-muted-foreground" />
-            Loading models…
-          </span>
-        ) : (
-          "Start the agent to list models."
-        )}
-      </p>
-    );
+}: Omit<Props, "agentId">) {
   if (groups.length === 0)
     return (
       <p className="px-1 py-1 text-muted-foreground">

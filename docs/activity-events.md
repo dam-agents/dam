@@ -43,6 +43,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ApprovalRequested` | _elsewhere_ | approvals |
 | `ApprovalResolved` | _elsewhere_ | approvals |
 | `SpendLimitsChanged` | _elsewhere_ | spend |
+| `GatewayCallEnded` | _elsewhere_ | spend |
 | `ScheduleCreated` | _elsewhere_ | schedules |
 | `ScheduleUpdated` | _elsewhere_ | schedules |
 | `ScheduleDeleted` | _elsewhere_ | schedules |
@@ -71,6 +72,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `StarterKitOnboarded` | `starter_kit_onboarded` | starter-kits |
 | `IdentityLinked` | _elsewhere_ | channels |
 | `AgentOutOfMemory` | `agent_oom` | agents |
+| `AgentResourceRemoved` | _elsewhere_ | agents |
 | `AvatarUnlocked` | _elsewhere_ | getting-started |
 | `GettingStartedReset` | _elsewhere_ | getting-started |
 

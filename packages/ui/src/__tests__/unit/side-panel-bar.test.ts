@@ -1,7 +1,7 @@
 // TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import {
@@ -9,6 +9,10 @@ import {
   SidePanelBar,
 } from "../../modules/sessions/components/side-panel-bar.js";
 import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
+
+vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
+  useNewLayout: () => true,
+}));
 
 function render(processes?: SidePanelBadge) {
   return renderToStaticMarkup(

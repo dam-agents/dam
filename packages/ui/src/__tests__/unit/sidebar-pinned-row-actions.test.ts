@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A pinned Session in the new layout's sidebar keeps the actions and spend it had in its Agent's own list. A row the owner's attention feed supplies renders through the same tree row, so it shows the Session's cost, offers Export telemetry when telemetry is on, and reads history ahead of a click while its Agent can answer.
+// TEST_OVERVIEW: A pinned Session in the new layout's sidebar, and a Session in its flat all-sessions list, keeps the actions and spend it had in its Agent's own list. A row the owner's attention feed supplies renders through the same tree row, so it shows the Session's cost, offers Export telemetry when telemetry is on, and reads history ahead of a click while its Agent can answer.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -72,13 +72,16 @@ vi.mock("../../modules/sessions/components/session-row.js", () => ({
   },
 }));
 
-const { FeedPinnedRow } =
+const { FeedSessionRow } =
   await import("../../modules/platform/components/sidebar-v2/pinned-rows.js");
+const { TreeSessionRow } =
+  await import("../../modules/platform/components/sidebar-v2/tree-session-row.js");
 
-function renderFeedPin() {
+function renderFeedPin(pinned = true) {
   seen.props.length = 0;
   renderToStaticMarkup(
-    createElement(FeedPinnedRow, {
+    createElement(FeedSessionRow, {
+      pinned,
       item: {
         id: "a:s1",
         at: "2026-10-20T00:00:00Z",
@@ -129,7 +132,7 @@ it("gates export and prefetch the same way as the Agent's list", () => {
   expect(props.cost).toBe(cost);
 });
 
-// TEST_SCENARIO: the Pinned section mixes Sessions of many Agents, so a pinned row leads with its Agent's avatar and the Session's activity dot over it, keeps the harness icon before its title, and keeps the Session's kind icons while its own dot replaces the activity ones.
+// TEST_SCENARIO: the Pinned section mixes Sessions of many Agents, so a pinned row leads with its Agent's avatar and the Session's activity dot over it, shows the harness icon in place of the harness name in its context line, not before its title, and keeps the Session's kind icons while its own dot replaces the activity ones. Its pin mark shows only with the row's actions, on hover or keyboard focus.
 it("leads a pinned row with its Agent's avatar under the activity dot", () => {
   const props = renderFeedPin();
   const leading = renderToStaticMarkup(props.leading as never);
@@ -137,6 +140,44 @@ it("leads a pinned row with its Agent's avatar under the activity dot", () => {
   expect(leading).toMatch(
     /<svg[\s\S]*data-testid="session-activity-dot" data-tone="idle"/,
   );
-  expect(props.titleIcon).toBeTruthy();
+  expect(props.titleIcon).toBeUndefined();
+  const context = renderToStaticMarkup(props.conversation as never);
+  expect(context).toMatch(
+    /^dam · <span[^>]*><span role="img" aria-label="Claude"/,
+  );
+  expect(context).not.toContain("Claude ·");
+  expect(context).toContain("Chat");
   expect(props.activityIndicators).toBe(false);
+  expect(props.quietPin).toBe(true);
+});
+
+// TEST_SCENARIO: grouped as all sessions, the flat list draws each Session with the same row as the Pinned section, its Agent's avatar and name included, but unpinned, so its action offers to pin it.
+it("draws a flat-list row like a pinned row, unpinned", () => {
+  const props = renderFeedPin(false);
+  expect(props.pinned).toBe(false);
+  expect(renderToStaticMarkup(props.conversation as never)).toMatch(/^dam · /);
+});
+
+// TEST_SCENARIO: a Session read in full from its Agent, as an open Agent's list and an off-feed pin read it, can carry the repositories it touched; its sidebar row still stays on two lines, so it draws no repository line, the same as a feed row that has none.
+it("keeps a full-record row with repositories on two lines", () => {
+  seen.props.length = 0;
+  renderToStaticMarkup(
+    createElement(TreeSessionRow, {
+      agentId: "a",
+      session: {
+        agentId: "a",
+        sessionId: "s1",
+        mode: SessionMode.Chat,
+        type: SessionType.Regular,
+        title: "Recent",
+        createdAt: "2026-10-20T00:00:00Z",
+        repositories: [{ name: "dam", path: "/work/dam", branch: "main" }],
+      } as never,
+      state: { active: false, working: false, needsApproval: false },
+      operable: true,
+      pinned: false,
+    }),
+  );
+  expect(seen.props[0]!.repositoryBadges).toBe(false);
+  expect(renderFeedPin().repositoryBadges).toBe(false);
 });

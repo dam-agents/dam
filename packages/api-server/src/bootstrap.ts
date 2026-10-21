@@ -246,6 +246,7 @@ import {
   composeSubAgentOutcomeDelivery,
   createDriverResolutionAdapter,
   createSpawnSessionsAdapter,
+  createInvocationTasksAdapter,
   createInvocationsCleanupHook,
   createPodSessionClient,
   createInvocationSetupFailure,
@@ -268,6 +269,7 @@ import {
   createSpendLimitsCleanupHook,
   listSpendLimitAgentIds,
 } from "./modules/spend/index.js";
+import { composeProviderStatus } from "./modules/provider-status/index.js";
 import {
   createEgressRuleMatchAdapter,
   createEgressRulesCleanupHook,
@@ -284,6 +286,7 @@ import {
   createGrantedConnectionTemplates,
   createProviderEgressScopes,
   listConnectionGrantAgentIds,
+  listConnectionTemplateIds,
   listPlatformConnectionOwners,
 } from "./modules/connections/compose.js";
 import { startAttachFirstProviderSaga } from "./modules/connections/sagas/attach-first-provider.js";
@@ -310,6 +313,7 @@ import {
 } from "./modules/agents/infrastructure/agent-state-cache.js";
 import { createOutOfMemoryWatch } from "./modules/agents/infrastructure/out-of-memory-watch.js";
 import { createReadyWatch } from "./modules/agents/infrastructure/ready-watch.js";
+import { agentRemovalWatch } from "./modules/agents/infrastructure/agent-removal-watch.js";
 import { createTurnAttendance } from "./core/turn-attendance.js";
 import { createSubPseudonymizer } from "./core/sub-pseudonymizer.js";
 import {
@@ -416,6 +420,7 @@ export async function bootstrap() {
     observe: (kind, obj) => {
       outOfMemoryWatch(kind, obj);
       readyWatch(kind, obj);
+      agentRemovalWatch(kind, obj);
     },
   });
   const agentsRepo = createAgentsRepository(k8sClient, agentStateCache);
@@ -1163,6 +1168,16 @@ export async function bootstrap() {
     defaultCeilingMicros: config.spendDefaultUserCeilingMicros,
     brandName: config.brand.name,
     connectionNames: createConnectionNames(db),
+    agentNames: {
+      namesOf: async (ownerSub) =>
+        new Map(
+          (await agentsRepo.list(ownerSub)).map((agent) => [
+            agent.id,
+            agent.name,
+          ]),
+        ),
+    },
+    invocationTasks: createInvocationTasksAdapter(db),
     ownedAgents: {
       anyCreatedBefore: async (ownerSub, at) =>
         (await agentsRepo.list(ownerSub)).some(
@@ -1182,6 +1197,14 @@ export async function bootstrap() {
     "spend-call-rows-retention",
     24 * 60 * 60 * 1000,
     () => spend.callRowsRetentionTick(),
+  );
+  const providerStatus = composeProviderStatus({
+    redis: sharedRedis,
+    connectedTemplates: listConnectionTemplateIds(db),
+  });
+  const providerStatusSaga = providerStatus.startSaga();
+  await periodicJobs.register("provider-status-evaluate", 60_000, () =>
+    providerStatus.service.evaluate(new Date()),
   );
 
   const spendQuestions = composeSpendLimitQuestions(db);
@@ -1840,6 +1863,18 @@ export async function bootstrap() {
       );
     },
   );
+  runtimeDelivery.registerEventOutcomeHandler(
+    "trigger",
+    async (event, input) => {
+      const { invocation } = event.payload as Partial<TriggerEventPayload>;
+      if (input.outcome !== "failed" || !invocation) return;
+      await invocationSetupFailure(
+        event.agentId,
+        "run",
+        input.detail ?? input.outcome,
+      );
+    },
+  );
   await periodicJobs.register("invocation-liveness-sweep", 60_000, () =>
     invocationLivenessSweep.tick(),
   );
@@ -1951,6 +1986,7 @@ export async function bootstrap() {
     seedSources,
     redisBus,
     spendForOwner: spend.forOwner,
+    providerStatus: providerStatus.service,
     approvalsRelay,
     wrapperFrameSender,
     presetSeeder,
@@ -2056,6 +2092,7 @@ export async function bootstrap() {
     }),
     wakeAgent: wakeAgentFor,
     readHarnessConfigSupport,
+    sessionMessages: runtimeDelivery.sessionMessages,
     markOnboardingComplete: (agentId: string, owner: string) =>
       createOnboardingMarker({
         agents: harnessAgentsServiceFor(owner),
@@ -2095,6 +2132,8 @@ export async function bootstrap() {
     kbShareAutoRefresh.unsubscribe();
     approvalsWakeSaga.unsubscribe();
     spend.extendSaga.unsubscribe();
+    spend.lastKnownNameSaga.unsubscribe();
+    providerStatusSaga.unsubscribe();
     defaultConversionSaga.unsubscribe();
     usage.stop();
     audit.stop();

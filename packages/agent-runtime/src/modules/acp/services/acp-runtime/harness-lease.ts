@@ -17,6 +17,7 @@ export interface PendingRecycle {
 export interface HarnessLease {
   ensure(): boolean;
   pid(): number | null;
+  lastExitCause(): string | null;
   send(frame: unknown): boolean;
   whenReady(cb: () => void): () => void;
   refreshEnv(opts: { force: boolean }): void;
@@ -78,6 +79,7 @@ const RECYCLE_LOG: Partial<Record<HarnessTeardownReason, string>> = {
 
 export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
   let agent: AgentProcess | null = null;
+  let lastExitCause: string | null = null;
   let terminal = false;
   let envReady = deps.envReadyAtBoot;
   const readyWaiters = new Set<() => void>();
@@ -271,6 +273,7 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
       a.onLine(deps.onFrame);
       void a.exited.then(() => {
         if (agent !== a) return;
+        lastExitCause = a.exitCause();
         agent = null;
         terminal = true;
         teardown("agent-exited");
@@ -280,6 +283,10 @@ export function createHarnessLease(deps: HarnessLeaseDeps): HarnessLease {
 
     pid() {
       return agent?.pid ?? null;
+    },
+
+    lastExitCause() {
+      return lastExitCause;
     },
 
     send(frame) {

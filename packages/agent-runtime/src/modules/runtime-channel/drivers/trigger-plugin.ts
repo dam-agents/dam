@@ -17,6 +17,7 @@ import {
 import type { PrecheckOutcome } from "../domain/precheck.js";
 import type { PrecheckRunner } from "../infrastructure/precheck-runner.js";
 import type { TriggerStateStore } from "../infrastructure/trigger-state-store.js";
+import type { InvocationWatch } from "../services/invocation-watch.js";
 
 const IMPL_NAME = "trigger";
 
@@ -53,6 +54,32 @@ function withContext(task: string, context: string | undefined): string {
  */
 const CATALOG_WAIT_MS = 10_000;
 
+const START_ATTEMPTS = 3;
+const START_RETRY_MS = 5_000;
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: how long a sub-agent's run may take to start
+ * before it fails. The start runs detached from the event, so a harness that
+ * stays silent at startup would otherwise leave the run unwatched until its
+ * deadline. A start past the bound is not retried: it may still be under way.
+ */
+const START_TIMEOUT_MS = 120_000;
+
+class StartTimeoutError extends Error {
+  constructor() {
+    super(`the harness did not answer within ${START_TIMEOUT_MS / 1000} s`);
+    this.name = "StartTimeoutError";
+  }
+}
+
+function withinStartBound<T>(start: Promise<T>): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new StartTimeoutError()), START_TIMEOUT_MS);
+    timer.unref?.();
+  });
+  return Promise.race([start, timeout]).finally(() => clearTimeout(timer));
+}
+
 export function createTriggerPlugin(deps: {
   driver: TriggerSessionDriver;
   stateStore: TriggerStateStore;
@@ -61,11 +88,12 @@ export function createTriggerPlugin(deps: {
   reporter: EventReporter;
   findSessionByRef?: (ref: string) => string | undefined;
   catalogListed?: () => Promise<void>;
+  invocationWatch: Pick<InvocationWatch, "watch">;
 }): Plugin {
   const startSession = async (
     payload: TriggerEventPayload,
     task: string,
-  ): Promise<void> => {
+  ): Promise<string> => {
     if (deps.catalogListed)
       await Promise.race([
         deps.catalogListed(),
@@ -88,7 +116,7 @@ export function createTriggerPlugin(deps: {
     if (origin?.mode === "continue") {
       const originSession = deps.findSessionByRef?.(origin.sessionRef);
       if (originSession) {
-        await deps.driver.start({
+        const res = await deps.driver.start({
           task: continuationPrompt(origin.name, task),
           mcpServers: payload.mcpServers,
           resumeSessionId: originSession,
@@ -96,14 +124,14 @@ export function createTriggerPlugin(deps: {
           model,
           keepSessionModel: true,
         });
-        return;
+        return res.sessionId;
       }
       deps.log(
         `[trigger] ${payload.scheduleId}: the session that scheduled it is gone; running in a fresh session`,
       );
     }
     if (origin?.mode === "report") {
-      await deps.driver.start({
+      const res = await deps.driver.start({
         task,
         mcpServers: payload.mcpServers,
         platformMeta: {
@@ -113,7 +141,7 @@ export function createTriggerPlugin(deps: {
         },
         model,
       });
-      return;
+      return res.sessionId;
     }
     if (!payload.once && (payload.sessionMode ?? "fresh") === "continuous") {
       const prior = deps.stateStore.getSessionForSchedule(payload.scheduleId);
@@ -137,14 +165,15 @@ export function createTriggerPlugin(deps: {
           payload.scheduleId,
           res.sessionId,
         );
-      return;
+      return res.sessionId;
     }
-    await deps.driver.start({
+    const res = await deps.driver.start({
       task,
       mcpServers: payload.mcpServers,
       platformMeta,
       model,
     });
+    return res.sessionId;
   };
 
   const report = async (input: EventReportInput): Promise<void> => {
@@ -220,10 +249,57 @@ export function createTriggerPlugin(deps: {
     );
   };
 
+  const runInvocation = async (
+    payload: TriggerEventPayload,
+    eventId: string,
+  ): Promise<void> => {
+    for (let attempt = 1; ; attempt++) {
+      try {
+        deps.invocationWatch.watch(
+          await withinStartBound(startSession(payload, payload.task)),
+          eventId,
+        );
+        return;
+      } catch (err) {
+        if (
+          err instanceof SessionModelError ||
+          err instanceof StartTimeoutError ||
+          attempt >= START_ATTEMPTS
+        ) {
+          failInvocation(payload, eventId, err);
+          return;
+        }
+        deps.log(
+          `[trigger] ${payload.scheduleId} start attempt ${attempt} failed: ${(err as Error).message}`,
+        );
+        await new Promise((resolve) => setTimeout(resolve, START_RETRY_MS));
+      }
+    }
+  };
+
+  const failInvocation = (
+    payload: TriggerEventPayload,
+    eventId: string,
+    err: unknown,
+  ): void => {
+    const detail =
+      err instanceof SessionModelError
+        ? err.message
+        : `the run could not start: ${(err as Error).message}`;
+    deps.log(`[trigger] ${payload.scheduleId} ${detail}`);
+    void report(refusedReport(eventId, detail.slice(0, DETAIL_MAX)));
+  };
+
   const fire = async (
     payload: TriggerEventPayload,
     ctx: EventContext,
   ): Promise<void> => {
+    if (payload.invocation) {
+      void runInvocation(payload, ctx.eventId).catch((err) =>
+        deps.log(`[trigger] invocation run failed: ${(err as Error).message}`),
+      );
+      return;
+    }
     if (!payload.precheck) {
       const refused = await runOrRefuse(payload, payload.task);
       if (refused) void report(refusedReport(ctx.eventId, refused));

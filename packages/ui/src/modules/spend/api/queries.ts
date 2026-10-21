@@ -46,6 +46,19 @@ export function useSpendBreakdown(input: SpendBreakdownInput) {
   });
 }
 
+export function useSubAgentSpend(
+  input: { agentId: string; from: string; to: string },
+  limit: number,
+) {
+  return useQuery({
+    ...trpc.spend.subAgents.queryOptions(
+      limit > 0 ? { ...input, limit } : skipToken,
+    ),
+    refetchInterval: SPEND_REFRESH_MS * 2,
+    placeholderData: keepPreviousData,
+  });
+}
+
 export function useSpendMetering() {
   return useQuery({
     ...trpc.spend.metering.queryOptions(),

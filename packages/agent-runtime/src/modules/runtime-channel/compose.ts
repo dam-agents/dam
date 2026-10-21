@@ -24,6 +24,7 @@ import { bindingsFingerprint } from "./domain/bindings-fingerprint.js";
 import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
+import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
@@ -41,6 +42,7 @@ import {
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
+import type { InvocationWatch } from "./services/invocation-watch.js";
 import { createRuntimeChannelService } from "./service.js";
 import {
   createHarnessConfigPlugin,
@@ -80,6 +82,7 @@ export interface ComposeRuntimeChannelOpts {
   stateBackend: DocumentStoreBackend;
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
+  invocationWatch: Pick<InvocationWatch, "watch">;
   subAgentSessions: SubAgentSessionStore;
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
@@ -167,6 +170,7 @@ export async function composeRuntimeChannel(
         ? { findSessionByRef: opts.findSessionByRef }
         : {}),
       ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
+      invocationWatch: opts.invocationWatch,
     }),
   );
   const spawnEnv = () => mergedSpawnEnv(opts.envReader);
@@ -185,6 +189,9 @@ export async function composeRuntimeChannel(
       driver: opts.triggerDriver,
       sessions: opts.subAgentSessions,
     }),
+  );
+  registry.register(
+    createSessionMessagePlugin({ driver: opts.triggerDriver, reporter, log }),
   );
 
   const discoverModels = createModelDiscovery({ log });

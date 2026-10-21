@@ -16,7 +16,6 @@ import {
 } from "@/components/ui/popover";
 
 import { useStore } from "../../../store.js";
-import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
 import {
   useGrantProvider,
   useHarnessCatalog,
@@ -79,7 +78,6 @@ export function ModelIndicator({
   );
   const { granted, owned, loaded } = useProviderConnections(agentId);
   const { grant, pending } = useGrantProvider(agentId);
-  const answerableSoon = useIsAgentAnswerableSoon(agentId);
   const activeProvider = granted.find((p) => p.id === provider);
   const alias = routed
     ? (parseQualifiedModel(model, { claudePrefix: true })?.alias ?? null)
@@ -230,14 +228,13 @@ export function ModelIndicator({
             className="-mx-1 flex max-h-72 flex-col gap-2 overflow-y-auto"
           >
             <SessionModelList
+              agentId={agentId}
               groups={groups}
               harnessName={harnessName}
               current={model}
               loading={catalogModels.isLoading}
               waiting={catalogModels.waiting}
               failed={catalogModels.isError}
-              operable={catalogModels.operable}
-              starting={answerableSoon}
               onRetry={() => void catalogModels.refetch()}
               onChoose={(name) => onChoose(name)}
             />

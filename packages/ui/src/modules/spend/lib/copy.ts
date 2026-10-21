@@ -335,6 +335,20 @@ export function thisAgent(name: string): string {
   return `${name} (this agent)`;
 }
 
+export function moreSubAgents(count: number): string {
+  return `${count} more`;
+}
+
+export function showAllSubAgents(count: number): string {
+  return `Show all ${count} sub-agents`;
+}
+
+export function showMoreSubAgents(count: number): string {
+  return `Show ${count} more`;
+}
+
+export const SHOW_LESS = "Show less";
+
 export function subAgentOwnCalls(rootName: string): string {
   return `These are this sub-agent's own calls. They count for the limits of ${rootName}.`;
 }

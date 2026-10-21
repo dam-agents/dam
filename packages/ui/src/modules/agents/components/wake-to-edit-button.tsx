@@ -3,7 +3,7 @@ import { Play } from "@carbon/icons-react";
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 
-import { useWakeAgent } from "../../agents/hooks/use-wake-agent.js";
+import { useWakeAgent } from "../hooks/use-wake-agent.js";
 
 export function WakeToEditButton({
   agentId,

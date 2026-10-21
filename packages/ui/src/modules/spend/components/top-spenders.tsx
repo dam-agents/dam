@@ -4,20 +4,17 @@ import { AnimatePresence, motion } from "motion/react";
 import { TextSkeleton } from "@/components/ui/text-skeleton";
 import { cn } from "@/lib/utils";
 
-import { useAgentsList } from "../../agents/api/queries.js";
 import { AgentAvatar } from "../../agents/components/avatar/agent-avatar.js";
 import {
   NEUTRAL_FILL,
   NEUTRAL_LIGHT_FILL,
 } from "../../budgets/lib/pool-colors.js";
 import { SpendBarTrack } from "../../metrics/components/spend-bar.js";
-import {
-  DELETED_AGENT_NAME,
-  NO_SPEND_IN_PERIOD,
-  paidWithPlanUse,
-} from "../lib/copy.js";
+import { agentLabel, agentNameOf } from "../lib/breakdown-sources.js";
+import { NO_SPEND_IN_PERIOD, paidWithPlanUse } from "../lib/copy.js";
 import { bareSpend } from "../lib/format.js";
 import { amountsBy, VISIBLE_MICROS } from "../lib/measured-spend.js";
+import { SpendAgentAvatar } from "./spend-agent-avatar.js";
 
 const TOP_SPENDERS = 3;
 const ROW_HIDDEN = { opacity: 0, y: 16 };
@@ -26,6 +23,7 @@ const BAR_FILL =
 
 interface Spender {
   agentId: string;
+  agentName: string | null;
   paidMicros: number;
   planMicros: number;
 }
@@ -36,9 +34,11 @@ function topSpenders(
 ): Spender[] {
   const size = (spender: Spender) =>
     spender.paidMicros + (showPlanUse ? spender.planMicros : 0);
+  const nameOf = agentNameOf(byAgent);
   return [...amountsBy(byAgent, (row) => row.agentId)]
     .map(([agentId, amounts]) => ({
       agentId,
+      agentName: nameOf(agentId),
       paidMicros: amounts.usd,
       planMicros: amounts.usd_list,
     }))
@@ -103,9 +103,7 @@ function SpenderRow({
   showPlanUse: boolean;
   topMicros: number;
 }) {
-  const agents = useAgentsList();
-  const agent = agents.find((a) => a.id === spender.agentId);
-  const name = agent?.name ?? DELETED_AGENT_NAME;
+  const name = agentLabel(spender.agentName);
   const withPlan = showPlanUse && spender.planMicros >= VISIBLE_MICROS;
   const pct = (micros: number) =>
     topMicros > 0 ? (micros / topMicros) * 100 : 0;
@@ -114,12 +112,7 @@ function SpenderRow({
     <>
       <div className="mb-1 flex items-center justify-between">
         <span className="flex min-w-0 items-center gap-1.5 text-sm text-muted-foreground">
-          <AgentAvatar
-            name={name}
-            avatar={agent?.avatar}
-            mood={agent ? "awake" : "disabled"}
-            size={16}
-          />
+          <SpendAgentAvatar agentId={spender.agentId} name={name} />
           <span className="truncate">{name}</span>
         </span>
         <span className="ml-2 shrink-0 text-sm text-muted-foreground tabular-nums">

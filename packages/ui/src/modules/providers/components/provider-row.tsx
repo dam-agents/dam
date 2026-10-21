@@ -16,6 +16,7 @@ interface Props {
   type: ProviderPresetType;
   harnesses?: readonly HarnessFamily[];
   connected: boolean;
+  degraded?: boolean;
   keyCheck?: ProviderKeyCheck | null;
   checking?: boolean;
   balance?: ReactNode;
@@ -27,6 +28,7 @@ export function ProviderRow({
   type,
   harnesses,
   connected,
+  degraded = false,
   keyCheck,
   checking,
   balance,
@@ -46,16 +48,11 @@ export function ProviderRow({
           >
             {name}
           </p>
-          <Badge
-            variant={refused ? "danger" : connected ? "success" : "muted"}
-            className="ml-auto shrink-0"
-          >
-            {refused
-              ? "Key refused"
-              : connected
-                ? "Connected"
-                : "Not connected"}
-          </Badge>
+          <ConnectionBadge
+            connected={connected}
+            degraded={degraded}
+            refused={refused}
+          />
         </div>
         <div className="mt-2 flex items-center justify-between gap-3">
           <div className="flex shrink-0 items-center gap-2">
@@ -99,6 +96,42 @@ export function ProviderRow({
     </CardButton>
   ) : (
     <div className={cn(CARD_SURFACE, layout)}>{body}</div>
+  );
+}
+
+function ConnectionBadge({
+  connected,
+  degraded,
+  refused,
+}: {
+  connected: boolean;
+  degraded: boolean;
+  refused: boolean;
+}) {
+  if (!connected)
+    return (
+      <Badge variant="muted" className="ml-auto shrink-0">
+        Not connected
+      </Badge>
+    );
+  if (refused)
+    return (
+      <Badge variant="danger" className="ml-auto shrink-0">
+        Key refused
+      </Badge>
+    );
+  return degraded ? (
+    <Badge
+      variant="warning"
+      className="ml-auto shrink-0"
+      data-testid="provider-degraded-badge"
+    >
+      Degraded
+    </Badge>
+  ) : (
+    <Badge variant="success" className="ml-auto shrink-0">
+      Connected
+    </Badge>
   );
 }
 

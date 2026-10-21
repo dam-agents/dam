@@ -117,7 +117,9 @@ export function hintFor(
     case EventType.StarterKitOnboarded:
     case EventType.IdentityLinked:
     case EventType.AgentOutOfMemory:
+    case EventType.AgentResourceRemoved:
     case EventType.SpendLimitsChanged:
+    case EventType.GatewayCallEnded:
       return null;
     default: {
       const unhandled: never = event;
