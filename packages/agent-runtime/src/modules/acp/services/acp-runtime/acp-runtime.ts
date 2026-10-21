@@ -190,10 +190,6 @@ export interface AcpRuntimeDeps {
   replayTailEvents?: number;
   harnessLoadTimeoutMs?: number;
   historyProvider?: HistoryProvider;
-  /**
-   * The harness's session-cut provider, when its image declares one: a
-   * rewind or a take-back then cuts the stored conversation in place.
-   */
   sessionCut?: SessionCutProvider;
   terminalSessionPins?: () => PlatformSessionOf;
   sessionMetadata?: SessionMetadataStore;

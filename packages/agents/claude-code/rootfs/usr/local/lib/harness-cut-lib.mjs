@@ -9,8 +9,6 @@ sdkPromise.catch(() => {});
 
 const DROPS_TURN_REFUSAL = "Resume rejected by --resume-drops-turn:";
 
-// The bundled SDK cannot find the native CLI beside itself; harness-chat names
-// it for the adapter, and the image puts it on PATH beside claude-agent-acp.
 function claudeExecutable() {
   if (process.env.CLAUDE_CODE_EXECUTABLE) {
     return process.env.CLAUDE_CODE_EXECUTABLE;
@@ -20,9 +18,6 @@ function claudeExecutable() {
   }).trim();
 }
 
-// getSessionMessages leaves out each entry's parent, so the cut point — the
-// chain entry right before the first dropped user entry — is read from the
-// transcript itself.
 async function parentOf(sessionId, uuid) {
   const root = join(
     process.env.CLAUDE_CONFIG_DIR ?? join(homedir(), ".claude"),
@@ -40,7 +35,7 @@ async function parentOf(sessionId, uuid) {
         const entry = JSON.parse(line);
         if (entry.uuid === uuid) return entry.parentUuid ?? null;
       } catch {
-        // A line still being written; the entry is read on the next line.
+        continue;
       }
     }
   }
@@ -58,12 +53,17 @@ async function* emptyNote() {
 }
 
 /**
- * Cuts a closed session's stored conversation in place: the session keeps
- * every entry before the user entry `before` and goes on from there under the
- * same id, leaving the rest as a dead branch. A resume at an earlier entry
- * saves the cut only with a message after it, so the cut appends one empty
+ * UNIT_BOUNDARY_DESCRIPTION: Cuts a closed Claude Code session's stored
+ * conversation in place, for the runtime's session-cut provider: the session
+ * keeps every entry before the user entry `before` and goes on from there
+ * under the same id, leaving the rest as a dead branch. The SDK resumes at the
+ * chain entry right before `before`, read from the transcript file because
+ * getSessionMessages leaves out each entry's parent. A resume at an earlier
+ * entry is saved only with a message after it, so the cut sends one empty
  * note that starts no model turn. `dropsTurn` arms the CLI's guard: the cut is
- * refused, and nothing changes, when it would drop anything but that turn.
+ * refused, and nothing changes, when it would drop anything but that turn. The
+ * SDK is the adapter's own bundle, which cannot find the native CLI beside it,
+ * so the CLI is the one harness-chat names, or the one on PATH.
  */
 export async function cutSession({ sessionId, before, dropsTurn }) {
   const sdk = await sdkPromise;
