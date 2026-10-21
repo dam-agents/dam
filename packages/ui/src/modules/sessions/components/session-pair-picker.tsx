@@ -23,7 +23,6 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
 import {
   rememberFirstModel,
   rememberSessionPair,
@@ -165,7 +164,6 @@ export function SessionPairPicker({
     routed ? agentId : null,
     harness,
   );
-  const answerableSoon = useIsAgentAnswerableSoon(routed ? agentId : null);
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
@@ -270,14 +268,13 @@ export function SessionPairPicker({
             {routed ? (
               <>
                 <SessionModelList
+                  agentId={agentId}
                   groups={groups}
                   harnessName={harnessName(harness)}
                   current={pair?.model ?? null}
                   loading={catalogModels.isLoading}
                   waiting={catalogModels.waiting}
                   failed={catalogModels.isError}
-                  operable={catalogModels.operable}
-                  starting={answerableSoon}
                   onRetry={() => void catalogModels.refetch()}
                   onChoose={(model, group) => {
                     const kept = settingsForModel(
