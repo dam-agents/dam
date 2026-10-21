@@ -86,6 +86,8 @@ The sidebar becomes one tree: every Agent is a row that opens to that Agent's ow
 JanUI keeps its own navigation at every width.
 What decides whether the navigation takes room beside the page is the room the page has left, not the viewport alone: below 768 px, or whenever the page would be left under 720 px once the navigation and the right rail are counted, the navigation stands aside as its rail whatever the user last chose, and their choice is kept for when the room comes back.
 A rail already up waits for 40 px more than that minimum before it takes the room back, so a window dragged across the threshold does not flicker.
+The pane's edge is dragged, and the width it is dragged to is held to what the page can spare: past the width that would leave the page under its minimum, the drag stops there rather than squeezing the page, so a drag is never what collapses the navigation.
+Dragging the edge most of the way down from the narrowest width to the rail puts the navigation away, and dragging the rail's edge the same distance back out brings it back at its narrowest; the width the user last chose is kept for the next time it opens.
 Expanding the rail there opens the pane over the page, from the left edge up to the right rail, which stays visible; picking a Session, pressing Escape or going back closes it.
 An open right panel is laid over the page the same way, from the left rail up to the right rail, and Escape, back or its close control shuts it; both overlays hold the keyboard while they are open and hand it back to what opened them.
 

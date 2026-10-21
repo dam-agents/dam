@@ -2,12 +2,21 @@ import { useEffect, useRef, useState } from "react";
 
 import { ResizeHandle } from "@/components/resize-handle";
 import { SideDrawer } from "@/components/ui/side-drawer";
-import { navigationMode, useNarrowShell } from "@/lib/breakpoints";
+import {
+  MIN_CONTENT_WIDTH,
+  navigationMode,
+  useNarrowShell,
+} from "@/lib/breakpoints";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../../store.js";
 import { useSidebarWidth } from "../../hooks/use-sidebar-layout.js";
 import { holdBackEntry } from "../../lib/back-entry.js";
+import {
+  SIDEBAR_COLLAPSED_W,
+  sidebarMaxWidth,
+  snapSidebarWidth,
+} from "../../lib/sidebar-layout.js";
 import { SidebarContent } from "./sidebar-content.js";
 import { SidebarHeader } from "./sidebar-header.js";
 import { SidebarRail } from "./sidebar-rail.js";
@@ -19,23 +28,34 @@ export function SidebarV2() {
   const pinned = useStore((s) => s.sidebarPinned);
   const setPinned = useStore((s) => s.setSidebarPinned);
   const setView = useStore((s) => s.setView);
-  const { width, resize, endResize } = useSidebarWidth({
+  const { width, resizing, resize, endResize } = useSidebarWidth({
     key: "platform-sidebar-v2-w",
     fallback: 325,
   });
   const { viewport } = useNarrowShell();
-  const [resizing, setResizing] = useState(false);
   const [overlaid, setOverlaid] = useState(false);
 
   const railed = useRef(false);
-  const mode = navigationMode({
-    viewport,
-    sidebarWidth: width,
-    rightRailWidth: 60,
-    railed: railed.current,
-  });
+  // UNIT_BOUNDARY_DESCRIPTION: the room the navigation itself is about to take is the user's own doing while they drag it, so the drag never changes the mode; only a viewport or a rail that no longer fits it does.
+  const mode = resizing
+    ? railed.current
+      ? "rail"
+      : "layout"
+    : navigationMode({
+        viewport,
+        sidebarWidth: width,
+        rightRailWidth: 60,
+        railed: railed.current,
+      });
   railed.current = mode === "rail";
   const expanded = pinned && mode === "layout";
+  const maxWidth = sidebarMaxWidth({
+    viewport,
+    rightRailWidth: 60,
+    contentMinWidth: MIN_CONTENT_WIDTH,
+  });
+  const railDrag = useRef(0);
+  const dragRaw = useRef<number | null>(null);
   const over = overlaid && mode === "rail";
 
   useEffect(() => {
@@ -77,16 +97,46 @@ export function SidebarV2() {
           />
         )}
       </nav>
+      {mode === "rail" && (
+        <div className="flex" data-testid="app-sidebar-resize-rail">
+          <ResizeHandle
+            side="left"
+            label="Resize navigation"
+            value={SIDEBAR_COLLAPSED_W}
+            onResize={(delta) => {
+              railDrag.current += delta;
+              const dragged = SIDEBAR_COLLAPSED_W + railDrag.current;
+              if (dragged < SIDEBAR_COLLAPSED_W * 2) return;
+              setPinned(true);
+              railDrag.current = 0;
+              resize(dragged - width, maxWidth);
+            }}
+            onDragEnd={() => {
+              railDrag.current = 0;
+              endResize();
+            }}
+          />
+        </div>
+      )}
       {expanded && (
         <div className="flex" data-testid="app-sidebar-resize">
           <ResizeHandle
             side="left"
-            onResize={(next) => {
-              setResizing(true);
-              resize(next);
+            label="Resize navigation"
+            value={width}
+            onResize={(delta) => {
+              // UNIT_BOUNDARY_DESCRIPTION: the snap reads the drag as the user made it rather than the width the drag was last held to, so pulling the edge most of the way down gives the navigation up instead of resting at its narrowest.
+              const raw = (dragRaw.current ?? width) + delta;
+              dragRaw.current = raw;
+              const snapped = snapSidebarWidth(raw, maxWidth);
+              if (snapped === "rail") {
+                setPinned(false);
+                return;
+              }
+              resize(snapped - width, maxWidth);
             }}
             onDragEnd={() => {
-              setResizing(false);
+              dragRaw.current = null;
               endResize();
             }}
           />

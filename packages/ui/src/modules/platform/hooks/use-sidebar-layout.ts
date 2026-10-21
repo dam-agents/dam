@@ -19,8 +19,8 @@ export function useSidebarWidth({
   const [resizing, setResizing] = useState(false);
 
   const resize = useCallback(
-    (delta: number) => {
-      const next = clampSidebarWidth(widthRef.current + delta);
+    (delta: number, max?: number) => {
+      const next = clampSidebarWidth(widthRef.current + delta, max);
       widthRef.current = next;
       writePersistedNumber(key, next);
       setResizing(true);
