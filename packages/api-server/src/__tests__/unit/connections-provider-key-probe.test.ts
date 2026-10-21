@@ -144,12 +144,14 @@ describe("provider key recheck", () => {
     svc: ReturnType<typeof makeService>["svc"],
     templateId: string,
     value: string,
+    configInputs?: Record<string, string>,
   ) =>
     svc.createFromTemplate({
       templateId,
       name: templateId,
       authKind: "header",
       value,
+      ...(configInputs ? { configInputs } : {}),
     });
 
   // TEST_SCENARIO: a key the provider accepts at save time is listed with an ok check and its time, so the row can say when it was last checked.
@@ -165,12 +167,14 @@ describe("provider key recheck", () => {
   it("probes every stored provider key and records each result", async () => {
     const saved = makeService(
       { ok: true },
-      { bob: { ok: true, unchecked: true } },
+      { bedrock: { ok: true, unchecked: true } },
     );
     const anthropic = await connect(saved.svc, "anthropic-oauth", "sk-ant-oat");
     const openai = await connect(saved.svc, "openai", "sk-openai");
     const litellm = await connect(saved.svc, "ibm-litellm", "sk-litellm");
-    const bob = await connect(saved.svc, "bob", "bob-key");
+    const bedrock = await connect(saved.svc, "bedrock", "bedrock-key", {
+      region: "us-east-1",
+    });
 
     const later = makeService(
       { ok: true },
@@ -185,7 +189,7 @@ describe("provider key recheck", () => {
           reason: "unverified",
           detail: "HTTP 503",
         },
-        bob: { ok: true, unchecked: true },
+        bedrock: { ok: true, unchecked: true },
       },
     );
     for (const [id, row] of saved.rows) later.rows.set(id, row);
@@ -196,7 +200,7 @@ describe("provider key recheck", () => {
 
     expect(later.probed.sort()).toEqual([
       "anthropic-oauth:sk-ant-oat",
-      "bob:bob-key",
+      "bedrock:bedrock-key",
       "ibm-litellm:sk-litellm",
       "openai:sk-openai",
     ]);
@@ -209,7 +213,7 @@ describe("provider key recheck", () => {
       result: "unverified",
       detail: "HTTP 503",
     });
-    expect(byId.get(bob)).toBeNull();
+    expect(byId.get(bedrock)).toBeNull();
 
     const views = new Map(
       (await later.svc.listConnections()).map((v) => [v.id, v.keyCheck]),
@@ -217,7 +221,7 @@ describe("provider key recheck", () => {
     expect(views.get(anthropic)?.result).toBe("refused");
     expect(views.get(litellm)?.result).toBe("unverified");
     expect(views.get(openai)?.result).toBe("ok");
-    expect(views.get(bob)).toBeUndefined();
+    expect(views.get(bedrock)).toBeUndefined();
   });
 
   // TEST_SCENARIO: a refused or unverified recheck writes the same security log line the save path writes, naming the connection and the reason.

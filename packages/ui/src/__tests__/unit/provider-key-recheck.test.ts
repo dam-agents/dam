@@ -159,16 +159,16 @@ describe("provider key recheck", () => {
     expect(row).toContain("HTTP 503");
   });
 
-  // TEST_SCENARIO: a provider with no stored check, such as Bob whose template has no model-list check, says its key is not checked.
+  // TEST_SCENARIO: a provider with no stored check, such as Bedrock whose template has no model-list check, says its key is not checked.
   it("says a key with no check is not checked", () => {
-    state.items = new Map([["bob", { id: "c3", conn: { templateId: "bob" } }]]);
-    const row = rowOf(render(), "Edit Bob");
+    state.items = new Map([["bedrock", { id: "c3", conn: { templateId: "bedrock" } }]]);
+    const row = rowOf(render(), "Edit AWS Bedrock");
     expect(row).toContain("Key not checked");
   });
 
-  // TEST_SCENARIO: a provider whose template has no key check, such as Bob, gets no Recheck button of its own, since a recheck could never change its row.
+  // TEST_SCENARIO: a provider whose template has no key check, such as Bedrock, gets no Recheck button of its own, since a recheck could never change its row.
   it("offers no recheck when no connected provider has a key check", () => {
-    state.items = new Map([["bob", { id: "c3", conn: { templateId: "bob" } }]]);
+    state.items = new Map([["bedrock", { id: "c3", conn: { templateId: "bedrock" } }]]);
     expect(render()).not.toContain("Recheck");
   });
 
@@ -177,13 +177,13 @@ describe("provider key recheck", () => {
     state.pending = true;
     state.items = new Map([
       ["openai", { id: "c2", conn: { templateId: "openai" } }],
-      ["bob", { id: "c3", conn: { templateId: "bob" } }],
+      ["bedrock", { id: "c3", conn: { templateId: "bedrock" } }],
     ]);
     const html = render();
     expect(rowOf(html, "Edit OpenAI")).toContain("Checking the key…");
-    const bob = rowOf(html, "Edit Bob");
-    expect(bob).toContain("Key not checked");
-    expect(bob).not.toContain("Checking the key…");
+    const bedrock = rowOf(html, "Edit AWS Bedrock");
+    expect(bedrock).toContain("Key not checked");
+    expect(bedrock).not.toContain("Checking the key…");
   });
 
   // TEST_SCENARIO: while the recheck runs, the button is disabled and reads Rechecking, and each checkable row shows progress in place of its last result line; the badge keeps the last known state, so a refused key never flips to Connected.

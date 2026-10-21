@@ -1,4 +1,5 @@
 import {
+  BOB_HOST,
   CURVE_BENDER_HOST,
   hasKeyCheck,
   IBM_LITELLM_HOST,
@@ -11,11 +12,17 @@ const DEFAULT_TIMEOUT_MS = 10_000;
 const INVALID_KEY_MARKER =
   /"(invalid_api_key|authentication_error|token_not_found_in_db)"/;
 
+const BOB_USER_AGENT = "platform-bob-key-check/1";
+
 const bearer = (key: string) => ({ authorization: `Bearer ${key}` });
 
 const MODELS_ENDPOINTS: Record<
   KeyCheckTemplateId,
-  { url: string; headers: (key: string) => Record<string, string> }
+  {
+    url: string;
+    headers: (key: string) => Record<string, string>;
+    invalidKey?: RegExp;
+  }
 > = {
   anthropic: {
     url: "https://api.anthropic.com/v1/models",
@@ -38,9 +45,17 @@ const MODELS_ENDPOINTS: Record<
     url: `https://${CURVE_BENDER_HOST}/v1/models`,
     headers: bearer,
   },
+  bob: {
+    url: `https://${BOB_HOST}/inference/v1/models`,
+    headers: (key) => ({
+      authorization: `Apikey ${key}`,
+      "user-agent": BOB_USER_AGENT,
+    }),
+    invalidKey: /API Key verification failed: Invalid or expired API Key/,
+  },
 };
 
-// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Templates with no model-list check here (Bob, Bedrock) are accepted, marked unchecked.
+// UNIT_BOUNDARY_DESCRIPTION: Checks a model provider key by listing the provider's models with it, before the key is stored. Only a 401 whose body names an unknown or invalid key counts as a refusal: a scoped key may get a 401 on the model list and still work for inference, and a timeout, a 5xx or a proxy's 403 says nothing about the key, so those come back unverified. Bob's gateway answers a wrong key with its own 401 message and refuses with a Cloudflare 403 a request whose User-Agent does not name Bob, so its check names itself. Templates with no model-list check here (Bedrock) are accepted, marked unchecked.
 export function createProviderKeyProbe(
   opts: { timeoutMs?: number } = {},
 ): ProviderKeyProbe {
@@ -62,7 +77,8 @@ export function createProviderKeyProbe(
         return {
           ok: false,
           reason:
-            res.status === 401 && INVALID_KEY_MARKER.test(body)
+            res.status === 401 &&
+            (endpoint.invalidKey ?? INVALID_KEY_MARKER).test(body)
               ? "refused"
               : "unverified",
           detail: `HTTP ${res.status}`,
