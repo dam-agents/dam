@@ -49,7 +49,7 @@ pub(super) struct Fake {
     pub(super) cpu: Mutex<Option<u64>>,
     vmm_pids: Mutex<HashMap<String, i32>>,
     // UNIT_BOUNDARY_DESCRIPTION: pids the kernel has handed to another process, which a machine's record still names: the runtime's start-time check is what tells them apart from the VMM the record meant.
-    pub(super) recycled: Mutex<HashSet<i32>>,
+    recycled: Mutex<HashSet<i32>>,
     // UNIT_BOUNDARY_DESCRIPTION: the signal the runtime's own code kept for a VMM it reaped itself, as smolvm's boot monitor and sweep leave it.
     exit_signals: Mutex<HashMap<i32, i32>>,
     pub(super) state_reads: AtomicUsize,
@@ -60,7 +60,7 @@ impl Fake {
         locked(&self.calls).clone()
     }
 
-    pub(super) fn record(&self, call: String) {
+    fn record(&self, call: String) {
         locked(&self.calls).push(call);
     }
 
