@@ -59,7 +59,7 @@ Every install with runner pods therefore names a node directory for runner relea
 On OpenShift the directory the kubelet creates carries the host's own SELinux label, which a confined runner may not read, so the stager labels it, and everything it stages, for containers at the plain level every runner's own categories can read; to set that label it runs as the unconfined container type, as the [image cache](vm-image-cache.md) service does, under the SCC the install names for its runners.
 A cluster admin can instead have the nodes create and label the directory themselves, with the node configuration in [`etc/openshift-node-config/`](../../etc/openshift-node-config/).
 
-**A runner release** is the runner with the two guest binaries it copies into every machine's share, platform-init and platform-runc, so the side that writes a share and the side that reads it stay one version.
+**A runner release** is the runner with the two guest binaries it copies into every machine's share, platform-init and platform-runc, so the side that writes a share and the side that reads it stay one version, and the loader that supervises it.
 Each release also records the **runtime** it was built against: the smolvm release with the first stage of platform-init as the guests' init, the guest kernel and the libkrun the platform patches, the image tooling, and the base image's libc.
 The runner is itself the VMM of every machine it starts, and loads its runtime's libraries and agent root, so the runtime travels with the release.
 That first stage only executes the share's platform-init, which is the release's, so a machine's init is always the release that wrote its share.
@@ -76,23 +76,30 @@ Runner pods mount the directory read-only, so a guest that escapes into its runn
 It runs as root with no capability: root owns every file it copies and prunes, and the image build gives root read access to each of them, and write and search access to each directory.
 A chart upgrade replaces every stager at once, since a stager serves nothing once it has staged, so the new release reaches each node after that node's own image pull.
 
-**The loader** is the runner pod's entrypoint.
+**The loader** is the runner pod's entrypoint, and travels in the release like the runner it runs.
 It supervises one runner process and runs the release the controller names over the runner's own machine API, with its token: the runner writes the name into the loader's directory in the pod, which the loader reads every second, so a hand-off starts seconds after the call.
 The name lives as long as the pod: a runner process that restarts keeps it, and a new pod runs its own image until the controller names the release again.
 The pod's own image is always available as a release.
 A staged one is used once the stager has reached the pod's node, and the loader first copies it, and its runtime, into the pod: the stager may remove them from the node while a runner still copies its guest binaries from one or a VMM still serves its agent rootfs from the other.
-Before a hand-off the loader checks that the release's runner loads in the pod at all.
+Before a hand-off the loader checks that the release's runner loads in the pod at all, and, where that release carries a loader of its own, that its loader starts there too.
 The loader restarts a runner that exits, with a backoff, and passes a stop of the pod to the runner, which then stops every machine as the [runner](vm-runner.md) page describes.
 A stop that arrives while no runner can take it — the old one closing for a hand-off, a release being copied in, a backoff — is kept: a hand-off not yet begun is dropped, a backoff is cut short, and the stop goes to the next runner once that runner has set up its own stop, since one killed before that leaves its machines to be powered off with the pod.
 
-**A hand-off** replaces the runner process.
-The loader signals the runner, which closes as it would for a stop but leaves every machine running, then starts the named release.
+**A hand-off** replaces the runner process, and the loader with it where the release carries another.
+The loader signals the runner, which closes as it would for a stop but leaves every machine running, then starts the named release, or, where that release carries a loader of its own, becomes it first.
+The exec keeps the loader's pid, its place as the pod's subreaper, and every machine it holds, so the release's loader takes them up as any loader does and starts the release's runner for them.
+A release that carries no loader, as one staged before loaders travelled in releases does, is run by the loader the pod has.
+A release's loader that cannot start costs the pod nothing, since the check above comes before the machines are handed anything: an exec never comes back, so a loader that could not start would leave the pod with nothing to supervise its machines.
+One that cannot start is held as `failed`, and the pod keeps the loader and the release it runs.
+The loader the pod's image carries is the only one that can become another, since only it reads the release's, so the change that first ships such a loader is delivered once by a pod roll, through its reboot key ([below](#hand-offs)).
 The new runner reads each machine's record, finds its VMM alive, and publishes its port again, as any restarted runner does.
 The machines and their disks are untouched, and each keeps the runtime it booted; the machines the new runner starts boot its own runtime, so a machine moves to a new runtime at its next boot.
 The runner records the runtime each machine booted, and manages a machine on another runtime assuming the two are compatible, rather than testing every pair of releases: a runtime error on such a machine, or a guest quiet for half a minute instead of ten, reboots it onto the runner's own runtime.
 That reboot is the safety for a new runtime, and it waits on the machine failing: a fix a running guest needs — a new libkrun, guest kernel or platform-init — reaches it only when a hand-off's machine errs or goes quiet.
 So a release declares which of what a machine booted it changes, as a reboot key it carries in its release directory, written by the image build from [`packages/vm-runner/reboot-id`](../../packages/vm-runner/reboot-id): a runner refuses a release whose key differs from the one it runs, holding it as `reboot`, and each owner's runner pod rolls onto that release instead, rebooting that owner's machines.
-That key also covers the loader, which a hand-off never replaces: the loader is the pod's entrypoint and only the pod's own image carries it, so a release that needs a new one — a loader that records the signal of a machine that outlived its runner, say — declares a key of its own, and the roll that hold causes is what delivers it.
+That key covers only what a machine booted: not the runner and not the loader, which are processes the pod starts and a hand-off replaces.
+A release that changes only the loader therefore declares no key, and the pods it reaches become its loader in place, with no pod roll and no machine reboot.
+That key also decides how a release that needs a new loader reaches a pod, since only a loader the pod's image carries can become one: the release that first ships such a loader declares a key of its own, and the roll that hold causes delivers the loader.
 An upgrade that changes the pod's shape along with the release rolls every runner pod once, onto the configured image, so the loader the image now carries arrives with that roll; the two are not one step, since the controller comes up first and a pod whose roll has not come yet still runs the loader its own image was built with, so a death only that loader can record goes unnamed until the roll reaches it.
 The key is compared whole and never parsed, and a release that changes nothing a machine booted carries the key before it, so the pods it reaches take it in place.
 A release built before keys declares none, and so does a pod built from one: with nothing to compare, the keyed release is handed off in place and no machine reboots, until that pod's shape changes for another reason, which rolls it onto a release that carries a key.

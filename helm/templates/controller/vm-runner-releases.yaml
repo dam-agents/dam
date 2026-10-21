@@ -3,11 +3,11 @@
 {{- /*
 The per-node runner release stager: the only writer of the node directory that
 `runner.releaseHostPath` names. It runs this chart's runner image and copies the
-runner release that image carries — the runner, platform-init and
-platform-runc — into the directory under the image reference the controller
+runner release that image carries — the runner, platform-init,
+platform-runc and the loader above them — into the directory under the image reference the controller
 names the release by, keeping the newest few. A chart upgrade rolls this
 DaemonSet, which stages the new release; each runner pod's loader then hands
-its machines to it. Runner pods mount the directory read-only, so a guest that
+its machines to it, and becomes it where it carries another loader. Runner pods mount the directory read-only, so a guest that
 escapes into its runner cannot replace the release another owner's runner
 takes next.
 

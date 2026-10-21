@@ -8,9 +8,9 @@ use tokio::process::Command;
 use tokio::signal::unix::{signal, SignalKind};
 use tokio_util::sync::CancellationToken;
 use vm_runner::api::{RunnerRelease, HELD_FAILED, HELD_RUNTIME, HELD_UNSTAGED};
-use vm_runner::release::{self, Choice, Releases, RUNNER};
+use vm_runner::release::{self, Choice, Releases, LOADER, RUNNER};
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner pod's entrypoint, and the node's stager. The pod's image is fixed for as long as the pod lives, and the runner's machines are processes of the pod, so a new runner release would otherwise reboot every machine with the pod. Run, the loader supervises one runner process and replaces it with the release the controller names over the runner's machine API, which the stager has copied onto the node; the machines outlive the runner process and the next one adopts them. Stage, it is the DaemonSet that does that copying.
+// UNIT_BOUNDARY_DESCRIPTION: the runner pod's entrypoint, and the node's stager. The pod's image is fixed for as long as the pod lives, and the runner's machines are processes of the pod, so a new runner release would otherwise reboot every machine with the pod. Run, the loader supervises one runner process and replaces it, and itself, with the release the controller names over the runner's machine API, which the stager has copied onto the node; the machines outlive the runner process and the next one adopts them. Stage, it is the DaemonSet that does that copying.
 #[derive(Parser, Debug)]
 #[command(
     name = "vm-runner-loader",
@@ -142,7 +142,7 @@ struct Loader {
     status_file: PathBuf,
     copies: PathBuf,
     runtimes: PathBuf,
-    failed: Option<String>,
+    failed: Option<(String, String)>,
     unloadable: Option<(String, String)>,
     // UNIT_BOUNDARY_DESCRIPTION: where a reaped VMM's signal is recorded for the runner that adopted its machine, which is the only way a kill is still named after a hand-off: the machine outlives the runner process, and the next runner is not its VMM's parent. The loader inherits those VMMs because it asks to be the pod's subreaper, so this process is the one that reads their status.
     exits: PathBuf,
@@ -164,8 +164,22 @@ struct Running {
     replaced: Option<Release>,
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: how long the check that a release loads in this pod may take. It only prints the runner's usage.
+// UNIT_BOUNDARY_DESCRIPTION: how long the check that a release's binary loads in this pod may take. It only prints the binary's usage.
 const LOAD_CHECK: Duration = Duration::from_secs(10);
+
+// UNIT_BOUNDARY_DESCRIPTION: whether a binary of a release loads in this pod at all: it prints its usage and exits, which one linked against a newer libc than the pod's image has cannot. The loader itself is checked the same way before its release is handed the machines, since the exec that becomes it never comes back.
+async fn loads(binary: &Path) -> Result<(), String> {
+    let usage = Command::new(binary)
+        .arg("--help")
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .kill_on_drop(true)
+        .status();
+    match tokio::time::timeout(LOAD_CHECK, usage).await {
+        Ok(Ok(status)) if status.success() => Ok(()),
+        outcome => Err(format!("{outcome:?}")),
+    }
+}
 
 impl Loader {
     fn target(&self) -> String {
@@ -182,11 +196,8 @@ impl Loader {
 
     // UNIT_BOUNDARY_DESCRIPTION: the release to run for `target`, from the pod's own copies of it and its runtime, so a release the stager removes from the node never leaves a runner without its guest binaries or a VMM without its runtime. A release whose runner cannot even load in this pod — one linked against a newer libc than the pod's image has — is held as built for another pod, which the controller answers by rolling the pod, and is not checked again until the controller names another.
     async fn choose(&mut self, target: &str) -> Result<Release, (&'static str, String)> {
-        if self.failed.as_deref() == Some(target) {
-            return Err((
-                HELD_FAILED,
-                format!("{target} exited right after it took over"),
-            ));
+        if let Some((_, message)) = self.failed.as_ref().filter(|(name, _)| name == target) {
+            return Err((HELD_FAILED, message.clone()));
         }
         if let Some((_, message)) = self.unloadable.as_ref().filter(|(name, _)| name == target) {
             return Err((HELD_RUNTIME, message.clone()));
@@ -218,22 +229,20 @@ impl Loader {
         });
         let release =
             copied.map_err(|e| (HELD_UNSTAGED, format!("copying {name} into the pod: {e:#}")))?;
-        let loads = Command::new(release.dir.join(RUNNER))
-            .arg("--help")
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .kill_on_drop(true)
-            .status();
-        match tokio::time::timeout(LOAD_CHECK, loads).await {
-            Ok(Ok(status)) if status.success() => Ok(release),
-            outcome => {
-                let message = format!(
-                    "{name} does not load in this pod ({outcome:?}), so only a new pod runs it"
-                );
-                self.unloadable = Some((name, message.clone()));
-                Err((HELD_RUNTIME, message))
-            }
+        if let Err(outcome) = loads(&release.dir.join(RUNNER)).await {
+            let message =
+                format!("{name} does not load in this pod ({outcome}), so only a new pod runs it");
+            self.unloadable = Some((name, message.clone()));
+            return Err((HELD_RUNTIME, message));
         }
+        Ok(release)
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: the loader a release carries, where it is not the one this process runs: a hand-off replaces the runner process and never the loader above it, so a pod keeps the loader of its own image until the release it is named carries another. A release that carries none, which one staged before loaders travelled in releases does, is run by the loader the pod has. Only a loader already in the image can become one, since only it reads this.
+    fn release_loader(&self, running: &Running, release: &Release) -> Option<PathBuf> {
+        let theirs = release.dir.join(LOADER);
+        let mine = running.release.dir.join(LOADER);
+        (theirs.is_file() && !release::same_bytes(&theirs, &mine)).then_some(theirs)
     }
 
     fn spawn(&self, release: Release, replaced: Option<Release>) -> anyhow::Result<Running> {
@@ -264,8 +273,9 @@ impl Loader {
         match self.spawn(release, Some(fallback.clone())) {
             Ok(running) => Ok(running),
             Err(e) => {
-                tracing::error!(release = name, error = %format!("{e:#}"), "the runner release could not be started; going back to the one it replaced");
-                self.failed = Some(name);
+                let message = format!("the runner release could not be started: {e:#}");
+                tracing::error!(release = name, error = %message, "the runner release could not be started; going back to the one it replaced");
+                self.failed = Some((name, message));
                 self.spawn(fallback, None)
             }
         }
@@ -355,12 +365,12 @@ impl Loader {
                     match self.choose(&target).await {
                         Ok(_) if stopping.is_cancelled() => {}
                         Ok(release) => {
-                            tracing::info!(from = running.release.name, to = release.name, "handing the machines off to another runner release");
-                            hand_off(running.pid, &self.exits).await;
-                            let replaced = running.release.clone();
-                            running = self.take_over(release, replaced)?;
-                            self.prune(&running);
-                            self.report(&running, &target, None);
+                            let (next, held) = self.hand_over(running, release, &stopping).await?;
+                            if held.is_none() {
+                                self.prune(&next);
+                            }
+                            self.report(&next, &target, held);
+                            running = next;
                         }
                         Err(held) => self.report(&running, &target, Some(held)),
                     }
@@ -368,6 +378,51 @@ impl Loader {
                 () = stopping.cancelled() => return stop(running.pid, &self.exits).await,
             }
         }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: hands `running`'s machines to `release`, and, where the release carries another loader, this process becomes that loader. The exec keeps the pid, the subreaper and every machine this process holds, so the release's loader takes them up as any loader does and starts the release's runner for them. A loader that does not even start in this pod is checked before the machines are handed off, since the exec never comes back; one that starts and then dies is a release that takes the pod with it, the failure a release whose binary is broken enough looks like.
+    async fn hand_over(
+        &mut self,
+        running: Running,
+        release: Release,
+        stopping: &CancellationToken,
+    ) -> anyhow::Result<(Running, Option<(&'static str, String)>)> {
+        let name = release.name.clone();
+        let loader = self.release_loader(&running, &release);
+        if let Some(loader) = &loader {
+            if let Err(outcome) = loads(loader).await {
+                let message = format!(
+                    "{name}'s loader does not start in this pod ({outcome}), so the pod keeps the loader it has"
+                );
+                tracing::error!(release = name, error = %message, "the release's loader does not start; keeping the one this pod runs");
+                self.failed = Some((name, message.clone()));
+                return Ok((running, Some((HELD_FAILED, message))));
+            }
+        }
+        tracing::info!(from = running.release.name, to = name, loader = ?loader.as_deref(), "handing the machines off to another runner release");
+        hand_off(running.pid, &self.exits).await;
+        let replaced = running.release.clone();
+        let Some(loader) = loader else {
+            return Ok((self.take_over(release, replaced)?, None));
+        };
+        // UNIT_BOUNDARY_DESCRIPTION: a stop that arrived while the runner closed is the next runner's to take, and a loader that became another here would lose it: the stop is a signal this process already took, and the exec would discard it. So the machines go back to the release this pod ran, which the loop passes the stop to.
+        if stopping.is_cancelled() {
+            tracing::info!(
+                release = name,
+                "dropping the hand-off to a release's loader: the pod is stopping"
+            );
+            return Ok((self.spawn(replaced, None)?, None));
+        }
+        // UNIT_BOUNDARY_DESCRIPTION: an exec that returns is one that could not start the release's loader, and the runner that was handed off is gone: the release is held as failed and the machines go back to the release this pod ran, which is the loader it still has.
+        let error = std::process::Command::new(&loader)
+            .args(std::env::args_os().skip(1))
+            .exec();
+        let message = format!(
+            "{name}'s loader could not be started ({error}), so the pod keeps the loader it has"
+        );
+        tracing::error!(release = name, loader = %loader.display(), error = %error, "the release's loader could not be started; going back to the release this pod ran");
+        self.failed = Some((name, message.clone()));
+        Ok((self.spawn(replaced, None)?, Some((HELD_FAILED, message))))
     }
 
     // UNIT_BOUNDARY_DESCRIPTION: what runs in place of a runner that exited: the release it replaced, where the new one did not last its settle window, and otherwise the same one again after a backoff that grows while a release keeps failing on start. A stop that arrives during the backoff ends the wait, and the next runner is started with the stop already waiting for it.
@@ -382,7 +437,8 @@ impl Loader {
         match running.replaced.take() {
             Some(replaced) if ran < SETTLE => {
                 tracing::error!(release = running.release.name, status = %exited, "the runner release exited right after it took over; going back to the one it replaced");
-                self.failed = Some(running.release.name.clone());
+                let message = format!("{} exited right after it took over", running.release.name);
+                self.failed = Some((running.release.name.clone(), message));
                 self.spawn(replaced, None)
             }
             _ => {

@@ -412,8 +412,11 @@ virtualization:
     # does not run (`packages/vm-runner/reboot-id`): a runner refuses it, its
     # pod rolls instead, and that roll does not wait for a busy agent, so the
     # fix reaches every machine within the roll rather than after `idleWait`.
-    # The key covers the pod's loader too, which a hand-off never replaces:
-    # only the pod's image carries it.
+    # The key covers what a machine booted alone: a release that changes only
+    # the pod's runner or its loader carries the key before it and is taken in
+    # place. The loader travels in the release too, and the pod becomes it, so
+    # the release that first ships such a loader declares a key of its own and
+    # that roll is what delivers it.
     # A pod built from a release that declares no key takes the release in
     # place, since there is nothing to compare it with.
     # A roll for a changed pod shape keeps its idle wait. A runner that
@@ -436,8 +439,9 @@ virtualization:
       stalledTimeout: 30m
       idleWait: 24h
     # A directory on each node where a stager DaemonSet copies the runner
-    # release this chart's runner image carries: the runner and the two guest
-    # binaries it hands every machine. Required with runner pods. A runner
+    # release this chart's runner image carries: the runner, the two guest
+    # binaries it hands every machine, and the loader above it. Required with
+    # runner pods. A runner
     # pod keeps the image it was created with, and a new runner image reaches
     # it without a restart: the controller names the release over the
     # runner's machine API, the pod's loader drains the old runner, starts
@@ -445,7 +449,11 @@ virtualization:
     # machine still running, so no machine reboots, unless the release
     # declares a reboot key the pod it reaches does not run, which rolls the
     # pods to reboot the machines, while a pod whose own release declares no
-    # key takes it in place. A release built against another VM runtime
+    # key takes it in place. A release that carries another loader makes the
+    # pod's loader become it before it starts the release's runner, so a
+    # release that changes only the loader reaches the pods in place; a
+    # release's loader that cannot start leaves the pod on the loader and the
+    # release it has, held as failed. A release built against another VM runtime
     # (a new smolvm, libkrun or crane) brings its runtime along: machines
     # already running keep the runtime they booted, and machines started after
     # the hand-off boot the new one. A release the pod's loader cannot load (a
