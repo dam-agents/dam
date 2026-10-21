@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { VIEWER_ALLOWLIST_MAX } from "../artifact-library/schemas.js";
 
 export const ENVIRONMENT_EXPIRY_MAX_DAYS = 30;
 export const ENVIRONMENT_EXPIRY_DEFAULT_DAYS = 7;
@@ -32,9 +33,10 @@ export const environmentEndpointsSchema = z
     "endpoint names must be unique",
   );
 
+// UNIT_BOUNDARY_DESCRIPTION: a list of people by email, at most as many as an artifact's viewers, whose editor the app reuses for it.
 export const environmentAccessSchema = z
   .array(z.email().transform((e) => e.trim().toLowerCase()))
-  .max(100);
+  .max(VIEWER_ALLOWLIST_MAX);
 
 export const environmentEndpointViewSchema = environmentEndpointSchema.extend({
   url: z.string().nullable(),
