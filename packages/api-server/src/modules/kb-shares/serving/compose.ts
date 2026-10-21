@@ -53,10 +53,12 @@ export function createShareHostApp(deps: {
   viewer: { fetch: (req: Request) => Response | Promise<Response> };
   kbMcp: Hono;
   auth: Hono;
+  environments?: Hono | null;
 }): { fetch: (req: Request) => Response | Promise<Response> } {
   const app = new Hono();
   app.route("/", deps.kbMcp);
   app.route("/auth", deps.auth);
+  if (deps.environments) app.route("/e", deps.environments);
   app.all("*", (c) => deps.viewer.fetch(c.req.raw));
   return app;
 }

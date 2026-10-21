@@ -24,7 +24,6 @@ import type { EnvironmentsRepository } from "../infrastructure/environments-repo
 import type { EnvironmentSignIn } from "../services/environment-signin.js";
 import { renderGatePage } from "./pages.js";
 
-export const SIGNIN_LABEL = "signin";
 const FORWARD_PREFIX = "/api/environment/forward/";
 const DECLARED_PORTS_HEADER = "x-platform-environment-ports";
 const ACTIVITY_INTERVAL_MS = 60_000;
@@ -49,10 +48,12 @@ const GATE_HEADERS: Record<string, string> = {
 export interface EnvironmentGateDeps {
   domain: string;
   scheme: "http" | "https";
-  addressUrl: (address: string) => string;
+  // UNIT_BOUNDARY_DESCRIPTION: the share host's front door for an address, where a visitor without a session is sent to sign in, with the path to return to on the address; and its signed-out page, which offers to come back or switch account on the share host's own origin.
+  frontDoorUrl: (address: string, next: string) => string;
+  signedOutUrl: (address: string) => string;
   repo: Pick<EnvironmentsRepository, "getByHost">;
   ownerList: (owningAgentId: string) => Promise<string[]>;
-  signIn: EnvironmentSignIn;
+  signIn: Pick<EnvironmentSignIn, "redeemHandoff" | "session" | "end">;
   ensureReady: (agentId: string) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   upstream: (agentId: string) => { host: string; port: number };
@@ -79,8 +80,9 @@ export const noEnvironmentGate: EnvironmentGate = {
  * UNIT_BOUNDARY_DESCRIPTION: The api-server's front for every Environment
  * address, `<endpoint>-<host>.<environments domain>`, which one wildcard
  * Ingress sends here. It finds the Environment and endpoint from the host
- * name, admits the visitor (in this slice: the owner, by their platform
- * sign-in on the fixed sign-in host), wakes a sleeping Environment and waits
+ * name, admits the visitor by the session the share host's front door handed
+ * it (the owner, or a verified email on the effective list, checked again on
+ * every request), wakes a sleeping Environment and waits
  * for it, and relays HTTP and WebSocket to the Environment runtime's forward,
  * which reaches only the declared port on the Environment's loopback. Any
  * other host passes on untouched. The relay never passes the platform's own
@@ -93,8 +95,6 @@ export function createEnvironmentGate(
 ): EnvironmentGate {
   const secure = deps.scheme === "https";
   const cookieName = secure ? SESSION_COOKIE_SECURE : SESSION_COOKIE_PLAIN;
-  const signInHost = `${SIGNIN_LABEL}.${deps.domain}`.toLowerCase();
-  const signInUrl = deps.addressUrl(SIGNIN_LABEL);
   const lastStamp = new Map<string, number>();
 
   function stamp(agentId: string) {
@@ -142,56 +142,6 @@ export function createEnvironmentGate(
     );
   }
 
-  function signInRedirect(address: string, next: string) {
-    const url = new URL("/.platform/login", signInUrl);
-    url.searchParams.set("address", address);
-    url.searchParams.set("next", next);
-    return url.href;
-  }
-
-  async function signInHostApp(c: Context): Promise<Response> {
-    const path = c.req.path;
-    if (path === "/.platform/login") {
-      const address = c.req.query("address") ?? "";
-      const parsed = parseAddress(`${address}.${deps.domain}`, deps.domain);
-      if (!parsed || !(await deps.repo.getByHost(parsed.host)))
-        return page(
-          c,
-          404,
-          "No such Environment",
-          "This link names no Environment.",
-        );
-      gateHeaders(c);
-      return c.redirect(
-        await deps.signIn.begin(parsed.address, c.req.query("next")),
-        302,
-      );
-    }
-    if (path === "/.platform/callback") {
-      const state = c.req.query("state");
-      const code = c.req.query("code");
-      const done =
-        state && code ? await deps.signIn.complete(state, code) : null;
-      if (!done?.ok)
-        return page(
-          c,
-          400,
-          "Sign-in failed",
-          "Sign-in did not complete. Open the Environment's link again.",
-        );
-      gateHeaders(c);
-      return c.redirect(done.value.handoffUrl, 302);
-    }
-    if (path === "/.platform/signed-out")
-      return page(
-        c,
-        401,
-        "Signed out",
-        "You are signed out. Open an Environment's link to sign in again.",
-      );
-    return page(c, 404, "Not found", "Nothing is served here.");
-  }
-
   async function reserved(
     c: Context,
     address: string,
@@ -233,7 +183,7 @@ export function createEnvironmentGate(
       if (id) await deps.signIn.end(id);
       deleteCookie(c, cookieName, { path: "/", secure });
       gateHeaders(c);
-      return c.redirect(deps.signIn.signOutUrl(), 302);
+      return c.redirect(deps.signedOutUrl(address), 302);
     }
     return page(c, 404, "Not found", "Nothing is served here.");
   }
@@ -312,8 +262,6 @@ export function createEnvironmentGate(
   }
 
   const middleware: MiddlewareHandler = async (c, next) => {
-    const host = c.req.header("host")?.split(":")[0]?.toLowerCase();
-    if (host === signInHost) return signInHostApp(c);
     const resolved = await resolve(c.req.header("host"));
     if (resolved === null) return next();
     if (resolved === "none")
@@ -344,7 +292,7 @@ export function createEnvironmentGate(
           gateHeaders(c);
           const url = new URL(c.req.url);
           return c.redirect(
-            signInRedirect(address, `${url.pathname}${url.search}`),
+            deps.frontDoorUrl(address, `${url.pathname}${url.search}`),
             302,
           );
         }
@@ -355,7 +303,7 @@ export function createEnvironmentGate(
         403,
         "You don't have access",
         visitor?.email
-          ? `You are signed in as ${visitor.email}, which is not on this Environment's list. Ask the person who sent you the link to add you, then sign out and open it again.`
+          ? `You are signed in as ${visitor.email}, which is no longer on this Environment's list. Ask the person who sent you the link to add you again.`
           : "Your account has no verified email address, so it cannot be on this Environment's list. Ask the person who sent you the link.",
       );
     }

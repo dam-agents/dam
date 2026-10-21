@@ -1,18 +1,20 @@
 import type { Redis } from "ioredis";
-import { createRemoteJWKSet } from "jose";
+import type { Hono } from "hono";
 import { createRedisTtlStore } from "../../core/ttl-store.js";
-import {
-  createKeycloakShareIdentity,
-  keycloakShareJwksUrl,
-} from "../artifact-library/index.js";
-import { domainOf, LOGIN_TTL_MS, SESSION_TTL_MS } from "./domain/gate.js";
+import { domainOf, SESSION_TTL_MS } from "./domain/gate.js";
 import {
   createEnvironmentGate,
   noEnvironmentGate,
-  SIGNIN_LABEL,
   type EnvironmentGate,
 } from "./gate/environment-gate.js";
-import { createEnvironmentSignIn } from "./services/environment-signin.js";
+import {
+  createEnvironmentFrontDoor,
+  type ShareSignIn,
+} from "./gate/front-door.js";
+import {
+  createEnvironmentSignIn,
+  type EnvironmentSignIn,
+} from "./services/environment-signin.js";
 import {
   createAccessListsRepository,
   type AccessListsRepository,
@@ -190,69 +192,67 @@ export function composeEnvironmentsOver(
 
 const HANDOFF_TTL_MS = 60_000;
 
+// UNIT_BOUNDARY_DESCRIPTION: the path of an Environment's front door on the share host.
+export const FRONT_DOOR_PREFIX = "/e/";
+
 export interface ComposeEnvironmentGateDeps {
   db: Db;
   redis: Redis;
   urlTemplate: string | null;
-  keycloak: {
-    externalUrl: string;
-    internalUrl: string;
-    realm: string;
-    clientId: string;
-  };
+  shareBaseUrl: string;
+  share: ShareSignIn;
   ensureReady: (agentId: string) => Promise<unknown>;
   stampActivity: (agentId: string) => Promise<void>;
   namespace: string;
   brandName: string;
 }
 
+export interface EnvironmentGateComposition {
+  gate: EnvironmentGate;
+  // UNIT_BOUNDARY_DESCRIPTION: the front door the share host mounts at `/e`, or nothing when the install serves no Environments.
+  frontDoor: Hono | null;
+}
+
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The front for Environment addresses, or a gate
- * that passes every request on when the install serves no Environments (no
- * environments domain). The sign-in host is `signin.<domain>`, whose callback
- * the identity provider's environments client names; sign-ins, hand-off codes
- * and sessions live in Redis, so any api-server replica serves any step.
+ * UNIT_BOUNDARY_DESCRIPTION: The front for Environment addresses and its door
+ * on the share host, or a gate that passes every request on when the install
+ * serves no Environments (no environments domain). Visitors sign in with the
+ * share host's own session and identity provider client; the hand-off codes
+ * and the addresses' sessions live in Redis, so any api-server replica serves
+ * any step.
  */
 export function composeEnvironmentGate(
   deps: ComposeEnvironmentGateDeps,
-): EnvironmentGate {
+): EnvironmentGateComposition {
   const template = deps.urlTemplate;
   const domain = domainOf(template);
-  if (template === null || domain === null) return noEnvironmentGate;
+  if (template === null || domain === null)
+    return { gate: noEnvironmentGate, frontDoor: null };
   const addressUrl = (address: string) =>
     template.replace("{host}", () => address);
-  const signInUrl = addressUrl(SIGNIN_LABEL);
-  const keycloak = {
-    keycloakExternalUrl: deps.keycloak.externalUrl,
-    keycloakUrl: deps.keycloak.internalUrl,
-    realm: deps.keycloak.realm,
-  };
-  return createEnvironmentGate({
+  const shareBase = deps.shareBaseUrl.replace(/\/+$/, "");
+  const repo = createEnvironmentsRepository(deps.db);
+  const ownerList = (owningAgentId: string) =>
+    createAccessListsRepository(deps.db).get(owningAgentId);
+  const signIn: EnvironmentSignIn = createEnvironmentSignIn({
+    handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
+    sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
+    addressUrl,
+    now: () => Date.now(),
+  });
+  const gate = createEnvironmentGate({
     domain,
     scheme: template.startsWith("https:") ? "https" : "http",
-    addressUrl,
-    repo: createEnvironmentsRepository(deps.db),
-    ownerList: (owningAgentId) =>
-      createAccessListsRepository(deps.db).get(owningAgentId),
-    signIn: createEnvironmentSignIn({
-      provider: createKeycloakShareIdentity(
-        {
-          ...keycloak,
-          clientId: deps.keycloak.clientId,
-          callbackUrl: new URL("/.platform/callback", signInUrl).href,
-        },
-        {
-          fetch: globalThis.fetch,
-          idTokenKey: createRemoteJWKSet(keycloakShareJwksUrl(keycloak)),
-        },
-      ),
-      pending: createRedisTtlStore(deps.redis, "env:login", LOGIN_TTL_MS),
-      handoffs: createRedisTtlStore(deps.redis, "env:handoff", HANDOFF_TTL_MS),
-      sessions: createRedisTtlStore(deps.redis, "env:session", SESSION_TTL_MS),
-      addressUrl,
-      signInUrl,
-      now: () => Date.now(),
-    }),
+    frontDoorUrl: (address, next) => {
+      const url = new URL(`${shareBase}${FRONT_DOOR_PREFIX}${address}`);
+      url.searchParams.set("next", next);
+      return url.href;
+    },
+    signedOutUrl: (address) =>
+      `${shareBase}${FRONT_DOOR_PREFIX}${address}/signed-out`,
+    repo,
+    ownerList,
+    signIn,
     ensureReady: deps.ensureReady,
     stampActivity: deps.stampActivity,
     upstream: (agentId) => {
@@ -261,4 +261,13 @@ export function composeEnvironmentGate(
     },
     brandName: deps.brandName,
   });
+  const frontDoor = createEnvironmentFrontDoor({
+    domain,
+    repo,
+    ownerList,
+    signIn,
+    share: deps.share,
+    brandName: deps.brandName,
+  });
+  return { gate, frontDoor };
 }

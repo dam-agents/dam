@@ -1,26 +1,17 @@
 import type { EnvironmentRecord } from "./environment.js";
 
-// UNIT_BOUNDARY_DESCRIPTION: the path every Environment address reserves for the platform's own sign-in and sign-out; the relay never forwards it to the app.
+// UNIT_BOUNDARY_DESCRIPTION: the path every Environment address reserves for the hand-off of its session and its sign-out; the relay never forwards it to the app.
 export const RESERVED_PREFIX = "/.platform/";
 
 // UNIT_BOUNDARY_DESCRIPTION: a visitor's session on one Environment address, in a `__Host-` cookie (https) that the browser sends to that exact origin only, so no other Environment or platform host can set or read it. Over plain http (the local cluster) the prefix cannot be used, and the cookie is host-only anyway.
 export const SESSION_COOKIE_SECURE = "__Host-platform-env";
 export const SESSION_COOKIE_PLAIN = "platform-env";
 export const SESSION_TTL_MS = 12 * 60 * 60 * 1000;
-export const LOGIN_TTL_MS = 5 * 60 * 1000;
 
 export interface EnvironmentSession {
   sub: string;
   email: string | null;
   address: string;
-  createdAt: number;
-}
-
-export interface PendingEnvironmentLogin {
-  codeVerifier: string;
-  nonce: string;
-  address: string;
-  next: string;
   createdAt: number;
 }
 
