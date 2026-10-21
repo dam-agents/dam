@@ -404,9 +404,10 @@ virtualization:
       settleTimeout: 10m
       # A roll whose new pod never becomes ready is a broken release, and it
       # keeps its place so the release goes no further. `stalledTimeout`
-      # bounds that hold: past it the place is released and the next runner
-      # may roll, so one owner's admission refusal breaks owners one at a
-      # time instead of freezing every owner's upgrade. The stalled runner
+      # bounds that hold while another runner is ready on the new pod: past
+      # it the place is released and the next runner may roll, so one
+      # owner's stall does not freeze every owner's upgrade. With no ready
+      # runner on the new pod the hold has no bound. The stalled runner
       # keeps its `agent-platform.ai/runner-roll-stalled` mark and a Warning
       # Event.
       stalledTimeout: 30m

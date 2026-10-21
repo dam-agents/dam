@@ -464,7 +464,7 @@ func (r *AgentReconciler) readyMachines(ctx context.Context, owner string) []str
 	return ready
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll or mid-hand-off, read from the Deployments' annotations alone. Every owner's roll decision reads this under one lock, so it calls no runner: a hung runner would hold that lock for a call timeout and stall every owner's agent starts. Whether a runner's machines came back, or its runner took a new release, is asked on that owner's own turn (settleRunnerRoll, settleRunnerHandoff), which clears the annotations. A roll that has settled by its annotations alone — its new pod is ready and it had no machines to wait for — has them removed here, so the next pass reads it as settled. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped, or its place has been held past `rollout.stalledTimeout` (runnerRollGivenUp), which releases it and keeps the stalled mark until its pod is ready.
+// UNIT_BOUNDARY_DESCRIPTION: the runners still mid-roll or mid-hand-off, read from the Deployments' annotations alone. Every owner's roll decision reads this under one lock, so it calls no runner: a hung runner would hold that lock for a call timeout and stall every owner's agent starts. Whether a runner's machines came back, or its runner took a new release, is asked on that owner's own turn (settleRunnerRoll, settleRunnerHandoff), which clears the annotations. A roll that has settled by its annotations alone — its new pod is ready and it had no machines to wait for — has them removed here, so the next pass reads it as settled. A roll whose new pod became ready but whose machines did not all come back within `rollout.settleTimeout` stops holding its place: a machine whose agent stopped during the roll never comes back, and it must not stall every other owner's upgrade. A roll whose new pod never became ready keeps its place instead — a pod that does not start is a broken runner release, and letting the next owner roll would break them too — and is marked stalled, reported at error level and counted, once — unless the pod never started for a fault of its owner alone (runnerPodStuckOnItsOwner), which is skipped, or its place has been held past `rollout.stalledTimeout` beside a ready peer on its pod shape (runnerRollGivenUp), which releases it and keeps the stalled mark until its pod is ready.
 func (r *AgentReconciler) runnersMidRoll(ctx context.Context) (rolling []string, total int, err error) {
 	if !r.runnerRoll.at.IsZero() && time.Since(r.runnerRoll.at) < r.rollViewTTL {
 		return r.runnerRoll.rolling, r.runnerRoll.total, nil
@@ -488,7 +488,7 @@ func (r *AgentReconciler) runnersMidRoll(ctx context.Context) (rolling []string,
 			if stalled {
 				if dep.Annotations[annRunnerStalled] == "" {
 					r.markRunnerRollStalled(ctx, dep, timeout)
-				} else if runnerRollGivenUp(dep, r.config.VM.Runner) {
+				} else if r.runnerRollGivenUp(ctx, dep) {
 					if r.giveUpRunnerRoll(ctx, dep) != nil {
 						continue
 					}
@@ -567,17 +567,17 @@ func (r *AgentReconciler) markRunnerRollStalled(ctx context.Context, dep *appsv1
 	slog.Error("vm runner: the rolled pod is not ready after the settle timeout; the roll is halted until it is ready or the runner pod changes again",
 		"owner", owner, "runner", dep.Name, "rolledAt", updated.Annotations[annRunnerRolledAt], "timeout", timeout)
 	telemetry.RunnerRollStalled(ctx)
-	r.runnerEvent(ctx, updated, corev1.EventTypeWarning, reasonRollStalled, fmt.Sprintf("this runner's new pod is not ready %s after the roll started: the roll is halted here, so the release goes no further until the pod becomes ready or the pod changes again, and its place is given up %s after the roll started if it does not", timeout, runnerStalledTimeout(r.config.VM.Runner)))
+	r.runnerEvent(ctx, updated, corev1.EventTypeWarning, reasonRollStalled, fmt.Sprintf("this runner's new pod is not ready %s after the roll started: the roll is halted here, so the release goes no further until the pod becomes ready or the pod changes again, and its place is given up %s after the roll started if it does not and another runner is ready on this pod", timeout, runnerStalledTimeout(r.config.VM.Runner)))
 	return updated
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: whether a roll whose new pod never became ready has held its place past `rollout.stalledTimeout`. The stalled mark has to be there already: it is what keeps saying, after the place is gone, that this runner's release went no further.
-func runnerRollGivenUp(dep *appsv1.Deployment, spec config.VMRunnerSpec) bool {
+// UNIT_BOUNDARY_DESCRIPTION: whether a roll whose new pod never became ready has held its place past `rollout.stalledTimeout` while another owner's runner is ready on the same pod shape. The stalled mark has to be there already: it is what keeps saying, after the place is gone, that this runner's release went no further. Without a ready peer no runner has ever started on the new pod, which is what a broken release looks like, so the place is kept for good and the fleet stays halted: giving it up would take every owner's runner down in turn.
+func (r *AgentReconciler) runnerRollGivenUp(ctx context.Context, dep *appsv1.Deployment) bool {
 	rolledAt, err := time.Parse(time.RFC3339, dep.Annotations[annRunnerRolledAt])
-	return err == nil && dep.Annotations[annRunnerStalled] != "" && time.Since(rolledAt) > runnerStalledTimeout(spec)
+	return err == nil && dep.Annotations[annRunnerStalled] != "" && time.Since(rolledAt) > runnerStalledTimeout(r.config.VM.Runner) && r.runnerTemplateRunsElsewhere(ctx, dep)
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: gives up a stalled roll's place in the width, so the next runner may roll, and keeps the stalled mark and a Warning Event on the Deployment as the signal that this runner's release went no further. A truly broken release then breaks owners one at a time rather than freezing every owner's upgrade, which is what an admission refusal did before it was bounded. The mark stays until the runner's pod is ready, which is where it is cleared. It answers nil when the write did not land: the runner still holds its annotations, so its place has to stay taken until a later pass releases it, and only the write that frees the place reports the transition.
+// UNIT_BOUNDARY_DESCRIPTION: gives up a stalled roll's place in the width, so the next runner may roll, and keeps the stalled mark and a Warning Event on the Deployment as the signal that this runner's release went no further. Only a runner beside a ready peer on its pod shape gets here, so one owner's stall does not freeze every owner's upgrade, while a broken release, which no runner starts on, still halts the fleet. The mark stays until the runner's pod is ready, which is where it is cleared. It answers nil when the write did not land: the runner still holds its annotations, so its place has to stay taken until a later pass releases it, and only the write that frees the place reports the transition.
 func (r *AgentReconciler) giveUpRunnerRoll(ctx context.Context, dep *appsv1.Deployment) *appsv1.Deployment {
 	given := dep.DeepCopy()
 	delete(given.Annotations, annRunnerRolledAt)
@@ -648,7 +648,7 @@ func (r *AgentReconciler) settleRunnerRoll(ctx context.Context, owner string, de
 			}
 			return dep
 		}
-		if runnerRollGivenUp(dep, r.config.VM.Runner) {
+		if r.runnerRollGivenUp(ctx, dep) {
 			if given := r.giveUpRunnerRoll(ctx, dep); given != nil {
 				return given
 			}
