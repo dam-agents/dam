@@ -108,7 +108,7 @@ import {
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
 import { harnessManifestPaths } from "./modules/runtime-channel/manifest-paths.js";
-import { leaseSpawnEnv } from "./core/runtime-env.js";
+import { leaseSpawnEnv, mergedSpawnEnv } from "./core/runtime-env.js";
 import { reportHomeVolumeFullOnCrash } from "./core/home-volume-full.js";
 import {
   canonicalModel,
@@ -606,12 +606,24 @@ sessionState = {
   spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
 };
 
-const { service: processesService, keepMarks } = processes.start({
+const {
+  service: processesService,
+  keepMarks,
+  startupItemEnv,
+} = processes.start({
   agentHome: homeDir,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
 });
+
+function applyStartupItemEnv(): void {
+  startupItemEnv.apply(mergedSpawnEnv(envStore)).catch((err: unknown) => {
+    process.stderr.write(
+      `[processes] Startup Item env not applied: ${err instanceof Error ? err.message : String(err)}\n`,
+    );
+  });
+}
 
 let recoveryScheduled = false;
 function scheduleRecovery(): void {
@@ -664,6 +676,7 @@ const runtimeChannel = await composeRuntimeChannel({
       onChange: (change) => {
         acpRuntime.applyEnvChange(change);
         podService?.refreshEnv();
+        applyStartupItemEnv();
         void modelCatalog.refresh();
         scheduleRecovery();
       },
@@ -1347,7 +1360,10 @@ server.headersTimeout = 60_000;
 server.listen(config.PORT, () => {
   process.stderr.write(`Platform on http://localhost:${config.PORT}\n`);
 
-  if (envStore.ready()) podService?.refreshEnv();
+  if (envStore.ready()) {
+    podService?.refreshEnv();
+    applyStartupItemEnv();
+  }
 
   modelCatalog.onChange(() =>
     acpRuntime.applyEnvChange({

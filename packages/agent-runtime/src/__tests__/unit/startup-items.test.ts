@@ -3,7 +3,10 @@ import {
   existsSync,
   mkdirSync,
   mkdtempSync,
+  readdirSync,
+  readFileSync,
   readlinkSync,
+  statSync,
   symlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -21,6 +24,8 @@ import {
 } from "../../modules/processes/domain/startup-items.js";
 import { createProcessTable } from "../../modules/processes/infrastructure/proc-scan.js";
 import { openProcessesDocument } from "../../modules/processes/infrastructure/processes-document.js";
+import { createStartupItemEnvFile } from "../../modules/processes/infrastructure/startup-item-env.js";
+import { createStartupItemEnv } from "../../modules/processes/services/startup-item-env.js";
 import {
   createStartupItemStore,
   type StartupItemStore,
@@ -338,6 +343,126 @@ describe("the agent's services on disk", () => {
     expect(
       createStartupItemStore(mkdtempSync(join(tmpdir(), "empty-"))).list(),
     ).toEqual([]);
+  });
+});
+
+describe("the env a Startup Item starts with", () => {
+  // TEST_SCENARIO: openrc adds every variable of ~/.config/rc/profile.env that its filter left unset to a user service, so the runtime writes its own env there, connection placeholders included, and a GitHub item can use gh. A value openrc's parser would cut at a quote or `#`, or keep whole when it starts with `$`, and a name no shell takes, are left out rather than delivered wrong, and so is the runtime's own PORT, which a service's server would take; the file is root's alone and replaced whole, so a new env drops a variable that went away. A write says whether the file changed, which decides whether items restart.
+  it("writes the runtime's env as openrc reads it, leaving out what its parser would change", () => {
+    const dir = mkdtempSync(join(tmpdir(), "home-"));
+    const file = createStartupItemEnvFile(dir);
+    const path = join(dir, ".config", "rc", "profile.env");
+    const env = {
+      PLATFORM_GH_TOKEN_AVAILABLE: "true",
+      GH_TOKEN: "platform:conn:abc",
+      ANTHROPIC_BASE_URL: "http://127.0.0.1:9/v1?a=b c",
+      QUOTED: 'say "hi"',
+      SINGLE: "it's",
+      HASH: "a#b",
+      DOLLAR: "$HOME",
+      MULTI: "a\nb",
+      "BAD-NAME": "x",
+      UNSET: undefined,
+      PORT: "8080",
+      PWD: "/app",
+    };
+
+    expect(file.write(env)).toBe(true);
+    expect(readFileSync(path, "utf8")).toBe(
+      [
+        "ANTHROPIC_BASE_URL=http://127.0.0.1:9/v1?a=b c",
+        "GH_TOKEN=platform:conn:abc",
+        "PLATFORM_GH_TOKEN_AVAILABLE=true",
+        "",
+      ].join("\n"),
+    );
+    expect(statSync(path).mode & 0o777).toBe(0o600);
+    expect(file.write({ ...env, PORT: "9090", QUOTED: "x'y" })).toBe(false);
+
+    expect(file.write({ PLATFORM_GH_TOKEN_AVAILABLE: "false" })).toBe(true);
+    expect(readFileSync(path, "utf8")).toBe(
+      "PLATFORM_GH_TOKEN_AVAILABLE=false\n",
+    );
+    expect(readdirSync(join(dir, ".config", "rc"))).toEqual(["profile.env"]);
+  });
+});
+
+describe("a new env reaches the running Startup Items", () => {
+  function harness(opts: {
+    available?: boolean;
+    running?: string[];
+    failing?: string[];
+  }) {
+    const dir = mkdtempSync(join(tmpdir(), "home-"));
+    const restarted: string[] = [];
+    const logs: string[] = [];
+    const env = createStartupItemEnv({
+      file: createStartupItemEnvFile(dir),
+      available: () => opts.available ?? true,
+      running: async () => opts.running ?? [],
+      restart: async (id) => {
+        restarted.push(id);
+        return opts.failing?.includes(id) ? "rc-service: failed" : null;
+      },
+      log: (msg) => logs.push(msg),
+    });
+    return { dir, env, restarted, logs };
+  }
+
+  // TEST_SCENARIO: a process keeps the env it started with, so a connection added or removed reaches a running item only when it starts again. A changed env restarts every running item through openrc, as the pod service is respawned; the same env, pushed again, restarts nothing. At boot, items start before the runtime from the file of the last run, so the first push restarts them only when the env moved meanwhile.
+  it("restarts the running items when the env changed, and only then", async () => {
+    const { dir, env, restarted, logs } = harness({ running: ["web", "sync"] });
+
+    await env.apply({ GH_TOKEN: "platform:conn:a" });
+    expect(restarted).toEqual(["web", "sync"]);
+    await env.apply({ GH_TOKEN: "platform:conn:a", PORT: "8080" });
+    expect(restarted).toEqual(["web", "sync"]);
+    await env.apply({ GH_TOKEN: "platform:conn:b" });
+    expect(restarted).toEqual(["web", "sync", "web", "sync"]);
+    expect(
+      readFileSync(join(dir, ".config", "rc", "profile.env"), "utf8"),
+    ).toBe("GH_TOKEN=platform:conn:b\n");
+    expect(logs).toContain("restarted Startup Item web for a new env");
+  });
+
+  // TEST_SCENARIO: one item that openrc fails to restart is logged, and the other items still get the new env.
+  it("restarts the other items when one restart fails", async () => {
+    const { env, restarted, logs } = harness({
+      running: ["broken", "web"],
+      failing: ["broken"],
+    });
+
+    await env.apply({ GH_TOKEN: "platform:conn:a" });
+    expect(restarted).toEqual(["broken", "web"]);
+    expect(logs).toContain(
+      "Startup Item broken not restarted for a new env: rc-service: failed",
+    );
+  });
+
+  // TEST_SCENARIO: two pushes close together run one after another, so an item never restarts twice at once, and the file ends with the latest env.
+  it("applies quick pushes in order", async () => {
+    const { dir, env, restarted } = harness({ running: ["web"] });
+
+    await Promise.all([
+      env.apply({ GH_TOKEN: "platform:conn:a" }),
+      env.apply({ GH_TOKEN: "platform:conn:b" }),
+    ]);
+    expect(restarted).toEqual(["web", "web"]);
+    expect(
+      readFileSync(join(dir, ".config", "rc", "profile.env"), "utf8"),
+    ).toBe("GH_TOKEN=platform:conn:b\n");
+  });
+
+  // TEST_SCENARIO: a container agent runs the same image without openrc, so it has no Startup Items: the runtime writes nothing into its home and restarts nothing.
+  it("does nothing where openrc did not boot", async () => {
+    const { dir, env, restarted } = harness({
+      available: false,
+      running: ["web"],
+    });
+
+    await env.apply({ GH_TOKEN: "x" });
+    expect(existsSync(join(dir, ".config"))).toBe(false);
+    expect(restarted).toEqual([]);
   });
 });
 
