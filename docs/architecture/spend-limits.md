@@ -1,6 +1,6 @@
 # Spend limits
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -292,6 +292,7 @@ A channel thread whose session runs on another pair is still checked against the
 - **Channels:** a turn does not start, and the agent does not wake.
   Whoever waits for an answer is told why none comes: a person gets a notice that only they see in Slack, or a chat post in Telegram; an app or another agent that mentioned the agent gets one notice in the thread; an agent that hands a turn over gets the reason as an error.
   A notice names the time when the agent answers again, and Slack and Telegram show that time in each reader's own time zone.
+- **Shared interactive artifacts:** a viewer's prompt does not start a turn or wake the agent, and the page tells the viewer the agent reached its spend limit ([artifact library](artifact-library.md#viewers-of-a-shared-page)).
   Ambient reading waits for nobody, so it skips the agent silently ([channels](channels.md)).
 
 At a soft limit, a hold also asks the owner whether to continue, so the owner is asked even when the call that reached the limit was the last one of its turn.

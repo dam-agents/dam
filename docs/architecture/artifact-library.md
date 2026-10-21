@@ -60,15 +60,31 @@ The host validates both the message payload and the sending window against its p
 The page still never holds a credential for either call.
 The frame is sandboxed without modals, so browser dialogs are blocked.
 
-Callbacks are available only in the docked preview inside the publishing Agent's chat, including fullscreen, and work in a newly started conversation without reloading the page.
+Callbacks are available in the docked preview inside the publishing Agent's chat, including fullscreen, and work in a newly started conversation without reloading the page.
 The same preview on a page outside that chat and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 There is no permanent Session binding: the currently open conversation is the destination.
 An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
 The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
-A viewer sees the page through the share host, where the renderer injects a refusing bridge in place of the owner's: `sendPrompt` throws and `request` rejects with `not-allowed` at once, nothing is posted to the host, and the page shows a notice that only its owner can use its buttons.
-The share page has no host that relays either call, so the refusing bridge is for a clear failure, not the boundary.
-A viewer sees the stored HTML as it is; state that the page reads from its Agent's server is not there for them.
-The owner keeps the callbacks in the docked preview while the page is restricted.
+The dialog warns the owner there that viewers can read and change the Agent's data and send it prompts, under the owner's Agent.
+
+### Viewers of a shared page
+
+A viewer uses a shared interactive page as its owner does: they act under the owner's grant, as a person in a shared Slack channel does.
+On the share host the content host injects the owner's bridge, and the share page relays the frame's messages to two share-host routes, one for requests and one for prompts.
+The share page accepts a message only from its own frame on the content origin, and the routes accept a call only from the share origin, so artifact code cannot use the viewer's share session behind the share page's back.
+Each call is checked again from the start: the viewer's share session and the viewer list, then that the artifact is still restricted, interactive and published by an Agent, and that its owner has the interactive-artifacts feature on.
+A page the owner makes private or plain, a viewer the owner removes, and turning the feature off all stop the next call.
+
+- **A request** wakes the Agent and goes to its Artifact API server, with the same limits and failure reasons as the owner's.
+- **A prompt** starts or continues the viewer's own Session on the Agent, one per viewer and artifact, titled with the viewer's email and the artifact's title, so the owner sees who asked for what.
+  The prompt names the viewer and the page, and tells the Agent the viewer sees only the page, not its reply.
+  The viewer gets an answer once the Agent is awake, without waiting for the turn, and the page shows a short notice.
+  The turn runs on the Agent's channel default and counts as a channel turn: nobody answers its permission prompts, so they are refused, and its credentialed requests are gated as a channel turn's are ([channel turns](channel-turns.md)).
+  An Agent at a spend limit or the Spend Ceiling is not woken, and the viewer is told why ([spend limits](spend-limits.md#unattended-work)).
+
+Every call, allowed or refused, is in the security log under the viewer, with the artifact and the owner, and never with the prompt or the request ([logging](logging.md)).
+A public interactive page, which the sharing rules forbid, would get a refusing bridge instead: its calls fail at once and post nothing.
+Out of scope: limits per viewer on what the Agent may do.
 
 ## Sharing model
 
@@ -144,7 +160,7 @@ What remains on the api-server per public view is bounded work: a small HTML wra
 
 The viewer runs inside the api-server process — a deliberate, accepted trade-off for now rather than an oversight: origin isolation is real, but the event loop and DB pool are shared with the control plane.
 The viewer keeps its dependency surface minimal (metadata reads, blob reads) exactly so it can move into its own deployment when sustained public traffic warrants it.
-Interactive callbacks use the existing chat relay in the app.
+Interactive callbacks use the existing chat relay in the app; a viewer's calls on the share host use the two relay routes above.
 
 ## Publishing and download paths
 
