@@ -1,0 +1,388 @@
+// TEST_OVERVIEW: a refusal from the runner parks the Agent with the reason the user reads, releases the budget the start held, and never hibernates a machine that is up.
+package reconciler
+
+import (
+	"context"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	corev1 "k8s.io/api/core/v1"
+	apimeta "k8s.io/apimachinery/pkg/api/meta"
+	"k8s.io/apimachinery/pkg/api/resource"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/apis/meta/v1/unstructured"
+
+	apiv1 "github.com/dam-agents/dam/packages/controller/api/v1"
+	"github.com/dam-agents/dam/packages/controller/pkg/vmrunner"
+)
+
+func TestARefusedMachineParksAndReleasesTheOwnersBudget(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateCreating,
+		Reason:  vmrunner.ReasonOutOfCapacity,
+		Message: "this machine's 1024 MiB does not fit",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")),
+		"the gateway is scaled down, so the owner is not charged for a machine that was refused")
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Regexp(t, `^Your VM agents are using [0-9.]+ of 8\.0 GiB of memory, and starting this agent needs about [1-9][0-9.]* GiB more`, cond.Message, "the user reads the pool out of the total Home shows, and the room the start itself needs")
+	assert.Contains(t, cond.Message, "disable an agent you aren't using", "the user reads what frees it")
+	assert.NotContains(t, cond.Message, "MiB", "the runner's accounting stays out of the user's copy")
+}
+
+func TestAStartWaitingForTheNodesMemoryIsRetriedAtOnceAndHibernatesNothing(t *testing.T) {
+	ctx := context.Background()
+	for _, tc := range []struct {
+		reason    string
+		published string
+		reclaimed bool
+		message   string
+	}{
+		{reason: vmrunner.ReasonAwaitingAllocation, published: apiv1.ReasonAwaitingAllocation, message: "waiting for the node"},
+		{reason: vmrunner.ReasonOutOfCapacity, published: apiv1.ReasonOverBudget, reclaimed: true, message: "can't start yet"},
+	} {
+		agent := vmAgentCR()
+		r, node, requeued := setupVMReconciler(t, agent)
+		r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+			Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("2Gi")},
+		}
+		r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+		for _, peer := range []string{"idle-peer", "other-peer"} {
+			peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+			_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+				[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+				metav1.PatchOptions{})
+			require.NoError(t, err)
+			r.noteMachineUse(peer, measured(700))
+		}
+		// TEST_SCENARIO: a refused start holds nothing, which is what the runner reports for the machine it did not start.
+		node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: tc.reason}
+
+		require.NoError(t, r.Reconcile(ctx, agent))
+
+		assert.Equal(t, int32(0), agentSSReplicas(t, r, GatewayName("my-agent")),
+			"the gateway is scaled down while the machine waits")
+		cond := readyCondition(t, r, "my-agent")
+		require.NotNil(t, cond)
+		assert.Contains(t, cond.Message, tc.message)
+		assert.Equal(t, tc.published, cond.Reason,
+			"%s: a start waiting for the node is not the owner's budget being spent", tc.reason)
+		published, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+		require.NoError(t, err)
+		live, err := FromCacheObject[apiv1.Agent](published)
+		require.NoError(t, err)
+		agentPod := apimeta.FindStatusCondition(live.Status.Conditions, apiv1.ConditionAgentPodReady)
+		require.NotNil(t, agentPod)
+		assert.Equal(t, tc.published, agentPod.Reason)
+		hibernated := 0
+		for _, peer := range []string{"idle-peer", "other-peer"} {
+			u, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})
+			require.NoError(t, err)
+			if u.GetAnnotations()[annReclaimedAt] != "" {
+				hibernated++
+			}
+		}
+		assert.Equal(t, tc.reclaimed, hibernated > 0,
+			"%s: an idle agent is hibernated only when the owner's own memory is what the start lacks", tc.reason)
+		if !tc.reclaimed {
+			assert.Equal(t, vmReadinessPoll, requeued.last(), "retried at the machine watch's cadence, not at the parked tick")
+			assert.NotContains(t, cond.Message, "disable an agent", "nothing the owner disables frees memory the node has not granted")
+		}
+	}
+}
+
+func TestAStartWaitingOnADeferredResizeFreesWhatTheNodeDidGrant(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, requeued := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+		r.noteMachineUse(peer, measured(700))
+	}
+	runnerPod(t, r, "9Gi", "16Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("9Gi")},
+		},
+	}}
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	hibernated := 0
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		reclaimed, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})
+		require.NoError(t, err)
+		if reclaimed.GetAnnotations()[annReclaimedAt] != "" {
+			hibernated++
+		}
+	}
+	assert.Positive(t, hibernated,
+		"a resize the node will not enact leaves the room it did grant, and an idle agent's machine frees it")
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonAwaitingAllocation, cond.Reason)
+	assert.Equal(t, vmReadinessPoll, requeued.last(), "still retried at the machine watch's cadence, with the parked tick under it")
+}
+
+func TestReclaimForAWaitingStartDoesNotCountTheOtherWaiter(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("16Gi")},
+	}
+	clusterResizesPods(r, true)
+	r.podStatus = func(context.Context, string) (bool, bool) { return true, true }
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		peerVMAgent(t, r, peer, "4Gi", "20Gi", true)
+		_, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Patch(ctx, peer, "application/merge-patch+json",
+			[]byte(`{"metadata":{"annotations":{"`+annLastActivity+`":"`+time.Now().UTC().Add(-10*time.Minute).Format(time.RFC3339)+`"}}}`),
+			metav1.PatchOptions{})
+		require.NoError(t, err)
+	}
+	// TEST_SCENARIO: one idle machine is up and holding memory; the second waiter reached this same wait first and its machine is stopped, holding nothing while it waits.
+	r.noteMachineUse("idle-peer", measured(700))
+	r.vmAnswers.Store("other-peer", vmrunner.ReasonAwaitingAllocation)
+	runnerPod(t, r, "9Gi", "16Gi")
+	pod, err := r.client.CoreV1().Pods("test-agents").Get(ctx, r.runnerName(testOwner)+"-abc", metav1.GetOptions{})
+	require.NoError(t, err)
+	pod.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		Resources: &corev1.ResourceRequirements{
+			Requests: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("9Gi")},
+		},
+	}}
+	pod.Status.Conditions = []corev1.PodCondition{{
+		Type: corev1.PodResizePending, Status: corev1.ConditionTrue, Reason: corev1.PodReasonDeferred, Message: "node(s) didn't have free memory",
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, pod, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonAwaitingAllocation}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	hibernated := map[string]bool{}
+	for _, peer := range []string{"idle-peer", "other-peer"} {
+		reclaimed, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, peer, metav1.GetOptions{})
+		require.NoError(t, err)
+		hibernated[peer] = reclaimed.GetAnnotations()[annReclaimedAt] != ""
+	}
+	assert.True(t, hibernated["idle-peer"], "one idle machine frees what this start lacks")
+	assert.False(t, hibernated["other-peer"], "the other waiter holds nothing, so it is not a machine this reclaim can free room with")
+}
+
+func TestAHostRunnerMemoryRefusalNamesNoFigures(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.HostAddress = "192.168.5.2"
+	for _, sec := range []*corev1.Secret{runnerSecret(), runnerTLSSecret()} {
+		sec.Name = strings.Replace(sec.Name, runnerSuffix(testOwner), "host", 1)
+		_, err := r.client.CoreV1().Secrets("test-agents").Create(ctx, sec, metav1.CreateOptions{})
+		require.NoError(t, err)
+	}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateCreating,
+		Reason:  vmrunner.ReasonOutOfCapacity,
+		Message: "this machine's 1024 MiB does not fit",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	cond := readyCondition(t, r, "my-agent")
+	require.NotNil(t, cond)
+	assert.Contains(t, cond.Message, "Your VM agents' memory is full, so this agent can't start yet.")
+	assert.NotContains(t, cond.Message, "GiB", "the host runner's share is unknown here")
+}
+
+func TestAStorageRefusalIsPublishedWithoutParking(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateAbsent,
+		Reason:  vmrunner.ReasonStorageFull,
+		Message: "your agents' shared storage is 93% full",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.Equal(t, int32(1), agentSSReplicas(t, r, GatewayName("my-agent")), "a storage refusal does not park the agent")
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, metav1.ConditionFalse, cond.Status)
+	assert.Equal(t, vmrunner.ReasonStorageFull, cond.Reason)
+	assert.Contains(t, cond.Message, "93% full")
+}
+
+func TestACacheRefusalNamesTheNodeDirectoryTheRunnerMounts(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	createRolloutRunner(t, r, testOwner)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateAbsent,
+		Reason:  vmrunner.ReasonImageCacheUnreachable,
+		Message: "the node's image cache service at /var/lib/platform/images/.cache.sock cannot be reached: Connection refused (os error 111)",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, vmrunner.ReasonImageCacheUnreachable, cond.Reason)
+	assert.Contains(t, cond.Message, "cannot be reached", "the runner's own refusal is published")
+	assert.Contains(t, cond.Message, r.config.VM.Runner.ImageCacheHostPath, "the failure does not name the node directory the runner mounts")
+}
+
+func TestAFullHomeInsideAGuestIsPublishedAsAFullHomeVolume(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{
+		State:   vmrunner.StateRunning,
+		Reason:  vmrunner.ReasonHomeFull,
+		Message: "the agent's disk is full",
+	}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	got, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	cond := apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	require.NotNil(t, cond)
+	assert.Equal(t, apiv1.ReasonHomeVolumeFull, cond.Reason)
+	assert.Contains(t, cond.Message, "disk is full")
+}
+
+func TestTheKillTheRunnerReportsIsNotOvertakenByTheAgentsOwnReason(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+	r.vmRunning.Store(agent.Name, true)
+	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NoError(t, unstructured.SetNestedSlice(stored.Object, []any{map[string]any{
+		"type":               apiv1.ConditionAgentPodReady,
+		"status":             string(metav1.ConditionFalse),
+		"reason":             vmrunner.ReasonNotReady,
+		"message":            "machine is stopped",
+		"lastTransitionTime": metav1.NewTime(time.Now().Add(-20 * time.Minute)).Format(time.RFC3339),
+	}}, "status", "conditions"))
+	seeded, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	agent, err = FromCacheObject[apiv1.Agent](seeded)
+	require.NoError(t, err)
+	runner, err := r.client.CoreV1().Pods("test-agents").Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(time.Now().Add(-time.Minute)),
+		}},
+	}}
+	_, err = r.client.CoreV1().Pods("test-agents").UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+
+	read := func() *metav1.Condition {
+		obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, agent.Name, metav1.GetOptions{})
+		require.NoError(t, err)
+		got, err := FromCacheObject[apiv1.Agent](obj)
+		require.NoError(t, err)
+		return apimeta.FindStatusCondition(got.Status.Conditions, apiv1.ConditionAgentPodReady)
+	}
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonNotReady, Message: "machine is stopped"}, true))
+	first := read()
+	require.NotNil(t, first)
+	require.Equal(t, apiv1.ReasonRunnerOutOfMemory, first.Reason)
+	assert.WithinDuration(t, time.Now(), first.LastTransitionTime.Time, time.Minute,
+		"the episode is timed from this publish, not from a flip twenty minutes old")
+
+	// TEST_SCENARIO: the next reconcile reads the condition this one wrote, exactly as a reconciler working from the API would.
+	agent.Status.Conditions = []metav1.Condition{*first}
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonNotReady, Message: "machine is stopped"}, true))
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, read().Reason, "the reconcile after the kill's publish names the kill again")
+}
+
+func TestASweepWakeRefusedForMemoryStartsOnTheRetryTick(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateCreating, Reason: vmrunner.ReasonOutOfCapacity, Message: "does not fit"}
+
+	require.NoError(t, r.Reconcile(ctx, agent))
+	require.Contains(t, r.ParkedForRetry(), "my-agent", "the refused wake is queued for the retry tick")
+
+	node.mu.Lock()
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped}
+	node.puts = nil
+	node.mu.Unlock()
+	require.NoError(t, r.Reconcile(ctx, agent))
+
+	assert.True(t, node.spec("my-agent").Running, "the retry under the same activity asked the runner to start the machine")
+	assert.NotContains(t, r.ParkedForRetry(), "my-agent", "and the agent left the retry queue")
+}
+
+func TestAnUnreachableRunnerKeepsThePublishedRestarts(t *testing.T) {
+	agent := vmAgentCR()
+	r, _, _ := setupVMReconciler(t, agent)
+	ctx := context.Background()
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{State: vmrunner.StateRunning, Ready: true, Restarts: 2}, true))
+	restarts, _ := agentRestartStatus(t, r, agent.Name)
+	require.Equal(t, int64(2), restarts, "precondition: the count was published")
+
+	require.NoError(t, r.publishVMReadiness(ctx, agent,
+		vmrunner.MachineStatus{Message: "vm runner is not ready"}, false))
+
+	restarts, reason := agentRestartStatus(t, r, agent.Name)
+	assert.Equal(t, int64(2), restarts)
+	assert.Equal(t, "GuestStoppedAnswering", reason)
+}
