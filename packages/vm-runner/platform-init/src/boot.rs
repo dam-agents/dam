@@ -174,16 +174,31 @@ const OPENRC: &str = "/sbin/openrc";
 
 // UNIT_BOUNDARY_DESCRIPTION: a runlevel that fails is a line on the console and not a failed boot: the entrypoint, which is the agent, may not need the service that failed. It is waited for as the entrypoint is, reaping every orphan meanwhile: a service's daemon is an orphan of PID 1, and openrc stopping one waits until its process is gone, which a zombie never is. A stop that arrives meanwhile is passed on to openrc and noted in `stopping`. openrc runs in the entrypoint's environment, of which its rc_env_allow passes on only what the image names, such as the gateway a service pulls through.
 fn run_openrc(runlevel: &str, env: &[(String, String)], stopping: &mut bool) {
+    finish_openrc(runlevel, spawn_openrc(runlevel, env), stopping);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: starts `openrc <runlevel>` as a child of the init, unblocked for it, or reports why not and gives none.
+fn spawn_openrc(runlevel: &str, env: &[(String, String)]) -> Option<std::process::Child> {
     let mut openrc = std::process::Command::new(OPENRC);
     openrc.arg(runlevel).env_clear().env("PATH", DEFAULT_PATH);
-    let spawned = unblocked(openrc.envs(env.iter().map(|(key, value)| (key, value)))).spawn();
-    match spawned.map(|child| wait_for(child.id(), stopping)) {
-        Ok(0) => logf!("openrc {runlevel} done"),
-        Ok(status) => announce(&format!(
+    match unblocked(openrc.envs(env.iter().map(|(key, value)| (key, value)))).spawn() {
+        Ok(child) => Some(child),
+        Err(e) => {
+            announce(&format!("WARNING: running openrc {runlevel}: {e}"));
+            None
+        }
+    }
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: waits out an `openrc` child and reports how it ended, splitting a runlevel that failed from one that did not.
+fn finish_openrc(runlevel: &str, child: Option<std::process::Child>, stopping: &mut bool) {
+    match child.map(|child| wait_for(child.id(), stopping)) {
+        Some(0) => logf!("openrc {runlevel} done"),
+        Some(status) => announce(&format!(
             "WARNING: openrc {runlevel} {}",
             exit_description(status)
         )),
-        Err(e) => announce(&format!("WARNING: running openrc {runlevel}: {e}")),
+        None => {}
     }
 }
 
@@ -2911,11 +2926,26 @@ fn end_cgroup(stopping: &mut bool) {
 // UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
 fn stop(openrc: bool) -> ! {
     if openrc {
-        run_openrc("shutdown", &[], &mut true);
+        // UNIT_BOUNDARY_DESCRIPTION: the shutdown's start and the stop's kill are one decision, and a child that lost that race stops nothing, so it is ended rather than waited on.
+        match vm::begin_shutdown(|| spawn_openrc("shutdown", &[])) {
+            vm::Begun::Started(shutdown) => finish_openrc("shutdown", shutdown, &mut true),
+            vm::Begun::Refused => {
+                logf!("the workload was already killed; openrc shutdown would stop no service")
+            }
+            vm::Begun::TooLate(shutdown) => abandon_shutdown(shutdown),
+        }
         end_the_rest(&mut true);
     }
     flush_home_on_stop();
     vm::stopped()
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an openrc shutdown that started only after the kill stops nothing, so it is dropped rather than waited on. Waiting on the direct child would hold the supervisor exactly where it is already behind, and a child a stop already gave up on can sit in uninterruptible I/O for as long as its storage wants. Nothing is signalled here either: the shutdown may have forked its own children by then, and one pid is not its tree. `end_the_rest` ends the whole namespace under END_GRACE and reaps it, this child included, since the init is the reaper of every child it has.
+fn abandon_shutdown(shutdown: Option<std::process::Child>) {
+    if shutdown.is_some() {
+        logf!("the stop was killed while openrc shutdown started; its tree is ended with the rest");
+    }
+    drop(shutdown);
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: writes the agent's home out to the disk once the workload has stopped, before the guest is quiesced and powered off. A stop asks smolvm to quiesce the disk, and a runner may be stopping a machine an older smolvm started, whose guest agent may not confirm it; the runner then powers the guest off. Flushing here means that power-off never costs what the agent last wrote, whatever version the host runs.
@@ -3206,6 +3236,35 @@ mod tests {
 
     // UNIT_BOUNDARY_DESCRIPTION: the guard tests share one process-wide slot, and the mutex protects each look at it, not a test's setup and assertions, so the standard runner's concurrent tests would have one test's stop release another test's guard.
     static GUARD_TESTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    // TEST_SCENARIO: an openrc shutdown that starts only after the kill is abandoned, not waited on. Waiting on its direct child would hold the supervisor on the one path where it is already behind, and the shutdown's own children would go on running until the namespace cleanup behind it. So the drop returns at once even while the child and a child of its own are alive, and no single pid is signalled: the group here is ended by the test itself, after the call, as `end_the_rest` ends the namespace in a guest.
+    #[test]
+    fn an_abandoned_shutdown_is_not_waited_on() {
+        use std::os::unix::process::CommandExt;
+        let child = std::process::Command::new("/bin/sh")
+            .arg("-c")
+            .arg("sleep 30 & sleep 30")
+            .process_group(0)
+            .spawn()
+            .unwrap();
+        let pid = child.id() as libc::pid_t;
+        std::thread::sleep(std::time::Duration::from_millis(100));
+        let started = std::time::Instant::now();
+        abandon_shutdown(Some(child));
+        let waited = started.elapsed();
+        assert!(
+            waited < std::time::Duration::from_millis(500),
+            "abandoning a live shutdown waited {waited:?} on it"
+        );
+        // SAFETY: kill(2) with signal 0 only checks for the process, and reads no memory.
+        let alive = unsafe { libc::kill(pid, 0) } == 0;
+        assert!(
+            alive,
+            "the shutdown was gone; nothing showed that the call did not wait on it"
+        );
+        // SAFETY: kill(2) reads no memory; the pid leads the group this test made, which holds nothing else.
+        unsafe { libc::kill(-pid, libc::SIGKILL) };
+    }
 
     // TEST_SCENARIO: a guard that held room when the guest stopped is detached from its slot before it is released, so the running guard cannot regrow it and the filesystem frees its blocks once the last descriptor closes; the stop's sync then has nothing left to wait for. That the room is room the guest can write again is measured in `a_smaller_guard_gives_up_its_files` and, on a bounded disk, in `a_btrfs_guard_move_returns_the_room`: this test's own filesystem is shared with the rest of the suite's tests, so their writes move its free space. The guard thread then finds nothing and ends.
     #[test]
