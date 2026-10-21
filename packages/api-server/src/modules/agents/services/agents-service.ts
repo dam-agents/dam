@@ -200,7 +200,7 @@ export function executeTelegramBind(deps: {
     });
 
     emit({
-      type: EventType.AttentionChanged,
+      type: EventType.TelegramChatBound,
       ownerSub: flow.keycloakSub,
       agentId,
     });
@@ -294,7 +294,7 @@ export function executeTelegramUnbind(deps: {
     });
     if (deps.owner)
       emit({
-        type: EventType.AttentionChanged,
+        type: EventType.TelegramChatUnbound,
         ownerSub: deps.owner,
         agentId,
       });

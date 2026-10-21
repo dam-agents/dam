@@ -51,7 +51,7 @@ One substitution is made: Haiku on a provider that lists no Haiku becomes that p
 Several fitting providers, a provider without that model, or nothing to go on saves the default as not set; a provider not listed yet is left for a later try.
 The owner is told on [Home](home-feed.md#default-model-notices) about a default that is not set, one on a provider the agent no longer holds, and one the conversion changed.
 The first two stop no work on an agent that runs nothing unattended: they are shown once the agent has an enabled Schedule or a Slack or Telegram Channel bound, which is the point where they start failing runs.
-A bound Slack Channel is a row in `channels` and a bound Telegram chat is a row in `telegram_conversations`, so the notice reader asks each table for the Agents it holds rather than inferring both from `channels`.
+Slack Channels and Telegram chats are bound in separate stores, each written by its own binding flow, so the notice reader asks both for the Agents they hold.
 The conversion runs after each `hello` while nothing is saved, and once per channel turn.
 A schedule fire for an agent moved to a new image and still asleep wakes it first, so the fire is checked, converted and resolved against the new runtime rather than the one its last `hello` came from; when the new runtime does not say hello in time, the fire fails as still setting up instead of going out on the old view.
 Run Now on such an agent refuses with "setting up" and starts that wake in the background.

@@ -360,7 +360,7 @@ export function createTelegramMessageHandler(deps: {
     const ownerSub = await deps.ownerOf(binding.agentId);
     if (ownerSub)
       deps.emit({
-        type: EventType.AttentionChanged,
+        type: EventType.TelegramChatUnbound,
         ownerSub,
         agentId: binding.agentId,
       });
@@ -596,7 +596,7 @@ export function createTelegramWorker(deps: {
   emit?: (event: DomainEvent) => void;
   attendance: ChannelTurnAttendance;
   isChatAdmin?: (chatId: string, userId: string) => Promise<boolean>;
-  ownerOf?: (agentId: string) => Promise<string | null>;
+  ownerOf: (agentId: string) => Promise<string | null>;
   settleMs?: number;
 }): TelegramWorker {
   const emit = deps.emit ?? defaultEmit;
@@ -920,7 +920,7 @@ export function createTelegramWorker(deps: {
           oauthConfig: deps.oauthConfig,
           pendingOAuthFlows: deps.pendingOAuthFlows,
           isTermsAccepted: deps.isTermsAccepted,
-          ownerOf: deps.ownerOf ?? (async () => null),
+          ownerOf: deps.ownerOf,
           emit,
           ...(deps.spendHold ? { spendHold: deps.spendHold } : {}),
           uiBaseUrl: deps.uiBaseUrl,

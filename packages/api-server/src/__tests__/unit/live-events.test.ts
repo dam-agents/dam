@@ -207,6 +207,24 @@ describe("hintFor", () => {
     ).toBeNull();
   });
 
+  // TEST_SCENARIO: a Telegram binding decides the same notice as a Slack one, so a bind or an unbind must reach the owner's attention query too.
+  it("projects an attention hint from a Telegram binding change", () => {
+    expect(
+      hintFor({
+        type: EventType.TelegramChatBound,
+        agentId: "a1",
+        ownerSub: "u1",
+      }),
+    ).toEqual({ ownerSub: "u1", hint: { topic: "attention", agentId: "a1" } });
+    expect(
+      hintFor({
+        type: EventType.TelegramChatUnbound,
+        agentId: "a1",
+        ownerSub: "u1",
+      }),
+    ).toEqual({ ownerSub: "u1", hint: { topic: "attention", agentId: "a1" } });
+  });
+
   // TEST_SCENARIO: A runtime's hello is what establishes whether the platform may watch its session list. That claim is stored on the Agent, which the K8s watch cannot see change, so the hello must project an agents hint of its own — otherwise an agent that says hello after a subscription is established stays out of the watch set until an unrelated event fires.
   it("projects an agents hint when a runtime says hello", () => {
     expect(

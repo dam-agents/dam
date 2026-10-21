@@ -24,6 +24,8 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `AgentWoken` | _elsewhere_ | agents |
 | `SlackConnected` | `slack_channel_bound` | agents |
 | `SlackDisconnected` | _elsewhere_ | agents, channels |
+| `TelegramChatBound` | _elsewhere_ | agents |
+| `TelegramChatUnbound` | _elsewhere_ | agents, channels |
 | `ChannelTurnRelayed` | `channel_turn` | channels |
 | `ChannelMessageSent` | `channel_message_sent` | mcp-endpoint |
 | `SessionTurnRelayed` | `session_turn` | agent-proxies/acp-relay |
@@ -46,7 +48,7 @@ They will not appear in `activity_events`, so they answer nothing about usage.
 | `ScheduleDeleted` | _elsewhere_ | schedules |
 | `SchedulePrecheckReported` | _elsewhere_ | schedules |
 | `HarnessConfigChanged` | `harness_config_changed` | harness-config |
-| `AttentionChanged` | _elsewhere_ | agents, attention, channels, harness-config |
+| `AttentionChanged` | _elsewhere_ | attention, harness-config |
 | `ArtifactCreated` | _elsewhere_ | artifact-library |
 | `ArtifactUpdated` | _elsewhere_ | artifact-library |
 | `ArtifactDeleted` | `artifact_deleted` | artifact-library |

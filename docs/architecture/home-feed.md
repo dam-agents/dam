@@ -119,7 +119,7 @@ That is harmless — the row is a fresh capture of live state — but it means r
 
 The bell also lists the Agents on the Model Router whose saved default stops a run nobody picks for ([harness configuration](harness-config.md)): none is set, the Agent holds no model provider to pick one from, the provider its model names is no longer the Agent's, or the conversion of an old default runs it on another model than its setting named.
 That state stops real work only where an Agent runs unattended, so one with no enabled Schedule and no bound Slack or Telegram Channel is not listed for it: nothing of its own fails yet.
-A Slack Channel is a row in `channels`; a Telegram chat is a row in `telegram_conversations`, the table the Telegram bind flow writes, so the reader asks that table rather than looking for Telegram rows among the Channels.
+A Slack Channel and a Telegram chat are stored apart, each where its own binding flow writes it, so the reader asks both stores for the Agents they hold rather than one for both.
 The conversion's note is not a run that fails, and it is shown whatever the Agent runs.
 An Agent on an older runtime runs a default with no model on its harness's own model, so it gets no notice.
 They are computed on every read from the Agent's saved default, its granted providers, the conversion's note and what it runs unattended, so a sleeping Agent is never woken for them and setting a default clears the notice with no write of its own.

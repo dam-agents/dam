@@ -118,6 +118,7 @@ export function telegramWorkerHarness(
     },
     pendingOAuthFlows: createMemoryTtlStore<TelegramOAuthPending>(60_000),
     isTermsAccepted: async () => true,
+    ownerOf: async () => "kc|owner-1",
     uiBaseUrl: "https://app.example",
     brandName: "Platform",
     emit: () => {},

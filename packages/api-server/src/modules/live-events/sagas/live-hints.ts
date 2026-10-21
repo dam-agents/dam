@@ -60,6 +60,12 @@ export function hintFor(
             hint: { topic: "attention", agentId: event.agentId },
           }
         : null;
+    case EventType.TelegramChatBound:
+    case EventType.TelegramChatUnbound:
+      return {
+        ownerSub: event.ownerSub,
+        hint: { topic: "attention", agentId: event.agentId },
+      };
     case EventType.ArtifactCreated:
     case EventType.ArtifactUpdated:
     case EventType.ArtifactDeleted:

@@ -139,12 +139,12 @@ describe("telegram message handler", () => {
     expect(posted).toContain("https://kc.example");
   });
 
-  // TEST_SCENARIO: an in-chat unbind removes the Agent's last Telegram run, so its owner's attention query must re-read; the handler therefore sends the owner an attention event naming the Agent.
+  // TEST_SCENARIO: an in-chat unbind removes the Agent's last Telegram run, so its owner's attention query must re-read; the handler therefore sends the owner an unbind event naming the Agent.
   it("tells the owner a chat was unbound", async () => {
     const h = harness({ boundTo: "agent-1" });
     await h.handle(makeThread(), { text: "/unbind", author: author() }, true);
     expect(h.emitted).toContainEqual({
-      type: EventType.AttentionChanged,
+      type: EventType.TelegramChatUnbound,
       ownerSub: "kc|owner-1",
       agentId: "agent-1",
     });
