@@ -34,9 +34,14 @@ Each comparison reads the grant and the guest's free space in one guest command,
 The renewed comparison needs a grant the runner published after the case's own write, and both of its bounds are waited for on one sample, so a room the guard has not yet moved is neither accepted nor rejected.
 The case also checks the machines' grants against the claim, for every run and with no host byte: no guest may be granted more than the room left below 95% of the claim's capacity, and each running guest is granted a part of it.
 That is a policy check and not the ceiling regression: a sum of observed grants cannot prove the whole claim's ceiling, so the near-ceiling refusal still needs the claim filled.
-The direct refusal probe of that case — the write its fill leaves no room for — is quarantined until the guest can say which storage allowance it has applied: a renewed allowance can return room between the fill and the write, so a write that was allowed cannot be told from one a renewal preceded.
-The quarantine is a coverage gap and not a replaced check: the guest's room against its grant says the guard left the guest no room, never that a write was refused, and the probe is skipped rather than retried until it passes, so an intermittent defect cannot earn a pass.
-Its fill, writes, trim, share recovery, sibling write and grant policy keep running in the case around it.
+The next case is the direct refusal the share-recovery case cannot make: a guest held at its share is refused its next write, and refused for want of space.
+That probe is deliberately coarser than the wedge it guards.
+It does not judge the write at the size of the guest's own grant: a renewal can return room between the fill and the write, and no guest-side figure says which allowance the guard has applied, so a write allowed at the guest's share cannot be told from one a renewal preceded.
+Instead the case marks the guest's whole remaining room and asks for more than any grant the guest could be given in the meantime — everything the claim has left below its 95% ceiling, which no guest may be granted all of, plus the floor every guest may write past its grant, the guard's step and the case's slack — so no renewal that lands before the write can make it fit.
+What it loses is the size of the refusal: a guest refused at its share and one refused at ten times its share both pass, and only the claim-ceiling case below reads a refusal close to a real share.
+What it keeps is the direct coverage the always-on lane had none of: the guest's room against its grant says the guard left the guest no room, never that a write was refused.
+The write is made once and never retried until it is refused, so a guest let past the bound fails the case rather than earning a pass on a later attempt.
+Its fill, writes, trim, share recovery, sibling write and grant policy keep running in the case before it.
 The opt-in ceiling case is unchanged.
 It skips on a Mac host runner, where the first case measures no machine's disk.
 The case beside it fills the claim itself with real bytes to read the ceiling, and spends `E2E_DISK_FILL_GIB` of the host to do it, so it skips when the claim would need more than that or the variable is unset.
