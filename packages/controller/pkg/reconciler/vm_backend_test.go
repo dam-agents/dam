@@ -3139,3 +3139,112 @@ func TestAPodNewerThanTheCachedStatefulSetIsNotForceRolled(t *testing.T) {
 	_, err = client.CoreV1().Pods("test-agents").Get(ctx, pod.Name, metav1.GetOptions{})
 	assert.NoError(t, err, "the pod on the current revision is left to start")
 }
+
+// UNIT_BOUNDARY_DESCRIPTION: the agent as the API holds it, for a reconcile that reads it the way a controller working from the API would.
+func readAgent(t *testing.T, r *AgentReconciler, name string) *apiv1.Agent {
+	t.Helper()
+	obj, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(context.Background(), name, metav1.GetOptions{})
+	require.NoError(t, err)
+	agent, err := FromCacheObject[apiv1.Agent](obj)
+	require.NoError(t, err)
+	return agent
+}
+
+func readAgentPodReady(t *testing.T, r *AgentReconciler, name string) *metav1.Condition {
+	t.Helper()
+	return apimeta.FindStatusCondition(readAgent(t, r, name).Status.Conditions, apiv1.ConditionAgentPodReady)
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: an agent that was ready and running an hour ago, which is what the kill's attribution reads to know the machine was running when the kill landed.
+func readyAndRunningAgent(t *testing.T, r *AgentReconciler, agent *apiv1.Agent) {
+	t.Helper()
+	ctx := context.Background()
+	r.vmRunning.Store(agent.Name, true)
+	r.vmRunningSince.Store(agent.Name, time.Now().Add(-time.Hour))
+	require.NoError(t, updateAgentStatus(ctx, r.dynamic, "test-agents", agent.Name, func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionAgentPodReady, true, "PodReady", "", "", 0)
+		setStatusCondition(s, apiv1.ConditionReady, true, "AllPodsReady", "", "", 0)
+	}))
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: the owner's runner pod carrying the kernel's OOM kill in its last termination, as the restarted runner reports it for the ten minutes that follow.
+func killTheRunnerForMemory(t *testing.T, r *AgentReconciler) time.Time {
+	t.Helper()
+	ctx := context.Background()
+	pods := r.client.CoreV1().Pods("test-agents")
+	runner, err := pods.Get(ctx, readyRunnerPod().Name, metav1.GetOptions{})
+	require.NoError(t, err)
+	killed := time.Now().Add(-time.Minute)
+	runner.Status.ContainerStatuses = []corev1.ContainerStatus{{
+		Name: vmRunnerComponent,
+		LastTerminationState: corev1.ContainerState{Terminated: &corev1.ContainerStateTerminated{
+			Reason: "OOMKilled", FinishedAt: metav1.NewTime(killed),
+		}},
+	}}
+	_, err = pods.UpdateStatus(ctx, runner, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	return killed
+}
+
+// TEST_SCENARIO: the owner's runner pod is OOM-killed and the restarted runner refuses the machine for room, so the agent parks under OverBudget. The kill took that machine down, and the notice, the Slack alert and the history read only the reason on AgentPodReady, so the kill has to be published there over the refusal the agent wears now. The refusal stays on Ready, which is what the budget surfaces and the parked retry read, and a later reconcile publishes the same kill rather than a new one.
+func TestAParkedAgentStillNamesTheKillThatTookItsMachineDown(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	r.config.VM.Runner.Resources = &corev1.ResourceRequirements{
+		Limits: corev1.ResourceList{corev1.ResourceMemory: resource.MustParse("8Gi")},
+	}
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped, Reason: vmrunner.ReasonOutOfCapacity}
+	readyAndRunningAgent(t, r, agent)
+	killTheRunnerForMemory(t, r)
+
+	require.NoError(t, r.Reconcile(ctx, readAgent(t, r, "my-agent")))
+
+	assert.Equal(t, apiv1.ReasonOverBudget, readyCondition(t, r, "my-agent").Reason,
+		"the refusal is still what the budget surfaces read")
+	first := readAgentPodReady(t, r, "my-agent")
+	require.NotNil(t, first)
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, first.Reason, "the owner hears about the kill, not only about the refusal it caused")
+	assert.Contains(t, first.Message, "ran out of memory together")
+
+	require.NoError(t, r.Reconcile(ctx, readAgent(t, r, "my-agent")))
+	second := readAgentPodReady(t, r, "my-agent")
+	require.NotNil(t, second)
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, second.Reason, "the episode lasts, so the kill is still what the agent names")
+	assert.Equal(t, first.LastTransitionTime, second.LastTransitionTime,
+		"the same kill is not announced again on the next reconcile")
+}
+
+// TEST_SCENARIO: a machine the pool's pressure hibernated was running when the runner was OOM-killed, and the owner's notice reads AgentPodReady, so the kill has to be published over the hibernation the agent wears now. Once the episode ends nothing else writes that condition on an agent that stays asleep, so the hibernation is published again on a later reconcile and the agent stops naming a kill that is over.
+func TestAHibernatedAgentNamesTheKillUntilItsEpisodeEnds(t *testing.T) {
+	ctx := context.Background()
+	agent := vmAgentCR()
+	r, node, _ := setupVMReconciler(t, agent)
+	readyAndRunningAgent(t, r, agent)
+	node.statuses["my-agent"] = vmrunner.MachineStatus{State: vmrunner.StateStopped}
+	stored, err := r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Get(ctx, "my-agent", metav1.GetOptions{})
+	require.NoError(t, err)
+	stored.SetAnnotations(map[string]string{annLastActivity: time.Now().Add(-2 * time.Hour).UTC().Format(time.RFC3339)})
+	_, err = r.dynamic.Resource(AgentsGVR).Namespace("test-agents").Update(ctx, stored, metav1.UpdateOptions{})
+	require.NoError(t, err)
+	require.NoError(t, r.Reconcile(ctx, readAgent(t, r, "my-agent")))
+	require.NoError(t, hibernateAgentPair(ctx, r.client, r.dynamic, r.HaltMachine, testOwner, "test-agents", "my-agent"))
+	killTheRunnerForMemory(t, r)
+
+	require.NoError(t, r.Reconcile(ctx, readAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonHibernated, readyCondition(t, r, "my-agent").Reason, "the agent still reads as put to sleep")
+	killed := readAgentPodReady(t, r, "my-agent")
+	require.NotNil(t, killed)
+	assert.Equal(t, apiv1.ReasonRunnerOutOfMemory, killed.Reason, "the owner hears what took its machine down")
+
+	killed.LastTransitionTime = metav1.NewTime(time.Now().Add(-runnerOOMEpisode - time.Minute))
+	require.NoError(t, updateAgentStatus(ctx, r.dynamic, "test-agents", agent.Name, func(s *apiv1.AgentStatus) {
+		if c := apimeta.FindStatusCondition(s.Conditions, apiv1.ConditionAgentPodReady); c != nil {
+			c.LastTransitionTime = killed.LastTransitionTime
+		}
+	}))
+
+	require.NoError(t, r.Reconcile(ctx, readAgent(t, r, "my-agent")))
+	assert.Equal(t, apiv1.ReasonHibernated, readAgentPodReady(t, r, "my-agent").Reason,
+		"past the episode the kill explains nothing the agent reads now")
+}

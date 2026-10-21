@@ -476,6 +476,8 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 	}
 	var machine vmrunner.MachineStatus
 	var runnerReached bool
+	// UNIT_BOUNDARY_DESCRIPTION: whether this agent's machine was running until this reconcile, read before the reconcile records what it decided. A kill of the owner's runner explains only the agents whose machine it took down, and a decision to park or to put an agent to sleep is published under its own reason on Ready while the kill goes on AgentPodReady, which is where the notice, the alert and the history read it.
+	wasRunning, _ := r.vmRunning.Load(name)
 	var migrationVMErr error
 	if migration.requested {
 		if err := r.beginRuntimeMigration(ctx, agent, &migration); err != nil {
@@ -514,10 +516,13 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		r.noteMachineUse(name, machine)
 		machineLock.Unlock()
 		timer.mark("vmMachine")
-		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer.
-		if pairAtRest && runnerReached && machineStopped(machine) && (lastReady == nil || lastReady.Reason != apiv1.ReasonHibernated) {
+		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer. It is published on every reconcile of a resting agent rather than only the first, so the kill that took its machine down comes off AgentPodReady once its episode ends: nothing else writes that condition on an agent that stays asleep.
+		if pairAtRest && runnerReached && machineStopped(machine) {
 			if err := publishHibernated(ctx, r.dynamic, r.config.Namespace, name); err != nil {
 				return fmt.Errorf("agent %s: publishing hibernation: %w", name, err)
+			}
+			if err := r.attributeRunnerKill(ctx, agent, wasRunning == true); err != nil {
+				return fmt.Errorf("agent %s: publishing the kill that took its machine down: %w", name, err)
 			}
 		}
 		if migration.active() {
@@ -645,19 +650,22 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
-	if overBudget != "" {
+	switch {
+	case overBudget != "":
 		err = r.publishOverBudget(ctx, agent, overBudget)
 		timer.mark("overBudget")
-		return err
-	}
-	if awaiting != "" {
+	case awaiting != "":
 		err = r.publishParked(ctx, agent, awaitingReason, awaiting)
 		timer.mark("awaitingAllocation")
+	default:
+		err = r.publishReconciled(ctx, agent)
+		timer.mark("reconciled")
+	}
+	if err != nil || !agentSpec.IsVM() {
 		return err
 	}
-	err = r.publishReconciled(ctx, agent)
-	timer.mark("reconciled")
-	return err
+	// UNIT_BOUNDARY_DESCRIPTION: a refusal for room and a start waiting for the node are consequences of the kill, and each is published under its own reason on Ready so that the budget surfaces and the parked retry keep reading them. The kill goes on AgentPodReady after them, so the owner still hears what took their machine down.
+	return r.attributeRunnerKill(ctx, agent, wasRunning == true)
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: whether the idle checker has yet to hibernate the Agent, read off its gateway, which the checker scales to zero with the machine. A lapsed idle timeout alone must not stop a vm machine, as it never scales a container down: only the checker also asks agent-runtime whether it is busy. A gateway at zero whose machine did not stop, because the runner was unreachable, is stopped here on the next reconcile. It is read live: the checker scales the gateway down and then writes the status that requeues the Agent, and a cache that has not seen the scale yet would start the machine the checker just stopped.
