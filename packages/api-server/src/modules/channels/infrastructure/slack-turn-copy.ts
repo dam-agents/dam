@@ -2,6 +2,7 @@ import { channelNetworkAccessGuidance } from "./network-access-copy.js";
 import { channelPermissionCheckGuidance } from "./permission-check-copy.js";
 import { OUTBOUND_TOOL_PREFIX } from "../../../core/platform-mcp.js";
 import { formatSlackTs } from "./agent-footer.js";
+import type { SupersededTurn } from "../domain/thread-supersede.js";
 
 const TOOL = OUTBOUND_TOOL_PREFIX;
 
@@ -398,4 +399,45 @@ export function postDeletedNotice(post: {
     `deleted by your owner${reason}. Do not reply to this message, this is ` +
     "a notice only.</notice>"
   );
+}
+
+const SUPERSEDED_REPLY_CHARS = 1500;
+
+export function supersededTurnNote(turns: readonly SupersededTurn[]): string {
+  if (turns.length === 0) return "";
+  const cancelled = turns.some((turn) => turn.cancelled);
+  const tools = turns.flatMap((turn) => turn.tools);
+  const replies = turns.flatMap((turn) => turn.replies);
+  const done =
+    tools.length === 0 && replies.length === 0
+      ? ["It had not run a tool or posted anything yet."]
+      : [
+          ...(tools.length > 0
+            ? [
+                "Before it ended it ran:",
+                ...tools.map((title) => `- ${escapeFrameText(title)}`),
+              ]
+            : []),
+          ...replies.map((said) => {
+            const capped =
+              said.length > SUPERSEDED_REPLY_CHARS
+                ? `${said.slice(0, SUPERSEDED_REPLY_CHARS)}… (truncated)`
+                : said;
+            return `It posted:\n${escapeFrameText(capped)}`;
+          }),
+          "Some of that may already have had effects — an issue filed, a " +
+            "message sent, a change made. Check what it did before you act, " +
+            "and do not do it a second time.",
+        ];
+  return [
+    "<earlier-turn>",
+    "Another session of yours was already working on this thread's opening " +
+      "message when the reply here arrived. " +
+      (cancelled
+        ? "That turn was stopped so the request is handled once, here, with " +
+          "everything said about it in front of you."
+        : "This turn waited for it to end, so the two never ran at once."),
+    ...done,
+    "</earlier-turn>",
+  ].join("\n");
 }
