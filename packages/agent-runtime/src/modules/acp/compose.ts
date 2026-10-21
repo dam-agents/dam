@@ -100,6 +100,7 @@ export interface ComposeAcpOptions {
   keepPolicy: KeepPolicy;
   onArtifactTouch: (touch: ArtifactTouch) => void;
   onToolActivity?: (activity: ToolActivity) => void;
+  gitTraceEnv?: Record<string, string>;
   onTurnOutcome?: (
     sessionId: string,
     end: { stopReason: string | null; error: string | null },
@@ -445,6 +446,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
                 },
                 scoped.pair().native !== undefined,
               ),
+              ...opts.gitTraceEnv,
             },
           });
         },

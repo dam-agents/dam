@@ -72,7 +72,11 @@ import { config } from "./modules/config.js";
 import { composeAcp } from "./modules/acp/compose.js";
 import { prepareProcesses } from "./modules/processes/index.js";
 import { createEnvironmentForward } from "./modules/environment-forward.js";
-import { composeChanges } from "./modules/changes/index.js";
+import {
+  composeChanges,
+  createGitTraceReader,
+  gitTraceEnv,
+} from "./modules/changes/index.js";
 import { recoverInterruptedTurns } from "./modules/acp/services/interrupted-turn-recovery.js";
 import {
   createTerminalSessionLookup,
@@ -197,12 +201,25 @@ const setupGitCredentialHelper = createGitCredentialHelperSetup(
   envStore,
   (msg) => process.stderr.write(`[git] ${msg}\n`),
 );
+const changesLog = (msg: string) => process.stderr.write(`[changes] ${msg}\n`);
 const changes = composeChanges({
   roots: [workDir, homeDir],
   stateBackend,
   githubToken: () => resolveGitHubToken(envStore.current(), homeDir),
-  log: (msg) => process.stderr.write(`[changes] ${msg}\n`),
+  sessionOf: (id) => (sessionMetadata.get(id) !== undefined ? id : undefined),
+  runningSessions: () =>
+    Object.keys(sessionMetadata.all()).filter((id) =>
+      acpRuntime.isSessionRunning(id),
+    ),
+  log: changesLog,
 });
+const gitTraceDir = join(homeDir, ".platform", "git-traces");
+const gitTraces = createGitTraceReader({
+  dir: gitTraceDir,
+  onCommand: (command) => void changes.onGitCommand(command),
+  log: changesLog,
+});
+
 const skillsLog = (msg: string) => process.stderr.write(`[skills] ${msg}\n`);
 const { service: skillsService, reconciler: imageSkillReconciler } =
   composeSkills({
@@ -533,7 +550,9 @@ const {
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   agentRequests: toolApprovalReporter,
-  onToolActivity: changes.onToolActivity,
+  onToolActivity: ({ sessionId }) =>
+    void gitTraces.drain().then(() => changes.onToolCallSettled(sessionId)),
+  gitTraceEnv: gitTraceEnv(gitTraceDir),
   onTurnOutcome: (sessionId, end) =>
     invocationWatch.turnOutcome(sessionId, end),
   onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
@@ -559,6 +578,13 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+void gitTraces
+  .start()
+  .catch((error: unknown) =>
+    changesLog(
+      `reading git traces could not start: ${error instanceof Error ? error.message : String(error)}`,
+    ),
+  );
 runningSessionsOf = (harness) =>
   Object.entries(sessionMetadata.all())
     .filter(
@@ -954,6 +980,7 @@ function attachPty(
           ...terminalModelEnv(lease),
           TERM: "xterm-256color",
           COLORTERM: "truecolor",
+          ...gitTraceEnv(gitTraceDir),
           HARNESS_SESSION_ID: sessionId,
           PLATFORM_TERMINAL_ID: terminalId,
         },

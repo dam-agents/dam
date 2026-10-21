@@ -9,22 +9,18 @@ import {
 } from "../../modules/changes/domain/git-output.js";
 import { createToolActivityReader } from "../../modules/changes/domain/tool-activity.js";
 import {
-  completeLinesOf,
-  pushedRefOf,
-  pushEntriesIn,
-} from "../../modules/changes/domain/push-log.js";
-import {
-  createToolCallWindows,
-  SETTLED_KEPT_MS,
-  WINDOW_SLACK_MS,
-} from "../../modules/changes/domain/tool-call-windows.js";
+  gitCommandOf,
+  gitTraceEnv,
+  SESSION_ENV_VARS,
+} from "../../modules/changes/domain/git-trace.js";
 import { INERT_GITHUB_TOKEN } from "../../modules/skills/infrastructure/github-token.js";
 import { createPullRequestFinder } from "../../modules/changes/infrastructure/pull-requests.js";
 
 /**
  * TEST_OVERVIEW: the parts of the Changes panel's runtime that read text —
- * git's porcelain output, ACP tool-call frames — and the pull request lookup
- * that goes through the agent's GitHub connection.
+ * git's porcelain output, git's trace of a command, ACP tool-call frames —
+ * and the pull request lookup that goes through the agent's GitHub
+ * connection.
  */
 
 describe("git output parsing", () => {
@@ -151,236 +147,175 @@ describe("git output parsing", () => {
 });
 
 describe("tool activity", () => {
-  /**
-   * TEST_SCENARIO: An Edit tool call names the file it edits in its
-   * locations and its raw input; both give the edited path once.
-   */
-  it("should read the paths an edit tool call touches", () => {
-    const toolActivityIn = createToolActivityReader();
-    const frame = {
-      method: "session/update",
-      params: {
-        sessionId: "s1",
-        update: {
-          sessionUpdate: "tool_call",
-          kind: "edit",
-          status: "pending",
-          locations: [{ path: "/tmp/tmp.abc/x.md" }],
-          rawInput: { file_path: "/tmp/tmp.abc/x.md" },
-        },
-      },
-    };
-
-    expect(toolActivityIn(frame)).toEqual({
-      sessionId: "s1",
-      toolCallId: null,
-      editedPaths: ["/tmp/tmp.abc/x.md"],
-      started: true,
-      settled: false,
-    });
-  });
-
-  /**
-   * TEST_SCENARIO: A finished tool call of any kind may have changed files
-   * (a shell command), so it is reported as settled with no edited paths;
-   * an unfinished non-edit tool call is nothing.
-   */
-  it("should report a settled tool call without paths", () => {
-    const toolActivityIn = createToolActivityReader();
-    const update = (status: string) => ({
-      params: {
-        sessionId: "s1",
-        update: { sessionUpdate: "tool_call_update", kind: "execute", status },
-      },
-    });
-
-    expect(toolActivityIn(update("completed"))).toEqual({
-      sessionId: "s1",
-      toolCallId: null,
-      editedPaths: [],
-      started: false,
-      settled: true,
-    });
-    expect(toolActivityIn(update("in_progress"))).toBeNull();
-  });
-
-  const frameOf = (update: Record<string, unknown>) => ({
+  const frame = (update: Record<string, unknown>) => ({
     method: "session/update",
-    params: { sessionId: "s1", update: { toolCallId: "t1", ...update } },
+    params: { sessionId: "s1", update },
   });
 
   /**
-   * TEST_SCENARIO: A streamed Write opens as an edit with no locations, before
-   * its input arrives; the update that names the file carries no kind. The
-   * call reports its start, the path still counts as edited, and the call
-   * settles once.
+   * TEST_SCENARIO: A tool call that finished, completed or failed, names its
+   * Session; one still running, a new one, or any other update is nothing.
+   * What the tool call did is not read.
    */
-  it("should read the path a streamed edit names in a later update", () => {
+  it("should name the Session of a tool call that finished", () => {
     const toolActivityIn = createToolActivityReader();
+    const update = (sessionUpdate: string, status: string) =>
+      frame({ sessionUpdate, toolCallId: "t1", kind: "edit", status });
 
-    expect(
-      toolActivityIn(
-        frameOf({ sessionUpdate: "tool_call", kind: "edit", locations: [] }),
-      ),
-    ).toEqual({
+    expect(toolActivityIn(update("tool_call_update", "completed"))).toEqual({
       sessionId: "s1",
-      toolCallId: "t1",
-      editedPaths: [],
-      started: true,
-      settled: false,
     });
-    expect(
-      toolActivityIn(
-        frameOf({
-          sessionUpdate: "tool_call_update",
-          locations: [{ path: "/repo/a.ts" }],
-        }),
-      ),
-    ).toEqual({
+    expect(toolActivityIn(update("tool_call_update", "failed"))).toEqual({
       sessionId: "s1",
-      toolCallId: "t1",
-      editedPaths: ["/repo/a.ts"],
-      started: false,
-      settled: false,
     });
     expect(
-      toolActivityIn(
-        frameOf({ sessionUpdate: "tool_call_update", status: "completed" }),
-      ),
-    ).toEqual({
-      sessionId: "s1",
-      toolCallId: "t1",
-      editedPaths: [],
-      started: false,
-      settled: true,
-    });
-  });
-
-  /**
-   * TEST_SCENARIO: A Read names the file it reads in a later update too; a
-   * tool call that opened as another kind edits nothing, and neither does a
-   * call of the same id in another session.
-   */
-  it("should not count the locations of a tool call that is not an edit", () => {
-    const toolActivityIn = createToolActivityReader();
-    toolActivityIn(frameOf({ sessionUpdate: "tool_call", kind: "edit" }));
-    toolActivityIn({
-      params: {
-        sessionId: "s2",
-        update: { sessionUpdate: "tool_call", toolCallId: "t2", kind: "read" },
-      },
-    });
-
-    expect(
-      toolActivityIn({
-        params: {
-          sessionId: "s2",
-          update: {
-            sessionUpdate: "tool_call_update",
-            toolCallId: "t2",
-            locations: [{ path: "/repo/a.ts" }],
-          },
-        },
-      }),
+      toolActivityIn(update("tool_call_update", "in_progress")),
     ).toBeNull();
+    expect(toolActivityIn(update("tool_call", "pending"))).toBeNull();
     expect(
-      toolActivityIn({
-        params: {
-          sessionId: "s2",
-          update: {
-            sessionUpdate: "tool_call_update",
-            toolCallId: "t1",
-            locations: [{ path: "/repo/a.ts" }],
-          },
-        },
-      }),
+      toolActivityIn(frame({ sessionUpdate: "agent_message_chunk" })),
     ).toBeNull();
   });
 });
 
-describe("push log", () => {
-  const sha = (c: string) => c.repeat(40);
+describe("git trace", () => {
+  const event = (fields: Record<string, unknown>, sid = "20261021T1-P1") =>
+    JSON.stringify({ sid, thread: "main", ...fields });
+
+  const trace = (
+    name: string,
+    opts: {
+      code?: number;
+      params?: Record<string, string>;
+      worktree?: string;
+    } = {},
+  ) =>
+    [
+      event({ event: "version", evt: "4", exe: "2.47.3" }),
+      event({
+        event: "start",
+        argv: ["git", name, "-m", "token=abc123"],
+      }),
+      ...(opts.worktree === undefined
+        ? [event({ event: "def_repo", repo: 1, worktree: "/w/app" })]
+        : opts.worktree === ""
+          ? []
+          : [event({ event: "def_repo", repo: 1, worktree: opts.worktree })]),
+      event({ event: "cmd_name", name, hierarchy: name }),
+      ...Object.entries(opts.params ?? {}).map(([param, value]) =>
+        event({ event: "def_param", scope: "command", param, value }),
+      ),
+      event({ event: "exit", code: opts.code ?? 0 }),
+      event({ event: "atexit", code: opts.code ?? 0 }),
+    ].join("\n") + "\n";
 
   /**
-   * TEST_SCENARIO: A remote-tracking ref's reflog holds pushes and fetches;
-   * only the pushes count, each at its time in milliseconds.
+   * TEST_SCENARIO: A commit that succeeded gives its worktree and the Session
+   * its harness named; the command line it carries, which may hold a
+   * secret, is not part of the result.
    */
-  it("should read only the pushes of a remote-tracking reflog", () => {
-    const log = [
-      `${sha("0")} ${sha("a")} Bench <b@example.com> 1760533942 +0200\tupdate by push`,
-      `${sha("a")} ${sha("b")} Bench <b@example.com> 1760533950 +0000\tfetch: fast-forward`,
-      `${sha("b")} ${sha("c")} Bench <b@example.com> 1760533960 -0700\tupdate by push`,
-      "",
+  it("should read the worktree and Session of a commit", () => {
+    const command = gitCommandOf(
+      trace("commit", { params: { CLAUDE_CODE_SESSION_ID: "s1" } }),
+    );
+
+    expect(command).toEqual({
+      name: "commit",
+      worktree: "/w/app",
+      sessionId: "s1",
+      push: false,
+    });
+    expect(JSON.stringify(command)).not.toContain("abc123");
+  });
+
+  /**
+   * TEST_SCENARIO: A push is marked as one, and a trace that names no
+   * Session still gives its command, for agent-runtime to decide.
+   */
+  it("should mark a push and keep a command that names no Session", () => {
+    expect(gitCommandOf(trace("push"))).toEqual({
+      name: "push",
+      worktree: "/w/app",
+      sessionId: null,
+      push: true,
+    });
+  });
+
+  /**
+   * TEST_SCENARIO: The platform's own variable wins over a harness's, and
+   * among a harness's the first listed wins.
+   */
+  it("should prefer the platform's Session variable", () => {
+    expect(
+      gitCommandOf(
+        trace("commit", {
+          params: {
+            PI_SESSION_ID: "pi",
+            HARNESS_SESSION_ID: "term",
+            CLAUDE_CODE_SESSION_ID: "cc",
+          },
+        }),
+      )?.sessionId,
+    ).toBe("term");
+    expect(
+      gitCommandOf(
+        trace("commit", {
+          params: { PI_SESSION_ID: "pi", CODEX_THREAD_ID: "codex" },
+        }),
+      )?.sessionId,
+    ).toBe("codex");
+  });
+
+  /**
+   * TEST_SCENARIO: A command that only reads or switches, one that failed,
+   * one outside any repository and an unfinished trace give nothing.
+   */
+  it("should give nothing for a command that records no work", () => {
+    expect(gitCommandOf(trace("status"))).toBeNull();
+    expect(gitCommandOf(trace("checkout"))).toBeNull();
+    expect(gitCommandOf(trace("commit", { code: 1 }))).toBeNull();
+    expect(gitCommandOf(trace("commit", { worktree: "" }))).toBeNull();
+    expect(
+      gitCommandOf(trace("commit").split("\n").slice(0, 4).join("\n")),
+    ).toBeNull();
+  });
+
+  /**
+   * TEST_SCENARIO: A child git process a command starts writes into the
+   * same trace under a nested id; only the command's own events count, so a
+   * maintenance run inside a commit does not change its result.
+   */
+  it("should read only the top-level process of a trace", () => {
+    const child = (fields: Record<string, unknown>) =>
+      event(fields, "20261021T1-P1/20261021T2-P2");
+    const text = [
+      ...trace("commit", { params: { CLAUDE_CODE_SESSION_ID: "s1" } })
+        .trim()
+        .split("\n")
+        .slice(0, -2),
+      child({ event: "def_repo", repo: 1, worktree: "/other" }),
+      child({ event: "cmd_name", name: "maintenance" }),
+      child({ event: "exit", code: 1 }),
+      event({ event: "exit", code: 0 }),
+      event({ event: "atexit", code: 0 }),
     ].join("\n");
 
-    expect(pushEntriesIn(log)).toEqual([
-      { sha: sha("a"), at: 1_760_533_942_000 },
-      { sha: sha("c"), at: 1_760_533_960_000 },
-    ]);
-  });
-
-  /**
-   * TEST_SCENARIO: A read can end in the middle of a line git is still
-   * writing; only the complete lines are read, so the rest is read next time.
-   */
-  it("should keep only the complete lines of a read", () => {
-    expect(completeLinesOf("one\ntwo\nthr")).toBe("one\ntwo\n");
-    expect(completeLinesOf("partial")).toBe("");
-  });
-
-  /**
-   * TEST_SCENARIO: A reflog's path under logs/refs/remotes names the remote
-   * and the branch, which may hold slashes; the remote's HEAD is not a push.
-   */
-  it("should name the remote and branch of a reflog path", () => {
-    expect(pushedRefOf("origin/fix/5052-split")).toEqual({
-      remote: "origin",
-      branch: "fix/5052-split",
+    expect(gitCommandOf(text)).toMatchObject({
+      name: "commit",
+      worktree: "/w/app",
     });
-    expect(pushedRefOf("origin/HEAD")).toBeNull();
-    expect(pushedRefOf("origin")).toBeNull();
-  });
-});
-
-describe("tool call windows", () => {
-  /**
-   * TEST_SCENARIO: A push lands while one session's tool call runs; that
-   * session is the one running then, and a moment of slack covers git's
-   * whole-second timestamps.
-   */
-  it("should name the sessions running a tool call at a time", () => {
-    let at = 1_000_000;
-    const windows = createToolCallWindows(() => at);
-    windows.started("s1", "t1");
-    at += 5_000;
-    windows.started("s2", "t2");
-    at += 5_000;
-    windows.settled("s1", "t1");
-
-    expect(windows.sessionsAt(1_002_000)).toEqual(["s1"]);
-    expect(windows.sessionsAt(1_007_000)).toEqual(["s2", "s1"]);
-    expect(windows.sessionsAt(1_010_000 + WINDOW_SLACK_MS)).toEqual([
-      "s2",
-      "s1",
-    ]);
-    expect(windows.sessionsAt(1_000_000 - WINDOW_SLACK_MS - 1)).toEqual([]);
   });
 
   /**
-   * TEST_SCENARIO: A settled tool call is kept a while for a push the watcher
-   * reads late, then forgotten; a tool call that never started settles
-   * nothing.
+   * TEST_SCENARIO: The trace configuration writes one file per git process
+   * into a directory and records only the Session variables.
    */
-  it("should forget a settled tool call after a while", () => {
-    let at = 1_000_000;
-    const windows = createToolCallWindows(() => at);
-    windows.started("s1", "t1");
-    windows.settled("s1", "t1");
-    windows.settled("s1", "unknown");
-
-    expect(windows.sessionsAt(1_000_000)).toEqual(["s1"]);
-    at += SETTLED_KEPT_MS + 1;
-    expect(windows.sessionsAt(1_000_000)).toEqual([]);
+  it("should configure a per-process trace with only the Session variables", () => {
+    expect(gitTraceEnv("/home/agent/.platform/git-traces")).toMatchObject({
+      GIT_TRACE2_EVENT: "/home/agent/.platform/git-traces/",
+      GIT_TRACE2_BRIEF: "1",
+      GIT_TRACE2_ENV_VARS: SESSION_ENV_VARS.join(","),
+    });
   });
 });
 

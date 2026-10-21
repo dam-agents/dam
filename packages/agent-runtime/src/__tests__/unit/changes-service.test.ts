@@ -12,13 +12,18 @@ import {
   createChangesService,
   type ChangesRuntime,
 } from "../../modules/changes/services/changes-service.js";
+import {
+  gitCommandOf,
+  gitTraceEnv,
+  SESSION_ENV_VARS,
+} from "../../modules/changes/domain/git-trace.js";
 
 /**
  * TEST_OVERVIEW: the changes service finds every git repository the agent
  * has and reads each worktree as a change set, against real repositories on
  * disk. $HOME may itself be a repository with others nested inside it, a
- * repository may have several worktrees, and a session may edit a repository
- * outside $HOME (a clone in /tmp). The diff against base must give the same
+ * repository may have several worktrees, and a session may work in a
+ * repository outside $HOME (a clone in /tmp), linked by the commits it makes. The diff against base must give the same
  * files and lines as `git diff <merge-base>`. Each spec runs tens of git
  * processes, so a loaded machine needs more than vitest's defaults: 30 s per
  * spec and 20 s for the service to settle.
@@ -67,6 +72,8 @@ const settles = { timeout: 20_000 };
 
 const noPullRequests: PullRequestFinder = { find: async () => null };
 
+let running: string[] = [];
+
 function serviceFor(
   roots: string[],
   pullRequests: PullRequestFinder = noPullRequests,
@@ -79,9 +86,54 @@ function serviceFor(
       createFileDocumentStoreBackend(path.join(tmp, "state")),
     ),
     pullRequests,
+    sessionOf: (id) => (id.startsWith("harness-") ? id.slice(8) : id),
+    runningSessions: () => running,
     log,
     now: () => new Date("2026-10-14T10:00:00.000Z"),
   });
+}
+
+/**
+ * Runs git with its trace written into a directory, as agent-runtime
+ * configures it for its harnesses, then hands every finished trace to the
+ * service the way the trace reader does. The Session variables of the shell
+ * running the tests are dropped, so only the ones a spec sets are recorded.
+ */
+async function traced(
+  sessionEnv: Record<string, string>,
+  cwd: string,
+  ...args: string[]
+): Promise<void> {
+  const dir = await fs.mkdtemp(path.join(tmp, "trace-"));
+  const result = await runOnce({
+    command: [
+      "git",
+      "-c",
+      "user.email=bench@example.com",
+      "-c",
+      "user.name=Bench",
+      "-C",
+      cwd,
+      ...args,
+    ],
+    env: {
+      ...Object.fromEntries(
+        Object.entries(process.env).filter(
+          ([key]) => !(SESSION_ENV_VARS as readonly string[]).includes(key),
+        ),
+      ),
+      ...gitTraceEnv(dir),
+      ...sessionEnv,
+    },
+    timeoutMs: 30_000,
+  });
+  if (!result.ok) throw new Error(JSON.stringify(result.error));
+  for (const name of await fs.readdir(dir)) {
+    const command = gitCommandOf(
+      await fs.readFile(path.join(dir, name), "utf8"),
+    );
+    if (command) await service.onGitCommand(command);
+  }
 }
 
 beforeEach(async () => {
@@ -90,6 +142,7 @@ beforeEach(async () => {
   );
   home = path.join(tmp, "home");
   elsewhere = path.join(tmp, "elsewhere");
+  running = [];
   service = serviceFor([path.join(home, "work"), home]);
 });
 
@@ -223,30 +276,31 @@ describe("changes service", { timeout: 30_000 }, () => {
   });
 
   /**
-   * TEST_SCENARIO: A session that edits a file in a repository outside the
-   * scanned roots (a clone in /tmp) adds that repository to the list, marked
-   * with when the session edited it, and records it for the sessions list.
+   * TEST_SCENARIO: A session commits in a repository outside the scanned
+   * roots (a clone in /tmp), however it wrote the files. The commit adds that
+   * repository to the list, marked with when the session worked in it, and
+   * records it for the sessions list.
    */
-  it("should add a repository a session edited outside the roots", async () => {
+  it("should add a repository a session committed in outside the roots", async () => {
     await repository(path.join(home, "work", "app"), { "a.txt": "a\n" });
     const clone = path.join(elsewhere, "tmp.abc");
     await repository(clone, { "x.md": "x\n" });
     await write(path.join(clone, "x.md"), "y\n");
 
-    service.onToolActivity({
-      sessionId: "s1",
-      toolCallId: null,
-      started: false,
-      editedPaths: [path.join(clone, "x.md")],
-      settled: false,
-    });
-    await expect
-      .poll(() => service.repositoriesOf("s1").map((r) => r.path), settles)
-      .toEqual([clone]);
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      clone,
+      "commit",
+      "--quiet",
+      "-am",
+      "y",
+    );
     const { changeSets } = await service.list("s1");
 
-    const edited = changeSets.find((c) => c.path === clone);
-    expect(edited?.sessionEditedAt).toBe("2026-10-14T10:00:00.000Z");
+    expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([clone]);
+    expect(changeSets.find((c) => c.path === clone)?.sessionEditedAt).toBe(
+      "2026-10-14T10:00:00.000Z",
+    );
     expect(
       changeSets.find((c) => c.path === path.join(home, "work", "app"))
         ?.sessionEditedAt,
@@ -258,90 +312,74 @@ describe("changes service", { timeout: 30_000 }, () => {
   });
 
   /**
-   * TEST_SCENARIO: $HOME is a repository that ignores everything but its own
-   * files. A session that edits a file $HOME ignores — in a scratch directory
-   * with no repository of its own — has not touched $HOME, so it gets no
-   * record; an edit of a file $HOME re-includes, or tracks although a pattern
-   * ignores it, does.
+   * TEST_SCENARIO: Each harness names its Session in a variable of its own,
+   * and the platform's own variable wins over a harness's. Every one links
+   * the commit to the Session agent-runtime maps it to.
    */
-  it("should record a repository only for a file it does not ignore", async () => {
-    await repository(home, {
-      ".gitignore": "/*\n!/.gitignore\n!/notes.md\n",
-      "notes.md": "a\n",
-    });
-    await write(path.join(home, "forced.log"), "a\n");
-    await git(home, "add", "-f", "forced.log");
-    await git(home, "commit", "--quiet", "-m", "force-add");
-    await write(path.join(home, "work", "scratch", "a.txt"), "a\n");
+  it("should link a commit to the Session each harness names", async () => {
+    const repo = path.join(home, "work", "app");
+    await repository(repo, { "a.txt": "a\n" });
+    const commit = (env: Record<string, string>) =>
+      traced(env, repo, "commit", "--quiet", "--allow-empty", "-m", "x");
 
-    await service.onToolActivity({
-      sessionId: "s1",
-      toolCallId: null,
-      started: false,
-      editedPaths: [path.join(home, "work", "scratch", "a.txt")],
-      settled: false,
-    });
+    await commit({ CODEX_THREAD_ID: "harness-codex" });
+    await commit({ PI_SESSION_ID: "harness-pi" });
+    await commit({ HARNESS_SESSION_ID: "term", CLAUDE_CODE_SESSION_ID: "cc" });
+
+    expect(service.repositoriesOf("codex").map((r) => r.path)).toEqual([repo]);
+    expect(service.repositoriesOf("pi").map((r) => r.path)).toEqual([repo]);
+    expect(service.repositoriesOf("term").map((r) => r.path)).toEqual([repo]);
+    expect(service.repositoriesOf("cc")).toEqual([]);
+  });
+
+  /**
+   * TEST_SCENARIO: Only commands that record work on a branch link a
+   * Session. Reading the repository, switching branches or a command that
+   * failed links nothing.
+   */
+  it("should not link a Session for a command that records no work", async () => {
+    const repo = path.join(home, "work", "app");
+    await repository(repo, { "a.txt": "a\n" });
+    const env = { CLAUDE_CODE_SESSION_ID: "s1" };
+
+    await traced(env, repo, "status");
+    await traced(env, repo, "log", "--oneline");
+    await traced(env, repo, "checkout", "--quiet", "-b", "feat/x");
+    await traced(env, repo, "commit", "--quiet", "-m", "nothing").catch(
+      () => undefined,
+    );
+
     expect(service.repositoriesOf("s1")).toEqual([]);
-
-    await write(path.join(home, "notes.md"), "b\n");
-    await service.onToolActivity({
-      sessionId: "s1",
-      toolCallId: null,
-      started: false,
-      editedPaths: [path.join(home, "notes.md")],
-      settled: false,
-    });
-    expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([home]);
-
-    await write(path.join(home, "forced.log"), "b\n");
-    await service.onToolActivity({
-      sessionId: "s2",
-      toolCallId: null,
-      started: false,
-      editedPaths: [path.join(home, "forced.log")],
-      settled: false,
-    });
-    expect(service.repositoriesOf("s2").map((r) => r.path)).toEqual([home]);
   });
 
   /**
-   * TEST_SCENARIO: The user's global excludes ignore *.log, but the
-   * repository itself would track one. Only the repository's own rules
-   * decide, so the edit still counts.
+   * TEST_SCENARIO: A commit that names no Session goes to the one Session
+   * running a turn, the way a harness that sets no variable is still served;
+   * with two running it is nobody's, logged rather than guessed.
    */
-  it("should record a repository for a file only the global excludes ignore", async () => {
-    await repository(home, { "notes.md": "a\n" });
-    const excludes = path.join(tmp, "global-ignore");
-    const config = path.join(tmp, "global-gitconfig");
-    await write(excludes, "*.log\n");
-    await write(config, `[core]\n\texcludesFile = ${excludes}\n`);
-    await write(path.join(home, "run.log"), "a\n");
-    const previous = process.env.GIT_CONFIG_GLOBAL;
-    process.env.GIT_CONFIG_GLOBAL = config;
-    try {
-      expect((await git(home, "check-ignore", "run.log")).trim()).toBe(
-        "run.log",
-      );
-      await service.onToolActivity({
-        sessionId: "s1",
-        toolCallId: null,
-        started: false,
-        editedPaths: [path.join(home, "run.log")],
-        settled: false,
-      });
-    } finally {
-      if (previous === undefined) delete process.env.GIT_CONFIG_GLOBAL;
-      else process.env.GIT_CONFIG_GLOBAL = previous;
-    }
+  it("should give a commit that names no Session to the only one running", async () => {
+    const repo = path.join(home, "work", "app");
+    await repository(repo, { "a.txt": "a\n" });
+    const logged: string[] = [];
+    service = serviceFor([home], noPullRequests, (msg) => logged.push(msg));
+    const commit = () =>
+      traced({}, repo, "commit", "--quiet", "--allow-empty", "-m", "x");
 
-    expect(service.repositoriesOf("s1").map((r) => r.path)).toEqual([home]);
+    running = ["bob"];
+    await commit();
+    running = ["bob", "other"];
+    await commit();
+
+    expect(service.repositoriesOf("bob").map((r) => r.path)).toEqual([repo]);
+    expect(service.repositoriesOf("other")).toEqual([]);
+    expect(logged.some((msg) => msg.includes("names no Session"))).toBe(true);
   });
 
   /**
-   * TEST_SCENARIO: After a restart, a repository a session edited outside the
-   * roots is still listed from the persisted record, with its linked
-   * worktrees, and the diff of each is served from the same record rather
-   * than refused as unknown.
+   * TEST_SCENARIO: After a restart, a repository a session committed in
+   * outside the roots is still listed from the persisted record, with its
+   * linked worktrees, and the diff of each is served from the same record
+   * rather than refused as unknown.
    */
   it("should diff a session's repository outside the roots after a restart", async () => {
     await fs.mkdir(home, { recursive: true });
@@ -349,18 +387,17 @@ describe("changes service", { timeout: 30_000 }, () => {
     const linked = path.join(elsewhere, "tmp.abc-feat");
     await repository(clone, { "x.md": "x\n" });
     await git(clone, "worktree", "add", "--quiet", "-b", "feat/one", linked);
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      clone,
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "-m",
+      "x",
+    );
     await write(path.join(clone, "x.md"), "y\n");
     await write(path.join(linked, "x.md"), "z\n");
-    service.onToolActivity({
-      sessionId: "s1",
-      toolCallId: null,
-      started: false,
-      editedPaths: [path.join(clone, "x.md")],
-      settled: false,
-    });
-    await expect
-      .poll(() => service.repositoriesOf("s1").map((r) => r.path), settles)
-      .toEqual([clone]);
 
     const restarted = serviceFor([path.join(home, "work"), home]);
     const diff = await restarted.diff(clone, "uncommitted");
@@ -377,10 +414,10 @@ describe("changes service", { timeout: 30_000 }, () => {
 
   /**
    * TEST_SCENARIO: A branch with an open pull request carries its link. The
-   * session that edited it gets the link once its tool call settles, before
-   * anyone opens the panel, so the sessions list can show it.
+   * session that committed on it gets the link once a tool call of it
+   * settles, before anyone opens the panel, so the sessions list can show it.
    */
-  it("should link the pull request of a branch", async () => {
+  it("should link the pull request of a branch a session committed on", async () => {
     const repo = path.join(home, "work", "app");
     await repository(repo, { "a.txt": "a\n" });
     await git(
@@ -399,23 +436,26 @@ describe("changes service", { timeout: 30_000 }, () => {
         return branch === "feat/x" ? link : null;
       },
     });
-    service.onToolActivity({
-      sessionId: "s1",
-      toolCallId: null,
-      started: false,
-      editedPaths: [path.join(repo, "a.txt")],
-      settled: true,
-    });
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      repo,
+      "commit",
+      "--quiet",
+      "--allow-empty",
+      "-m",
+      "x",
+    );
+    expect(service.repositoriesOf("s1")[0]?.pullRequest).toBeNull();
+
+    service.onToolCallSettled("s1");
     await expect
       .poll(() => service.repositoriesOf("s1")[0]?.pullRequest, settles)
       .toEqual(link);
-
     const { changeSets } = await service.list("s1");
 
     expect(changeSets[0]?.pullRequest).toEqual(link);
     expect(changeSets[0]?.repository.name).toBe("acme/app");
     expect(asked).toContainEqual(["https://github.com/acme/app.git", "feat/x"]);
-    expect(service.repositoriesOf("s1")[0]?.pullRequest).toEqual(link);
   });
 
   /**
@@ -440,6 +480,8 @@ describe("changes service", { timeout: 30_000 }, () => {
         createFileDocumentStoreBackend(path.join(tmp, "state")),
       ),
       pullRequests: noPullRequests,
+      sessionOf: (id) => id,
+      runningSessions: () => [],
       log: () => undefined,
     });
 
@@ -473,7 +515,10 @@ describe("session pushes", { timeout: 30_000 }, () => {
     find: async (_remote, branch) => (branch === "feat/push" ? link : null),
   };
 
-  async function repositoryWithRemote(): Promise<string> {
+  async function repositoryWithRemote(): Promise<{
+    repo: string;
+    remote: string;
+  }> {
     const remote = path.join(tmp, "remote.git");
     await fs.mkdir(remote, { recursive: true });
     await git(remote, "init", "--quiet", "--bare");
@@ -484,184 +529,86 @@ describe("session pushes", { timeout: 30_000 }, () => {
     await git(repo, "checkout", "--quiet", "-b", "feat/push");
     await write(path.join(repo, "a.txt"), "b\n");
     await git(repo, "commit", "--quiet", "-am", "change");
-    return repo;
+    return { repo, remote };
   }
 
-  let pushWatches: Promise<void>[] = [];
-  beforeEach(() => {
-    pushWatches = [];
-  });
+  /**
+   * TEST_SCENARIO: A session pushes its branch from a shell command while
+   * another session runs too. The push names its Session, so it links the
+   * branch's pull request to that session alone, on the remote it went to.
+   */
+  it("should link the pull request a session pushed", async () => {
+    const { repo, remote } = await repositoryWithRemote();
+    const asked: [string | null, string | null][] = [];
+    service = serviceFor([home], {
+      find: async (remoteUrl, branch) => {
+        asked.push([remoteUrl, branch]);
+        return findsFeature.find(remoteUrl, branch);
+      },
+    });
+    running = ["s1", "s2"];
 
-  function activity(
-    sessionId: string,
-    toolCallId: string,
-    editedPaths: string[],
-    settled: boolean,
-  ) {
-    pushWatches.push(
-      service.onToolActivity({
-        sessionId,
-        toolCallId,
-        editedPaths,
-        started: !settled,
-        settled,
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      repo,
+      "push",
+      "--quiet",
+      "-u",
+      "origin",
+      "feat/push",
+    );
+
+    expect(service.repositoriesOf("s1")).toEqual([
+      expect.objectContaining({
+        path: repo,
+        branch: "feat/push",
+        pullRequest: link,
       }),
-    );
-  }
-
-  function toolCall(sessionId: string, toolCallId: string, settled = false) {
-    activity(sessionId, toolCallId, [], settled);
-  }
-
-  const watching = () => Promise.all(pushWatches);
-
-  /**
-   * TEST_SCENARIO: A session pushes its branch from a shell command, which
-   * names no file. The push links the branch's pull request to that session
-   * alone; the push made before the watch started is not anyone's.
-   */
-  it("should link the pull request a session pushed from a shell command", async () => {
-    const repo = await repositoryWithRemote();
-    service = serviceFor([home], findsFeature);
-    toolCall("s1", "t1");
-    await watching();
-
-    await git(repo, "push", "--quiet", "-u", "origin", "feat/push");
-    toolCall("s1", "t1", true);
-
-    await expect
-      .poll(() => service.repositoriesOf("s1"), settles)
-      .toEqual([
-        expect.objectContaining({
-          path: repo,
-          branch: "feat/push",
-          pullRequest: link,
-        }),
-      ]);
-    expect(service.repositoriesOf("other")).toEqual([]);
-  });
-
-  /**
-   * TEST_SCENARIO: Two sessions run tool calls when the push lands. The one
-   * that already worked in the repository pushed it; the other gets nothing.
-   */
-  it("should give a push to the running session that worked in the repository", async () => {
-    const repo = await repositoryWithRemote();
-    service = serviceFor([home], findsFeature);
-    activity("s1", "t0", [path.join(repo, "a.txt")], false);
-    toolCall("s1", "t0", true);
-    toolCall("s1", "t1");
-    toolCall("s2", "t2");
-    await expect
-      .poll(() => service.repositoriesOf("s1").length, settles)
-      .toBe(1);
-    await watching();
-
-    await git(repo, "push", "--quiet", "origin", "feat/push");
-
-    await expect
-      .poll(() => service.repositoriesOf("s1")[0]?.pullRequest, settles)
-      .toEqual(link);
+    ]);
     expect(service.repositoriesOf("s2")).toEqual([]);
+    expect(asked).toContainEqual([remote, "feat/push"]);
   });
 
-  async function worktreeOf(repo: string, branch: string): Promise<string> {
-    const worktree = path.join(home, "work", "slots", branch.split("/").pop()!);
-    await git(repo, "worktree", "add", "--quiet", "-b", branch, worktree);
-    await write(path.join(worktree, "b.txt"), "b\n");
-    await git(worktree, "add", "-A");
-    await git(worktree, "commit", "--quiet", "-m", "change b");
-    return worktree;
-  }
-
-  function edited(sessionId: string, toolCallId: string, file: string) {
-    activity(sessionId, toolCallId, [file], false);
-    toolCall(sessionId, toolCallId, true);
-  }
-
   /**
-   * TEST_SCENARIO: Two sessions run tool calls when a push lands from a
-   * worktree only the second one worked in. The push is the second
-   * session's, though the first edited another worktree of the repository.
+   * TEST_SCENARIO: Two sessions work in two worktrees of one repository.
+   * Each push goes to the session that ran it, in the worktree it ran in.
    */
-  it("should give a push to the session that worked in the pushed worktree", async () => {
-    const repo = await repositoryWithRemote();
-    const other = await worktreeOf(repo, "feat/other");
+  it("should give each push to the session and worktree that ran it", async () => {
+    const { repo } = await repositoryWithRemote();
+    const other = path.join(home, "work", "slots", "other");
+    await git(repo, "worktree", "add", "--quiet", "-b", "feat/other", other);
+    await write(path.join(other, "b.txt"), "b\n");
+    await git(other, "add", "-A");
+    await git(other, "commit", "--quiet", "-m", "change b");
     service = serviceFor([home], findsFeature);
-    edited("s1", "t0", path.join(other, "b.txt"));
-    edited("s2", "t1", path.join(repo, "a.txt"));
-    toolCall("s1", "t2");
-    toolCall("s2", "t3");
-    await expect
-      .poll(() => service.repositoriesOf("s2").length, settles)
-      .toBe(1);
-    await watching();
+    running = ["s1", "s2"];
 
-    await git(repo, "push", "--quiet", "origin", "feat/push");
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s1" },
+      other,
+      "push",
+      "--quiet",
+      "origin",
+      "feat/other",
+    );
+    await traced(
+      { CLAUDE_CODE_SESSION_ID: "s2" },
+      repo,
+      "push",
+      "--quiet",
+      "origin",
+      "feat/push",
+    );
 
-    await expect
-      .poll(() => service.repositoriesOf("s2")[0]?.pullRequest, settles)
-      .toEqual(link);
     expect(service.repositoriesOf("s1").map((r) => [r.path, r.branch])).toEqual(
       [[other, "feat/other"]],
     );
-  });
-
-  /**
-   * TEST_SCENARIO: Two sessions run tool calls when a push lands from a
-   * worktree neither worked in; the first edited another worktree of the
-   * repository. The push is nobody's, and the first session does not list
-   * the pushed worktree.
-   */
-  it("should not give a push to a session that worked in another worktree", async () => {
-    const repo = await repositoryWithRemote();
-    const other = await worktreeOf(repo, "feat/other");
-    const logged: string[] = [];
-    service = serviceFor([home], findsFeature, (msg) => logged.push(msg));
-    edited("s1", "t0", path.join(other, "b.txt"));
-    toolCall("s1", "t1");
-    toolCall("s2", "t2");
-    await expect
-      .poll(() => service.repositoriesOf("s1").length, settles)
-      .toBe(1);
-    await watching();
-
-    await git(repo, "push", "--quiet", "origin", "feat/push");
-
-    await expect
-      .poll(
-        () => logged.some((msg) => msg.includes("matches no single session")),
-        settles,
-      )
-      .toBe(true);
-    expect(service.repositoriesOf("s1").map((r) => [r.path, r.branch])).toEqual(
-      [[other, "feat/other"]],
-    );
-    expect(service.repositoriesOf("s2")).toEqual([]);
-  });
-
-  /**
-   * TEST_SCENARIO: Two sessions run tool calls when the push lands and
-   * neither worked in the repository: the push is nobody's rather than a
-   * guess, and the log says so.
-   */
-  it("should link a push no single session ran to nobody", async () => {
-    const repo = await repositoryWithRemote();
-    const logged: string[] = [];
-    service = serviceFor([home], findsFeature, (msg) => logged.push(msg));
-    toolCall("s1", "t1");
-    toolCall("s2", "t2");
-    await watching();
-
-    await git(repo, "push", "--quiet", "origin", "feat/push");
-
-    await expect
-      .poll(
-        () => logged.some((msg) => msg.includes("matches no single session")),
-        settles,
-      )
-      .toBe(true);
-    expect(service.repositoriesOf("s1")).toEqual([]);
-    expect(service.repositoriesOf("s2")).toEqual([]);
+    expect(service.repositoriesOf("s2")).toEqual([
+      expect.objectContaining({
+        path: repo,
+        branch: "feat/push",
+        pullRequest: link,
+      }),
+    ]);
   });
 });
