@@ -455,6 +455,7 @@ async fn the_usage_read_names_the_seeds() {
     assert!(storage.seed_bytes >= 1 << 20, "{storage:?}");
 }
 
+// TEST_SCENARIO: a running agent that filled its disk says so: platform-init marks it on the console, which reaches the guest's kernel log, and the usage read names the machine's full home. The mark is read from where the last probe stopped, so it is found among the lines the VMM logs as the guest runs, and a mark of room back clears it. A machine that does not run carries no mark, whatever its log says.
 #[tokio::test]
 async fn a_running_machine_whose_guest_ran_out_of_room_says_so() {
     let h = Harness::new("guest-full");

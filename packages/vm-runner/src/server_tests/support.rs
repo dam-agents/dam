@@ -16,21 +16,21 @@ pub(super) struct Fake {
     pub(super) calls: Mutex<Vec<String>>,
     pub(super) created: Mutex<HashMap<String, (String, ImageLaunch)>>,
     pub(super) images: Mutex<HashMap<String, String>>,
-    pub(super) updated: Mutex<Vec<Updated>>,
+    updated: Mutex<Vec<Updated>>,
     pub(super) start_delay: Mutex<Duration>,
     // UNIT_BOUNDARY_DESCRIPTION: the next start reports that it is inside the gate and then waits for the test to let it go, so a test can act while a boot is provably in flight rather than within a delay a loaded machine can outlast.
-    pub(super) start_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    start_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
     // UNIT_BOUNDARY_DESCRIPTION: the ordinal of the start that `hold_nth_start` holds, so a test can gate the reboot after a grow and let the small boot before it through.
-    pub(super) hold_start_at: Mutex<Option<usize>>,
-    pub(super) nth_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
-    pub(super) start_release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
+    hold_start_at: Mutex<Option<usize>>,
+    nth_held: Mutex<Option<std::sync::mpsc::Sender<()>>>,
+    start_release: Mutex<Option<std::sync::mpsc::Receiver<()>>>,
     pub(super) stop_delay: Mutex<Duration>,
     pub(super) delete_delay: Mutex<Duration>,
     pub(super) fail_start_once: Mutex<Option<String>>,
     // UNIT_BOUNDARY_DESCRIPTION: a start this many calls in fails with this message, so a test can break the boot that follows a grow without touching the one before it.
     pub(super) fail_start_at: Mutex<Option<(usize, String)>>,
     // UNIT_BOUNDARY_DESCRIPTION: a signal the VMM of the next start dies by, which that start returns as the kill the runtime read, as the real one does when its boot monitor reaps the child.
-    pub(super) start_killed: Mutex<Option<i32>>,
+    start_killed: Mutex<Option<i32>>,
     pub(super) fail_grow_once: Mutex<Option<String>>,
     // UNIT_BOUNDARY_DESCRIPTION: a grow whose VMM the kernel kills, as memory pressure does: the grow answers with that death, and the replacement start is held by `start_held`/`start_release`, so a test can sample the OOM count while the recovery is still in flight, which is the moment a hold has to exist by.
     pub(super) grow_killed: Mutex<Option<i32>>,
@@ -47,11 +47,11 @@ pub(super) struct Fake {
     pub(super) vmms: Mutex<HashSet<String>>,
     pub(super) resident: Mutex<Option<i32>>,
     pub(super) cpu: Mutex<Option<u64>>,
-    pub(super) vmm_pids: Mutex<HashMap<String, i32>>,
+    vmm_pids: Mutex<HashMap<String, i32>>,
     // UNIT_BOUNDARY_DESCRIPTION: pids the kernel has handed to another process, which a machine's record still names: the runtime's start-time check is what tells them apart from the VMM the record meant.
     pub(super) recycled: Mutex<HashSet<i32>>,
     // UNIT_BOUNDARY_DESCRIPTION: the signal the runtime's own code kept for a VMM it reaped itself, as smolvm's boot monitor and sweep leave it.
-    pub(super) exit_signals: Mutex<HashMap<i32, i32>>,
+    exit_signals: Mutex<HashMap<i32, i32>>,
     pub(super) state_reads: AtomicUsize,
 }
 
@@ -295,7 +295,7 @@ impl Runtime for Fake {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a crane that answers the two questions the runner asks — what an image says to run, and what its filesystem holds — and logs each call, so a test can count fetches. A fake that answered only one would let a change that stopped asking the other pass. It reads its own directory from `$0` once instead of forking `dirname` at each use: a resolve runs it four times, a stress run resolves one image per test, and the runner always runs it by the absolute path it was given.
-pub(super) const FAKE_CRANE: &str = r#"#!/bin/sh
+const FAKE_CRANE: &str = r#"#!/bin/sh
 here=${0%/*}
 echo "$@" >> "$here/crane.log"
 if [ "$1" = digest ]; then
@@ -312,7 +312,7 @@ d=$(mktemp -d); echo rootfs > "$d/hello"; tar -cf - -C "$d" .; rm -rf "$d"
 "#;
 
 // UNIT_BOUNDARY_DESCRIPTION: the node's image cache, in this test's process rather than behind its socket, over the harness's image directory and with its crane, unless the test gave the runner a cache of its own. Only the service writes a node cache, so this stands in for it, at the budget the test gave the runner.
-pub(super) fn in_process_cache(config: &mut Config, dir: &Path) {
+fn in_process_cache(config: &mut Config, dir: &Path) {
     if config.images.is_none() {
         config.images = Some(node_cache_in(dir, config.image_budget));
     }
@@ -552,7 +552,7 @@ impl Drop for Harness {
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: two published ports held by this test until the runner takes them, with both guest ports at the loopback offset free. A port proven free and released is only a port that used to be free, so the published ones are handed over bound. Blocks come from `testdir`'s band, not from the kernel: an ephemeral base in the top 1000 of the range has no free block to find, and a retry from there fails every time.
-pub(super) fn port_block() -> (u16, HashMap<u16, TcpListener>) {
+fn port_block() -> (u16, HashMap<u16, TcpListener>) {
     for base in crate::testdir::PORT_BLOCK_BASE..crate::testdir::PORT_BLOCK_TOP {
         let Ok(first) = TcpListener::bind(("127.0.0.1", base)) else {
             continue;

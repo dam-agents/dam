@@ -54,6 +54,7 @@ async fn a_stopped_machine_reports_no_cpu() {
     assert_eq!(cpu(&h), Some(0), "a stopped machine reports none");
 }
 
+// TEST_SCENARIO: a probe reads the kernel log outside the machine's lock, so a cut of that log can rewrite the file between the probe's read and its write: the offset it read to then counts from a log that no longer exists, and the mark it carries is older than the ones the cut kept, which leaves the next probe reading an old GUEST_FULL and the runner reporting a guest full for as long as the machine runs. A probe that began on an earlier cut of the log publishes neither its offset nor its mark, and the next probe reads the log the cut left from its start.
 #[tokio::test(flavor = "current_thread")]
 async fn a_probe_that_began_before_a_cut_publishes_nothing() {
     let dir = crate::testdir::TempDir::new("cut-probe");
