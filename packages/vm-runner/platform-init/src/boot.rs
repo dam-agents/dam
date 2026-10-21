@@ -2621,6 +2621,7 @@ fn end_cgroup(stopping: &mut bool) {
 // UNIT_BOUNDARY_DESCRIPTION: the end of the workload once its entrypoint has exited on a stop: openrc's services are stopped by openrc first, so each gets its own stop, and whatever is left is ended after.
 fn stop(openrc: bool) -> ! {
     if openrc {
+        vm::shutdown_started();
         run_openrc("shutdown", &[], &mut true);
         end_the_rest(&mut true);
     }

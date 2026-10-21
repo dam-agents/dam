@@ -1,6 +1,6 @@
 # VM runner
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 The pods behind the `vm` Backend: **one runner per owner**, each a single-replica Deployment in the agent namespace running smolvm and the platform's **vm-runner** agent.
 A local cluster on a Mac runs one [host runner](vm-host-runner.md) outside the cluster instead.
@@ -126,6 +126,8 @@ Each VMM also raises its own OOM score to the kernel's maximum as it boots, so a
 A btrfs disk that does not mount fails the boot and stays as it is, since btrfs has no repair a boot may run unattended.
 A start never copies smolvm's template over a disk that already holds a filesystem — not even one whose first format stopped short of resizing it to the size asked for.
 A stop has platform-init send the workload SIGTERM and give it a few seconds, as a pod's container gets, then sync and freeze that disk, and a guest that does not confirm it did is powered off anyway, so a stop or a delete always ends the machine.
+An image with openrc gets a second window after that one: once the supervisor has reached `openrc shutdown`, the stop gives each service's `stop` the same length of time again before it kills what is left, because the shutdown is the supervisor's own child and a kill inside it would end the services whose stop had not come round yet.
+That is what makes a service's `stop_post` a place cleanup can live in on a vm machine, and it holds the stop to 25 s in all, inside the window the runner gives a stop when its pod goes away.
 A start refuses a disk that a VMM which outlived even its kill still holds, since booting beside it would put two VMMs on one disk.
 A start finds the VMMs an existing disk still has by scanning the host's process table, and a scan that did not happen says nothing either way, so a start waits one out rather than reading it as a free machine: only a scan that saw every process of the runner's user can say the disk is free, and a wait that ends with no such scan fails the start and leaves the machine's lock and sockets where they are.
 smolvm forgets a machine before it removes the machine's directory, so a delete cut short between the two leaves the disk with no record.
