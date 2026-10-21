@@ -345,8 +345,10 @@ async function buildClientCredentials(
   input: Extract<ConnectionCreateInput, { authKind: "client-credentials" }>,
   mintSecretRef: (purpose: string) => SecretRef,
 ): Promise<BuildResult> {
-  const { host, port, headerName, valueFormat, contributions } =
-    clientCredentialsTarget(template, input);
+  const { host, port, contributions } = clientCredentialsTarget(
+    template,
+    input,
+  );
   const explicitIssuer = clientCredentialsIssuer(template, input, host);
 
   let issuerUrl: string;

@@ -37,7 +37,9 @@ export type PendingSecretRequest =
     };
 
 export type SecretRequestOutcome = { ownerId: string } & (
-  { status: "saved"; connectionId: string } | { status: "cancelled" }
+  | { status: "saving" }
+  | { status: "saved"; connectionId: string }
+  | { status: "cancelled" }
 );
 
 const FIELDS: Record<SecretRequestAuthKind, SecretRequestField[]> = {

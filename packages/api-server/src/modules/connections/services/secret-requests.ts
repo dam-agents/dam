@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { TRPCError } from "@trpc/server";
+import { match } from "ts-pattern";
 import type {
   ConnectionsService,
   SecretRequestsService,
@@ -36,7 +37,7 @@ export const SECRET_REQUEST_PATH = "/connections/secret";
  * check that the signed-in user owns the request, so a link sent to another
  * user is no use to the sender. A request is used once, and expires after ten
  * minutes. Nobody can read a secret back: the status says only saved,
- * cancelled, expired or pending.
+ * cancelled, expired or pending, and stays pending while a submit is saving.
  */
 export function createSecretRequestsService(deps: {
   ownerId: string;
@@ -137,9 +138,16 @@ export function createSecretRequestsService(deps: {
     async status(requestId) {
       const outcome = await deps.outcomes.peek(requestId);
       if (outcome?.ownerId === deps.ownerId) {
-        return outcome.status === "saved"
-          ? { status: "saved", connectionId: outcome.connectionId }
-          : { status: "cancelled" };
+        return match(outcome)
+          .with({ status: "saving" }, () => ({ status: "pending" as const }))
+          .with({ status: "saved" }, (o) => ({
+            status: "saved" as const,
+            connectionId: o.connectionId,
+          }))
+          .with({ status: "cancelled" }, () => ({
+            status: "cancelled" as const,
+          }))
+          .exhaustive();
       }
       const pending = await deps.pending.peek(requestId);
       if (
@@ -229,6 +237,10 @@ export function createSecretRequestsService(deps: {
           message: "This link has expired or was already used.",
         });
       }
+      await deps.outcomes.set(requestId, {
+        ownerId: deps.ownerId,
+        status: "saving",
+      });
       let connectionId: string;
       try {
         if (claimed.action === "create") {
@@ -246,6 +258,7 @@ export function createSecretRequestsService(deps: {
         if (claimed.expiresAt > now()) {
           await deps.pending.set(requestId, claimed);
         }
+        await deps.outcomes.delete(requestId);
         throw err;
       }
       await deps.outcomes.set(requestId, {

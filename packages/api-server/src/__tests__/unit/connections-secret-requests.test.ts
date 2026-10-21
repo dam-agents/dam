@@ -187,6 +187,30 @@ describe("secret requests", () => {
     expect(w.createFromTemplate).toHaveBeenCalledTimes(1);
   });
 
+  // TEST_SCENARIO: the create probes the provider and can take seconds; the CLI polls meanwhile and must read pending, not expired, or it reports a failure for a secret that is then saved.
+  it("reads pending while the submit is saving", async () => {
+    let finish!: (id: string) => void;
+    const w = world({
+      createFromTemplate: () => new Promise((resolve) => (finish = resolve)),
+    });
+    const alice = w.forOwner("alice");
+    const ticket = await alice.request(githubPat);
+    const submitted = alice.submit({
+      requestId: ticket.requestId,
+      fields: { value: "ghp_x" },
+    });
+    await vi.waitFor(() => expect(w.createFromTemplate).toHaveBeenCalled());
+    expect(await alice.status(ticket.requestId)).toEqual({
+      status: "pending",
+    });
+    finish("conn-000000000002");
+    await submitted;
+    expect(await alice.status(ticket.requestId)).toEqual({
+      status: "saved",
+      connectionId: "conn-000000000002",
+    });
+  });
+
   // TEST_SCENARIO: a secret the provider refuses must not burn the link, so the user can correct it on the same page while the request is still live.
   it("keeps the request when the create fails", async () => {
     const w = world({
