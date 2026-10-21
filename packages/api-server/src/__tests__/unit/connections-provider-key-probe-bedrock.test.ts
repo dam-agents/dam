@@ -32,8 +32,7 @@ describe("provider key probe for Bedrock", () => {
   const probe = (
     key = "ABSK-key",
     target: ProviderKeyTarget = { region: "eu-west-1" },
-  ) =>
-    createProviderKeyProbe().probe("bedrock", key, target);
+  ) => createProviderKeyProbe().probe("bedrock", key, target);
 
   // TEST_SCENARIO: the key is sent as a bearer token to the inference-profile list of the Connection's region; a key Bedrock accepts comes back ok.
   it("accepts a key the region's profile list answers", async () => {
@@ -76,8 +75,7 @@ describe("provider key probe for Bedrock", () => {
     ],
     [
       "a 401 naming the key",
-      () =>
-        new Response(message("Bearer Token has expired"), { status: 401 }),
+      () => new Response(message("Bearer Token has expired"), { status: 401 }),
     ],
     ["a 503", () => new Response("", { status: 503 })],
     [
