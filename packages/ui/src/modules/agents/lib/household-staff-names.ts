@@ -252,7 +252,7 @@ export const FEMALE_STAFF_NAMES: readonly string[] = [
   "Evangeline",
   "Evelina",
   "Felicity",
-  "Fenella",
+  "Eglantine",
   "Flora",
   "Florence",
   "Florentina",
