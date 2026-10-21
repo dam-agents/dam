@@ -62,6 +62,7 @@ function setup(
   templates: Record<string, Partial<TemplateSpec>> = {},
 ) {
   const connections = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
     platformProviderEnabled: async () => false,
     platformProviderKey: null,
     isOwnedAgent: async () => true,
@@ -112,7 +113,6 @@ function setup(
     }),
     secretRefs: unused(),
     agentDefaultLimits: { cpu: "1", memory: "1Gi" },
-    agentDefaultMounts: [],
     agentIdleTimeoutMinutes: { container: 30, vm: 5 },
     cleanupHooks: [],
     readTemplateSpec: async (id) =>

@@ -123,8 +123,44 @@ vi.mock("@/components/ui/tooltip", () => ({
   },
 }));
 
+vi.mock("../../modules/agents/api/harness-config.js", () => ({
+  useHarnessConfigStatus: () => ({ data: { followsDefaults: false } }),
+}));
+
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useIsAgentAnswerableSoon: () => state.answerable ?? state.operable,
+}));
+
+vi.mock("../../modules/agents/hooks/use-operable-state.js", () => ({
+  useOperableState: () => ({
+    operable: state.operable,
+    comingUp: !state.operable && !!state.answerable,
+  }),
+}));
+
+vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
+  useWakeAgent: () => ({ wake: vi.fn(), isPending: false }),
+}));
+
+vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
+  useProviderUsage: () => () => ({ kinds: [], schedules: [] }),
+}));
+
+vi.mock("../../modules/home/hooks/use-default-model-notices.js", () => ({
+  useDefaultModelNotices: () => ({
+    all: [],
+    byAgentEvenDismissed: new Map(),
+    waiting: [],
+    dismiss: vi.fn(),
+  }),
+}));
+
+vi.mock("../../modules/schedules/api/queries.js", () => ({
+  useSchedules: () => ({ data: [] }),
+}));
+
+vi.mock("../../modules/schedules/api/mutations.js", () => ({
+  useClearScheduleChoices: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
@@ -356,6 +392,8 @@ describe("session pair model choices", () => {
       renderPicker(),
       renderToStaticMarkup(
         createElement(ModelIndicator, {
+          kind: "chat",
+          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "ibm",
@@ -424,6 +462,8 @@ describe("session pair model choices", () => {
       state.fetching = true;
       const html = renderToStaticMarkup(
         createElement(ModelIndicator, {
+          kind: "chat",
+          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "curve",
@@ -459,6 +499,8 @@ describe("session pair model choices", () => {
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
         renderToStaticMarkup(
           createElement(ModelIndicator, {
+            kind: "chat",
+            onFollowDefault: () => {},
             agentId: "agent",
             harness: "pi",
             provider: "curve",
@@ -554,6 +596,31 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(state.providersAsked).toEqual([]);
   });
 
+  /** TEST_SCENARIO: The model list is read from the running agent, so on a
+   * sleeping agent the list gives way to the start button rather than an
+   * empty list, and to "Agent is starting…" once the start is under way. */
+  it("offers to start a sleeping agent instead of an empty model list", () => {
+    const render = () =>
+      renderToStaticMarkup(
+        createElement(SessionPairPicker, {
+          agentId: "agent",
+          defaultHarness: "pi",
+          carried,
+          routed: true,
+          onConnectProviders: state.connectProviders,
+        }),
+      );
+    state.operable = false;
+    const asleep = render();
+    expect(asleep).toContain("Start agent to edit");
+    expect(asleep).not.toContain("gpt-5.5");
+    state.answerable = true;
+    const starting = render();
+    expect(starting).toContain("Agent is starting…");
+    expect(starting).not.toContain("Start agent to edit");
+    state.answerable = undefined;
+  });
+
   /** TEST_SCENARIO: A second IBM key the owner holds cannot be attached
    * beside the one the agent already uses (one Connection per provider
    * alias), so it is listed disabled with the reason, not as an attach that
@@ -590,6 +657,8 @@ describe("one model list on a runtime that routes by model name", () => {
   it("offers every provider's models to a running session", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
         agentId: "agent",
         harness: "pi",
         provider: "ibm",
@@ -628,6 +697,8 @@ describe("one model list on a runtime that routes by model name", () => {
     ];
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
         agentId: "agent",
         harness: "pi",
         provider: null,
@@ -642,5 +713,72 @@ describe("one model list on a runtime that routes by model name", () => {
     expect(html).toContain("Provider removed");
     expect(html).toContain("Attach Anthropic old again");
     expect(html).toContain("rits/zai-org/glm-5-3");
+  });
+});
+
+describe("JanUI's picker and the default's editor", () => {
+  beforeEach(() => {
+    state.models = {};
+    state.loading = false;
+    state.operable = true;
+    state.owned = [{ id: "other", name: "Other", type: "curve-bender" }];
+    state.noProviders = false;
+    state.configured = undefined;
+    state.chosen = null;
+    state.catalog = routedCatalog;
+    state.providersAsked = [];
+  });
+
+  const render = (props: Record<string, unknown>) =>
+    renderToStaticMarkup(
+      createElement(SessionPairPicker, {
+        agentId: "agent",
+        defaultHarness: "pi",
+        carried,
+        routed: true,
+        onConnectProviders: state.connectProviders,
+        ...props,
+      }),
+    );
+
+  /** TEST_SCENARIO: In JanUI the picker neither attaches nor
+   * disconnects providers; one row counts the attached providers among the
+   * owner's and leads to the agent's Providers page. The current layout
+   * keeps its controls. */
+  it("swaps provider controls for one Manage providers row", () => {
+    const html = render({ newLayout: true });
+    expect(html).not.toContain("Disconnect IBM");
+    expect(html).not.toContain("Attach this provider");
+    expect(html).not.toContain("Configure providers and defaults");
+    expect(html.replace(/<!-- -->/g, "")).toMatch(
+      /data-testid="session-pair-manage-providers"[^>]*>Manage providers \(2\/3 connected\)/,
+    );
+    const current = render({});
+    expect(current).toContain("Disconnect IBM");
+    expect(current).not.toContain("session-pair-manage-providers");
+  });
+
+  /** TEST_SCENARIO: As the editor of the agent's saved default, the picker
+   * shows the saved pair, not the pair picked for the next session, offers
+   * the same harnesses, models and session settings, and has neither
+   * provider controls nor the Manage providers row, since it sits on the
+   * Providers page already. */
+  it("edits the saved default with the same options and no provider row", () => {
+    state.chosen = {
+      harness: "pi",
+      provider: "curve",
+      model: "curve-bender/rits/zai-org/glm-5-3",
+    };
+    const html = render({
+      defaultPair: {
+        value: { harness: "pi", provider: "ibm", model: "ibm-litellm/gpt-5.5" },
+        onChoose: vi.fn(),
+      },
+    });
+    expect(html).toContain("gpt-5.5");
+    expect(html).toContain('aria-label="Session settings"');
+    expect(html).not.toContain("session-pair-manage-providers");
+    expect(html).not.toContain("Configure providers and defaults");
+    expect(html).not.toContain("Disconnect IBM");
   });
 });

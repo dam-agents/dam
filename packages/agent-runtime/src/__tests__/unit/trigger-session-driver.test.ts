@@ -38,6 +38,8 @@ function fakeRuntime(): { runtime: AcpRuntime; sent: any[] } {
     },
     prestart() {},
     isSessionRunning: () => false,
+    toolCallsOpen: () => false,
+    harnessBusy: () => false,
     sessionFrames: () => ({ frames: [], truncated: false }),
     status: () => ({
       idle: true,
@@ -211,5 +213,34 @@ describe("createTriggerSessionDriver", () => {
       driver.start({ task: "go on", resumeSessionId: "s0" }),
     ).rejects.toBeInstanceOf(NoSessionModelError);
     expect(sent.map((f) => f.method)).not.toContain("session/resume");
+  });
+
+  /** TEST_SCENARIO: A message from another Session is sent on the message
+   * surface, which the runtime may steer into a turn in flight; a scheduled
+   * fire stays on the schedule surface, which only queues. */
+  it("marks a steered prompt with the message surface", async () => {
+    const { runtime, sent } = fakeRuntime();
+    const driver = createTriggerSessionDriver({
+      acpRuntime: runtime,
+      modelRequired: () => false,
+      modelMissing: () => false,
+    });
+
+    await driver.start({
+      task: "stop",
+      resumeSessionId: "s0",
+      unattended: true,
+      steer: true,
+    });
+    await driver.start({
+      task: "due",
+      resumeSessionId: "s0",
+      unattended: true,
+    });
+
+    const surfaces = sent
+      .filter((f) => f.method === "session/prompt")
+      .map((f) => f.params._meta?.platform?.surface);
+    expect(surfaces).toEqual(["message", "schedule"]);
   });
 });

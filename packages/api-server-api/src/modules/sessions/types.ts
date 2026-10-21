@@ -56,6 +56,8 @@ export interface SessionView {
   scheduleId?: string | null;
   initialization?: boolean | null;
   title?: string | null;
+  customTitle?: string | null;
+  autoTitle?: string | null;
   updatedAt?: string | null;
   threadTs?: string | null;
   running?: boolean;
@@ -67,6 +69,7 @@ export interface SessionView {
   provider?: string | null;
   model?: string | null;
   settings?: Record<string, string>;
+  follows?: "chat" | "channel" | "scheduled" | null;
   repositories?: SessionRepository[];
 }
 

@@ -60,10 +60,6 @@ export const agentSetDisabledInputSchema = idSchema.extend({
 export const agentUpgradeInputSchema = idSchema.extend({
   expectedToImage: z.string().min(1).optional(),
 });
-export const agentMigrateRuntimeInputSchema = idSchema;
-export const agentPlanRuntimeMigrationInputSchema = idSchema;
-export const agentAbortRuntimeMigrationInputSchema = idSchema;
-export const agentRetryRuntimeMigrationInputSchema = idSchema;
 export const agentDisconnectSlackInputSchema = idSchema.extend({
   slackChannelId: z.string().min(1).optional(),
 });

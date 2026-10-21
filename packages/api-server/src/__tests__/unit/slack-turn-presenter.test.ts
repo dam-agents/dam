@@ -5,7 +5,10 @@ import {
   createTurnPresenter,
   type TurnPresenterOpts,
 } from "../../modules/channels/infrastructure/slack-turn-presenter.js";
-import type { SlackGateway } from "../../modules/channels/infrastructure/slack-gateway.js";
+import type {
+  SlackGateway,
+  SlackSetStatus,
+} from "../../modules/channels/infrastructure/slack-gateway.js";
 
 configureLogger({ level: "error", write: () => {} });
 
@@ -149,5 +152,30 @@ describe("turn presenter — status arc", () => {
     p.onUpdate({ kind: "tool", title: "Search" });
     await vi.advanceTimersByTimeAsync(5_000);
     expect(gw.setStatus).toHaveBeenCalledTimes(1);
+  });
+
+  /**
+   * TEST_SCENARIO: A status write fails during the turn, for example on a
+   * network error, and the presenter stops updating the status. The turn
+   * still clears it when it ends: a session left in `processing` keeps its
+   * Stop button in Slack for up to an hour.
+   */
+  it("still clears the status at the end after a failed write", async () => {
+    const setStatus = vi
+      .fn(async (_args: SlackSetStatus) => {})
+      .mockRejectedValueOnce(new Error("socket hang up"));
+    const gw = spyGateway({ setStatus });
+    const p = createTurnPresenter(gw, baseOpts);
+    p.setThinking();
+    await Promise.resolve();
+    p.onUpdate({ kind: "tool", title: "Search" });
+    await vi.advanceTimersByTimeAsync(5_000);
+
+    await p.clearStatus();
+
+    expect(setStatus.mock.calls.map((c) => c[0].status)).toEqual([
+      "is thinking…",
+      "",
+    ]);
   });
 });

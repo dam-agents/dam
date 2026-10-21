@@ -87,11 +87,12 @@ export class ModelNameError extends Error {
  * the spawn, not the calling session's own harness), so the spawn is refused
  * at once instead of starting a sub-agent that cannot run.
  */
+export const NO_SPAWN_MODEL_MESSAGE =
+  "nothing names the sub-agent's model: pass a provider-qualified model (list_harnesses lists each harness's models), or spawn on this session's own harness to run on its model";
+
 export class NoSpawnModelError extends Error {
   constructor() {
-    super(
-      "nothing names the sub-agent's model: pass a provider-qualified model (list_harnesses lists each harness's models), or spawn on this session's own harness to run on its model",
-    );
+    super(NO_SPAWN_MODEL_MESSAGE);
     this.name = "NoSpawnModelError";
   }
 }

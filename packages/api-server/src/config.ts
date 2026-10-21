@@ -14,7 +14,6 @@ import { X509Certificate } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { DEFAULT_DB_POOL_MAX } from "db";
 import { z } from "zod";
-import pkg from "../package.json" with { type: "json" };
 import { getLogger } from "./core/logger.js";
 import { durationToMinutesStrict, goDurationMs } from "./duration.js";
 
@@ -203,7 +202,6 @@ const platformProviderSchema = z
     return { baseUrl: baseUrl.replace(/\/+$/, ""), model, apiKey, ca };
   });
 const configSchema = z.object({
-  serverVersion: z.string().min(1),
   appVersion: z.string().min(1),
   namespace: z.string().default("platform-agents"),
   releaseName: z.string().min(1, "PLATFORM_RELEASE_NAME must be set"),
@@ -247,10 +245,6 @@ const configSchema = z.object({
   vmPoolMemory: z.string().default(""),
   featureModes: featureModesSchema,
   platformProvider: platformProviderSchema,
-  runtimeMigrationRetentionMs: z
-    .string()
-    .default("168h")
-    .transform(goDurationMs),
   activityTrackingEnabled: z.coerce.boolean().default(false),
   activityHmacKey: z.string().min(1, "ACTIVITY_HMAC_KEY must be set"),
   apiKeyHmacKey: z.string().min(1, "API_KEY_HMAC_KEY must be set"),
@@ -298,6 +292,7 @@ const configSchema = z.object({
   onceScheduleAgentMaxOpen: z.coerce.number().int().positive().default(20),
   onceScheduleAgentMaxPerHour: z.coerce.number().int().positive().default(30),
   minClientCliVersion: z.string().optional(),
+  recommendedClientCliVersion: z.string().optional(),
   trustedHostsPath: z.string().default(""),
   agentTemplatesPath: z.string().default(""),
   harnesses: harnessesSchema,
@@ -403,14 +398,19 @@ export function agentsInstallSettings(config: Config) {
     ),
     agentDefaultStorageSize: config.agentDefaultStorageSize,
     agentDefaultMounts: config.agentDefaultMounts,
-    runtimeMigrationRetentionMs: config.runtimeMigrationRetentionMs,
   };
 }
 
+const RELEASE_VERSION = /^\d+\.\d+\.\d+(-rc\d+)?$/;
+
+function recommendedClientCliVersion(appVersion: string): string | undefined {
+  return RELEASE_VERSION.test(appVersion) ? appVersion : undefined;
+}
+
 export function loadConfig(): Config {
+  const appVersion = process.env.PLATFORM_APP_VERSION ?? "0.0.0";
   return validatedConfigSchema.parse({
-    serverVersion: pkg.version,
-    appVersion: process.env.PLATFORM_APP_VERSION ?? "0.0.0",
+    appVersion,
     namespace: process.env.NAMESPACE,
     releaseName: process.env.PLATFORM_RELEASE_NAME,
     logLevel: process.env.LOG_LEVEL,
@@ -452,7 +452,6 @@ export function loadConfig(): Config {
       apiKey: process.env.PLATFORM_PROVIDER_API_KEY,
       caFile: process.env.PLATFORM_PROVIDER_CA_FILE,
     },
-    runtimeMigrationRetentionMs: process.env.RUNTIME_MIGRATION_RETENTION,
     activityTrackingEnabled: process.env.ACTIVITY_TRACKING_ENABLED,
     activityHmacKey: process.env.ACTIVITY_HMAC_KEY,
     apiKeyHmacKey: process.env.API_KEY_HMAC_KEY,
@@ -505,6 +504,7 @@ export function loadConfig(): Config {
     onceScheduleAgentMaxOpen: process.env.ONCE_SCHEDULE_AGENT_MAX_OPEN,
     onceScheduleAgentMaxPerHour: process.env.ONCE_SCHEDULE_AGENT_MAX_PER_HOUR,
     minClientCliVersion: process.env.MIN_CLIENT_CLI_VERSION,
+    recommendedClientCliVersion: recommendedClientCliVersion(appVersion),
     trustedHostsPath: process.env.TRUSTED_HOSTS_PATH,
     agentTemplatesPath: process.env.AGENT_TEMPLATES_PATH,
     harnesses: process.env.HARNESSES,

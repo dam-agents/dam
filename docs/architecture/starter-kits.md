@@ -1,6 +1,6 @@
 # Starter Kits
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -123,7 +123,7 @@ flowchart LR
   A new agent has it on by default, so a kit that names nothing gets that; `true` says so explicitly, and `false` turns it off for an agent whose tools need credentials added to requests that name no Connection.
   Agent settings show the same switch, so the owner can change it later.
 - **Install Command** — optional `install.command`: shell the agent-runtime runs once in the new agent's workspace, queued as a `workspace-command` event right after create and before anything else the apply queues, so a bootstrap has run by the time the initialization session opens.
-  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
+  The command runs as the kit wrote it: every harness image states the family it runs in `PLATFORM_HARNESS` (`claude-code`, `codex`, `pi`, `bob`, `copilot`), set as an image `ENV` so the harness, the install command and terminal shells all inherit it; a bootstrap reads that instead of being told, and detects the harness itself on an image that carries none.
   The command runs **inside the agent's own sandbox** — the same pod, grants and egress rules under which the harness already executes whatever the kit's `ONBOARDING.md` asks of it — so a kit from any catalog may declare one; what it can never do is widen the platform-enforced boundary (the invariant below).
   This is how the two wiki kits run their toolkit's bootstrap: from the checkout their `seed` brought in, pinned to the commit the catalog resolved, instead of fetching a script from the network at install.
 - **Knowledge Base Kit** — optional `knowledgeBase.shareRoots`: a kit may declare that what it creates publishes a [knowledge base](knowledge-bases.md), naming the workspace paths its shares expose.
@@ -138,7 +138,7 @@ flowchart LR
   It is stated in the user-facing vocabulary and nothing else: limits are what an agent's power and its owner's Ceiling are measured in, so a kit never states requests — the controller derives those from the limits.
   Each dimension is independent and a stated one wins over the harness Template's own value, so a kit sizes its workload whether it brings an image or runs on a harness Template; an omitted dimension inherits the Template's, then the install default.
   CPU and memory stay editable on the Agent afterwards like any other Size; disk is fixed at create.
-  Every kit on an install with virtualization gets none of it and shows no size, since every agent created there is a machine unless the caller asks for a container: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](persistence.md) pools.
+  Every kit on an install with virtualization gets none of it and shows no size, since every agent created there is a machine: a machine has no CPU, memory or disk size of its own and shares its owner's [memory](vm-memory.md) and [storage](vm-storage.md#the-owners-claim) pools.
   Only an install that cannot run one, and so creates containers, shows a kit's size.
   This is where the sizing the `preconfigured` Templates used to carry now lives.
 - **Seed** — optional `seed: { url, ref, into }`: the kit's definition repository.
@@ -202,7 +202,7 @@ Apply — the `create` procedure of the starter-kits router, since tRPC reserves
    This step waits for the Agent to be reachable, like every skill install, so a kit with external skills returns once the Agent is up; its verdicts ride back on the apply result, and a failure here is reported, never compensated by deleting the Agent — the requirements that justify a refusal were all checked before create.
    The apply is recorded in the security log last, once the outcome including the skill verdicts is known, and recorded once more as usage activity naming the kit it applied, so which kits people take up and what they do with the Agent afterwards are answerable from one log ([usage tracking](usage-tracking.md)).
 
-The catalog lives in one place, the **Browse Kits modal**, opened from the sidebar's **Starter kits** entry and from Home's browse button.
+The catalog is one view shown in two places: the **Starter kits** page at `/starter-kits`, which the sidebar's Starter kits entry opens, and the **Browse Kits modal**, which Home's browse button opens.
 Its first card, **Default**, is no kit: it creates a plain agent at once.
 A kit pick opens the **kit modal** at the kit's own URL over Home, which shows what the kit brings and takes the only input apply needs — the agent's name and avatar (generated, editable), the required connections, the schedules to adjust or skip, and the Slack channel — then applies without a further page.
 Every kit shows at one size.

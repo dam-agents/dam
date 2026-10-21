@@ -1,4 +1,5 @@
 import {
+  type PlatformContinuedFrom,
   type PlatformUndeliveredPrompt,
   type QueuedPrompt,
   SESSION_CATEGORIES,
@@ -52,6 +53,7 @@ export interface SessionsSlice {
   sessionMode: SessionMode | null;
   messages: Message[];
   runStarts: string[];
+  continuedFrom: PlatformContinuedFrom | null;
   queuedPrompts: QueuedPrompt[];
   harnessForks: boolean;
   harnessSteers: boolean;
@@ -79,15 +81,20 @@ export interface SessionsSlice {
   setToolActivityExpanded: (expanded: boolean) => void;
   setMessages: (updater: Message[] | ((prev: Message[]) => Message[])) => void;
   setRunStarts: (list: string[]) => void;
+  setContinuedFrom: (copy: PlatformContinuedFrom | null) => void;
   setQueuedPrompts: (items: QueuedPrompt[]) => void;
   setHarnessForks: (forks: boolean) => void;
   setHarnessSteers: (steers: boolean) => void;
   setRewriting: (rewriting: Rewriting | null) => void;
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
+  clearNextSessionPair: (agentId: string) => void;
   setSessionError: (e: SessionError | null) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
+  continueInNewSessionDraft: (agentId: string, invocationId: string) => void;
+  dropDraftContinuation: (agentId: string) => void;
+  clearDraftContent: (key: string) => void;
   clearDraft: (key: string) => void;
   migrateDraft: (fromKey: string, toKey: string) => void;
   consumeDroppedAttachments: (key: string) => void;
@@ -163,6 +170,7 @@ export const createSessionsSlice: StateCreator<
   return {
     sessionId: null,
     runStarts: [],
+    continuedFrom: null,
     queuedPrompts: [],
     harnessForks: false,
     harnessSteers: false,
@@ -203,6 +211,7 @@ export const createSessionsSlice: StateCreator<
         messages: typeof updater === "function" ? updater(s.messages) : updater,
       })),
     setRunStarts: (list) => set({ runStarts: list }),
+    setContinuedFrom: (copy) => set({ continuedFrom: copy }),
     setQueuedPrompts: (items) => set({ queuedPrompts: items }),
     setHarnessForks: (forks) => set({ harnessForks: forks }),
     setHarnessSteers: (steers) => set({ harnessSteers: steers }),
@@ -210,6 +219,14 @@ export const createSessionsSlice: StateCreator<
     setNextSessionPair: (agentId, pair) =>
       set((state) => ({
         nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
+      })),
+    clearNextSessionPair: (agentId) =>
+      set((state) => ({
+        nextSessionPair: Object.fromEntries(
+          Object.entries(state.nextSessionPair).filter(
+            ([id]) => id !== agentId,
+          ),
+        ),
       })),
     addRunStart: (at) =>
       set((s) =>
@@ -222,7 +239,8 @@ export const createSessionsSlice: StateCreator<
         const empty =
           next.text.length === 0 &&
           next.attachments.length === 0 &&
-          !next.droppedAttachmentNames?.length;
+          !next.droppedAttachmentNames?.length &&
+          next.continuesInvocation === undefined;
         if (empty && !(key in drafts)) return false;
         if (empty) delete drafts[key];
         else drafts[key] = next;
@@ -237,6 +255,25 @@ export const createSessionsSlice: StateCreator<
           text: current.text.length > 0 ? `${current.text}\n\n${text}` : text,
         };
         return true;
+      }),
+    continueInNewSessionDraft: (agentId, invocationId) =>
+      updateDrafts((drafts) => {
+        const key = draftKey(agentId, null);
+        drafts[key] = {
+          ...(drafts[key] ?? EMPTY_DRAFT),
+          continuesInvocation: invocationId,
+        };
+        return true;
+      }),
+    dropDraftContinuation: (agentId) =>
+      get().setDraft(draftKey(agentId, null), {
+        continuesInvocation: undefined,
+      }),
+    clearDraftContent: (key) =>
+      get().setDraft(key, {
+        text: "",
+        attachments: [],
+        droppedAttachmentNames: undefined,
       }),
     clearDraft: (key) =>
       updateDrafts((drafts) => {
@@ -289,6 +326,7 @@ export const createSessionsSlice: StateCreator<
         sessionMode: null,
         messages: [],
         runStarts: [],
+        continuedFrom: null,
         queuedPrompts: [],
         rewriting: null,
         sessionError: null,
@@ -368,9 +406,14 @@ export const createSessionsSlice: StateCreator<
     discardSessionToDraft: async (sessionId, text) => {
       const agentId = get().selectedAgent;
       if (!agentId) return;
+      const continuation =
+        get().sessionId === sessionId
+          ? get().continuedFrom?.invocationId
+          : undefined;
       await deleteAgentSession(agentId, sessionId);
       await forgetSession(agentId, sessionId);
       get().appendNewSessionDraft(agentId, text);
+      if (continuation) get().continueInNewSessionDraft(agentId, continuation);
     },
   };
 };

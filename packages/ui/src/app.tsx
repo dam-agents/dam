@@ -3,14 +3,13 @@ import { useEffect } from "react";
 import { getBrand } from "./brand.js";
 import { ConnectionBanner } from "./components/connection-banner.js";
 import { DialogOverlay } from "./components/dialog-overlay.js";
-import { Button } from "./components/ui/button.js";
 import { useIsDesktop } from "./hooks/use-is-desktop.js";
 import { documentTitle } from "./lib/document-title.js";
 import { emitToast } from "./lib/toast.js";
 import { cn } from "./lib/utils.js";
 import { useAgentsList } from "./modules/agents/api/queries.js";
 import { useAgentCrashToasts } from "./modules/agents/hooks/use-agent-crash-toasts.js";
-import { ArtifactIcon } from "./modules/artifacts/lib/artifact-icon.js";
+import { ArtifactsView } from "./modules/artifacts/views/artifacts-view.js";
 import { useNewLayout } from "./modules/features/hooks/use-new-layout.js";
 import { useApprovalToasts } from "./modules/home/hooks/use-approval-toasts.js";
 import { HomeView } from "./modules/home/views/home-view.js";
@@ -23,6 +22,7 @@ import { useBrowserHistory } from "./modules/platform/hooks/use-browser-history.
 import { parseRoute } from "./modules/platform/lib/routes.js";
 import { applyTheme } from "./modules/platform/store/theme.js";
 import { NotFoundView } from "./modules/platform/views/not-found-view.js";
+import { ProviderOutageBanner } from "./modules/provider-status/components/provider-outage-banner.js";
 import { SECTIONS } from "./modules/sandboxes/components/sandbox-section-nav.js";
 import { SandboxHomeView } from "./modules/sandboxes/views/sandbox-home-view.js";
 import { useAgentSession } from "./modules/sessions/api/queries.js";
@@ -36,6 +36,7 @@ import { SlackBindView } from "./modules/slack/views/slack-bind-view.js";
 import { useStarterKit } from "./modules/starter-kits/api/queries.js";
 import { BrowseKitsModal } from "./modules/starter-kits/components/browse-kits-modal.js";
 import { StarterKitDetailView } from "./modules/starter-kits/views/starter-kit-view.js";
+import { StarterKitsView } from "./modules/starter-kits/views/starter-kits-view.js";
 import { TelegramBindView } from "./modules/telegram/views/telegram-bind-view.js";
 import { TermsView } from "./modules/terms/views/terms-view.js";
 import { UsageReportView } from "./modules/usage/views/usage-report-view.js";
@@ -133,8 +134,6 @@ function AppSidebar() {
 function MainApp() {
   const view = useStore((s) => s.view);
   const kitBrowserOpen = useStore((s) => s.kitBrowserOpen);
-  const setSidePanelTab = useStore((s) => s.setSidePanelTab);
-  const setMobileScreen = useStore((s) => s.setMobileScreen);
   const desktop = useIsDesktop();
 
   const newLayout = useNewLayout();
@@ -203,35 +202,22 @@ function MainApp() {
             className="flex flex-1 flex-col overflow-y-auto [scrollbar-gutter:stable] outline-none"
           >
             {!desktop && (
-              <AppTopBar
-                actions={
-                  <>
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label="Artifacts"
-                      onClick={() => {
-                        setSidePanelTab("artifacts");
-                        setMobileScreen("files");
-                      }}
-                    >
-                      <ArtifactIcon size={16} />
-                    </Button>
-                    <AppSidePanelButtons />
-                  </>
-                }
-              />
+              <AppTopBar actions={<AppSidePanelButtons withArtifacts />} />
             )}
             <div
               className={cn(
                 "mx-auto w-full flex-1 px-4 md:px-[5%] py-6 md:py-10",
-                view === "home" || view === "starter-kit"
+                view === "home" ||
+                  view === "starter-kit" ||
+                  view === "starter-kits" ||
+                  view === "artifacts"
                   ? "max-w-[1200px]"
                   : view === "settings" || view === "sandbox-home"
                     ? "max-w-[1040px]"
                     : "max-w-[960px]",
               )}
             >
+              <ProviderOutageBanner className="mb-6" />
               {view === "sandbox-home" ? (
                 <SandboxHomeView />
               ) : view === "home" || view === "starter-kit" ? (
@@ -239,6 +225,10 @@ function MainApp() {
                   <HomeView />
                   {view === "starter-kit" && <StarterKitDetailView />}
                 </>
+              ) : view === "artifacts" ? (
+                <ArtifactsView />
+              ) : view === "starter-kits" ? (
+                <StarterKitsView />
               ) : view === "settings" ? (
                 <SettingsView />
               ) : (

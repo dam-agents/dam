@@ -1,5 +1,9 @@
 import { CONFIGURE_SESSION_METHOD, PIN_MODEL_METHOD } from "agent-runtime-api";
-import { type PromptBlock, SessionMode } from "api-server-api";
+import {
+  type DefaultKind,
+  type PromptBlock,
+  SessionMode,
+} from "api-server-api";
 import {
   useCallback,
   useEffect,
@@ -170,6 +174,7 @@ export function useAcpSession(
         : appendUndelivered([], readUndelivered(draftKey(selectedAgent, null))),
     );
     useStore.getState().setRunStarts([]);
+    useStore.getState().setContinuedFrom(null);
     useStore.getState().setSessionError(null);
   }, [resetConnection, setSessionId, setMessages, selectedAgent]);
 
@@ -182,6 +187,7 @@ export function useAcpSession(
       setMessages([]);
       useStore.getState().setRewriting(null);
       useStore.getState().setRunStarts([]);
+      useStore.getState().setContinuedFrom(null);
       useStore.getState().setSessionError(null);
       setSessionId(sid);
 
@@ -294,6 +300,7 @@ export function useAcpSession(
         await live.connection.agent.request(PIN_MODEL_METHOD, {
           sessionId: sid,
           model: value,
+          follows: null,
         });
         onPinned?.();
         await queryClient.invalidateQueries({
@@ -310,7 +317,11 @@ export function useAcpSession(
   );
 
   const configureSession = useCallback(
-    async (settings: Record<string, string>) => {
+    async (
+      settings: Record<string, string>,
+      follows: DefaultKind | null = null,
+      afterNextDefaults = false,
+    ) => {
       const sid = useStore.getState().sessionId;
       if (!sid || !selectedAgent) return;
       try {
@@ -319,6 +330,8 @@ export function useAcpSession(
         await live.connection.agent.request(CONFIGURE_SESSION_METHOD, {
           sessionId: sid,
           settings,
+          follows,
+          ...(afterNextDefaults && { afterNextDefaults: true }),
         });
         await queryClient.invalidateQueries({
           queryKey: acpSessionsKeys.agent(selectedAgent),

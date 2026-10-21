@@ -139,6 +139,7 @@ export function startApiServerApp(deps: ApiServerDeps) {
     deps.agentsRepo,
     deps.approvalsRelay,
     deps.sessionPresence,
+    deps.firePair,
   );
   const terminalRelay = createTerminalRelay(
     config.namespace,

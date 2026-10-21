@@ -8,17 +8,27 @@ import type { PlatformStore } from "../../../store.js";
 import {
   type ActivityFilters,
   defaultActivityFilters,
+  isFiltered,
 } from "../../home/lib/activity-filter.js";
+import { keepFirstSessionPages } from "../../sessions/api/queries.js";
 
 const SIDEBAR_EXPANDED_STORAGE_KEY = "platform-sidebar-expanded";
 const SIDEBAR_HIBERNATING_STORAGE_KEY = "platform-sidebar-show-hibernating";
 const SIDEBAR_V2_PINNED_STORAGE_KEY = "platform-sidebar-v2-pinned";
+
+export type SidebarGroupBy = "agents" | "all";
 
 export interface SidebarSlice {
   sidebarExpanded: boolean;
   setSidebarExpanded: (expanded: boolean) => void;
   sidebarActivityFilters: ActivityFilters;
   setSidebarActivityFilters: (filters: ActivityFilters) => void;
+  sidebarGroupBy: SidebarGroupBy;
+  setSidebarGroupBy: (groupBy: SidebarGroupBy) => void;
+  sidebarTreeToggled: ReadonlyMap<string, boolean>;
+  setSidebarTreeToggled: (toggled: ReadonlyMap<string, boolean>) => void;
+  sidebarTreeOpenAgent: string | null;
+  setSidebarTreeOpenAgent: (agentId: string | null) => void;
   sidebarShowHibernating: boolean;
   setSidebarShowHibernating: (show: boolean) => void;
   sidebarAgentOpen: Readonly<Record<string, boolean>>;
@@ -29,8 +39,6 @@ export interface SidebarSlice {
   setSidebarPinned: (pinned: boolean) => void;
   sidebarPeek: boolean;
   setSidebarPeek: (peek: boolean) => void;
-  sidebarAgentId: string | null;
-  setSidebarAgentId: (agentId: string | null) => void;
 }
 
 function readStoredSidebarExpanded(): boolean {
@@ -42,15 +50,26 @@ export const createSidebarSlice: StateCreator<
   [],
   [],
   SidebarSlice
-> = (set) => ({
+> = (set, get) => ({
   sidebarExpanded: readStoredSidebarExpanded(),
   setSidebarExpanded: (expanded) => {
     writePersistedFlag(SIDEBAR_EXPANDED_STORAGE_KEY, expanded);
     set({ sidebarExpanded: expanded });
   },
   sidebarActivityFilters: defaultActivityFilters(),
-  setSidebarActivityFilters: (filters) =>
-    set({ sidebarActivityFilters: filters }),
+  setSidebarActivityFilters: (filters) => {
+    if (isFiltered(get().sidebarActivityFilters) && !isFiltered(filters))
+      keepFirstSessionPages();
+    set({ sidebarActivityFilters: filters });
+  },
+  sidebarGroupBy: "agents",
+  setSidebarGroupBy: (groupBy) => set({ sidebarGroupBy: groupBy }),
+  sidebarTreeToggled: new Map(),
+  setSidebarTreeToggled: (toggled) => set({ sidebarTreeToggled: toggled }),
+  sidebarTreeOpenAgent: null,
+  setSidebarTreeOpenAgent: (agentId) => {
+    if (agentId) set({ sidebarTreeOpenAgent: agentId });
+  },
   sidebarShowHibernating: readPersistedFlag(
     SIDEBAR_HIBERNATING_STORAGE_KEY,
     false,
@@ -75,6 +94,4 @@ export const createSidebarSlice: StateCreator<
   },
   sidebarPeek: false,
   setSidebarPeek: (peek) => set({ sidebarPeek: peek }),
-  sidebarAgentId: null,
-  setSidebarAgentId: (agentId) => set({ sidebarAgentId: agentId }),
 });

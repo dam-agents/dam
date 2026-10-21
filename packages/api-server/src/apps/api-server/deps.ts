@@ -6,6 +6,7 @@ import type {
   E2eService,
   HarnessCatalog,
   LiveEventsService,
+  ProviderStatusService,
   ReposService,
   TermsService,
 } from "api-server-api";
@@ -42,7 +43,10 @@ import type { SlackBindFlowStore } from "../../modules/channels/infrastructure/s
 import type { SlackInstallPending } from "../../modules/channels/infrastructure/slack-install-routes.js";
 import type { SlackInstallService } from "../../modules/channels/services/slack-install-service.js";
 import type { ConnectionsBootCompose } from "../../modules/connections/compose.js";
-import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type {
+  OutboxRepo,
+  RuntimeMutator,
+} from "../../modules/runtime-delivery/index.js";
 import type { SchedulesBoot } from "../../modules/schedules/index.js";
 import type { SecretStore } from "../../modules/secret-store/index.js";
 import type { SkillSourceSeed } from "../../modules/skills/index.js";
@@ -89,6 +93,7 @@ export interface ApiServerDeps {
   seedSources: SkillSourceSeed[];
   redisBus: RedisBus;
   spendForOwner: SpendSystem["forOwner"];
+  providerStatus: ProviderStatusService;
   approvalsRelay: ApprovalsRelayService;
   wrapperFrameSender: WrapperFrameSender;
   presetSeeder: PresetSeeder;
@@ -96,6 +101,7 @@ export interface ApiServerDeps {
   agentCleanupHooks: readonly AgentCleanupHook[];
   secretStore: SecretStore;
   runtimeMutator: RuntimeMutator;
+  outboxRepo: OutboxRepo;
   contributionsProgress: ContributionsProgressPort;
   onboardingChecklists: OnboardingChecklistReader;
   getAgentCapabilities: (agentId: string) => Promise<unknown>;

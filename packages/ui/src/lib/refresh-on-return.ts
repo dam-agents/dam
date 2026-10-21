@@ -10,7 +10,6 @@ const NO_PUSH_PATHS: readonly KeyPath[] = [
   ["channels", "telegramBot"],
   ["agents", "listTelegramChats"],
   ["agents", "get"],
-  ["agents", "planRuntimeMigration"],
   ["slack", "install", "availability"],
   ["features", "flags"],
   ["features", "install"],
@@ -25,6 +24,7 @@ const NO_PUSH_PATHS: readonly KeyPath[] = [
   ["skills", "state"],
   ["satellites", "list"],
   ["metrics", "spendBreakdown"],
+  ["providerStatus", "list"],
   ["telemetry", "turns"],
   ["telemetry", "turn"],
   ["telemetry", "invocationTurns"],
@@ -60,7 +60,7 @@ function startsWith(path: readonly string[], prefix: KeyPath): boolean {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The one place that decides which data an open screen re-reads when the user returns to the tab or the API connection comes back. A family belongs here when it changes outside this screen and no stream or poll carries it: no live-event topic, no pod watch on an older runtime, no continuing poll. Everything else heals through its own notice, its poll, or the owner stream's sync hint on re-subscription.
+ * UNIT_BOUNDARY_DESCRIPTION: The one place that decides which data an open screen re-reads when the user returns to the tab or the API connection comes back. A family belongs here when it changes outside this screen and no stream or poll carries it: no live-event topic, no pod watch on an older runtime, no continuing poll. Everything else heals through its own notice, its poll, or the owner stream's sync hint on re-subscription. Provider Status is the one polled family here: its poll pauses while the tab is hidden, and a returning user must not see an ended outage, or miss a new one, for another minute.
  */
 export function refreshOnReturn(
   queryKey: readonly unknown[],

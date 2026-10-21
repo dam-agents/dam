@@ -116,6 +116,31 @@ describe("TokenProvider — claim 5: DAM_TOKEN precedence", () => {
     expect(store.removes).toBe(0);
   });
 
+  /**
+   * TEST_SCENARIO: `dam auth login` and `dam auth status` judge the saved
+   * sign-in, not the `DAM_TOKEN` that shadows it. The saved-token path skips
+   * the env var, so a set `DAM_TOKEN` cannot make a dead saved session look
+   * alive.
+   */
+  it("getSavedAccessToken ignores DAM_TOKEN and checks the saved session", async () => {
+    const store = makeStore([
+      [HOST, makeAuth(new Date(NOW.getTime() + 30_000).toISOString())],
+    ]);
+    const tp = createTokenProvider({
+      authStore: store,
+      authEnvReader: envReader("env-token-value"),
+      tokenEndpointClient: refreshClient(
+        ok({ kind: "error", error: "invalid_grant" }),
+      ),
+      hostMetadata: metadataResolver(),
+      now: () => NOW,
+    });
+
+    const r = await tp.getSavedAccessToken(HOST);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error.kind).toBe("session-expired");
+  });
+
   it("DAM_TOKEN empty string treated as unset (falls through to Auth Store)", async () => {
     const store = makeStore([[HOST, makeAuth("2027-01-01T00:00:00Z")]]);
     const tp = createTokenProvider({

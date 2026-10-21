@@ -21,12 +21,15 @@ import { cn } from "@/lib/utils";
 import { FormError } from "../../../components/form-error.js";
 import { FormField } from "../../../components/form-field.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
 import {
   useHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
+  useSessionDefaults,
 } from "../../sessions/api/session-pair.js";
+import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
 import {
   type Choice,
   OptionPicker,
@@ -507,7 +510,8 @@ interface ChoicesControl {
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the same three choices a session picks.
- * "Agent default" is the empty choice and says what that default is now. On
+ * "Scheduled default" is the empty choice and says what that default is now,
+ * and whether it is the chat default, set on the Providers page. On
  * a runtime without the Model Router the old single model field stands.
  */
 export function ScheduleChoicesField<T extends ChoicesControl>({
@@ -521,6 +525,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
 }) {
   const typed = control as unknown as Control<ChoicesControl>;
   const { data: status } = useHarnessConfigStatus(agentId || null);
+  const agentOperable = useIsAgentOperable(agentId || null);
   const routed = status?.modelRouter ?? false;
   const harnessValue = useWatch({ control: typed, name: "harness" });
   const { field: modelField } = useController({
@@ -531,6 +536,10 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     control: typed,
     name: "settings",
   });
+  const { data: savedDefaults } = useSessionDefaults(
+    routed && agentId ? agentId : null,
+  );
+  const sameAsChat = savedDefaults !== undefined && !savedDefaults.scheduled;
   const storedModel = modelField.value;
   const settingsValue = settingsField.value;
   const { data: catalog } = useHarnessCatalog();
@@ -545,7 +554,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
     status?.defaultHarness ||
     carried[0]?.name ||
     "";
-  const { data: catalogModels, operable } = useHarnessCatalogModels(
+  const { data: catalogModels } = useHarnessCatalogModels(
     routed && agentId ? agentId : null,
     routed ? harness || null : null,
   );
@@ -554,7 +563,17 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
+    storedModel || fallback?.model || null,
   );
+  const listedByRunningAgent =
+    !status?.harnesses ||
+    (!routed && status.sessionModel && !!status.defaultHarness);
+  if (agentId && status && !agentOperable && listedByRunningAgent)
+    return (
+      <FormField label="Model">
+        <AwakeModelsGate agentId={agentId} />
+      </FormField>
+    );
   if (!routed)
     return (
       <ScheduleModelField
@@ -589,17 +608,18 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       ...(catalogModels !== undefined && {
         description: "Not in this agent's model list",
       }),
-      ...(!operable && { description: "Start the agent to check this model" }),
     });
   const todayModel = fallback?.model
     ? modelIndicatorLabel(groups, fallback.model)
     : null;
+  const now = (value: string) =>
+    sameAsChat ? `Now: ${value}, same as chat` : `Now: ${value}`;
+  const defaultHint = sameAsChat
+    ? "Scheduled default runs on the agent's scheduled default, set on its Providers page, which is the same as its chat default."
+    : "Scheduled default runs on the agent's scheduled default, set on its Providers page.";
   return (
     <div className="flex flex-col gap-4">
-      <FormField
-        label="Harness"
-        hint="Agent default runs on the agent's default harness and model."
-      >
+      <FormField label="Harness" hint={defaultHint}>
         <Controller
           control={typed}
           name="harness"
@@ -609,11 +629,15 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
               choices={harnessChoices}
               value={field.value || null}
               clearable
-              clearedLabel="Agent default"
+              placeholder="Scheduled default"
+              clearedLabel="Scheduled default"
               clearedDescription={
                 fallback?.harness
-                  ? `Today: ${harnessChoices.find((c) => c.id === fallback.harness)?.name ?? fallback.harness}`
-                  : "Follows the agent's default harness"
+                  ? now(
+                      harnessChoices.find((c) => c.id === fallback.harness)
+                        ?.name ?? fallback.harness,
+                    )
+                  : "Follows the agent's scheduled default"
               }
               onSelect={(id) => {
                 field.onChange(id ?? "");
@@ -626,34 +650,37 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
       </FormField>
       <FormField
         label="Model"
-        hint="Each model is named with its provider. Agent default uses the agent's default model for the harness."
+        hint="Each model is named with its provider. Scheduled default uses the scheduled default's model for the harness."
         {...(migrationNote ? { error: migrationNote } : {})}
       >
-        <OptionPicker
-          title="Model"
-          choices={modelChoices}
-          value={modelValue || null}
-          clearable
-          clearedLabel="Agent default"
-          clearedDescription={
-            todayModel
-              ? `Today: ${todayModel}`
-              : "Follows the agent's default model for the harness"
-          }
-          onSelect={(id) => {
-            modelField.onChange(id ?? "");
-            if (!id && fallback === undefined) return;
-            const current = settingsValue ?? {};
-            const kept = settingsForModel(
-              capability,
-              groups,
-              id || fallback?.model || null,
-              current,
-            );
-            if (Object.keys(kept).length !== Object.keys(current).length)
-              settingsField.onChange(kept);
-          }}
-        />
+        <AwakeModelsGate agentId={agentId}>
+          <OptionPicker
+            title="Model"
+            choices={modelChoices}
+            value={modelValue || null}
+            clearable
+            placeholder="Scheduled default"
+            clearedLabel="Scheduled default"
+            clearedDescription={
+              todayModel
+                ? now(todayModel)
+                : "Follows the scheduled default's model for the harness"
+            }
+            onSelect={(id) => {
+              modelField.onChange(id ?? "");
+              if (!id && fallback === undefined) return;
+              const current = settingsValue ?? {};
+              const kept = settingsForModel(
+                capability,
+                groups,
+                id || fallback?.model || null,
+                current,
+              );
+              if (Object.keys(kept).length !== Object.keys(current).length)
+                settingsField.onChange(kept);
+            }}
+          />
+        </AwakeModelsGate>
       </FormField>
       {capability?.sessionSettings && capability.sessionSettings.length > 0 && (
         <FormField label="Session settings">
@@ -661,7 +688,7 @@ export function ScheduleChoicesField<T extends ChoicesControl>({
             agentId={agentId}
             carried={carried}
             capability={capability}
-            model={modelValue || null}
+            model={modelValue || fallback?.model || null}
             settings={settingsValue ?? {}}
             defaults={defaults}
             modelChoices={sameSideGroups(

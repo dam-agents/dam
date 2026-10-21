@@ -20,6 +20,7 @@ import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
 
 const SHOWN = hiddenSidePanelTabs({
   agent: true,
+  artifacts: true,
   canOpenBrowser: true,
   processesEnabled: true,
   gettingStarted: true,
@@ -49,6 +50,7 @@ describe("what the right-hand slot shows", () => {
   it("TEST_SCENARIO: a finished or dismissed checklist hides Get started, so the slot falls back to the docked item", () => {
     const hidden = hiddenSidePanelTabs({
       agent: true,
+      artifacts: true,
       canOpenBrowser: true,
       processesEnabled: true,
       gettingStarted: false,

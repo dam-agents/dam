@@ -8,7 +8,23 @@ description: >-
 # DAM — what a tester needs to know
 
 DAM runs AI coding agents (Claude Code, Codex, Pi, Bob) in isolated environments.
-The nested install is a fresh, single-user platform at `http://localhost:4444`, signed in as the test owner from `credentials.env` (a local account of the bundled sign-in service).
+The nested install is a fresh platform at `http://localhost:4444` with four test accounts from `credentials.env` (local accounts of the bundled sign-in service); the suite signs in as the owner.
+
+## Test accounts
+
+DAM has no teams or workspaces: every account owns its own agents, connections, schedules and artifacts, and sees another account's work only through what that account shares (an artifact link, a public agent, a shared connection).
+
+| Role        | Account        | May                                                                                                  |
+| ----------- | -------------- | ---------------------------------------------------------------------------------------------------- |
+| `OWNER`     | `qa-owner`     | everything a user may, plus the usage analytics report (an inspector)                                |
+| `MEMBER`    | `qa-member`    | everything an ordinary user may with their own work; no usage report (a "We are sorry" page)         |
+| `INSPECTOR` | `qa-inspector` | what `MEMBER` may, plus the usage analytics report                                                   |
+| `OUTSIDER`  | `qa-outsider`  | the same as `MEMBER` — kept apart for checks that someone else cannot see or change the owner's work |
+
+No account sees the Slack workspaces tab in Settings: the QA install sets no Slack app.
+None of them can see, open or change another account's agents, connections, schedules or artifacts unless it was shared with them.
+There is no read-only account: any signed-in user may create their own agents, so DAM provides no `VIEWER`.
+Builds published before these accounts were added have only `qa-owner`; there another account cannot sign in, so a check that needs one is `blocked` on such a build, never failed.
 
 ## Vocabulary a user sees
 
@@ -22,8 +38,20 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
 
 ## What the nested install cannot do
 
-- No outbound network from inside the nested cluster: real model providers, GitHub, Slack and Telegram do not work.
+- No outbound network from inside the nested cluster beyond the sandbox accounts below: real model providers (unless lent), Telegram, and any GitHub or Slack other than the sandbox's do not work.
   An AC that needs any of them is `testable: no — external dependency`, unless it only checks that the UI offers or records something.
+- **Sandbox accounts** (`sandbox` in `profile.json`, set up at the inspector's onboarding) make two services real, each only when its credentials are set:
+  - **GitHub** — one repository of a throwaway organization, `profile.sandbox_github_repo`.
+    An agent reaches it through a **GitHub** connection made with a personal access token (Settings → Connections → GitHub → *Connect with a personal access token*), whose value is `E2E_SANDBOX_GITHUB_TOKEN`.
+    The token may only read the repository and write its issues.
+    Check what the agent did on GitHub through what DAM and Slack show — its reply, its chat — never by reading GitHub.
+  - **Slack** — one channel of a throwaway workspace; DAM's Slack app is installed there and connected at install, so the workspace needs no install flow.
+    An agent joins it under the agent's **Channels** → *Connect a Slack channel* with **Channel ID** `E2E_SANDBOX_SLACK_CHANNEL_ID`.
+    The test person writes and reads there only through `suite/lib/sandbox.ts`: `botUserId()` to mention the agent, `personSays(text)`, `botReplies(ts)`.
+    A Mock agent answers a Slack mention in the thread with its scripted reply, without a model.
+  - Filing an issue or deciding anything needs a real model: with `lend_model` on, the test creates an **Anthropic** connection whose key is the lent placeholder (`ANTHROPIC_API_KEY`, `ANTHROPIC_AUTH_TOKEN` or `CLAUDE_CODE_OAUTH_TOKEN` in the test's environment), and the agent uses a Claude Code template.
+    Without it, such ACs are `blocked`, naming `lend_model`.
+  - A sandbox whose credentials are not set leaves its ACs `testable: no — external dependency`.
 - Agents answer through the **Mock** harness template (a scripted mock agent, the profile's `mock_image`): it replies "Hello from the mock agent."
   to every prompt and never calls a model.
   An AC about what an agent says or decides is judged only on what the UI shows around that reply; with `mock_image` set empty, an AC that needs an agent to reply or run is `blocked`, not failed.
@@ -33,8 +61,6 @@ The nested install is a fresh, single-user platform at `http://localhost:4444`, 
   records for it stays testable.
 - What a user creates with a free-text field (a schedule's prompt) needs an agent first; the agent's name is itself free text and shows wherever the agent is listed.
   The injection canary therefore names one Mock agent with its text (`canary` in `profile.json`) and deletes it.
-- One user.
-  ACs about sharing, other users' access or approvals between people need a second account — `testable: no — single user` until the profile adds one.
 - No service mesh: the VM's kernel cannot run Istio, so the nested install runs without it.
   Network isolation between agents is not enforced — an AC that one agent cannot reach or act as another is `testable: no — no mesh`.
 - No email, no SSO federation, no real billing.

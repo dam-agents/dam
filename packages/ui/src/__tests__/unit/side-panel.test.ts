@@ -20,7 +20,8 @@ import type { PlatformStore } from "../../store.js";
 /**
  * TEST_OVERVIEW: Every page has one side panel on the right, switched by an
  * icon bar. An Agent's chat offers Files, Changes, Browser and Processes;
- * every page, the chat included, offers Artifacts, Get started and Approvals.
+ * every page offers Get started and Approvals, and the chat and an Agent's
+ * configuration page also offer Artifacts.
  * A list tab shows its list, or the docked item it opened (a file, an
  * artifact, a process output). The Changes and Browser tabs show their docked
  * panel and nothing else. Clicking the active icon collapses the panel. A
@@ -38,6 +39,7 @@ const NOTHING_DOCKED: DockedItems = {
 
 const ALL_AVAILABLE = hiddenSidePanelTabs({
   agent: true,
+  artifacts: true,
   canOpenBrowser: true,
   processesEnabled: true,
   gettingStarted: true,
@@ -77,6 +79,7 @@ describe("which tab the side panel shows", () => {
     const docked = { ...NOTHING_DOCKED, browser: true };
     const unavailable = hiddenSidePanelTabs({
       agent: true,
+      artifacts: true,
       canOpenBrowser: false,
       processesEnabled: false,
       gettingStarted: true,
@@ -87,18 +90,17 @@ describe("which tab the side panel shows", () => {
 });
 
 describe("the panels outside an Agent's chat", () => {
-  it("TEST_SCENARIO: a page that is not an Agent's chat offers only Artifacts, Get started and Approvals, so an Agent's tab left open there shows nothing", () => {
+  it("TEST_SCENARIO: a page that is not an Agent's chat offers only Get started and Approvals, so an Agent's tab left open there shows nothing, and Artifacts stays on the Artifacts page instead of opening a second time", () => {
     const hidden = hiddenSidePanelTabs({
       agent: false,
+      artifacts: false,
       canOpenBrowser: true,
       processesEnabled: true,
       gettingStarted: true,
     });
     expect(visibleSidePanelTab("files", NOTHING_DOCKED, hidden)).toBe(null);
     expect(visibleSidePanelTab("processes", NOTHING_DOCKED, hidden)).toBe(null);
-    expect(visibleSidePanelTab("artifacts", NOTHING_DOCKED, hidden)).toBe(
-      "artifacts",
-    );
+    expect(visibleSidePanelTab("artifacts", NOTHING_DOCKED, hidden)).toBe(null);
     expect(visibleSidePanelTab("approvals", NOTHING_DOCKED, hidden)).toBe(
       "approvals",
     );
@@ -110,6 +112,7 @@ describe("the panels outside an Agent's chat", () => {
   it("TEST_SCENARIO: a dismissed or finished checklist hides Get started, so its panel closes", () => {
     const hidden = hiddenSidePanelTabs({
       agent: true,
+      artifacts: true,
       canOpenBrowser: true,
       processesEnabled: true,
       gettingStarted: false,

@@ -70,12 +70,14 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     slackBindFlows,
     seedSources,
     spendForOwner,
+    providerStatus,
     wrapperFrameSender,
     presetSeeder,
     trustedHosts,
     agentCleanupHooks,
     secretStore,
     runtimeMutator,
+    outboxRepo,
     contributionsProgress,
     onboardingChecklists,
     gettingStarted,
@@ -130,6 +132,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
       brandName: config.brand.name,
       platformProviderKey: config.platformProvider?.apiKey ?? null,
       platformProviderCa: config.platformProvider?.ca ?? null,
+      harnesses,
       platformProviderEnabled: async () =>
         (await features.flags())["platform-provider"],
     });
@@ -270,7 +273,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
       sessionPair: (agentId) =>
-        firePair(agentId, {}).catch((err: unknown) => {
+        firePair(agentId, "chat", {}).catch((err: unknown) => {
           if (isNoDefaultModelError(err))
             throw new TRPCError({
               code: "PRECONDITION_FAILED",
@@ -338,6 +341,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
     const { service: harnessConfig } = composeHarnessConfigModule({
       catalog: harnesses,
       db,
+      outboxRepo,
       ownerSub: user.sub,
       surface,
       runtimeMutator,
@@ -438,6 +442,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         isAgentOwnedBy: (agentId, ownerSub) =>
           agentsRepo.isOwnedBy(agentId, ownerSub),
       }),
+      providerStatus,
       user,
       e2eEnabled: config.e2eEnabled,
       virtualizationEnabled: config.virtualizationEnabled,

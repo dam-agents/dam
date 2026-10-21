@@ -31,6 +31,7 @@ const scheduleMeta = (scheduleId: string) => ({
   type: SessionType.ScheduleCron,
   mode: SessionMode.Chat,
   scheduleId,
+  follows: null,
 });
 
 const allows: PrecheckRunner = async () => ({ verdict: "allowed" });
@@ -48,6 +49,7 @@ const handlerFor = (
     runPrecheck: allows,
     log: () => {},
     reporter: { report: async () => {} },
+    invocationWatch: { watch: () => {} },
     ...deps,
   }).bindEvent!(kind, { impl: "trigger" });
 
@@ -87,6 +89,7 @@ describe("trigger plugin", () => {
       runPrecheck: allows,
       log: () => {},
       reporter: { report: async () => {} },
+      invocationWatch: { watch: () => {} },
       driver,
       stateStore,
       catalogListed,
@@ -302,6 +305,7 @@ describe("trigger plugin one-time tasks", () => {
         runPrecheck: allows,
         log: () => {},
         reporter: { report: async () => {} },
+        invocationWatch: { watch: () => {} },
         findSessionByRef: () => found,
       }).bindEvent!("trigger", { impl: "trigger" });
     const payload = {

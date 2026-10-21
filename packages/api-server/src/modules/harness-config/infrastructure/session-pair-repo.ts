@@ -8,22 +8,33 @@ import {
   connectionGrants,
   connections as connectionsTable,
   type Db,
+  type DbTx,
 } from "db";
+import { match } from "ts-pattern";
 import {
   orderByAlias,
   PROVIDER_TEMPLATE_IDS,
   providerTypeForTemplateId,
   sessionPairSchema,
+  type DefaultKind,
+  type SessionDefaults,
   type SessionPair,
 } from "api-server-api";
 import type { DefaultModelNote } from "../domain/default-model-notice.js";
 import type { GrantedProvider } from "../domain/session-pair.js";
 
 export interface SessionPairRepo {
-  read(agentId: string): Promise<SessionPair | null>;
-  write(agentId: string, pair: SessionPair): Promise<void>;
+  read(agentId: string, kind: DefaultKind): Promise<SessionPair | null>;
+  readSaved(agentId: string, lockIn?: DbTx): Promise<SessionDefaults>;
+  write(agentId: string, kind: DefaultKind, pair: SessionPair): Promise<void>;
+  clear(agentId: string, kind: Exclude<DefaultKind, "chat">): Promise<void>;
   grantedProviders(agentId: string): Promise<GrantedProvider[]>;
 }
+
+const parsePair = (value: unknown): SessionPair | null => {
+  const parsed = sessionPairSchema.safeParse(value);
+  return parsed.success ? parsed.data : null;
+};
 
 export interface FillableSessionPairRepo extends SessionPairRepo {
   writeIfEmpty(
@@ -34,20 +45,60 @@ export interface FillableSessionPairRepo extends SessionPairRepo {
 }
 
 export function createSessionPairRepo(db: Db): FillableSessionPairRepo {
+  async function readSaved(
+    agentId: string,
+    lockIn?: DbTx,
+  ): Promise<SessionDefaults> {
+    const query = (lockIn ?? db)
+      .select({
+        chat: agentsTable.sessionPair,
+        channel: agentsTable.channelSessionPair,
+        scheduled: agentsTable.scheduledSessionPair,
+      })
+      .from(agentsTable)
+      .where(eq(agentsTable.id, agentId));
+    const rows = await (lockIn ? query.for("update") : query);
+    return {
+      chat: parsePair(rows[0]?.chat),
+      channel: parsePair(rows[0]?.channel),
+      scheduled: parsePair(rows[0]?.scheduled),
+    };
+  }
+
   return {
-    async read(agentId) {
-      const rows = await db
-        .select({ pair: agentsTable.sessionPair })
-        .from(agentsTable)
-        .where(eq(agentsTable.id, agentId));
-      const parsed = sessionPairSchema.safeParse(rows[0]?.pair);
-      return parsed.success ? parsed.data : null;
+    readSaved,
+
+    async read(agentId, kind) {
+      const saved = await readSaved(agentId);
+      return match(kind)
+        .with("chat", () => saved.chat)
+        .with("channel", () => saved.channel ?? saved.chat)
+        .with("scheduled", () => saved.scheduled ?? saved.chat)
+        .exhaustive();
     },
 
-    async write(agentId, pair) {
+    async write(agentId, kind, pair) {
       await db
         .update(agentsTable)
-        .set({ sessionPair: pair, defaultModelNote: null })
+        .set(
+          match(kind)
+            .with("chat", () => ({ sessionPair: pair, defaultModelNote: null }))
+            .with("channel", () => ({ channelSessionPair: pair }))
+            .with("scheduled", () => ({ scheduledSessionPair: pair }))
+            .exhaustive(),
+        )
+        .where(eq(agentsTable.id, agentId));
+    },
+
+    async clear(agentId, kind) {
+      await db
+        .update(agentsTable)
+        .set(
+          match(kind)
+            .with("channel", () => ({ channelSessionPair: null }))
+            .with("scheduled", () => ({ scheduledSessionPair: null }))
+            .exhaustive(),
+        )
         .where(eq(agentsTable.id, agentId));
     },
 

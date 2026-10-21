@@ -143,6 +143,7 @@ function makeService(
     },
   };
   const svc = createConnectionsService({
+    harnesses: { default: "claude-code", harnesses: [] },
     platformProviderEnabled: async () => false,
     platformProviderKey: null,
     isOwnedAgent: async () => true,

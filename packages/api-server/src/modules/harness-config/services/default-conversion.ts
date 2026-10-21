@@ -92,7 +92,7 @@ export function createDefaultConverter(deps: {
   };
 
   const convert = async (agentId: string): Promise<DefaultConversion> => {
-    if (await deps.pairRepo.read(agentId)) return "saved";
+    if (await deps.pairRepo.read(agentId, "chat")) return "saved";
     const capabilities = await deps.getCapabilities(agentId);
     if (!routesByModelName(capabilities)) return "old-runtime";
     const harness =
@@ -178,7 +178,8 @@ export function createDefaultConverter(deps: {
     async pendingAfterMove(agentId) {
       if (!(await deps.movedToNewImage(agentId))) return false;
       return (
-        !(await deps.isRunning(agentId)) || !(await deps.pairRepo.read(agentId))
+        !(await deps.isRunning(agentId)) ||
+        !(await deps.pairRepo.read(agentId, "chat"))
       );
     },
     async ensureForFire(agentId) {
@@ -190,7 +191,7 @@ export function createDefaultConverter(deps: {
         if (!(await helloSince(agentId, since)))
           throw new NoDefaultModelError(undefined, { pending: true });
       }
-      if (!(await deps.pairRepo.read(agentId)))
+      if (!(await deps.pairRepo.read(agentId, "chat")))
         await ensure(agentId, LISTING_WAIT_MS);
       return stamp;
     },

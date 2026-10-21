@@ -15,6 +15,9 @@ import {
 import type { SessionPresence } from "./session-presence.js";
 import { addUpgradeSecurityHeaders, type RelayActor } from "./upgrade.js";
 import { emit, EventType } from "../../../events.js";
+import { getLogger } from "../../../core/logger.js";
+import type { FirePair } from "../../../modules/harness-config/index.js";
+import { fillSavedDefault } from "./saved-default.js";
 
 const PENDING_BUFFER_MAX_BYTES = 1 * 1024 * 1024;
 
@@ -91,6 +94,7 @@ export function createAcpRelay(
   repo: AgentsRepository,
   approvals: ApprovalsRelayService,
   presence: SessionPresence,
+  firePair: FirePair,
 ) {
   const wss = new WebSocketServer({ noServer: true, perMessageDeflate: false });
   addUpgradeSecurityHeaders(wss);
@@ -147,6 +151,7 @@ export function createAcpRelay(
             toolName,
             ...(toolCallId !== undefined && { toolCallId }),
             args: tc.rawInput,
+            idsWhole: true,
             options,
           })
           .then((recorded) => {
@@ -173,6 +178,7 @@ export function createAcpRelay(
       }
 
       function mirrorPermissionResponse(msg: JsonRpcResponse): void {
+        if (typeof msg.id !== "string" && typeof msg.id !== "number") return;
         const key = String(msg.id);
         const rowId = mirroredRows.get(key);
         const result = msg.result as
@@ -247,11 +253,57 @@ export function createAcpRelay(
             return;
           }
           actor.attached();
-          for (const msg of pending) {
-            if (upstream.readyState === WebSocket.OPEN) {
-              if (!msg.isBinary) trackIfPrompt(tryParse(msg.data));
-              upstream.send(msg.data, { binary: msg.isBinary });
+
+          let held: Promise<void> | null = null;
+          const send = (
+            data: Buffer | ArrayBuffer | Buffer[] | string,
+            isBinary: boolean,
+          ) => {
+            if (upstream.readyState === WebSocket.OPEN)
+              upstream.send(data, { binary: isBinary });
+          };
+          const forward = (
+            data: Buffer | ArrayBuffer | Buffer[],
+            isBinary: boolean,
+            parsed: unknown,
+          ) => {
+            const filled = isBinary
+              ? null
+              : fillSavedDefault(parsed, agentId, firePair)?.catch(
+                  (err: unknown) => {
+                    getLogger().warn(
+                      { err, agentId },
+                      "acp relay: saved default lookup failed",
+                    );
+                    return null;
+                  },
+                );
+            if (!filled && !held) {
+              send(data, isBinary);
+              return;
             }
+            const before = held ?? Promise.resolve();
+            const sent = before
+              .then(async () => {
+                const frame = await filled;
+                send(frame ? JSON.stringify(frame) : data, isBinary);
+              })
+              .catch((err: unknown) => {
+                getLogger().warn(
+                  { err, agentId },
+                  "acp relay: a held frame could not be sent",
+                );
+              });
+            held = sent;
+            void sent.then(() => {
+              if (held === sent) held = null;
+            });
+          };
+
+          for (const msg of pending) {
+            const parsed = msg.isBinary ? null : tryParse(msg.data);
+            if (parsed !== null) trackIfPrompt(parsed);
+            forward(msg.data, msg.isBinary, parsed);
           }
           pending.length = 0;
 
@@ -264,12 +316,7 @@ export function createAcpRelay(
 
             if (!passive) stamper.bump(agentId);
 
-            if (isBinary) {
-              upstream.send(data, { binary: true });
-              return;
-            }
-
-            upstream.send(data, { binary: false });
+            forward(data, isBinary, parsed);
             if (isResponse(parsed)) mirrorPermissionResponse(parsed);
           });
 

@@ -7,7 +7,7 @@ import { trpc } from "../../../trpc.js";
 import { runNowErrorText } from "../lib/schedule-format.js";
 
 const invalidatesScheduleList = {
-  invalidates: [trpc.schedules.pathKey()],
+  invalidates: [trpc.schedules.pathKey(), trpc.attention.pathKey()],
 };
 
 interface CreateScheduleInput {
@@ -151,6 +151,16 @@ export function useToggleSchedule() {
     meta: {
       ...invalidatesScheduleList,
       errorToast: "Couldn't toggle schedule",
+    },
+  });
+}
+
+export function useClearScheduleChoices() {
+  return useMutation({
+    ...trpc.schedules.clearSessionChoices.mutationOptions(),
+    meta: {
+      ...invalidatesScheduleList,
+      errorToast: "Couldn't move the schedules to the scheduled default",
     },
   });
 }

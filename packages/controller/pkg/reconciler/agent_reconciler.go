@@ -61,6 +61,7 @@ type AgentReconciler struct {
 	lifetime              context.Context
 	podResize             atomic.Int32
 	agentCache            cache.GenericLister
+	agentCacheSynced      cache.InformerSynced
 	podCache              corelisters.PodLister
 	statefulSets          cache.MutationCache
 	runnerDeploys         cache.MutationCache
@@ -68,13 +69,13 @@ type AgentReconciler struct {
 	nodeCache             corelisters.NodeLister
 	nodeCacheSynced       cache.InformerSynced
 	vmRunning             sync.Map
-	vmRunningSince        sync.Map
-	vmRecoveredAt         sync.Map
 	vmLive                sync.Map
 	vmAnswers             sync.Map
 	grantHolds            sync.Map
+	holdHeld              sync.Map
 	grantProbes           sync.Map
 	noNodeResize          sync.Map
+	steppedSince          sync.Map
 	vmDiskGrows           sync.Map
 	vmPools               sync.Map
 	usageSecrets          sync.Map
@@ -100,11 +101,15 @@ type AgentReconciler struct {
 	migrationCopyMu       sync.Mutex
 	ownerGatewayRevisions sync.Map
 	ownerGatewayRefused   sync.Map
-	ownerStaleListeners   sync.Map
-	ownerGatewayOffers    sync.Map
-	clock                 func() time.Time
-	ownerGatewayBudget    int
-	ownerProbeClient      *http.Client
+	ownerGatewayAnswered  sync.Map
+	// UNIT_BOUNDARY_DESCRIPTION: the revision a member's listener carries under the previous two-volume layout, which hashes differently because its credential root does. Readiness and cutover accept either, so a retained old-layout pod is not called stale while it serves; only a canonical answer ever authorises a repair, because the two layouts are separate publications and the canonical one is no receipt for the other.
+	ownerGatewayLegacyRevisions sync.Map
+	// UNIT_BOUNDARY_DESCRIPTION: the arrival epoch the revision the owner last published for an agent encodes. Recorded with the revision and adopted with it, so a probe answer can be matched to the epoch it is evidence about.
+	ownerGatewayEpochs sync.Map
+	ownerGatewayOffers sync.Map
+	clock              func() time.Time
+	ownerGatewayBudget int
+	ownerProbeClient   *http.Client
 }
 
 func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg *config.Config) *AgentReconciler {
@@ -122,6 +127,17 @@ func NewAgentReconciler(client kubernetes.Interface, dyn dynamic.Interface, cfg 
 func (r *AgentReconciler) WithAgentCache(lister cache.GenericLister) *AgentReconciler {
 	r.agentCache = lister
 	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: a cache that has not listed yet reads as an owner with no agents, and that is a different statement from an owner whose agents are gone: rendering on it drains a serving owner's listeners, and tearing down on it deletes a gateway that still serves. So work the controller starts before the caches are synced asks here first and waits.
+func (r *AgentReconciler) WithAgentCacheSynced(synced cache.InformerSynced) *AgentReconciler {
+	r.agentCacheSynced = synced
+	return r
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: whether the agent cache can answer at all. A reconciler built without one — the tests — reads agents live, so it can always answer.
+func (r *AgentReconciler) agentCacheReady() bool {
+	return r.agentCache == nil || r.agentCacheSynced == nil || r.agentCacheSynced()
 }
 
 // UNIT_BOUNDARY_DESCRIPTION: a reconcile reads an agent's pods up to three times, and every change to those pods already requeues the agent through the pod informer, so the informer's cache answers instead of the API server. A reconciler built without the cache — the tests — reads them live.
@@ -496,10 +512,16 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		machineLock.Lock()
 		r.noteMachineUse(name, machine)
 		machineLock.Unlock()
+		// UNIT_BOUNDARY_DESCRIPTION: the machine's episode is stamped as it is watched, so a kill of the runner can later be held to the machines that were on it: a machine started after a kill is no victim of it, and one booting at the kill is.
+		if stamped, err := r.stampMachine(ctx, agent, machine, runnerReached); err != nil {
+			slog.Warn("stamping the machine's episode", "agent", name, "error", err)
+		} else {
+			agent = stamped
+		}
 		timer.mark("vmMachine")
-		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer.
-		if pairAtRest && runnerReached && machineStopped(machine) && (lastReady == nil || lastReady.Reason != apiv1.ReasonHibernated) {
-			if err := publishHibernated(ctx, r.dynamic, r.config.Namespace, name); err != nil {
+		// UNIT_BOUNDARY_DESCRIPTION: the hibernation the idle checker or reclaim began, finished once the runner reports the machine stopped; until then the agent reads as not ready, so a wake waits for readiness instead of trusting the first health check answer. It is published on every reconcile of a resting agent rather than only the first, so a kill that took its machine down comes off AgentPodReady once its episode ends: nothing else writes that condition on an agent that stays asleep.
+		if pairAtRest && runnerReached && machineStopped(machine) {
+			if _, err := r.publishKill(ctx, agent, hibernatedStatus); err != nil {
 				return fmt.Errorf("agent %s: publishing hibernation: %w", name, err)
 			}
 		}
@@ -518,17 +540,17 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 		}
 		// UNIT_BOUNDARY_DESCRIPTION: a start the runner's own limit had room for and the node had not yet granted is not the owner's memory being full: the controller asks the node for that memory with an in-place resize in this same reconcile, so the Agent is retried at the machine watch's cadence rather than at the parked tick, and the owner's idle agents are not hibernated for room the node is already being asked for. It is published under its own reason, so a wake waits for the start instead of failing on it.
 		if machine.Reason == vmrunner.ReasonAwaitingAllocation {
-			// UNIT_BOUNDARY_DESCRIPTION: a restart the runner is running keeps its exemption from the ceiling, but a runner from before that still answers the wait for a restart in flight. Parking that answer would stop the machine behind the restart the runner is already performing, so the fast retry is what acts on it, and the next reconcile reads the machine it booted.
-			restartInFlight := machine.State == vmrunner.StateRestarting
-			if !restartInFlight {
+			// UNIT_BOUNDARY_DESCRIPTION: an answer about a machine that is still coming up is never parked: parking stops the machine, and a boot or a restart the runner already admitted runs to completion whatever this second answer says. A runner current with this controller lets such a machine through instead of answering, and one from before it answers exactly here, so this is where the exemption is kept for the rollout rather than in the runner alone.
+			bootInFlight := holdsMemory(machine.State)
+			if !bootInFlight {
 				running, parked, awaiting, awaitingReason = false, true, vmAwaitingAllocationMessage, apiv1.ReasonAwaitingAllocation
 				r.recordParkedRetry(name)
 			}
 			if r.requeue != nil {
 				r.requeue(name, vmReadinessPoll)
 			}
-			// UNIT_BOUNDARY_DESCRIPTION: a resize the node has deferred or refused does not land on its own, so the room it did grant is freed the way a refused start frees it, and the start is retried at the parked tick too.
-			if !restartInFlight && r.runnerResizePending(ctx, owner) {
+			// UNIT_BOUNDARY_DESCRIPTION: a grant below what one more machine costs is answered by asking the node for less, not by freeing anything: an idle agent hibernated now is taken away while the smaller ask is still on its way, and the two would have fitted. The reclaim starts only once this same ask has been with the node for a grace and the node still has not granted it, where the owner's idle agents are the only room left.
+			if !bootInFlight && r.runnerResizePending(ctx, owner) && !r.reclaimWaitsForTheReducedAsk(owner) {
 				if err := r.reclaimForRefusedStart(ctx, agent, owner, func() (int, error) { return r.runnerAdmitMiB(ctx, owner) }); err != nil {
 					return fmt.Errorf("agent %s: reclaiming runner memory: %w", name, err)
 				}
@@ -540,6 +562,7 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			r.recordParkedRetry(name)
 		}
 	} else {
+		// UNIT_BOUNDARY_DESCRIPTION: Legacy container backend: remove once every agent runs as a VM. This arm serves only the Agents made before the microVM was the default, so nothing here grows; the vm arm above is where every new Agent is reconciled.
 		podSpec, refusal, err := r.renderedSpec(ctx, agent)
 		if err != nil {
 			return r.setError(ctx, name, err.Error())
@@ -627,18 +650,25 @@ func (r *AgentReconciler) Reconcile(ctx context.Context, agent *apiv1.Agent) (er
 			return r.setError(ctx, name, fmt.Sprintf("scaling down parked agent pair: %v", err))
 		}
 	}
-	if overBudget != "" {
-		err = r.publishOverBudget(ctx, agent, overBudget)
+	// UNIT_BOUNDARY_DESCRIPTION: a refusal for room and a start waiting for the node are published under their own reason on Ready, which is what the budget surfaces and the parked retry read, and the kill goes on AgentPodReady in the same update, so the owner still hears what took their machine down.
+	own := func(s *apiv1.AgentStatus) {
+		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", agent.Generation)
+		s.ObservedGeneration = agent.Generation
+	}
+	switch {
+	case overBudget != "":
+		own = func(s *apiv1.AgentStatus) { parkStatus(s, agent.Generation, apiv1.ReasonOverBudget, overBudget) }
 		timer.mark("overBudget")
-		return err
-	}
-	if awaiting != "" {
-		err = r.publishParked(ctx, agent, awaitingReason, awaiting)
+	case awaiting != "":
+		own = func(s *apiv1.AgentStatus) { parkStatus(s, agent.Generation, awaitingReason, awaiting) }
 		timer.mark("awaitingAllocation")
-		return err
+	default:
+		timer.mark("reconciled")
 	}
-	err = r.publishReconciled(ctx, agent)
-	timer.mark("reconciled")
+	if !agentSpec.IsVM() {
+		return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, name, own)
+	}
+	_, err = r.publishKill(ctx, agent, own)
 	return err
 }
 
@@ -728,7 +758,6 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 	if agent.Spec.IsVM() && r.ownerGatewayOn(agent.Labels[envoyOwnerLabel]) {
 		if svc, err := r.client.CoreV1().Services(r.config.Namespace).Get(ctx, GatewayName(agent.Name), metav1.GetOptions{}); err == nil && svc.Annotations[annOwnerGatewayServed] == "true" {
 			if ok, msg := r.ownerListenerCurrent(ctx, agent.Name, svc.Spec.ClusterIP, r.config.EnvoyPort); !ok {
-				r.ownerStaleListeners.Store(agent.Name, struct{}{})
 				if r.requeue != nil {
 					r.requeue(agent.Name, ownerListenerRecheck)
 				}
@@ -737,7 +766,10 @@ func (r *AgentReconciler) gatewayReadiness(ctx context.Context, agent *apiv1.Age
 				}
 				return false, apiv1.ReasonOwnerGatewayListenerStale, msg
 			}
-			r.ownerStaleListeners.Delete(agent.Name)
+			// UNIT_BOUNDARY_DESCRIPTION: a listener that answers the current revision still leaves the provider unbuilt if its credential file arrived late, and the repair for it cannot be made while a rollout has two pods; reporting ready here would hide the one case where traffic is unsigned on a gateway that looks healthy.
+			if r.ownerGatewayOwesThisRepair(agent.Labels[envoyOwnerLabel], agent.Name) {
+				return false, apiv1.ReasonOwnerGatewayListenerStale, "the owner gateway has not loaded this agent's credentials yet"
+			}
 			return true, "", ""
 		}
 	}
@@ -865,14 +897,14 @@ func (r *AgentReconciler) Delete(ctx context.Context, name, owner string, uid ty
 		return err
 	}
 	r.vmRunning.Delete(name)
-	r.vmRunningSince.Delete(name)
-	r.vmRecoveredAt.Delete(name)
 	r.vmAnswers.Delete(name)
 	r.vmDiskGrows.Delete(name)
 	r.notReadyPolls.Delete(name)
 	r.vmStartClocks.Delete(name)
 	r.ownerGatewayRevisions.Delete(name)
-	r.ownerStaleListeners.Delete(name)
+	r.ownerGatewayAnswered.Delete(name)
+	r.ownerGatewayLegacyRevisions.Delete(name)
+	r.ownerGatewayEpochs.Delete(name)
 
 	r.clearDeniedWake(name)
 	r.clearParkedRetry(name)

@@ -138,6 +138,7 @@ export interface SchedulesService {
   updateOnce: (input: ScheduleUpdateOnceInput) => Promise<Schedule | null>;
   delete: (id: string) => Promise<void>;
   toggle: (id: string, enabled?: boolean) => Promise<Schedule | null>;
+  clearSessionChoices: (id: string) => Promise<Schedule | null>;
   resetSession: (id: string) => Promise<void>;
   runNow: (id: string) => Promise<void>;
 }

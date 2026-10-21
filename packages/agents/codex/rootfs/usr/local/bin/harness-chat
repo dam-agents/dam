@@ -10,5 +10,10 @@ CODEX_CONFIG="{}"
 CODEX_PATH=codex-app-server
 # codex-acp sends its mode's approval and sandbox policy with every turn, over config.toml
 INITIAL_AGENT_MODE=agent-full-access
-export CODEX_CONFIG CODEX_PATH INITIAL_AGENT_MODE
+# codex-acp drops a session's MCP server whose name config.toml already holds.
+# The platform entry is in config.toml for the terminal's codex, but only the
+# session's own copy carries the session reference that spawn_subagent and
+# schedule_once read the session's choices from, so that copy must win.
+DISABLE_MCP_CONFIG_FILTERING=true
+export CODEX_CONFIG CODEX_PATH INITIAL_AGENT_MODE DISABLE_MCP_CONFIG_FILTERING
 exec codex-acp

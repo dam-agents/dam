@@ -1,6 +1,6 @@
 # Channels
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 Which Slack outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
@@ -297,7 +297,7 @@ The differences are transport, identity model, and where the bot token comes fro
 
 Bot scopes in [`etc/slack/app-manifest.yaml`](../../etc/slack/app-manifest.yaml) split into two tiers.
 **Required** scopes back core turn handling (inbound delivery, posting, the working status); nothing works without them.
-The working status also needs the Agents & AI Apps feature declared — Slack grants its scope only with it.
+The working status also needs Slack's agent messaging feature declared (`agent_view`) — Slack grants its scope only with it.
 **Optional** scopes back individual affordances that must degrade rather than take anything else down when the workspace withholds them.
 
 A withheld scope has no symptom of its own — the capability it backs behaves as though it were broken — so at startup the granted set is checked against what the running features need and any gap is reported with what it costs.

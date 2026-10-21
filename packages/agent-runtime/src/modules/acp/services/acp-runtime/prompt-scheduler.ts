@@ -41,12 +41,45 @@ export interface PromptSubmission {
   steerRefused?: boolean;
   steerNow?: boolean;
   queuedAt?: string;
+  modeRole?: ModeRole;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: what a setting does to the session's mode. A
+ * `reconcile` setting makes the harness report a mode the runtime caused — a
+ * mode it derived, or the fallback a model change forced — so such a report is
+ * not the session's. An `owner` setting is a mode the owner chose, which a
+ * report of it confirms rather than replaces.
+ */
+export type ModeRole = "reconcile" | "owner";
+
+export interface ModeWork {
+  role: ModeRole;
+  sent: boolean;
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: settings are submitted in the order the runtime
+ * wants them applied and sent one at a time, each after the harness answered
+ * the one before, because a harness reads a setting against the state an
+ * earlier one left — a mode against the model the session holds. A prompt
+ * waits for both. A setting the harness refused is asked for again as one block,
+ * ahead of the queue and in the order the runtime lists it, so what depends on
+ * it never applies against the state it failed to reach.
+ * A submission says what its answer does to the mode (its ModeRole), and the
+ * scheduler reports the mode work it holds, sent or still queued, so the runtime
+ * can tell which mode reports it caused and which the session took.
+ */
 export interface PromptScheduler {
   submit(submission: PromptSubmission): PromptFate;
   submitSetting(submission: PromptSubmission): PromptFate;
+  submitSettings(submissions: PromptSubmission[], first?: boolean): void;
+  dropQueuedSettings(
+    sessionId: string,
+    predicate: (entry: PromptSubmission) => boolean,
+  ): PromptSubmission[];
   onSettingResponse(sessionId: string, outboundId: number): void;
+  modeWork(sessionId: string): ModeWork[];
   onPromptResponse(
     sessionId: string,
     outboundId: number,
@@ -85,6 +118,7 @@ export interface PromptScheduler {
 
 export interface PromptSchedulerDeps {
   sendToAgent: (frame: unknown) => boolean;
+  modeRoleOf?: (entry: PromptSubmission) => ModeRole | null;
   canStart: (entry: PromptSubmission) => boolean;
   sessionLoaded?: (sessionId: string) => boolean;
   onQueueDropped: (
@@ -187,7 +221,7 @@ export function createPromptScheduler(
   const steerTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queues = new Map<string, PromptSubmission[]>();
   const pendingSettings = new Map<string, PromptSubmission[]>();
-  const settingsInFlight = new Map<string, Set<number>>();
+  const settingsInFlight = new Map<string, Map<number, PromptSubmission>>();
   const parkTimers = new Map<string, ReturnType<typeof setTimeout>>();
   const queueParkMs = deps.queueParkMs ?? DEFAULT_QUEUE_PARK_MS;
   const steerWaitMs = deps.steerWaitMs ?? DEFAULT_STEER_WAIT_MS;
@@ -232,21 +266,22 @@ export function createPromptScheduler(
 
   function flushSettings(sessionId: string): void {
     dropAbandonedSettings(sessionId);
+    if (settingsInFlight.has(sessionId)) return;
     const settings = pendingSettings.get(sessionId);
     const head = settings?.[0];
     if (settings === undefined || head === undefined) return;
     if (activeTurns.has(sessionId) || !sessionLoaded(head)) return;
-    for (const entry of [...settings]) {
-      if (!sendSetting(entry)) break;
-      settings.shift();
-    }
+    if (!sendSetting(head)) return;
+    settings.shift();
     if (settings.length === 0) pendingSettings.delete(sessionId);
   }
 
   function sendSetting(entry: PromptSubmission): boolean {
     if (!deps.sendToAgent(entry.frame)) return false;
-    const inFlight = settingsInFlight.get(entry.sessionId) ?? new Set();
-    inFlight.add(entry.outboundId);
+    const inFlight =
+      settingsInFlight.get(entry.sessionId) ??
+      new Map<number, PromptSubmission>();
+    inFlight.set(entry.outboundId, entry);
     settingsInFlight.set(entry.sessionId, inFlight);
     return true;
   }
@@ -531,6 +566,7 @@ export function createPromptScheduler(
       const sessionId = submission.sessionId;
       if (
         !pendingSettings.has(sessionId) &&
+        !settingsInFlight.has(sessionId) &&
         !activeTurns.has(sessionId) &&
         sessionLoaded(submission) &&
         sendSetting(submission)
@@ -541,6 +577,43 @@ export function createPromptScheduler(
         submission,
       ]);
       return "queued";
+    },
+
+    submitSettings(submissions, first = false) {
+      const sessionId = submissions[0]?.sessionId;
+      if (sessionId === undefined) return;
+      const queued = pendingSettings.get(sessionId) ?? [];
+      pendingSettings.set(
+        sessionId,
+        first ? [...submissions, ...queued] : [...queued, ...submissions],
+      );
+      maybeStartNext(sessionId);
+    },
+
+    modeWork(sessionId) {
+      const roleOf = deps.modeRoleOf;
+      if (roleOf === undefined) return [];
+      const work: ModeWork[] = [];
+      for (const entry of settingsInFlight.get(sessionId)?.values() ?? []) {
+        const role = roleOf(entry);
+        if (role !== null) work.push({ role, sent: true });
+      }
+      for (const entry of pendingSettings.get(sessionId) ?? []) {
+        const role = roleOf(entry);
+        if (role !== null) work.push({ role, sent: false });
+      }
+      return work;
+    },
+
+    dropQueuedSettings(sessionId, predicate) {
+      const queued = pendingSettings.get(sessionId);
+      if (queued === undefined) return [];
+      const dropped = queued.filter(predicate);
+      if (dropped.length === 0) return [];
+      const kept = queued.filter((entry) => !predicate(entry));
+      if (kept.length === 0) pendingSettings.delete(sessionId);
+      else pendingSettings.set(sessionId, kept);
+      return dropped;
     },
 
     onSettingResponse(sessionId, outboundId) {

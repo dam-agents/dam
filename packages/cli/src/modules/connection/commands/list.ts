@@ -1,5 +1,9 @@
 import { Command } from "commander";
-import type { ConnectionView } from "api-server-api";
+import {
+  aliasForTemplateId,
+  PROVIDER_TEMPLATE_IDS,
+  type ConnectionView,
+} from "api-server-api";
 import type { AgentService } from "../../agent/index.js";
 import { resolveAgentOrExit } from "../../agent/commands/errors.js";
 import { exitOnServiceError } from "../../shared/trpc/print.js";
@@ -10,7 +14,7 @@ import { renderTable } from "../../shared/render-table.js";
 import { writeStdoutAndExit } from "../../shared/stdout.js";
 import type { ConnectionService } from "../services/connection-service.js";
 
-const HEADER = ["ID", "NAME", "CATEGORY", "STATUS", "HOSTS"];
+const HEADER = ["ID", "NAME", "CATEGORY", "STATUS", "PROVIDER", "HOSTS"];
 
 function sortViews(
   views: readonly ConnectionView[],
@@ -24,6 +28,13 @@ function sortViews(
   });
 }
 
+function providerCell({ provider, templateId }: ConnectionView): string {
+  if (!provider) return aliasForTemplateId(templateId) ?? "—";
+  const harnesses =
+    provider.harnesses.length > 0 ? provider.harnesses.join(",") : "no harness";
+  return `${provider.alias} (${harnesses})${provider.preferred ? " preferred" : ""}`;
+}
+
 function tableFor(views: readonly ConnectionView[]): string {
   return renderTable([
     HEADER,
@@ -32,9 +43,22 @@ function tableFor(views: readonly ConnectionView[]): string {
       c.name,
       c.category,
       c.status,
+      providerCell(c),
       c.hosts.join(","),
     ]),
   ]);
+}
+
+function onlyProviders(
+  views: readonly ConnectionView[],
+  providers: boolean | undefined,
+): readonly ConnectionView[] {
+  return providers
+    ? views.filter(
+        (c) =>
+          c.provider !== undefined || PROVIDER_TEMPLATE_IDS.has(c.templateId),
+      )
+    : views;
 }
 
 export function buildListCommand(deps: {
@@ -52,18 +76,26 @@ export function buildListCommand(deps: {
       "--server <url>",
       "override the configured server URL for this call",
     )
+    .option(
+      "--providers",
+      "list only model-provider connections, the ones `dam agent create --provider` takes",
+    )
     .option("--json", "emit raw JSON instead of the default table")
     .addHelpText(
       "after",
-      "\nExamples:\n" +
+      "\nPROVIDER names a model provider's alias, the harnesses that run on it, and\n" +
+        "`preferred` on the one a new agent's sessions use when `dam agent create`\n" +
+        "names no --provider.\n" +
+        "\nExamples:\n" +
         "  dam connection list\n" +
+        "  dam connection list --providers\n" +
         "  dam connection list my-agent\n" +
         "  dam connection list --json\n",
     )
     .action(
       async (
         ref: string | undefined,
-        opts: { server?: string; json?: boolean },
+        opts: { server?: string; json?: boolean; providers?: boolean },
       ) => {
         const host = await resolveActiveHost(deps, opts.server);
         const svc = deps.createConnectionService(host);
@@ -71,19 +103,22 @@ export function buildListCommand(deps: {
         if (ref === undefined) {
           const result = await svc.list();
           exitOnServiceError(result, host);
+          const views = onlyProviders(result.value, opts.providers);
           if (opts.json) {
             return writeStdoutAndExit(
-              `${JSON.stringify(result.value)}\n`,
+              `${JSON.stringify(views)}\n`,
               EXIT_SUCCESS,
             );
           }
-          if (result.value.length === 0) {
+          if (views.length === 0) {
             process.stderr.write(
-              "No connections. See `dam connection templates` for options, then `dam connection connect <id>`.\n",
+              opts.providers
+                ? "No model providers. See `dam connection templates --providers` for options, then `dam connection connect <id>`.\n"
+                : "No connections. See `dam connection templates` for options, then `dam connection connect <id>`.\n",
             );
             process.exit(EXIT_SUCCESS);
           }
-          return writeStdoutAndExit(tableFor(result.value), EXIT_SUCCESS);
+          return writeStdoutAndExit(tableFor(views), EXIT_SUCCESS);
         }
 
         const agent = await resolveAgentOrExit(
@@ -100,13 +135,14 @@ export function buildListCommand(deps: {
         exitOnServiceError(allRes, host);
 
         const byId = new Map(allRes.value.map((c) => [c.id, c]));
-        const matched: ConnectionView[] = [];
+        const granted: ConnectionView[] = [];
         const missing: string[] = [];
         for (const id of idsRes.value) {
           const view = byId.get(id);
-          if (view) matched.push(view);
+          if (view) granted.push(view);
           else missing.push(id);
         }
+        const matched = onlyProviders(granted, opts.providers);
 
         if (opts.json) {
           return writeStdoutAndExit(
@@ -116,7 +152,7 @@ export function buildListCommand(deps: {
         }
         if (matched.length === 0 && missing.length === 0) {
           process.stderr.write(
-            `Agent ${ref} has no connections. Grant one with \`dam connection grant ${ref} --connection <id>\`.\n`,
+            `Agent ${ref} has no ${opts.providers ? "model providers" : "connections"}. Grant one with \`dam connection grant ${ref} --connection <id>\`.\n`,
           );
           process.exit(EXIT_SUCCESS);
         }

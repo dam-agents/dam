@@ -4,4 +4,5 @@ export interface AgentProcess {
   onLine(handler: (line: string) => void): void;
   kill(): void;
   exited: Promise<void>;
+  exitCause(): string | null;
 }

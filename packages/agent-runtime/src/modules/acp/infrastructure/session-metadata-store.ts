@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { sessionSettingsSchema } from "agent-runtime-api";
+import { sessionDefaultKind, sessionSettingsSchema } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../../core/document-store.js";
 
 export const platformSessionMetaSchema = z.object({
@@ -15,6 +15,8 @@ export const platformSessionMetaSchema = z.object({
   provider: z.string().optional(),
   model: z.string().optional(),
   settings: sessionSettingsSchema.optional(),
+  follows: sessionDefaultKind.nullable().optional(),
+  followsAfter: z.number().int().nonnegative().optional(),
   title: z.string().optional(),
   customTitle: z.string().optional(),
 });

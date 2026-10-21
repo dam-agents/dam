@@ -1,11 +1,21 @@
-import { BALANCE_PROVIDER_TYPES, harnessFits } from "api-server-api";
+import { Renew } from "@carbon/icons-react";
+import {
+  BALANCE_PROVIDER_TYPES,
+  harnessFits,
+  hasKeyCheck,
+} from "api-server-api";
 import { useState } from "react";
+
+import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 
 import { useStore } from "../../../store.js";
 import type { ProviderPresetType } from "../../../types.js";
 import { useDeleteConnection } from "../../connections/api/mutations.js";
 import { useFeatures } from "../../features/api/queries.js";
+import { useProviderStatus } from "../../provider-status/api/queries.js";
 import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
+import { useRecheckProviderKeys } from "../api/mutations.js";
 import { useProviderItems } from "../hooks/use-provider-items.js";
 import { PROVIDER_ROWS } from "../lib/provider-rows.js";
 import { ProviderBalance } from "./provider-balance.js";
@@ -27,8 +37,19 @@ export function ProviderSection({
       (flags?.["platform-provider"] &&
         (!onConnected || itemByType.has("platform"))),
   );
+  const { data: status } = useProviderStatus();
+  const degradedTemplate = (templateId: string | undefined) =>
+    !!status &&
+    (status.damSide !== null ||
+      status.outages.some((o) => o.templateId === templateId));
   const showConfirm = useStore((s) => s.showConfirm);
   const deleteConnection = useDeleteConnection();
+  const recheck = useRecheckProviderKeys();
+  const loading = isPending || catalogPending || flagsPending;
+  const checkable = rows.some((row) => {
+    const item = itemByType.get(row.type);
+    return !!item && hasKeyCheck(item.conn.templateId);
+  });
   const [dialog, setDialog] = useState<{
     provider: ProviderPresetType;
     item?: ProviderItem;
@@ -50,7 +71,20 @@ export function ProviderSection({
   return (
     <>
       <div className="flex flex-col gap-3">
-        {isPending || catalogPending || flagsPending
+        {!loading && checkable && (
+          <div className="flex justify-end">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => recheck.mutate()}
+              disabled={recheck.isPending}
+            >
+              {recheck.isPending ? <Spinner size={14} /> : <Renew size={14} />}
+              {recheck.isPending ? "Rechecking…" : "Recheck keys"}
+            </Button>
+          </div>
+        )}
+        {loading
           ? rows.map((row) => <ProviderRow.Skeleton key={row.type} />)
           : rows.map((row) => {
               const item = itemByType.get(row.type);
@@ -60,6 +94,15 @@ export function ProviderSection({
                   key={row.type}
                   type={row.type}
                   connected={!!item}
+                  degraded={!!item && degradedTemplate(item.conn.templateId)}
+                  keyCheck={
+                    item && !builtIn ? (item.conn.keyCheck ?? null) : undefined
+                  }
+                  checking={
+                    recheck.isPending &&
+                    !!item &&
+                    hasKeyCheck(item.conn.templateId)
+                  }
                   harnesses={catalog?.harnesses
                     .filter((h) =>
                       harnessFits(

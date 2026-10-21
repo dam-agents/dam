@@ -18,10 +18,12 @@ import type {
   HostUrl,
 } from "../modules/auth/infrastructure/auth-store.js";
 import type { AuthEnvReader } from "../modules/auth/infrastructure/auth-env-reader.js";
+import type { SavedTokenProvider } from "../modules/auth/services/token-provider.js";
 import type { CompatService, ConfigService } from "../modules/cli/index.js";
 import type {
   AuthConfigProbeError,
   OidcDiscoveryError,
+  TokenProviderError,
 } from "../modules/auth/domain/errors.js";
 
 const HOST: HostUrl = "http://api-server.test:4444";
@@ -47,6 +49,16 @@ function envReader(): AuthEnvReader {
   return { damToken: () => undefined };
 }
 
+function savedSession(
+  result: Result<string, TokenProviderError> = ok("saved-access-token"),
+): SavedTokenProvider {
+  return {
+    async getSavedAccessToken() {
+      return result;
+    },
+  };
+}
+
 function unusedConfigService(): ConfigService {
   return {
     async getResolved() {
@@ -69,6 +81,7 @@ function compatVerdict(
         localCli: "0.0.1",
         serverVersion: "1.0.0",
         serverMinClient,
+        serverRecommendedClient: "1.0.0",
       } as never);
     },
   };
@@ -184,6 +197,7 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       browserOpener: browserUnused(),
       authStore: emptyStore(),
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.login({
@@ -213,6 +227,7 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       browserOpener: browserUnused(),
       authStore: emptyStore(),
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.login({
@@ -242,6 +257,7 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       browserOpener: browserUnused(),
       authStore: emptyStore(),
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.login({
@@ -272,6 +288,7 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       browserOpener: browserUnused(),
       authStore: emptyStore(),
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.login({
@@ -312,6 +329,7 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
       browserOpener: browserUnused(),
       authStore: store,
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.login({
@@ -322,6 +340,125 @@ describe("auth-service.login pre-flight (claim 9: distinct error kinds)", () => 
     });
     expect(r.ok).toBe(false);
     if (!r.ok) expect(r.error.kind).toBe("requires-force");
+  });
+});
+
+function deviceFlowApproves(): DeviceFlowClient {
+  return {
+    async authorize() {
+      return ok({
+        deviceCode: "dc",
+        userCode: "UC",
+        verificationUri: "http://idp/device",
+        expiresIn: 600,
+        interval: 1,
+      });
+    },
+  };
+}
+
+function tokenEndpointIssues(refreshToken: string): TokenEndpointClient {
+  return {
+    ...tokenClientUnused(),
+    async exchangeDeviceCode() {
+      return ok({
+        kind: "success",
+        access_token: "x.e30.y",
+        refresh_token: refreshToken,
+        expires_in: 300,
+        token_type: "Bearer",
+      });
+    },
+  };
+}
+
+function savedAuth(expiresAt: Date) {
+  return {
+    issuer: "http://idp/realms/platform",
+    username: "alice",
+    sub: "alice-sub",
+    cliClientId: "platform-cli",
+    accessToken: "old-access",
+    refreshToken: "old-refresh",
+    expiresAt,
+  };
+}
+
+describe("auth-service.login over a saved session", () => {
+  /**
+   * TEST_SCENARIO: The saved sign-in expired long ago and its refresh token is
+   * no longer accepted, so every other command says "session expired" and
+   * sends the user to `dam auth login`. Without a terminal and without
+   * `--force`, login must start the device flow and replace the dead session,
+   * not refuse with "already logged in".
+   */
+  it("signs in again without --force when the saved session cannot be refreshed", async () => {
+    const store = emptyStore();
+    await store.write(HOST, savedAuth(new Date("2026-07-13T08:19:45Z")));
+    const svc = createAuthService({
+      compatService: compatVerdict("ok"),
+      configService: unusedConfigService(),
+      authConfigProbe: authConfigProbeOk(),
+      oidcDiscovery: oidcOk(),
+      deviceFlowClient: deviceFlowApproves(),
+      tokenEndpointClient: tokenEndpointIssues("new-refresh"),
+      revokeClient: revokeUnused(),
+      browserOpener: browserUnused(),
+      authStore: store,
+      authEnvReader: envReader(),
+      savedTokenProvider: savedSession(
+        err({ kind: "session-expired", host: HOST }),
+      ),
+      sleepMs: async () => {},
+    });
+
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
+
+    expect(r.ok).toBe(true);
+    const stored = await store.read();
+    expect(stored.ok && stored.value.get(HOST)?.refreshToken).toBe(
+      "new-refresh",
+    );
+  });
+
+  /**
+   * TEST_SCENARIO: The saved session could not be checked because the IdP
+   * did not answer the refresh. Login does not refuse on a session it cannot
+   * show to work; it goes on, and fails on its own if the IdP is still down.
+   */
+  it("does not refuse when the saved session cannot be checked", async () => {
+    const store = emptyStore();
+    await store.write(HOST, savedAuth(new Date("2026-07-13T08:19:45Z")));
+    const svc = createAuthService({
+      compatService: compatVerdict("ok"),
+      configService: unusedConfigService(),
+      authConfigProbe: authConfigProbeOk(),
+      oidcDiscovery: oidcOk(),
+      deviceFlowClient: deviceFlowApproves(),
+      tokenEndpointClient: tokenEndpointIssues("new-refresh"),
+      revokeClient: revokeUnused(),
+      browserOpener: browserUnused(),
+      authStore: store,
+      authEnvReader: envReader(),
+      savedTokenProvider: savedSession(
+        err({ kind: "refresh-transient", host: HOST, reason: "ECONNRESET" }),
+      ),
+      sleepMs: async () => {},
+    });
+
+    const r = await svc.login({
+      host: HOST,
+      openBrowser: false,
+      force: false,
+      isTty: false,
+    });
+
+    expect(r.ok).toBe(true);
   });
 });
 
@@ -394,6 +531,7 @@ describe("auth-service.login on a moved server", () => {
       browserOpener: browserUnused(),
       authStore: store,
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
       sleepMs: async () => {},
     });
 
@@ -423,6 +561,7 @@ describe("auth-service.logout", () => {
       browserOpener: browserUnused(),
       authStore: emptyStore(),
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.logout(HOST);
@@ -459,6 +598,7 @@ describe("auth-service.logout", () => {
       browserOpener: browserUnused(),
       authStore: store,
       authEnvReader: envReader(),
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.logout(HOST);
@@ -474,6 +614,111 @@ describe("auth-service.logout", () => {
 });
 
 describe("auth-service.status", () => {
+  /**
+   * TEST_SCENARIO: The active host's saved session expired and cannot be
+   * refreshed. Status marks that entry as expired, so a reader does not have
+   * to compare the `expires` date with the clock, and reports no valid
+   * sign-in.
+   */
+  it("marks the active session expired when it cannot be refreshed", async () => {
+    const store = emptyStore();
+    await store.write(HOST, savedAuth(new Date("2026-07-13T08:19:45Z")));
+    const svc = createAuthService({
+      compatService: compatVerdict("ok"),
+      configService: unusedConfigService(),
+      authConfigProbe: authConfigProbeOk(),
+      oidcDiscovery: oidcOk(),
+      deviceFlowClient: deviceFlowUnused(),
+      tokenEndpointClient: tokenClientUnused(),
+      revokeClient: revokeUnused(),
+      browserOpener: browserUnused(),
+      authStore: store,
+      authEnvReader: envReader(),
+      savedTokenProvider: savedSession(
+        err({ kind: "session-expired", host: HOST }),
+      ),
+    });
+
+    const r = await svc.status();
+
+    expect(r.ok && r.value.activeHostValid).toBe(false);
+    expect(
+      r.ok && r.value.entries.find((e) => e.isActive)?.sessionExpired,
+    ).toBe(true);
+  });
+
+  /**
+   * TEST_SCENARIO: The five-minute access token lapsed, but the refresh token
+   * still works. Every other command refreshes it and runs, so status counts
+   * the session as valid and shows the expiry of the refreshed token.
+   */
+  it("counts a lapsed access token that refreshes as a valid sign-in", async () => {
+    const store = emptyStore();
+    await store.write(HOST, savedAuth(new Date("2026-07-13T08:19:45Z")));
+    const refreshedUntil = new Date("2099-01-01T00:00:00Z");
+    const svc = createAuthService({
+      compatService: compatVerdict("ok"),
+      configService: unusedConfigService(),
+      authConfigProbe: authConfigProbeOk(),
+      oidcDiscovery: oidcOk(),
+      deviceFlowClient: deviceFlowUnused(),
+      tokenEndpointClient: tokenClientUnused(),
+      revokeClient: revokeUnused(),
+      browserOpener: browserUnused(),
+      authStore: store,
+      authEnvReader: envReader(),
+      savedTokenProvider: {
+        async getSavedAccessToken(host) {
+          await store.write(host, {
+            ...savedAuth(refreshedUntil),
+            accessToken: "new-access",
+          });
+          return ok("new-access");
+        },
+      },
+    });
+
+    const r = await svc.status();
+
+    expect(r.ok && r.value.activeHostValid).toBe(true);
+    const active = r.ok ? r.value.entries.find((e) => e.isActive) : undefined;
+    expect(active?.sessionExpired).toBe(false);
+    expect(active?.expiresAt).toEqual(refreshedUntil);
+  });
+
+  /**
+   * TEST_SCENARIO: The refresh could not reach the IdP, so status cannot tell
+   * whether the session still works. It does not call the session expired;
+   * it reports no valid sign-in and says why it could not check.
+   */
+  it("reports an unchecked session with the reason, not as expired", async () => {
+    const store = emptyStore();
+    await store.write(HOST, savedAuth(new Date("2026-07-13T08:19:45Z")));
+    const svc = createAuthService({
+      compatService: compatVerdict("ok"),
+      configService: unusedConfigService(),
+      authConfigProbe: authConfigProbeOk(),
+      oidcDiscovery: oidcOk(),
+      deviceFlowClient: deviceFlowUnused(),
+      tokenEndpointClient: tokenClientUnused(),
+      revokeClient: revokeUnused(),
+      browserOpener: browserUnused(),
+      authStore: store,
+      authEnvReader: envReader(),
+      savedTokenProvider: savedSession(
+        err({ kind: "refresh-transient", host: HOST, reason: "ECONNRESET" }),
+      ),
+    });
+
+    const r = await svc.status();
+
+    expect(r.ok && r.value.activeHostValid).toBe(false);
+    expect(r.ok && r.value.uncheckedReason).toBe("ECONNRESET");
+    expect(
+      r.ok && r.value.entries.find((e) => e.isActive)?.sessionExpired,
+    ).toBe(false);
+  });
+
   it("DAM_TOKEN set + active host → synthesizes an env-sourced entry", async () => {
     const svc = createAuthService({
       compatService: compatVerdict("ok"),
@@ -486,6 +731,7 @@ describe("auth-service.status", () => {
       browserOpener: browserUnused(),
       authStore: emptyStore(),
       authEnvReader: { damToken: () => "env-token-value" },
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.status();
@@ -519,6 +765,7 @@ describe("auth-service.status", () => {
       browserOpener: browserUnused(),
       authStore: store,
       authEnvReader: { damToken: () => "env-token-value" },
+      savedTokenProvider: savedSession(),
     });
 
     const r = await svc.status();

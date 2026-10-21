@@ -225,6 +225,7 @@ export type SendPromptOpts = (
   onImagesDropped?: () => Promise<void> | void;
   onUpdate?: (update: PromptUpdate) => void;
   onSession?: (sessionId: string) => void;
+  signal?: AbortSignal;
 };
 
 export type TriggerSessionOpts = {
@@ -443,12 +444,14 @@ async function withAcpConnection<T>(
 
 export type AcpClientFactory = (instanceName: string) => AcpClient;
 
-function pairMeta(pair: SessionPair | undefined): Record<string, string> {
+function pairMeta(pair: SessionPair | undefined): Record<string, unknown> {
   if (!pair) return {};
   return {
+    follows: "channel",
     harness: pair.harness,
     ...(pair.provider !== null && { provider: pair.provider }),
     ...(pair.model !== null && { model: pair.model }),
+    ...(pair.settings && { settings: pair.settings }),
   };
 }
 
@@ -639,17 +642,31 @@ export function createAcpClient(opts: {
             await sendOpts.onImagesDropped?.();
           }
 
+          const { signal } = sendOpts;
+          signal?.throwIfAborted();
           live = true;
           const send = () =>
             connection.agent.request("session/prompt", {
               sessionId,
               prompt: finalBlocks,
             });
-          await ("resumeSessionId" in sendOpts
-            ? promptPinningDefault(connection, sessionId, send, () =>
-                resolvePair(opts.firePair, agentId),
-              )
-            : send());
+          const cancel = () => {
+            connection.agent
+              .notify("session/cancel", { sessionId })
+              .catch((err) =>
+                getLogger().debug({ err, sessionId }, "acp cancel failed"),
+              );
+          };
+          signal?.addEventListener("abort", cancel, { once: true });
+          try {
+            await ("resumeSessionId" in sendOpts
+              ? promptPinningDefault(connection, sessionId, send, () =>
+                  resolvePair(opts.firePair, agentId),
+                )
+              : send());
+          } finally {
+            signal?.removeEventListener("abort", cancel);
+          }
         },
       );
 

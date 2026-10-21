@@ -52,12 +52,9 @@ import {
   routerEnvFor,
   createModelCallExporter,
 } from "./modules/model-router/index.js";
-import {
-  createSshService,
-  prepareSshd,
-  spawnSshd,
-  type PreparedSshd,
-} from "./modules/ssh.js";
+import { composeSsh, spawnSshd, type PreparedSshd } from "./modules/ssh.js";
+import { terminalBusy } from "./modules/terminal-busy.js";
+import { terminalReap } from "./modules/terminal-reap.js";
 import { moveTerminalSlot } from "./modules/terminal-slots.js";
 import {
   agentBrowserCommand,
@@ -91,6 +88,8 @@ import {
   createModelDiscovery,
   createFilePlugin,
   createHarnessClient,
+  createInvocationWatch,
+  createSubAgentsRunning,
   createMcpEntryPlugin,
   createSkillInstallPlugin,
   loadManifest,
@@ -98,6 +97,7 @@ import {
   readSkillInstallBootState,
   resolveDrivers,
   harnessConfigBindingOf,
+  readCurrentValues,
   sessionModelOf,
   type RuntimeManifest,
 } from "./modules/runtime-channel/index.js";
@@ -213,7 +213,12 @@ const { service: skillsService, reconciler: imageSkillReconciler } =
       : {}),
     log: skillsLog,
   });
-const sshService = createSshService(homeDir);
+// UNIT_BOUNDARY_DESCRIPTION: sshd's files go outside the agent's home only where nothing else fills that home and /run is writable: a VM guest runs as root over a tmpfs /run with the platform share at /platform, so a full home there cannot lock its owner out of the machine; a container and a dev run keep them in the home, which is the one path their uid may write — a container's /run is root's and it has no share, and its volume no pool guard.
+const VM_SHARE_DIR = "/platform";
+const { service: sshService, prepare: prepareSsh } = composeSsh(
+  existsSync(VM_SHARE_DIR),
+  homeDir,
+);
 const importHandlers = createImportHandlers(homeDir, workDir, (msg) =>
   process.stderr.write(`[import] ${msg}\n`),
 );
@@ -255,6 +260,27 @@ if (envStore.ready()) void modelCatalog.refresh();
 modelCatalog.start();
 
 const modelRouterLog = (msg: string) => process.stderr.write(`${msg}\n`);
+const subAgentsRunning = createSubAgentsRunning({
+  apiServerUrl: config.API_SERVER_URL,
+  agentId: platformAgentId,
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
+let sessionState: {
+  turnRunning: (sessionId: string) => boolean;
+  localWork: (sessionId: string) => boolean;
+  spawnedBy: (sessionId: string) => string[];
+} = { turnRunning: () => false, localWork: () => false, spawnedBy: () => [] };
+const invocationWatch = createInvocationWatch({
+  reporter: {
+    report: (input) =>
+      harnessClient.runtime.v1.reportEvent.mutate(input) as Promise<void>,
+  },
+  turnRunning: (sessionId) => sessionState.turnRunning(sessionId),
+  localWork: (sessionId) => sessionState.localWork(sessionId),
+  subAgentsRunning: (sessionId) =>
+    subAgentsRunning(sessionState.spawnedBy(sessionId)),
+  log: (msg) => process.stderr.write(`${msg}\n`),
+});
 const modelCallExporter = createModelCallExporter({
   envState: () => envStore.state(),
   log: modelRouterLog,
@@ -265,6 +291,7 @@ const modelCallExporter = createModelCallExporter({
  */
 let sessionChoiceOf: ((sessionId: string) => SessionChoice) | null = null;
 let isRuntimeSession: ((sessionId: string) => boolean) | null = null;
+let runningSessionsOf: ((harness: string) => string[]) | null = null;
 const TERMINAL_PIN_REFRESH_MS = 2_000;
 const terminalSessionOf = createTerminalSessionLookup(
   Object.values(harnessManifests).flatMap((m) =>
@@ -282,6 +309,7 @@ const modelRouter = composeModelRouter({
   },
   isSession: (sessionId) => isRuntimeSession?.(sessionId) ?? true,
   terminalSessionOf,
+  runningSessionsOf: (harness) => runningSessionsOf?.(harness) ?? [],
   catalog: modelCatalog,
   envState: () => envStore.state(),
   harnesses: Object.fromEntries(
@@ -290,6 +318,11 @@ const modelRouter = composeModelRouter({
   defaultHarness,
   port: config.PLATFORM_MODEL_ROUTER_PORT,
   onCall: (record) => modelCallExporter.record(record),
+  onCallStarted: (session) => invocationWatch.modelCallStarted(session),
+  onCallEnded: (session, answered) =>
+    invocationWatch.modelCallEnded(session, answered),
+  onRefused: ({ session, ...error }) =>
+    invocationWatch.modelError(session, error),
   log: modelRouterLog,
 });
 await modelRouter.listen();
@@ -446,42 +479,56 @@ const {
   envReader: envStore,
   defaultHarness,
   harnesses: Object.fromEntries(
-    Object.entries(harnessManifests).map(([name, manifest]) => [
-      name,
-      {
-        sessionHistory: manifest.sessionHistory,
-        ...(manifest.terminalSessionPins && {
-          terminalSessionPins: expandHome(
-            manifest.terminalSessionPins,
-            homeDir,
-          ),
-        }),
-        sessionModel: sessionModelOf(manifest),
-        ...(manifest.modelRouter?.sessionModel && {
-          sessionModelFrame: {
-            configOption: manifest.modelRouter.sessionModel.configOption,
-            render: (model: string) =>
-              (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
-              renderSessionModel(model, manifest.modelRouter),
-          },
-        }),
-        ...(manifest.initializeCapabilities && {
-          initialize: manifest.initializeCapabilities as Record<
-            string,
-            unknown
-          >,
-        }),
-        sessionSettings: harnessConfigBindingOf(manifest)?.sessionSettings,
-        catalog: harnessConfigBindingOf(manifest)?.catalog,
-      },
-    ]),
+    Object.entries(harnessManifests).map(([name, manifest]) => {
+      const harnessConfig = harnessConfigBindingOf(manifest);
+      return [
+        name,
+        {
+          sessionHistory: manifest.sessionHistory,
+          ...(manifest.terminalSessionPins && {
+            terminalSessionPins: expandHome(
+              manifest.terminalSessionPins,
+              homeDir,
+            ),
+          }),
+          sessionModel: sessionModelOf(manifest),
+          ...(manifest.modelRouter?.sessionModel && {
+            sessionModelFrame: {
+              configOption: manifest.modelRouter.sessionModel.configOption,
+              render: (model: string) =>
+                (manifest.modelRouter?.sessionModel?.valuePrefix ?? "") +
+                renderSessionModel(model, manifest.modelRouter),
+            },
+          }),
+          ...(manifest.initializeCapabilities && {
+            initialize: manifest.initializeCapabilities as Record<
+              string,
+              unknown
+            >,
+          }),
+          ...(manifest.harnessState && {
+            harnessState: manifest.harnessState,
+          }),
+          sessionSettings: harnessConfig?.sessionSettings,
+          catalog: harnessConfig?.catalog,
+          configured: () =>
+            harnessConfig
+              ? readCurrentValues(harnessConfig, homeDir, (msg) =>
+                  process.stderr.write(`[harness-config] ${msg}\n`),
+                )
+              : { mode: null, model: null },
+        },
+      ];
+    }),
   ),
   isTerminalSessionActive: isPtySessionActive,
-  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   keepPolicy: processes.keepPolicy,
   onArtifactTouch: artifactTouchReporter.report,
   agentRequests: toolApprovalReporter,
   onToolActivity: changes.onToolActivity,
+  onTurnOutcome: (sessionId, end) =>
+    invocationWatch.turnOutcome(sessionId, end),
+  onResultAccepted: (sessionId) => invocationWatch.resultAccepted(sessionId),
   sessionRepositories: changes.repositoriesOf,
   onPrompt: startDisplay,
   beforeSpawn: () =>
@@ -504,9 +551,23 @@ const {
 
 sessionChoiceOf = (sessionId) => acpRuntime.sessionChoice(sessionId);
 isRuntimeSession = (sessionId) => sessionMetadata.get(sessionId) !== undefined;
+runningSessionsOf = (harness) =>
+  Object.entries(sessionMetadata.all())
+    .filter(
+      ([sessionId, entry]) =>
+        (entry.meta.harness ?? defaultHarness) === harness &&
+        acpRuntime.isSessionRunning(sessionId),
+    )
+    .map(([sessionId]) => sessionId);
+sessionState = {
+  turnRunning: (sessionId) =>
+    acpRuntime.isSessionRunning(sessionId) || acpRuntime.harnessBusy(sessionId),
+  localWork: (sessionId) =>
+    acpRuntime.toolCallsOpen(sessionId) || backgroundWork.hasWork(sessionId),
+  spawnedBy: (sessionId) => subAgentSessions.spawnedBy(sessionId),
+};
 
 const { service: processesService, keepMarks } = processes.start({
-  backgroundWorkHolds: config.BACKGROUND_WORK_HOLDS,
   runtimePid: process.pid,
   harnessWork,
   log: (msg) => process.stderr.write(`[processes] ${msg}\n`),
@@ -538,6 +599,7 @@ const reconcileOnState = imageSkillReconciler
 
 const runtimeChannel = await composeRuntimeChannel({
   subAgentSessions,
+  onSessionDefaults: (defaults) => acpRuntime.receiveDefaults(defaults),
   onHarnessConfigApplied: (harness) => acpRuntime.recycleHarness(harness),
   manifests: harnessManifests,
   defaultHarness,
@@ -546,6 +608,7 @@ const runtimeChannel = await composeRuntimeChannel({
   stateBackend,
   harnessClient,
   triggerDriver,
+  invocationWatch,
   findSessionByRef: (ref) => sessionMetadata.findByRef(ref),
   readSessions: () =>
     sessionDirectoryEntries(sessionMetadata.all(), (sessionId) =>
@@ -608,6 +671,7 @@ const trpcHandler = createHTTPHandler({
 
 const PTY_DETACH_GRACE_MS = 30_000;
 const PTY_IDLE_REAP_MS = 5 * 60_000;
+const PTY_BACKGROUND_WORK_RECHECK_MS = 15_000;
 const PTY_ACTIVE_WINDOW_MS = 5_000;
 const PTY_INPUT_ECHO_MS = 500;
 
@@ -739,20 +803,41 @@ function killPtySlot(sessionId: string): void {
   } catch {}
   slot.headless.dispose();
   ptySlots.delete(sessionId);
+  backgroundWork.forget(sessionId);
   ptyLog(sessionId, "killed");
+}
+
+function anyPtyBusy(): boolean {
+  const kept = new Set(backgroundWork.held().map((h) => h.sessionId));
+  const now = Date.now();
+  return [...ptySlots.values()].some((slot) =>
+    terminalBusy({
+      attached: slot.client !== null,
+      sinceDetachMs: now - slot.detachedAt,
+      quietMs: now - slot.lastOutputAt,
+      detachGraceMs: PTY_DETACH_GRACE_MS,
+      idleReapMs: PTY_IDLE_REAP_MS,
+      keptBackgroundWork: kept.has(slot.sessionId),
+    }),
+  );
 }
 
 function reapPtySlotIfIdle(sessionId: string): void {
   const slot = ptySlots.get(sessionId);
   if (!slot || slot.client || !slot.pty) return;
-  const quietMs = Date.now() - slot.lastOutputAt;
-  if (quietMs >= PTY_IDLE_REAP_MS) {
+  const reap = terminalReap({
+    quietMs: Date.now() - slot.lastOutputAt,
+    idleReapMs: PTY_IDLE_REAP_MS,
+    holdsBackgroundWork: backgroundWork.hasWork(sessionId),
+    recheckMs: PTY_BACKGROUND_WORK_RECHECK_MS,
+  });
+  if (reap.kind === "kill") {
     killPtySlot(sessionId);
     return;
   }
   slot.graceTimer = setTimeout(
     () => reapPtySlotIfIdle(slot.sessionId),
-    PTY_IDLE_REAP_MS - quietMs,
+    reap.ms,
   );
 }
 
@@ -773,6 +858,7 @@ function attachPty(
     slot.client = null;
     slot.detachedAt = Date.now();
     markTerminalSeen(slot.sessionId);
+    void sessionsService.adoptHarnessTitle(slot.sessionId);
     if (!slot.pty) return;
     if (slot.graceTimer) clearTimeout(slot.graceTimer);
     slot.graceTimer = setTimeout(
@@ -917,6 +1003,7 @@ function attachPty(
       });
       pty.onExit(({ exitCode }) => {
         ptyLog(slot.sessionId, `exited ${exitCode}`);
+        void sessionsService.adoptHarnessTitle(slot.sessionId);
         if (slot.graceTimer) clearTimeout(slot.graceTimer);
         if (slot.client?.readyState === 1) {
           slot.client.send(encodeExit(exitCode));
@@ -925,6 +1012,7 @@ function attachPty(
         slot.pty = null;
         slot.headless.dispose();
         ptySlots.delete(slot.sessionId);
+        backgroundWork.forget(slot.sessionId);
       });
       return;
     }
@@ -980,7 +1068,7 @@ const server = http.createServer((req, res) => {
   if (req.url === "/api/status") {
     const acp = acpRuntime.status();
     const status = {
-      idle: acp.idle && ptySlots.size === 0 && !kbPublish.isBusy(),
+      idle: acp.idle && !anyPtyBusy() && !kbPublish.isBusy(),
       backgroundWork: acp.backgroundWork,
       keptProcesses: acp.keptProcesses,
     };
@@ -1183,7 +1271,7 @@ server.on("upgrade", (req, socket, head) => {
     );
   } else if (url.pathname === "/api/ssh") {
     startDisplay();
-    preparedSshd ??= prepareSshd(homeDir, sshLog).catch((err: Error) => {
+    preparedSshd ??= prepareSsh(sshLog).catch((err: Error) => {
       sshLog(`could not prepare sshd: ${err.message}`);
       preparedSshd = undefined;
       return null;

@@ -54,7 +54,7 @@ export function ChatInput({
   const agentId = useStore((s) => s.selectedAgent);
   const sessionId = useStore((s) => s.sessionId);
   const setDraft = useStore((s) => s.setDraft);
-  const clearDraft = useStore((s) => s.clearDraft);
+  const clearDraftContent = useStore((s) => s.clearDraftContent);
   const key = agentId ? draftKey(agentId, sessionId) : null;
   const draft = useStore((s) =>
     key ? (s.drafts[key] ?? EMPTY_DRAFT) : EMPTY_DRAFT,
@@ -196,9 +196,9 @@ export function ChatInput({
       current.attachments.length > 0 ? current.attachments : undefined;
     if (!text && !files) return;
     promptHistory.reset();
-    clearDraft(key);
+    clearDraftContent(key);
     onSend(text, files);
-  }, [key, loadingSession, clearDraft, onSend, promptHistory]);
+  }, [key, loadingSession, clearDraftContent, onSend, promptHistory]);
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isMobile() && promptHistory.navigate(e)) {

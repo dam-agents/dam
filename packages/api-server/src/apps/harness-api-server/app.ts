@@ -62,7 +62,10 @@ import {
 } from "../../core/request-body-bounds.js";
 import { agentsInstallSettings, type Config } from "../../config.js";
 import type { ChannelManager } from "./../../modules/channels/services/channel-manager.js";
-import type { RuntimeMutator } from "../../modules/runtime-delivery/index.js";
+import type {
+  RuntimeMutator,
+  SessionMessages,
+} from "../../modules/runtime-delivery/index.js";
 import type {
   CaseStudyInspectionService,
   CaseStudySubmissionsService,
@@ -97,6 +100,7 @@ export interface HarnessApiServerAppDeps {
   agentTelemetry: AgentTelemetryService;
   wakeAgent: (agentId: string) => Promise<void>;
   readHarnessConfigSupport: ReadHarnessConfigSupport;
+  sessionMessages: SessionMessages;
   markOnboardingComplete: OnboardingMarker;
   onboardingChecklist: OnboardingChecklistOps;
   kitUpdateReporter: KitUpdateReporter;
@@ -296,6 +300,7 @@ export function startHarnessApiServerApp(deps: HarnessApiServerAppDeps) {
     spendStatusFor,
     satelliteOps: deps.satellitesBoot.agentOps,
     satelliteWaitDeadlineMs: config.satelliteWaitDeadlineMs,
+    sessionMessages: deps.sessionMessages,
   });
   mountAgentKbRoutes(app, {
     k8s: k8sClient,

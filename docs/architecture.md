@@ -1,6 +1,6 @@
 # Architecture
 
-Last verified: 2026-10-13
+Last verified: 2026-10-21
 
 ## System context
 
@@ -66,7 +66,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [agent-lifecycle](architecture/agent-lifecycle.md) — create → wake → trigger → hibernate → delete; the [processes](architecture/agent-processes.md) inside; [sessions](architecture/sessions.md); the [changes](architecture/agent-changes.md) in its repositories.
 - [schedules](architecture/schedules.md) — recurring and one-time work on an Agent: arming and firing occurrences, the Precheck that declines a fire before any model wakes, and the Session each fire opens.
 - [budgets](architecture/budgets.md) — per-user ceiling on concurrently reserved compute, enforced by the controller at the 0→1 scale transition; UserBudget CRs for privileged users.
-- [persistence](architecture/persistence.md) — the storage substrates (Postgres, custom resources, per-Agent PVC, the VM runner volume) and what survives each lifecycle event.
+- [persistence](architecture/persistence.md) — the storage substrates (Postgres, custom resources, per-Agent PVC); [vm storage](architecture/vm-storage.md) — a machine's one disk and the owner's claim under it; what survives each lifecycle event.
 - [security-and-credentials](architecture/security-and-credentials.md) — identity, Secret storage, HITL, boundaries; [credential-gateway](architecture/credential-gateway.md).
 - [channels](architecture/channels.md) — Slack and Telegram adapters inside the api-server, bindings, ambient mode, identity linking.
 - [channel-turns](architecture/channel-turns.md) — a channel message becoming an agent turn: inbound relay, outbound tools, the liveness watch, delivery recovery.
@@ -92,6 +92,7 @@ Each page is the authoritative, self-contained description of its subsystem.
 - [agent-telemetry](architecture/agent-telemetry.md) — the user-facing read path over raw agent traces and log records, scoped to the agents you own.
 - [metrics](architecture/metrics.md) — the user-facing spend read path behind the global and per-agent Usage surfaces: how much the agents you own have spent.
 - [spend-limits](architecture/spend-limits.md) — Metered Spend: each agent's gateway meters every model call, out of the agent's reach.
+- [provider-status](architecture/provider-status.md) — which model providers fail now, from the calls that the agents' gateways see.
 - [logging](architecture/logging.md) — Pino structured logging to stdout, and the real-identity security audit trail built on it (the forensic counterpart to pseudonymized usage-tracking).
 - [observability](architecture/observability.md) — the optional, bundled agent-telemetry backend: an OTLP collector writing OpenTelemetry signals into a columnar store, gated by the mesh rather than ingestion tokens.
 - [e2e](architecture/e2e.md) — the smoke suite that proves an install end to end: its two lanes, the order the projects run in, and the specs a pull request defers to the merge queue and the nightly run.

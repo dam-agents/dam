@@ -7,6 +7,11 @@ Last verified: 2026-10-20
 agent-runtime holds one harness process, a **Harness Lease**, per harness and set of process-scoped [session settings](harness-config.md#session-settings) its sessions ask for; the provider and model are no fact of a process.
 Every model call goes through the [Model Router](harness-config.md#the-model-router) by the session's model name: a per-turn choice kept in the session's metadata and applied through the harness's own per-session call before each prompt and after every cold load; a harness that refuses the name is asked once more, then the queued prompts fail with its reason rather than run on a substitute.
 A model change applies to the next turn; a setting change moves the next turn to the matching lease.
+A session is either **on the default** of its kind (chat, channel or scheduled; a sub-agent session has none) or on its **own choice**, and the metadata keeps which.
+Before each turn of a session on the default, the runtime applies the newest default of that kind: its model, and its settings, a process-scoped one moving the session only once a running turn ends.
+A default on another harness is not applied, since a session keeps its harness; the session runs on what it last took and follows again when the default is back on its harness.
+A pick by hand in the session, or a configure call, makes it its own choice; **Back to default** and **Set as default** make it follow again.
+A session from before this marker follows its default once, when the runtime first holds the defaults, only if its harness, model and settings all equal that default; every other one keeps its own choice.
 The default harness's lease starts once the server listens, so a waking chat finds it loaded; any other starts on the first frame naming a session on its harness.
 A lease that held no session for a while shuts down, the default's included, and one whose harness crashes is respawned by the next frame.
 A lease outlives connections.
@@ -16,6 +21,7 @@ Each lease is the unchanged ACP runtime this section describes, behind a **lease
 `session/new` names the session's harness and model; the runtime persists that choice in its session-metadata store, so later frames, and a load or resume after a restart, route back to the same lease.
 Each lease is told about the client as the first was, and an agent's question is answered to the lease that asked.
 The session list draws on the metadata store too, so a harness not running still lists its sessions.
+A listed session's title is its explicit title (a rename, a schedule's session title, or the original's on a rewind) when it has one, else the harness's own or the one its first prompt gave it; the list also carries the explicit and the automatic title apart, so the rename dialog prefills only an explicit one and offers the automatic one as its placeholder.
 
 A lease spawns with the agent-wide env, its harness's layer ([connections](connections.md#contribution-fan-out)) and the router's env; a routed provider's env stays with the Model Router, which reads it per call, a native Connection's (Bedrock) still reaches the process, and a provider env change recycles the leases.
 A prompt to a session whose model names a removed provider fails with a structured *provider removed* error naming it; another provider's model, or the grant restored, resumes it.
@@ -49,6 +55,7 @@ A harness cannot cut a session short in place, so one that can **fork** copies t
 User messages with nothing between them are one **batch**, which the agent took as one message: the chat shows them under one header and rewrites them as one, editing their texts joined by a blank line and sending the result as one message.
 The runtime finds that entry in the harness's own history, through the session-history provider, by the message's id or, for a message sent live, by its text; a message that history does not hold is refused rather than cut somewhere else, and only for the first message does an empty Session stand in.
 The copy's history is loaded before anything else and the edited message is its first new prompt.
+A rewritten follow-up chat keeps its copy, and the cut compares user messages with the `<continued-from>` block removed; a copy cut at the start carries the block again in its first prompt.
 A rewind gives the copy the original's place, title and creation time and then deletes the original like any deleted Session, so the conversation keeps going under a new id; a fork leaves the original as it was and lists the copy as a new conversation.
 Files the agent changed stay changed.
 The runtime answers before the copy's first frame, so the client that asked follows the new id without reloading.
@@ -64,6 +71,16 @@ A message still in the queue is removed from it; otherwise the chat stops the tu
 Either way, the message's text goes back to the input; when the runtime refuses because the agent already answered, the turn only stops.
 When the message started the Session, the chat deletes the Session instead and puts the text in a new chat.
 The copy keeps the original's times: the harness stamps the last entry it copies with the time of the fork, and the runtime gives that entry its original time back.
+
+### Follow-up chats
+
+A **follow-up chat** is a regular chat Session that starts from a finished sub-agent's work: its prompt and its result, the **copy**.
+A client asks for one on `session/new` with the copy in `_meta.platform.continuedFrom`; the runtime refuses a copy over its size bound rather than cut it.
+The runtime keeps the copy in its own byte-capped document under `.platform/`, apart from the log and the session metadata, because a session-history provider rebuilds the log from the harness's own store.
+The harness gets the copy once: the runtime puts it in a `<continued-from>` block before the first prompt it frames for the Session.
+Editing a queued prompt that carries the block keeps it; a prompt refused, dropped from the queue or recorded undelivered loses it, and the next prompt carries it again.
+The echo and the title use the typed text only, and a client hides the block wherever the first prompt shows.
+Every `session/load` returns the copy in `_meta.platform.continuedFrom`, so a client draws it above the conversation however the log was filled.
 
 ## Prompt delivery
 
@@ -88,6 +105,24 @@ A turn that ends first starts the waiting prompts as the next turn, again as one
 Until then it is an ordinary queued prompt the user can still change.
 A refused steer queues again at the head, so the agent receives each prompt once and in order.
 Scheduled fires, invocation outcomes and CLI runs always queue.
+A message from another of the agent's sessions is steered like a typed one.
+
+### Messages between sessions
+
+An agent can send a message from one of its sessions into another, for example from a Slack thread into a session that is working on the change the thread is about.
+The `list_sessions` tool lists the agent's chat sessions with whether a turn is running in each; `send_session_message` sends text into one of them.
+Both reach only the calling agent's own sessions.
+
+The message travels as a **session-message** [event](runtime-delivery.md#event), not over a connection to the pod: the platform resolves the sending session from the session reference the tool call carries, writes the event, and the runtime resumes the target session with the text.
+So the sender is the one the platform resolved, never one the caller wrote; the prompt opens with a line naming the sending session's title, type and id.
+The prompt is unattended, as a scheduled fire is, and steerable, as a typed message is: in a running turn it joins at the next steer point, and an idle session starts a turn with it.
+The answer stays in the receiving session.
+The tool only queues the message.
+The runtime reports the outcome over the event report, and a message not delivered within an hour expires.
+A failed or expired message comes back to its sender as a **notice** from the platform, with the reason and a short quote; a delivered one sends nothing back.
+A notice that fails is only logged, so notices never answer each other.
+A sender the platform could not identify gets no notice, and the tool says so.
+An agent whose runtime does not advertise the event kind is refused at the tool, rather than its message waiting until it expires.
 
 This makes **the server authoritative about delivery**, which is the point: watching for content cannot separate "parked behind a running turn" from "never arrived".
 A client fails a prompt on evidence instead:
@@ -134,12 +169,25 @@ One further condition holds that reap back: **background work the session report
 While a session reports work still running, the runtime keeps it open, and busy while that work is kept, so neither the reap nor the [idle checker](agent-lifecycle.md#hibernate) ends the work underneath it.
 The contract, and the process inventory that shows the user everything running in the agent, live on [agent-processes](agent-processes.md).
 
+**An Autonomous Turn holds the reap back too.**
+A harness can work on after it answered a prompt: Claude Code answers a prompt that started background agents, and when the last of them reports it runs a turn of its own to handle the reports and do the steps that follow.
+Closing the session then would cut that turn off, and Claude Code reads the close as the user interrupting.
+So the runtime asks the harness for its session state: on every session/new, session/load and session/resume it sends to Claude Code, it adds a `session_state_changed` filter to `_meta.claudeCode.emitRawSDKMessages`, and the adapter reports each change of state as a `_claude/sdkMessage` notification, which the runtime keeps out of the transcript.
+The image's manifest names that dialect (`harnessState`); a harness without one reports nothing and is idle once its prompt is answered.
+From a busy report to the idle one, in every session, the session is not reaped, the runtime is busy, and the Active-Turn marker stays, so a pod that dies in the Autonomous Turn resumes it on the next boot with the `<turn-interrupted>` notice.
+A busy report with no prompt turn running writes the marker itself.
+Claude Code can lose its idle report, so a busy session that stays silent for ten minutes — no session/update, no open tool call, no pending agent request, no reported background work — is treated as idle, with a warning in the log.
+
 Terminal-mode sessions follow a different model from the chat path above.
 agent-runtime accepts at most one connection per terminal session, runs the terminal entrypoint in a PTY with the env of the harness and provider its WebSocket names, and pipes raw bytes both ways.
 A session on a removed provider or an unknown harness closes with the reason.
 Scrollback is tracked so that reattaching while the PTY lives replays it.
 A detached PTY is reaped on idleness, not on viewer loss: after a short detach grace it is killed only once the harness has also gone quiet.
 Liveness keys on harness output rather than viewer presence, so in-flight work (a running build, a streaming response) survives switching away and can be reattached live, while an abandoned idle prompt is cleaned up.
+Background work the session reports holds that reap back, as it holds a chat session's: a background command prints to its own output file, not to the screen, so a quiet screen does not mean the work is done.
+While the report is not empty the PTY is never reaped; once it is empty, the quiet clock applies again.
+Such a PTY makes the runtime busy only while its work is [kept](agent-processes.md#keeping-work), as a chat session does: unkept work holds the terminal open and dies at hibernation.
+When the PTY ends, the session's report goes with it, so a dead terminal cannot keep the agent busy.
 There is no append-only log, no fan-out, and no `session/resume` — terminal sessions belong to one viewer at a time, and the harness's own on-disk session store is the only durable record.
 
 SSH sessions are unrelated to the session machinery above: they carry no session identity, no metadata entry, and no harness involvement — a per-connection in-pod OpenSSH the platform relays bytes to, with its own authentication and its own shell, several coexisting per agent.

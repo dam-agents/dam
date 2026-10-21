@@ -1,6 +1,6 @@
 # Artifact library
 
-Last verified: 2026-10-19
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -35,7 +35,7 @@ The design is a port of a proven external tool (the "slop" artifact vault) onto 
 
 ## Interactive pages
 
-An HTML artifact can be declared **interactive** at creation and stays private.
+An HTML artifact can be declared **interactive** at creation; it can be private or restricted, never public.
 With the interactive-artifacts feature enabled, a button in its latest version can send a prompt into an existing open chat with its publishing Agent.
 The app checks the sending frame and the preview's agent before submitting through the normal chat path.
 If the Agent is unavailable, the conversation is missing or loading, the Session is a terminal, or the user has switched conversations, the app refuses the prompt and shows a notification explaining how to try again.
@@ -47,7 +47,7 @@ The state lives with the Agent, so both the page and the Agent read and change i
 Unlike a prompt, this is request and response.
 One request travels four hops: the page posts it to the host app; the app checks the frame and the same gate as for prompts, then calls the api-server with the owner's own session; the api-server checks the artifact and wakes its Agent through the reachability primitive ([agent-lifecycle](agent-lifecycle.md#wake)); agent-runtime relays it over loopback to the Agent's server, and the answer comes back the same way.
 The call names an artifact, never an Agent: the api-server reads the publishing Agent from the artifact, so a page can only reach the Agent that published it, and uploaded artifacts (no publishing Agent) get no access.
-It serves only artifacts that are owned by the caller, HTML, interactive and private, whatever the feature flag says.
+It serves only artifacts that are owned by the caller, HTML, interactive and not public, whatever the feature flag says.
 Any HTTP status the server returns is a normal answer; a typed failure reason reports only what the platform could not deliver, such as nothing listening on the port, a timeout, a body over the size cap or too many requests in flight from one frame.
 The bridge also rejects any request the host has not answered within three minutes, longer than a wake plus the relay timeout, so every call settles even when the host drops it.
 Bodies are text only and capped both ways, and only the content type crosses in either direction.
@@ -63,8 +63,12 @@ The frame is sandboxed without modals, so browser dialogs are blocked.
 Callbacks are available only in the docked preview inside the publishing Agent's chat, including fullscreen, and work in a newly started conversation without reloading the page.
 The same preview on a page outside that chat and historical versions cannot send prompts or requests, and disabling the feature disconnects both.
 There is no permanent Session binding: the currently open conversation is the destination.
-Interactive pages cannot be shared, including with named viewers; that restriction is enforced with the sharing write.
-Retention remains available, and a separate static copy can be shared.
+An interactive page can never become public: the sharing write refuses it, and the Share dialog offers only private and restricted.
+The owner can share it with named viewers like any other artifact, and only from the Share dialog, since agent tools cannot set restricted.
+A viewer sees the page through the share host, where the renderer injects a refusing bridge in place of the owner's: `sendPrompt` throws and `request` rejects with `not-allowed` at once, nothing is posted to the host, and the page shows a notice that only its owner can use its buttons.
+The share page has no host that relays either call, so the refusing bridge is for a clear failure, not the boundary.
+A viewer sees the stored HTML as it is; state that the page reads from its Agent's server is not there for them.
+The owner keeps the callbacks in the docked preview while the page is restricted.
 
 ## Sharing model
 
@@ -168,10 +172,13 @@ flowchart LR
 
 ## UI surfaces
 
-- The library lives in the **Artifacts tab** of the side panel on the right, on every page outside an Agent's chat.
-  The sidebar's Artifacts destination (the drawer on a phone, where the panel opens full screen) opens that tab rather than a page of its own, and shows as the current destination while that tab is open; there it shares the panel with Get started and Approvals.
-  In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files, and the Artifacts destination opens that section and shows as current while it is open.
+- The library has a page of its own, **Artifacts** at `/artifacts`, which the sidebar's Artifacts destination opens; an artifact opened there docks in the side panel on the right.
+  The page shows the same list as the side panel's **Artifacts tab**, which an Agent's configuration page offers, scoped to that Agent; other pages outside an Agent's chat leave the tab out, so the library is never open twice.
+  On a phone, the configuration page's top bar has the Artifacts button that opens that tab.
+  With the `new-layout` experiment on, every page offers the tab, with the whole library, and Home's Artifacts card opens it.
+  In an Agent's chat the side panel is part of the `new-layout` [experiment](features.md): with it on, the chat has the same Artifacts tab in its side panel; with it off, the list is an **Artifacts section** in the column beside the conversation, under Files.
   In an Agent's chat the list starts on that Agent's artifacts and switches to the whole library, uploads included; anywhere else it is the whole library, and there each row names the Agent that published it, or the user for an upload.
+  While the library holds no artifact and no folder, the page shows an introduction instead of the list, with Create agent and Upload artifact; a list that fails to load still shows the list's retry.
   The tab offers search by title and file name, upload, folder management (rename, delete, copy the folder's public link), sharing controls and a separate delete-after (retention) control.
   Folders are listed first and unfiled artifacts after them at the top level; every user folder is listed, empty ones included, even when the list shows one Agent's artifacts, so a folder created there is in view at once and can take a drop.
 - Opening an artifact docks a **preview** in the same tab, or, in a chat with `new-layout` off, in the panel docked beside the conversation; it reuses the chat file-viewer stack (markdown prose, highlighted code, inline images) and follows new versions as they are published.
@@ -187,6 +194,7 @@ flowchart LR
 - Folder membership is mutable and advisory: any artifact can be filed into any folder, moved to another, or taken out again from the library itself, so organising a library is not tied to the moment each artifact was published.
   Filing works from the artifact's menu or by dragging it onto a folder; a drag held near the top or bottom edge of the list scrolls it, so a folder off screen can still take the drop.
   Nothing reads membership as a claim about provenance.
+  An agent files what it publishes itself: the artifact tools tell it to look at the user's folders first and pick the one that fits, else leave the artifact ungrouped rather than create a folder nobody asked for.
 - The chat file panel's toolbar carries a **Create artifact / Sync to artifact** action that publishes the open file as above and switches the dock to the resulting artifact; binary and oversized files are excluded.
 - In a chat the preview shares one dock with the sandbox file viewer, so opening either evicts the other.
   The dock belongs to the chat it was opened in: switching Agent, going back or leaving the chat closes it, and so does entering a chat; moving between pages outside a chat keeps it open.

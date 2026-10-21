@@ -51,10 +51,17 @@ export type ModelDiscoverySources = z.infer<typeof modelDiscoverySources>;
  * UNIT_BOUNDARY_DESCRIPTION: how a session setting reaches the harness. An
  * `env` setting is read at process start, so a session that picks one runs
  * in a process of its own; a `router` setting is never sent, the Model
- * Router reads the session's value itself on every call.
+ * Router reads the session's value itself on every call. A `mode` setting that
+ * opts in with `deriveStartMode` has no start mode of its own the runtime can
+ * rely on, so the runtime derives one from the catalog and the session's
+ * model; every other harness starts on its own, and its own sources of a start
+ * mode — a thinking level, a pinned persona — are left alone.
  */
 export const sessionSettingBinding = z.union([
-  z.object({ mode: z.literal(true) }),
+  z.object({
+    mode: z.literal(true),
+    deriveStartMode: z.literal(true).optional(),
+  }),
   z.object({ configOption: z.string().min(1) }),
   z.object({ env: z.array(z.string().min(1)).nonempty() }),
   z.object({ router: z.literal(true) }),
@@ -139,6 +146,8 @@ export const modelRouterBinding = z.object({
   bareNamesFromSession: z.boolean().optional(),
   claudeTiers: z.boolean().optional(),
   credentialEnv: z.array(z.string().min(1)).optional(),
+  defaultModelEnv: z.array(z.string().min(1)).optional(),
+  sessionFromRunningTurn: z.boolean().optional(),
   bobGateway: z.boolean().optional(),
 });
 export type ModelRouterBinding = z.infer<typeof modelRouterBinding>;
@@ -149,6 +158,8 @@ export const runtimeManifestSchema = z.object({
   modelRouter: modelRouterBinding.optional(),
 
   initializeCapabilities: initializeCapabilities.optional(),
+
+  harnessState: z.enum(["claude-code"]).optional(),
 
   drivers: z.record(z.string(), driverEntry).default({}),
 
@@ -164,6 +175,8 @@ export const runtimeManifestSchema = z.object({
     .optional(),
 
   terminalSessionPins: z.string().min(1).optional(),
+
+  sessionMcpEntry: z.boolean().default(true),
 
   agentProcesses: z.array(z.string().min(1).max(15)).default([]),
 
@@ -231,6 +244,14 @@ const BUILTIN_DRIVERS: Record<
   },
   "sub-agent-outcome": {
     binding: { impl: "sub-agent-outcome" },
+    defaultOn: true,
+  },
+  "session-message": {
+    binding: { impl: "session-message" },
+    defaultOn: true,
+  },
+  "session-defaults": {
+    binding: { impl: "session-defaults" },
     defaultOn: true,
   },
 };

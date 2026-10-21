@@ -1,11 +1,12 @@
 import {
   Add,
+  ChevronRight,
   Information,
   Unlink,
   WarningAltFilled,
 } from "@carbon/icons-react";
 import type { HarnessCapability } from "agent-runtime-api";
-import type { SessionPair } from "api-server-api";
+import type { DefaultKind, SessionPair } from "api-server-api";
 import { useState } from "react";
 
 import { HarnessIcons } from "@/components/harness-icons";
@@ -22,26 +23,31 @@ import { Tooltip } from "@/components/ui/tooltip";
 import { cn } from "@/lib/utils";
 
 import { useStore } from "../../../store.js";
-import { useIsAgentAnswerableSoon } from "../../agents/api/queries.js";
+import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
 import {
   rememberFirstModel,
   rememberSessionPair,
+  samePair,
   useGrantProvider,
   useHarnessCatalog,
   useHarnessCatalogModels,
   useHarnessConfigured,
   useProviderConnections,
   useProviderModels,
+  useRememberedPair,
 } from "../api/session-pair.js";
 import { useNextSessionPair } from "../hooks/use-next-session-pair.js";
+import { useProviderUsage } from "../hooks/use-provider-usage.js";
 import {
   addableProviders,
   attachableProviders,
+  type ModelGroup,
   modelGroups,
   modelIndicatorLabel,
   sameModel,
   sameSideGroups,
 } from "../lib/catalog-groups.js";
+import { DEFAULT_KIND_LABEL, DEFAULT_KIND_TITLE } from "../lib/default-kind.js";
 import {
   harnessDisplayName,
   harnessOptions,
@@ -55,6 +61,7 @@ import {
   settingsForModel,
 } from "../lib/session-settings.js";
 import { useAttachProvidersDialog } from "./attach-providers-dialog.js";
+import { DetachProviderMessage } from "./detach-provider-message.js";
 import { SessionModelList } from "./session-model-list.js";
 import { SessionPairTrigger } from "./session-pair-trigger.js";
 import { SessionSettingsControls } from "./session-settings-controls.js";
@@ -67,8 +74,21 @@ interface Props {
   open?: boolean;
   onOpenChange?: (open: boolean) => void;
   onConnectProviders: () => void;
+  newLayout?: boolean;
+  defaultPair?: {
+    value: SessionPair | null;
+    onChoose: (pair: SessionPair) => void;
+  };
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the harness, model and session settings a new
+ * session starts on. With `defaultPair` it edits the agent's saved default
+ * instead, handing each pick to its `onChoose`. In JanUI, and always as the
+ * default's editor, providers are not attached or disconnected here: a
+ * Manage providers row, absent from the default's editor, leads to the
+ * agent's Providers page.
+ */
 export function SessionPairPicker({
   agentId,
   carried,
@@ -77,13 +97,21 @@ export function SessionPairPicker({
   open,
   onOpenChange,
   onConnectProviders,
+  newLayout = false,
+  defaultPair,
 }: Props) {
   const navigateToSandboxHome = useStore((s) => s.navigateToSandboxHome);
   const showConfirm = useStore((s) => s.showConfirm);
   const { data: catalog } = useHarnessCatalog();
-  const chosen = useStore((s) => s.nextSessionPair[agentId] ?? null);
+  const picked = useStore((s) => s.nextSessionPair[agentId] ?? null);
+  const chosen = defaultPair ? null : picked;
+  const manageProviders = newLayout || !!defaultPair;
   const setPair = useStore((s) => s.setNextSessionPair);
+  const clearPair = useStore((s) => s.clearNextSessionPair);
+  const { data: remembered } = useRememberedPair(agentId);
+  const { data: status } = useHarnessConfigStatus(agentId);
   const providers = useProviderConnections(agentId);
+  const usage = useProviderUsage(agentId);
   const { revoke, pending: revoking } = useGrantProvider(agentId);
   const attachDialog = useAttachProvidersDialog(agentId);
   const pending = revoking || attachDialog.pending;
@@ -103,7 +131,8 @@ export function SessionPairPicker({
   const harnessName = (name: string) => harnessDisplayName(name, views);
   const names = carried.map((h) => h.name);
   const harnesses = harnessOptions(names, views);
-  const pair = useNextSessionPair(agentId, names, defaultHarness);
+  const next = useNextSessionPair(agentId, names, defaultHarness);
+  const pair = defaultPair ? defaultPair.value : next;
   const harness =
     (chosen && names.includes(chosen.harness) ? chosen.harness : null) ??
     pair?.harness ??
@@ -128,14 +157,16 @@ export function SessionPairPicker({
     return fit.granted.length === 0 && fit.addable.length === 0;
   };
   const capability = carried.find((h) => h.name === harness);
+  const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
   const defaults = settingDefaults(
     capability,
     useHarnessConfigured(agentId, harness),
+    pair?.harness === harness ? (pair.model ?? null) : null,
   );
-  const settings = pair?.harness === harness ? (pair.settings ?? {}) : {};
-  const choose = (next: SessionPair) => {
-    setPair(agentId, next);
-    if (routed) void rememberFirstModel(agentId, next);
+  const choose = (chosenPair: SessionPair) => {
+    if (defaultPair) return defaultPair.onChoose(chosenPair);
+    setPair(agentId, chosenPair);
+    if (routed) void rememberFirstModel(agentId, chosenPair);
   };
   const withSettings = (next: SessionPair): SessionPair =>
     Object.keys(settings).length > 0 ? { ...next, settings } : next;
@@ -143,25 +174,26 @@ export function SessionPairPicker({
     routed ? agentId : null,
     harness,
   );
-  const answerableSoon = useIsAgentAnswerableSoon(routed ? agentId : null);
   const groups = routed
     ? modelGroups(catalogModels.data, catalogModels.granted)
     : [];
-  const addable = routed
-    ? addableProviders(providers.granted, providers.owned, (c) =>
-        offered.addable.some((p) => p.id === c.id),
-      )
-    : [];
-  const confirmDisconnect = (name: string, id: string) =>
-    void showConfirm(
-      <p>
-        Sessions running on <strong>{name}</strong> stop until it is attached
-        again. Schedules and channels that use it don&rsquo;t run until you
-        choose another model.
-      </p>,
+  const addable =
+    routed && !manageProviders
+      ? addableProviders(providers.granted, providers.owned, (c) =>
+          offered.addable.some((p) => p.id === c.id),
+        )
+      : [];
+  const confirmDisconnect = (name: string, id: string) => {
+    const provider = providers.granted.find((p) => p.id === id);
+    return void showConfirm(
+      <DetachProviderMessage
+        name={name}
+        usage={provider ? usage(provider) : { kinds: [], schedules: [] }}
+      />,
       `Disconnect ${name} from this agent?`,
       { kind: "destructive", confirmLabel: "Disconnect" },
     ).then((ok) => ok && revoke(id));
+  };
 
   if (providers.loaded && providers.owned.length === 0)
     return <ConnectProvidersPrompt onClick={onConnectProviders} />;
@@ -188,9 +220,13 @@ export function SessionPairPicker({
           />
         </PopoverTrigger>
         <PopoverContent
-          side="top"
+          side={defaultPair ? "bottom" : "top"}
           align="start"
-          aria-label="New session harness and model"
+          aria-label={
+            defaultPair
+              ? "Default harness and model"
+              : "New session harness and model"
+          }
           className="flex w-[340px] flex-col gap-2 p-1 text-sm"
         >
           <div className="flex max-h-96 flex-col gap-2 overflow-y-auto p-1">
@@ -243,14 +279,13 @@ export function SessionPairPicker({
             {routed ? (
               <>
                 <SessionModelList
+                  agentId={agentId}
                   groups={groups}
                   harnessName={harnessName(harness)}
                   current={pair?.model ?? null}
                   loading={catalogModels.isLoading}
                   waiting={catalogModels.waiting}
                   failed={catalogModels.isError}
-                  operable={catalogModels.operable}
-                  starting={answerableSoon}
                   onRetry={() => void catalogModels.refetch()}
                   onChoose={(model, group) => {
                     const kept = settingsForModel(
@@ -266,9 +301,10 @@ export function SessionPairPicker({
                       ...(Object.keys(kept).length > 0 && { settings: kept }),
                     });
                   }}
-                  onDisconnect={(group) =>
-                    confirmDisconnect(group.displayName, group.connectionId)
-                  }
+                  {...(!manageProviders && {
+                    onDisconnect: (group: ModelGroup) =>
+                      confirmDisconnect(group.displayName, group.connectionId),
+                  })}
                   disconnecting={pending}
                 />
                 {addable.map(({ connection, conflict }) => (
@@ -319,12 +355,16 @@ export function SessionPairPicker({
                 agentId={agentId}
                 harness={harness}
                 carried={carried}
-                sections={sections}
+                sections={
+                  manageProviders
+                    ? sections.filter((p) => attached(p.id))
+                    : sections
+                }
                 attached={attached}
                 pair={pair}
                 pending={pending}
                 harnessName={harnessName(harness)}
-                onDisconnect={confirmDisconnect}
+                {...(!manageProviders && { onDisconnect: confirmDisconnect })}
                 onAttach={attach}
                 onChoose={(id, model) =>
                   choose(withSettings({ harness, provider: id, model }))
@@ -356,20 +396,70 @@ export function SessionPairPicker({
               />
             </div>
           )}
-          <div className="border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
-            <PopoverClose asChild>
-              <button
-                type="button"
-                onClick={() => navigateToSandboxHome(agentId, "providers")}
-                className="underline underline-offset-2 hover:text-foreground"
-              >
-                Configure providers and defaults
-              </button>
-            </PopoverClose>
-          </div>
+          {!manageProviders ? (
+            <div className="flex items-center justify-between gap-3 border-t border-border px-2 pb-1 pt-2 text-xs text-muted-foreground">
+              {pair && routed && status?.followsDefaults && !defaultPair && (
+                <NewSessionFollowState
+                  onDefault={
+                    chosen === null ||
+                    (!!remembered && samePair(pair, remembered))
+                  }
+                  onFollow={() => clearPair(agentId)}
+                />
+              )}
+              <PopoverClose asChild>
+                <button
+                  type="button"
+                  onClick={() => navigateToSandboxHome(agentId, "providers")}
+                  className="underline underline-offset-2 hover:text-foreground"
+                >
+                  Configure providers and defaults
+                </button>
+              </PopoverClose>
+            </div>
+          ) : (
+            !defaultPair && (
+              <div className="border-t border-border pt-1">
+                <PopoverClose asChild>
+                  <button
+                    type="button"
+                    data-testid="session-pair-manage-providers"
+                    onClick={() => navigateToSandboxHome(agentId, "providers")}
+                    className="flex w-full items-center justify-between gap-2 rounded px-2 py-1.5 text-left text-muted-foreground hover:bg-muted hover:text-foreground"
+                  >
+                    Manage providers ({providers.granted.length}/
+                    {providers.owned.length} connected)
+                    <ChevronRight size={14} aria-hidden />
+                  </button>
+                </PopoverClose>
+              </div>
+            )
+          )}
         </PopoverContent>
       </Popover>
     </>
+  );
+}
+
+function NewSessionFollowState({
+  onDefault,
+  onFollow,
+}: {
+  onDefault: boolean;
+  onFollow: () => void;
+}) {
+  if (onDefault) return <span>On the chat default</span>;
+  return (
+    <span className="flex min-w-0 items-center gap-2">
+      <span>Own choice</span>
+      <button
+        type="button"
+        onClick={onFollow}
+        className="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
+      >
+        Back to default
+      </button>
+    </span>
   );
 }
 
@@ -393,14 +483,18 @@ export function ConnectProvidersPrompt({ onClick }: { onClick: () => void }) {
 
 export function SetAsDefault({
   agentId,
+  kind,
   pair,
   defaults,
   remembered,
+  onSet,
 }: {
   agentId: string;
+  kind: DefaultKind;
   pair: SessionPair;
   defaults: Readonly<Record<string, string>>;
   remembered: SessionPair | null | undefined;
+  onSet?: () => void;
 }) {
   if (pair.model === null) return null;
   const saved =
@@ -416,10 +510,14 @@ export function SetAsDefault({
     <button
       type="button"
       disabled={saved}
-      onClick={() => rememberSessionPair(agentId, pair)}
+      onClick={() => {
+        rememberSessionPair(agentId, pair, kind, onSet);
+      }}
       className="shrink-0 whitespace-nowrap underline underline-offset-2 hover:text-foreground disabled:no-underline disabled:opacity-60"
     >
-      {saved ? "Default" : "Set as default"}
+      {saved
+        ? `${DEFAULT_KIND_TITLE[kind]} default`
+        : `Set as ${DEFAULT_KIND_LABEL[kind]} default`}
     </button>
   );
 }
@@ -481,7 +579,7 @@ function OldRuntimeProviderSections({
   pair: SessionPair | null;
   pending: boolean;
   harnessName: string | undefined;
-  onDisconnect: (name: string, id: string) => void;
+  onDisconnect?: (name: string, id: string) => void;
   onAttach: (provider: { id: string }) => void;
   onChoose: (id: string, model: string) => void;
 }) {
@@ -497,7 +595,9 @@ function OldRuntimeProviderSections({
             current={pair?.provider === p.id ? pair.model : undefined}
             fallback={catalogModels(carried, harness)}
             disconnecting={pending}
-            onDisconnect={() => onDisconnect(p.name, p.id)}
+            {...(onDisconnect && {
+              onDisconnect: () => onDisconnect(p.name, p.id),
+            })}
             onChoose={(model) => onChoose(p.id, model)}
           />
         ) : (
@@ -555,7 +655,7 @@ function ProviderModels({
   current: string | null | undefined;
   fallback: readonly { value: string; name: string }[];
   disconnecting: boolean;
-  onDisconnect: () => void;
+  onDisconnect?: () => void;
   onChoose: (model: string) => void;
 }) {
   const { data, isLoading, isError, operable, answerable, refetch } =

@@ -2,7 +2,11 @@ import type {
   HarnessCapability,
   HarnessConfigCurrent,
 } from "agent-runtime-api";
-import { modelConstraintsFor, SUBAGENT_MODEL_SETTING } from "agent-runtime-api";
+import {
+  modelConstraintsFor,
+  startModeFor,
+  SUBAGENT_MODEL_SETTING,
+} from "agent-runtime-api";
 
 import {
   findModel,
@@ -20,18 +24,43 @@ export function sessionSettingOptions(
   );
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: the value each setting shows before the owner
+ * picks one. The runtime applies the option's own default, except for the
+ * permission mode and a setting whose default a person must approve, which
+ * stay what the agent's configured value for the harness holds. A mode with
+ * neither is the runtime's to choose, and it chooses by the model the session
+ * runs on — its own, or the one the agent's config file names where the
+ * session names none — and only where the harness opts in, since a harness
+ * with start modes of its own keeps them. The picker asks the same rule, so a
+ * session on a model that cannot use the option's default shows the mode it
+ * really starts in.
+ */
 export function settingDefaults(
   capability: HarnessCapability | undefined,
   configured: HarnessConfigCurrent | null | undefined,
+  model: string | null,
 ): Record<string, string> {
   return Object.fromEntries(
     sessionSettingOptions(capability)
       .filter((o) => !o.subagents)
       .flatMap((o) => {
-        const value =
-          (o.id === "mode"
-            ? configured?.mode
-            : configured?.configOptions[o.id]) ?? o.default;
+        const derived =
+          o.id === "mode" && capability?.derivedStartMode?.includes(o.id)
+            ? startModeFor(
+                capability.harnessConfigCatalog,
+                model ?? configured?.model ?? null,
+                o.id,
+              )
+            : null;
+        const harnessOwned =
+          o.category === "mode" ||
+          o.choices.some((c) => c.value === o.default && c.needsApproval);
+        const value = harnessOwned
+          ? ((o.id === "mode"
+              ? (configured?.mode ?? derived)
+              : configured?.configOptions[o.id]) ?? o.default)
+          : o.default;
         return value &&
           (o.choices.some((c) => c.value === value) || isModelOption(o))
           ? [[o.id, value]]

@@ -3,8 +3,8 @@ import { homedir } from "node:os";
 import { join } from "node:path";
 
 export const AGENT_NS = process.env.E2E_AGENT_NS ?? "platform-agents";
-const RELEASE_NS = process.env.E2E_RELEASE_NS ?? "default";
-const RELEASE = process.env.E2E_RELEASE_NAME ?? "platform";
+export const RELEASE_NS = process.env.E2E_RELEASE_NS ?? "default";
+export const RELEASE = process.env.E2E_RELEASE_NAME ?? "platform";
 
 function kubeconfig(): string {
   if (process.env.KUBECONFIG) return process.env.KUBECONFIG;
@@ -15,10 +15,56 @@ function kubeconfig(): string {
 }
 
 export function kubectl(...args: string[]): string {
+  return kubectlWithin(undefined, ...args);
+}
+
+// UNIT_BOUNDARY_DESCRIPTION: how long a call that only reads which pod or which object a machine lives on may take. Every such call is synchronous, so one that hangs holds the whole suite, and a teardown that runs after a case failed runs with the cluster already unhealthy.
+export const LOOKUP_TIMEOUT_MS = 30_000;
+
+// UNIT_BOUNDARY_DESCRIPTION: the same call with a deadline, for a remote command that may run for minutes: without one the call blocks this process until the pod answers. A deadline kills the local kubectl, not the command it started in the pod.
+export function kubectlWithin(
+  timeoutMs: number | undefined,
+  ...args: string[]
+): string {
+  return runKubectl(args, "ignore", timeoutMs);
+}
+
+function runKubectl(
+  args: string[],
+  stdin: "ignore" | string,
+  timeoutMs?: number,
+): string {
   return execFileSync("kubectl", ["--kubeconfig", kubeconfig(), ...args], {
     encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: [stdin === "ignore" ? stdin : "pipe", "pipe", "pipe"],
+    ...(stdin === "ignore" ? {} : { input: stdin }),
+    ...(timeoutMs === undefined ? {} : { timeout: timeoutMs }),
   }).trim();
+}
+
+export interface AgentCr {
+  apiVersion: string;
+  kind: string;
+  metadata: Record<string, unknown>;
+  spec: Record<string, unknown>;
+}
+
+export function readAgentCr(agent: string): AgentCr {
+  return JSON.parse(
+    kubectl(
+      "-n",
+      AGENT_NS,
+      "get",
+      "agents.agent-platform.ai",
+      agent,
+      "-o",
+      "json",
+    ),
+  ) as AgentCr;
+}
+
+export function applyAgentCr(cr: AgentCr): void {
+  runKubectl(["-n", AGENT_NS, "apply", "-f", "-"], JSON.stringify(cr));
 }
 
 function kubectlOrEmpty(...args: string[]): string {
@@ -83,6 +129,18 @@ export function deleteAgentCr(name: string): void {
     "agents.agent-platform.ai",
     name,
     "--ignore-not-found",
+  );
+}
+
+export function requestRuntimeMigration(agent: string): void {
+  kubectl(
+    "-n",
+    AGENT_NS,
+    "annotate",
+    "agents.agent-platform.ai",
+    agent,
+    "--overwrite",
+    "agent-platform.ai/runtime-migration=requested",
   );
 }
 

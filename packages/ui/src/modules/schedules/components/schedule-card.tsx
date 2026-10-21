@@ -63,9 +63,9 @@ export function ScheduleCard({
   const nextRunHint =
     enabled && status?.nextRun ? timeUntil(status.nextRun) : null;
   const stopReason = enabled ? status?.stopReason : undefined;
-  const defaultModelNotice = defaultModels.byAgentEvenDismissed.get(
-    schedule.agentId,
-  );
+  const defaultModelNotice = defaultModels.byAgentEvenDismissed
+    .get(schedule.agentId)
+    ?.find((notice) => notice.kinds.includes("scheduled"));
   const noDefaultModel =
     enabled && !schedule.model && defaultModelStopsRuns(defaultModelNotice);
   const onceState = scheduleOnceState(schedule);

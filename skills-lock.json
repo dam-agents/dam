@@ -1,0 +1,93 @@
+{
+  "version": 1,
+  "skills": {
+    "adr": {
+      "source": "./.agents/skills/adr",
+      "sourceType": "local"
+    },
+    "adr-policy": {
+      "source": "./.agents/skills/adr-policy",
+      "sourceType": "local"
+    },
+    "align-repo": {
+      "source": "./.agents/skills/align-repo",
+      "sourceType": "local"
+    },
+    "babysit": {
+      "source": "./.agents/skills/babysit",
+      "sourceType": "local"
+    },
+    "ccweb": {
+      "source": "./.agents/skills/ccweb",
+      "sourceType": "local"
+    },
+    "chat-sdk": {
+      "source": "./.agents/skills/chat-sdk",
+      "sourceType": "local"
+    },
+    "cluster-ops": {
+      "source": "./.agents/skills/cluster-ops",
+      "sourceType": "local"
+    },
+    "dam-agent-creator": {
+      "source": "./.agents/skills/dam-agent-creator",
+      "sourceType": "local"
+    },
+    "doc-drift": {
+      "source": "./.agents/skills/doc-drift",
+      "sourceType": "local"
+    },
+    "draft-issue": {
+      "source": "./.agents/skills/draft-issue",
+      "sourceType": "local"
+    },
+    "file-issue": {
+      "source": "./.agents/skills/file-issue",
+      "sourceType": "local"
+    },
+    "grill-me": {
+      "source": "./.agents/skills/grill-me",
+      "sourceType": "local"
+    },
+    "implement-feature": {
+      "source": "./.agents/skills/implement-feature",
+      "sourceType": "local"
+    },
+    "low-hanging-fruit": {
+      "source": "./.agents/skills/low-hanging-fruit",
+      "sourceType": "local"
+    },
+    "plan-feature": {
+      "source": "./.agents/skills/plan-feature",
+      "sourceType": "local"
+    },
+    "pr-artifact": {
+      "source": "./.agents/skills/pr-artifact",
+      "sourceType": "local"
+    },
+    "pr-open": {
+      "source": "./.agents/skills/pr-open",
+      "sourceType": "local"
+    },
+    "react-ui-engineering": {
+      "source": "./.agents/skills/react-ui-engineering",
+      "sourceType": "local"
+    },
+    "review-remediation": {
+      "source": "./.agents/skills/review-remediation",
+      "sourceType": "local"
+    },
+    "typescript-engineering": {
+      "source": "./.agents/skills/typescript-engineering",
+      "sourceType": "local"
+    },
+    "up": {
+      "source": "./.agents/skills/up",
+      "sourceType": "local"
+    },
+    "write-a-prd": {
+      "source": "./.agents/skills/write-a-prd",
+      "sourceType": "local"
+    }
+  }
+}

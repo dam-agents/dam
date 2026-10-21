@@ -8,6 +8,10 @@ import type {
 import { createInvocationsRepository } from "./infrastructure/invocations-repository.js";
 import { createInvocationLinks } from "./infrastructure/invocation-links.js";
 import {
+  createInvocationTasks,
+  type InvocationTasks,
+} from "./infrastructure/invocation-tasks.js";
+import {
   createSpawnSessions,
   type SpawnSessions,
 } from "./services/spawn-sessions.js";
@@ -172,6 +176,10 @@ export function createSpawnSessionsAdapter(db: Db): SpawnSessions {
     driverResolution: createDriverResolutionAdapter(db),
     links: createInvocationLinks(db),
   });
+}
+
+export function createInvocationTasksAdapter(db: Db): InvocationTasks {
+  return createInvocationTasks(db);
 }
 
 export function createInvocationsCleanupHook(opts: {

@@ -54,6 +54,44 @@ describe("loadConfig — turn watch invariants", () => {
   });
 });
 
+describe("loadConfig — version", () => {
+  const managed = [...Object.keys(REQUIRED_ENV), "PLATFORM_APP_VERSION"];
+  const saved: Record<string, string | undefined> = {};
+
+  beforeEach(() => {
+    for (const k of managed) {
+      saved[k] = process.env[k];
+      delete process.env[k];
+    }
+    Object.assign(process.env, REQUIRED_ENV);
+  });
+
+  afterEach(() => {
+    for (const k of managed) {
+      if (saved[k] === undefined) delete process.env[k];
+      else process.env[k] = saved[k];
+    }
+  });
+
+  it("recommends the CLI of a tagged release", () => {
+    process.env.PLATFORM_APP_VERSION = "0.2.24";
+    expect(loadConfig()).toMatchObject({
+      appVersion: "0.2.24",
+      recommendedClientCliVersion: "0.2.24",
+    });
+    process.env.PLATFORM_APP_VERSION = "0.2.24-rc3";
+    expect(loadConfig().recommendedClientCliVersion).toBe("0.2.24-rc3");
+  });
+
+  // TEST_SCENARIO: CD stamps a build from main `<version>-dev-<sha>`, a version npm never publishes. Recommending it would warn every CLI that is behind a release nobody can install.
+  it("recommends no CLI for a build from main", () => {
+    process.env.PLATFORM_APP_VERSION = "0.2.24-dev-db35e8abf4bd";
+    const config = loadConfig();
+    expect(config.appVersion).toBe("0.2.24-dev-db35e8abf4bd");
+    expect(config.recommendedClientCliVersion).toBeUndefined();
+  });
+});
+
 describe("loadConfig — object storage", () => {
   const OBJECT_KEYS = [
     "OBJECT_STORAGE_ENDPOINT",
@@ -128,7 +166,6 @@ mmkBNIQHEZyNseqNrUDmwQIgTMRmxAc+KqNdi/HNDz1fCYGZvkoVYMgLYZM0W/aS
 describe("agentsInstallSettings — what every agents module is built with", () => {
   const managed = [
     ...Object.keys(REQUIRED_ENV),
-    "RUNTIME_MIGRATION_RETENTION",
     "AGENT_DEFAULT_STORAGE_SIZE",
     "VIRTUALIZATION_ENABLED",
     "FEATURE_MODES",
@@ -157,9 +194,8 @@ describe("agentsInstallSettings — what every agents module is built with", () 
     }
   });
 
-  // TEST_SCENARIO: the chart sets the retention window on the api-server as a Go duration. Every composition root takes the agents module's install facts from this one reading, so the migration plan the UI gets names the install's window, disk default and default mounts rather than none.
-  it("carries the chart's retention window, disk default and default mounts", () => {
-    process.env.RUNTIME_MIGRATION_RETENTION = "72h";
+  // TEST_SCENARIO: the chart sets the disk default and default mounts on the api-server. Every composition root takes the agents module's install facts from this one reading, so the migration decision names the install's disk default and default mounts rather than none.
+  it("carries the chart's disk default and default mounts", () => {
     process.env.AGENT_DEFAULT_STORAGE_SIZE = "20Gi";
     process.env.VIRTUALIZATION_ENABLED = "true";
     expect(agentsInstallSettings(loadConfig())).toEqual({
@@ -171,7 +207,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
         { path: "/home/agent", persist: true },
         { path: "/tmp", persist: false },
       ],
-      runtimeMigrationRetentionMs: 72 * 3600_000,
     });
   });
 
@@ -269,20 +304,6 @@ describe("agentsInstallSettings — what every agents module is built with", () 
       defaultHarness: "codex",
       telemetry: true,
     });
-  });
-
-  it("defaults the retention window to a week", () => {
-    expect(
-      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
-    ).toBe(7 * 24 * 3600_000);
-  });
-
-  // TEST_SCENARIO: the controller keeps a volume whose window it cannot read, so the api-server must not invent one either.
-  it("reads a retention window it cannot parse as unknown", () => {
-    process.env.RUNTIME_MIGRATION_RETENTION = "7d";
-    expect(
-      agentsInstallSettings(loadConfig()).runtimeMigrationRetentionMs,
-    ).toBeNull();
   });
 });
 

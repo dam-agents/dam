@@ -137,6 +137,24 @@ export const authKind = z.enum([
 ]);
 export type AuthKind = z.infer<typeof authKind>;
 
+export const providerKeyCheck = z.object({
+  result: z.enum(["ok", "refused", "unverified"]),
+  detail: z.string().optional(),
+  checkedAt: z.string(),
+});
+export type ProviderKeyCheck = z.infer<typeof providerKeyCheck>;
+
+export interface ProviderKeyRecheck {
+  connectionId: string;
+  check: ProviderKeyCheck | null;
+}
+
+export const connectionProviderView = z.object({
+  alias: z.string(),
+  harnesses: z.array(z.string()),
+});
+export type ConnectionProviderView = z.infer<typeof connectionProviderView>;
+
 export const connectionView = z.object({
   id: z.string(),
   ownerId: z.string(),
@@ -150,6 +168,7 @@ export const connectionView = z.object({
   hosts: z.array(z.string()),
   host: z.string().min(1).optional(),
   accountLabel: z.string().min(1).optional(),
+  keyCheck: providerKeyCheck.optional(),
   appSlug: z.string().min(1).optional(),
   hasClientSecret: z.boolean().optional(),
   githubAppScope: z
@@ -161,6 +180,9 @@ export const connectionView = z.object({
     .optional(),
   githubUserToken: z
     .object({ scope: githubUserTokenScope.optional() })
+    .optional(),
+  provider: connectionProviderView
+    .extend({ preferred: z.boolean() })
     .optional(),
 });
 export type ConnectionView = z.infer<typeof connectionView>;
@@ -202,6 +224,7 @@ export const connectionTemplateView = z.object({
   authKind: authKind,
   inputs: z.array(templateInput),
   extras: z.record(z.string(), z.unknown()).optional(),
+  provider: connectionProviderView.optional(),
 });
 export type ConnectionTemplateView = z.infer<typeof connectionTemplateView>;
 
@@ -265,6 +288,8 @@ export interface ConnectionsService {
     fits: (type: ProviderPresetType, templateId: string) => boolean,
   ): Promise<string[]>;
   getProviderBalance(id: string): Promise<ProviderBalance | null>;
+
+  recheckProviderKeys(): Promise<ProviderKeyRecheck[]>;
 
   validateGrantSet(connectionIds: string[]): Promise<void>;
 

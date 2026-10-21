@@ -1,7 +1,8 @@
-import { PIN_MODEL_METHOD } from "agent-runtime-api";
+import { PIN_MODEL_METHOD, type SessionDefaultKind } from "agent-runtime-api";
 import { createInProcessCaller } from "../infrastructure/in-process-request.js";
 import type { PlatformSessionMeta } from "../infrastructure/session-metadata-store.js";
 import {
+  MESSAGE_SURFACE,
   SCHEDULE_SURFACE,
   type AcpRuntime,
 } from "./acp-runtime/acp-runtime.js";
@@ -13,8 +14,10 @@ export interface TriggerSessionDriver {
     resumeSessionId?: string;
     platformMeta?: PlatformSessionMeta;
     unattended?: boolean;
+    steer?: boolean;
     model?: string;
     keepSessionModel?: boolean;
+    follows?: SessionDefaultKind | null;
   }): Promise<{ sessionId: string; openedOn: string | null }>;
 }
 
@@ -68,8 +71,10 @@ export function createTriggerSessionDriver(deps: {
       resumeSessionId,
       platformMeta,
       unattended,
+      steer,
       model,
       keepSessionModel,
+      follows,
     }) {
       const pins =
         !!resumeSessionId &&
@@ -100,9 +105,14 @@ export function createTriggerSessionDriver(deps: {
         let openedOn: string | null;
 
         if (resumeSessionId) {
+          const intent = follows === undefined ? {} : { follows };
           if (pins && model)
             await caller
-              .request(PIN_MODEL_METHOD, { sessionId: resumeSessionId, model })
+              .request(PIN_MODEL_METHOD, {
+                sessionId: resumeSessionId,
+                model,
+                ...intent,
+              })
               .catch((err: unknown) => {
                 throw new SessionModelError(
                   model,
@@ -134,12 +144,15 @@ export function createTriggerSessionDriver(deps: {
           openedOn = openedModel(res);
         }
 
+        const surface = steer
+          ? MESSAGE_SURFACE
+          : unattended
+            ? SCHEDULE_SURFACE
+            : null;
         caller.notify("session/prompt", {
           sessionId,
           prompt: [{ type: "text", text: task }],
-          ...(unattended && {
-            _meta: { platform: { surface: SCHEDULE_SURFACE } },
-          }),
+          ...(surface && { _meta: { platform: { surface } } }),
         });
 
         return { sessionId, openedOn };

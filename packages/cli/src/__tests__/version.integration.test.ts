@@ -16,15 +16,28 @@ const PKG_ROOT = resolve(HERE, "../..");
 interface Fixture {
   url: string;
   setResponse: (res: { status?: number; body?: string | object }) => void;
+  setNpmLatest: (latest: string | undefined) => void;
   close: () => Promise<void>;
 }
+
+const DIST_TAGS_PATH = "/-/package/%40dam-agents%2Fcli/dist-tags";
 
 async function startFixture(): Promise<Fixture> {
   let response: { status: number; body: string } = {
     status: 200,
     body: JSON.stringify({ serverVersion: "1.0.0", minClientVersion: "0.0.0" }),
   };
+  let npmLatest: string | undefined = "0.0.0";
   const server: Server = createServer((req, res) => {
+    if (req.url === DIST_TAGS_PATH) {
+      if (npmLatest === undefined) {
+        res.writeHead(503).end();
+        return;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ latest: npmLatest, rc: `${npmLatest}-rc1` }));
+      return;
+    }
     if (req.url !== "/api/version") {
       res.writeHead(404).end();
       return;
@@ -44,6 +57,9 @@ async function startFixture(): Promise<Fixture> {
         status,
         body: typeof body === "string" ? body : JSON.stringify(body ?? {}),
       };
+    },
+    setNpmLatest: (latest) => {
+      npmLatest = latest;
     },
     close: () => new Promise<void>((r) => server.close(() => r())),
   };
@@ -75,6 +91,14 @@ describe("dam version (integration)", () => {
 
   afterAll(async () => {});
 
+  function env(): Record<string, string> {
+    return {
+      HOME: home,
+      PATH: process.env.PATH ?? "",
+      npm_config_registry: fixture.url,
+    };
+  }
+
   async function configureServer(url: string) {
     const dir = join(home, ".config", "dam");
     await mkdir(dir, { recursive: true });
@@ -82,12 +106,9 @@ describe("dam version (integration)", () => {
   }
 
   it("no server configured: prints local line only, exit 0", async () => {
-    const r = await runDam(["version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
+    const r = await runDam(["version"], env());
     expect(r.exitCode).toBe(0);
-    expect(r.stdout.trim()).toBe(`dam ${LOCAL}`);
+    expect(r.stdout.trim()).toBe(`dam ${LOCAL}\nnpm latest 0.0.0`);
     expect(r.stdout).not.toContain("server");
     expect(r.stderr).toBe("");
   });
@@ -98,13 +119,11 @@ describe("dam version (integration)", () => {
     });
     await configureServer(fixture.url);
 
-    const r = await runDam(["version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
+    const r = await runDam(["version"], env());
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain(`dam ${LOCAL}`);
     expect(r.stdout).toContain("server 1.2.3 (min CLI 0.0.0)");
+    expect(r.stdout).toContain("npm latest 0.0.0");
   });
 
   it("server advertises no floor: omits the (min CLI ...) parenthetical", async () => {
@@ -113,10 +132,7 @@ describe("dam version (integration)", () => {
     });
     await configureServer(fixture.url);
 
-    const r = await runDam(["version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
+    const r = await runDam(["version"], env());
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain(`dam ${LOCAL}`);
     expect(r.stdout).toContain("server 1.2.3");
@@ -127,10 +143,7 @@ describe("dam version (integration)", () => {
   it("unreachable server: 'server unreachable' goes to stderr, exit 0", async () => {
     await configureServer("http://127.0.0.1:1");
 
-    const r = await runDam(["version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
+    const r = await runDam(["version"], env());
     expect(r.exitCode).toBe(0);
     expect(r.stdout).toContain(`dam ${LOCAL}`);
     expect(r.stdout).not.toContain("server unreachable");
@@ -139,17 +152,151 @@ describe("dam version (integration)", () => {
 
   it("BehindCurrent: warns to stderr, still exit 0, prints server line", async () => {
     fixture.setResponse({
-      body: { serverVersion: "99.0.0", minClientVersion: "0.0.0" },
+      body: {
+        serverVersion: "99.0.0",
+        minClientVersion: "0.0.0",
+        recommendedClientVersion: "99.0.0",
+      },
     });
     await configureServer(fixture.url);
 
-    const r = await runDam(["version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
+    const r = await runDam(["version"], env());
     expect(r.exitCode).toBe(0);
-    expect(r.stderr).toMatch(/warning:.*behind server 99\.0\.0/);
-    expect(r.stdout).toContain("server 99.0.0 (min CLI 0.0.0)");
+    expect(r.stderr).toMatch(
+      /warning:.*behind the server's recommended CLI 99\.0\.0/,
+    );
+    expect(r.stdout).toContain(
+      "server 99.0.0 (min CLI 0.0.0, recommended CLI 99.0.0)",
+    );
+  });
+
+  // TEST_SCENARIO: a dev server built from main reports `<version>-dev-<sha>` and recommends no CLI, so only npm can tell that the CLI is old. An agent reads the verdict from `--json` and must see that it is not up to date.
+  it("dev server, npm has a newer CLI: warns, and --json says the CLI is not up to date", async () => {
+    fixture.setResponse({
+      body: { serverVersion: "0.2.24-dev-db35e8abf4bd" },
+    });
+    fixture.setNpmLatest("99.0.0");
+    await configureServer(fixture.url);
+
+    const text = await runDam(["version"], env());
+    expect(text.exitCode).toBe(0);
+    expect(text.stdout).toContain("server 0.2.24-dev-db35e8abf4bd\n");
+    expect(text.stdout).toContain("npm latest 99.0.0");
+    expect(text.stderr).toContain(
+      `warning: CLI ${LOCAL} is behind 99.0.0, the latest on npm`,
+    );
+    expect(text.stderr).toContain("npm install -g @dam-agents/cli@latest");
+
+    const json = await runDam(["version", "--json"], env());
+    expect(json.exitCode).toBe(0);
+    expect(JSON.parse(json.stdout)).toEqual({
+      cliVersion: LOCAL,
+      serverVersion: "0.2.24-dev-db35e8abf4bd",
+      minClientVersion: null,
+      recommendedClientVersion: null,
+      latestCliVersion: "99.0.0",
+      verdict: "ok",
+      behindLatest: true,
+      upToDate: false,
+    });
+  });
+
+  it("--json: a current CLI is up to date", async () => {
+    fixture.setResponse({
+      body: {
+        serverVersion: "1.0.0",
+        minClientVersion: "0.0.0",
+        recommendedClientVersion: "0.0.0",
+      },
+    });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version", "--json"], env());
+    expect(r.exitCode).toBe(0);
+    expect(r.stderr).toBe("");
+    expect(JSON.parse(r.stdout)).toEqual({
+      cliVersion: LOCAL,
+      serverVersion: "1.0.0",
+      minClientVersion: "0.0.0",
+      recommendedClientVersion: "0.0.0",
+      latestCliVersion: "0.0.0",
+      verdict: "ok",
+      behindLatest: false,
+      upToDate: true,
+    });
+  });
+
+  it("--json: below the floor gives verdict below-floor", async () => {
+    fixture.setResponse({
+      body: { serverVersion: "1.0.0", minClientVersion: "99.0.0" },
+    });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version", "--json"], env());
+    expect(r.exitCode).toBe(0);
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      verdict: "below-floor",
+      minClientVersion: "99.0.0",
+      upToDate: false,
+    });
+  });
+
+  it("--json: nothing reachable reports nulls and the reasons, exit 0", async () => {
+    fixture.setNpmLatest(undefined);
+    await configureServer("http://127.0.0.1:1");
+
+    const r = await runDam(["version", "--json"], env());
+    expect(r.exitCode).toBe(0);
+    const report = JSON.parse(r.stdout) as Record<string, unknown>;
+    expect(report).toMatchObject({
+      cliVersion: LOCAL,
+      serverVersion: null,
+      latestCliVersion: null,
+      verdict: null,
+      behindLatest: null,
+      upToDate: null,
+    });
+    expect(report.serverError).toEqual(expect.any(String));
+    expect(report.latestError).toContain("503");
+  });
+
+  // TEST_SCENARIO: with npm unreachable and a dev server that recommends no CLI, nothing can tell whether the CLI is current. `upToDate` must say it does not know, not pass.
+  it("--json: npm unreachable and no recommended CLI gives upToDate null", async () => {
+    fixture.setNpmLatest(undefined);
+    fixture.setResponse({ body: { serverVersion: "0.2.24-dev-db35e8abf4bd" } });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version", "--json"], env());
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      verdict: "ok",
+      latestCliVersion: null,
+      upToDate: null,
+    });
+  });
+
+  it("--json: npm unreachable, the server's recommended CLI still decides", async () => {
+    fixture.setNpmLatest(undefined);
+    fixture.setResponse({
+      body: { serverVersion: "1.0.0", recommendedClientVersion: "0.0.0" },
+    });
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version", "--json"], env());
+    expect(JSON.parse(r.stdout)).toMatchObject({
+      verdict: "ok",
+      upToDate: true,
+    });
+  });
+
+  it("npm unreachable: says so on stderr, still prints the server line", async () => {
+    fixture.setNpmLatest(undefined);
+    await configureServer(fixture.url);
+
+    const r = await runDam(["version"], env());
+    expect(r.exitCode).toBe(0);
+    expect(r.stdout).toContain("server 1.0.0 (min CLI 0.0.0)");
+    expect(r.stdout).not.toContain("npm latest");
+    expect(r.stderr).toContain("npm unreachable");
   });
 
   it("BelowFloor: stronger stderr warning, still exit 0 (informational, not gated)", async () => {
@@ -158,10 +305,7 @@ describe("dam version (integration)", () => {
     });
     await configureServer(fixture.url);
 
-    const r = await runDam(["version"], {
-      HOME: home,
-      PATH: process.env.PATH ?? "",
-    });
+    const r = await runDam(["version"], env());
     expect(r.exitCode).toBe(0);
     expect(r.stderr).toContain(
       "below the server's minimum required version 99.0.0",

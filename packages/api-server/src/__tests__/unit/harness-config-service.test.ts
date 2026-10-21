@@ -11,7 +11,7 @@ import {
 } from "../../modules/harness-config/services/harness-config-service.js";
 import { harnessConfigSupported } from "../../modules/harness-config/index.js";
 
-type BumpCall = { agentId: string; events: unknown[] };
+type QueueCall = { agentId: string; change: unknown; inLock: boolean };
 type MergeCall = {
   agentId: string;
   patch: HarnessConfigSnapshotPatch;
@@ -26,36 +26,63 @@ function makeService(opts?: {
   granted?: GrantedProvider[];
 }) {
   const calls = {
-    bumps: [] as BumpCall[],
+    queues: [] as QueueCall[],
     enqueues: [] as string[],
     merges: [] as MergeCall[],
     pairs: [] as SessionPair[],
+    locked: 0,
+    retired: [] as {
+      agentId: string;
+      inLock: boolean;
+      harness?: string;
+    }[],
   };
+  let holdingLock = false;
   const service = createHarnessConfigService({
     ownerSub: "owner-1",
     surface: "ui",
-    runtimeMutator: {
-      bump: async (agentId, events) => {
-        calls.bumps.push({ agentId, events });
+    eventQueue: {
+      queue: async (agentId, change, tx) => {
+        calls.queues.push({
+          agentId,
+          change,
+          inLock: holdingLock && tx !== undefined,
+        });
         return 1;
       },
+    },
+    runtimeMutator: {
+      bump: async () => 1,
       enqueueAfterCommit: async (agentId) => {
         calls.enqueues.push(agentId);
       },
+      supersede: async () => {},
     },
     snapshotRepo: {
       read: async () => opts?.snapshot ?? null,
       merge: async (agentId, patch, mergeOpts) => {
         calls.merges.push({ agentId, patch, confirmed: mergeOpts.confirmed });
       },
+      locked: async (_agentId, work) => {
+        calls.locked += 1;
+        holdingLock = true;
+        try {
+          return await work({} as never);
+        } finally {
+          holdingLock = false;
+        }
+      },
     },
     pairRepo: {
       read: async () => null,
-      write: async (_agentId, pair) => {
+      readSaved: async () => ({ chat: null, channel: null, scheduled: null }),
+      write: async (_agentId, _kind, pair) => {
         calls.pairs.push(pair);
       },
+      clear: async () => {},
       grantedProviders: async () => opts?.granted ?? [],
     },
+    publishDefaults: async () => {},
     catalog: {
       default: "claude-code",
       harnesses: [
@@ -69,11 +96,17 @@ function makeService(opts?: {
       ],
       telemetryEnv: () => [],
     },
+    retireReset: async (agentId, tx, harness) => {
+      calls.retired.push({
+        agentId,
+        inLock: holdingLock && tx !== undefined,
+        ...(harness !== undefined && { harness }),
+      });
+    },
     isOwnedAgent: async () => opts?.owned ?? true,
     specHarness: async () => undefined,
     getCapabilities: async () => opts?.capabilities,
     isSettled: async () => opts?.settled ?? true,
-    now: () => 1000,
   });
   return { service, calls };
 }
@@ -101,7 +134,7 @@ describe("harness-config service: harnesses chosen per session", () => {
         configOptions: { effort: "high" },
       }),
     ).rejects.toThrow(/does not carry the codex harness/);
-    expect(calls.bumps).toEqual([]);
+    expect(calls.queues).toEqual([]);
   });
 
   it("sends a change for a carried harness with the harness named", async () => {
@@ -110,8 +143,9 @@ describe("harness-config service: harnesses chosen per session", () => {
       harness: "codex",
       configOptions: { effort: "high" },
     });
-    expect(calls.bumps[0]?.events[0]).toMatchObject({
-      payload: { harness: "codex", configOptions: { effort: "high" } },
+    expect(calls.queues[0]?.change).toMatchObject({
+      harness: "codex",
+      configOptions: { effort: "high" },
     });
   });
 
@@ -126,13 +160,13 @@ describe("harness-config service: harnesses chosen per session", () => {
       ],
     });
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: "lite",
         model: "x",
       }),
     ).rejects.toThrow(/cannot run on that provider/);
-    await service.rememberSessionPair("a1", {
+    await service.rememberSessionPair("a1", "chat", {
       harness: "codex",
       provider: "oai",
       model: "gpt-5",
@@ -155,7 +189,7 @@ describe("harness-config service: pairs on a runtime that routes by model name",
    * the agent does not hold is refused naming the alias. */
   it("saves a qualified model with the provider it names", async () => {
     const { service, calls } = makeService({ capabilities: ROUTED, granted });
-    await service.rememberSessionPair("a1", {
+    await service.rememberSessionPair("a1", "chat", {
       harness: "codex",
       provider: null,
       model: "openai/gpt-5.5",
@@ -164,14 +198,14 @@ describe("harness-config service: pairs on a runtime that routes by model name",
       { harness: "codex", provider: "oai", model: "openai/gpt-5.5" },
     ]);
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: "oai",
         model: "gpt-5.5",
       }),
     ).rejects.toThrow(/name the model with its provider/);
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: null,
         model: "cb/glm",
@@ -184,7 +218,7 @@ describe("harness-config service: pairs on a runtime that routes by model name",
   it("refuses a default with no model", async () => {
     const { service, calls } = makeService({ capabilities: ROUTED, granted });
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: "oai",
         model: null,
@@ -209,13 +243,13 @@ describe("harness-config service: pairs on a runtime that routes by model name",
       },
     });
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: null,
         model: "openai/gpt-4",
       }),
     ).rejects.toThrow(/does not list openai\/gpt-4/);
-    await service.rememberSessionPair("a1", {
+    await service.rememberSessionPair("a1", "chat", {
       harness: "codex",
       provider: null,
       model: "openai/gpt-5.5",
@@ -228,17 +262,48 @@ describe("harness-config service", () => {
   it("fires a one-shot harness-config event carrying the change, then enqueues", async () => {
     const { service, calls } = makeService();
     await service.apply("a1", { model: "opus", unset: ["mode"] });
-    expect(calls.bumps).toHaveLength(1);
-    expect(calls.bumps[0]!.agentId).toBe("a1");
-    expect(calls.bumps[0]!.events).toEqual([
+    expect(calls.queues).toEqual([
       {
-        id: "harness-config:a1:1000",
-        kind: "harness-config",
-        payload: { model: "opus", unset: ["mode"] },
-        expiresAt: new Date(1000 + 30 * 24 * 60 * 60 * 1000),
+        agentId: "a1",
+        change: { model: "opus", unset: ["mode"] },
+        inLock: true,
       },
     ]);
+    expect(calls.merges).toHaveLength(1);
     expect(calls.enqueues).toEqual(["a1"]);
+  });
+
+  // TEST_SCENARIO: an owner who chooses a mode outranks a pending one-off correction, so the choice retires it in the same locked transaction; a runtime report of the old mode arriving afterwards cannot bring the correction back. A change that carries no mode leaves the correction alone for its pass to finish, and the choice names the harness it is about, so the retirement can be scoped to the harness the correction repairs.
+  it("retires a pending reset only for a mode choice on the harness it repairs", async () => {
+    const chosen = makeService({ capabilities: CARRIES_CODEX });
+    await chosen.service.apply("a1", { harness: "claude-code", mode: "plan" });
+    const unset = makeService();
+    await unset.service.apply("a1", { unset: ["mode"] });
+    const modelOnly = makeService();
+    await modelOnly.service.apply("a1", { model: "opus" });
+    const otherHarness = makeService({ capabilities: CARRIES_CODEX });
+    await otherHarness.service.apply("a1", {
+      harness: "codex",
+      mode: "read-only",
+    });
+    const otherHarnessUnset = makeService({ capabilities: CARRIES_CODEX });
+    await otherHarnessUnset.service.apply("a1", {
+      harness: "codex",
+      unset: ["mode"],
+    });
+
+    expect(chosen.calls.retired).toEqual([
+      { agentId: "a1", inLock: true, harness: "claude-code" },
+    ]);
+    expect(chosen.calls.queues[0]?.inLock).toBe(true);
+    expect(unset.calls.retired).toEqual([{ agentId: "a1", inLock: true }]);
+    expect(modelOnly.calls.retired).toEqual([]);
+    expect(otherHarness.calls.retired).toEqual([
+      { agentId: "a1", inLock: true, harness: "codex" },
+    ]);
+    expect(otherHarnessUnset.calls.retired).toEqual([
+      { agentId: "a1", inLock: true, harness: "codex" },
+    ]);
   });
 
   it("rejects apply for an agent the caller doesn't own (no event fired)", async () => {
@@ -246,7 +311,7 @@ describe("harness-config service", () => {
     await expect(service.apply("a1", { model: "opus" })).rejects.toMatchObject({
       code: "NOT_FOUND",
     });
-    expect(calls.bumps).toHaveLength(0);
+    expect(calls.queues).toHaveLength(0);
     expect(calls.enqueues).toHaveLength(0);
   });
 
@@ -267,6 +332,7 @@ describe("harness-config service", () => {
       catalog: null,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -279,6 +345,7 @@ describe("harness-config service", () => {
       catalog: null,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -289,6 +356,7 @@ describe("harness-config service", () => {
       catalog: null,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -314,6 +382,7 @@ describe("harness-config service", () => {
       catalog,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });

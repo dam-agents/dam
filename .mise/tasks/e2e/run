@@ -86,6 +86,16 @@ cleanup() {
           kubectl exec -n "$ns" "$name" -- sh -c "$vmm_procs" sh "$port" </dev/null 2>&1 || true
         done
     echo ""
+    echo "--- api-server error lines, whole log (current, then previous container) ---"
+    # The per-pod logs below keep the last 200 lines; a 500 early in the suite is long gone from them by the time it fails.
+    for pod in $(kubectl get pods -n default -l app.kubernetes.io/component=apiserver -o name 2>/dev/null); do
+      for previous in false true; do
+        echo "### $pod (previous=$previous) ###"
+        kubectl logs -n default "$pod" -c apiserver --previous="$previous" 2>&1 \
+          | grep -E '"level":"(error|fatal)"' | tail -n 300 || true
+      done
+    done
+    echo ""
     echo "--- Logs from Platform pods ---"
     for ns in default platform-agents; do
       for pod in $(kubectl get pods -n "$ns" -o name 2>/dev/null); do

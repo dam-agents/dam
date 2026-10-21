@@ -302,17 +302,16 @@ func (r *AgentReconciler) ownerLock(owner string) *sync.Mutex {
 	return l
 }
 
-func (r *AgentReconciler) publishOverBudget(ctx context.Context, agent *apiv1.Agent, msg string) error {
-	return r.publishParked(ctx, agent, apiv1.ReasonOverBudget, msg)
+// UNIT_BOUNDARY_DESCRIPTION: the conditions a parked agent carries, for the reconcile that writes them beside the kill in one status update.
+func parkStatus(s *apiv1.AgentStatus, gen int64, reason, msg string) {
+	setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", reason, msg, gen)
+	setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, gen)
+	setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
+	s.ObservedGeneration = gen
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: a parked agent is not ready for a reason of the caller's, and a start waiting for the node reads as a start in progress rather than as a refusal: its own reasons keep a wake waiting for it, where OverBudget fails the wake at once, and leave the budget surfaces that key on OverBudget alone.
-func (r *AgentReconciler) publishParked(ctx context.Context, agent *apiv1.Agent, reason, msg string) error {
-	gen := agent.Generation
-	return updateAgentStatus(ctx, r.dynamic, r.config.Namespace, agent.Name, func(s *apiv1.AgentStatus) {
-		setStatusCondition(s, apiv1.ConditionReady, false, "AllPodsReady", reason, msg, gen)
-		setStatusCondition(s, apiv1.ConditionAgentPodReady, false, "PodReady", reason, msg, gen)
-		setStatusCondition(s, apiv1.ConditionReconciled, true, "Reconciled", "", "", gen)
-		s.ObservedGeneration = gen
-	})
+// UNIT_BOUNDARY_DESCRIPTION: a parked agent is not ready for a reason of the caller's, and a start waiting for the node reads as a start in progress rather than as a refusal: its own reasons keep a wake waiting for it, where OverBudget fails the wake at once, and leave the budget surfaces that key on OverBudget alone. It is written beside the kill in one status update, since both conditions belong to the same reconcile.
+// UNIT_BOUNDARY_DESCRIPTION: the owner's lock, for a caller outside this package that must serialize with the reconciler's own work on that owner. The idle checker takes it around its pin read and its halt, so a runner roll cannot start in between.
+func (r *AgentReconciler) OwnerLock(owner string) *sync.Mutex {
+	return r.ownerLock(owner)
 }

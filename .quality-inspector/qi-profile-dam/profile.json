@@ -19,7 +19,15 @@
     "default_candidate": "main",
     "default_baseline": "release",
     "helm_version": "{{config:helm_version}}",
-    "credentials": { "users": { "owner": { "username": "qa-owner" } }, "secrets": ["keycloak_admin"] },
+    "credentials": {
+      "users": {
+        "owner": { "username": "qa-owner" },
+        "member": { "username": "qa-member" },
+        "inspector": { "username": "qa-inspector" },
+        "outsider": { "username": "qa-outsider" }
+      },
+      "secrets": ["keycloak_admin"]
+    },
     "prerequisites": [
       { "kind": "manifest", "name": "cert-manager",
         "url": "https://github.com/cert-manager/cert-manager/releases/download/{{config:cert_manager_version}}/cert-manager.yaml",
@@ -43,14 +51,23 @@
       "terms": { "version": "qa", "text": "Nested QA environment." },
       "keycloak": {
         "admin": { "password": "{{secret:keycloak_admin}}" },
-        "testUser": { "enabled": true, "username": "{{user:owner.username}}", "password": "{{user:owner.password}}" }
-      }
+        "testUser": { "enabled": true, "username": "{{user:owner.username}}", "password": "{{user:owner.password}}" },
+        "extraTestUsers": [
+          { "username": "{{user:member.username}}", "password": "{{user:member.password}}", "firstName": "Member" },
+          { "username": "{{user:inspector.username}}", "password": "{{user:inspector.password}}", "firstName": "Inspector", "groups": ["inspectors"] },
+          { "username": "{{user:outsider.username}}", "password": "{{user:outsider.password}}", "firstName": "Outsider" }
+        ]
+      },
+      "controller": { "gatewayUpstreamExtraCAs": "{{gateway_ca}}" }
     },
     "overlays": [
       { "when": "mock_image", "values": { "harnessTemplates": { "mock": {
         "enabled": true, "harness": "mock", "description": "Scripted mock agent (QA)",
         "image": { "repository": "{{config_repo:mock_image}}", "tag": "{{config_tag:mock_image}}" },
-        "env": [ { "name": "MOCK_DEFAULT_REPLY", "value": "Hello from the mock agent." } ] } } } }
+        "env": [ { "name": "MOCK_DEFAULT_REPLY", "value": "Hello from the mock agent." } ] } } } },
+      { "when": "@sandbox:github", "values": { "controller": { "gatewayEgress": { "extraCidrs": ["{{gateway_ip}}/32"] } } } },
+      { "when": "@sandbox:slack", "values": { "apiServer": {
+        "slackAppToken": "{{sandbox:slack.APP_TOKEN}}", "slackBotToken": "{{sandbox:slack.BOT_TOKEN}}" } } }
     ]
   },
   "boundary": { "github_paths": ["actions/runs?per_page=1", "releases?per_page=1"], "urls": [] },
@@ -59,16 +76,29 @@
     { "host": "*.quay.io", "method": "GET", "why": "image layers" },
     { "host": "get.helm.sh", "method": "GET", "why": "the helm binary" },
     { "host": "mirror.gcr.io", "method": "GET", "why": "SeaweedFS, Envoy, CoreDNS and job images (Docker Hub mirror; layers come from the same host)" },
-    { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" }
+    { "host": "istio-release.storage.googleapis.com", "method": "GET", "why": "Istio charts" },
+    { "host": "api.github.com", "method": "POST", "path": "/repos/{profile.sandbox_github_repo}/issues", "why": "sandbox: an agent files the issue a test asks for" },
+    { "host": "api.github.com", "method": "PATCH", "path": "/repos/{profile.sandbox_github_repo}/issues/*", "why": "sandbox: the agent or the test closes it" },
+    { "host": "slack.com", "why": "sandbox: DAM's Slack app (Web API, the Socket Mode handshake) and the test person; host-wide, so the gateway passes it through" },
+    { "host": "*.slack.com", "why": "sandbox: Slack's Socket Mode websocket (wss-primary.slack.com, wss-backup.slack.com); host-wide, so the gateway passes it through" }
   ],
   "canary": { "thing": "agent, created from the Mock template (New agent)", "field": "name" },
   "requires": { "root": true, "commands": ["k3s", "curl", "jq", "node"], "memory_gi": 12 },
+  "sandbox": {
+    "accounts": [
+      { "id": "github", "what": "a GitHub organization of its own with one repository, and a fine-grained token that may write issues in that repository only",
+        "guide": "sandbox/github.md", "credentials": ["TOKEN"] },
+      { "id": "slack", "what": "a free Slack workspace with one channel, DAM's Slack app in it, and a second person who writes to the agent",
+        "guide": "sandbox/slack.md", "credentials": ["BOT_TOKEN", "APP_TOKEN", "HUMAN_TOKEN", "CHANNEL_ID"] }
+    ]
+  },
   "config": {
     "chart_ref": { "default": "oci://quay.io/dam-agents/charts/platform", "about": "OCI chart the builds come from" },
     "mock_image": { "default": "quay.io/dam-agents/mock:cb334b15595863567e8a4d61474886a1cbf10aef", "about": "image of the scripted mock harness template, so nested agents answer without a model; empty = none" },
     "istio_version": { "default": "1.29.1", "about": "Istio CRDs only (istio-base), installed once in the nested cluster" },
     "cert_manager_version": { "default": "v1.21.2", "about": "cert-manager, installed once" },
     "gateway_api_version": { "default": "v1.2.0", "about": "Gateway API CRDs, installed once" },
-    "helm_version": { "default": "v3.19.0", "about": "helm downloaded into the home" }
+    "helm_version": { "default": "v3.19.0", "about": "helm downloaded into the home" },
+    "sandbox_github_repo": { "default": "", "ask": true, "about": "the sandbox repository an agent under test files issues in, <organization>/<repository>: an organization of its own, never the product's; empty = no GitHub sandbox" }
   }
 }

@@ -1,6 +1,7 @@
 import type { Subscription } from "rxjs";
 import type { Db } from "db";
 import type {
+  DefaultKind,
   DefaultModelNotice,
   HarnessCatalog,
   HarnessConfigService,
@@ -21,17 +22,58 @@ import { createHarnessConfigSnapshotRepo } from "./infrastructure/snapshot-repo.
 import { createRuntimeCatalogReader } from "./infrastructure/runtime-catalog.js";
 import { createScheduleModelForFire } from "./services/schedule-model.js";
 import { startConvertDefaultOnHelloSaga } from "./sagas/convert-default-on-hello.js";
+import { startPublishDefaultsOnHelloSaga } from "./sagas/publish-defaults-on-hello.js";
+import { createSessionDefaultsPublisher } from "./services/session-defaults-publisher.js";
 import {
   createDefaultConverter,
   type DefaultConverter,
   type WakeStamp,
 } from "./services/default-conversion.js";
+import { createHarnessConfigResetRepo } from "./infrastructure/reset-repo.js";
+import { createHarnessConfigReset } from "./services/harness-config-reset.js";
+import { createHarnessConfigEventQueue } from "./infrastructure/config-event-queue.js";
+import type { OutboxRepo } from "../runtime-delivery/index.js";
 import type { RuntimeMutator } from "../runtime-delivery/index.js";
 import { emit, EventType } from "../../events.js";
 import { createDefaultModelNoticeReader } from "./infrastructure/default-model-notices.js";
 
+export const ETE_BYPASS_RESET = {
+  reset: "ibm-litellm-bypass-mode",
+  template: "ibm-litellm",
+  harness: "claude-code",
+  from: "bypassPermissions",
+  to: "auto",
+} as const;
+
+export function composeHarnessConfigReset(deps: {
+  db: Db;
+  outboxRepo: OutboxRepo;
+  runtimeMutator: RuntimeMutator;
+  ownerOf: (agentId: string) => Promise<string | null>;
+  log: (msg: string) => void;
+}): { run(): Promise<{ reset: number; failed: number }> } {
+  return createHarnessConfigReset({
+    repo: createHarnessConfigResetRepo({
+      db: deps.db,
+      ...ETE_BYPASS_RESET,
+    }),
+    snapshotRepo: createHarnessConfigSnapshotRepo(deps.db),
+    eventQueue: createHarnessConfigEventQueue({
+      db: deps.db,
+      outboxRepo: deps.outboxRepo,
+    }),
+    enqueue: (agentId) => deps.runtimeMutator.enqueueAfterCommit(agentId),
+    ownerOf: deps.ownerOf,
+    harness: ETE_BYPASS_RESET.harness,
+    from: ETE_BYPASS_RESET.from,
+    to: ETE_BYPASS_RESET.to,
+    log: deps.log,
+  });
+}
+
 export function composeHarnessConfigModule(deps: {
   db: Db;
+  outboxRepo: OutboxRepo;
   surface: string;
   runtimeMutator: RuntimeMutator;
   catalog: HarnessCatalog;
@@ -41,12 +83,22 @@ export function composeHarnessConfigModule(deps: {
   specHarness: (agentId: string) => Promise<string | undefined>;
   isSettled: (agentId: string) => Promise<boolean>;
 }): { service: HarnessConfigService } {
-  const { db, ...serviceDeps } = deps;
+  const { db, outboxRepo, ...serviceDeps } = deps;
+  const resetRepo = createHarnessConfigResetRepo({ db, ...ETE_BYPASS_RESET });
+  const pairRepo = createSessionPairRepo(db);
   return {
     service: createHarnessConfigService({
       ...serviceDeps,
       snapshotRepo: createHarnessConfigSnapshotRepo(db),
-      pairRepo: createSessionPairRepo(db),
+      pairRepo,
+      eventQueue: createHarnessConfigEventQueue({ db, outboxRepo }),
+      retireReset: (agentId, tx, harness) =>
+        resetRepo.retire(agentId, tx, harness),
+      publishDefaults: createSessionDefaultsPublisher({
+        db,
+        pairRepo,
+        runtimeMutator: deps.runtimeMutator,
+      }),
     }),
   };
 }
@@ -68,6 +120,7 @@ export function composeSessionChoicesValidator(deps: {
 
 export type FirePair = (
   agentId: string,
+  kind: DefaultKind,
   preferred: { harness?: string; provider?: string; model?: string },
 ) => Promise<SessionPair | null | undefined>;
 
@@ -81,7 +134,8 @@ export function composeFirePair(deps: {
     ...deps,
     pairRepo: createSessionPairRepo(deps.db),
   };
-  return (agentId, preferred) => resolveFirePair(resolver, agentId, preferred);
+  return (agentId, kind, preferred) =>
+    resolveFirePair(resolver, agentId, kind, preferred);
 }
 
 export function composeDefaultConverter(deps: {
@@ -96,12 +150,24 @@ export function composeDefaultConverter(deps: {
   wake: (agentId: string) => Promise<WakeStamp | null>;
   lastHelloAt: (agentId: string) => Promise<number | null>;
   ownerOf: (agentId: string) => Promise<string | undefined>;
+  runtimeMutator: RuntimeMutator;
   log: (msg: string) => void;
 }): { converter: DefaultConverter; helloSaga: Subscription } {
-  const { db, namespace, ownerOf, ...rest } = deps;
+  const { db, namespace, ownerOf, runtimeMutator, ...rest } = deps;
+  const pairRepo = createSessionPairRepo(db);
+  const publishDefaults = createSessionDefaultsPublisher({
+    db,
+    pairRepo,
+    runtimeMutator,
+  });
   const converter = createDefaultConverter({
     ...rest,
     onSaved: (agentId) => {
+      void publishDefaults(agentId).catch((err: Error) =>
+        deps.log(
+          `[default-conversion] ${agentId}: sending the defaults failed: ${err.message}`,
+        ),
+      );
       void ownerOf(agentId)
         .then((ownerSub) => {
           if (!ownerSub) return;
@@ -114,21 +180,26 @@ export function composeDefaultConverter(deps: {
           ),
         );
     },
-    pairRepo: createSessionPairRepo(db),
+    pairRepo,
     snapshotRepo: createHarnessConfigSnapshotRepo(db),
     catalogView: createRuntimeCatalogReader(namespace),
   });
-  return { converter, helloSaga: startConvertDefaultOnHelloSaga(converter) };
+  const helloSaga = startConvertDefaultOnHelloSaga(converter);
+  helloSaga.add(startPublishDefaultsOnHelloSaga(publishDefaults));
+  return { converter, helloSaga };
 }
 
 export function composeConvertingFirePair(
   converter: DefaultConverter,
   firePair: FirePair,
-): (agentId: string) => Promise<SessionPair | null | undefined> {
-  return async (agentId) => {
+): (
+  agentId: string,
+  kind: DefaultKind,
+) => Promise<SessionPair | null | undefined> {
+  return async (agentId, kind) => {
     const outcome = await converter.convert(agentId);
     try {
-      return await firePair(agentId, {});
+      return await firePair(agentId, kind, {});
     } catch (err) {
       if (err instanceof NoDefaultModelError && outcome === "waiting")
         throw new NoDefaultModelError(undefined, { pending: true });

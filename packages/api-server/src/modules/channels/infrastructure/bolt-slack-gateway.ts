@@ -368,6 +368,16 @@ export function createBoltSlackGateway(
         });
       });
 
+      bolt.event("agent_session_stopped", async ({ event, context }) => {
+        await handlers.onSessionStopped({
+          channel: event.channel,
+          threadTs: event.thread_ts,
+          user: event.user,
+          streamingMessageTs: event.streaming_message_ts ?? [],
+          teamId: context.teamId ?? NO_WORKSPACE,
+        });
+      });
+
       bolt.command(deps.commandName, async ({ command, ack }) => {
         await handlers.onCommand(
           {
@@ -586,12 +596,23 @@ export function createBoltSlackGateway(
       if (!app) throw new Error("slack app not started");
       const token = await tokenFor(args.teamId);
       if (!token) throw new Error(INSTALL_TOKEN_MISSING);
-      await app.client.assistant.threads.setStatus({
+      const session = {
         token,
         channel_id: args.channel,
         thread_ts: args.threadTs,
-        status: args.status,
-      });
+      };
+      try {
+        await app.client.agents.sessions.setStatus({
+          ...session,
+          status: args.status ? "processing" : "active",
+        });
+      } catch (err) {
+        if (slackRefusal(err) === null) throw err;
+        await app.client.assistant.threads.setStatus({
+          ...session,
+          status: args.status,
+        });
+      }
     },
 
     async addReaction(args) {

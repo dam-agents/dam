@@ -1,7 +1,7 @@
 // TEST_OVERVIEW: The side panel's icon bar lists one button per visible tab, shows a count badge on a tab while it has one, such as the processes running now, keeps Get started and Approvals at its bottom, after the Agent's tabs, and outside an Agent's chat offers only Artifacts, Get started and Approvals.
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 
 import { TooltipProvider } from "../../components/ui/tooltip.js";
 import {
@@ -9,6 +9,10 @@ import {
   SidePanelBar,
 } from "../../modules/sessions/components/side-panel-bar.js";
 import { hiddenSidePanelTabs } from "../../modules/sessions/lib/side-panel.js";
+
+vi.mock("../../modules/features/hooks/use-new-layout.js", () => ({
+  useNewLayout: () => true,
+}));
 
 function render(processes?: SidePanelBadge) {
   return renderToStaticMarkup(
@@ -109,7 +113,7 @@ it("orders the tabs Artifacts, Files, Changes, Browser", () => {
   expect(order[0]).toBeGreaterThan(-1);
 });
 
-// TEST_SCENARIO: Home and every other page share the chat's icon bar, with Artifacts at the top beside Get started and Approvals at the bottom, and none of the Agent's tabs.
+// TEST_SCENARIO: Home and every other page outside an Agent share the chat's icon bar with only Get started and Approvals: no Agent tab, and no Artifacts, which has its own page.
 it("offers only the tabs that belong to no Agent outside a chat", () => {
   const html = renderToStaticMarkup(
     createElement(
@@ -119,6 +123,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
         active: null,
         hidden: hiddenSidePanelTabs({
           agent: false,
+          artifacts: false,
           canOpenBrowser: true,
           processesEnabled: true,
           gettingStarted: true,
@@ -130,7 +135,7 @@ it("offers only the tabs that belong to no Agent outside a chat", () => {
   const tabs = [
     ...html.matchAll(/data-testid="side-panel-tab-([a-z-]+)"/g),
   ].map((m) => m[1]);
-  expect(tabs).toEqual(["artifacts", "getting-started", "approvals"]);
+  expect(tabs).toEqual(["getting-started", "approvals"]);
 });
 
 // TEST_SCENARIO: The rail reads like an activity bar: 48 px square buttons with 24 px icons, and only the open tab carries the bar on its inner edge.
@@ -149,8 +154,8 @@ it("marks only the open tab with the inner-edge bar", () => {
   expect(html).toContain('width="24"');
 });
 
-// TEST_SCENARIO: In the new layout the rail matches the sidebar strip: 40 px rounded tiles with 20 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
-it("draws the new layout's tiles, with the bar on the right edge", () => {
+// TEST_SCENARIO: In JanUI the rail matches the sidebar strip: 40 px rounded tiles with 20 px icons, only the open tab filled and carrying the bar on the rail's outer right edge, and Documentation as a tile between Get started and Approvals.
+it("draws JanUI's tiles, with the bar on the right edge", () => {
   const html = renderToStaticMarkup(
     createElement(
       TooltipProvider,

@@ -1,0 +1,30 @@
+#!/usr/bin/env node
+//MISE description="drizzle skips a migration older than the newest applied one, so journal timestamps must increase with index"
+//MISE sources=["drizzle/meta/_journal.json"]
+//MISE outputs=[]
+//MISE cache.enabled=true
+// UNIT_BOUNDARY_DESCRIPTION: drizzle's migrator records the newest applied
+import { readFileSync } from "node:fs";
+
+const journal = JSON.parse(
+  readFileSync(
+    new URL("../../../drizzle/meta/_journal.json", import.meta.url),
+    "utf8",
+  ),
+);
+const entries = journal.entries;
+for (const [position, entry] of entries.entries()) {
+  if (entry.idx !== position)
+    throw new Error(
+      `❌ migration ${entry.tag} is index ${entry.idx}, expected ${position}`,
+    );
+  const previous = entries[position - 1];
+  if (previous && entry.when <= previous.when)
+    throw new Error(
+      `❌ migration ${entry.tag} is stamped ${entry.when}, not after ${previous.tag} at ${previous.when}\n` +
+        `   An installation that applied ${previous.tag} would skip this one. Regenerate it after ${previous.tag}.`,
+    );
+}
+console.log(
+  `✅ Journal timestamps increase with index across ${entries.length} migrations.`,
+);

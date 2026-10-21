@@ -1,6 +1,6 @@
 # Agent processes
 
-Last verified: 2026-10-19
+Last verified: 2026-10-20
 
 ## Overview
 
@@ -39,7 +39,7 @@ A harness that stopped answering is recycled regardless, since a wedged harness 
 
 Only work a harness *supervises* reaches its report, which bounds what the contract promises.
 A job the agent detached from the harness is invisible to it, and what is reported can be adjacent to the real work — a detached loop whose progress a supervised log tail watches holds the session for the tail.
-Nothing times a hold out, so an agent with reported work does not scale to zero until that work ends; [sleep](agent-lifecycle.md#hibernate) reclaims it regardless, and an install can refuse holds outright.
+Nothing times a hold out, so an agent with reported work does not scale to zero until that work ends; [sleep](agent-lifecycle.md#hibernate) reclaims it regardless.
 
 ## Process inventory
 
@@ -111,7 +111,6 @@ The agent marks through the runtime's in-pod surface, from inside the agent only
 Once the user has decided about a process, a later mark on it is refused with a message that names the user's choice, so the agent can ask instead.
 This, like the reported contract, is not a security boundary — the agent could kill its own work anyway — but a rule an honest agent follows.
 Kept Detached Processes keep the agent awake next to kept Harness Tasks, but never hold back a harness recycle.
-With holds refused by the install, Harness Task reports are discarded, so none is listed, and nothing keeps the agent awake: a Detached Process row still says who decided, and `platform-keep` still records its mark, but neither holds the agent.
 
 Marks and user choices live in the processes document, keyed so a reused pid never inherits one, and go on a new boot with everything else boot-scoped.
 

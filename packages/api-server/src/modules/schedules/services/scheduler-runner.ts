@@ -219,7 +219,7 @@ export function createSchedulerRunner(
     }
     const pair = continues
       ? undefined
-      : await deps.firePair?.(sched.agentId, {
+      : await deps.firePair?.(sched.agentId, "scheduled", {
           ...(sched.spec.harness && { harness: sched.spec.harness }),
           ...(model && { model }),
         });
@@ -238,6 +238,7 @@ export function createSchedulerRunner(
       if (pair.settings) payload.settings = pair.settings;
     }
     if (sched.spec.settings) payload.settings = sched.spec.settings;
+    if (pair && Object.keys(choices).length === 0) payload.onDefault = true;
     if (sched.status?.lastRun) payload.lastRunAt = sched.status.lastRun;
     if (sched.spec.type === "once") {
       payload.once = true;

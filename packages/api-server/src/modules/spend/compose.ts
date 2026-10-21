@@ -11,6 +11,7 @@ import {
   operatorPrices,
   type OperatorPriceInput,
 } from "./infrastructure/operator-prices.js";
+import { createLastKnownNames } from "./infrastructure/last-known-names.js";
 import { createSpendLedger } from "./infrastructure/spend-ledger.js";
 import { createSpendLimits } from "./infrastructure/spend-limits.js";
 import {
@@ -21,6 +22,7 @@ import {
   startExtendOnContinueSaga,
   type SpendQuestions,
 } from "./sagas/extend-on-continue.js";
+import { startKeepLastKnownNameSaga } from "./sagas/keep-last-known-name.js";
 import {
   createDayTotals,
   createSpendCheck,
@@ -35,8 +37,10 @@ import {
 } from "./services/spend-ingest.js";
 import {
   createSpendService,
+  type AgentNames,
   type AgentPayers,
   type ConnectionNames,
+  type InvocationTasks,
   type OwnedAgentAges,
   type SessionCategories,
   type SpendQuestionCloser,
@@ -62,6 +66,7 @@ export interface SpendSystem {
   ingest: SpendIngest;
   check: SpendCheck;
   extendSaga: Subscription;
+  lastKnownNameSaga: Subscription;
   agentSpend: AgentSpendReader;
   callRowsRetentionTick(): Promise<void>;
   forOwner(deps: {
@@ -83,6 +88,8 @@ export function composeSpendSystem(deps: {
   defaultCeilingMicros: number | null;
   brandName: string;
   connectionNames: ConnectionNames;
+  agentNames: AgentNames;
+  invocationTasks: InvocationTasks;
   ownedAgents: OwnedAgentAges;
   sessions: SessionOwnership & SessionCategories;
   subAgents: SpawnedSubAgents;
@@ -91,6 +98,7 @@ export function composeSpendSystem(deps: {
   const ledger = createSpendLedger(deps.db);
   const counters = createRedisDayCounters(deps.redis);
   const limits = createSpendLimits(deps.db);
+  const lastKnownNames = createLastKnownNames(deps.db);
   const ceilings = createUserSpendCeilings({
     k8s: deps.k8s,
     defaultMicros: deps.defaultCeilingMicros,
@@ -144,6 +152,7 @@ export function composeSpendSystem(deps: {
       questions: deps.questions,
       limits,
     }),
+    lastKnownNameSaga: startKeepLastKnownNameSaga({ names: lastKnownNames }),
     forOwner: (owner) =>
       createSpendService({
         ledger,
@@ -157,6 +166,11 @@ export function composeSpendSystem(deps: {
         subAgents: deps.subAgents,
         meteringStart,
         connectionNames: () => deps.connectionNames.namesOf(owner.ownerSub),
+        liveAgentNames: () => deps.agentNames.namesOf(owner.ownerSub),
+        lastKnownNames: (agentIds) =>
+          lastKnownNames.namesOf(owner.ownerSub, agentIds),
+        invocationTasks: (agentIds) =>
+          deps.invocationTasks.tasksOf(owner.ownerSub, agentIds),
         ownedAgentCreatedBefore: (at) =>
           deps.ownedAgents.anyCreatedBefore(owner.ownerSub, at),
         telemetryStoreOn: deps.telemetryStoreOn,

@@ -22,6 +22,8 @@ export enum EventType {
   AgentWoken = "AgentWoken",
   SlackConnected = "SlackConnected",
   SlackDisconnected = "SlackDisconnected",
+  TelegramChatBound = "TelegramChatBound",
+  TelegramChatUnbound = "TelegramChatUnbound",
   ChannelTurnRelayed = "ChannelTurnRelayed",
   ChannelMessageSent = "ChannelMessageSent",
   SessionTurnRelayed = "SessionTurnRelayed",
@@ -39,6 +41,7 @@ export enum EventType {
   ApprovalRequested = "ApprovalRequested",
   ApprovalResolved = "ApprovalResolved",
   SpendLimitsChanged = "SpendLimitsChanged",
+  GatewayCallEnded = "GatewayCallEnded",
   ScheduleCreated = "ScheduleCreated",
   ScheduleUpdated = "ScheduleUpdated",
   ScheduleDeleted = "ScheduleDeleted",
@@ -67,6 +70,7 @@ export enum EventType {
   StarterKitOnboarded = "StarterKitOnboarded",
   IdentityLinked = "IdentityLinked",
   AgentOutOfMemory = "AgentOutOfMemory",
+  AgentResourceRemoved = "AgentResourceRemoved",
   AvatarUnlocked = "AvatarUnlocked",
   GettingStartedReset = "GettingStartedReset",
 }
@@ -118,6 +122,19 @@ export type SlackDisconnected = {
   type: EventType.SlackDisconnected;
   agentId: string;
   slackChannelId?: string;
+  ownerSub?: string | null;
+};
+
+export type TelegramChatBound = {
+  type: EventType.TelegramChatBound;
+  agentId: string;
+  ownerSub: string;
+};
+
+export type TelegramChatUnbound = {
+  type: EventType.TelegramChatUnbound;
+  agentId: string;
+  ownerSub: string;
 };
 
 export type ChannelTurnRelayed = {
@@ -234,6 +251,15 @@ export type ApprovalResolved = {
 export type SpendLimitsChanged = {
   type: EventType.SpendLimitsChanged;
   ownerSub: string;
+};
+
+export type GatewayCallEnded = {
+  type: EventType.GatewayCallEnded;
+  payer: string;
+  providers: readonly string[];
+  status: number | null;
+  refusedByGate: boolean;
+  endedAt: Date;
 };
 
 export type ScheduleCreated = {
@@ -466,6 +492,13 @@ export type AgentOutOfMemory = {
   memory?: string;
 };
 
+export type AgentResourceRemoved = {
+  type: EventType.AgentResourceRemoved;
+  agentId: string;
+  ownerSub: string;
+  name: string;
+};
+
 export type AvatarUnlocked = {
   type: EventType.AvatarUnlocked;
   ownerSub: string;
@@ -487,6 +520,8 @@ export type DomainEvent =
   | AgentWoken
   | SlackConnected
   | SlackDisconnected
+  | TelegramChatBound
+  | TelegramChatUnbound
   | ChannelTurnRelayed
   | ChannelMessageSent
   | ScheduleFired
@@ -503,6 +538,7 @@ export type DomainEvent =
   | ApprovalRequested
   | ApprovalResolved
   | SpendLimitsChanged
+  | GatewayCallEnded
   | ScheduleCreated
   | ScheduleUpdated
   | ScheduleDeleted
@@ -532,6 +568,7 @@ export type DomainEvent =
   | StarterKitOnboarded
   | IdentityLinked
   | AgentOutOfMemory
+  | AgentResourceRemoved
   | AvatarUnlocked
   | GettingStartedReset;
 

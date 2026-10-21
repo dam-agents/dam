@@ -4,12 +4,16 @@ import type {
 } from "agent-runtime-api";
 import type { z } from "zod";
 import type {
+  defaultKindSchema,
   harnessConfigSnapshotResultSchema,
   harnessConfigSnapshotSchema,
+  sessionDefaultsSchema,
   sessionPairSchema,
 } from "./schemas.js";
 
 export type SessionPair = z.infer<typeof sessionPairSchema>;
+export type DefaultKind = z.infer<typeof defaultKindSchema>;
+export type SessionDefaults = z.infer<typeof sessionDefaultsSchema>;
 
 export interface HarnessConfigChange {
   harness?: string;
@@ -24,6 +28,7 @@ export interface HarnessConfigStatus {
   catalog: HarnessConfigCatalog | null;
   sessionModel: boolean;
   modelRouter: boolean;
+  followsDefaults: boolean;
   defaultHarness: string | null;
   harnesses: HarnessCapability[] | null;
 }
@@ -50,7 +55,20 @@ export interface HarnessConfigService {
     agentId: string,
     harness?: string,
   ): Promise<HarnessConfigSnapshotResult>;
-  sessionPair(agentId: string): Promise<SessionPair | null>;
-  rememberSessionPair(agentId: string, pair: SessionPair): Promise<void>;
-  defaultFor(agentId: string, harness?: string): Promise<SessionPair | null>;
+  sessionPair(agentId: string, kind: DefaultKind): Promise<SessionPair | null>;
+  sessionDefaults(agentId: string): Promise<SessionDefaults>;
+  rememberSessionPair(
+    agentId: string,
+    kind: DefaultKind,
+    pair: SessionPair,
+  ): Promise<void>;
+  clearSessionDefault(
+    agentId: string,
+    kind: Exclude<DefaultKind, "chat">,
+  ): Promise<void>;
+  defaultFor(
+    agentId: string,
+    kind: DefaultKind,
+    harness?: string,
+  ): Promise<SessionPair | null>;
 }

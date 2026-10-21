@@ -3,6 +3,7 @@ import type { TemplateSpec } from "api-server-api";
 import {
   assembleSpecFromTemplate,
   concreteResources,
+  resolveEffectiveHibernationTimeoutMin,
 } from "../../modules/agents/domain/spec-assembly.js";
 
 const baseTemplate: TemplateSpec = {
@@ -94,6 +95,38 @@ describe("assembleSpecFromTemplate", () => {
     );
     expect(spec.backend).toBeUndefined();
     expect(spec.runtimeClassName).toBe("kata");
+  });
+});
+
+describe("resolveEffectiveHibernationTimeoutMin", () => {
+  const idle = { container: 30, vm: 5 };
+
+  // TEST_SCENARIO: the CRD carries a Go duration, so a Template can seed a unit
+  // TEST_SCENARIO: the minute parser never sees. The controller treats a
+  // TEST_SCENARIO: positive nanosecond override as awake-for-an-instant, never
+  // TEST_SCENARIO: as never-hibernate, so this must not project it to zero.
+  it("keeps a positive sub-minute vm override awake rather than never-hibernate", () => {
+    expect(resolveEffectiveHibernationTimeoutMin("1ns", true, idle)).toBe(1);
+    expect(resolveEffectiveHibernationTimeoutMin("1500ms", true, idle)).toBe(1);
+  });
+
+  it("reads a Go duration the minute parser would have dropped", () => {
+    expect(resolveEffectiveHibernationTimeoutMin("90s", true, idle)).toBe(2);
+    expect(resolveEffectiveHibernationTimeoutMin("2h", false, idle)).toBe(120);
+  });
+
+  it("keeps zero as never-hibernate on both backends", () => {
+    expect(resolveEffectiveHibernationTimeoutMin("0s", true, idle)).toBe(0);
+    expect(resolveEffectiveHibernationTimeoutMin("0s", false, idle)).toBe(0);
+  });
+
+  it("inherits the backend's default when the Agent carries no override", () => {
+    expect(resolveEffectiveHibernationTimeoutMin(undefined, true, idle)).toBe(
+      5,
+    );
+    expect(resolveEffectiveHibernationTimeoutMin(undefined, false, idle)).toBe(
+      30,
+    );
   });
 });
 

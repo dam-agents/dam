@@ -7,6 +7,7 @@ import type {
   HarnessConfigService,
   Plugin,
   RuntimeChannelService,
+  SessionDefaultsEventPayload,
   SessionDirectoryEntry,
 } from "agent-runtime-api";
 import type { DocumentStoreBackend } from "../../core/document-store.js";
@@ -24,10 +25,12 @@ import { bindingsFingerprint } from "./domain/bindings-fingerprint.js";
 import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
+import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
 import { createAgentInstructionsPlugin } from "./drivers/agent-instructions-plugin.js";
+import { createSessionDefaultsPlugin } from "./drivers/session-defaults-plugin.js";
 import {
   createInitializationPlugin,
   createSubAgentOutcomePlugin,
@@ -42,6 +45,7 @@ import {
 import { createPluginRegistry } from "./infrastructure/plugin-registry.js";
 import { loadExtensions } from "./infrastructure/extension-loader.js";
 import type { HarnessClient } from "./harness-client.js";
+import type { InvocationWatch } from "./services/invocation-watch.js";
 import { createRuntimeChannelService } from "./service.js";
 import {
   createHarnessConfigPlugin,
@@ -81,7 +85,9 @@ export interface ComposeRuntimeChannelOpts {
   stateBackend: DocumentStoreBackend;
   harnessClient: HarnessClient;
   triggerDriver: TriggerSessionDriver;
+  invocationWatch: Pick<InvocationWatch, "watch">;
   subAgentSessions: SubAgentSessionStore;
+  onSessionDefaults: (defaults: SessionDefaultsEventPayload) => void;
   findSessionByRef?: (ref: string) => string | undefined;
   readSessions: () => readonly SessionDirectoryEntry[];
   plugins: readonly Plugin[];
@@ -168,6 +174,7 @@ export async function composeRuntimeChannel(
         ? { findSessionByRef: opts.findSessionByRef }
         : {}),
       ...(opts.catalog ? { catalogListed: () => opts.catalog!.listed() } : {}),
+      invocationWatch: opts.invocationWatch,
     }),
   );
   const spawnEnv = () => mergedSpawnEnv(opts.envReader);
@@ -180,6 +187,9 @@ export async function composeRuntimeChannel(
   registry.register(createAgentInstructionsPlugin({ log }));
   registry.register(createInitializationPlugin({ driver: opts.triggerDriver }));
   registry.register(
+    createSessionDefaultsPlugin({ onDefaults: opts.onSessionDefaults }),
+  );
+  registry.register(
     createSatelliteOutcomePlugin({ driver: opts.triggerDriver }),
   );
   registry.register(
@@ -187,6 +197,9 @@ export async function composeRuntimeChannel(
       driver: opts.triggerDriver,
       sessions: opts.subAgentSessions,
     }),
+  );
+  registry.register(
+    createSessionMessagePlugin({ driver: opts.triggerDriver, reporter, log }),
   );
 
   const discoverModels = createModelDiscovery({ log });
@@ -348,7 +361,13 @@ export async function composeRuntimeChannel(
               sessionSettings: plugin.sessionSettings,
               platformSubagentSettings: true,
             }),
+            ...(plugin?.derivedStartMode && {
+              derivedStartMode: plugin.derivedStartMode,
+            }),
             ...(nativeTemplates?.length && { nativeTemplates }),
+            ...(opts.manifests[name]?.sessionMcpEntry === false && {
+              identifiesSession: false,
+            }),
           };
         }),
         kbPublish: 2,

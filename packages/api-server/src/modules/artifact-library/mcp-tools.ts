@@ -44,7 +44,7 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "create_artifact",
-    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library. PREFER THIS for handing work products to humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Artifacts are private by default: only the user sees them, in the app. Keep them private until the user picks how to share; publishing is not sharing. Set visibility='public' only when the user asks for a link anyone can open (the unguessable URL is the access control). Say in your reply whether the artifact is private or public. Set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app's Share dialog; this tool cannot set it or change an artifact that is already restricted. When the user asks to share, name the three levels and recommend the narrowest that fits: private (only the user, in the app), Restricted (only people the user invites, by email address, in the app's Share dialog; you cannot set it), or public (anyone with the link). The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
+    "Publish an artifact (HTML page, React/JSX component, markdown, code, text, or a binary file) to the platform artifact library. PREFER THIS for handing work products to humans — artifacts outlive this sandbox, are versioned, and render on a share page (HTML/JSX render live; markdown and code render formatted). Content must be a single self-contained file: anything available only in your sandbox — companion files, installed packages, running services — does not exist for viewers, so inline all resources or reference them via absolute public URLs. Provide `content` inline for text, or `upload_ref` from create_artifact_upload_url for anything big or binary. Artifacts are private by default: only the user sees them, in the app. Keep them private until the user picks how to share; publishing is not sharing. Set visibility='public' only when the user asks for a link anyone can open (the unguessable URL is the access control). Before you publish, call list_artifact_folders: when one of the user's folders fits the artifact by its name, pass its id as `folder_id`; when none fits, leave the artifact ungrouped — do not create a folder unless the user asks for one. A folder the user or your instructions name for this work wins over your own match. Say in your reply whether the artifact is private or public, and which folder it went into, if any. Set `expires_in_hours` only if the platform should permanently delete the artifact after that time. Restricted sharing (a named list of viewers) is set by the owner in the app's Share dialog; this tool cannot set it or change an artifact that is already restricted. When the user asks to share, name the three levels and recommend the narrowest that fits: private (only the user, in the app), Restricted (only people the user invites, by email address, in the app's Share dialog; you cannot set it), or public (anyone with the link). The response includes `internal_link` (platform://artifacts/<id>) — paste it into your chat reply as a markdown link, e.g. [My dashboard](platform://artifacts/<id>), and the user sees an inline chip that opens a live preview beside the chat.",
     {
       title: z.string().trim().min(1).max(ARTIFACT_TITLE_MAX_LENGTH),
       content: z
@@ -59,7 +59,12 @@ export function registerArtifactLibraryTools(
       type: artifactKindSchema
         .optional()
         .describe("Auto-detected from file name / content when omitted."),
-      folder_id: z.string().optional(),
+      folder_id: z
+        .string()
+        .optional()
+        .describe(
+          "Id of the user's folder that fits this artifact, from list_artifact_folders; omit to leave it ungrouped.",
+        ),
       visibility: z
         .enum(["private", "public"])
         .optional()
@@ -70,7 +75,7 @@ export function registerArtifactLibraryTools(
         .boolean()
         .optional()
         .describe(
-          "Opt-in HTML prompt buttons and state shared with the agent through a server it runs. Use only when the user requests them and has enabled Interactive artifacts. The page stays private. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
+          "Opt-in HTML prompt buttons and state shared with the agent through a server it runs. Use only when the user requests them and has enabled Interactive artifacts. It can never be public; the owner can share it with named people in the app, and their copy cannot ask you. Read the platform-artifacts skill first; omit this for ordinary artifacts.",
         ),
       expires_in_hours: z
         .number()
@@ -326,14 +331,14 @@ export function registerArtifactLibraryTools(
 
   server.tool(
     "create_artifact_folder",
-    "Create a folder to organize artifacts.",
+    "Create a folder to organize artifacts. Only when the user asks for one: when no folder fits a new artifact, leave it ungrouped instead.",
     { name: z.string().min(1).max(200) },
     ({ name }) => run(async () => json(await lib.createFolder(name))),
   );
 
   server.tool(
     "list_artifact_folders",
-    "List the owner's artifact folders with artifact counts.",
+    "List the owner's artifact folders with artifact counts. Call it before create_artifact, so a new artifact goes into the folder that fits it.",
     {},
     () => run(async () => json(await lib.listFolders())),
   );

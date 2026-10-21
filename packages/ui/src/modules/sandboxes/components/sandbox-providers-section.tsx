@@ -11,34 +11,32 @@ import { SectionLabel } from "@/components/ui/section-label";
 
 import { useStore } from "../../../store.js";
 import { useHarnessConfigStatus } from "../../agents/api/harness-config.js";
+import { useIsAgentOperable } from "../../agents/api/queries.js";
+import { DefaultModelNotice } from "../../agents/components/default-model-notice.js";
 import { useRootDriver } from "../../agents/hooks/use-root-driver.js";
+import { useNewLayout } from "../../features/hooks/use-new-layout.js";
 import { ProviderToggleRow } from "../../providers/components/provider-toggle-row.js";
 import {
   rememberSessionPair,
   useGrantProvider,
   useHarnessCatalog,
-  useHarnessCatalogModels,
   useProviderConnections,
-  useProviderModels,
   useRememberedPair,
 } from "../../sessions/api/session-pair.js";
-import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
-import { OptionField } from "../../sessions/components/option-field.js";
-import {
-  findModel,
-  modelGroups,
-  sameModel,
-} from "../../sessions/lib/catalog-groups.js";
+import { AwakeModelsGate } from "../../sessions/components/awake-models-gate.js";
+import { DetachProviderMessage } from "../../sessions/components/detach-provider-message.js";
+import { SessionPairPicker } from "../../sessions/components/session-pair-picker.js";
+import { useProviderUsage } from "../../sessions/hooks/use-provider-usage.js";
 import {
   fittingProviders,
   harnessOptions,
   nextPair,
   providerHarnesses,
 } from "../../sessions/lib/session-pair-options.js";
-import { settingsForModel } from "../../sessions/lib/session-settings.js";
 import { ConnectionSpendLimit } from "../../spend/components/connection-spend-limit.js";
 import { RootDriverSpendNote } from "../../spend/components/root-driver-spend-note.js";
 import type { SectionHeaderSlot } from "./sandbox-home-header.js";
+import { SessionDefaultsSection } from "./session-defaults-section.js";
 
 export function SandboxProvidersSection({
   agentId,
@@ -53,6 +51,8 @@ export function SandboxProvidersSection({
   const { grant, revoke, pending } = useGrantProvider(agentId);
   const catalog = useHarnessCatalog().data?.harnesses;
   const root = useRootDriver(agentId);
+  const usage = useProviderUsage(agentId);
+  const newLayout = useNewLayout();
 
   return (
     <div className="flex flex-col gap-3">
@@ -83,11 +83,7 @@ export function SandboxProvidersSection({
               on
                 ? void grant(p.id)
                 : void showConfirm(
-                    <p>
-                      Sessions running on <strong>{p.name}</strong> stop until
-                      it is attached again. Schedules and channels that use it
-                      don&rsquo;t run until you choose another model.
-                    </p>,
+                    <DetachProviderMessage name={p.name} usage={usage(p)} />,
                     `Disconnect ${p.name} from this agent?`,
                     { kind: "destructive", confirmLabel: "Disconnect" },
                   ).then((ok) => ok && revoke(p.id))
@@ -119,13 +115,19 @@ export function SandboxProvidersSection({
           </AddRow>
         </Card>
       )}
-      <DefaultPairPicker key={agentId} agentId={agentId} />
+      {newLayout ? (
+        <DefaultPairPicker key={agentId} agentId={agentId} />
+      ) : (
+        <SessionDefaultsSection agentId={agentId} />
+      )}
     </div>
   );
 }
 
 function DefaultPairPicker({ agentId }: { agentId: string }) {
+  const navigateToSettings = useStore((s) => s.navigateToSettings);
   const { data: status } = useHarnessConfigStatus(agentId);
+  const operable = useIsAgentOperable(agentId);
   const { data: catalog } = useHarnessCatalog();
   const { data: remembered } = useRememberedPair(agentId);
   const { granted } = useProviderConnections(agentId);
@@ -137,7 +139,7 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     views,
   ).filter((h) => fitting(h.name).length > 0);
   const routed = status?.modelRouter ?? false;
-  const [draftHarness, setDraftHarness] = useState<string | null>(null);
+  const [draft, setDraft] = useState<SessionPair | null>(null);
   const saved = nextPair(
     null,
     remembered ?? null,
@@ -146,100 +148,44 @@ function DefaultPairPicker({ agentId }: { agentId: string }) {
     status?.defaultHarness,
   );
   const pair =
-    routed && draftHarness !== null && draftHarness !== saved?.harness
-      ? { harness: draftHarness, provider: null, model: null }
+    routed && draft !== null && draft.harness !== saved?.harness
+      ? draft
       : saved;
-  const { data: models } = useProviderModels(
-    routed ? null : agentId,
-    pair?.harness ?? null,
-    pair?.provider ?? null,
-  );
-  const { data: catalogModels } = useHarnessCatalogModels(
-    routed ? agentId : null,
-    pair?.harness ?? null,
-  );
-  if (!pair || !routesSessionPairs(carried)) return null;
-  const groups = modelGroups(catalogModels);
-
-  const save = (next: SessionPair) => {
-    const kept =
-      remembered?.harness === next.harness && remembered.settings
-        ? settingsForModel(
-            carried.find((h) => h.name === next.harness),
-            groups,
-            next.model,
-            remembered.settings,
-          )
-        : {};
-    rememberSessionPair(
-      agentId,
-      Object.keys(kept).length > 0 ? { ...next, settings: kept } : next,
+  if (status && !status.harnesses && !operable)
+    return (
+      <section className="mt-6">
+        <SectionLabel spaced>Default for new sessions</SectionLabel>
+        <AwakeModelsGate agentId={agentId} />
+      </section>
     );
-  };
-  const modelChoices = routed
-    ? groups.flatMap((g) =>
-        g.models.map((m) => ({
-          value: m.name,
-          name: `${m.upstreamId} · ${g.displayName}`,
-        })),
-      )
-    : ((models?.availableModels === null
-        ? carried
-            .find((h) => h.name === pair.harness)
-            ?.harnessConfigCatalog?.options.find((o) => o.category === "model")
-            ?.choices
-        : models?.availableModels) ?? []);
-  const providerOfModel = (model: string | null): string | null =>
-    groups.find((g) => g.models.some((m) => sameModel(m.name, model)))
-      ?.connectionId ?? pair.provider;
-
+  if (!pair || !routesSessionPairs(carried)) return null;
   return (
     <section className="mt-6">
       <SectionLabel spaced>Default for new sessions</SectionLabel>
-      <OptionField title="Harness">
-        <OptionPicker
-          title="Harness"
-          choices={harnesses.map((h) => ({ id: h.name, name: h.displayName }))}
-          value={pair.harness}
-          onSelect={(harness) => {
-            if (!harness) return;
-            if (routed) setDraftHarness(harness);
-            else save({ harness, provider: fitting(harness)[0]!, model: null });
+      <div className="flex flex-col gap-2">
+        <SessionPairPicker
+          agentId={agentId}
+          carried={carried}
+          defaultHarness={status?.defaultHarness ?? pair.harness}
+          routed={routed}
+          onConnectProviders={() => navigateToSettings("providers")}
+          defaultPair={{
+            value: pair,
+            onChoose: (next) => {
+              if (routed && next.model === null) return setDraft(next);
+              rememberSessionPair(agentId, next);
+              setDraft(null);
+            },
           }}
         />
-      </OptionField>
-      {!routed && (
-        <OptionField title="Provider">
-          <OptionPicker
-            title="Provider"
-            choices={granted
-              .filter((p) => fitting(pair.harness).includes(p.id))
-              .map((p) => ({ id: p.id, name: p.name }))}
-            value={pair.provider}
-            onSelect={(provider) =>
-              provider && save({ harness: pair.harness, provider, model: null })
-            }
-          />
-        </OptionField>
-      )}
-      <OptionField title="Model">
-        <OptionPicker
-          title="Model"
-          choices={modelChoices.map((m) => ({ id: m.value, name: m.name }))}
-          value={
-            routed
-              ? (findModel(groups, pair.model)?.model.name ?? pair.model)
-              : pair.model
-          }
-          clearable={!routed}
-          {...(routed && { placeholder: "Not set" })}
-          onSelect={(model) => {
-            if (routed && model === null) return;
-            save({ ...pair, provider: providerOfModel(model), model });
-            setDraftHarness(null);
-          }}
-        />
-      </OptionField>
+        {pair !== saved ? (
+          <p role="status" className="pl-3 text-xs text-muted-foreground">
+            Pick a model to save this harness as the default.
+          </p>
+        ) : (
+          <DefaultModelNotice agentId={agentId} />
+        )}
+      </div>
     </section>
   );
 }

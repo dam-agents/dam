@@ -18,6 +18,8 @@ import {
   type ConnectionView,
   type Contribution,
   type ProviderBalance,
+  type ProviderKeyCheck,
+  type ProviderKeyRecheck,
   type SecretRef,
   preferenceGroupOf,
   signingTargetOf,
@@ -25,6 +27,10 @@ import {
   aliasForProviderType,
   orderByAlias,
   providerAliasConflict,
+  harnessFits,
+  type ConnectionProviderView,
+  type HarnessCatalog,
+  type ProviderPresetType,
 } from "api-server-api";
 import type { SecretStore } from "../../secret-store/index.js";
 import type { ConnectionsRepository } from "../infrastructure/connections-repository.js";
@@ -77,7 +83,10 @@ import type {
   S3CredentialProbe,
   S3CredentialProbeFailure,
 } from "../domain/s3-credential-probe.js";
-import type { ProviderKeyProbe } from "../domain/provider-key-probe.js";
+import type {
+  ProviderKeyProbe,
+  ProviderKeyProbeOutcome,
+} from "../domain/provider-key-probe.js";
 import { discoverMcpAuth } from "../infrastructure/mcp-discovery.js";
 import { probeClusterCa } from "../infrastructure/cluster-ca-probe.js";
 import type { OAuthEngine } from "../infrastructure/oauth-engine.js";
@@ -96,6 +105,10 @@ import { scopeGitHubUserToken } from "./github-user-token.js";
 import { connectionRefreshLockKey } from "./oauth-refresh.js";
 import { recordAccountLabel } from "./account-label.js";
 import { accountLabelOf } from "../domain/account-label.js";
+import {
+  KEY_CHECK_INPUT_KEY,
+  keyCheckOf,
+} from "../domain/provider-key-check.js";
 import { emit, EventType } from "../../../events.js";
 import { securityLog } from "../../../core/security-log.js";
 import { isUniqueViolation } from "../../../core/db-errors.js";
@@ -163,12 +176,56 @@ export function createConnectionsService(deps: {
   platformProviderEnabled: () => Promise<boolean>;
   platformProviderKey: string | null;
   platformProviderCa?: string | null;
+  harnesses: Pick<HarnessCatalog, "default" | "harnesses">;
 }): ConnectionsService & PlatformLlmConnections {
   const maxSharedKbConnections =
     deps.maxSharedKbConnections ?? MAX_SHARED_KB_CONNECTIONS_PER_OWNER;
-  function toView(conn: Connection): ConnectionView {
+
+  function providerView(templateId: string): ConnectionProviderView | null {
+    const type = providerTypeForTemplateId(templateId);
+    if (type === null) return null;
+    return {
+      alias: aliasForProviderType(type),
+      harnesses: deps.harnesses.harnesses
+        .filter((h) => harnessFits(deps.harnesses, h.name, type, templateId))
+        .map((h) => h.name),
+    };
+  }
+
+  async function firstProviderPerAlias(
+    fits: (type: ProviderPresetType, templateId: string) => boolean,
+  ): Promise<{ id: string; type: ProviderPresetType }[]> {
+    const usable = (
+      await deps.repo.listByOwnerOldestFirst(deps.ownerId)
+    ).flatMap((c) => {
+      const type = providerTypeForTemplateId(c.templateId);
+      return type !== null &&
+        fits(type, c.templateId) &&
+        PROVIDER_IS_ACTIVE[deriveStatus(c)]
+        ? [{ id: c.id, type }]
+        : [];
+    });
+    const aliases = new Set<string>();
+    return orderByAlias(usable).filter((c) => {
+      const alias = aliasForProviderType(c.type);
+      if (aliases.has(alias)) return false;
+      aliases.add(alias);
+      return true;
+    });
+  }
+
+  async function preferredProviderId(): Promise<string | undefined> {
+    const harness = deps.harnesses.default;
+    const granted = await firstProviderPerAlias((type, templateId) =>
+      harnessFits(deps.harnesses, harness, type, templateId),
+    );
+    return orderByAlias(granted, harness)[0]?.id;
+  }
+
+  function toView(conn: Connection, preferredId?: string): ConnectionView {
     const template = deps.templates.get(conn.templateId);
     const accountLabel = accountLabelOf(conn);
+    const keyCheck = keyCheckOf(conn);
     const hosts = [
       ...new Set(
         conn.contributions.flatMap((c) =>
@@ -221,6 +278,7 @@ export function createConnectionsService(deps: {
               : {}),
           }
         : {};
+    const provider = providerView(conn.templateId);
     return {
       id: conn.id,
       ownerId: conn.ownerId,
@@ -232,7 +290,11 @@ export function createConnectionsService(deps: {
       contributions: conn.contributions,
       hosts,
       ...(accountLabel ? { accountLabel } : {}),
+      ...(keyCheck ? { keyCheck } : {}),
       ...oauthExtras,
+      ...(provider
+        ? { provider: { ...provider, preferred: conn.id === preferredId } }
+        : {}),
     };
   }
 
@@ -635,13 +697,15 @@ export function createConnectionsService(deps: {
     });
   }
 
-  async function assertProviderKeyAccepted(
+  function recordProviderKeyOutcome(
+    outcome: ProviderKeyProbeOutcome,
     templateId: string,
-    key: string,
     connectionId: string,
-  ): Promise<void> {
-    const outcome = await deps.providerKeyProbe.probe(templateId, key);
-    if (outcome.ok) return;
+  ): ProviderKeyCheck | null {
+    const checkedAt = new Date().toISOString();
+    if (outcome.ok) {
+      return outcome.unchecked ? null : { result: "ok", checkedAt };
+    }
     securityLog("warn", "connection.provider_key_probe_failed", {
       category: "credential",
       actor: deps.ownerId,
@@ -651,15 +715,62 @@ export function createConnectionsService(deps: {
       reason: outcome.reason,
       detail: { templateId, probe: outcome.detail },
     });
-    if (outcome.reason !== "refused") return;
+    return { result: outcome.reason, detail: outcome.detail, checkedAt };
+  }
+
+  async function assertProviderKeyAccepted(
+    templateId: string,
+    key: string,
+    connectionId: string,
+  ): Promise<ProviderKeyCheck | null> {
+    const check = recordProviderKeyOutcome(
+      await deps.providerKeyProbe.probe(templateId, key),
+      templateId,
+      connectionId,
+    );
+    if (check?.result !== "refused") return check;
     throw new TRPCError({
       code: "BAD_REQUEST",
       message:
-        `The provider refused this key (${outcome.detail}). Check that it is complete and still valid.` +
+        `The provider refused this key (${check.detail}). Check that it is complete and still valid.` +
         (templateId === "ibm-litellm"
           ? ` There are two ETE LiteLLM instances, and only keys from https://${IBM_LITELLM_HOST}/ui?page=api-keys work with ${deps.brandName}.`
           : ""),
     });
+  }
+
+  async function probeStoredProviderKey(
+    conn: Connection,
+    valueRef: SecretRef,
+  ): Promise<ProviderKeyProbeOutcome> {
+    let key: string | null;
+    try {
+      key = await deps.secretStore.getField(valueRef);
+    } catch (err) {
+      return {
+        ok: false,
+        reason: "unverified",
+        detail: `the stored key could not be read: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+    if (!key)
+      return { ok: false, reason: "refused", detail: "no key is stored" };
+    return deps.providerKeyProbe.probe(conn.templateId, key);
+  }
+
+  async function recheckProviderKey(
+    conn: Connection,
+  ): Promise<ProviderKeyCheck | null> {
+    if (conn.auth.kind !== "header") return null;
+    const check = recordProviderKeyOutcome(
+      await probeStoredProviderKey(conn, conn.auth.valueRef),
+      conn.templateId,
+      conn.id,
+    );
+    if (check) {
+      await deps.repo.mergeInputs(conn.id, { [KEY_CHECK_INPUT_KEY]: check });
+    }
+    return check;
   }
 
   async function rotateSigv4Keys(
@@ -805,13 +916,22 @@ export function createConnectionsService(deps: {
         const preset = creds
           ? { clientId: creds.clientId, hasSecret: !!creds.clientSecretRef }
           : undefined;
-        return templateToView(t, deps.oauthCallbackUrl, preset);
+        const provider = providerView(t.id);
+        return {
+          ...templateToView(t, deps.oauthCallbackUrl, preset),
+          ...(provider ? { provider } : {}),
+        };
       });
     },
 
     async listConnections(): Promise<ConnectionView[]> {
       const conns = await deps.repo.listByOwner(deps.ownerId);
-      const views = conns.map(toView);
+      const preferredId = conns.some((c) =>
+        PROVIDER_TEMPLATE_IDS.has(c.templateId),
+      )
+        ? await preferredProviderId()
+        : undefined;
+      const views = conns.map((conn) => toView(conn, preferredId));
       await Promise.all(
         views.map(async (view, i) => {
           const conn = conns[i]!;
@@ -840,7 +960,10 @@ export function createConnectionsService(deps: {
 
     async getConnection(id: string): Promise<ConnectionView | null> {
       const conn = await deps.repo.get(id, deps.ownerId);
-      return conn ? toView(conn) : null;
+      if (!conn) return null;
+      return PROVIDER_TEMPLATE_IDS.has(conn.templateId)
+        ? toView(conn, await preferredProviderId())
+        : toView(conn);
     },
 
     async validateProviderConnection(id: string): Promise<void> {
@@ -867,23 +990,7 @@ export function createConnectionsService(deps: {
     },
 
     async defaultProviderConnections(fits) {
-      const usable = (
-        await deps.repo.listByOwnerOldestFirst(deps.ownerId)
-      ).flatMap((c) => {
-        const type = providerTypeForTemplateId(c.templateId);
-        return type !== null &&
-          fits(type, c.templateId) &&
-          PROVIDER_IS_ACTIVE[deriveStatus(c)]
-          ? [{ id: c.id, type }]
-          : [];
-      });
-      const aliases = new Set<string>();
-      return orderByAlias(usable).flatMap((c) => {
-        const alias = aliasForProviderType(c.type);
-        if (aliases.has(alias)) return [];
-        aliases.add(alias);
-        return [c.id];
-      });
+      return (await firstProviderPerAlias(fits)).map((c) => c.id);
     },
 
     async getProviderBalance(id: string): Promise<ProviderBalance | null> {
@@ -917,6 +1024,20 @@ export function createConnectionsService(deps: {
           message: "the provider did not report a balance",
         });
       }
+    },
+
+    async recheckProviderKeys(): Promise<ProviderKeyRecheck[]> {
+      const providers = (await deps.repo.listByOwner(deps.ownerId)).filter(
+        (c) =>
+          PROVIDER_TEMPLATE_IDS.has(c.templateId) &&
+          c.templateId !== PLATFORM_LLM_TEMPLATE_ID,
+      );
+      return Promise.all(
+        providers.map(async (conn) => ({
+          connectionId: conn.id,
+          check: await recheckProviderKey(conn),
+        })),
+      );
     },
 
     async validateGrantSet(connectionIds: string[]): Promise<void> {
@@ -954,8 +1075,15 @@ export function createConnectionsService(deps: {
               ? singleValueOf(credential)
               : credential.value;
           if (value) {
-            await assertProviderKeyAccepted(conn.templateId, value, conn.id);
+            const check = await assertProviderKeyAccepted(
+              conn.templateId,
+              value,
+              conn.id,
+            );
             await rotateHeaderValue(conn, conn.auth, value);
+            await deps.repo.mergeInputs(conn.id, {
+              [KEY_CHECK_INPUT_KEY]: check,
+            });
           }
           if (contributions) {
             await deps.repo.updateContributions(conn.id, contributions);
@@ -1319,9 +1447,9 @@ export function createConnectionsService(deps: {
         auth.kind === "header" && secretPath
           ? built.secrets.get(secretPath)?.["value"]
           : undefined;
-      if (headerValue) {
-        await assertProviderKeyAccepted(template.id, headerValue, id);
-      }
+      const keyCheck = headerValue
+        ? await assertProviderKeyAccepted(template.id, headerValue, id)
+        : null;
 
       if (secretPath) {
         const placeholderSds = buildConnectionSdsFields(
@@ -1342,7 +1470,11 @@ export function createConnectionsService(deps: {
         ownerId: deps.ownerId,
         templateId: template.id,
         name: connectionName,
-        inputs: { ...stripSecretsFromInputs(input), ...sharedKbInputs },
+        inputs: {
+          ...stripSecretsFromInputs(input),
+          ...sharedKbInputs,
+          ...(keyCheck ? { [KEY_CHECK_INPUT_KEY]: keyCheck } : {}),
+        },
         auth,
         contributions,
       };

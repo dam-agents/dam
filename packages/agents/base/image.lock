@@ -232,6 +232,12 @@ aube = { path = ".mise/locks/npm-earendil-works-pi-coding-agent/1.1.0", digest =
 backend = "npm:@earendil-works/pi-coding-agent"
 specifiers = ["1.1.0"]
 
+[[tools."npm:@github/copilot"]]
+version = "1.0.96"
+aube = { path = ".mise/locks/npm-github-copilot/1.0.96", digest = "sha256:fd1d7f241b68a58e936150897a39b7de590e71b804b3d111c8a94d188849bc05" }
+backend = "npm:@github/copilot"
+specifiers = ["1.0.96"]
+
 [[tools."npm:@zhafron/pi-memory"]]
 version = "1.0.2"
 aube = { path = ".mise/locks/npm-zhafron-pi-memory/1.0.2", digest = "sha256:0dbbb549242b631b6fafcb2e57e7707f8d5c3405716ca3a723c3ecbc4525080a" }
