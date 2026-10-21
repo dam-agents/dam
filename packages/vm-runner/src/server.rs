@@ -184,13 +184,14 @@ fn probe_every(entry: &MachineEntry) -> Option<Duration> {
     }
 }
 
-// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure as its sampler last read it. `signalled` is when its version last moved while pressure lasted.
+// UNIT_BOUNDARY_DESCRIPTION: the runner's memory pressure as its sampler last read it. `signalled` is when its version last moved while pressure lasted. `oom_group` is the cgroup's own memory.oom.group at that same sample, since a node's kubelet can change it under a running runner.
 #[derive(Default)]
 struct Pressure {
     version: u64,
     pressured: bool,
     working_set_mib: i32,
     signalled: Option<Instant>,
+    oom_group: Option<bool>,
 }
 
 #[derive(Default)]
@@ -599,30 +600,28 @@ impl Server {
         locked(&server.machines).pressure.version =
             server.versions.fetch_add(1, Ordering::Relaxed) + 1;
         if let Some(cgroup) = server.config.cgroup_dir.clone() {
-            // UNIT_BOUNDARY_DESCRIPTION: a node's kubelet can make the runner's cgroup kill every process in it for one process's memory, which no OOM score of the VMMs' own prevents: one machine's growth would then end the runner and every machine of the owner. The kubelet writes memory.oom.group and leaves it 0 while singleProcessOOMKill is on, its default, so a runner that reads it set says so on its console, and the gauge keeps saying it on every scrape.
-            if crate::pressure::oom_group(&cgroup) == Some(true) {
-                tracing::warn!(
-                    cgroup = %cgroup.display(),
-                    "vm runner: its cgroup kills the whole runner for one machine's memory (memory.oom.group=1); the node's kubelet must not group OOM kills for these runners"
-                );
-            }
             let sampler = Arc::downgrade(&server);
             server.background(move |lifetime| {
-                if let Err(e) = crate::pressure::working_set_mib(&cgroup) {
-                    tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
-                    return;
-                }
+                // UNIT_BOUNDARY_DESCRIPTION: a working set this runner cannot read says nothing about pressure, but it says nothing about the cgroup's grouping either, so the grouping sample waits on no pressure reading: the two are read apart and the failure is said once, not at every tick.
+                let mut pressure_unreadable = false;
                 while !lifetime.is_cancelled() {
                     let Some(server) = sampler.upgrade() else {
                         return;
                     };
+                    server.sample_oom_group(&cgroup);
                     if let Ok(stat) = crate::cpu::stat(&cgroup) {
                         locked(&server.machines).cpu.push(Instant::now(), stat);
                     }
                     match crate::pressure::working_set_mib(&cgroup) {
-                        Ok(mib) => server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX)),
+                        Ok(mib) => {
+                            pressure_unreadable = false;
+                            server.sample_pressure(i32::try_from(mib).unwrap_or(i32::MAX));
+                        }
                         Err(e) => {
-                            tracing::warn!(error = %format!("{e:#}"), "vm runner: reading the runner's cgroup")
+                            if !pressure_unreadable {
+                                pressure_unreadable = true;
+                                tracing::warn!(error = %format!("{e:#}"), "vm runner: cannot read the runner's cgroup, so it reports no memory pressure");
+                            }
                         }
                     }
                     drop(server);
@@ -657,6 +656,25 @@ impl Server {
             pressure.signalled = now.then(Instant::now);
             pressure.version = self.versions.fetch_add(1, Ordering::Relaxed) + 1;
             self.changed.notify_all();
+        }
+    }
+
+    // UNIT_BOUNDARY_DESCRIPTION: records one sample of whether the runner's cgroup kills every process in it for one process's memory, which no OOM score of the VMMs' own prevents: one machine's growth would then end the runner and every machine of the owner. The node's kubelet writes memory.oom.group and groups unless its `singleProcessOOMKill` is on, so a node that leaves the setting alone takes an owner's whole pool down, and a kubelet can turn grouping on under a runner that started with it off. The runner reads it at every sample rather than once at start and says each change on its console; its gauge reads the sample, so a scrape never disagrees with the console.
+    fn sample_oom_group(&self, cgroup: &Path) {
+        let now = crate::pressure::oom_group(cgroup);
+        let mut machines = locked(&self.machines);
+        let was = std::mem::replace(&mut machines.pressure.oom_group, now);
+        drop(machines);
+        match (was, now) {
+            (_, Some(true)) if was != Some(true) => tracing::warn!(
+                cgroup = %cgroup.display(),
+                "vm runner: its cgroup now kills the whole runner for one machine's memory (memory.oom.group=1); the node's kubelet must set singleProcessOOMKill: true for these runners"
+            ),
+            (Some(true), Some(false)) => tracing::info!(
+                cgroup = %cgroup.display(),
+                "vm runner: its cgroup no longer groups OOM kills (memory.oom.group=0), so one machine that runs out of memory ends alone"
+            ),
+            _ => {}
         }
     }
 
@@ -2019,6 +2037,7 @@ impl Server {
                 )
             })
         });
+        let oom_group = locked(&self.machines).pressure.oom_group;
         self.metrics.render(&Gauges {
             budget_bytes: self.config.image_budget,
             limit_mib: self.memory_limit_mib(),
@@ -2029,7 +2048,7 @@ impl Server {
             cpu_limit_milli: cgroup.and_then(|c| crate::cpu::limit_milli(c).ok().flatten()),
             working_set_mib: sampled.map(|p| p.0),
             pressured: sampled.map(|p| p.1),
-            oom_group: cgroup.and_then(crate::pressure::oom_group),
+            oom_group,
         })
     }
 
