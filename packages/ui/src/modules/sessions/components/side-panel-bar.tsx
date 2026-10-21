@@ -4,9 +4,9 @@ import {
   type CarbonIconType,
   Folder,
   Gears,
-  Globe,
   Notification,
   Task,
+  Wikis,
 } from "@carbon/icons-react";
 import type { ReactNode } from "react";
 
@@ -35,7 +35,7 @@ export const SIDE_PANEL_TABS: readonly {
   { tab: "artifacts", label: "Artifacts", icon: ArtifactIcon },
   { tab: "files", label: "Files", icon: Folder },
   { tab: "changes", label: "Changes", icon: Branch },
-  { tab: "browser", label: "Browser", icon: Globe },
+  { tab: "browser", label: "Browser", icon: Wikis },
   { tab: "processes", label: "Processes", icon: Gears },
   { tab: "getting-started", label: "Get started", icon: Task },
   { tab: "approvals", label: "Approvals", icon: Notification },
