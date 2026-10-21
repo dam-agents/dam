@@ -110,6 +110,10 @@ vi.mock(
 );
 vi.mock("../../modules/platform/components/sidebar-v2/pinned-rows.js", () => ({
   PinnedList: () => null,
+  usePinnedRows: () => ({
+    rows: env.pins.size > 0 ? [{ key: [...env.pins][0] }] : [],
+    conversationOf: () => undefined,
+  }),
 }));
 
 const { SidebarRail } =

@@ -126,9 +126,9 @@ export function OffFeedPinnedRow({
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: The Pinned section of JanUI's tree: every pinned Session of every Agent, ordered by latest activity, read from the owner's attention record or, for a pin the record does not hold, from its own Agent. The tree shows it above the Agents and the collapsed rail shows it in a popover, so both draw the same rows.
+ * UNIT_BOUNDARY_DESCRIPTION: The rows of the Pinned section: every pinned Session of every Agent, ordered by latest activity, read from the owner's attention record or, for a pin the record does not hold, from its own Agent. A pin whose Session is gone and whose Agent no longer exists resolves to no row at all, so a stored pin is not by itself something to show.
  */
-export function PinnedList({ onNavigate }: { onNavigate?: () => void }) {
+export function usePinnedRows() {
   const activity = useActivitySessions();
   const pins = usePinnedSessions();
   const filters = useStore((s) => s.sidebarActivityFilters);
@@ -174,6 +174,14 @@ export function PinnedList({ onNavigate }: { onNavigate?: () => void }) {
     pinned.map((item) => item.session),
     agents,
   );
+  return { rows, conversationOf };
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The Pinned section of JanUI's tree: the rows usePinnedRows resolves, each opening its Session. The tree shows it above the Agents and the collapsed rail shows it in a popover, so both draw the same rows.
+ */
+export function PinnedList({ onNavigate }: { onNavigate?: () => void }) {
+  const { rows, conversationOf } = usePinnedRows();
   return (
     <>
       {rows.map((row) =>

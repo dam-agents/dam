@@ -7,6 +7,7 @@ vi.stubGlobal("window", new EventTarget());
 
 const env = vi.hoisted(() => ({
   pins: new Set<string>(),
+  pinnedRows: [] as unknown[],
   agents: [] as { id: string; name: string; state: string }[],
   approvals: [] as unknown[],
   unread: new Set<string>(),
@@ -61,6 +62,10 @@ vi.mock(
 );
 vi.mock("../../modules/platform/components/sidebar-v2/pinned-rows.js", () => ({
   PinnedList: () => null,
+  usePinnedRows: () => ({
+    rows: env.pinnedRows,
+    conversationOf: () => undefined,
+  }),
 }));
 
 const { SidebarRail } =
@@ -73,6 +78,7 @@ const agents = [
 
 beforeEach(() => {
   env.pins = new Set();
+  env.pinnedRows = [];
   env.agents = agents;
   env.approvals = [];
   env.unread = new Set();
@@ -109,10 +115,12 @@ it("ends the Agent tiles with a New agent tile", () => {
   expect(html).toContain("hidden group-hover:block");
 });
 
-// TEST_SCENARIO: the pin tile appears once the browser holds a pin, since the popover it opens would otherwise be empty.
-it("offers the Pinned tile only while a pin is stored", () => {
+// TEST_SCENARIO: the pin tile appears once there is a pinned Session to show in the popover, and a pin left behind by a Session that is gone leaves no tile at all.
+it("offers the Pinned tile only while a pinned Session resolves", () => {
   expect(render()).not.toContain('data-testid="sidebar-rail-pinned"');
   env.pins = new Set(["a1:s1"]);
+  expect(render()).not.toContain('data-testid="sidebar-rail-pinned"');
+  env.pinnedRows = [{ key: "a1:s1" }];
   expect(render()).toContain('data-testid="sidebar-rail-pinned"');
 });
 

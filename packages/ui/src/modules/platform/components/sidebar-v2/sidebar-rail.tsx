@@ -41,12 +41,11 @@ import { useCreateDefaultAgent } from "../../../agents/hooks/use-create-default-
 import { useSidebarAgents } from "../../../agents/hooks/use-sidebar-agents.js";
 import { useApprovalsForOwner } from "../../../approvals/api/queries.js";
 import { useStartSession } from "../../../sessions/hooks/use-start-session.js";
-import { usePinnedSessions } from "../../../sessions/lib/pinned-sessions.js";
 import { awaitsApproval } from "../../lib/sidebar-tree.js";
 import { AddRow } from "./add-row.js";
 import { AgentContextMenu, AgentRowActions } from "./agent-row-actions.js";
 import { AgentSessionList } from "./agent-session-list.js";
-import { PinnedList } from "./pinned-rows.js";
+import { PinnedList, usePinnedRows } from "./pinned-rows.js";
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: JanUI's sidebar as one column of icons, which it becomes when it is collapsed: Home, the Pinned section, one avatar per Agent in the same manual order and Settings. An avatar opens that Agent's new-session page when clicked, and what the expanded tree would show under it, in a popover beside the rail, on hover or keyboard focus, or on a long press where there is no hover; choosing a Session closes the popover; the pin icon opens the Pinned section on click. The rail never leaves the layout, so the page always has a way back to the tree.
@@ -61,7 +60,7 @@ export function SidebarRail({
   const { agents, openAgentId, unreadAgentIds } = useSidebarAgents();
   const defaultAgent = useCreateDefaultAgent();
   const approvals = useApprovalsForOwner().data;
-  const pins = usePinnedSessions();
+  const { rows: pinnedRows } = usePinnedRows();
   const homeOpen = useStore((s) => s.view === "home");
   const settingsOpen = useStore((s) => s.view === "settings");
   const setView = useStore((s) => s.setView);
@@ -115,7 +114,7 @@ export function SidebarRail({
       >
         <Home size={RAIL_GLYPH} />
       </button>
-      {pins.size > 0 && (
+      {pinnedRows.length > 0 && (
         <PinnedTile
           skipDelay={skipDelay}
           open={open === "pinned"}
