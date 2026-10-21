@@ -2,9 +2,10 @@ import {
   Add,
   type CarbonIconType,
   ChevronRight,
+  FaceActivatedAdd,
+  FaceAdd,
   Home,
   ListTree,
-  NewTab,
   Settings,
 } from "@carbon/icons-react";
 import { type ReactNode, useEffect, useId, useMemo, useState } from "react";
@@ -253,7 +254,8 @@ export function SidebarTree({ onNavigate }: { onNavigate?: () => void }) {
           {groupBy === "agents" && (
             <div className="mt-px">
               <AddRow
-                icon={NewTab}
+                icon={FaceAdd}
+                hoverIcon={FaceActivatedAdd}
                 label="New agent"
                 testId="sidebar-new-agent-row"
                 disabled={!defaultAgent.ready}

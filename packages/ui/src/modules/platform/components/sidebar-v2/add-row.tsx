@@ -10,6 +10,7 @@ export const TREE_AVATAR = RAIL_AVATAR;
 
 export function AddRow({
   icon: Icon,
+  hoverIcon: HoverIcon,
   label,
   ariaLabel,
   testId,
@@ -18,6 +19,7 @@ export function AddRow({
   onClick,
 }: {
   icon: CarbonIconType;
+  hoverIcon?: CarbonIconType;
   label: string;
   ariaLabel?: string;
   testId: string;
@@ -33,10 +35,21 @@ export function AddRow({
       aria-current={current ? "page" : undefined}
       disabled={disabled}
       onClick={onClick}
-      className={`flex h-[34px] w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground disabled:pointer-events-none disabled:opacity-50 ${FOCUS_RING}`}
+      className={`group flex h-[34px] w-full min-w-0 items-center gap-2.5 rounded-lg px-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted hover:text-foreground aria-[current=page]:bg-muted aria-[current=page]:text-foreground disabled:pointer-events-none disabled:opacity-50 ${FOCUS_RING}`}
     >
       <span className={TREE_LEADING}>
-        <Icon size={SIDEBAR_GLYPH} aria-hidden />
+        <Icon
+          size={SIDEBAR_GLYPH}
+          aria-hidden
+          className={HoverIcon ? "group-hover:hidden" : undefined}
+        />
+        {HoverIcon && (
+          <HoverIcon
+            size={SIDEBAR_GLYPH}
+            aria-hidden
+            className="hidden group-hover:block"
+          />
+        )}
       </span>
       <span className="truncate">{label}</span>
     </button>

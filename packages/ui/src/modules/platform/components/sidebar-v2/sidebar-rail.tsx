@@ -1,8 +1,9 @@
 import {
   Add,
   ChevronRight,
+  FaceActivatedAdd,
+  FaceAdd,
   Home,
-  NewTab,
   Pin,
   Settings,
 } from "@carbon/icons-react";
@@ -166,7 +167,16 @@ export function SidebarRail({
           }}
           className={cn(railTile(false), FOCUS_RING)}
         >
-          <NewTab size={RAIL_GLYPH} />
+          <FaceAdd
+            size={RAIL_GLYPH}
+            aria-hidden
+            className="group-hover:hidden"
+          />
+          <FaceActivatedAdd
+            size={RAIL_GLYPH}
+            aria-hidden
+            className="hidden group-hover:block"
+          />
         </button>
       </div>
       <button

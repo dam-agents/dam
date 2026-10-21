@@ -104,6 +104,9 @@ it("ends the Agent tiles with a New agent tile", () => {
   const html = render();
   expect(html).toContain('data-testid="sidebar-rail-new-agent"');
   expect(html).toContain('aria-label="New agent"');
+  // UNIT_BOUNDARY_DESCRIPTION: the outlined face stands until the pointer arrives, and the filled one takes its place.
+  expect(html).toContain("group-hover:hidden");
+  expect(html).toContain("hidden group-hover:block");
 });
 
 // TEST_SCENARIO: the pin tile appears once the browser holds a pin, since the popover it opens would otherwise be empty.
