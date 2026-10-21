@@ -12,8 +12,10 @@ import { useActivityConversations } from "../../home/hooks/use-activity-conversa
 import { useActivitySessions } from "../../home/hooks/use-activity-sessions.js";
 import { MessengerBindDialog } from "../../sandboxes/components/channels/messenger-bind-dialog.js";
 import type { BindMessenger } from "../../sandboxes/components/channels/messenger-instructions.js";
+import { useAgentsWithUnreadListedSessions } from "../../sessions/api/queries.js";
 import { SidebarAgentSessions } from "../../sessions/components/sidebar-agent-sessions.js";
 import { useStartSession } from "../../sessions/hooks/use-start-session.js";
+import { shownSessionId } from "../../sessions/lib/shown-session.js";
 import { useAgents, useAgentsList } from "../api/queries.js";
 import { useCreateDefaultAgent } from "../hooks/use-create-default-agent.js";
 import { useSidebarAgents } from "../hooks/use-sidebar-agents.js";
@@ -56,6 +58,9 @@ export function SidebarAgents({
   const showFolded = useStore((s) => s.sidebarShowHibernating);
   const setShowFolded = useStore((s) => s.setSidebarShowHibernating);
   const startSession = useStartSession();
+  const listedUnread = useAgentsWithUnreadListedSessions(
+    useStore(shownSessionId),
+  );
   const [binding, setBinding] = useState<BindMessenger | null>(null);
 
   const navigate = (go: () => void) => () => {
@@ -75,7 +80,7 @@ export function SidebarAgents({
         open={open}
         selected={current && open}
         current={current && !sessionOpen}
-        unread={unreadAgentIds.has(agent.id)}
+        unread={unreadAgentIds.has(agent.id) || listedUnread.has(agent.id)}
         orderReady={orderActions.ready}
         onMove={(id, drop) => orderActions.moveAgent(shownAgentIds, id, drop)}
         onStep={(id, step) => orderActions.stepAgent(shownAgentIds, id, step)}

@@ -14,7 +14,7 @@ import {
   SessionType,
   type SessionView,
 } from "api-server-api";
-import { useMemo } from "react";
+import { useMemo, useSyncExternalStore } from "react";
 
 import { queryClient } from "../../../query-client.js";
 import { useStore } from "../../../store.js";
@@ -24,6 +24,7 @@ import {
   useAgentLacksLiveUpdates,
 } from "../../agents/api/queries.js";
 import { askAgainWhenReady } from "../../agents/lib/agent-start.js";
+import { isUnreadSession } from "../../home/lib/unread.js";
 import { nextSessionCursor } from "../lib/sidebar-session-window.js";
 import {
   findAgentSession,
@@ -54,6 +55,31 @@ function updateListedSessions(
         })),
       },
   );
+}
+
+function unreadListedAgentIds(openSessionId: string | null): string {
+  const ids = new Set<string>();
+  for (const [, data] of queryClient.getQueriesData<SessionPages>({
+    queryKey: acpSessionsKeys.all,
+    predicate: ({ queryKey }) => queryKey[2] === "pages",
+  }))
+    for (const page of data?.pages ?? [])
+      for (const s of page.sessions)
+        if (isUnreadSession(s, { open: s.sessionId === openSessionId }))
+          ids.add(s.agentId);
+  return [...ids].sort().join("\n");
+}
+
+export function useAgentsWithUnreadListedSessions(
+  openSessionId: string | null,
+): ReadonlySet<string> {
+  const snapshot = () => unreadListedAgentIds(openSessionId);
+  const ids = useSyncExternalStore(
+    (onChange) => queryClient.getQueryCache().subscribe(onChange),
+    snapshot,
+    snapshot,
+  );
+  return useMemo(() => new Set(ids ? ids.split("\n") : []), [ids]);
 }
 
 export function keepFirstSessionPages(): void {

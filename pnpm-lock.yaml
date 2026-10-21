@@ -37,7 +37,7 @@ importers:
         version: 8.71.2(eslint@10.12.0(jiti@2.7.0))(typescript@6.0.3)
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
 
   packages/agent-runtime:
     dependencies:
@@ -104,7 +104,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -419,7 +419,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
       ws:
         specifier: ^8.22.0
         version: 8.22.0
@@ -477,7 +477,7 @@ importers:
         version: 6.0.3
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
 
   packages/e2e/agents/mock:
     dependencies:
@@ -768,6 +768,9 @@ importers:
       dev-config:
         specifier: workspace:*
         version: link:../dev-config
+      happy-dom:
+        specifier: ^21.0.1
+        version: 21.0.1
       typescript:
         specifier: ^6.0.3
         version: 6.0.3
@@ -776,7 +779,7 @@ importers:
         version: 8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)
       vitest:
         specifier: ^5.0.4
-        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
+        version: 5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
 
 packages:
 
@@ -3360,6 +3363,9 @@ packages:
   '@types/unist@3.0.3':
     resolution: {integrity: sha512-ko/gIFJRv177XgZsZcBwnqJN5x/Gien8qNOn0D5bQU/zAzVf9Zt3BlcUiLqhV9y4ARk0GbT3tnUiPNgnTXzc/Q==}
 
+  '@types/whatwg-mimetype@3.0.2':
+    resolution: {integrity: sha512-c2AKvDT8ToxLIOUlN51gTiHXflsfIFisS4pO7pDPoKouJCESkhZnEy623gwP9laCy5lnLDAw1vAzu2vM2YLOrA==}
+
   '@types/ws@8.18.2':
     resolution: {integrity: sha512-67MQl+fpWKVTT1NYdnmo3U4sc/xPo/zQBncVnI74qmQa0z/b+1g6iYqNmGCPbxO+zz2aklb08a0oHfegiVd0/w==}
 
@@ -3629,6 +3635,10 @@ packages:
 
   buffer-from@1.1.2:
     resolution: {integrity: sha512-E+XQCRwSbaaiChtv6k6Dwgc+bx+Bs6vuKJHHl5kox/BaKbhiXzqQOwK4cO22yElGp2OCmjwVhT3HmxgyPGnJfQ==}
+
+  buffer-image-size@0.6.4:
+    resolution: {integrity: sha512-nEh+kZOPY1w+gcCMobZ6ETUp9WfibndnosbpwB1iJk/8Gt5ZF2bhS6+B6bPYz424KtwsR6Rflc3tCz1/ghX2dQ==}
+    engines: {node: '>=4.0'}
 
   builtin-modules@5.1.0:
     resolution: {integrity: sha512-c5JxaDrzwRjq3WyJkI1AGR5xy6Gr6udlt7sQPbl09+3ckB+Zo2qqQ2KhCTBr7Q8dHB43bENGYEk4xddrFH/b7A==}
@@ -4049,6 +4059,10 @@ packages:
     resolution: {integrity: sha512-nGXts5znJzmWPu+mIE9izCOzdg63oJca2mDzGWWTth7sr4aCToKcoyFVBQwN75Ij5Pf6p510EwkTqViTRzDV+w==}
     engines: {node: '>=10.13.0'}
 
+  entities@7.0.1:
+    resolution: {integrity: sha512-TWrgLOFUQTH994YUyl1yT4uyavY5nNB5muff+RtWaqNVCAK408b5ZnnbNAUEWLTCpum9w6arT70i1XdQ4UeOPA==}
+    engines: {node: '>=0.12'}
+
   entities@8.1.0:
     resolution: {integrity: sha512-kxL7msIffSuh9aaFAMD7rxAIuTRMAHMeBtgHW2yUdWw732ZNh4MehkF2gdjvtdmikkaIP9bFDDJOPlsvm7avrA==}
     engines: {node: '>=20.19.0'}
@@ -4389,6 +4403,10 @@ packages:
   grpc-tools@1.13.1:
     resolution: {integrity: sha512-0sttMUxThNIkCTJq5qI0xXMz5zWqV2u3yG1kR3Sj9OokGIoyRBFjoInK9NyW7x5fH7knj48Roh1gq5xbl0VoDQ==}
     hasBin: true
+
+  happy-dom@21.0.1:
+    resolution: {integrity: sha512-pRBs/u9fhrncyByOl58DMex0R2uAj6ZPKWIjV5j5yNGZBqLw3P6BTRhlc0DD5b/Ht4/6JYTMuE2LJhUWRC6SGw==}
+    engines: {node: '>=20.0.0'}
 
   has-symbols@1.1.0:
     resolution: {integrity: sha512-1cDNdwJ2Jaohmb3sg4OmKaMBwuC48sYni5HUw2DvsC8LjGTLK9h+eb1X6RyuOHe4hT0ULCW68iomhjUoKUqlPQ==}
@@ -6178,6 +6196,10 @@ packages:
 
   webidl-conversions@3.0.1:
     resolution: {integrity: sha512-2JAn3z8AR6rjK8Sm8orRC0h/bcl/DqL7tRPdGZ4I1CjdF+EaMLmYxBHyXuKL849eucPFhvBoxMsflfOb8kxaeQ==}
+
+  whatwg-mimetype@3.0.0:
+    resolution: {integrity: sha512-nt+N2dzIutVRxARx1nghPKGv1xHikU7HKdfafKkLNLindmPU/ch3U31NOCGGA/dmPcmb1VlofO0vnKAcsm0o/Q==}
+    engines: {node: '>=12'}
 
   whatwg-url@5.0.0:
     resolution: {integrity: sha512-saE57nupxk6v3HY35+jzBwYa0rKSy0XR8JSxZPwgLr7ys0IBzhGviA1/TUGJLmSVqs8pb9AnvICXEuOHLprYTw==}
@@ -8836,6 +8858,8 @@ snapshots:
 
   '@types/unist@3.0.3': {}
 
+  '@types/whatwg-mimetype@3.0.2': {}
+
   '@types/ws@8.18.2':
     dependencies:
       '@types/node': 26.6.5
@@ -9105,6 +9129,10 @@ snapshots:
 
   buffer-from@1.1.2: {}
 
+  buffer-image-size@0.6.4:
+    dependencies:
+      '@types/node': 26.6.5
+
   builtin-modules@5.1.0: {}
 
   bullmq@6.3.13(ioredis@6.0.0)(pg@8.20.0):
@@ -9363,6 +9391,8 @@ snapshots:
     dependencies:
       graceful-fs: 4.2.11
       tapable: 2.3.3
+
+  entities@7.0.1: {}
 
   entities@8.1.0: {}
 
@@ -9846,6 +9876,19 @@ snapshots:
     transitivePeerDependencies:
       - encoding
       - supports-color
+
+  happy-dom@21.0.1:
+    dependencies:
+      '@types/node': 26.6.5
+      '@types/whatwg-mimetype': 3.0.2
+      '@types/ws': 8.18.2
+      buffer-image-size: 0.6.4
+      entities: 7.0.1
+      whatwg-mimetype: 3.0.0
+      ws: 8.22.0
+    transitivePeerDependencies:
+      - bufferutil
+      - utf-8-validate
 
   has-symbols@1.1.0: {}
 
@@ -11829,7 +11872,7 @@ snapshots:
       tsx: 4.23.15
       yaml: 2.9.0
 
-  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
+  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.4(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.1)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
@@ -11848,10 +11891,11 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 26.6.5
+      happy-dom: 21.0.1
     transitivePeerDependencies:
       - msw
 
-  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
+  vitest@5.0.4(@opentelemetry/api@1.9.1)(@types/node@26.6.5)(happy-dom@21.0.1)(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0)):
     dependencies:
       '@types/chai': 5.2.3
       '@vitest/mocker': 5.0.4(vite@8.3.4(@types/node@26.6.5)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.48.0)(tsx@4.23.15)(yaml@2.9.0))
@@ -11870,6 +11914,7 @@ snapshots:
     optionalDependencies:
       '@opentelemetry/api': 1.9.1
       '@types/node': 26.6.5
+      happy-dom: 21.0.1
     transitivePeerDependencies:
       - msw
 
@@ -11878,6 +11923,8 @@ snapshots:
   web-streams-polyfill@3.3.3: {}
 
   webidl-conversions@3.0.1: {}
+
+  whatwg-mimetype@3.0.0: {}
 
   whatwg-url@5.0.0:
     dependencies:

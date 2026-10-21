@@ -30,6 +30,7 @@ it.each([
   ["home", "Home"],
   ["artifacts", "Artifacts"],
   ["starter-kits", "Starter kits"],
+  ["starter-kit", "Starter kits"],
 ])("TEST_SCENARIO: on the %s page, only %s is current", (view, label) => {
   state.view = view;
   expect(
