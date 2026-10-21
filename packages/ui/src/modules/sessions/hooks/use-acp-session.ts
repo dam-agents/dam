@@ -370,6 +370,11 @@ export function useAcpSession(
         { kind: "text" as const, text: rewrite.text },
       ];
       const promptId = crypto.randomUUID();
+      const optimistic = rewrite.mode === "rewind";
+      if (optimistic) {
+        setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
+        useStore.getState().setRewriting(null);
+      }
       useStore.getState().setRewritePending(live.sessionId);
       const result = (await live.connection.agent
         .request("platform/rewriteFrom", {
@@ -390,11 +395,23 @@ export function useAcpSession(
               }
             : {}),
         })
+        .catch((err: unknown) => {
+          if (optimistic && useStore.getState().sessionId === live.sessionId) {
+            setMessages(all);
+            useStore.getState().setRewriting({
+              messageId: rewrite.messageId,
+              mode: rewrite.mode,
+            });
+          }
+          throw err;
+        })
         .finally(() => useStore.getState().setRewritePending(null))) as {
         sessionId: string;
       };
-      setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
-      useStore.getState().setRewriting(null);
+      if (!optimistic) {
+        setMessages((prev) => rewrittenThread(prev, at, promptId, parts));
+        useStore.getState().setRewriting(null);
+      }
       if (result.sessionId !== live.sessionId) {
         bindEngagement(result.sessionId);
         setSessionId(result.sessionId);
