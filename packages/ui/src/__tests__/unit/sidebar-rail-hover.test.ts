@@ -5,6 +5,7 @@ import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 const env = vi.hoisted(() => ({
+  pins: new Set<string>(),
   agents: [
     { id: "a1", name: "dam", state: "running" },
     { id: "a2", name: "other", state: "running" },
@@ -33,7 +34,7 @@ vi.mock("../../modules/approvals/api/queries.js", () => ({
   useApprovalsForOwner: () => ({ data: [] }),
 }));
 vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
-  usePinnedSessions: () => new Set<string>(),
+  usePinnedSessions: () => env.pins,
 }));
 vi.mock("../../modules/sessions/hooks/use-start-session.js", () => ({
   useStartSession: () => env.startSession,
@@ -74,6 +75,7 @@ let container: HTMLDivElement;
 
 beforeEach(() => {
   vi.clearAllMocks();
+  env.pins = new Set(["a1:s1"]);
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.useFakeTimers();
   container = document.createElement("div");
@@ -181,5 +183,32 @@ it("leaves the popover open when the tile is clicked", () => {
   act(() => tile().click());
   expect(env.startSession).toHaveBeenCalledWith("a1");
   act(() => void vi.advanceTimersByTime(400));
+  expect(popover()).not.toBeNull();
+});
+
+const pinnedTile = () =>
+  container.querySelector<HTMLButtonElement>(
+    '[data-testid="sidebar-rail-pinned"]',
+  )!;
+
+// TEST_SCENARIO: the Pinned tile has no page behind it, so a click names no navigation; what it opens is the popover, and a pointer resting on the tile or keyboard focus opens it as an Agent's tile does.
+it("opens the Pinned popover on hover, and a click navigates nowhere", () => {
+  expect(pinnedTile()).not.toBeNull();
+  act(() => {
+    pinnedTile().dispatchEvent(
+      new PointerEvent("pointerover", {
+        bubbles: true,
+        relatedTarget: document.body,
+      }),
+    );
+  });
+  act(() => void vi.advanceTimersByTime(200));
+  expect(popover()).not.toBeNull();
+  expect(popover()!.textContent).toContain("Pinned");
+
+  vi.clearAllMocks();
+  act(() => pinnedTile().click());
+  expect(env.startSession).not.toHaveBeenCalled();
+  expect(env.navigated).not.toHaveBeenCalled();
   expect(popover()).not.toBeNull();
 });

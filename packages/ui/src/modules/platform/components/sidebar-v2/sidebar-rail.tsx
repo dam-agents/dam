@@ -1,19 +1,23 @@
 import { Add, ChevronRight, Home, Pin, Settings } from "@carbon/icons-react";
-import { useEffect, useRef, useState } from "react";
+import {
+  type FocusEvent,
+  type PointerEvent,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 
 import { FOCUS_RING } from "@/components/ui/focus-ring";
 import {
   Popover,
   PopoverAnchor,
   PopoverContent,
-  PopoverTrigger,
 } from "@/components/ui/popover.js";
 import {
   RAIL_AVATAR,
   RAIL_COLUMN,
   RAIL_GAP,
   RAIL_GLYPH,
-  RAIL_GROUP_GAP,
   RAIL_SEPARATOR,
   railTile,
 } from "@/components/ui/rail-tile";
@@ -89,52 +93,29 @@ export function SidebarRail({
           aria-label="Home"
           aria-current={homeOpen ? "page" : undefined}
           data-testid="sidebar-home-row"
-          className={cn(railTile(homeOpen), RAIL_GROUP_GAP, FOCUS_RING)}
+          className={cn(railTile(homeOpen), FOCUS_RING)}
         >
           <Home size={RAIL_GLYPH} />
         </button>
       </Tooltip>
       {pins.size > 0 && (
-        <Popover
+        <PinnedTile
           open={open === "pinned"}
-          onOpenChange={(next) => setOpen(next ? "pinned" : null)}
-        >
-          <Tooltip content="Pinned sessions" side="right">
-            <PopoverTrigger asChild>
-              <button
-                type="button"
-                aria-label="Pinned sessions"
-                aria-current={open === "pinned" ? "page" : undefined}
-                data-testid="sidebar-rail-pinned"
-                className={cn(
-                  railTile(open === "pinned"),
-                  RAIL_GROUP_GAP,
-                  FOCUS_RING,
-                )}
-              >
-                <Pin size={RAIL_GLYPH} />
-              </button>
-            </PopoverTrigger>
-          </Tooltip>
-          <PopoverContent
-            side="right"
-            align="start"
-            className="max-h-[70vh] w-[320px] overflow-y-auto p-2"
-          >
-            <div className="px-2 pb-1 text-xs font-semibold text-muted-foreground">
-              Pinned
-            </div>
-            <div className="flex flex-col gap-px">
-              <PinnedList onNavigate={navigate} />
-            </div>
-          </PopoverContent>
-        </Popover>
+          onOpenChange={(next) =>
+            setOpen((prev) =>
+              next ? "pinned" : prev === "pinned" ? null : prev,
+            )
+          }
+          onNavigate={navigate}
+        />
       )}
-      <div aria-hidden className={RAIL_SEPARATOR} />
       <div
-        className={cn("flex min-h-0 flex-col items-center", RAIL_GAP)}
+        className={cn("relative flex min-h-0 flex-col items-center", RAIL_GAP)}
         data-testid="sidebar-rail-agents"
       >
+        <div aria-hidden className={cn(RAIL_SEPARATOR, "-top-[3px]")}>
+          <span className="h-px w-6 bg-border" />
+        </div>
         {agents.map((agent) => (
           <AgentTile
             key={agent.id}
@@ -179,6 +160,69 @@ export function SidebarRail({
 const HOVER_OPEN_MS = 150;
 const HOVER_CLOSE_MS = 250;
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: What a tile of the rail needs to open what it holds in a popover beside it: the pointer resting on the tile opens it after a moment, leaving the tile and the popover closes it after a grace long enough to move between them, keyboard focus opens it, and a menu opened from the popover keeps it alive.
+ */
+function useRailPopover(onOpenChange: (open: boolean) => void) {
+  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const closedAt = useRef(0);
+  const content = useRef<HTMLDivElement>(null);
+  const hovering = useRef(false);
+  const cancel = () => clearTimeout(timer.current);
+  const closeSoon = () => {
+    cancel();
+    timer.current = setTimeout(() => {
+      // UNIT_BOUNDARY_DESCRIPTION: a menu opened from the popover outlives the pointer leaving it.
+      if (content.current?.querySelector('[data-state="open"]')) return;
+      closedAt.current = Date.now();
+      onOpenChange(false);
+    }, HOVER_CLOSE_MS);
+  };
+  const openSoon = () => {
+    cancel();
+    timer.current = setTimeout(() => onOpenChange(true), HOVER_OPEN_MS);
+  };
+  useEffect(() => cancel, []);
+  return {
+    hovered: () => hovering.current,
+    // UNIT_BOUNDARY_DESCRIPTION: a press dismisses the popover, and a pointer still resting on the tile takes it back.
+    keepOpen: () => {
+      if (hovering.current) onOpenChange(true);
+    },
+    dismissed: () => {
+      closedAt.current = Date.now();
+    },
+    trigger: {
+      onPointerEnter: (e: PointerEvent<HTMLButtonElement>) => {
+        if (e.pointerType === "touch") return;
+        hovering.current = true;
+        openSoon();
+      },
+      onPointerLeave: (e: PointerEvent<HTMLButtonElement>) => {
+        cancel();
+        if (e.pointerType === "touch") return;
+        hovering.current = false;
+        closeSoon();
+      },
+      onFocus: (e: FocusEvent<HTMLButtonElement>) => {
+        // UNIT_BOUNDARY_DESCRIPTION: Escape returns focus to this tile, and must not reopen what it closed.
+        if (
+          e.currentTarget.matches(":focus-visible") &&
+          Date.now() - closedAt.current > HOVER_CLOSE_MS
+        ) {
+          cancel();
+          onOpenChange(true);
+        }
+      },
+    },
+    content: {
+      ref: content,
+      onPointerEnter: cancel,
+      onPointerLeave: closeSoon,
+    },
+  };
+}
+
 function AgentTile({
   agent,
   current,
@@ -198,31 +242,12 @@ function AgentTile({
   const name = `New session with ${agent.name}${
     cue ? `, ${cue === "approval" ? "needs your approval" : "unread"}` : ""
   }`;
-  const hovering = useRef(false);
+  const rail = useRailPopover(onOpenChange);
   const newSession = () => {
     onNavigate();
     startSession(agent.id);
-    // UNIT_BOUNDARY_DESCRIPTION: a click opens the Agent's page and is no reason to dismiss the popover the hover opened, so a pointer that is still over the tile gets it back after the press closed it.
-    if (hovering.current) onOpenChange(true);
+    rail.keepOpen();
   };
-  const timer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
-  const closedAt = useRef(0);
-  const content = useRef<HTMLDivElement>(null);
-  const cancel = () => clearTimeout(timer.current);
-  const closeSoon = () => {
-    cancel();
-    timer.current = setTimeout(() => {
-      // UNIT_BOUNDARY_DESCRIPTION: a menu opened from the popover outlives the pointer leaving it.
-      if (content.current?.querySelector('[data-state="open"]')) return;
-      closedAt.current = Date.now();
-      onOpenChange(false);
-    }, HOVER_CLOSE_MS);
-  };
-  const openSoon = () => {
-    cancel();
-    timer.current = setTimeout(() => onOpenChange(true), HOVER_OPEN_MS);
-  };
-  useEffect(() => cancel, []);
   return (
     <Popover open={open} onOpenChange={onOpenChange}>
       <AgentContextMenu agent={agent} current={current} onNavigate={onNavigate}>
@@ -235,28 +260,7 @@ function AgentTile({
             data-agent-id={agent.id}
             className={cn(railTile(current || open), FOCUS_RING)}
             onClick={newSession}
-
-            onPointerLeave={(e) => {
-              cancel();
-              if (e.pointerType === "touch") return;
-              hovering.current = false;
-              closeSoon();
-            }}
-            onPointerEnter={(e) => {
-              if (e.pointerType === "touch") return;
-              hovering.current = true;
-              openSoon();
-            }}
-            onFocus={(e) => {
-              // UNIT_BOUNDARY_DESCRIPTION: Escape returns focus to this tile, and must not reopen what it closed.
-              if (
-                e.currentTarget.matches(":focus-visible") &&
-                Date.now() - closedAt.current > HOVER_CLOSE_MS
-              ) {
-                cancel();
-                onOpenChange(true);
-              }
-            }}
+            {...rail.trigger}
           >
             <AgentAvatar
               name={agent.name}
@@ -277,12 +281,10 @@ function AgentTile({
         </PopoverAnchor>
       </AgentContextMenu>
       <PopoverContent
-        ref={content}
         side="right"
         align="start"
         className="max-h-[70vh] w-[320px] overflow-y-auto p-2"
-        onPointerEnter={cancel}
-        onPointerLeave={closeSoon}
+        {...rail.content}
       >
         <div className="flex h-8 items-center justify-between gap-2 pr-1 pl-2">
           <span className="truncate text-sm font-medium">{agent.name}</span>
@@ -309,6 +311,54 @@ function AgentTile({
             />
           }
         />
+      </PopoverContent>
+    </Popover>
+  );
+}
+
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: The rail's Pinned tile, which has no page behind it: a click does nothing but open the popover, and a pointer resting on the tile or keyboard focus opens it as it does for an Agent's tile, listing the Pinned Sessions.
+ */
+function PinnedTile({
+  open,
+  onOpenChange,
+  onNavigate,
+}: {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  onNavigate: () => void;
+}) {
+  const rail = useRailPopover(onOpenChange);
+  return (
+    <Popover open={open} onOpenChange={onOpenChange}>
+      <PopoverAnchor asChild>
+        <button
+          type="button"
+          aria-label="Pinned sessions"
+          aria-current={open ? "page" : undefined}
+          data-testid="sidebar-rail-pinned"
+          className={cn(railTile(open), FOCUS_RING)}
+          onClick={() => {
+            if (rail.hovered()) rail.keepOpen();
+            else onOpenChange(!open);
+          }}
+          {...rail.trigger}
+        >
+          <Pin size={RAIL_GLYPH} />
+        </button>
+      </PopoverAnchor>
+      <PopoverContent
+        side="right"
+        align="start"
+        className="max-h-[70vh] w-[320px] overflow-y-auto p-2"
+        {...rail.content}
+      >
+        <div className="px-2 pb-1 text-xs font-semibold text-muted-foreground">
+          Pinned
+        </div>
+        <div className="flex flex-col gap-px">
+          <PinnedList onNavigate={onNavigate} />
+        </div>
       </PopoverContent>
     </Popover>
   );
