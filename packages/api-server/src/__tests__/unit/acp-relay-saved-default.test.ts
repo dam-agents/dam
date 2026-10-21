@@ -161,6 +161,31 @@ describe("ACP relay: the saved default on a new session", () => {
     const [frame] = await relay.received(1);
     expect(frame).toEqual(cliNewSession);
   });
+  // TEST_SCENARIO: a second session/new whose lookup fails while the first one's is still running must not leave a rejection unhandled, which would stop the api-server; both frames still reach the runtime in order.
+  it("survives a queued lookup that fails before the one ahead of it", async () => {
+    const unhandled = vi.fn();
+    process.on("unhandledRejection", unhandled);
+    closers.push(() => process.off("unhandledRejection", unhandled));
+    let answerFirst!: (pair: SessionPair) => void;
+    const firePair = vi
+      .fn<FirePair>()
+      .mockImplementationOnce(
+        () => new Promise<SessionPair>((r) => (answerFirst = r)),
+      )
+      .mockImplementationOnce(async () => {
+        throw new Error("db down");
+      });
+    const relay = await world(firePair);
+    relay.send(cliNewSession);
+    relay.send({ ...cliNewSession, id: 3 });
+    await vi.waitFor(() => expect(firePair).toHaveBeenCalledTimes(2));
+    await new Promise((r) => setTimeout(r, 50));
+    answerFirst(saved);
+    const frames = await relay.received(2);
+    expect(frames.map((f) => f.id)).toEqual([2, 3]);
+    expect(frames[1]).toEqual({ ...cliNewSession, id: 3 });
+    expect(unhandled).not.toHaveBeenCalled();
+  });
 });
 
 describe("fillSavedDefault", () => {

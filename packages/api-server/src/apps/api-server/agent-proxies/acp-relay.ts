@@ -269,7 +269,15 @@ export function createAcpRelay(
           ) => {
             const filled = isBinary
               ? null
-              : fillSavedDefault(parsed, agentId, firePair);
+              : fillSavedDefault(parsed, agentId, firePair)?.catch(
+                  (err: unknown) => {
+                    getLogger().warn(
+                      { err, agentId },
+                      "acp relay: saved default lookup failed",
+                    );
+                    return null;
+                  },
+                );
             if (!filled && !held) {
               send(data, isBinary);
               return;
@@ -277,13 +285,7 @@ export function createAcpRelay(
             const before = held ?? Promise.resolve();
             const sent = before
               .then(async () => {
-                const frame = await filled?.catch((err: unknown) => {
-                  getLogger().warn(
-                    { err, agentId },
-                    "acp relay: saved default lookup failed",
-                  );
-                  return null;
-                });
+                const frame = await filled;
                 send(frame ? JSON.stringify(frame) : data, isBinary);
               })
               .catch((err: unknown) => {
