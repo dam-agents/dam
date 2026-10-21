@@ -248,7 +248,7 @@ Series are still partitioned by runner, because each runner is a process with it
 
 The runner's other duty here rides the machine status rather than a signal: **explaining a boot**.
 A guest's own boot log is on its storage disk, which the host does not read — parsing a filesystem a guest has had root on is not something the host should do — so the runner reads the machine's **console**, which the runtime writes on the host side.
-It carries the guest kernel and platform-init, the guest's init, not the harness, whose output goes to the boot log ([persistence](persistence.md)).
+It carries the guest kernel and platform-init, the guest's init, not the harness, whose output goes to the boot log ([vm storage](vm-storage.md#the-disk)).
 Inside the guest the boot log, this boot's and the one before, is readable at `/var/log/platform`, read-only, so an operator's `vm-runner exec` or the agent itself can read the harness's output.
 The two arrive apart — the runtime files the agent's output as the console and logs the kernel's console lines with its own — and the tail shows the kernel's first.
 platform-init writes its own verdicts there too, as kernel log lines at a level the guest's quiet console still prints — a refusal to boot, each step of a boot that a host must be able to follow, each hand-off to the image's entrypoint and each exit of it — so a machine that will not boot, or whose agent keeps exiting, says why, and a boot the host cut short says how far it got.
