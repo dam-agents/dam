@@ -1418,8 +1418,8 @@ apiServer:
 
   # -- Minimum dam CLI version this server accepts (semver, e.g. "1.2.0").
   # Empty/unset means no floor — every CLI is accepted (a soft-warn fires
-  # if the CLI is behind the current server version). Set this to retire a
-  # known-broken older client.
+  # if the CLI is behind the CLI this release recommends, its own version).
+  # Set this to retire a known-broken older client.
   minClientCliVersion: ""
 
   # -- Ingress NetworkPolicy for the api-server pod.
