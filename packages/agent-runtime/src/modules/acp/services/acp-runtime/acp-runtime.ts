@@ -4,6 +4,7 @@ import { z } from "zod";
 import type { PendingRestart, PodSession } from "agent-runtime-api";
 import {
   buildPlatformQueueChangedNotification,
+  buildPlatformSessionResetNotification,
   buildPlatformRunEndedNotification,
   buildPlatformRunStartedNotification,
   capInlineImages,
@@ -1382,6 +1383,15 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         );
         return;
       }
+      if (
+        cut.kind === "after" &&
+        cut.batch !== undefined &&
+        params.mode === "rewind" &&
+        deps.sessionCut !== undefined
+      ) {
+        cutInPlace(channel, id, params, cut.batch, deps.sessionCut, fail);
+        return;
+      }
       if (cut.kind === "after" && !sessionForkSupported) {
         failRewrite(
           "this agent cannot rewrite a conversation",
@@ -1528,6 +1538,109 @@ export function createAcpRuntime(deps: AcpRuntimeDeps): AcpRuntime {
         );
       },
     );
+  }
+
+  function cutInPlace(
+    channel: ClientChannel,
+    id: unknown,
+    params: PlatformRewriteFromParams,
+    batch: string,
+    sessionCut: SessionCutProvider,
+    fail: (message: string, code?: string) => void,
+  ): void {
+    const sid = params.sessionId;
+    const viewers = [...engagedViewersOf(sid)];
+    const finish = (error?: string): void => {
+      resetSession(sid, viewers, (loaded) => {
+        rewritingSessions.delete(sid);
+        if (error !== undefined || !loaded) {
+          fail(error ?? "the rewound session could not be loaded");
+          return;
+        }
+        sendToChannel(
+          channel,
+          JSON.stringify({ jsonrpc: "2.0", id, result: { sessionId: sid } }),
+        );
+        if (params.prompt !== undefined && params.promptId !== undefined)
+          submitRewrittenPrompt(channel, sid, params.prompt, params.promptId);
+      });
+    };
+    closeInHarness(sid, (closed) => {
+      if (!closed) {
+        rewritingSessions.delete(sid);
+        fail("this agent cannot rewrite a conversation", REWRITE_REFUSED_CODE);
+        return;
+      }
+      void sessionCut
+        .cut({
+          sessionId: sid,
+          before: batch,
+          ...(params.prompt === undefined && { dropsTurn: batch }),
+        })
+        .then((outcome) => {
+          if (outcome.ok) {
+            finish();
+            return;
+          }
+          if (outcome.refused) {
+            rewritingSessions.delete(sid);
+            fail(outcome.message, REWRITE_REFUSED_CODE);
+            return;
+          }
+          finish(outcome.message);
+        });
+    });
+  }
+
+  function closeInHarness(
+    sessionId: string,
+    done: (closed: boolean) => void,
+  ): void {
+    if (harnessColdSessions.has(sessionId)) {
+      done(true);
+      return;
+    }
+    if (!sessionCloseSupported) {
+      done(false);
+      return;
+    }
+    requestFromHarness("session/close", { sessionId }, (frame) => {
+      const failed = (frame as { error?: unknown }).error !== undefined;
+      if (!failed) harnessColdSessions.add(sessionId);
+      done(!failed);
+    });
+  }
+
+  /**
+   * UNIT_BOUNDARY_DESCRIPTION: A Session Reset: after the harness's stored
+   * conversation was cut in place, drops the Session's log and what the
+   * runtime derived from it, keeping its id, metadata, queue and engaged
+   * channels, and fills the log again from history. The viewers engaged
+   * before the reset then get one ephemeral platform/sessionReset and load the
+   * Session again; their cursors went with the old log, and a viewer's next
+   * frame is the next live one. The harness copy stays closed, so the next
+   * prompt rehydrates it from the cut store.
+   */
+  function resetSession(
+    sessionId: string,
+    viewers: readonly ClientChannel[],
+    done: (loaded: boolean) => void,
+  ): void {
+    harnessColdSessions.add(sessionId);
+    appliedSettings.delete(sessionId);
+    autonomousTurns.end(sessionId);
+    transcript.forget(sessionId);
+    openToolCalls.delete(sessionId);
+    generating.delete(sessionId);
+    supersededEchoes.delete(sessionId);
+    runTextBuffers.delete(sessionId);
+    bootstrap.fill(sessionId, (loaded) => {
+      const line = JSON.stringify(
+        buildPlatformSessionResetNotification({ sessionId }),
+      );
+      for (const viewer of viewers) if (viewer.isOpen()) viewer.send(line);
+      done(loaded);
+    });
   }
 
   function submitRewrittenPrompt(

@@ -94,9 +94,9 @@ It is ephemeral, like `platform/queueChanged`: sent to the viewers engaged befor
 
 | #     | Title                                            | Scope                                                                                           | Depends on |
 | ----- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------- | ---------- |
-| 01    | ADR: a Session can be reset in place             | ADR amending ADR-026; `sessions.md`; glossary                                                   | —          |
+| 01 ✅ | ADR: a Session can be reset in place             | ADR amending ADR-026; `sessions.md`; glossary                                                   | —          |
 | 02 ✅ | The Claude Code image cuts a session in place    | `harness-cut-lib.mjs`, its manifest declaration, the `sessionCut` schema, a generic worker call | —          |
-| 03    | The runtime cuts in place and resets the Session | `rewriteFrom` in-place path, the reset, `platform/sessionReset`                                 | 01, 02     |
+| 03 ✅ | The runtime cuts in place and resets the Session | `rewriteFrom` in-place path, the reset, `platform/sessionReset`                                 | 01, 02     |
 | 04    | The chat reloads on a reset                      | UI handles `platform/sessionReset`; the asking tab skips its own reload                         | 03         |
 
 ## Conventions & glossary
