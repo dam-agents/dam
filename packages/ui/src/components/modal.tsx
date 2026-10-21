@@ -277,13 +277,16 @@ function focusablesIn(container: HTMLElement): HTMLElement[] {
   ).filter((el) => el.getClientRects().length > 0);
 }
 
-export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
+export function useFocusTrap(
+  containerRef: RefObject<HTMLElement | null>,
+  active = true,
+) {
   const [previouslyFocused] = useState(
     () => document.activeElement as HTMLElement | null,
   );
   useEffect(() => {
     const container = containerRef.current;
-    if (!container) return;
+    if (!active || !container) return;
 
     let grabRaf = 0;
     const reassertUntil = performance.now() + 500;
@@ -312,13 +315,13 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
       }
       const first = focusables[0]!;
       const last = focusables[focusables.length - 1]!;
-      const active = document.activeElement as HTMLElement | null;
+      const focused = document.activeElement as HTMLElement | null;
       if (e.shiftKey) {
-        if (active === first || !container.contains(active)) {
+        if (focused === first || !container.contains(focused)) {
           e.preventDefault();
           last.focus();
         }
-      } else if (active === last || !container.contains(active)) {
+      } else if (focused === last || !container.contains(focused)) {
         e.preventDefault();
         first.focus();
       }
@@ -330,7 +333,7 @@ export function useFocusTrap(containerRef: RefObject<HTMLElement | null>) {
       container.removeEventListener("keydown", onKey);
       previouslyFocused?.focus?.();
     };
-  }, [containerRef, previouslyFocused]);
+  }, [containerRef, previouslyFocused, active]);
 }
 
 const openModalIds: string[] = [];

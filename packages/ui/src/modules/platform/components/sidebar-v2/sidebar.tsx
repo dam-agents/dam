@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 
+import { useFocusTrap } from "@/components/modal";
 import { ResizeHandle } from "@/components/resize-handle";
-import { SideDrawer } from "@/components/ui/side-drawer";
 import {
   MIN_CONTENT_WIDTH,
   navigationMode,
@@ -58,37 +58,58 @@ export function SidebarV2() {
   const dragFrom = useRef<number | null>(null);
   const dragBy = useRef(0);
   const over = overlaid && mode === "rail";
-
+  // UNIT_BOUNDARY_DESCRIPTION: over the page the pane is the only thing to reach, so Tab stays inside it and the way out is Escape, a Session, or going back.
+  const navRef = useRef<HTMLElement>(null);
+  useFocusTrap(navRef, over);
   useEffect(() => {
     if (!over) return;
     const release = holdBackEntry(() => {
       setOverlaid(false);
       return true;
     });
-    return release;
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== "Escape" || e.defaultPrevented) return;
+      if (document.querySelector('[role="menu"][data-state="open"]')) return;
+      setOverlaid(false);
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      release();
+    };
   }, [over]);
 
   return (
     <>
       <nav
+        ref={navRef}
         className={cn(
-          "relative flex h-full shrink-0 flex-col border-r border-border bg-chrome",
-          "transition-[width] duration-200 ease-out motion-reduce:transition-none",
+          "flex flex-col border-r border-border bg-chrome",
+          over
+            ? "fixed inset-y-0 left-0 right-[60px] z-overlay"
+            : "relative h-full shrink-0",
+          !over &&
+            "transition-[width] duration-200 ease-out motion-reduce:transition-none",
           resizing && "transition-none",
-          !expanded && "w-14 overflow-visible",
+          !expanded && !over && "w-14 overflow-visible",
         )}
-        style={expanded ? { width } : undefined}
+        style={expanded && !over ? { width } : undefined}
         data-testid="app-sidebar"
         data-pinned={expanded || undefined}
         data-collapsed={!expanded || undefined}
       >
-        {expanded ? (
+        {expanded || over ? (
           <>
             <SidebarHeader
-              onCollapse={() => setPinned(false)}
-              onHome={() => setView("home")}
+              onCollapse={() => (over ? setOverlaid(false) : setPinned(false))}
+              onHome={() => {
+                setView("home");
+                if (over) setOverlaid(false);
+              }}
             />
-            <SidebarContent />
+            <SidebarContent
+              onNavigate={over ? () => setOverlaid(false) : undefined}
+            />
           </>
         ) : (
           <SidebarRail
@@ -146,29 +167,6 @@ export function SidebarV2() {
             }}
           />
         </div>
-      )}
-      {over && (
-        <SideDrawer
-          side="left"
-          label="Navigation"
-          closing={false}
-          onClose={() => setOverlaid(false)}
-          onClosed={() => {}}
-          showBackdrop={false}
-          animated={false}
-          // UNIT_BOUNDARY_DESCRIPTION: a narrow viewport has no room for a page beside the navigation, so the navigation takes the screen up to the right rail rather than lying over the page.
-          containerClassName="right-[60px]"
-          className="w-full"
-        >
-          <SidebarHeader
-            onCollapse={() => setOverlaid(false)}
-            onHome={() => {
-              setView("home");
-              setOverlaid(false);
-            }}
-          />
-          <SidebarContent onNavigate={() => setOverlaid(false)} />
-        </SideDrawer>
       )}
     </>
   );
