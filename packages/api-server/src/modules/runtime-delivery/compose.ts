@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import type { ConnectionOptions } from "bullmq";
 import {
   runtimeFeaturesOf,
@@ -52,6 +53,11 @@ import {
   type EventLifecycleListener,
 } from "./services/event-lifecycle.js";
 import { createEventOutcomeRegistry } from "./services/event-outcome-registry.js";
+import {
+  createSessionMessages,
+  SESSION_MESSAGE_KIND,
+  type SessionMessages,
+} from "./services/session-messages.js";
 import { emit, EventType } from "../../events.js";
 import { workspaceEvent } from "./domain/outbox-events.js";
 import { createEgressRuleMatchAdapter } from "../egress-rules/compose.js";
@@ -64,6 +70,7 @@ export interface RuntimeDeliveryComposition {
   sweep: CronSweep;
   hello: RuntimeDeliveryService;
   runtimeMutator: RuntimeMutator;
+  sessionMessages: SessionMessages;
   contributionsStatus(agentId: string): Promise<ContributionsStatus>;
   runtimeFeaturesMany(
     agentIds: string[],
@@ -212,6 +219,16 @@ export function composeRuntimeDelivery(
     queue,
   });
 
+  const sessionMessages = createSessionMessages({
+    runtimeMutator,
+    readCapabilities: async (agentId) =>
+      (await agentsRuntimeRepo.get(agentId))?.runtimeCapabilities ?? null,
+    newId: randomUUID,
+    log,
+  });
+  eventOutcomes.add(SESSION_MESSAGE_KIND, sessionMessages.onOutcome);
+  lifecycleListeners.set(SESSION_MESSAGE_KIND, sessionMessages.onLifecycle);
+
   return {
     registerEventOutcomeHandler: eventOutcomes.add,
     registerEventLifecycleListener: (kind, listener) => {
@@ -224,6 +241,7 @@ export function composeRuntimeDelivery(
     sweep,
     hello,
     runtimeMutator,
+    sessionMessages,
     async contributionsStatus(agentId): Promise<ContributionsStatus> {
       const [row, preparing, features, workspace] = await Promise.all([
         outboxRepo.getRow(agentId),

@@ -3,6 +3,10 @@ export { createBullConnection } from "./infrastructure/state-queue.js";
 export type { OutboxRepo } from "./infrastructure/outbox-repo.js";
 export type { RuntimeMutator } from "./services/runtime-mutator.js";
 export type {
+  SessionMessageEvent,
+  SessionMessages,
+} from "./services/session-messages.js";
+export type {
   EventLifecycleListener,
   EventLifecycleTransition,
 } from "./services/event-lifecycle.js";

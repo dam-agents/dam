@@ -22,6 +22,7 @@ export const eventKind = z.enum([
   "harness-config",
   "satellite-outcome",
   "sub-agent-outcome",
+  "session-message",
 ]);
 export type EventKind = z.infer<typeof eventKind>;
 
@@ -329,6 +330,36 @@ export const subAgentOutcomeEvent = z.object({
   payload: subAgentOutcomeEventPayload,
 });
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a message one of the agent's Sessions sends into
+ * another of its Sessions through the send_session_message tool. `from` names
+ * the sending Session as the platform resolved it, never as the sender wrote
+ * it, so the receiving turn can tell who is talking. A `notice` is the
+ * platform telling a sender that its message was not delivered; nothing is
+ * sent back when a notice itself fails, so notices never loop.
+ */
+export const sessionMessageEventPayload = z.object({
+  sessionId: z.string().min(1),
+  text: z.string().min(1).max(20_000),
+  from: z.object({
+    sessionId: z.string().min(1).optional(),
+    title: z.string().optional(),
+    type: z.string().optional(),
+  }),
+  notice: z.literal(true).optional(),
+});
+export type SessionMessageEventPayload = z.infer<
+  typeof sessionMessageEventPayload
+>;
+
+export const sessionMessageEvent = z.object({
+  id: z.string().min(1),
+  kind: z.literal("session-message"),
+  version: z.number().int().nonnegative(),
+  expiresAt: z.string().datetime({ offset: true }),
+  payload: sessionMessageEventPayload,
+});
+
 export const event = z.discriminatedUnion("kind", [
   triggerEvent,
   scheduleResetEvent,
@@ -338,6 +369,7 @@ export const event = z.discriminatedUnion("kind", [
   harnessConfigEvent,
   satelliteOutcomeEvent,
   subAgentOutcomeEvent,
+  sessionMessageEvent,
 ]);
 export type Event = z.infer<typeof event>;
 

@@ -24,6 +24,7 @@ import { bindingsFingerprint } from "./domain/bindings-fingerprint.js";
 import type { ApplyStateDeps } from "./service.js";
 import { createTriggerStateStore } from "./infrastructure/trigger-state-store.js";
 import { createTriggerPlugin } from "./drivers/trigger-plugin.js";
+import { createSessionMessagePlugin } from "./drivers/session-message-plugin.js";
 import { createPrecheckRunner } from "./infrastructure/precheck-runner.js";
 import { createWorkspaceSeedPlugin } from "./drivers/workspace-seed-plugin.js";
 import { createWorkspaceCommandPlugin } from "./drivers/workspace-command-plugin.js";
@@ -188,6 +189,9 @@ export async function composeRuntimeChannel(
       driver: opts.triggerDriver,
       sessions: opts.subAgentSessions,
     }),
+  );
+  registry.register(
+    createSessionMessagePlugin({ driver: opts.triggerDriver, reporter, log }),
   );
 
   const discoverModels = createModelDiscovery({ log });

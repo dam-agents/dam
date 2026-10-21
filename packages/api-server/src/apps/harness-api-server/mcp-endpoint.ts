@@ -45,6 +45,8 @@ import {
 } from "./sub-agent-tools.js";
 import { rejectOversizedArrays } from "../../core/mcp-input-bounds.js";
 import { registerSpendLimitsTool } from "./spend-limits-tool.js";
+import { registerSessionMessageTools } from "./session-message-tools.js";
+import type { SessionMessages } from "../../modules/runtime-delivery/index.js";
 import { securityLog } from "../../core/security-log.js";
 import { emit, EventType } from "../../events.js";
 import {
@@ -173,6 +175,7 @@ export interface McpSessionDeps {
   agentTelemetry: AgentTelemetryService;
   spendStatus?: () => Promise<SpendStatus>;
   sessionRef?: string;
+  sessionMessages?: SessionMessages;
   chatForms?: ChatFormPreferences | null;
   satellites?: {
     ops: SatelliteAgentOpsImpl;
@@ -1321,6 +1324,34 @@ export function createMcpSession(
     agentTelemetry: deps.agentTelemetry,
   });
 
+  const sessionMessages = deps.sessionMessages;
+  if (sessionMessages)
+    registerSessionMessageTools(server, {
+      listSessions: async (query) =>
+        (
+          await runtimeClient.sessions.list.query(query, {
+            signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS),
+          })
+        ).sessions,
+      callerSessionId: async () => {
+        const ref = deps.sessionRef;
+        if (!ref) return null;
+        try {
+          const { sessionId } = await runtimeClient.sessions.byRef.query(
+            { ref },
+            { signal: AbortSignal.timeout(SESSION_LOOKUP_TIMEOUT_MS) },
+          );
+          return sessionId;
+        } catch {
+          return null;
+        }
+      },
+      acceptsSessionMessages: () => sessionMessages.accepts(agentId),
+      send: async (payload) => {
+        await sessionMessages.send(agentId, payload);
+      },
+    });
+
   server.tool(
     "report_result",
     "Report this invocation's final result. Pass a JSON value conforming to the JSON Schema given in your prompt. The platform validates it structurally: if it conforms, the result is stored and the invocation is marked done; if not, you get back what was wrong so you can call report_result again with a corrected result. The platform decides you are done only when a call passes validation — finishing your turn without calling report_result reports nothing. Once a call is accepted, your task is over: end your turn at once, with no more text and no more tool calls. Only works while this agent is a running invocation target; attribution is automatic from your agent identity.",
@@ -1463,6 +1494,7 @@ export interface MountMcpDeps {
   spendStatusFor?: (agentId: string, owner: string) => Promise<SpendStatus>;
   satelliteOps?: SatelliteAgentOpsImpl;
   satelliteWaitDeadlineMs?: number;
+  sessionMessages?: SessionMessages;
 }
 
 export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
@@ -1512,6 +1544,7 @@ export function mountMcpRoutes(app: Hono, deps: MountMcpDeps) {
     const session = createMcpSession(agentId, {
       owner: verified.owner,
       ...(sessionRef ? { sessionRef } : {}),
+      ...(deps.sessionMessages && { sessionMessages: deps.sessionMessages }),
       chatForms,
       channelManager: deps.channelManager,
       k8s: deps.k8s,
