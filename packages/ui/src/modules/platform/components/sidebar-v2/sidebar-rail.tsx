@@ -93,7 +93,11 @@ export function SidebarRail({
                 aria-label="Pinned sessions"
                 aria-current={open === "pinned" ? "page" : undefined}
                 data-testid="sidebar-rail-pinned"
-                className={cn(railTile(open === "pinned"), FOCUS_RING)}
+                className={cn(
+                  railTile(open === "pinned"),
+                  "mt-1.5",
+                  FOCUS_RING,
+                )}
               >
                 <Pin size={20} />
               </button>
