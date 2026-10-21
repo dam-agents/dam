@@ -30,6 +30,7 @@ npx skills add 'dam-agents/dam/skills/dam#v0.2.24' -g
 ```
 
 Replace `0.2.24` with the version `dam --version` prints, so the skill matches your CLI.
+The skill ships from CLI 0.2.24 on: with an older CLI, update the CLI first.
 
 ## Links
 

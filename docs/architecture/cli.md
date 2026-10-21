@@ -1,6 +1,6 @@
 # CLI
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 ## Overview
 
@@ -146,11 +146,12 @@ The recurring patterns, stated once:
 
 The repository ships agent skills for agents that run outside the platform ([`skills/`](../../skills/)).
 They sit at the top level, not inside a client package, because a skill is not owned by any one client.
-The repository's contributor skills, under `.agents/skills/`, are for working on the repository, not for users.
-Its `skills-lock.json` lists them, and a skills installer leaves out the skills that file lists, so an installer pointed at the repository offers only the skills in `skills/`.
+The repository's contributor skills ([`.agents/skills/`](../../.agents/skills/)) are for working on the repository, not for users.
+Its [`skills-lock.json`](../../skills-lock.json) lists them, and a skills installer leaves out the skills that file lists, so an installer pointed at the repository offers only the skills in `skills/`.
 A repository check fails when a contributor skill is missing from that list.
 The `dam` skill teaches an agent on the user's own machine — any harness that loads skills — to drive a Platform deployment through the CLI.
 The user installs it from the repository with an open skills installer, pinned to the release tag of the CLI they run.
+The tag of a CLI from before the first release that ships the skill does not hold it, so the user updates the CLI first.
 The skill describes flows and rules, not every flag: the CLI's own help is its authority for flags.
 
 The CLI's test suite checks the `dam` skill against the CLI.
