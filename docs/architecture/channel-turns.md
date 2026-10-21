@@ -95,8 +95,9 @@ A few observations the diagram glosses over:
   System notices (wake failures, a still-starting note) are separate direct posts, not agent content.
 - **Resume vs. new is decided by the ACP session list.** The binding lives on the session itself: the worker lists an Agent's sessions over ACP and resumes the one whose thread key matches.
   A resume that fails (PVC lost, session expired) falls back to a fresh session with thread history injected from the messenger API — no regression, just a colder start.
-  A fresh session opens on the Agent's saved default harness, provider and model ([harness configuration](harness-config.md)); with no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the Providers page, and when no granted provider fits, it fails rather than running elsewhere.
-  A resumed session from before the Model Router, which carries no model, gets the saved default pinned on it first.
+  A fresh session opens on the Agent's channel default harness, provider, model and settings, which is the chat default unless the owner saved one for channels ([harness configuration](harness-config.md)); with no default model, or one on a provider the Agent no longer holds, the turn fails with the `no-default-model` reason and a reply naming the Providers page, and when no granted provider fits, it fails rather than running elsewhere.
+  A resumed session from before the Model Router, which carries no model, gets the channel default pinned on it first.
+  A thread's session follows the channel default from its next turn unless someone picked its model or settings by hand ([sessions](sessions.md#session-inside-the-pod)).
 - **A resumed conversation is caught up on what it missed, best-effort (Slack).** A session belongs to one Agent, so it sees a conversation's history only on its first turn there; a mention-only binding is never handed what does not tag it, and an Agent stopped or unreachable is handed nothing at all.
   A resuming turn therefore also carries what arrived after its own last turn, labelled as above and marked unseen: its own posts stay out, and nothing new means no block.
   Catch-up looks strictly backward from the turn's own messages — anything sent after them is already queued for a turn of its own and is never presented as missed.

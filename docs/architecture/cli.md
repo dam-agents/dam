@@ -54,6 +54,10 @@ The realm advertises a public `platform-cli` client (device grant only, no secre
 Credentials are keyed by host URL, so switching between deployments never clobbers state.
 A host that moved redirects its `/api/auth/config` to the new host; login follows that redirect, keys the credential under the new host, and saves the new host as the active one.
 `dam auth status` lists each host, credential source, and token expiry, and never prints tokens.
+Login and status judge the active host's saved credential the way every other verb does: through the `TokenProvider`'s saved-credential path, which refreshes a lapsed access token.
+A credential that refreshes counts as a valid sign-in, and login asks for confirmation (or `--force` without a terminal) before it replaces one.
+A credential whose refresh fails with an invalid grant is expired: status marks it so and exits non-zero, and login replaces it without `--force`.
+When the refresh cannot reach the IdP, status says it could not check, and login goes ahead rather than refuse on a session it cannot show to work.
 `dam auth logout` best-effort revokes the refresh token ([RFC 7009](https://datatracker.ietf.org/doc/html/rfc7009)) and removes the local entry; the local clear always proceeds even when revocation fails.
 Logout is deliberately not RP-Initiated Logout — the CLI must not kill SSO sessions belonging to the web UI or federated apps.
 
@@ -207,7 +211,7 @@ On disconnect or exit the CLI prints a ready-to-paste resume command and the lea
 `dam run <agent>` is the CI verb: it speaks ACP to the relay like the UI does — open a Session, submit one prompt, stream the assistant's text to stdout — and exits with a code derived from the turn's stop reason, so a pipeline can branch on the outcome.
 The prompt comes from a flag or a file (`-` reads stdin — never implicitly, so a promptless invocation errors instead of hanging a CI job).
 Sessions it creates are typed `cli_run` through the same session metadata every other surface uses — the UI groups them under their own category, and `dam session list` shows the type on each row; every prompt is stamped with a minted prompt identity and the CLI surface marker, so the runtime reports the prompt's fate, frames the turn as a direct one, and records the turn's outcome even when the prompt was sent into a Session another surface created.
-It names no model: the relay fills in the agent's saved default ([harness configuration](harness-config.md)), so a run starts on the model the web chat would start on.
+It names no model: the relay fills in the agent's chat default ([harness configuration](harness-config.md)), so a run starts on the model the web chat would start on.
 
 The headline property is that **the caller may leave**.
 Detaching never cancels a running turn, so `--async` exits once the runtime reports the prompt started, printing the session id to poll with `dam run get`.

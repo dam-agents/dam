@@ -56,6 +56,7 @@ function makeService(opts?: {
       enqueueAfterCommit: async (agentId) => {
         calls.enqueues.push(agentId);
       },
+      supersede: async () => {},
     },
     snapshotRepo: {
       read: async () => opts?.snapshot ?? null,
@@ -74,11 +75,14 @@ function makeService(opts?: {
     },
     pairRepo: {
       read: async () => null,
-      write: async (_agentId, pair) => {
+      readSaved: async () => ({ chat: null, channel: null, scheduled: null }),
+      write: async (_agentId, _kind, pair) => {
         calls.pairs.push(pair);
       },
+      clear: async () => {},
       grantedProviders: async () => opts?.granted ?? [],
     },
+    publishDefaults: async () => {},
     catalog: {
       default: "claude-code",
       harnesses: [
@@ -156,13 +160,13 @@ describe("harness-config service: harnesses chosen per session", () => {
       ],
     });
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: "lite",
         model: "x",
       }),
     ).rejects.toThrow(/cannot run on that provider/);
-    await service.rememberSessionPair("a1", {
+    await service.rememberSessionPair("a1", "chat", {
       harness: "codex",
       provider: "oai",
       model: "gpt-5",
@@ -185,7 +189,7 @@ describe("harness-config service: pairs on a runtime that routes by model name",
    * the agent does not hold is refused naming the alias. */
   it("saves a qualified model with the provider it names", async () => {
     const { service, calls } = makeService({ capabilities: ROUTED, granted });
-    await service.rememberSessionPair("a1", {
+    await service.rememberSessionPair("a1", "chat", {
       harness: "codex",
       provider: null,
       model: "openai/gpt-5.5",
@@ -194,14 +198,14 @@ describe("harness-config service: pairs on a runtime that routes by model name",
       { harness: "codex", provider: "oai", model: "openai/gpt-5.5" },
     ]);
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: "oai",
         model: "gpt-5.5",
       }),
     ).rejects.toThrow(/name the model with its provider/);
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: null,
         model: "cb/glm",
@@ -214,7 +218,7 @@ describe("harness-config service: pairs on a runtime that routes by model name",
   it("refuses a default with no model", async () => {
     const { service, calls } = makeService({ capabilities: ROUTED, granted });
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: "oai",
         model: null,
@@ -239,13 +243,13 @@ describe("harness-config service: pairs on a runtime that routes by model name",
       },
     });
     await expect(
-      service.rememberSessionPair("a1", {
+      service.rememberSessionPair("a1", "chat", {
         harness: "codex",
         provider: null,
         model: "openai/gpt-4",
       }),
     ).rejects.toThrow(/does not list openai\/gpt-4/);
-    await service.rememberSessionPair("a1", {
+    await service.rememberSessionPair("a1", "chat", {
       harness: "codex",
       provider: null,
       model: "openai/gpt-5.5",
@@ -328,6 +332,7 @@ describe("harness-config service", () => {
       catalog: null,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -340,6 +345,7 @@ describe("harness-config service", () => {
       catalog: null,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -350,6 +356,7 @@ describe("harness-config service", () => {
       catalog: null,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });
@@ -375,6 +382,7 @@ describe("harness-config service", () => {
       catalog,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     });

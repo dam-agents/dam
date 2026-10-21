@@ -11,7 +11,8 @@ export function ApprovalsBanner() {
   const approvals = useWaitingApprovals();
   const notices = useDefaultModelNotices().all.filter(defaultModelStopsRuns);
   if (approvals.length === 0 && notices.length === 0) return null;
-  const needDefault = `${String(notices.length)} ${notices.length === 1 ? "agent needs" : "agents need"} a default model`;
+  const agents = new Set(notices.map((notice) => notice.agentId)).size;
+  const needDefault = `${String(agents)} ${agents === 1 ? "agent needs" : "agents need"} a default model`;
   const approvalsCopy =
     approvals.length > 0 ? approvalsBannerCopy(approvals) : null;
   const { title, detail } = approvalsCopy

@@ -8,7 +8,7 @@ import { useAttention } from "../api/queries.js";
 
 interface DefaultModelNotices {
   all: readonly DefaultModelNotice[];
-  byAgentEvenDismissed: ReadonlyMap<string, DefaultModelNotice>;
+  byAgentEvenDismissed: ReadonlyMap<string, readonly DefaultModelNotice[]>;
   waiting: readonly DefaultModelNotice[];
   dismiss: (notice: DefaultModelNotice) => void;
 }
@@ -26,6 +26,12 @@ export function useDefaultModelNotices(): DefaultModelNotices {
 
   const { all, byAgentEvenDismissed, waiting } = useMemo(() => {
     const notices = attention.data?.defaultModels ?? [];
+    const byAgent = new Map<string, DefaultModelNotice[]>();
+    for (const notice of notices)
+      byAgent.set(notice.agentId, [
+        ...(byAgent.get(notice.agentId) ?? []),
+        notice,
+      ]);
     const dismissed = new Set(
       (attention.data?.dismissed ?? [])
         .filter((d) => d.kind === "default-model")
@@ -33,9 +39,7 @@ export function useDefaultModelNotices(): DefaultModelNotices {
     );
     return {
       all: notices,
-      byAgentEvenDismissed: new Map(
-        notices.map((n) => [n.agentId, n] as const),
-      ),
+      byAgentEvenDismissed: byAgent,
       waiting: notices.filter((n) => !dismissed.has(n.id)),
     };
   }, [attention.data]);

@@ -590,6 +590,42 @@ export function createSchedulesService(deps: {
       return next;
     },
 
+    async clearSessionChoices(id) {
+      const current = await deps.repo.get(id, deps.owner);
+      if (!current) return null;
+      if (
+        current.spec.type === "once" &&
+        current.spec.origin?.mode === "continue"
+      )
+        throw badRequest(
+          "a task that continues its session keeps that session's choices",
+        );
+      const {
+        harness: _harness,
+        model: _model,
+        settings: _settings,
+        migrationNote: _note,
+        ...spec
+      } = current.spec;
+      const next = await deps.repo.updateSpec(id, deps.owner, spec);
+      if (!next) return null;
+      emit({
+        type: EventType.ScheduleUpdated,
+        scheduleId: id,
+        agentId: next.agentId,
+        ownerSub: deps.owner,
+      });
+      securityLog("info", "schedule.clear_session_choices", {
+        category: "privileged",
+        actor: deps.owner,
+        actorKind: "user",
+        agentId: next.agentId,
+        target: id,
+        result: "success",
+      });
+      return next;
+    },
+
     async resetSession(id) {
       const sched = await deps.repo.get(id, deps.owner);
       if (!sched) return;

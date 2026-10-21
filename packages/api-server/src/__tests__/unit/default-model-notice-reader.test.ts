@@ -50,6 +50,8 @@ function world(initial: Partial<World> = {}) {
             AGENT,
             { harness: "claude-code", provider: "anthropic", model: null },
             null,
+            null,
+            null,
             { modelRouter: true },
           ],
         ],

@@ -162,6 +162,7 @@ function toSessionViewFromPod(agentId: string, s: PodSession): SessionView {
     provider: s.provider ?? null,
     model: s.model ?? null,
     ...(s.settings && { settings: s.settings }),
+    ...(s.follows !== undefined && { follows: s.follows }),
     ...(s.repositories?.length ? { repositories: s.repositories } : {}),
   };
 }

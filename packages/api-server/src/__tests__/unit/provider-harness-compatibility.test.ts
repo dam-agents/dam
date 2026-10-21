@@ -54,7 +54,6 @@ describe("provider harness compatibility", () => {
             provider: "oauth",
             model: "old",
           }),
-          write: async () => {},
           grantedProviders: async () => [
             { id: "oauth", type: "anthropic", templateId: "anthropic-oauth" },
           ],
@@ -79,6 +78,7 @@ describe("provider harness compatibility", () => {
         }),
       },
       "agent-1",
+      "channel",
       {},
     );
     expect(pair).toEqual({

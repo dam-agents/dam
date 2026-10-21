@@ -377,6 +377,8 @@ export const agents = pgTable(
     runtimeAgentVersion: text("runtime_agent_version"),
     harnessConfigSnapshot: jsonb("harness_config_snapshot"),
     sessionPair: jsonb("session_pair"),
+    channelSessionPair: jsonb("channel_session_pair"),
+    scheduledSessionPair: jsonb("scheduled_session_pair"),
     defaultModelNote: jsonb("default_model_note"),
     skillsSnapshot: jsonb("skills_snapshot"),
     onboardingChecklist: jsonb("onboarding_checklist"),

@@ -30,6 +30,7 @@ export interface SessionMetaLike {
     provider?: string;
     model?: string;
     settings?: Record<string, string>;
+    follows?: "chat" | "channel" | "scheduled" | null;
     title?: string;
     customTitle?: string;
   };
@@ -86,6 +87,7 @@ function fromEntry(
     }),
     ...(entry.meta.model !== undefined && { model: entry.meta.model }),
     ...(entry.meta.settings !== undefined && { settings: entry.meta.settings }),
+    ...(entry.meta.follows !== undefined && { follows: entry.meta.follows }),
   };
 }
 

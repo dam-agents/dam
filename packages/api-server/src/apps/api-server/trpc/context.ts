@@ -272,7 +272,7 @@ export function createApiContextFactory(boot: ApiServerDeps) {
         agentsRepo.patchAnnotation(agentId, ANN_STARTER_KIT_ONBOARDED, at),
       runtimeMutator,
       sessionPair: (agentId) =>
-        firePair(agentId, {}).catch((err: unknown) => {
+        firePair(agentId, "chat", {}).catch((err: unknown) => {
           if (isNoDefaultModelError(err))
             throw new TRPCError({
               code: "PRECONDITION_FAILED",

@@ -111,6 +111,7 @@ export function createTriggerPlugin(deps: {
       ...(model !== undefined && { model }),
       ...(payload.sessionTitle && { customTitle: payload.sessionTitle }),
       ...(payload.settings !== undefined && { settings: payload.settings }),
+      follows: payload.onDefault ? ("scheduled" as const) : null,
     };
     const origin = payload.origin;
     if (origin?.mode === "continue") {
@@ -149,7 +150,12 @@ export function createTriggerPlugin(deps: {
         .start({
           task,
           mcpServers: payload.mcpServers,
-          ...(prior ? { resumeSessionId: prior } : { platformMeta }),
+          ...(prior
+            ? {
+                resumeSessionId: prior,
+                follows: payload.onDefault ? ("scheduled" as const) : null,
+              }
+            : { platformMeta }),
           model,
         })
         .catch((err: unknown) => {

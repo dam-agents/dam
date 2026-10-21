@@ -16,6 +16,16 @@ import { useHarnessCatalog } from "../../sessions/api/session-pair.js";
 import { OptionPicker } from "../../sessions/components/model-settings-panel.js";
 import { OptionField } from "../../sessions/components/option-field.js";
 
+type CatalogOption = NonNullable<
+  HarnessCapability["harnessConfigCatalog"]
+>["options"][number];
+
+const harnessWide = (harness: HarnessCapability) => (o: CatalogOption) =>
+  o.category !== "model" &&
+  (!harness.sessionSettings?.includes(o.id) ||
+    o.category === "mode" ||
+    o.choices.some((c) => c.value === o.default && c.needsApproval));
+
 const harnessCurrentKey = (agentId: string, harness: string) =>
   ["harness-config-current", agentId, harness] as const;
 
@@ -56,8 +66,7 @@ export function HarnessSettingsSections({
   const { data: catalog } = useHarnessCatalog();
   const configurable = harnesses.filter(
     (h) =>
-      h.harnessConfig &&
-      h.harnessConfigCatalog?.options.some((o) => o.category !== "model"),
+      h.harnessConfig && h.harnessConfigCatalog?.options.some(harnessWide(h)),
   );
   if (configurable.length === 0) return null;
   return (
@@ -76,8 +85,9 @@ export function HarnessSettingsSections({
           />
         ))}
         <p className="pt-3 text-2xs leading-snug text-muted-foreground">
-          Defaults for new sessions on each harness. A session&rsquo;s model is
-          chosen when it starts.
+          Settings each harness keeps for all its sessions. The model, effort
+          and other session settings are chosen in each session, or in the
+          defaults on the Providers page.
         </p>
       </Callout>
     </section>
@@ -99,9 +109,7 @@ function HarnessSettings({
   );
   const apply = useApplyHarnessConfig();
   const groups =
-    harness.harnessConfigCatalog?.options.filter(
-      (o) => o.category !== "model",
-    ) ?? [];
+    harness.harnessConfigCatalog?.options.filter(harnessWide(harness)) ?? [];
   const valueOf = (id: string): string | null =>
     id === "mode"
       ? (values?.mode ?? null)

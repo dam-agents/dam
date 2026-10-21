@@ -4,6 +4,12 @@
 # defaults of the base manifest.
 manifestVersion: 1
 
+# Bob reads MCP servers only from its own config files and ignores the
+# per-session entry a session/new carries, so its platform tool calls name no
+# session: a session's platform sub-agent settings cannot apply, and a task
+# cannot be tied to the session that scheduled it.
+sessionMcpEntry: false
+
 # Bob has no per-session model switch, so the router sets each session's
 # model by Bob's X-Task-Id and maps the tier aliases its subagents ask for to
 # the session's subagent model. bobGateway: the runtime points

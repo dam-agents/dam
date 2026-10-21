@@ -24,6 +24,7 @@ function setup(user: User) {
       catalog: null,
       sessionModel: false,
       modelRouter: false,
+      followsDefaults: false,
       defaultHarness: null,
       harnesses: null,
     })),

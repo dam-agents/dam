@@ -11,7 +11,6 @@ import { useChatFormsEnabled } from "../../a2ui/hooks/use-chat-forms-enabled.js"
 import {
   useHarnessConfigStatus,
   useResolvedHarnessConfig,
-  useStaleModel,
 } from "../../agents/api/harness-config.js";
 import { useAgentConnections, useAgents } from "../../agents/api/queries.js";
 import {
@@ -25,6 +24,11 @@ import {
 } from "../../connections/api/queries.js";
 import { catalogProviderTitle } from "../../connections/lib/catalog-providers.js";
 import { useCurrentPreset } from "../../egress-rules/api/queries.js";
+import { useDefaultModelNotices } from "../../home/hooks/use-default-model-notices.js";
+import {
+  defaultModelHeadline,
+  defaultModelStopsRuns,
+} from "../../home/lib/default-model-copy.js";
 import type { SandboxSection } from "../../platform/lib/routes.js";
 import { NO_SATELLITES, useSatellites } from "../../satellites/api/queries.js";
 import { useSchedules } from "../../schedules/api/queries.js";
@@ -43,7 +47,6 @@ import { useTelegramChats } from "../../telegram/api/queries.js";
 type SectionSummaries = Partial<Record<SandboxSection, string>>;
 type SectionWarnings = Partial<Record<SandboxSection, string>>;
 
-const STALE_MODEL_WARNING = "Saved model not offered by the current provider";
 const NO_PROVIDER_WARNING =
   "No provider connected — the agent cannot reach a model";
 
@@ -97,7 +100,9 @@ export function useSectionSummaries(agent: AgentView | null): {
     );
   }, [appsLoaded, connectionsQuery.data, providerAppIds]);
 
-  const staleModel = useStaleModel(agent?.id ?? null);
+  const defaultNotice = useDefaultModelNotices()
+    .byAgentEvenDismissed.get(agent?.id ?? "")
+    ?.find(defaultModelStopsRuns);
   const sourceCount = useSkillSourceCount(agent?.id ?? null);
   const { hasRun, pending: configPending } = useResolvedHarnessConfig(
     agent?.id ?? null,
@@ -262,8 +267,8 @@ export function useSectionSummaries(agent: AgentView | null): {
     warnings:
       missingProvider && !configStatus?.harnesses
         ? { providers: NO_PROVIDER_WARNING }
-        : staleModel.stale && !configStatus?.harnesses
-          ? { setup: STALE_MODEL_WARNING }
+        : defaultNotice
+          ? { providers: defaultModelHeadline(defaultNotice) }
           : {},
   };
 }

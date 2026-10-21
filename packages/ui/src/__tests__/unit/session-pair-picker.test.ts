@@ -123,6 +123,10 @@ vi.mock("@/components/ui/tooltip", () => ({
   },
 }));
 
+vi.mock("../../modules/agents/api/harness-config.js", () => ({
+  useHarnessConfigStatus: () => ({ data: { followsDefaults: false } }),
+}));
+
 vi.mock("../../modules/agents/api/queries.js", () => ({
   useIsAgentAnswerableSoon: () => state.answerable ?? state.operable,
 }));
@@ -136,6 +140,27 @@ vi.mock("../../modules/agents/hooks/use-operable-state.js", () => ({
 
 vi.mock("../../modules/agents/hooks/use-wake-agent.js", () => ({
   useWakeAgent: () => ({ wake: vi.fn(), isPending: false }),
+}));
+
+vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
+  useProviderUsage: () => () => ({ kinds: [], schedules: [] }),
+}));
+
+vi.mock("../../modules/home/hooks/use-default-model-notices.js", () => ({
+  useDefaultModelNotices: () => ({
+    all: [],
+    byAgentEvenDismissed: new Map(),
+    waiting: [],
+    dismiss: vi.fn(),
+  }),
+}));
+
+vi.mock("../../modules/schedules/api/queries.js", () => ({
+  useSchedules: () => ({ data: [] }),
+}));
+
+vi.mock("../../modules/schedules/api/mutations.js", () => ({
+  useClearScheduleChoices: () => ({ mutate: vi.fn(), isPending: false }),
 }));
 
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
@@ -367,6 +392,8 @@ describe("session pair model choices", () => {
       renderPicker(),
       renderToStaticMarkup(
         createElement(ModelIndicator, {
+          kind: "chat",
+          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "ibm",
@@ -435,6 +462,8 @@ describe("session pair model choices", () => {
       state.fetching = true;
       const html = renderToStaticMarkup(
         createElement(ModelIndicator, {
+          kind: "chat",
+          onFollowDefault: () => {},
           agentId: "agent",
           harness: "pi",
           provider: "curve",
@@ -470,6 +499,8 @@ describe("session pair model choices", () => {
       /data-testid="session-model-picker"[^>]*>(.*?)<\/button>/.exec(
         renderToStaticMarkup(
           createElement(ModelIndicator, {
+            kind: "chat",
+            onFollowDefault: () => {},
             agentId: "agent",
             harness: "pi",
             provider: "curve",
@@ -626,6 +657,8 @@ describe("one model list on a runtime that routes by model name", () => {
   it("offers every provider's models to a running session", () => {
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
         agentId: "agent",
         harness: "pi",
         provider: "ibm",
@@ -664,6 +697,8 @@ describe("one model list on a runtime that routes by model name", () => {
     ];
     const html = renderToStaticMarkup(
       createElement(ModelIndicator, {
+        kind: "chat",
+        onFollowDefault: () => {},
         agentId: "agent",
         harness: "pi",
         provider: null,
@@ -681,7 +716,7 @@ describe("one model list on a runtime that routes by model name", () => {
   });
 });
 
-describe("the new layout's picker and the default's editor", () => {
+describe("JanUI's picker and the default's editor", () => {
   beforeEach(() => {
     state.models = {};
     state.loading = false;
@@ -706,7 +741,7 @@ describe("the new layout's picker and the default's editor", () => {
       }),
     );
 
-  /** TEST_SCENARIO: In the new layout the picker neither attaches nor
+  /** TEST_SCENARIO: In JanUI the picker neither attaches nor
    * disconnects providers; one row counts the attached providers among the
    * owner's and leads to the agent's Providers page. The current layout
    * keeps its controls. */

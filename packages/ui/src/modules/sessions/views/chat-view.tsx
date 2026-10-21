@@ -179,6 +179,7 @@ import {
   classicDockToggle,
   classicPanel,
 } from "../lib/classic-chat-layout.js";
+import { defaultKindOf } from "../lib/default-kind.js";
 import { draftKey } from "../lib/draft-key.js";
 import { newLiveArrivals, noteArrivals } from "../lib/live-arrivals.js";
 import {
@@ -1188,6 +1189,14 @@ export function ChatView() {
                   <div className="flex min-w-0 items-center justify-between gap-3">
                     <ModelIndicator
                       agentId={selectedAgent}
+                      kind={defaultKindOf(sessionView?.type)}
+                      follows={currentSession.follows}
+                      followsDefaults={harnessStatus?.followsDefaults ?? false}
+                      onFollowDefault={(afterNextDefaults) => {
+                        const kind = defaultKindOf(sessionView?.type);
+                        if (kind)
+                          void configureSession({}, kind, afterNextDefaults);
+                      }}
                       harness={sessionHarness}
                       provider={currentSession.provider ?? null}
                       model={currentSession.model ?? null}

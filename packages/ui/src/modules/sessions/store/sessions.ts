@@ -88,6 +88,7 @@ export interface SessionsSlice {
   setRewriting: (rewriting: Rewriting | null) => void;
   addRunStart: (at: string) => void;
   setNextSessionPair: (agentId: string, pair: SessionPair) => void;
+  clearNextSessionPair: (agentId: string) => void;
   setSessionError: (e: SessionError | null) => void;
   setDraft: (key: string, patch: Partial<SessionDraft>) => void;
   appendNewSessionDraft: (agentId: string, text: string) => void;
@@ -218,6 +219,14 @@ export const createSessionsSlice: StateCreator<
     setNextSessionPair: (agentId, pair) =>
       set((state) => ({
         nextSessionPair: { ...state.nextSessionPair, [agentId]: pair },
+      })),
+    clearNextSessionPair: (agentId) =>
+      set((state) => ({
+        nextSessionPair: Object.fromEntries(
+          Object.entries(state.nextSessionPair).filter(
+            ([id]) => id !== agentId,
+          ),
+        ),
       })),
     addRunStart: (at) =>
       set((s) =>

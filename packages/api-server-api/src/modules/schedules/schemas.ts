@@ -134,6 +134,10 @@ export const scheduleToggleInputSchema = z.object({
   enabled: z.boolean().optional(),
 });
 
+export const scheduleClearSessionChoicesInputSchema = z.object({
+  ids: z.array(z.string().min(1)).min(1),
+});
+
 export const scheduleResetSessionInputSchema = z.object({
   id: z.string().min(1),
 });

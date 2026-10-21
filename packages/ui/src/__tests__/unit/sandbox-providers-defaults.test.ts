@@ -89,6 +89,27 @@ vi.mock("../../modules/spend/components/connection-spend-limit.js", () => ({
   ConnectionSpendLimit: () => null,
 }));
 
+vi.mock("../../modules/sessions/hooks/use-provider-usage.js", () => ({
+  useProviderUsage: () => () => ({ kinds: [], schedules: [] }),
+}));
+
+vi.mock("../../modules/home/hooks/use-default-model-notices.js", () => ({
+  useDefaultModelNotices: () => ({
+    all: [],
+    byAgentEvenDismissed: new Map(),
+    waiting: [],
+    dismiss: vi.fn(),
+  }),
+}));
+
+vi.mock("../../modules/schedules/api/queries.js", () => ({
+  useSchedules: () => ({ data: [] }),
+}));
+
+vi.mock("../../modules/schedules/api/mutations.js", () => ({
+  useClearScheduleChoices: () => ({ mutate: vi.fn(), isPending: false }),
+}));
+
 vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   useHarnessCatalog: () => ({
     data: {
@@ -140,6 +161,11 @@ vi.mock("../../modules/sessions/api/session-pair.js", () => ({
   }),
   rememberSessionPair: (_agent: string, pair: unknown) =>
     state.saved.push(pair),
+  clearSessionDefault: vi.fn(),
+  useSessionDefaults: () => ({
+    data: { chat: state.remembered, channel: null, scheduled: null },
+  }),
+  useHarnessConfigured: () => undefined,
 }));
 
 function renderSection() {
@@ -219,8 +245,8 @@ describe("agent default on a runtime that routes by model name", () => {
   });
 });
 
-describe("the new layout's default editor", () => {
-  // TEST_SCENARIO: with the new layout on, the Providers page edits the saved default with the new session's picker, in its default mode: it shows the saved pair, and a pick saves the whole pair, session settings included.
+describe("JanUI's default editor", () => {
+  // TEST_SCENARIO: with JanUI on, the Providers page edits the saved default with the new session's picker, in its default mode: it shows the saved pair, and a pick saves the whole pair, session settings included.
   it("hands the saved pair to the session picker, which saves each pick", () => {
     state.newLayout = true;
     state.routed = true;
@@ -259,7 +285,7 @@ describe("the new layout's default editor", () => {
     state.routed = false;
   });
 
-  // TEST_SCENARIO: on a routed runtime the server refuses a default with no model, so a harness picked in the new layout's default editor waits for its model instead of being saved.
+  // TEST_SCENARIO: on a routed runtime the server refuses a default with no model, so a harness picked in JanUI's default editor waits for its model instead of being saved.
   it("does not save a routed harness pick until its model is picked", () => {
     state.newLayout = true;
     state.routed = true;
@@ -311,7 +337,7 @@ describe("agent default model on a sleeping agent", () => {
    * The harness stays pickable. */
   it("offers to start the agent instead of an empty model picker", () => {
     const asleep = renderSection();
-    expect(asleep).toContain("Default for new sessions");
+    expect(asleep).toContain("Chat sessions");
     expect(asleep).toMatch(/aria-label="Harness"[^>]*><span[^>]*>Codex</);
     expect(asleep).toContain("Start agent to edit");
     expect(asleep).not.toContain('aria-label="Model"');

@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The new layout experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
+// TEST_OVERVIEW: The JanUI experiment replaces the app shell for the user who turns it on, and turning it off restores the current one. With it on, the sidebar is one tree of Agents that open to their Sessions, Home is a dashboard of cards, the right rail draws tiles with Documentation among them, an Agent's chat has the side panel and its icon bar instead of the sections beside the conversation, a Session can be pinned to a Pinned section above every Agent, the tree's one session filter narrows the Pinned section and an Agent's own Sessions, and deleting a pinned Session drops its pin. The spec creates its own Agents and the one Session it pins, so it moves nothing the other specs read, and it leaves the experiment off.
 import { expect, type Page, test } from "@playwright/test";
 
 import { baseUrl } from "../../config.js";
@@ -176,7 +176,7 @@ test("switches the chat between the sections and the side panel", async ({
   await page.evaluate(() => {
     (window as { layoutMarker?: boolean }).layoutMarker = true;
   });
-  const layoutSwitch = page.getByRole("switch", { name: "New layout" });
+  const layoutSwitch = page.getByRole("switch", { name: "JanUI" });
   const switchLayout = async (on: boolean) => {
     await navigateInApp("/settings/features");
     await layoutSwitch.click();

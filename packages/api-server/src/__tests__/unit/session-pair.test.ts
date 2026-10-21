@@ -268,7 +268,6 @@ describe("resolveFirePair", () => {
             provider: "second",
             model: "old",
           }),
-          write: async () => {},
           grantedProviders: async () => [
             { id: "first", type: "ibm-litellm" },
             { id: "second", type: "anthropic" },
@@ -301,6 +300,7 @@ describe("resolveFirePair", () => {
         }),
       },
       "agent-1",
+      "scheduled",
       { model: "opus" },
     );
     expect(pair).toEqual({
@@ -321,7 +321,6 @@ describe("resolveRememberedPair before the agent's first hello", () => {
         {
           pairRepo: {
             read: async () => null,
-            write: async () => {},
             grantedProviders: async () => [
               { id: "claude", type: "anthropic" },
               { id: "oai", type: "openai" },
@@ -351,6 +350,7 @@ describe("resolveRememberedPair before the agent's first hello", () => {
           getCapabilities: async () => null,
         },
         "agent-1",
+        "chat",
       ),
     ).toEqual({ harness: "codex", provider: "oai", model: null });
   });
@@ -369,7 +369,6 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
             provider: "curve",
             model: "rits/zai-org/glm-5-3",
           }),
-          write: async () => {},
           grantedProviders: async () => [{ id: "curve", type: "curve-bender" }],
         },
         catalog: {
@@ -392,6 +391,7 @@ describe("resolveFirePair on an agent too old for session pairs", () => {
         }),
       },
       "agent-1",
+      "scheduled",
       {},
     );
     expect(pair).toBeUndefined();
@@ -407,7 +407,6 @@ describe("resolveFirePair on a harness outside the catalog", () => {
       {
         pairRepo: {
           read: async () => null,
-          write: async () => {},
           grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
         },
         catalog: {
@@ -424,6 +423,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
         }),
       },
       "agent-1",
+      "scheduled",
       {},
     );
     expect(pair).toBeUndefined();
@@ -438,7 +438,6 @@ describe("resolveFirePair on a harness outside the catalog", () => {
         {
           pairRepo: {
             read: async () => null,
-            write: async () => {},
             grantedProviders: async () => [{ id: "lite", type: "ibm-litellm" }],
           },
           catalog: {
@@ -463,6 +462,7 @@ describe("resolveFirePair on a harness outside the catalog", () => {
           }),
         },
         "agent-1",
+        "chat",
       ),
     ).toBeNull();
   });

@@ -13,6 +13,7 @@ import {
   scheduleGetInputSchema,
   scheduleListForOwnerInputSchema,
   scheduleListInputSchema,
+  scheduleClearSessionChoicesInputSchema,
   scheduleResetSessionInputSchema,
   scheduleRunNowInputSchema,
   scheduleToggleInputSchema,
@@ -159,6 +160,24 @@ export const schedulesRouter = t.router({
       const sched = await ctx.schedules.toggle(input.id, input.enabled);
       if (!sched) throw new TRPCError({ code: "NOT_FOUND" });
       return toView(sched);
+    }),
+
+  clearSessionChoices: manageAgentsProcedure
+    .input(scheduleClearSessionChoicesInputSchema)
+    .mutation(async ({ ctx, input }) => {
+      const failed: { id: string; reason: string }[] = [];
+      for (const id of input.ids) {
+        try {
+          if (!(await ctx.schedules.clearSessionChoices(id)))
+            failed.push({ id, reason: "schedule not found" });
+        } catch (err) {
+          failed.push({
+            id,
+            reason: err instanceof Error ? err.message : String(err),
+          });
+        }
+      }
+      return { failed };
     }),
 
   resetSession: manageAgentsProcedure

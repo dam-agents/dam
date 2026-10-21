@@ -69,6 +69,7 @@ export interface SessionView {
   provider?: string | null;
   model?: string | null;
   settings?: Record<string, string>;
+  follows?: "chat" | "channel" | "scheduled" | null;
   repositories?: SessionRepository[];
 }
 

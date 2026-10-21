@@ -13,6 +13,7 @@ import {
 } from "agent-runtime-api";
 import { aliasForProviderType } from "api-server-api";
 import type {
+  DefaultKind,
   HarnessCatalog,
   HarnessConfigChange,
   HarnessConfigService,
@@ -34,6 +35,7 @@ import type { HarnessConfigSnapshotRepo } from "../infrastructure/snapshot-repo.
 import type { DbTx } from "db";
 import type { HarnessConfigEventQueue } from "../infrastructure/config-event-queue.js";
 import { getLogger } from "../../../core/logger.js";
+import type { PublishSessionDefaults } from "./session-defaults-publisher.js";
 
 export function createHarnessConfigService(deps: {
   surface: string;
@@ -52,6 +54,7 @@ export function createHarnessConfigService(deps: {
     tx: DbTx,
     harness?: string,
   ) => Promise<unknown>;
+  publishDefaults: PublishSessionDefaults;
 }): HarnessConfigService {
   async function requireOwned(agentId: string): Promise<void> {
     if (!(await deps.isOwnedAgent(agentId))) {
@@ -68,6 +71,7 @@ export function createHarnessConfigService(deps: {
         catalog: harnessConfigCatalogOf(capabilities),
         sessionModel: sessionModelSupported(capabilities),
         modelRouter: routesByModelName(capabilities),
+        followsDefaults: followsDefaults(capabilities),
         defaultHarness: defaultHarnessOf(capabilities),
         harnesses: harnessesOf(capabilities),
       };
@@ -134,12 +138,17 @@ export function createHarnessConfigService(deps: {
       });
     },
 
-    async sessionPair(agentId) {
+    async sessionPair(agentId, kind) {
       await requireOwned(agentId);
-      return resolveRememberedPair(deps, agentId);
+      return resolveRememberedPair(deps, agentId, kind);
     },
 
-    async defaultFor(agentId, harness) {
+    async sessionDefaults(agentId) {
+      await requireOwned(agentId);
+      return deps.pairRepo.readSaved(agentId);
+    },
+
+    async defaultFor(agentId, kind, harness) {
       await requireOwned(agentId);
       const pair = await resolveFirePair(
         {
@@ -149,13 +158,21 @@ export function createHarnessConfigService(deps: {
           specHarness: deps.specHarness,
         },
         agentId,
+        kind,
         harness ? { harness } : {},
         false,
       );
       return pair ?? null;
     },
 
-    async rememberSessionPair(agentId, pair) {
+    async clearSessionDefault(agentId, kind) {
+      await requireOwned(agentId);
+      await deps.pairRepo.clear(agentId, kind);
+      await deps.publishDefaults(agentId);
+      notifyDefaultChanged(agentId);
+    },
+
+    async rememberSessionPair(agentId, kind, pair) {
       await requireOwned(agentId);
       const carried = harnessesOf(await deps.getCapabilities(agentId));
       if (
@@ -210,19 +227,24 @@ export function createHarnessConfigService(deps: {
             ));
       if (invalid)
         throw new TRPCError({ code: "BAD_REQUEST", message: invalid });
-      await deps.pairRepo.write(agentId, pair);
-      emit({
-        type: EventType.HarnessConfigChanged,
-        ownerSub: deps.ownerSub,
-        agentId,
-      });
-      emit({
-        type: EventType.AttentionChanged,
-        ownerSub: deps.ownerSub,
-        agentId,
-      });
+      await deps.pairRepo.write(agentId, kind, pair);
+      await deps.publishDefaults(agentId);
+      notifyDefaultChanged(agentId);
     },
   };
+
+  function notifyDefaultChanged(agentId: string): void {
+    emit({
+      type: EventType.HarnessConfigChanged,
+      ownerSub: deps.ownerSub,
+      agentId,
+    });
+    emit({
+      type: EventType.AttentionChanged,
+      ownerSub: deps.ownerSub,
+      agentId,
+    });
+  }
 
   /**
    * UNIT_BOUNDARY_DESCRIPTION: a bare name is refused, since the runtime
@@ -333,6 +355,16 @@ function harnessConfigCatalogOf(
   return parsed.success ? parsed.data : null;
 }
 
+/**
+ * UNIT_BOUNDARY_DESCRIPTION: a runtime takes the session-defaults event only
+ * from the build that lets its sessions follow a default; an older one has
+ * no follow state for the UI to show or change.
+ */
+export function followsDefaults(capabilities: unknown): boolean {
+  const events = (capabilities as { events?: unknown } | null)?.events;
+  return Array.isArray(events) && events.includes("session-defaults");
+}
+
 export function defaultHarnessOf(capabilities: unknown): string | null {
   const raw = (capabilities as { defaultHarness?: unknown } | null)
     ?.defaultHarness;
@@ -346,7 +378,7 @@ export function harnessesOf(capabilities: unknown): HarnessCapability[] | null {
 }
 
 export interface PairResolverDeps {
-  pairRepo: SessionPairRepo;
+  pairRepo: Pick<SessionPairRepo, "read" | "grantedProviders">;
   catalog: HarnessCatalog;
   getCapabilities: (agentId: string) => Promise<unknown>;
   specHarness: (agentId: string) => Promise<string | undefined>;
@@ -355,25 +387,28 @@ export interface PairResolverDeps {
 export async function resolveRememberedPair(
   deps: PairResolverDeps,
   agentId: string,
+  kind: DefaultKind,
 ): Promise<SessionPair | null> {
-  return (await resolveFirePair(deps, agentId, {}, false)) ?? null;
+  return (await resolveFirePair(deps, agentId, kind, {}, false)) ?? null;
 }
 
 /**
  * UNIT_BOUNDARY_DESCRIPTION: the pair an unattended run asks the agent for —
  * the one it names, or, naming only a model, that model on the agent's own
- * harness, or else the pair a person last picked. Undefined when the agent's
+ * harness, or else the default saved for its kind of run (chat, channel or
+ * scheduled, the last two falling back to chat). Undefined when the agent's
  * runtime holds one harness only and would ignore a pair, or runs a harness
  * the catalog does not offer, such as a custom template's own.
  */
 export async function resolveFirePair(
   deps: PairResolverDeps,
   agentId: string,
+  kind: DefaultKind,
   preferred: { harness?: string; provider?: string; model?: string },
   requireLeases = true,
 ): Promise<SessionPair | null | undefined> {
   const [stored, granted, capabilities] = await Promise.all([
-    deps.pairRepo.read(agentId),
+    deps.pairRepo.read(agentId, kind),
     deps.pairRepo.grantedProviders(agentId),
     deps.getCapabilities(agentId),
   ]);

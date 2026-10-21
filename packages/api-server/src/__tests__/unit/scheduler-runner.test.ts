@@ -217,6 +217,7 @@ function makeDeps(opts?: {
       calls.push(`enqueue:${agentId}`);
       if (opts?.enqueueError) throw opts.enqueueError;
     },
+    async supersede() {},
   };
 
   const runner = createSchedulerRunner({
@@ -424,7 +425,8 @@ describe("scheduler-runner fire: the harness and provider a fire runs on", () =>
         checked.push(choices);
         return undefined;
       },
-      firePair: async (_agentId, preferred) => {
+      firePair: async (_agentId, kind, preferred) => {
+        expect(kind).toBe("scheduled");
         asked.push(preferred);
         return { harness: "codex", provider: "oai", model: "openai/gpt-5.5" };
       },

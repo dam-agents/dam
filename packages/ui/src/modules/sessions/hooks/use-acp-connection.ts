@@ -246,6 +246,7 @@ export function useAcpConnection(
               ...(next && pairMeta(next.pair)),
               ...(next?.pair.settings && { settings: next.pair.settings }),
               ...(continuedFrom && { continuedFrom }),
+              ...(next && { follows: next.picked ? null : "chat" }),
             },
           },
         });

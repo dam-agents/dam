@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: A pinned Session row marks its pin with an icon, except where its section already says it is pinned (the new layout's Pinned section): there the pin shows only with the row's actions, on hover or while the row holds keyboard focus, and the unpin button stays in the row for the keyboard.
+// TEST_OVERVIEW: A pinned Session row marks its pin with an icon, except where its section already says it is pinned (JanUI's Pinned section): there the pin shows only with the row's actions, on hover or while the row holds keyboard focus, and the unpin button stays in the row for the keyboard.
 import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
@@ -57,7 +57,7 @@ it("shows a quiet pin only with the row's actions", () => {
   expect(quiet).toContain('aria-label="Unpin session"');
 });
 
-// TEST_SCENARIO: a terminal Session is marked by the terminal icon, with its accessible name, as before the new layout's context line existed.
+// TEST_SCENARIO: a terminal Session is marked by the terminal icon, with its accessible name, as before JanUI's context line existed.
 it("marks a terminal Session with the labelled terminal icon", () => {
   expect(render(true, SessionMode.Terminal)).toMatch(
     /<svg[^>]*aria-label="Terminal"/,
@@ -65,7 +65,7 @@ it("marks a terminal Session with the labelled terminal icon", () => {
   expect(render(true)).not.toContain('aria-label="Terminal"');
 });
 
-// TEST_SCENARIO: the current layout lists the repositories a Session touched under its row; a row that turns them off, as the new layout's two-line sidebar rows do, draws no repository line.
+// TEST_SCENARIO: the current layout lists the repositories a Session touched under its row; a row that turns them off, as JanUI's two-line sidebar rows do, draws no repository line.
 it("drops the repository line only when asked", () => {
   expect(render(false)).toContain("Repositories this session touched");
   expect(

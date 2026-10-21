@@ -6,6 +6,7 @@ import type { ToolActivity } from "../changes/index.js";
 import { leaseSpawnEnv, type LeaseEnvReader } from "../../core/runtime-env.js";
 import {
   isPlatformSubagentSetting,
+  modelConstraintsFor,
   platformSubagentSettingsError,
   sessionSettingsError,
   type SessionRepository,
@@ -28,6 +29,7 @@ import {
   createActiveTurnStore,
   type ActiveTurnStore,
 } from "./infrastructure/active-turn-store.js";
+import { createSessionDefaultsStore } from "./infrastructure/session-defaults-store.js";
 import {
   createSessionMetadataStore,
   type SessionMetadataStore,
@@ -192,6 +194,50 @@ function inheritedSubAgentConfig(
 }
 
 /**
+ * UNIT_BOUNDARY_DESCRIPTION: the manifest's own value for each setting a
+ * session or process takes from the platform, so a setting nobody chose runs
+ * on the harness's documented default and never on whatever its settings
+ * file was left with. A setting for the harness's own subagents keeps
+ * following the session, and one with no declared default stays the
+ * harness's, and so does one the session's model does not take (Haiku takes
+ * no effort). So does the permission mode, and any setting whose default a
+ * person must approve: such a default asks for approvals, which would stall
+ * every unattended turn and undo the mode the agent's image sets for its
+ * provider.
+ */
+function manifestDefaults(
+  harness: HarnessRuntime | undefined,
+  scope: "session" | "process",
+  model?: string | null,
+): Record<string, string> {
+  const allowed =
+    model === undefined
+      ? undefined
+      : modelConstraintsFor(harness?.catalog, model);
+  return Object.fromEntries(
+    (harness?.catalog?.options ?? []).flatMap((option) => {
+      const binding = harness?.sessionSettings?.[option.id];
+      if (
+        !binding ||
+        option.subagents ||
+        option.category === "mode" ||
+        option.default === undefined ||
+        option.choices.some(
+          (c) => c.value === option.default && c.needsApproval,
+        ) ||
+        allowed?.[option.id]?.includes(option.default) === false
+      )
+        return [];
+      const process = "env" in binding;
+      const session = "mode" in binding || "configOption" in binding;
+      return (scope === "process" ? process : session)
+        ? [[option.id, option.default] as const]
+        : [];
+    }),
+  );
+}
+
+/**
  * UNIT_BOUNDARY_DESCRIPTION: a native process names a model the way the
  * harness does, without the Connection's alias, as the model frame does.
  */
@@ -298,6 +344,7 @@ export function composeAcp(opts: ComposeAcpOptions): {
     : undefined;
   const runResults = createRunResultStore(opts.stateBackend);
   const runtime = createLeaseRouter({
+    sessionDefaults: createSessionDefaultsStore(opts.stateBackend),
     defaultHarness: opts.defaultHarness,
     harnessKnown: (harness) => Object.hasOwn(opts.harnesses, harness),
     providerAliases: opts.providerAliases,
@@ -352,13 +399,19 @@ export function composeAcp(opts: ComposeAcpOptions): {
       const harness = opts.harnesses[pair.harness];
       const ownHistory = historyProviders.get(pair.harness);
       const ownPins = harness?.terminalSessionPins;
-      const settingInput = (sessionId: string) => ({
-        sessionId,
-        harness,
-        model: runtime.sessionChoice(sessionId).model,
-        native: pair.native !== undefined,
-        settings: sessionMetadata.get(sessionId)?.meta.settings ?? {},
-      });
+      const settingInput = (sessionId: string) => {
+        const model = runtime.sessionChoice(sessionId).model;
+        return {
+          sessionId,
+          harness,
+          model,
+          native: pair.native !== undefined,
+          settings: {
+            ...manifestDefaults(harness, "session", model),
+            ...sessionMetadata.get(sessionId)?.meta.settings,
+          },
+        };
+      };
       return createAcpRuntime({
         undeliveredPrompts,
         continuedFrom,
@@ -386,7 +439,10 @@ export function composeAcp(opts: ComposeAcpOptions): {
                   }),
               ...processEnvOf(
                 harness,
-                scoped.pair().settings,
+                {
+                  ...manifestDefaults(harness, "process"),
+                  ...scoped.pair().settings,
+                },
                 scoped.pair().native !== undefined,
               ),
             },
