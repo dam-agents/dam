@@ -1,6 +1,6 @@
 # VM runtime migration
 
-Last verified: 2026-10-19
+Last verified: 2026-10-21
 
 A **runtime migration** moves one container Agent onto the `vm` Backend's [runners](vm-runner.md) at an operator's request, and can be undone until the Agent's machine has booted from the copy; it exists only to carry Agents made before the microVM was the default, since no page offers it and every agent a create makes on an install that can virtualize is a machine.
 `HOME` is the only path a machine keeps whatever image it boots, and a container's root outside its persisted mounts is the image's and keeps nothing ([persistence](persistence.md#per-agent-pvcs)), so a migration carries exactly one thing: the volume that held `HOME`, copied as the machine's home.
@@ -73,7 +73,7 @@ The clone is owned by the Agent and carries none of the Agent's volume labels, s
 A shared volume is read in place, as is one no CSI driver serves or whose PersistentVolume the controller may not read; an install whose driver cannot clone sets `virtualization.runtimeMigration.cloneSource: false` to read every volume in place.
 What holds a migration up is said as [observability](observability.md#runtime-migration) describes.
 
-**What the owner is told.** The owner starts nothing and decides nothing, so the page shows only where the Agent is: a badge naming the phase of its move, with the controller's reason.
+**What the owner is told.** The owner starts nothing and decides nothing, so the pages show only where the Agent is: its row on Home and its chat carry a badge naming the phase of its move, with the controller's reason as the tooltip, and its configuration names the runtime it runs on and shows the same badge, with the reason as text and, after a failure, that an operator has to finish or undo the move.
 A refusal is the operator's to read, on the api-server's log, with every reason named.
 From the container's stop until the machine has booted from the copy the Agent reads as **migrating**, ahead of every state but an error, and so does one whose migration failed after the stop, since it stays stopped until an operator retries or aborts; through the preflight, an abort and a verified boot it reads as whichever side is starting or running.
 A wake for a migrating Agent, the owner's own included, is refused at once rather than waited out, so a chat reads "moving to the new runtime", a [channel](channel-turns.md) message is answered "try again in a few minutes" — or, after a failure, that the move failed and an operator has to finish or undo it — instead of timing out, and a [schedule](schedules.md#fire) fire is held.

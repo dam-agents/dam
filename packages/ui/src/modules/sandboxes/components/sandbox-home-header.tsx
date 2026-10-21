@@ -4,6 +4,7 @@ import { PageHeader } from "@/components/ui/page-header";
 
 import { AlwaysOnTag } from "../../../components/status-indicator.js";
 import type { AgentView } from "../../../types.js";
+import { AgentRuntimeStatus } from "../../agents/components/agent-runtime-status.js";
 import { avatarMood } from "../../agents/components/avatar/agent-avatar.js";
 import { EditableAgentIdentity } from "../../agents/components/editable-agent-identity.js";
 import { GatewayFailureBadge } from "../../agents/components/gateway-failure-badge.js";
@@ -32,6 +33,7 @@ export function SandboxIdentity({ agent, display }: Props) {
         <GatewayFailureBadge agent={agent} />
         {agent.hibernationTimeoutMin === 0 && <AlwaysOnTag />}
       </div>
+      <AgentRuntimeStatus agent={agent} />
     </div>
   );
 }

@@ -11,7 +11,7 @@ export function RuntimeMigrationBadge({
   agent,
   labelClassName,
 }: {
-  agent: AgentView;
+  agent: Pick<AgentView, "runtimeMigration">;
   labelClassName?: string;
 }) {
   const badge = runtimeMigrationBadge(agent);
