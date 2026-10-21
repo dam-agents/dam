@@ -23,8 +23,8 @@ Before you rely on it, compare that with the CLI you have: see [Match this skill
    Don't read the CLI's state directory (`~/.local/state/dam/`), and don't print or export `DAM_TOKEN`.
    `dam auth status` is safe: it never prints tokens.
 3. **Ask before anything you can't undo.**
-   `dam agent delete` removes an agent and all its data.
-   Confirm with the user first, then pass `--yes` yourself; without a terminal, destructive commands refuse to run without it.
+   `dam agent delete` removes an agent and all its data, and `dam connection disconnect` deletes a stored credential that every agent it is granted to loses.
+   Confirm with the user first, then pass `--yes` yourself; without a terminal, these commands refuse to run without it ([Without a terminal](#without-a-terminal) lists them).
 4. **Approvals and the Terms of Use are the user's to decide.**
    Don't approve or deny a pending request, and don't accept the Terms of Use, unless the user told you to after seeing what is being asked.
 5. **Parse `--json`, not tables.**
@@ -127,7 +127,10 @@ A ref that matches nothing or more than one agent exits with code 5; list the ag
 
 Your shell has no terminal attached, and the CLI behaves accordingly:
 
-- Destructive commands need `--yes` (see the hard rules).
+- These commands need `--yes` (see the hard rules):
+  `dam agent delete`, `dam connection disconnect`, `dam schedule delete`, `dam import`, `dam skill source remove` and `dam satellite rm`;
+  `dam network create`, `dam network update` and `dam network revoke` when the change restarts the agent's network gateway, and `dam network apply-preset --preset all`.
+  `dam terms accept` needs it too, and only after the user accepts (hard rule 4).
 - `dam chat <agent>` attaches to the agent's interactive session and `dam agent create-interactive` walks through a form; both need a terminal, so offer the command to the user instead.
 - A prompt the CLI would show a person becomes an error that names the flag to pass.
 
@@ -225,6 +228,8 @@ dam connection revoke my-agent --connection github
 
 A connection belongs to the user; granting it lets one agent use it.
 Creating one, rotating its credential, and removing it are `dam connection connect`, `dam connection update` and `dam connection disconnect`; read [Secrets](#secrets) before the first two.
+`dam connection disconnect` can't be undone: confirm with the user, then pass `--yes` (hard rule 3).
+Without `--yes` it names the agents that would lose the connection.
 
 ### Network rules and approvals
 
