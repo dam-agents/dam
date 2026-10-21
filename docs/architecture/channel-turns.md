@@ -1,9 +1,9 @@
 # Channel turns
 
-Last verified: 2026-10-20
+Last verified: 2026-10-21
 
 What happens when a channel message becomes an agent turn: the inbound relay from messenger to ACP session, the outbound tools the agent answers with, the liveness watch on a running relay, and the recovery that rescues an undelivered answer.
-What a channel *is* — bindings, adapters, topology, identity — lives on [channels](channels.md).
+What a channel _is_ — bindings, adapters, topology, identity — lives on [channels](channels.md).
 Which of these outcomes are guaranteed, which are the agent's judgement, and which depend on setup is mapped on [slack-guarantees](slack-guarantees.md); a behavior change here updates that page in the same PR.
 
 ## Inbound — channel message to ACP session
@@ -55,7 +55,7 @@ A few observations the diagram glosses over:
   So the relay refuses and the turn carries on with that one call denied, rather than waiting on an answer that cannot come — the same rule the credentialed-egress gate applies to an unattended turn ([security-and-credentials](security-and-credentials.md)).
   That holds where the harness offers a way to say no; where it offers only ways to say yes the sole honest answer left is to cancel, which ends the whole turn rather than the one call in it.
   The relay never picks an approval to keep a turn alive; the one approval it ever picks is the allow-once below.
-  What an Agent may do on a channel turn is therefore exactly what its session's permission mode lets it do *without* asking, which makes that mode the dial over channel behavior.
+  What an Agent may do on a channel turn is therefore exactly what its session's permission mode lets it do _without_ asking, which makes that mode the dial over channel behavior.
   The turn contract hands the Agent that explanation, because the platform does not tell the sender: a call the permission check refused is the mode's doing, never a platform setting, and only the owner can change the mode.
   Codex has no such dial: its image runs it never asking, so it raises no prompt to refuse ([harness-config](harness-config.md)).
   The platform's own tool surface is kept outside that dial: asked about one of the two MCP servers the platform injects, the relay answers allow-once, so disposing of a turn, reporting an invocation result and reading a knowledge base survive a mode that asks — wherever the prompt offers allowing once at all, since that is the only approval the relay will pick.
@@ -79,8 +79,11 @@ A few observations the diagram glosses over:
   A mention or DM turn is marked addressed, and the contract names the ways people reach an agent — the bot's tag, the agent's signed name, and (only where plain messages reach it) the bot name with no tag.
 - **The contract speaks for its own message.** A session continued in the UI carries this text with it, so the contract scopes itself to its own message and says what an unframed one means: not from that messenger, answered where it arrived, reaching the messenger on request ([platform-topology](platform-topology.md), §ui).
   So both messengers send it with every turn, a resumed one included: a relayed message without it would read as one from elsewhere, and its answer would never be posted.
-- **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn *presenter* drives Slack's assistant-status surface — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
+- **A working status is the one thing the platform presents on the agent's behalf.** On mention turns a per-turn _presenter_ drives Slack's working status — thinking, the current tool as it changes, waking during a cold start — cleared on every turn-exit path.
   Thought and tool notifications feed it; assistant text is ignored.
+  The status is the thread's agent session: `processing` while the turn works, `active` once it ends — after a Stop too, or Slack keeps the session working for up to an hour.
+  A session status carries no text, so Slack shows its own working indicator in place of the presenter's words.
+  When Slack refuses the session call, as an app without agent messaging can, the status falls back to the older assistant API, which shows the text but no Stop button.
   The status degrades to nothing where the workspace can't show it.
   Ambient turns present no status — nobody summoned the agent.
 - **The status carries Slack's Stop button, and it stops the turn.** Slack shows the button to apps subscribed to `agent_session_stopped`, and sends that event for the thread when someone presses it.
@@ -126,7 +129,7 @@ A few observations the diagram glosses over:
   Where replies were left out, a bracketed line after the opener names them by position and carries the handle that reads them, and the thread counts as offered to that Agent so the handle is honoured.
   The replies it skips do not hold back the catch-up boundary: they are older than the window, so the boundary moves to the end of what the turn carried.
   A channel's window is the stream outside threads — several unrelated topics interleaved, each line's send time the boundary — framed as background to read, not answer.
-  Catch-up on a resumed session inverts that deliberately: that block *is* a backlog, and what is still open in it is the Agent's to act on.
+  Catch-up on a resumed session inverts that deliberately: that block _is_ a backlog, and what is still open in it is the Agent's to act on.
   **A channel window is also incomplete**: the channel read returns only what the channel itself shows, so a reply inside a thread is absent unless it was broadcast — which is how an Agent reads a request its own thread already settled as still open.
   A line that opened a thread is therefore marked with its reply count, when the thread last moved, and the id that reads it.
   The marker and its explanation appear only where true — never in a thread's own history, whose replies are already in front of the Agent — and a read-along Agent is told about the multi-topic stream even when its turn carries no block.
@@ -155,7 +158,7 @@ A few observations the diagram glosses over:
 ## The turn watch — liveness, not duration
 
 A relayed turn has **no time limit** — like a session driven from the UI, it runs until the agent is done.
-While the relay's connection is up it watches for *life*, not length: transport pings guard the socket, and once frames have been silent for the stall-probe window the relay asks agent-runtime whether the session still has a turn running — alive means keep waiting, however long the work takes.
+While the relay's connection is up it watches for _life_, not length: transport pings guard the socket, and once frames have been silent for the stall-probe window the relay asks agent-runtime whether the session still has a turn running — alive means keep waiting, however long the work takes.
 The probe window is floor-bounded by the egress-approval hold at config load (raising a lower setting with a startup warning), so a turn silently waiting on an approval is never probed early.
 The relay abandons a turn on exactly two verdicts — the connection is lost, or the runtime reports the turn gone — and abandoning the relay never touches the work: the harness keeps running detached, and its late reply still lands through the lingering turn record.
 
@@ -177,7 +180,7 @@ A turn that never lost its relay needs no watch, and is judged the moment it end
 An addressed Slack turn that finishes having posted nothing, declined nothing and handed nothing on has left its answer undelivered — the agent wrote it as ordinary text, and the relay discards that — so it goes to the same watch with its ending already known: no poll, the verdict runs at once, and the recovery is the one the watch would have reached anyway.
 This is the common case nothing else catches — nothing failed, so nothing is abandoned; the person simply waits on an answer that was written and never sent.
 One owner decides both, which is what stops the two paths drifting into two different ideas of what "answered" means.
-The notice tells the agent to post the answer *as* the answer rather than as a correction — nobody saw a failure, so apologising for a delay they never noticed explains the platform instead of replying to them.
+The notice tells the agent to post the answer _as_ the answer rather than as a correction — nobody saw a failure, so apologising for a delay they never noticed explains the platform instead of replying to them.
 After an abandoned turn the notice says the opposite, because there the failure copy is already on screen above the agent's own post.
 If the Agent restarted out of memory since the turn began, the notice names that cause and the memory setting.
 Both paths nudge at most **once**: an agent still silent afterwards is left alone, because a second notice only repeats the first, and a nudge never authors anything itself — what reaches the channel is the agent's own post, or nothing.
@@ -214,7 +217,7 @@ What the agent sees:
   A position, unlike a total, never goes stale as the thread grows, so two windows read minutes apart still line up.
   That handle is the only way back, since a labelled line carries a readable time, never the id a read takes.
   A count that disagrees with Slack's own paging signal is dropped rather than shown wrong, and the window then names what it leaves out without numbering it.
-  The handle stays free of platform state: a handle is a position and nothing more, because its holder can rewrite it, so anything the platform would have to *believe* on being handed one back is derived afresh from the thread instead.
+  The handle stays free of platform state: a handle is a position and nothing more, because its holder can rewrite it, so anything the platform would have to _believe_ on being handed one back is derived afresh from the thread instead.
   What a rewritten position buys is another window of a thread already offered, which is nothing.
   A handle does name its thread, and one offered to another thread is refused the way an unoffered thread id is, as is one naming a point its thread does not reach — nothing else tells a foreign handle from a native one, and satisfying either answers with a window that looks ordinary and is not.
   Its reach is **what the platform offered**: a thread id resolves only against threads recently marked in that Agent's own injected history, which also settles which conversation the id lives in, and that conversation must still be bound.
@@ -305,7 +308,7 @@ This is the deliberate trade-off: keep outbound simple and stateless at the cost
 The two messengers diverge slightly on what a top-level post means:
 
 - **Slack:** the worker posts outside any thread, producing a new top-level message.
-  A reply to it is routed by the *reply conversation's own* bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
+  A reply to it is routed by the _reply conversation's own_ bindings like any inbound message — so it reaches whoever that conversation's routing resolves, which need not be the Agent that posted, and nobody where none is connected.
   An Agent-initiated DM goes only to someone within the Agent's reach (above); it lands in the person's DM regardless of any binding but does not itself bind it: for their replies to reach the Agent, the DM must be connected like any other conversation.
 - **Telegram:** there is no thread primitive in DMs and only weak threading in groups.
   The worker posts into the conversation the message arrived in: the chat, or the forum topic inside it; a reply in a supergroup is answered in its chat.

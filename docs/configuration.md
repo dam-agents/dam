@@ -1,7 +1,7 @@
 # Configuration
 
 How to configure [Platform](../README.md) after installation: secrets for the credential gateway, Slack integration, and the development-mode toggle.
-For *what* Platform is and how it's built, see the [architecture docs](architecture.md).
+For _what_ Platform is and how it's built, see the [architecture docs](architecture.md).
 
 ## Secrets
 
@@ -38,7 +38,7 @@ Agents created before named connections became the default keep their setting.
 
 It is set per agent:
 
-- **Agent settings:** *Inject only into addressed requests* under the agent's setup.
+- **Agent settings:** _Inject only into addressed requests_ under the agent's setup.
   Changing it there restarts the agent's gateway.
 - **Starter kit:** `requireConnectionAddress: true` or `false` in `kit.yaml`; a kit that names neither gets the default, on.
 
@@ -163,9 +163,14 @@ Re-apply [`etc/slack/app-manifest.yaml`](../etc/slack/app-manifest.yaml) from th
 The bind link the bot offers when someone invites it to a channel needs the `member_joined_channel` subscription this way; without it the invite is simply ignored, with nothing logged.
 The Stop button on an agent's working status needs the `agent_session_stopped` subscription the same way; without it Slack answers a press with "Stop isn't available for this agent".
 
+The Stop button also needs Slack's agent messaging (`agent_view` in the manifest), which replaces the older `assistant_view`.
+Slack refuses a manifest that declares both, so an app created from an earlier manifest is moved in its app settings: the **Agent** tab offers the update.
+The switch is one-way, people in the workspace see it only after a hard refresh of Slack, and a distributed app may need Marketplace review again.
+Until the app is moved, the working status still shows through the older assistant API, without a Stop button.
+
 ### Connecting a workspace
 
-1. Open **Settings → Slack workspaces** and press *Connect a workspace*.
+1. Open **Settings → Slack workspaces** and press _Connect a workspace_.
    The tab appears only for holders of the installer role.
    It answers with a `slack.com` consent URL and sends you there; `GET /api/slack/install/start` is the same thing for a script, returning the URL as JSON rather than redirecting, because a browser navigation carries no bearer token.
 2. Approve it as an admin of the workspace you are adding, or hand the URL to someone who is — it is an invitation, good for 24 hours and spendable once.
