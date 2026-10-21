@@ -66,7 +66,10 @@ The local cluster serves `*.env.localhost` over plain HTTP.
 **The gate.** The api-server reads the Environment and endpoint from the host name, before any other route, and relays HTTP and WebSocket to the Environment's runtime, which forwards to that endpoint's port on the Environment's own loopback and nowhere else.
 The api-server names the declared ports on every request, so a port the Environment did not declare is refused, and so are the runtime's own ports.
 
-- **Who may open it.** In this slice only the owner, by their platform sign-in.
+- **Who may open it.** The owner keeps a list of people per agent, by email, which every Environment of that agent inherits; the owner is always in, and an empty list means only the owner.
+  The Owning Agent can narrow the list for one Environment (`access`), never widen it: an email off the owner's list is refused, and the agent cannot read the owner's list.
+  A visitor matches by the email their identity provider verified, compared trimmed and lowercased; an account without one matches nobody's list.
+  A visitor who may not open it gets a page naming the account they are signed in with and telling them whom to ask.
 - **Sign-in** happens once, on the sign-in host, with an identity provider client of its own whose tokens the platform's API refuses.
   The sign-in host hands the address the visitor came from a code that works once, for that address only, within a minute, and the address trades it for a session cookie of its own: `__Host-platform-env` over HTTPS, scoped to that one origin, so no other Environment can set or read it.
   Every address reserves `/.platform/` for the hand-off and sign-out, which never reach the app.
@@ -82,6 +85,6 @@ The api-server names the declared ports on every request, so a port the Environm
 **The Owning Agent** uses five platform MCP tools — `create_environment`, `list_environments`, `update_environment`, `wake_environment`, `delete_environment` — offered only to a vm Agent that is not an Environment, while its owner has the feature on, and `platform-env` in the image, which lists them and opens the [Environment Link](#the-environment-link).
 They act on the calling Agent's Environments alone, found by name.
 
-**The owner** lists an agent's Environments and extends or deletes one through the `environments` tRPC router, under the same scopes as the agent's own management.
+**The owner** lists an agent's Environments, extends or deletes one, and reads and sets the agent's list of people through the `environments` tRPC router, under the same scopes as the agent's own management.
 
-The security log records each create and delete, naming the Owning Agent or the owner.
+The security log records each create and delete, naming the Owning Agent or the owner, each change to an agent's list of people, each new session with the person's email, and each refusal.

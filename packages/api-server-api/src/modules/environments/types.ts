@@ -9,6 +9,8 @@ export type EnvironmentView = z.infer<typeof environmentViewSchema>;
 
 export interface EnvironmentsService {
   list(owningAgentId: string): Promise<EnvironmentView[]>;
+  accessList(owningAgentId: string): Promise<string[]>;
+  setAccessList(owningAgentId: string, emails: string[]): Promise<string[]>;
   extend(id: string, expiresAt: Date): Promise<EnvironmentView>;
   delete(id: string): Promise<void>;
 }

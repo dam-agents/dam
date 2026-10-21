@@ -13,6 +13,10 @@ import {
   type EnvironmentGate,
 } from "./gate/environment-gate.js";
 import { createEnvironmentSignIn } from "./services/environment-signin.js";
+import {
+  createAccessListsRepository,
+  type AccessListsRepository,
+} from "./infrastructure/access-lists-repository.js";
 import { podBaseUrl } from "../agents/infrastructure/k8s.js";
 import type { Db } from "db";
 import type { AgentsService } from "api-server-api";
@@ -89,17 +93,23 @@ export function startItemCommand(command: string): string {
 export function composeEnvironments(
   deps: ComposeEnvironmentsDeps,
 ): EnvironmentsComposition {
-  return composeEnvironmentsOver(createEnvironmentsRepository(deps.db), deps);
+  return composeEnvironmentsOver(
+    createEnvironmentsRepository(deps.db),
+    deps,
+    createAccessListsRepository(deps.db),
+  );
 }
 
 export function composeEnvironmentsOver(
   repo: EnvironmentsRepository,
   deps: Omit<ComposeEnvironmentsDeps, "db">,
+  accessLists: AccessListsRepository,
 ): EnvironmentsComposition {
   const environmentsFor = (owner: string) =>
     createEnvironmentsService({
       owner,
       repo,
+      accessLists,
       agents: deps.agentsFor(owner),
       config: deps.config,
       startCommand: async (agentId, command) => {
@@ -129,6 +139,7 @@ export function composeEnvironmentsOver(
         for (const record of await repo.listByOwningAgent(agentId))
           await environmentsFor(record.owner).remove(record, record.owner);
         await repo.delete(agentId);
+        await accessLists.delete(agentId);
       },
     },
 
@@ -213,6 +224,8 @@ export function composeEnvironmentGate(
     scheme: template.startsWith("https:") ? "https" : "http",
     addressUrl,
     repo: createEnvironmentsRepository(deps.db),
+    ownerList: (owningAgentId) =>
+      createAccessListsRepository(deps.db).get(owningAgentId),
     signIn: createEnvironmentSignIn({
       provider: createKeycloakShareIdentity(
         {

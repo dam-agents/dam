@@ -1,4 +1,4 @@
-// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: the owner signs in once on the sign-in host, the address trades a one-time code for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. A visitor who is not signed in is sent to sign in; a session or code made for one address opens nothing on another; another person is refused; the platform's own session cookie and `Authorization` never reach the app, the app cannot set that cookie, and every response is uncacheable. Any other host passes on untouched.
+// TEST_OVERVIEW: The api-server's front for Environment addresses, end to end over real HTTP: the owner signs in once on the sign-in host, the address trades a one-time code for its own session, and requests and WebSockets are relayed to the Environment runtime's forward for the declared port. A visitor who is not signed in is sent to sign in; the owner and people on the owner's list (narrowed per Environment by its agent) are admitted, by verified email; a session or code made for one address opens nothing on another; anyone else is refused, with a page that says whom to ask; the platform's own session cookie and `Authorization` never reach the app, the app cannot set that cookie, and every response is uncacheable. Any other host passes on untouched.
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import { serve } from "@hono/node-server";
@@ -44,7 +44,14 @@ async function listen(server: http.Server): Promise<number> {
   return (server.address() as AddressInfo).port;
 }
 
-async function world(opts: { signedInAs?: string } = {}) {
+async function world(
+  opts: {
+    signedInAs?: string;
+    email?: string | null;
+    ownerList?: string[];
+    environmentList?: string[] | null;
+  } = {},
+) {
   const seen: { path: string; headers: http.IncomingHttpHeaders }[] = [];
   const runtime = http.createServer((req, res) => {
     seen.push({ path: req.url ?? "", headers: req.headers });
@@ -79,6 +86,7 @@ async function world(opts: { signedInAs?: string } = {}) {
   const runtimePort = await listen(runtime);
 
   const records = [record("pr-1-abcdef", 4444), record("pr-2-abcdef", 4444)];
+  records[0]!.access = opts.environmentList ?? null;
   const woken: string[] = [];
   const signIn = createEnvironmentSignIn({
     provider: {
@@ -87,8 +95,8 @@ async function world(opts: { signedInAs?: string } = {}) {
       redeemCode: async ({ code }) =>
         ok({
           sub: opts.signedInAs ?? OWNER,
-          email: "owner@example.com",
-          emailVerified: true,
+          email: opts.email === undefined ? "owner@example.com" : opts.email,
+          emailVerified: opts.email !== null,
           nonce: code,
         }),
       endSessionUrl: ({ postLogoutRedirectUri }) =>
@@ -108,6 +116,7 @@ async function world(opts: { signedInAs?: string } = {}) {
     repo: {
       getByHost: async (host) => records.find((r) => r.host === host) ?? null,
     },
+    ownerList: async () => opts.ownerList ?? [],
     signIn,
     ensureReady: async (id) => void woken.push(id),
     stampActivity: async () => {},
@@ -307,8 +316,67 @@ describe("the Environment gate", () => {
 
     const res = await w.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie });
     expect(res.status).toBe(403);
-    expect(res.body).toContain("Ask them for access");
+    expect(res.body).toContain("owner@example.com");
+    expect(res.body).toContain("Ask the person who sent you the link");
     expect(w.seen).toHaveLength(0);
+  });
+
+  // TEST_SCENARIO: a person on the owner's list opens every Environment of that agent; when the agent narrowed one Environment's list, only the people left on it open that one, and an email the agent added that is not on the owner's list opens nothing.
+  it("admits people on the owner's list, narrowed per Environment", async () => {
+    const reviewer = await world({
+      signedInAs: "reviewer-sub",
+      email: "Reviewer@Example.com",
+      ownerList: ["reviewer@example.com", "qa@example.com"],
+    });
+    const cookie = await reviewer.signInTo("app-pr-1-abcdef");
+    expect(
+      (await reviewer.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie }))
+        .status,
+    ).toBe(200);
+
+    const narrowed = await world({
+      signedInAs: "reviewer-sub",
+      email: "reviewer@example.com",
+      ownerList: ["reviewer@example.com", "qa@example.com"],
+      environmentList: ["qa@example.com"],
+    });
+    const out = await narrowed.signInTo("app-pr-1-abcdef");
+    expect(
+      (
+        await narrowed.request(`app-pr-1-abcdef.${DOMAIN}`, "/", {
+          cookie: out,
+        })
+      ).status,
+    ).toBe(403);
+
+    const widened = await world({
+      signedInAs: "outsider-sub",
+      email: "outsider@example.com",
+      ownerList: ["qa@example.com"],
+      environmentList: ["outsider@example.com"],
+    });
+    const outsider = await widened.signInTo("app-pr-1-abcdef");
+    expect(
+      (
+        await widened.request(`app-pr-1-abcdef.${DOMAIN}`, "/", {
+          cookie: outsider,
+        })
+      ).status,
+    ).toBe(403);
+  });
+
+  // TEST_SCENARIO: an account whose email the identity provider did not verify matches no list, and the page says why.
+  it("refuses an account with no verified email", async () => {
+    const w = await world({
+      signedInAs: "unverified-sub",
+      email: null,
+      ownerList: ["someone@example.com"],
+    });
+    const cookie = await w.signInTo("app-pr-1-abcdef");
+
+    const res = await w.request(`app-pr-1-abcdef.${DOMAIN}`, "/", { cookie });
+    expect(res.status).toBe(403);
+    expect(res.body).toContain("no verified email");
   });
 
   // TEST_SCENARIO: the code the sign-in host hands an address works once and only on the address it was made for.

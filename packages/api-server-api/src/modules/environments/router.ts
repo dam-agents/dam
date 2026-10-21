@@ -3,8 +3,10 @@ import {
   checkAgentBinding,
   manageAgentsProcedure,
   readAgentProcedure,
+  requireWildcardBinding,
 } from "../../auth-procedures.js";
 import {
+  environmentAccessListInputSchema,
   environmentExtendInputSchema,
   environmentIdInputSchema,
   environmentListInputSchema,
@@ -16,6 +18,21 @@ export const environmentsRouter = t.router({
     .query(({ ctx, input }) => {
       checkAgentBinding(ctx, input.owningAgentId);
       return ctx.environments.list(input.owningAgentId);
+    }),
+
+  accessList: readAgentProcedure
+    .use(requireWildcardBinding)
+    .input(environmentListInputSchema)
+    .query(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.owningAgentId);
+      return ctx.environments.accessList(input.owningAgentId);
+    }),
+
+  setAccessList: manageAgentsProcedure
+    .input(environmentAccessListInputSchema)
+    .mutation(({ ctx, input }) => {
+      checkAgentBinding(ctx, input.owningAgentId);
+      return ctx.environments.setAccessList(input.owningAgentId, input.emails);
     }),
 
   extend: manageAgentsProcedure
