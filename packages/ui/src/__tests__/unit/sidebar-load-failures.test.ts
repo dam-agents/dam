@@ -1,4 +1,5 @@
-// TEST_OVERVIEW: In JanUI's sidebar a failed read is never shown as an answer. An Agent's list whose first page failed offers a retry instead of saying it has no Sessions, and an old pin whose first lookup failed offers a retry instead of vanishing; the pin stays stored either way.
+// TEST_OVERVIEW: In JanUI's sidebar a failed read is never shown as an answer. An Agent's list whose first page failed offers a retry instead of saying it has no Sessions, and an old pin whose first lookup failed offers a retry instead of vanishing; the pin stays stored either way. An Agent's list ends with its New session row whenever it lists no Session, whether it has none, all are pinned or the filter hides them.
+import { SessionMode, SessionType } from "api-server-api";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { beforeEach, expect, it, vi } from "vitest";
@@ -12,6 +13,11 @@ const list = vi.hoisted(() => ({
   nextFailed: false,
 }));
 const agentState = vi.hoisted(() => ({ answerable: true }));
+const rows = vi.hoisted(() => ({
+  sessions: [] as unknown[],
+  pinned: new Set<string>(),
+  channelTypes: new Set(["chat", "slack", "telegram", "schedule", "terminal"]),
+}));
 const pin = vi.hoisted(() => ({
   result: {
     data: undefined as unknown,
@@ -21,14 +27,14 @@ const pin = vi.hoisted(() => ({
   },
 }));
 
-vi.mock("../../store.js", async () => {
-  const { defaultActivityFilters } =
-    await import("../../modules/home/lib/activity-filter.js");
+vi.mock("../../store.js", () => {
   const state = {
     view: "home",
     drafts: {},
     pendingPermissions: [],
-    sidebarActivityFilters: defaultActivityFilters(),
+    get sidebarActivityFilters() {
+      return { channelTypes: rows.channelTypes, state: "any" };
+    },
   };
   return { useStore: (select: (s: unknown) => unknown) => select(state) };
 });
@@ -42,7 +48,7 @@ vi.mock("../../modules/approvals/api/queries.js", () => ({
 }));
 vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
   useAgentSessionList: () => ({
-    sessions: [],
+    sessions: rows.sessions as never[],
     rowState: () => ({}),
     operable: true,
     answerable: agentState.answerable,
@@ -59,7 +65,7 @@ vi.mock("../../modules/sessions/hooks/use-agent-session-list.js", () => ({
 }));
 vi.mock("../../modules/sessions/lib/pinned-sessions.js", () => ({
   pinKey: (a: string, s: string) => `${a}:${s}`,
-  usePinnedSessions: () => new Set<string>(),
+  usePinnedSessions: () => rows.pinned,
 }));
 vi.mock("../../modules/sessions/api/queries.js", () => ({
   provisionalSessionView: vi.fn(),
@@ -99,6 +105,15 @@ beforeEach(() => {
   list.retrying = false;
   list.nextFailed = false;
   agentState.answerable = true;
+  rows.sessions = [];
+  rows.pinned = new Set();
+  rows.channelTypes = new Set([
+    "chat",
+    "slack",
+    "telegram",
+    "schedule",
+    "terminal",
+  ]);
   pin.result = {
     data: undefined,
     errorUpdatedAt: 1,
@@ -273,4 +288,37 @@ it("offers the New session row only for a list known to be empty", () => {
   list.loading = false;
   list.nextFailed = true;
   expect(render()).not.toContain("data-new-session");
+});
+
+// TEST_SCENARIO: an Agent's Sessions are all pinned to the Pinned section above, or the filter hides every one of them; its list under its own row holds no Session either way, so it ends with the New session row an Agent with no Sessions at all gets, and the filter case says it hid them above that row.
+it("offers the New session row for a list whose Sessions are all pinned or filtered out", () => {
+  const render = () =>
+    renderToStaticMarkup(
+      createElement(AgentSessionList, {
+        agentId: "a",
+        newSessionRow: createElement("i", { "data-new-session": true }),
+      }),
+    );
+  const chat = (sessionId: string) => ({
+    sessionId,
+    type: SessionType.Regular,
+    mode: SessionMode.Chat,
+    scheduleId: null,
+    createdAt: "2026-10-01T08:00:00Z",
+    updatedAt: "2026-10-01T08:00:00Z",
+  });
+  list.failed = false;
+  rows.sessions = [chat("s1"), chat("s2")];
+  expect(render()).not.toContain("data-new-session");
+
+  rows.pinned = new Set(["a:s1", "a:s2"]);
+  const pinned = render();
+  expect(pinned).toContain("data-new-session");
+  expect(pinned).not.toContain("No sessions match the filter.");
+
+  rows.pinned = new Set();
+  rows.channelTypes = new Set(["slack"]);
+  const filtered = render();
+  expect(filtered).toContain("No sessions match the filter.");
+  expect(filtered).toContain("data-new-session");
 });

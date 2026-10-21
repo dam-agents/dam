@@ -46,7 +46,7 @@ function useAgentTreeRows(agentId: string) {
 }
 
 /**
- * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in JanUI's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the filter it applies (its own, else the header's) is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first. When the Agent stays asleep and its record holds none of its Sessions, the list offers a wake as its retry.
+ * UNIT_BOUNDARY_DESCRIPTION: One Agent's Sessions, nested under the Agent in JanUI's sidebar tree: every Session the Agent lists except its pinned ones, which the Pinned section above shows, the next page loaded when the list scrolls near its end — or, while the filter it applies (its own, else the header's) is on and so hides Sessions of the loaded pages, only when the user clicks Load more, so a filter that hides most Sessions does not load every page — and the Sessions ordered by last activity, newest first; a New session row ends a list that lists no Session, whether it has none, all are pinned or the filter hides them. When the Agent stays asleep and its record holds none of its Sessions, the list offers a wake as its retry.
  */
 export function AgentSessionList({
   agentId,
@@ -61,10 +61,7 @@ export function AgentSessionList({
 }) {
   const { list, filters, rows, rest } = useAgentTreeRows(agentId);
   const empty =
-    !list.loading &&
-    !list.failed &&
-    !list.hasNextPage &&
-    list.sessions.length === 0;
+    !list.loading && !list.failed && !list.hasNextPage && rest.length === 0;
   useEffect(() => onEmptyChange?.(empty), [empty, onEmptyChange]);
   const {
     hasNextPage,
