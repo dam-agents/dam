@@ -630,8 +630,12 @@ export async function bootstrap() {
     specHarness: async (agentId) =>
       (await agentsRepo.get(agentId))?.spec.harness,
   });
+  let convertDefault: (agentId: string) => Promise<unknown> = async () => {};
   const resolveInitializationPair = composeInitializationPairResolver({
-    firePair,
+    firePair: async (agentId, preferred) => {
+      await convertDefault(agentId);
+      return firePair(agentId, preferred);
+    },
     log: (msg) => getLogger().warn(msg),
   });
   const outcomePairFields = async (
@@ -1024,6 +1028,7 @@ export async function bootstrap() {
       redeliver: (agentId) => runtimeDelivery.queue.enqueue(agentId),
       log: (msg) => getLogger().info(msg),
     });
+  convertDefault = (agentId) => defaultConverter.convert(agentId);
 
   const sessionWatcher = composeSessionWatcher({
     db,

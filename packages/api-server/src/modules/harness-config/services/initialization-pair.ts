@@ -15,9 +15,12 @@ const fieldOf = (payload: unknown, key: "harness" | "model"): unknown =>
  * saved default only once its runtime lists its provider. Such a turn (an
  * `initialization` Event that names no model, a kit update's too) takes the
  * saved default each time it is delivered, on the harness it names if any,
- * so it runs on the default saved after it was queued. While there is no default model to run on, it
- * is held back rather than sent, since the runtime refuses a turn with no
- * model; it goes out on a later delivery, once the default is saved. A turn
+ * so it runs on the default saved after it was queued; the caller converts
+ * the Agent's default first when none is saved yet, so a provider that
+ * listed too late for the conversion at hello is tried again on each
+ * delivery. While there is no default model to run on, it is held back
+ * rather than sent, since the runtime refuses a turn with no model; it goes
+ * out on a later delivery, once the default is saved. A turn
  * that names its model, any other event, and an Agent on an older runtime
  * pass as stored, and so does a turn whose default cannot be read, so a
  * failed read never drops it.
